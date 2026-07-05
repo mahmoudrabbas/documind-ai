@@ -7,8 +7,12 @@ services:
       - "5000:5000"
     env_file:
       - ./api/.env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/docsai
+      - REDIS_URL=redis://redis:6379
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     volumes:
       - ./api:/app
       - /app/node_modules
@@ -20,10 +24,42 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_started
     volumes:
       - ./app:/app
       - /app/node_modules
+
+  worker:
+    build:
+      context: ./workers
+      dockerfile: Dockerfile
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./workers:/app
+      - /app/node_modules
+    env_file:
+      - ./workers/.env
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/docsai
+      - REDIS_URL=redis://redis:6379
+
+  redis:
+    image: redis:7
+    container_name: docsai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mongodb:
     image: mongo:8
@@ -34,6 +70,12 @@ services:
       MONGO_INITDB_DATABASE: docsai
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   mongo_data:
+  redis_data:
