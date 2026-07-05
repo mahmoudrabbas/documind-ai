@@ -1,6 +1,6 @@
 # DocuMind AI
 
-DocuMind AI is an AI-powered knowledge assistant that allows users to upload documents, search their knowledge, and chat with AI.
+DocuMind AI is a private, multi-tenant knowledge assistant for companies. Admins upload internal documents (HR policies, SOPs, contracts) in Arabic or English; employees ask natural-language questions and get answers generated only from those documents, with source citations — or an honest refusal when there isn't enough evidence. Every tenant's data is fully isolated.
 
 ---
 
