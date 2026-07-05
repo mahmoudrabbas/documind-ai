@@ -1,9 +1,13 @@
 {
-  "name": "docsai",
+  "name": "documind-ai",
   "version": "1.0.0",
   "private": true,
   "description": "DocuMind AI monorepo — Next.js frontend, Express backend, and background workers.",
-  "workspaces": ["api", "app", "workers"],
+  "workspaces": [
+    "api",
+    "app",
+    "workers"
+  ],
   "scripts": {
     "dev": "docker compose up --build",
     "dev:api": "npm run dev --workspace api",
@@ -13,15 +17,31 @@
     "build:api": "npm run build --workspace api",
     "build:app": "npm run build --workspace app",
     "build:workers": "npm run build --workspace workers",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "install:all": "npm install --workspaces --include-workspace-root"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.4",
+    "typescript-eslint": "^8.62.1"
   },
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
   },
-  "keywords": ["docsai", "documind", "ai", "rag", "monorepo"],
+  "keywords": [
+    "docsai",
+    "documind",
+    "ai",
+    "rag",
+    "monorepo"
+  ],
   "license": "UNLICENSED"
 }
