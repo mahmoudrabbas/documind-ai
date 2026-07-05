@@ -170,20 +170,167 @@ src/
 
 ---
 
-# Git Workflow
+# For Teammates – Git Development Workflow
 
-Create a new branch before starting any task.
+Follow these steps for every task.
+
+## 1. Pick an Issue
+- Open the Project Board.
+- Choose an issue assigned to you from the current sprint.
+- Read the description, acceptance criteria, and dependencies.
+- Make sure all dependency tasks are already merged into `main`.
+
+---
+
+## 2. Create a Feature Branch
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature/<task-id>-<short-description>
+```
+
+**Example**
+
+```bash
+git checkout -b feature/t2.1.1-tenant-user-schemas
+```
+
+---
+
+## 3. Implement the Task
+- Work only inside your assigned module.
+- Follow the issue requirements.
+- Keep your changes focused on the current task.
+
+---
+
+## 4. Commit Your Changes
+
+```bash
+git add .
+git commit -m "feat(auth): add tenant and user schemas"
+```
+
+Use **Conventional Commits**, such as:
+- `feat`
+- `fix`
+- `refactor`
+- `docs`
+- `test`
+- `chore`
+
+---
+
+## 5. Push Your Branch
+
+```bash
+git push origin feature/<task-id>-<short-description>
+```
+
+---
+
+## 6. Open a Pull Request
+- Create a Pull Request targeting **main**.
+- Complete the PR template.
+- Add the following to the PR description:
+
+```text
+Closes #<issue-number>
+```
+
+This will:
+- Link the PR to the issue.
+- Move the issue to **In Progress** automatically.
+- Close the issue automatically after the PR is merged.
+
+---
+
+## 7. Wait for Review
+- Wait for CI checks (when available).
+- Request a code review.
+- Move the task to **Code Review** manually.
+
+If changes are requested:
+
+```bash
+git add .
+git commit -m "fix(auth): address review comments"
+git push
+```
+
+Continue pushing to the **same branch** until the PR is approved.
+
+---
+
+## 8. Testing (If Needed)
+- Move the task to **Testing**.
+- Verify everything works correctly.
+
+---
+
+## 9. Merge the Pull Request
+Once the PR is approved:
+
+- Use **Squash and Merge**.
+
+GitHub will automatically:
+- Close the linked issue.
+- Move the task to **Done**.
+
+---
+
+## 10. Clean Up
+
+```bash
+git checkout main
+git pull origin main
+git branch -d feature/<task-id>-<short-description>
+```
+
+Then delete the remote branch from GitHub.
+
+---
+
+## 11. Notify the Team
 
 Example:
 
-```bash
-git checkout -b feature/auth-login
+```text
+T2.1.1 merged into main. It now unblocks T2.1.2 and T2.1.3.
 ```
 
-Write clear commit messages.
+---
 
-Open a Pull Request before merging into the main branch.
+# Workflow Summary
 
+```text
+Pick Issue
+    ↓
+Create Branch
+    ↓
+Implement Task
+    ↓
+Commit Changes
+    ↓
+Push Branch
+    ↓
+Open PR (Closes #Issue)
+    ↓
+Auto → In Progress
+    ↓
+Code Review
+    ↓
+Testing (if needed)
+    ↓
+Squash & Merge
+    ↓
+Auto → Done
+    ↓
+Delete Branch
+    ↓
+Notify Team
+```
 ---
 
 # Notes
