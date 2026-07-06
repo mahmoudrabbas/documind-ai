@@ -1,21 +1,13 @@
 import { z } from "zod";
 
 /**
- * Zod schema for API service environment variables.
+ * Zod schema for Workers service environment variables.
  * Validates and parses all required and optional env vars at startup.
  */
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
-
-  PORT: z
-    .string()
-    .default("5000")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().positive().int()),
-
-  HOST: z.string().default("0.0.0.0"),
 
   MONGODB_URI: z
     .string()
@@ -27,6 +19,12 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"])
     .default("info"),
+
+  WORKER_CONCURRENCY: z
+    .string()
+    .default("1")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().positive().int()),
 });
 
 export type Env = z.infer<typeof envSchema>;
