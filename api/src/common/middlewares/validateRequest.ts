@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { AppError } from "../errors/appError.js";
+import { AppError } from "../errors/AppError.js";
 
 export interface ValidationSchema {
   body?: (req: { body?: unknown }) => Array<{ field: string; issue: string }>;
@@ -34,7 +34,7 @@ export function validateRequest(
 
     if (errors.length > 0) {
       return next(
-        new AppError("Validation failed", 400, errorCode, {
+        new AppError(400, errorCode, "Validation failed", {
           errors,
         })
       );

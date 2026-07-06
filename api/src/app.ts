@@ -1,7 +1,7 @@
 import express from "express";
-import { AppError } from "./common/errors/appError.js";
-import { errorHandler } from "./common/middlewares/errorHandler.js";
-import { notFoundHandler } from "./common/middlewares/notFoundHandler.js";
+import { AppError } from "./common/errors/AppError.js";
+import { errorHandlerMiddleware } from "./common/middlewares/errorHandler.middleware.js";
+import { notFoundMiddleware } from "./common/middlewares/notFound.middleware.js";
 import { validateRequest } from "./common/middlewares/validateRequest.js";
 
 const app = express();
@@ -14,7 +14,7 @@ app.get("/", (_, res) => {
 
 if (process.env.NODE_ENV !== "production") {
   app.get("/boom", () => {
-    throw new AppError("Bad request", 400, "BAD_REQUEST", {
+    throw new AppError(400, "BAD_REQUEST", "Bad request", {
       field: "email",
       issue: "invalid format",
     });
@@ -43,7 +43,7 @@ if (process.env.NODE_ENV !== "production") {
   );
 }
 
-app.use(notFoundHandler);
-app.use(errorHandler);
+app.use(notFoundMiddleware);
+app.use(errorHandlerMiddleware);
 
 export default app;
