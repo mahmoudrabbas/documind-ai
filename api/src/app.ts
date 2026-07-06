@@ -1,5 +1,6 @@
 import express from "express";
 import { AppError } from "./common/errors/AppError.js";
+import { BAD_REQUEST } from "./common/errors/errorCodes.js";
 import { errorHandlerMiddleware } from "./common/middlewares/errorHandler.middleware.js";
 import { notFoundMiddleware } from "./common/middlewares/notFound.middleware.js";
 import { validateRequest } from "./common/middlewares/validateRequest.js";
@@ -14,7 +15,7 @@ app.get("/", (_, res) => {
 
 if (process.env.NODE_ENV !== "production") {
   app.get("/boom", () => {
-    throw new AppError(400, "BAD_REQUEST", "Bad request", {
+    throw new AppError(400, BAD_REQUEST, "Bad request", {
       field: "email",
       issue: "invalid format",
     });

@@ -16,10 +16,23 @@ interface ErrorEnvelope {
 }
 
 function isSyntaxError(error: unknown): error is SyntaxError {
-  return error instanceof SyntaxError || (typeof error === "object" && error !== null && "type" in error && (error as { type?: string }).type === "entity.parse.failed");
+  return (
+    error instanceof SyntaxError ||
+    (typeof error === "object" &&
+      error !== null &&
+      "type" in error &&
+      (error as { type?: string }).type === "entity.parse.failed")
+  );
 }
 
-export const errorHandlerMiddleware: ErrorRequestHandler = (err, req, res) => {
+export const errorHandlerMiddleware: ErrorRequestHandler = (
+  err,
+  req,
+  res,
+  _next
+) => {
+  void _next;
+
   const isProduction = process.env.NODE_ENV === "production";
 
   let statusCode = 500;
@@ -31,11 +44,12 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (err, req, res) => {
     statusCode = err.statusCode;
     code = err.code;
     message = err.message;
-    details = err.details;
+    details = err.details ?? null;
   } else if (isSyntaxError(err)) {
     statusCode = 400;
     code = BAD_REQUEST;
     message = "Invalid JSON payload";
+    details = null;
   }
 
   console.error("[error-handler]", err);
