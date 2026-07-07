@@ -165,7 +165,7 @@ Converted from the full technical task breakdown. All issues assigned across the
 | **Labels** | `backend`, `epic-1`, `f1.2` |
 | **Epic** | EPIC 1 — Platform Foundation & Infrastructure |
 | **Dependencies** | T1.2.1 |
-| **Checklist** | - [ ] Branch created from `main` (`feature/t1.2.3`)<br>- [ ] Implementation complete<br>- [ ] Unit/integration tests written (where applicable)<br>- [ ] Manually verified against acceptance criteria<br>- [ ] Code reviewed by at least one other developer<br>- [ ] Documentation/comments updated<br>- [ ] Merged and deployed to dev environment |
+| **Checklist** | - [x] Branch created from `main` (`feature/t1.2.3`)<br>- [x] Implementation complete<br>- [x] Unit/integration tests written (where applicable)<br>- [x] Manually verified against acceptance criteria<br>- [x] Code reviewed by at least one other developer<br>- [] Documentation/comments updated<br>- [ ] Merged and deployed to dev environment |
 | **Definition of Done** | Code merged to main, passes CI, meets acceptance criteria, reviewed and approved via PR, no known regressions. |
 | **Assignee** | Isac Nady |
 
@@ -182,7 +182,7 @@ Converted from the full technical task breakdown. All issues assigned across the
 | **Labels** | `backend`, `epic-1`, `f1.2` |
 | **Epic** | EPIC 1 — Platform Foundation & Infrastructure |
 | **Dependencies** | T1.2.2, T1.2.3 |
-| **Checklist** | - [ ] Branch created from `main` (`feature/t1.2.4`)<br>- [ ] Implementation complete<br>- [ ] Unit/integration tests written (where applicable)<br>- [ ] Manually verified against acceptance criteria<br>- [ ] Code reviewed by at least one other developer<br>- [ ] Documentation/comments updated<br>- [ ] Merged and deployed to dev environment |
+| **Checklist** | - [] Branch created from `main` (`feature/t1.2.4`)<br>- [ ] Implementation complete<br>- [ ] Unit/integration tests written (where applicable)<br>- [ ] Manually verified against acceptance criteria<br>- [ ] Code reviewed by at least one other developer<br>- [ ] Documentation/comments updated<br>- [ ] Merged and deployed to dev environment |
 | **Definition of Done** | Code merged to main, passes CI, meets acceptance criteria, reviewed and approved via PR, no known regressions. |
 | **Assignee** | Abdullah Adel |
 
