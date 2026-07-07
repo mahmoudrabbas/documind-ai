@@ -15,6 +15,21 @@ export interface UserDocument extends mongoose.Document {
   updatedAt: Date;
 }
 
+function sanitizeUserTransform(
+  _doc: mongoose.Document,
+  ret: Record<string, unknown> & { _id?: unknown; __v?: number }
+) {
+  ret.id = ret._id?.toString?.() ?? "";
+
+  delete ret._id;
+  delete ret.__v;
+  delete ret.passwordHash;
+  delete ret.emailVerificationTokenHash;
+  delete ret.emailVerificationExpiresAt;
+
+  return ret;
+}
+
 const userSchema = new Schema<UserDocument>(
   {
     tenantId: {
@@ -33,7 +48,6 @@ const userSchema = new Schema<UserDocument>(
     email: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       lowercase: true,
       maxlength: 254,
@@ -41,6 +55,7 @@ const userSchema = new Schema<UserDocument>(
     passwordHash: {
       type: String,
       required: true,
+      select: false,
     },
     role: {
       type: String,
@@ -68,22 +83,32 @@ const userSchema = new Schema<UserDocument>(
     emailVerificationExpiresAt: {
       type: Date,
       default: null,
+      select: false,
     },
   },
   {
     timestamps: true,
     toJSON: {
-      transform(_doc, ret) {
-        const record = ret as Record<string, unknown> & { _id?: unknown; __v?: number };
-        record.id = record._id?.toString?.() ?? "";
-        delete record._id;
-        delete record.__v;
-        delete record.passwordHash;
-        delete record.emailVerificationTokenHash;
-        delete record.emailVerificationExpiresAt;
-        return record;
-      },
+      transform: sanitizeUserTransform,
     },
+    toObject: {
+      transform: sanitizeUserTransform,
+    },
+  }
+);
+
+userSchema.index(
+  { tenantId: 1, email: 1 },
+  {
+    unique: true,
+    name: "uniq_user_tenant_email",
+  }
+);
+
+userSchema.index(
+  { email: 1 },
+  {
+    name: "idx_user_email",
   }
 );
 

@@ -7,8 +7,12 @@ import { notFoundMiddleware } from "./common/middlewares/notFound.middleware.js"
 import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import { getRedisClient, isRedisConnected } from "./db/redis.js";
 
 const app = express();
+const redisClient = getRedisClient();
+
+app.locals.redisClient = redisClient;
 const parseAllowedOrigins = () => {
   const configuredOrigins = [
     process.env.CORS_ORIGIN,
@@ -55,6 +59,18 @@ app.use("/auth", authRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });
+});
+
+app.get("/readyz", async (_req, res) => {
+  const redisOk = isRedisConnected();
+  const statusCode = redisOk ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: redisOk ? "ready" : "degraded",
+    checks: {
+      redis: redisOk ? "connected" : "disconnected",
+    },
+  });
 });
   
 if (config.NODE_ENV !== "production") {
