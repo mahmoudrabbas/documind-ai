@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { RegisterInput } from "./auth.types.js";
+import type {
+  RegisterInput,
+  ResendVerificationEmailInput,
+  VerifyEmailInput,
+} from "./auth.types.js";
 
 const registerSchema = z
   .object({
@@ -26,17 +30,88 @@ const registerSchema = z
   })
   .strict();
 
+const verifyEmailSchema = z
+  .object({
+    token: z.string().trim().min(1, "token is required"),
+  })
+  .strict();
+
+const resendVerificationEmailSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email("email must be a valid address"),
+  })
+  .strict();
+
 export function validateRegisterInput(input: unknown): RegisterInput {
   const result = registerSchema.safeParse(input);
 
   if (!result.success) {
-    const errors = result.error.issues.map((issue) => ({
-      field: issue.path.join(".") || "body",
-      issue: issue.message,
-    }));
-
-    throw new AppError(400, VALIDATION_ERROR, "Validation failed", { errors });
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
   }
 
   return result.data;
+}
+
+export function validateVerifyEmailInput(input: unknown): VerifyEmailInput {
+  return parseAuthInput(verifyEmailSchema, input);
+}
+
+export function validateResendVerificationEmailInput(input: unknown): ResendVerificationEmailInput {
+  return parseAuthInput(resendVerificationEmailSchema, input);
+}
+
+function parseAuthInput<T>(schema: z.ZodType<T>, input: unknown): T {
+  const result = schema.safeParse(input);
+
+  if (!result.success) {
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+  }
+
+  return result.data;
+}
+
+function groupValidationIssues(issues: z.core.$ZodIssue[]) {
+  const groupedErrors = new Map<string, string[]>();
+
+  for (const issue of issues) {
+    const field = issue.path.join(".") || "body";
+
+    if (!groupedErrors.has(field)) {
+      groupedErrors.set(field, []);
+    }
+
+    groupedErrors.get(field)?.push(issue.message);
+  }
+
+  return Array.from(groupedErrors.entries()).map(([field, messages]) => ({
+    field,
+    message: formatGroupedMessage(field, messages),
+  }));
+}
+
+function formatGroupedMessage(field: string, messages: string[]) {
+  const [firstMessage, ...remainingMessages] = messages;
+
+  if (firstMessage === undefined) {
+    return "";
+  }
+
+  const deduplicatedMessages = remainingMessages.map((message) => removeRepeatedFieldPrefix(field, message));
+
+  return [firstMessage, ...deduplicatedMessages].join(" and ");
+}
+
+function removeRepeatedFieldPrefix(field: string, message: string) {
+  const mustPrefix = `${field} must `;
+  const fieldPrefix = `${field} `;
+
+  if (message.startsWith(mustPrefix)) {
+    return message.slice(mustPrefix.length);
+  }
+
+  if (message.startsWith(fieldPrefix)) {
+    return message.slice(fieldPrefix.length);
+  }
+
+  return message;
 }

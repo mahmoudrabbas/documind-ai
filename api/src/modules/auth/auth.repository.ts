@@ -16,6 +16,8 @@ export interface UserCreateInput {
   passwordHash: string;
   role: string;
   status: string;
+  emailVerified: boolean;
+  emailVerifiedAt: Date | null;
 }
 
 export async function findTenantBySlug(slug: string) {
@@ -24,6 +26,14 @@ export async function findTenantBySlug(slug: string) {
 
 export async function findUserByEmail(email: string) {
   return UserModel.findOne({ email }).lean<UserDocument>().exec();
+}
+
+export async function findUserDocumentByEmail(email: string) {
+  return UserModel.findOne({ email }).select("+emailVerificationTokenHash").exec();
+}
+
+export async function findUserDocumentById(userId: string) {
+  return UserModel.findById(userId).select("+emailVerificationTokenHash").exec();
 }
 
 export async function createTenant(input: TenantCreateInput, session?: ClientSession) {
@@ -36,6 +46,40 @@ export async function createUser(input: UserCreateInput, session?: ClientSession
   return user as UserDocument;
 }
 
+export async function updateUserVerificationToken(
+  userId: string,
+  tokenHash: string,
+  expiresAt: Date
+) {
+  await UserModel.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        emailVerificationTokenHash: tokenHash,
+        emailVerificationExpiresAt: expiresAt,
+      },
+    }
+  ).exec();
+}
+
+export async function activateTenantIfPendingVerification(tenantId: string) {
+  return TenantModel.findOneAndUpdate(
+    { _id: tenantId, status: "pending_verification" },
+    { $set: { status: "active" } },
+    { returnDocument: "after" }
+  )
+    .lean<TenantDocument>()
+    .exec();
+}
+
+export async function findTenantById(tenantId: string) {
+  return TenantModel.findById(tenantId).lean<TenantDocument>().exec();
+}
+
 export async function deleteTenantById(tenantId: string) {
   await TenantModel.deleteOne({ _id: tenantId });
+}
+
+export async function deleteUserById(userId: string) {
+  await UserModel.deleteOne({ _id: userId });
 }

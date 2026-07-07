@@ -1,20 +1,42 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
+import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   EMAIL_ALREADY_EXISTS,
+  INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
   REGISTRATION_FAILED,
   TENANT_ALREADY_EXISTS,
 } from "../../common/errors/errorCodes.js";
-import type { RegisterResult, RegisterInput } from "./auth.types.js";
+import type {
+  RegisterResult,
+  RegisterInput,
+  VerifyEmailResult,
+} from "./auth.types.js";
+import { sendVerificationEmail } from "./auth.mailer.js";
 import {
+  createEmailVerificationToken,
+  hashVerificationJti,
+  verifyEmailVerificationToken,
+} from "./emailVerificationToken.js";
+import {
+  activateTenantIfPendingVerification,
   createTenant,
   createUser,
   deleteTenantById,
+  deleteUserById,
+  findTenantById,
   findTenantBySlug,
+  findUserDocumentByEmail,
+  findUserDocumentById,
   findUserByEmail,
+  updateUserVerificationToken,
 } from "./auth.repository.js";
-import { validateRegisterInput } from "./auth.validator.js";
+import {
+  validateRegisterInput,
+  validateResendVerificationEmailInput,
+  validateVerifyEmailInput,
+} from "./auth.validator.js";
 
 type CreatedTenantRecord = {
   _id: { toString(): string };
@@ -34,6 +56,7 @@ type CreatedUserRecord = {
   email: string;
   role: string;
   status: string;
+  emailVerified: boolean;
   createdAt?: Date;
 };
 
@@ -89,8 +112,29 @@ function serializeUser(user: CreatedUserRecord) {
     email: user.email,
     role: user.role,
     status: user.status,
+    emailVerified: user.emailVerified,
     createdAt: user.createdAt?.toISOString() ?? new Date().toISOString(),
   };
+}
+
+function serializeVerifiedUser(user: CreatedUserRecord) {
+  return {
+    id: user.id ?? user._id.toString(),
+    tenantId: user.tenantId?.toString() ?? "",
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    emailVerified: user.emailVerified,
+  };
+}
+
+function buildVerificationUrl(token: string) {
+  const url = new URL("/verify-email", config.APP_FRONTEND_URL);
+
+  url.searchParams.set("token", token);
+
+  return url.toString();
 }
 
 export async function registerTenantAndAdmin(
@@ -110,7 +154,7 @@ export async function registerTenantAndAdmin(
   const userExists = await findUserByEmail(normalizedEmail);
 
   if (userExists) {
-    throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already registered");
+    throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
   }
 
   const passwordHash = hashPassword(payload.password);
@@ -118,7 +162,7 @@ export async function registerTenantAndAdmin(
   const tenantPayload = {
     name: payload.companyName.trim(),
     slug: normalizedSlug,
-    status: "active",
+    status: "pending_verification",
     plan: "free",
   };
 
@@ -128,7 +172,9 @@ export async function registerTenantAndAdmin(
     email: normalizedEmail,
     passwordHash,
     role: "COMPANY_ADMIN",
-    status: "active",
+    status: "pending_email_verification",
+    emailVerified: false,
+    emailVerifiedAt: null,
   };
 
   const created: {
@@ -169,12 +215,25 @@ export async function registerTenantAndAdmin(
       throw new AppError(500, REGISTRATION_FAILED, "Registration failed");
     }
 
+    const verificationToken = await createEmailVerificationTokenForUser(created.user);
+
+    await sendVerificationEmail({
+      to: created.user.email,
+      adminName: created.user.name,
+      companyName: created.tenant.name,
+      verificationUrl: buildVerificationUrl(verificationToken),
+    });
+
     return {
       tenant: serializeTenant(created.tenant),
       user: serializeUser(created.user),
     };
   } catch (error) {
-    if (created.tenant && !created.user) {
+    if (created.user) {
+      await deleteUserById(created.user._id.toString());
+    }
+
+    if (created.tenant) {
       const tenantId = created.tenant._id.toString();
 
       await deleteTenantById(tenantId);
@@ -189,21 +248,137 @@ export async function registerTenantAndAdmin(
         }
 
         if (keyPattern.email) {
-          throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already registered");
+          throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
         }
       }
 
-      throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already registered");
+      throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
     }
 
     if (error instanceof AppError) {
       throw error;
     }
 
+    console.error("[auth-register]", error);
+
     throw new AppError(500, REGISTRATION_FAILED, "Registration failed");
   } finally {
     await session.endSession();
   }
+}
+
+export async function verifyEmail(input: unknown): Promise<VerifyEmailResult> {
+  const payload = validateVerifyEmailInput(input);
+  const invalidTokenError = new AppError(
+    400,
+    INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
+    "Invalid or expired verification token"
+  );
+
+  try {
+    const tokenPayload = verifyEmailVerificationToken(payload.token);
+
+    if (tokenPayload.purpose !== "email_verification") {
+      throw invalidTokenError;
+    }
+
+    const user = await findUserDocumentById(tokenPayload.sub);
+
+    if (!user || user.tenantId.toString() !== tokenPayload.tenantId || user.email !== tokenPayload.email) {
+      throw invalidTokenError;
+    }
+
+    if (
+      user.emailVerified ||
+      user.status !== "pending_email_verification" ||
+      !user.emailVerificationTokenHash ||
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt.getTime() <= Date.now()
+    ) {
+      throw invalidTokenError;
+    }
+
+    if (user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)) {
+      throw invalidTokenError;
+    }
+
+    user.emailVerified = true;
+    user.emailVerifiedAt = new Date();
+    user.status = "active";
+    user.emailVerificationTokenHash = null;
+    user.emailVerificationExpiresAt = null;
+
+    await user.save();
+
+    const activatedTenant =
+      (await activateTenantIfPendingVerification(user.tenantId.toString())) ??
+      (await findTenantById(user.tenantId.toString()));
+
+    if (!activatedTenant) {
+      throw invalidTokenError;
+    }
+
+    return {
+      user: serializeVerifiedUser(user),
+      tenant: {
+        id: activatedTenant._id.toString(),
+        status: activatedTenant.status,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    throw invalidTokenError;
+  }
+}
+
+export async function resendVerificationEmail(input: unknown) {
+  const payload = validateResendVerificationEmailInput(input);
+  const genericResponse = {
+    success: true,
+    message: "If the email exists and is not verified, a verification email has been sent",
+  };
+
+  const user = await findUserDocumentByEmail(payload.email);
+
+  if (!user || user.emailVerified || user.status !== "pending_email_verification") {
+    return genericResponse;
+  }
+
+  const token = await createEmailVerificationTokenForUser(user);
+  const tenant = await findTenantById(user.tenantId.toString());
+
+  await sendVerificationEmail({
+    to: user.email,
+    adminName: user.name,
+    companyName: tenant?.name ?? "your company",
+    verificationUrl: buildVerificationUrl(token),
+  });
+
+  return genericResponse;
+}
+
+export async function createEmailVerificationTokenForUser(
+  user: Pick<CreatedUserRecord, "_id" | "tenantId" | "email">,
+  options: { purpose?: string; expiresIn?: string } = {}
+) {
+  const verificationToken = createEmailVerificationToken({
+    userId: user._id.toString(),
+    tenantId: user.tenantId?.toString() ?? "",
+    email: user.email,
+    purpose: options.purpose,
+    expiresIn: options.expiresIn,
+  });
+
+  await updateUserVerificationToken(
+    user._id.toString(),
+    verificationToken.tokenHash,
+    verificationToken.expiresAt
+  );
+
+  return verificationToken.token;
 }
 
 export function createRegisterPayload(input: RegisterInput) {

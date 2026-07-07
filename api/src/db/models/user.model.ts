@@ -7,6 +7,10 @@ export interface UserDocument extends mongoose.Document {
   passwordHash: string;
   role: string;
   status: string;
+  emailVerified: boolean;
+  emailVerifiedAt: Date | null;
+  emailVerificationTokenHash: string | null;
+  emailVerificationExpiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,8 +49,25 @@ const userSchema = new Schema<UserDocument>(
     },
     status: {
       type: String,
-      enum: ["active", "pending"],
-      default: "active",
+      enum: ["active", "pending", "pending_email_verification", "disabled"],
+      default: "pending_email_verification",
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    emailVerificationTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailVerificationExpiresAt: {
+      type: Date,
+      default: null,
     },
   },
   {
@@ -58,6 +79,8 @@ const userSchema = new Schema<UserDocument>(
         delete record._id;
         delete record.__v;
         delete record.passwordHash;
+        delete record.emailVerificationTokenHash;
+        delete record.emailVerificationExpiresAt;
         return record;
       },
     },

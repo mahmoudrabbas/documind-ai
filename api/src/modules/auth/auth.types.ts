@@ -6,6 +6,14 @@ export interface RegisterInput {
   password: string;
 }
 
+export interface VerifyEmailInput {
+  token: string;
+}
+
+export interface ResendVerificationEmailInput {
+  email: string;
+}
+
 export interface TenantPublicView {
   id: string;
   name: string;
@@ -22,10 +30,19 @@ export interface UserPublicView {
   email: string;
   role: string;
   status: string;
+  emailVerified: boolean;
   createdAt: string;
 }
 
 export interface RegisterResult {
   tenant: TenantPublicView;
   user: UserPublicView;
+}
+
+export interface VerifyEmailResult {
+  user: Omit<UserPublicView, "createdAt">;
+  tenant: {
+    id: string;
+    status: string;
+  };
 }

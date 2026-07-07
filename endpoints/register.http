@@ -7,10 +7,10 @@ POST http://localhost:5000/auth/register
 Content-Type: application/json
 
 {
-  "companyName": "Acme Consulting",
-  "companySlug": "acme-consulting",
+  "companyName": "Acm Consulting",
+  "companySlug": "acm-consulting",
   "adminName": "Sarah Ahmed",
-  "email": "sarah@acme.com",
+  "email": "",
   "password": "StrongPass123!"
 }
 
@@ -53,4 +53,22 @@ Content-Type: application/json
   "password": "StrongPass123!",
   "role": "SUPER_ADMIN",
   "tenantId": "fake-tenant-id"
+}
+
+
+### Verify email
+POST http://localhost:5000/auth/verify-email
+Content-Type: application/json
+
+{
+  "token": "paste-verification-token-here"
+}
+
+
+### Resend verification email
+POST http://localhost:5000/auth/resend-verification-email
+Content-Type: application/json
+
+{
+  "email": "03fvq@web-library.net"
 }

@@ -21,6 +21,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mongoose": "^9.7.3",
+    "nodemailer": "^9.0.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -29,6 +30,7 @@
     "@types/express": "^5.0.6",
     "@types/mongoose": "^5.11.96",
     "@types/node": "^26.1.0",
+    "@types/nodemailer": "^8.0.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "nodemon": "^3.1.14",
