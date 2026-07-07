@@ -59,7 +59,7 @@ jobs:
       - run: npm run typecheck --workspace api
       - run: npm run test --workspace api --if-present
         env:
-          MONGODB_URI: mongodb://localhost:27017/docsai
+          MONGODB_URI: mongodb://localhost:27017/docsai-test
           REDIS_URL: redis://localhost:6379
       - run: npm run build --workspace api
 
