@@ -7,6 +7,7 @@ process.env.NODE_ENV = "test";
 
 import app from "./app.js";
 import { connectDB } from "./db/connection.js";
+import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
@@ -72,6 +73,7 @@ function assertNoSensitiveFields(value: unknown) {
 
 before(async () => {
   await connectDB();
+  await connectRedis();
 });
 
 beforeEach(async () => {
@@ -80,6 +82,7 @@ beforeEach(async () => {
 });
 
 after(async () => {
+  await disconnectRedis();
   await mongoose.disconnect();
 });
 
@@ -845,6 +848,36 @@ test("returns a standardized 400 envelope for malformed JSON", async () => {
     assert.equal(body.error.path, "/signup");
     assert.equal(body.error.method, "POST");
     assert.match(body.error.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("redis responds to PING", async () => {
+  const redis = getRedisClient();
+  const result = await redis.ping();
+
+  assert.equal(result, "PONG");
+});
+
+test("isRedisConnected returns true after connect", () => {
+  assert.equal(isRedisConnected(), true);
+});
+
+test("/readyz returns 200 when redis is connected", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/readyz`);
+    const body = (await response.json()) as {
+      status: string;
+      checks: { redis: string };
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.status, "ready");
+    assert.equal(body.checks.redis, "connected");
   } finally {
     await closeServer(server);
   }

@@ -44,6 +44,10 @@ jobs:
         image: mongo:8
         ports:
           - 27017:27017
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,6 +60,7 @@ jobs:
       - run: npm run test --workspace api --if-present
         env:
           MONGODB_URI: mongodb://localhost:27017/docsai-test
+          REDIS_URL: redis://localhost:6379
       - run: npm run build --workspace api
 
   frontend:
