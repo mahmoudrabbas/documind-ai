@@ -32,8 +32,10 @@ export async function findUserDocumentByEmail(email: string) {
   return UserModel.findOne({ email }).select("+emailVerificationTokenHash").exec();
 }
 
-export async function findUserDocumentById(userId: string) {
-  return UserModel.findById(userId).select("+emailVerificationTokenHash").exec();
+export function findUserDocumentById(userId: string) {
+  return UserModel.findById(userId)
+    .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+    .exec();
 }
 
 export async function createTenant(input: TenantCreateInput, session?: ClientSession) {
