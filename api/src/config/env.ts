@@ -24,6 +24,34 @@ const envSchema = z.object({
 
   REDIS_URL: z.string().default("redis://redis:6379"),
 
+  APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
+
+  JWT_SECRET: z.string().min(1).default("development-only-jwt-secret"),
+  JWT_EXPIRES_IN: z.string().default("7d"),
+
+  EMAIL_VERIFICATION_JWT_SECRET: z
+    .string()
+    .min(1)
+    .default("development-only-email-verification-secret"),
+  EMAIL_VERIFICATION_JWT_EXPIRES_IN: z.string().default("24h"),
+  SEND_EMAILS: z
+    .string()
+    .default("false")
+    .transform((value) => value.toLowerCase() === "true"),
+  SMTP_HOST: z.string().default(""),
+  SMTP_PORT: z
+    .string()
+    .default("587")
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().positive().int()),
+  SMTP_SECURE: z
+    .string()
+    .default("false")
+    .transform((value) => value.toLowerCase() === "true"),
+  SMTP_USER: z.string().default(""),
+  SMTP_PASS: z.string().default(""),
+  SMTP_FROM: z.string().default("DocuMind AI <no-reply@localhost>"),
+
   LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"])
     .default("info"),
