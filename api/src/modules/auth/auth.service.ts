@@ -29,7 +29,6 @@ import {
   findTenantBySlug,
   findUserDocumentByEmail,
   findUserDocumentById,
-  findUserByEmail,
   updateUserVerificationToken,
 } from "./auth.repository.js";
 import {
@@ -151,12 +150,6 @@ export async function registerTenantAndAdmin(
     throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
   }
 
-  const userExists = await findUserByEmail(normalizedEmail);
-
-  if (userExists) {
-    throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
-  }
-
   const passwordHash = hashPassword(payload.password);
 
   const tenantPayload = {
@@ -247,12 +240,27 @@ export async function registerTenantAndAdmin(
           throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
         }
 
+        if (keyPattern.tenantId && keyPattern.email) {
+          throw new AppError(
+            409,
+            EMAIL_ALREADY_EXISTS,
+            "Email already exists in this tenant"
+          );
+        }
+
         if (keyPattern.email) {
-          throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
+          throw new AppError(
+            409,
+            EMAIL_ALREADY_EXISTS,
+            "Email already exists"
+          );
         }
       }
-
-      throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
+        throw new AppError(
+          409,
+          EMAIL_ALREADY_EXISTS,
+          "Email already exists in this tenant"
+        );
     }
 
     if (error instanceof AppError) {
