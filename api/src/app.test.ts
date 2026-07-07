@@ -197,25 +197,36 @@ test("verifies email with a valid token and activates user and tenant", async ()
 
     assert.equal(registerResponse.status, 201);
 
-    const user = await UserModel.findOne({ email: "sarah@acme.com" }).exec();
-    assert.ok(user);
-
-    const token = await createEmailVerificationTokenForUser(user);
-    const verifyResponse = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ token }),
-    });
-    const body = (await verifyResponse.json()) as {
-      success: boolean;
-      message: string;
-      data: {
-        user: { id: string; tenantId: string; status: string; emailVerified: boolean };
-        tenant: { id: string; status: string };
-      };
+  const registerBody = (await registerResponse.json()) as {
+    success: true;
+    data: {
+      tenant: { id: string };
+      user: { id: string; tenantId: string; email: string };
     };
+  };
+
+  const user = await UserModel.findById(registerBody.data.user.id).exec();
+
+  assert.ok(user);
+  assert.equal(user.tenantId.toString(), registerBody.data.tenant.id);
+  assert.equal(user.email, "sarah@acme.com");
+
+  const token = await createEmailVerificationTokenForUser(user);
+      const verifyResponse = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      });
+      const body = (await verifyResponse.json()) as {
+        success: boolean;
+        message: string;
+        data: {
+          user: { id: string; tenantId: string; status: string; emailVerified: boolean };
+          tenant: { id: string; status: string };
+        };
+      };
 
     assert.equal(verifyResponse.status, 200);
     assert.equal(body.success, true);
@@ -225,7 +236,10 @@ test("verifies email with a valid token and activates user and tenant", async ()
     assert.equal(body.data.tenant.status, "active");
     assertNoSensitiveFields(body);
 
-    const verifiedUser = await UserModel.findById(user.id).select("+emailVerificationTokenHash").lean().exec();
+    const verifiedUser = await UserModel.findById(user.id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
     const activatedTenant = await TenantModel.findById(user.tenantId).lean().exec();
 
     assert.equal(verifiedUser?.status, "active");
@@ -536,11 +550,12 @@ test("rejects invalid email and weak password with one detail per field", async 
   }
 });
 
-test("rejects duplicate email", async () => {
+test("allows the same email across different tenants", async () => {
   const server = await createServer();
 
   try {
     const address = server.address() as AddressInfo;
+
     const first = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
       method: "POST",
       headers: {
@@ -548,11 +563,13 @@ test("rejects duplicate email", async () => {
       },
       body: JSON.stringify({
         companyName: "Acme Consulting",
+        companySlug: "acme-consulting-same-email-test",
         adminName: "Sarah Ahmed",
         email: "sarah@acme.com",
         password: "StrongPass123!",
       }),
     });
+
     const second = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
       method: "POST",
       headers: {
@@ -560,6 +577,7 @@ test("rejects duplicate email", async () => {
       },
       body: JSON.stringify({
         companyName: "Acme Solutions",
+        companySlug: "acme-solutions-same-email-test",
         adminName: "Jane Smith",
         email: "sarah@acme.com",
         password: "StrongPass123!",
@@ -567,18 +585,49 @@ test("rejects duplicate email", async () => {
     });
 
     assert.equal(first.status, 201);
-    assert.equal(second.status, 409);
-    const body = (await second.json()) as {
-      success: false;
-      message: string;
-      error: string;
-      details: null;
+    assert.equal(second.status, 201);
+
+    const firstBody = (await first.json()) as {
+      success: true;
+      data: {
+        tenant: {
+          id: string;
+          slug: string;
+        };
+        user: {
+          id: string;
+          tenantId: string;
+          email: string;
+        };
+      };
     };
 
-    assert.equal(body.success, false);
-    assert.equal(body.message, "Email already exists");
-    assert.equal(body.error, "EMAIL_ALREADY_EXISTS");
-    assert.equal(body.details, null);
+    const secondBody = (await second.json()) as {
+      success: true;
+      data: {
+        tenant: {
+          id: string;
+          slug: string;
+        };
+        user: {
+          id: string;
+          tenantId: string;
+          email: string;
+        };
+      };
+    };
+
+    assert.equal(firstBody.success, true);
+    assert.equal(secondBody.success, true);
+
+    assert.equal(firstBody.data.user.email, "sarah@acme.com");
+    assert.equal(secondBody.data.user.email, "sarah@acme.com");
+
+    assert.notEqual(firstBody.data.tenant.id, secondBody.data.tenant.id);
+    assert.notEqual(firstBody.data.user.tenantId, secondBody.data.user.tenantId);
+
+    assert.equal(firstBody.data.user.tenantId, firstBody.data.tenant.id);
+    assert.equal(secondBody.data.user.tenantId, secondBody.data.tenant.id);
   } finally {
     await closeServer(server);
   }
