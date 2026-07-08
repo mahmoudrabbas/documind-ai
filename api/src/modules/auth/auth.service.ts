@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import mongoose from "mongoose";
 import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
@@ -36,6 +35,7 @@ import {
   validateResendVerificationEmailInput,
   validateVerifyEmailInput,
 } from "./auth.validator.js";
+import { hashPassword } from "./passwordHashing.js";
 
 type CreatedTenantRecord = {
   _id: { toString(): string };
@@ -74,13 +74,6 @@ function normalizeSlug(companySlug: string | undefined, companyName: string) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "")
   );
-}
-
-function hashPassword(password: string) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
-
-  return `scrypt$${salt}$${hash}`;
 }
 
 function isDuplicateKeyError(error: unknown) {
@@ -150,7 +143,7 @@ export async function registerTenantAndAdmin(
     throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
   }
 
-  const passwordHash = hashPassword(payload.password);
+  const passwordHash = await hashPassword(payload.password);
 
   const tenantPayload = {
     name: payload.companyName.trim(),

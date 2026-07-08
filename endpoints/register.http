@@ -7,8 +7,8 @@ POST http://localhost:5000/auth/register
 Content-Type: application/json
 
 {
-  "companyName": "AI3",
-  "companySlug": "AI3-ss-test",
+  "companyName": "AIs",
+  "companySlug": "AIss-ss-test",
   "adminName": "Same Email User",
   "email": "same-email-test2@example.com",
   "password": "StrongPass123!"

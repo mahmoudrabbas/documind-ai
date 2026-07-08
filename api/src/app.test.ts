@@ -12,6 +12,10 @@ import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { buildEmailVerificationTemplate } from "./modules/auth/auth.mailer.js";
+import {
+  hashPassword,
+  verifyPassword,
+} from "./modules/auth/passwordHashing.js";
 
 function createServer() {
   return new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -109,6 +113,29 @@ test("builds a verification email with html and plain text content", () => {
   }
 });
 
+test("hashPassword returns salted argon2id hashes", async () => {
+  const password = "StrongPass123!";
+  const firstHash = await hashPassword(password);
+  const secondHash = await hashPassword(password);
+
+  assert.equal(typeof firstHash, "string");
+  assert.notEqual(firstHash, password);
+  assert.match(firstHash, /^\$argon2id\$/);
+  assert.notEqual(firstHash, secondHash);
+});
+
+test("verifyPassword accepts the correct password and rejects the wrong one", async () => {
+  const password = "StrongPass123!";
+  const passwordHash = await hashPassword(password);
+
+  assert.equal(await verifyPassword(passwordHash, password), true);
+  assert.equal(await verifyPassword(passwordHash, "WrongPass123!"), false);
+});
+
+test("verifyPassword safely rejects malformed hashes", async () => {
+  assert.equal(await verifyPassword("not-an-argon2-hash", "StrongPass123!"), false);
+});
+
 test("registers a tenant and first company admin", async () => {
   const server = await createServer();
 
@@ -165,12 +192,18 @@ test("registers a tenant and first company admin", async () => {
     assertNoSensitiveFields(body);
 
     const tenant = await TenantModel.findById(body.data.tenant.id).lean().exec();
-    const user = await UserModel.findById(body.data.user.id).lean().exec();
+    const user = await UserModel.findById(body.data.user.id)
+      .select("+passwordHash")
+      .lean()
+      .exec();
 
     assert.equal(tenant?.status, "pending_verification");
     assert.equal(user?.status, "pending_email_verification");
     assert.equal(user?.emailVerified, false);
     assert.equal(user?.emailVerifiedAt, null);
+    assert.match(user?.passwordHash ?? "", /^\$argon2id\$/);
+    assert.equal(await verifyPassword(user?.passwordHash ?? "", "StrongPass123!"), true);
+    assert.equal("passwordHash" in body.data.user, false);
   } finally {
     await closeServer(server);
   }
