@@ -4,6 +4,8 @@ import { AppError } from "./common/errors/AppError.js";
 import { BAD_REQUEST } from "./common/errors/errorCodes.js";
 import { errorHandlerMiddleware } from "./common/middlewares/errorHandler.middleware.js";
 import { notFoundMiddleware } from "./common/middlewares/notFound.middleware.js";
+import { requestContextMiddleware } from "./common/middlewares/requestContext.middleware.js";
+import { requestLoggerMiddleware } from "./common/middlewares/requestLogger.middleware.js";
 import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
@@ -38,10 +40,18 @@ const corsOptions = {
         return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Request-ID",
+        "X-Correlation-ID",
+    ],
+    exposedHeaders: ["X-Request-ID"],
     credentials: true,
     optionsSuccessStatus: 204,
 };
+app.use(requestContextMiddleware);
+app.use(requestLoggerMiddleware);
 // ── Health-check probes (before CORS / auth so internal probes work) ──
 /**
  * Liveness probe — confirms the process is alive and the event loop is

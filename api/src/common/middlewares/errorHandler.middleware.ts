@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import { AppError } from "../errors/AppError.js";
 import { BAD_REQUEST, INTERNAL_SERVER_ERROR } from "../errors/errorCodes.js";
+import { logger } from "../logger/logger.js";
 
 interface ErrorEnvelope {
   success: false;
@@ -10,6 +11,7 @@ interface ErrorEnvelope {
     details: unknown;
     path: string;
     method: string;
+    requestId: string;
     timestamp: string;
     stack?: string;
   };
@@ -52,7 +54,20 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     details = null;
   }
 
-  console.error("[error-handler]", err);
+  const requestId = req.requestId ?? "unavailable";
+  const requestLogger = req.log ?? logger;
+  try {
+    if (err instanceof AppError && isProduction) {
+      requestLogger.error(
+        { requestId, code: err.code, statusCode: err.statusCode },
+        "request failed"
+      );
+    } else {
+      requestLogger.error({ requestId, err, statusCode }, "request failed");
+    }
+  } catch {
+    // Error reporting must not prevent the API error response.
+  }
 
   const payload: ErrorEnvelope = {
     success: false,
@@ -62,6 +77,7 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
       details,
       path: req.originalUrl,
       method: req.method,
+      requestId,
       timestamp: new Date().toISOString(),
     },
   };

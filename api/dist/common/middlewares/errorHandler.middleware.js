@@ -1,5 +1,6 @@
 import { AppError } from "../errors/AppError.js";
 import { BAD_REQUEST, INTERNAL_SERVER_ERROR } from "../errors/errorCodes.js";
+import { logger } from "../logger/logger.js";
 function isSyntaxError(error) {
     return (error instanceof SyntaxError ||
         (typeof error === "object" &&
@@ -26,7 +27,19 @@ export const errorHandlerMiddleware = (err, req, res, _next) => {
         message = "Invalid JSON payload";
         details = null;
     }
-    console.error("[error-handler]", err);
+    const requestId = req.requestId ?? "unavailable";
+    const requestLogger = req.log ?? logger;
+    try {
+        if (err instanceof AppError && isProduction) {
+            requestLogger.error({ requestId, code: err.code, statusCode: err.statusCode }, "request failed");
+        }
+        else {
+            requestLogger.error({ requestId, err, statusCode }, "request failed");
+        }
+    }
+    catch {
+        // Error reporting must not prevent the API error response.
+    }
     const payload = {
         success: false,
         error: {
@@ -35,6 +48,7 @@ export const errorHandlerMiddleware = (err, req, res, _next) => {
             details,
             path: req.originalUrl,
             method: req.method,
+            requestId,
             timestamp: new Date().toISOString(),
         },
     };

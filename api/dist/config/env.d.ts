@@ -5,9 +5,9 @@ import { z } from "zod";
  */
 declare const envSchema: z.ZodObject<{
     NODE_ENV: z.ZodDefault<z.ZodEnum<{
-        production: "production";
         development: "development";
         test: "test";
+        production: "production";
     }>>;
     PORT: z.ZodPipe<z.ZodPipe<z.ZodDefault<z.ZodString>, z.ZodTransform<number, string>>, z.ZodNumber>;
     HOST: z.ZodDefault<z.ZodString>;
@@ -28,11 +28,12 @@ declare const envSchema: z.ZodObject<{
     SMTP_PASS: z.ZodDefault<z.ZodString>;
     SMTP_FROM: z.ZodDefault<z.ZodString>;
     LOG_LEVEL: z.ZodDefault<z.ZodEnum<{
-        error: "error";
-        debug: "debug";
         info: "info";
+        error: "error";
         warn: "warn";
+        debug: "debug";
     }>>;
+    LOG_PRETTY: z.ZodPipe<z.ZodDefault<z.ZodString>, z.ZodTransform<boolean, string>>;
 }, z.core.$strip>;
 export type Env = z.infer<typeof envSchema>;
 /**

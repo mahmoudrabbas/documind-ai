@@ -4,6 +4,7 @@ import app from "./app.js";
 import { connectDB } from "./db/connection.js";
 import { connectRedis, disconnectRedis } from "./db/redis.js";
 import { config } from "./config/index.js";
+import { logger } from "./common/logger/logger.js";
 
 dotenv.config();
 
@@ -11,14 +12,14 @@ await connectDB();
 await connectRedis();
 
 const server = app.listen(config.PORT, () => {
-  console.log(`Server running on http://localhost:${config.PORT}`);
+  logger.info({ port: config.PORT }, "API server started");
 });
 
 async function gracefulShutdown(signal: string) {
-  console.log(`\n[server] Received ${signal}. Shutting down gracefully...`);
+  logger.info({ signal }, "graceful shutdown started");
 
   server.close(() => {
-    console.log("[server] HTTP server closed");
+    logger.info("HTTP server closed");
   });
 
   await disconnectRedis();
