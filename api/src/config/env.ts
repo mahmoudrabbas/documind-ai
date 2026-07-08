@@ -22,6 +22,14 @@ const envSchema = z.object({
     .string()
     .url()
     .default("mongodb://mongodb:27017/docsai"),
+  MONGODB_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
+  MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
+  MONGODB_RETRY_BACKOFF_FACTOR: z.coerce.number().min(1).default(2),
+  MONGODB_RETRY_MAX_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(10000),
 
   REDIS_URL: z.string().default("redis://redis:6379"),
 
