@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   login,
+  logout,
   refreshAccessToken,
   registerTenantAndAdmin,
   resendVerificationEmail,
@@ -62,7 +63,10 @@ export async function resendVerificationEmailController(req: Request, res: Respo
 
 export async function loginController(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await login(req.body);
+    const result = await login(req.body, {
+      ip: req.ip,
+      userAgent: req.get("user-agent"),
+    });
     const { refreshToken, ...publicTokens } = result.tokens;
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
@@ -98,26 +102,50 @@ function readCookie(req: Request, name: string) {
 
 export async function refreshController(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await refreshAccessToken(readCookie(req, REFRESH_COOKIE_NAME));
+    const result = await refreshAccessToken(
+      readCookie(req, REFRESH_COOKIE_NAME),
+      {
+        ip: req.ip,
+        userAgent: req.get("user-agent"),
+      }
+    );
+    const { refreshToken, ...data } = result;
 
+    res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
     res.status(200).json({
       success: true,
-      message: "Access token refreshed",
-      data: result,
+      data,
     });
   } catch (error) {
+    clearRefreshCookie(res);
     handleAuthError(error, res, next);
   }
 }
 
-export function logoutController(_req: Request, res: Response) {
+function clearRefreshCookie(res: Response) {
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
     secure: config.NODE_ENV === "production",
     sameSite: "lax",
     path: "/auth",
   });
-  res.status(200).json({ success: true, message: "Logout successful" });
+}
+
+export async function logoutController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    await logout(readCookie(req, REFRESH_COOKIE_NAME), { ip: req.ip });
+    clearRefreshCookie(res);
+    res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 function handleAuthError(error: unknown, res: Response, next: NextFunction) {

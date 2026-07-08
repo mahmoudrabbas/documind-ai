@@ -1,6 +1,7 @@
 import type { ClientSession } from "mongoose";
 import TenantModel, { type TenantDocument } from "../../db/models/tenant.model.js";
 import UserModel, { type UserDocument } from "../../db/models/user.model.js";
+import RefreshTokenModel from "../../db/models/refreshToken.model.js";
 
 export interface TenantCreateInput {
   name: string;
@@ -44,6 +45,115 @@ export function findUserDocumentById(userId: string) {
 
 export function findUserById(userId: string) {
   return UserModel.findById(userId).lean<UserDocument>().exec();
+}
+
+export function findUserByTenantAndId(tenantId: string, userId: string) {
+  return UserModel.findOne({ _id: userId, tenantId })
+    .lean<UserDocument>()
+    .exec();
+}
+
+export function createRefreshTokenRecord(input: {
+  tenantId: string;
+  userId: string;
+  tokenHash: string;
+  jtiHash: string;
+  familyId: string;
+  expiresAt: Date;
+  createdByIp?: string;
+  userAgent?: string;
+}) {
+  return RefreshTokenModel.create(input);
+}
+
+export function findRefreshTokenRecord(
+  tokenHash: string,
+  jtiHash: string
+) {
+  return RefreshTokenModel.findOne({ tokenHash, jtiHash }).exec();
+}
+
+export function claimRefreshTokenForRotation(
+  tokenId: string,
+  revokedAt: Date
+) {
+  return RefreshTokenModel.findOneAndUpdate(
+    { _id: tokenId, revokedAt: null },
+    { $set: { revokedAt } },
+    { returnDocument: "after" }
+  ).exec();
+}
+
+export function setRefreshTokenReplacement(
+  tokenId: string,
+  replacementId: string
+) {
+  return RefreshTokenModel.updateOne(
+    { _id: tokenId },
+    { $set: { replacedByTokenId: replacementId } }
+  ).exec();
+}
+
+export function revokeRefreshToken(
+  tokenId: string,
+  revokedAt: Date,
+  revokedByIp?: string
+) {
+  return RefreshTokenModel.updateOne(
+    { _id: tokenId, revokedAt: null },
+    { $set: { revokedAt, ...(revokedByIp ? { revokedByIp } : {}) } }
+  ).exec();
+}
+
+export function markReuseAndRevokeTokenFamily(
+  familyId: string,
+  tenantId: string,
+  userId: string,
+  reusedTokenId: string,
+  revokedAt: Date,
+  revokedByIp?: string
+) {
+  const ipUpdate = revokedByIp ? { revokedByIp } : {};
+
+  return Promise.all([
+    RefreshTokenModel.updateOne(
+      { _id: reusedTokenId, reuseDetectedAt: null },
+      { $set: { reuseDetectedAt: revokedAt, ...ipUpdate } }
+    ).exec(),
+    RefreshTokenModel.updateMany(
+      { familyId, tenantId, userId, revokedAt: null },
+      { $set: { revokedAt, ...ipUpdate } }
+    ).exec(),
+  ]);
+}
+
+export function revokeRefreshTokenFamily(
+  familyId: string,
+  tenantId: string,
+  userId: string,
+  revokedAt: Date,
+  revokedByIp?: string
+) {
+  return RefreshTokenModel.updateMany(
+    { familyId, tenantId, userId, revokedAt: null },
+    {
+      $set: {
+        revokedAt,
+        ...(revokedByIp ? { revokedByIp } : {}),
+      },
+    }
+  ).exec();
+}
+
+export function revokeAllRefreshTokensForTenantUser(
+  userId: string,
+  tenantId: string,
+  revokedAt: Date
+) {
+  return RefreshTokenModel.updateMany(
+    { userId, tenantId, revokedAt: null },
+    { $set: { revokedAt } }
+  ).exec();
 }
 
 export async function createTenant(input: TenantCreateInput, session?: ClientSession) {

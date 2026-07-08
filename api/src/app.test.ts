@@ -10,6 +10,7 @@ import { connectDB, isMongoConnected } from "./db/connection.js";
 import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
+import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { buildEmailVerificationTemplate } from "./modules/auth/auth.mailer.js";
 import {
@@ -26,6 +27,56 @@ function createServer() {
 function closeServer(server: ReturnType<typeof app.listen>) {
   return new Promise<void>((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+const TEST_PASSWORD = "StrongPass123!";
+
+async function createActiveTenantAdmin(options: {
+  slug?: string;
+  companyName?: string;
+  email?: string;
+} = {}) {
+  const tenant = await TenantModel.create({
+    name: options.companyName ?? "Acme Consulting",
+    slug: options.slug ?? "acme-consulting",
+    status: "active",
+    plan: "free",
+  });
+  const user = await UserModel.create({
+    tenantId: tenant.id,
+    name: "Sarah Ahmed",
+    email: options.email ?? "sarah@acme.com",
+    passwordHash: await hashPassword(TEST_PASSWORD),
+    role: "COMPANY_ADMIN",
+    status: "active",
+    emailVerified: true,
+    emailVerifiedAt: new Date(),
+  });
+
+  return { tenant, user };
+}
+
+function getRefreshCookie(response: Response) {
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  const cookie = setCookie
+    .split(";")
+    .find((part) => part.trim().startsWith("documind_refresh_token="))
+    ?.trim();
+
+  assert.ok(cookie, "response should set documind_refresh_token");
+  return { cookie, setCookie, rawToken: cookie.slice(cookie.indexOf("=") + 1) };
+}
+
+async function postLogin(port: number, companySlug = "acme-consulting", email = "sarah@acme.com") {
+  return fetch(`http://127.0.0.1:${port}/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      companySlug,
+      email,
+      password: TEST_PASSWORD,
+    }),
   });
 }
 
@@ -81,6 +132,7 @@ before(async () => {
 });
 
 beforeEach(async () => {
+  await RefreshTokenModel.deleteMany({});
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
 });
@@ -881,6 +933,283 @@ test("returns a standardized 400 envelope for malformed JSON", async () => {
     assert.equal(body.error.path, "/signup");
     assert.equal(body.error.method, "POST");
     assert.match(body.error.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("login stores a hashed refresh token record without exposing the token", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await postLogin(port);
+    const body = await response.json();
+    const { rawToken, setCookie } = getRefreshCookie(response);
+
+    assert.equal(response.status, 200);
+    assert.match(setCookie, /HttpOnly/i);
+    assert.equal(JSON.stringify(body).includes("refreshToken"), false);
+    assert.equal(JSON.stringify(body).includes(rawToken), false);
+
+    const records = await RefreshTokenModel.find({
+      tenantId: tenant.id,
+      userId: user.id,
+    }).lean().exec();
+
+    assert.equal(records.length, 1);
+    assert.ok(records[0]?.tokenHash);
+    assert.ok(records[0]?.jtiHash);
+    assert.ok(records[0]?.familyId);
+    assert.equal(JSON.stringify(records[0]).includes(rawToken), false);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("refresh rotates the persisted refresh token within the same family", async () => {
+  await createActiveTenantAdmin();
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const loginResponse = await postLogin(port);
+    const originalCookie = getRefreshCookie(loginResponse);
+    const oldRecord = await RefreshTokenModel.findOne().lean().exec();
+    assert.ok(oldRecord);
+
+    const refreshResponse = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+      method: "POST",
+      headers: { cookie: originalCookie.cookie },
+    });
+    const body = (await refreshResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+    const rotatedCookie = getRefreshCookie(refreshResponse);
+
+    assert.equal(refreshResponse.status, 200);
+    assert.equal(body.success, true);
+    assert.ok(body.data.tokens.accessToken);
+    assert.notEqual(rotatedCookie.rawToken, originalCookie.rawToken);
+
+    const persistedOldRecord = await RefreshTokenModel.findById(oldRecord._id)
+      .lean()
+      .exec();
+    const activeRecord = await RefreshTokenModel.findOne({
+      familyId: oldRecord.familyId,
+      revokedAt: null,
+    }).lean().exec();
+
+    assert.ok(persistedOldRecord?.revokedAt instanceof Date);
+    assert.ok(persistedOldRecord?.replacedByTokenId);
+    assert.ok(activeRecord);
+    assert.equal(activeRecord.familyId, oldRecord.familyId);
+    assert.notEqual(activeRecord.tokenHash, oldRecord.tokenHash);
+    assert.notEqual(activeRecord.jtiHash, oldRecord.jtiHash);
+    assert.equal(
+      persistedOldRecord.replacedByTokenId?.toString(),
+      activeRecord._id.toString()
+    );
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("reusing a rotated refresh token revokes its whole family", async () => {
+  await createActiveTenantAdmin();
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const loginResponse = await postLogin(port);
+    const originalCookie = getRefreshCookie(loginResponse);
+    const originalRecord = await RefreshTokenModel.findOne().lean().exec();
+    assert.ok(originalRecord);
+
+    const firstRefresh = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+      method: "POST",
+      headers: { cookie: originalCookie.cookie },
+    });
+    assert.equal(firstRefresh.status, 200);
+
+    const reuseResponse = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+      method: "POST",
+      headers: { cookie: originalCookie.cookie },
+    });
+    const body = (await reuseResponse.json()) as {
+      success: false;
+      error: string;
+    };
+
+    assert.equal(reuseResponse.status, 401);
+    assert.equal(body.error, "REFRESH_TOKEN_REUSED");
+
+    const familyRecords = await RefreshTokenModel.find({
+      familyId: originalRecord.familyId,
+    }).lean().exec();
+
+    assert.equal(familyRecords.length, 2);
+    assert.ok(familyRecords.every((record) => record.revokedAt instanceof Date));
+    assert.ok(
+      familyRecords.some((record) => record.reuseDetectedAt instanceof Date)
+    );
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("refresh without a cookie returns SESSION_EXPIRED", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+      method: "POST",
+    });
+    const body = (await response.json()) as { error: string };
+
+    assert.equal(response.status, 401);
+    assert.equal(body.error, "SESSION_EXPIRED");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("refresh with an invalid token returns SESSION_EXPIRED", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+      method: "POST",
+      headers: { cookie: "documind_refresh_token=invalid-token" },
+    });
+    const body = (await response.json()) as { error: string };
+
+    assert.equal(response.status, 401);
+    assert.equal(body.error, "SESSION_EXPIRED");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("logout revokes the current refresh token and clears its cookie", async () => {
+  await createActiveTenantAdmin();
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const loginResponse = await postLogin(port);
+    const loginCookie = getRefreshCookie(loginResponse);
+    const tokenRecord = await RefreshTokenModel.findOne().lean().exec();
+    assert.ok(tokenRecord);
+
+    const response = await fetch(`http://127.0.0.1:${port}/auth/logout`, {
+      method: "POST",
+      headers: { cookie: loginCookie.cookie },
+    });
+    const body = (await response.json()) as {
+      success: boolean;
+      message: string;
+    };
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    const revokedRecord = await RefreshTokenModel.findById(tokenRecord._id)
+      .lean()
+      .exec();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.message, "Logged out successfully");
+    assert.match(setCookie, /documind_refresh_token=/);
+    assert.match(setCookie, /Max-Age=0|Expires=Thu, 01 Jan 1970/i);
+    assert.ok(revokedRecord?.revokedAt instanceof Date);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("logout without a cookie remains idempotent", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/auth/logout`, {
+      method: "POST",
+    });
+    const body = (await response.json()) as {
+      success: boolean;
+      message: string;
+    };
+    const setCookie = response.headers.get("set-cookie") ?? "";
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.message, "Logged out successfully");
+    assert.match(setCookie, /documind_refresh_token=/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("refresh token records isolate the same email across tenants", async () => {
+  const passwordHash = await hashPassword(TEST_PASSWORD);
+  const tenantA = await TenantModel.create({
+    name: "Tenant Alpha",
+    slug: "tenant-alpha",
+    status: "active",
+    plan: "free",
+  });
+  const tenantB = await TenantModel.create({
+    name: "Tenant Beta",
+    slug: "tenant-beta",
+    status: "active",
+    plan: "free",
+  });
+  const sharedUserFields = {
+    name: "Shared Email User",
+    email: "shared@example.com",
+    passwordHash,
+    role: "COMPANY_ADMIN",
+    status: "active",
+    emailVerified: true,
+    emailVerifiedAt: new Date(),
+  };
+  const [userA, userB] = await Promise.all([
+    UserModel.create({ ...sharedUserFields, tenantId: tenantA.id }),
+    UserModel.create({ ...sharedUserFields, tenantId: tenantB.id }),
+  ]);
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const [loginA, loginB] = await Promise.all([
+      postLogin(port, tenantA.slug, sharedUserFields.email),
+      postLogin(port, tenantB.slug, sharedUserFields.email),
+    ]);
+
+    assert.equal(loginA.status, 200);
+    assert.equal(loginB.status, 200);
+
+    const [recordsA, recordsB] = await Promise.all([
+      RefreshTokenModel.find({
+        tenantId: tenantA.id,
+        userId: userA.id,
+      }).lean().exec(),
+      RefreshTokenModel.find({
+        tenantId: tenantB.id,
+        userId: userB.id,
+      }).lean().exec(),
+    ]);
+
+    assert.equal(recordsA.length, 1);
+    assert.equal(recordsB.length, 1);
+    assert.notEqual(
+      recordsA[0]?.tenantId.toString(),
+      recordsB[0]?.tenantId.toString()
+    );
+    assert.notEqual(recordsA[0]?.tokenHash, recordsB[0]?.tokenHash);
   } finally {
     await closeServer(server);
   }

@@ -14,4 +14,6 @@ export declare const INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
 export declare const ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE";
 export declare const TENANT_NOT_ACTIVE = "TENANT_NOT_ACTIVE";
 export declare const INVALID_REFRESH_TOKEN = "INVALID_REFRESH_TOKEN";
+export declare const SESSION_EXPIRED = "SESSION_EXPIRED";
+export declare const REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED";
 //# sourceMappingURL=errorCodes.d.ts.map

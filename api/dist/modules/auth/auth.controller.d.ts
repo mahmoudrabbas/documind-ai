@@ -4,5 +4,5 @@ export declare function verifyEmailController(req: Request, res: Response, next:
 export declare function resendVerificationEmailController(req: Request, res: Response, next: NextFunction): Promise<void>;
 export declare function loginController(req: Request, res: Response, next: NextFunction): Promise<void>;
 export declare function refreshController(req: Request, res: Response, next: NextFunction): Promise<void>;
-export declare function logoutController(_req: Request, res: Response): void;
+export declare function logoutController(req: Request, res: Response, next: NextFunction): Promise<void>;
 //# sourceMappingURL=auth.controller.d.ts.map

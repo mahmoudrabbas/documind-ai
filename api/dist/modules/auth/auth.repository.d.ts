@@ -41,6 +41,42 @@ export declare function findUserDocumentById(userId: string): Promise<(import("m
     id: string;
 }) | null>;
 export declare function findUserById(userId: string): Promise<UserDocument | null>;
+export declare function findUserByTenantAndId(tenantId: string, userId: string): Promise<UserDocument | null>;
+export declare function createRefreshTokenRecord(input: {
+    tenantId: string;
+    userId: string;
+    tokenHash: string;
+    jtiHash: string;
+    familyId: string;
+    expiresAt: Date;
+    createdByIp?: string;
+    userAgent?: string;
+}): Promise<import("mongoose").Document<unknown, {}, import("../../db/models/refreshToken.model.js").RefreshTokenDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../db/models/refreshToken.model.js").RefreshTokenDocument & Required<{
+    _id: import("mongoose").Types.ObjectId;
+}> & {
+    __v: number;
+} & {
+    id: string;
+}>;
+export declare function findRefreshTokenRecord(tokenHash: string, jtiHash: string): Promise<(import("mongoose").Document<unknown, {}, import("../../db/models/refreshToken.model.js").RefreshTokenDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../db/models/refreshToken.model.js").RefreshTokenDocument & Required<{
+    _id: import("mongoose").Types.ObjectId;
+}> & {
+    __v: number;
+} & {
+    id: string;
+}) | null>;
+export declare function claimRefreshTokenForRotation(tokenId: string, revokedAt: Date): Promise<(import("mongoose").Document<unknown, {}, import("../../db/models/refreshToken.model.js").RefreshTokenDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../db/models/refreshToken.model.js").RefreshTokenDocument & Required<{
+    _id: import("mongoose").Types.ObjectId;
+}> & {
+    __v: number;
+} & {
+    id: string;
+}) | null>;
+export declare function setRefreshTokenReplacement(tokenId: string, replacementId: string): Promise<import("mongoose").UpdateWriteOpResult>;
+export declare function revokeRefreshToken(tokenId: string, revokedAt: Date, revokedByIp?: string): Promise<import("mongoose").UpdateWriteOpResult>;
+export declare function markReuseAndRevokeTokenFamily(familyId: string, tenantId: string, userId: string, reusedTokenId: string, revokedAt: Date, revokedByIp?: string): Promise<[import("mongoose").UpdateWriteOpResult, import("mongoose").UpdateWriteOpResult]>;
+export declare function revokeRefreshTokenFamily(familyId: string, tenantId: string, userId: string, revokedAt: Date, revokedByIp?: string): Promise<import("mongoose").UpdateWriteOpResult>;
+export declare function revokeAllRefreshTokensForTenantUser(userId: string, tenantId: string, revokedAt: Date): Promise<import("mongoose").UpdateWriteOpResult>;
 export declare function createTenant(input: TenantCreateInput, session?: ClientSession): Promise<TenantDocument>;
 export declare function createUser(input: UserCreateInput, session?: ClientSession): Promise<UserDocument>;
 export declare function updateUserVerificationToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void>;

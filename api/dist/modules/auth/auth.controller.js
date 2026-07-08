@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { login, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, } from "./auth.service.js";
+import { login, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
@@ -49,7 +49,10 @@ export async function resendVerificationEmailController(req, res, next) {
 }
 export async function loginController(req, res, next) {
     try {
-        const result = await login(req.body);
+        const result = await login(req.body, {
+            ip: req.ip,
+            userAgent: req.get("user-agent"),
+        });
         const { refreshToken, ...publicTokens } = result.tokens;
         res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
         res.status(200).json({
@@ -80,25 +83,42 @@ function readCookie(req, name) {
 }
 export async function refreshController(req, res, next) {
     try {
-        const result = await refreshAccessToken(readCookie(req, REFRESH_COOKIE_NAME));
+        const result = await refreshAccessToken(readCookie(req, REFRESH_COOKIE_NAME), {
+            ip: req.ip,
+            userAgent: req.get("user-agent"),
+        });
+        const { refreshToken, ...data } = result;
+        res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
         res.status(200).json({
             success: true,
-            message: "Access token refreshed",
-            data: result,
+            data,
         });
     }
     catch (error) {
+        clearRefreshCookie(res);
         handleAuthError(error, res, next);
     }
 }
-export function logoutController(_req, res) {
+function clearRefreshCookie(res) {
     res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
         secure: config.NODE_ENV === "production",
         sameSite: "lax",
         path: "/auth",
     });
-    res.status(200).json({ success: true, message: "Logout successful" });
+}
+export async function logoutController(req, res, next) {
+    try {
+        await logout(readCookie(req, REFRESH_COOKIE_NAME), { ip: req.ip });
+        clearRefreshCookie(res);
+        res.status(200).json({
+            success: true,
+            message: "Logged out successfully",
+        });
+    }
+    catch (error) {
+        next(error);
+    }
 }
 function handleAuthError(error, res, next) {
     if (error instanceof AppError) {
