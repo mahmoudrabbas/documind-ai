@@ -1,10 +1,26 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import {
+  login,
+  refreshAccessToken,
   registerTenantAndAdmin,
   resendVerificationEmail,
   verifyEmail,
 } from "./auth.service.js";
+import { config } from "../../config/index.js";
+import { durationToMilliseconds } from "./jwtTokens.js";
+
+const REFRESH_COOKIE_NAME = "documind_refresh_token";
+
+function refreshCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: config.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/auth",
+    maxAge: durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN),
+  };
+}
 
 export async function registerController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -42,6 +58,66 @@ export async function resendVerificationEmailController(req: Request, res: Respo
   } catch (error) {
     handleAuthError(error, res, next);
   }
+}
+
+export async function loginController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await login(req.body);
+    const { refreshToken, ...publicTokens } = result.tokens;
+
+    res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        user: result.user,
+        tenant: result.tenant,
+        tokens: publicTokens,
+      },
+    });
+  } catch (error) {
+    handleAuthError(error, res, next);
+  }
+}
+
+function readCookie(req: Request, name: string) {
+  const cookieHeader = req.headers.cookie;
+
+  if (!cookieHeader) return "";
+
+  for (const entry of cookieHeader.split(";")) {
+    const [cookieName, ...valueParts] = entry.trim().split("=");
+
+    if (cookieName === name) {
+      return decodeURIComponent(valueParts.join("="));
+    }
+  }
+
+  return "";
+}
+
+export async function refreshController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await refreshAccessToken(readCookie(req, REFRESH_COOKIE_NAME));
+
+    res.status(200).json({
+      success: true,
+      message: "Access token refreshed",
+      data: result,
+    });
+  } catch (error) {
+    handleAuthError(error, res, next);
+  }
+}
+
+export function logoutController(_req: Request, res: Response) {
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: config.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/auth",
+  });
+  res.status(200).json({ success: true, message: "Logout successful" });
 }
 
 function handleAuthError(error: unknown, res: Response, next: NextFunction) {

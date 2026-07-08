@@ -1,5 +1,8 @@
 import { Router } from "express";
 import {
+  loginController,
+  logoutController,
+  refreshController,
   registerController,
   resendVerificationEmailController,
   verifyEmailController,
@@ -8,6 +11,9 @@ import {
 const router = Router();
 
 router.post("/register", registerController);
+router.post("/login", loginController);
+router.post("/refresh", refreshController);
+router.post("/logout", logoutController);
 router.post("/verify-email", verifyEmailController);
 router.post("/resend-verification-email", resendVerificationEmailController);
 
