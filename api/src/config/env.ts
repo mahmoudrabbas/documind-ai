@@ -27,7 +27,12 @@ const envSchema = z.object({
   APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
 
   JWT_SECRET: z.string().min(1).default("development-only-jwt-secret"),
-  JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_EXPIRES_IN: z.string().default("15m"),
+  JWT_REFRESH_SECRET: z
+    .string()
+    .min(1)
+    .default("development-only-refresh-jwt-secret"),
+  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
 
   EMAIL_VERIFICATION_JWT_SECRET: z
     .string()

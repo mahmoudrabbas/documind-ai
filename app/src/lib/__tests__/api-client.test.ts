@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiClient } from "../api-client";
+import { clearAccessToken, getAccessToken, setAccessToken } from "../auth-tokens";
 
-const storage = new Map<string, string>();
 const localStorageMock = {
-  getItem: vi.fn((key: string) => storage.get(key) ?? null),
-  setItem: vi.fn((key: string, value: string) => storage.set(key, value)),
-  removeItem: vi.fn((key: string) => storage.delete(key)),
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
 };
 const locationMock = { pathname: "/", href: "/" };
 
@@ -17,7 +17,7 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 beforeEach(() => {
-  storage.clear();
+  clearAccessToken();
   locationMock.pathname = "/";
   locationMock.href = "/";
   vi.stubGlobal("window", {
@@ -27,13 +27,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearAccessToken();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("apiClient authentication", () => {
   it("attaches Authorization when an access token exists", async () => {
-    storage.set("accessToken", "stored-token");
+    setAccessToken("stored-token");
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
 
     await apiClient("/documents", { method: "GET" });
@@ -43,7 +44,7 @@ describe("apiClient authentication", () => {
   });
 
   it("does not attach Authorization when auth is false", async () => {
-    storage.set("accessToken", "stored-token");
+    setAccessToken("stored-token");
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
 
     await apiClient("/documents", { method: "GET", auth: false });
@@ -53,7 +54,7 @@ describe("apiClient authentication", () => {
   });
 
   it("refreshes and retries once after a 401", async () => {
-    storage.set("accessToken", "expired-token");
+    setAccessToken("expired-token");
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
@@ -77,10 +78,12 @@ describe("apiClient authentication", () => {
       vi.mocked(fetch).mock.calls[2][1]?.headers,
     );
     expect(retryHeaders.get("Authorization")).toBe("Bearer fresh-token");
+    expect(getAccessToken()).toBe("fresh-token");
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
   });
 
   it("does not refresh again when the retried request returns 401", async () => {
-    storage.set("accessToken", "expired-token");
+    setAccessToken("expired-token");
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
@@ -105,7 +108,7 @@ describe("apiClient authentication", () => {
   });
 
   it("clears the token and redirects when refresh fails", async () => {
-    storage.set("accessToken", "expired-token");
+    setAccessToken("expired-token");
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
@@ -121,13 +124,14 @@ describe("apiClient authentication", () => {
       code: "INVALID_REFRESH",
       message: "Refresh expired",
     });
-    expect(storage.has("accessToken")).toBe(false);
+    expect(getAccessToken()).toBeNull();
     expect(locationMock.href).toBe("/login");
     expect(fetch).toHaveBeenCalledTimes(2);
+    expect(localStorageMock.removeItem).not.toHaveBeenCalled();
   });
 
   it("clears the token without redirecting when redirectOnAuthFailure is false", async () => {
-    storage.set("accessToken", "expired-token");
+    setAccessToken("expired-token");
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
@@ -141,7 +145,7 @@ describe("apiClient authentication", () => {
     await expect(
       apiClient("/documents", { redirectOnAuthFailure: false }),
     ).rejects.toBeInstanceOf(ApiError);
-    expect(storage.has("accessToken")).toBe(false);
+    expect(getAccessToken()).toBeNull();
     expect(locationMock.href).toBe("/");
   });
 
@@ -151,8 +155,9 @@ describe("apiClient authentication", () => {
     "/auth/refresh",
     "/auth/verify-email",
     "/auth/resend-verification-email",
+    "/auth/logout",
   ])("does not refresh the public endpoint %s", async (endpoint) => {
-    storage.set("accessToken", "expired-token");
+    setAccessToken("expired-token");
     globalThis.fetch = vi
       .fn()
       .mockResolvedValue(jsonResponse(401, { message: "Unauthorized" }));

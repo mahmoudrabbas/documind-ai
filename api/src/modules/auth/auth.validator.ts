@@ -3,6 +3,7 @@ import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import type {
   RegisterInput,
+  LoginInput,
   ResendVerificationEmailInput,
   VerifyEmailInput,
 } from "./auth.types.js";
@@ -42,6 +43,14 @@ const resendVerificationEmailSchema = z
   })
   .strict();
 
+const loginSchema = z
+  .object({
+    companySlug: z.string().trim().toLowerCase().min(1, "companySlug is required").max(80),
+    email: z.string().trim().toLowerCase().email("email must be a valid address"),
+    password: z.string().min(1, "password is required").max(128, "password must be at most 128 characters"),
+  })
+  .strict();
+
 export function validateRegisterInput(input: unknown): RegisterInput {
   const result = registerSchema.safeParse(input);
 
@@ -54,6 +63,10 @@ export function validateRegisterInput(input: unknown): RegisterInput {
 
 export function validateVerifyEmailInput(input: unknown): VerifyEmailInput {
   return parseAuthInput(verifyEmailSchema, input);
+}
+
+export function validateLoginInput(input: unknown): LoginInput {
+  return parseAuthInput(loginSchema, input);
 }
 
 export function validateResendVerificationEmailInput(input: unknown): ResendVerificationEmailInput {

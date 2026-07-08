@@ -10,6 +10,7 @@ const PUBLIC_AUTH_ENDPOINTS = new Set([
   "/auth/refresh",
   "/auth/verify-email",
   "/auth/resend-verification-email",
+  "/auth/logout",
 ]);
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -165,6 +166,7 @@ export async function refreshAccessToken(): Promise<string> {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
+        clearAccessToken();
         throw new ApiError({
           status: 0,
           code: "REFRESH_FAILED",
@@ -174,6 +176,7 @@ export async function refreshAccessToken(): Promise<string> {
 
       const payload = await parseResponse(response);
       if (!response.ok) {
+        clearAccessToken();
         throw toApiError(response, payload);
       }
 
