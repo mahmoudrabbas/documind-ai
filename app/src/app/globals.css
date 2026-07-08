@@ -1,26 +1,260 @@
+/**
+ * DocuMind AI — Base Design System
+ * -----------------------------------------------------------------------
+ * Source of truth: DESIGN.md ("DocuMind Enterprise").
+ * This file wires every design token (color, type scale, radius, spacing,
+ * elevation) from DESIGN.md into Tailwind v4's `@theme` layer, so the
+ * tokens become ordinary utility classes (e.g. `bg-primary`,
+ * `text-headline-lg`, `rounded-md`, `shadow-card`) rather than living
+ * only in Figma/DESIGN.md.
+ *
+ * If DESIGN.md changes, update the values below to match — this file
+ * should never drift from DESIGN.md.
+ * -----------------------------------------------------------------------
+ */
+
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ---- Color tokens (DESIGN.md > colors) ------------------------------ */
+  --surface: #f7f9fc;
+  --surface-dim: #d8dadd;
+  --surface-bright: #f7f9fc;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f2f4f7;
+  --surface-container: #eceef1;
+  --surface-container-high: #e6e8eb;
+  --surface-container-highest: #e0e3e6;
+  --on-surface: #191c1e;
+  --on-surface-variant: #43474c;
+  --inverse-surface: #2d3133;
+  --inverse-on-surface: #eff1f4;
+  --outline: #73777d;
+  --outline-variant: #c3c7cd;
+  --surface-tint: #486176;
+
+  --primary: #001524;
+  --on-primary: #ffffff;
+  --primary-container: #0f2a3d;
+  --on-primary-container: #7992a9;
+  --inverse-primary: #b0c9e2;
+
+  --secondary: #3f627b;
+  --on-secondary: #ffffff;
+  --secondary-container: #bde1fe;
+  --on-secondary-container: #41657d;
+
+  --tertiary: #001617;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #002d2e;
+  --on-tertiary-container: #0a9fa1;
+
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #93000a;
+
+  --primary-fixed: #cce6ff;
+  --primary-fixed-dim: #b0c9e2;
+  --on-primary-fixed: #011e30;
+  --on-primary-fixed-variant: #30495e;
+
+  --secondary-fixed: #c8e6ff;
+  --secondary-fixed-dim: #a7cbe7;
+  --on-secondary-fixed: #001e2f;
+  --on-secondary-fixed-variant: #264a62;
+
+  --tertiary-fixed: #81f4f6;
+  --tertiary-fixed-dim: #63d8da;
+  --on-tertiary-fixed: #002020;
+  --on-tertiary-fixed-variant: #004f51;
+
+  --background: #f7f9fc;
+  --on-background: #191c1e;
+  --surface-variant: #e0e3e6;
+
+  /* ---- Elevation (DESIGN.md > Elevation & Depth) ---------------------- */
+  --shadow-color-card: 15 42 61;
+
+  /* ---- Fonts ----------------------------------------------------------- */
+  --font-sans: var(--font-inter);
 }
+
+/*
+ * DESIGN.md defines one light, enterprise-grade surface — there is no
+ * documented dark theme, so we intentionally do not add a
+ * prefers-color-scheme override here. Add one deliberately (with its own
+ * token values) if/when a dark theme is designed.
+ */
 
 @theme inline {
+  /* ---- Color utilities: bg-*, text-*, border-*, fill-* ---------------- */
+  --color-surface: var(--surface);
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-bright: var(--surface-bright);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  --color-surface-tint: var(--surface-tint);
+
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-inverse-primary: var(--inverse-primary);
+
+  --color-secondary: var(--secondary);
+  --color-on-secondary: var(--on-secondary);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+
+  --color-tertiary: var(--tertiary);
+  --color-on-tertiary: var(--on-tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+
+  --color-primary-fixed: var(--primary-fixed);
+  --color-primary-fixed-dim: var(--primary-fixed-dim);
+  --color-on-primary-fixed: var(--on-primary-fixed);
+  --color-on-primary-fixed-variant: var(--on-primary-fixed-variant);
+
+  --color-secondary-fixed: var(--secondary-fixed);
+  --color-secondary-fixed-dim: var(--secondary-fixed-dim);
+  --color-on-secondary-fixed: var(--on-secondary-fixed);
+  --color-on-secondary-fixed-variant: var(--on-secondary-fixed-variant);
+
+  --color-tertiary-fixed: var(--tertiary-fixed);
+  --color-tertiary-fixed-dim: var(--tertiary-fixed-dim);
+  --color-on-tertiary-fixed: var(--on-tertiary-fixed);
+  --color-on-tertiary-fixed-variant: var(--on-tertiary-fixed-variant);
+
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-on-background: var(--on-background);
+  --color-surface-variant: var(--surface-variant);
+
+  /* ---- Font family ------------------------------------------------------ */
+  --font-sans: var(--font-inter);
+
+  /* ---- Type scale: text-* (DESIGN.md > typography) ---------------------
+   * Each entry maps 1:1 to a DESIGN.md typography role. Tailwind v4 lets a
+   * font-size theme key carry its own line-height/letter-spacing/weight,
+   * so `text-display-lg` alone applies the full, correct treatment.
+   */
+  --text-display-lg: 3rem; /* 48px */
+  --text-display-lg--line-height: 3.75rem; /* 60px */
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 700;
+
+  --text-headline-lg: 2rem; /* 32px */
+  --text-headline-lg--line-height: 2.5rem; /* 40px */
+  --text-headline-lg--letter-spacing: -0.01em;
+  --text-headline-lg--font-weight: 600;
+
+  --text-headline-lg-mobile: 1.5rem; /* 24px */
+  --text-headline-lg-mobile--line-height: 2rem; /* 32px */
+  --text-headline-lg-mobile--font-weight: 600;
+
+  --text-headline-md: 1.5rem; /* 24px */
+  --text-headline-md--line-height: 2rem; /* 32px */
+  --text-headline-md--font-weight: 600;
+
+  --text-title-lg: 1.25rem; /* 20px */
+  --text-title-lg--line-height: 1.75rem; /* 28px */
+  --text-title-lg--font-weight: 600;
+
+  --text-body-lg: 1.125rem; /* 18px */
+  --text-body-lg--line-height: 1.75rem; /* 28px */
+  --text-body-lg--font-weight: 400;
+
+  --text-body-md: 1rem; /* 16px */
+  --text-body-md--line-height: 1.5rem; /* 24px */
+  --text-body-md--font-weight: 400;
+
+  --text-body-sm: 0.875rem; /* 14px */
+  --text-body-sm--line-height: 1.25rem; /* 20px */
+  --text-body-sm--font-weight: 400;
+
+  --text-label-md: 0.875rem; /* 14px */
+  --text-label-md--line-height: 1.25rem; /* 20px */
+  --text-label-md--font-weight: 500;
+
+  --text-label-sm: 0.75rem; /* 12px */
+  --text-label-sm--line-height: 1rem; /* 16px */
+  --text-label-sm--letter-spacing: 0.05em;
+  --text-label-sm--font-weight: 600;
+
+  /* ---- Radius: rounded-* (DESIGN.md > rounded) -------------------------- */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.5rem; /* 8px — DESIGN.md `rounded.DEFAULT`, base component radius */
+  --radius-lg: 0.75rem; /* 12px — DESIGN.md `rounded.md`, card radius */
+  --radius-xl: 1rem; /* 16px — DESIGN.md `rounded.lg`, large component radius */
+  --radius-2xl: 1.5rem; /* 24px — DESIGN.md `rounded.xl` */
+  --radius-full: 9999px;
+
+  /* ---- Spacing: named utilities on top of the default 4px scale ---------
+   * DESIGN.md's named spacing scale (xs/sm/md/lg/xl/2xl), exposed as e.g.
+   * `p-md`, `gap-lg` alongside Tailwind's default numeric scale (`p-4`).
+   * Use whichever reads more clearly at the call site — both resolve to
+   * the same pixel values.
+   */
+  --spacing-xs: 0.25rem; /* 4px */
+  --spacing-sm: 0.5rem; /* 8px */
+  --spacing-md: 1rem; /* 16px */
+  --spacing-lg: 1.5rem; /* 24px */
+  --spacing-xl: 2rem; /* 32px */
+  --spacing-2xl: 3rem; /* 48px */
+  --spacing-container-mobile: 1rem; /* 16px */
+  --spacing-container-desktop: 2rem; /* 32px */
+  --spacing-gutter: 1.5rem; /* 24px */
+
+  /* ---- Elevation: shadow-* (DESIGN.md > Elevation & Depth) -------------- */
+  --shadow-card: 0px 4px 12px rgb(var(--shadow-color-card) / 0.04);
+  --shadow-popover: 0px 8px 24px rgb(var(--shadow-color-card) / 0.08);
+  --shadow-modal: 0px 24px 48px rgb(var(--shadow-color-card) / 0.16);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: var(--color-outline-variant);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-on-background);
+    font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  }
+
+  /* Visible keyboard focus everywhere — no silent focus removal. */
+  :focus-visible {
+    outline: 2px solid var(--color-secondary);
+    outline-offset: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

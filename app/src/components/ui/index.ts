@@ -5,7 +5,16 @@
  * write one import path regardless of how the component files are
  * organised internally:
  *
- *   import { Button, Card } from "@/components/ui";
+ *   import { Button, Card, Badge } from "@/components/ui";
  *
  * Add new exports here as components are created.
  */
+
+export { Button, type ButtonProps } from "./Button";
+export { Badge, resolveBadgeStatus, type BadgeProps } from "./Badge";
+export { Card, CardHeader, CardTitle, CardContent, type CardProps } from "./Card";
+export { Input, type InputProps } from "./Input";
+export { Avatar, getInitials, type AvatarProps } from "./Avatar";
+export { StatCard, type StatCardProps } from "./StatCard";
+export { Skeleton } from "./Skeleton";
+export type { ButtonVariant, ButtonSize, BadgeStatus } from "./variants";
