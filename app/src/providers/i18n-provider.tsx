@@ -37,14 +37,11 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 /* ── Provider ────────────────────────────────────────────────────── */
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
-  const dir: Direction = getDirection(locale);
-
-  /* Hydrate from cookie on first client render. */
-  useEffect(() => {
+  const [locale, setLocaleState] = useState<Locale>(() => {
     const persisted = getLocaleFromCookie();
-    setLocaleState(persisted);
-  }, []);
+    return persisted;
+  });
+  const dir: Direction = getDirection(locale);
 
   /* Sync <html> attributes whenever locale changes. */
   useEffect(() => {
