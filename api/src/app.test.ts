@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 process.env.NODE_ENV = "test";
 
 import app from "./app.js";
-import { connectDB } from "./db/connection.js";
+import { connectDB, isMongoConnected } from "./db/connection.js";
 import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
@@ -864,7 +864,7 @@ test("isRedisConnected returns true after connect", () => {
   assert.equal(isRedisConnected(), true);
 });
 
-test("/readyz returns 200 when redis is connected", async () => {
+test("/readyz returns 200 when redis and mongo are connected", async () => {
   const server = await createServer();
 
   try {
@@ -872,13 +872,33 @@ test("/readyz returns 200 when redis is connected", async () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/readyz`);
     const body = (await response.json()) as {
       status: string;
-      checks: { redis: string };
+      checks: { mongo: string; redis: string };
     };
 
     assert.equal(response.status, 200);
     assert.equal(body.status, "ready");
+    assert.equal(body.checks.mongo, "connected");
     assert.equal(body.checks.redis, "connected");
   } finally {
     await closeServer(server);
   }
+});
+
+test("/healthz returns 200 with status ok", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+    const body = (await response.json()) as { status: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.status, "ok");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("isMongoConnected returns true after connectDB", () => {
+  assert.equal(isMongoConnected(), true);
 });

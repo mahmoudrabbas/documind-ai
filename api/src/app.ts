@@ -8,6 +8,7 @@ import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
+import { isMongoConnected } from "./db/connection.js";
 
 const app = express();
 const redisClient = getRedisClient();
@@ -51,6 +52,17 @@ const corsOptions: CorsOptions = {
   optionsSuccessStatus: 204,
 };
 
+// ── Health-check probes (before CORS / auth so internal probes work) ──
+
+/**
+ * Liveness probe — confirms the process is alive and the event loop is
+ * not blocked. Orchestrators (Docker, K8s) restart the container when
+ * this fails.
+ */
+app.get("/healthz", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 app.use(cors(corsOptions));
 
 app.use(express.json());
@@ -61,13 +73,19 @@ app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });
 });
 
-app.get("/readyz", async (_req, res) => {
+/**
+ * Readiness probe — reports whether the service can handle traffic.
+ * Returns 200 when all dependencies are reachable, 503 otherwise.
+ */
+app.get("/readyz", (_req, res) => {
+  const mongoOk = isMongoConnected();
   const redisOk = isRedisConnected();
-  const statusCode = redisOk ? 200 : 503;
+  const allOk = mongoOk && redisOk;
 
-  res.status(statusCode).json({
-    status: redisOk ? "ready" : "degraded",
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? "ready" : "degraded",
     checks: {
+      mongo: mongoOk ? "connected" : "disconnected",
       redis: redisOk ? "connected" : "disconnected",
     },
   });
