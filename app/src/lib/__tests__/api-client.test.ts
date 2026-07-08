@@ -1,253 +1,232 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { api } from "../api-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError, apiClient } from "../api-client";
 
-/* ── Helpers ───────────────────────────────────────────── */
+const storage = new Map<string, string>();
+const localStorageMock = {
+  getItem: vi.fn((key: string) => storage.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => storage.set(key, value)),
+  removeItem: vi.fn((key: string) => storage.delete(key)),
+};
+const locationMock = { pathname: "/", href: "/" };
 
-function mockFetch(
-  status: number,
-  body: unknown,
-  contentType = "application/json",
-): void {
-  const bodyInit = body === null ? null : JSON.stringify(body);
-  globalThis.fetch = vi.fn().mockResolvedValue(
-    new Response(bodyInit, {
-      status,
-      headers: body === null ? undefined : { "content-type": contentType },
-    }),
-  );
-}
-
-function mockFetchNetworkError(): void {
-  globalThis.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
-}
-
-function mockFetchText(
-  status: number,
-  text: string,
-  contentType = "text/plain",
-): void {
-  globalThis.fetch = vi.fn().mockResolvedValue(
-    new Response(text, {
-      status,
-      headers: { "content-type": contentType },
-    }),
-  );
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(body === null ? null : JSON.stringify(body), {
+    status,
+    headers: body === null ? undefined : { "content-type": "application/json" },
+  });
 }
 
 beforeEach(() => {
+  storage.clear();
+  locationMock.pathname = "/";
+  locationMock.href = "/";
+  vi.stubGlobal("window", {
+    localStorage: localStorageMock,
+    location: locationMock,
+  });
+});
+
+afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
-/* ── GET ───────────────────────────────────────────────── */
+describe("apiClient authentication", () => {
+  it("attaches Authorization when an access token exists", async () => {
+    storage.set("accessToken", "stored-token");
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
 
-describe("api.get", () => {
-  it("calls fetch with GET method and correct URL", async () => {
-    mockFetch(200, { id: 1 });
-    await api.get("/documents");
+    await apiClient("/documents", { method: "GET" });
 
-    expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:5000/documents",
-      expect.objectContaining({
-        method: "GET",
-        credentials: "include",
-      }),
-    );
+    const headers = new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer stored-token");
   });
 
-  it("sets Content-Type: application/json by default", async () => {
-    mockFetch(200, {});
-    await api.get("/documents");
+  it("does not attach Authorization when auth is false", async () => {
+    storage.set("accessToken", "stored-token");
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
 
-    expect(fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          "Content-Type": "application/json",
+    await apiClient("/documents", { method: "GET", auth: false });
+
+    const headers = new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers);
+    expect(headers.has("Authorization")).toBe(false);
+  });
+
+  it("refreshes and retries once after a 401", async () => {
+    storage.set("accessToken", "expired-token");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          data: { tokens: { accessToken: "fresh-token" } },
         }),
-      }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, { documents: [] }));
+
+    const result = await apiClient<{ documents: unknown[] }>("/documents");
+
+    expect(result).toEqual({ documents: [] });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(fetch).mock.calls[1][0]).toBe(
+      "http://localhost:5000/auth/refresh",
     );
-  });
-
-  it("includes credentials: include", async () => {
-    mockFetch(200, {});
-    await api.get("/documents");
-
-    expect(fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ credentials: "include" }),
+    expect(vi.mocked(fetch).mock.calls[1][1]?.credentials).toBe("include");
+    const retryHeaders = new Headers(
+      vi.mocked(fetch).mock.calls[2][1]?.headers,
     );
+    expect(retryHeaders.get("Authorization")).toBe("Bearer fresh-token");
   });
 
-  it("returns data on success", async () => {
-    mockFetch(200, { docs: [] });
-    const res = await api.get<{ docs: unknown[] }>("/documents");
+  it("does not refresh again when the retried request returns 401", async () => {
+    storage.set("accessToken", "expired-token");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          data: { tokens: { accessToken: "fresh-token" } },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Still unauthorized" }));
 
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe(200);
-    expect(res.data).toEqual({ docs: [] });
-    expect(res.error).toBeNull();
+    await expect(apiClient("/documents")).rejects.toMatchObject({
+      status: 401,
+      message: "Still unauthorized",
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([url]) =>
+        String(url).endsWith("/auth/refresh"),
+      ),
+    ).toHaveLength(1);
   });
 
-  it("returns error on 400 with JSON body", async () => {
-    mockFetch(400, { message: "Bad request" });
-    const res = await api.get("/documents");
+  it("clears the token and redirects when refresh fails", async () => {
+    storage.set("accessToken", "expired-token");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
+      .mockResolvedValueOnce(
+        jsonResponse(401, {
+          success: false,
+          error: { code: "INVALID_REFRESH", message: "Refresh expired" },
+        }),
+      );
 
-    expect(res.ok).toBe(false);
-    expect(res.error).toBe("Bad request");
-    expect(res.data).toBeNull();
+    await expect(apiClient("/documents")).rejects.toMatchObject({
+      status: 401,
+      code: "INVALID_REFRESH",
+      message: "Refresh expired",
+    });
+    expect(storage.has("accessToken")).toBe(false);
+    expect(locationMock.href).toBe("/login");
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it("returns error on 401", async () => {
-    mockFetch(401, { error: "Unauthorized" });
-    const res = await api.get("/documents");
+  it("clears the token without redirecting when redirectOnAuthFailure is false", async () => {
+    storage.set("accessToken", "expired-token");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
+      .mockResolvedValueOnce(
+        jsonResponse(401, {
+          success: false,
+          error: { code: "INVALID_REFRESH", message: "Refresh expired" },
+        }),
+      );
 
-    expect(res.ok).toBe(false);
-    expect(res.error).toBe("Unauthorized");
+    await expect(
+      apiClient("/documents", { redirectOnAuthFailure: false }),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(storage.has("accessToken")).toBe(false);
+    expect(locationMock.href).toBe("/");
   });
 
-  it("returns error on 500 with text body", async () => {
-    mockFetchText(500, "Internal Server Error");
-    const res = await api.get("/documents");
+  it.each([
+    "/auth/login",
+    "/auth/register",
+    "/auth/refresh",
+    "/auth/verify-email",
+    "/auth/resend-verification-email",
+  ])("does not refresh the public endpoint %s", async (endpoint) => {
+    storage.set("accessToken", "expired-token");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(401, { message: "Unauthorized" }));
 
-    expect(res.ok).toBe(false);
-    expect(res.error).toBe("Internal Server Error");
+    await expect(apiClient(endpoint)).rejects.toBeInstanceOf(ApiError);
+
+    const headers = new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers);
+    expect(headers.has("Authorization")).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
+});
 
-  it("handles network errors gracefully", async () => {
-    mockFetchNetworkError();
-    const res = await api.get("/documents");
+describe("apiClient request and response handling", () => {
+  it("serializes a plain object while preserving caller headers", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { id: 1 }));
 
-    expect(res.ok).toBe(false);
-    expect(res.error).toBe("Network error");
-    expect(res.status).toBe(0);
-    expect(res.data).toBeNull();
-  });
-
-  it("passes custom headers", async () => {
-    mockFetch(200, {});
-    await api.get("/documents", {
-      headers: { "X-Custom": "value" } as Record<string, string>,
+    await apiClient("/documents", {
+      method: "POST",
+      headers: { "X-Request-ID": "request-1" },
+      body: { title: "Guide" },
+      auth: false,
     });
 
-    expect(fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        headers: expect.objectContaining({ "X-Custom": "value" }),
-      }),
-    );
-  });
-});
-
-/* ── POST ──────────────────────────────────────────────── */
-
-describe("api.post", () => {
-  it("calls fetch with POST method and JSON body", async () => {
-    mockFetch(201, { id: 1 });
-    const body = { title: "Test" };
-    await api.post("/documents", body);
-
-    expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:5000/documents",
-      expect.objectContaining({ method: "POST" }),
-    );
-
-    // Verify the request body was JSON-stringified
-    const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(JSON.parse(callArgs.body)).toEqual({ title: "Test" });
+    const init = vi.mocked(fetch).mock.calls[0][1];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Request-ID")).toBe("request-1");
+    expect(init?.body).toBe(JSON.stringify({ title: "Guide" }));
   });
 
-  it("sends FormData without Content-Type header", async () => {
-    mockFetch(201, { id: 1 });
-    const formData = new FormData();
-    formData.append("file", "blob");
+  it("preserves caller-provided credentials", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
 
-    await api.post("/upload", formData);
-
-    expect(fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ method: "POST" }),
-    );
-
-    const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    // FormData body should be sent directly, and Content-Type should NOT be set
-    expect(callArgs.body).toBe(formData);
-    expect(callArgs.headers?.["Content-Type"]).toBeUndefined();
-  });
-
-  it("can send empty POST without body", async () => {
-    mockFetch(200, { ok: true });
-    const res = await api.post("/noop");
-
-    expect(res.ok).toBe(true);
-    expect(res.data).toEqual({ ok: true });
-  });
-
-  it("handles network errors on POST", async () => {
-    mockFetchNetworkError();
-    const res = await api.post("/documents", { title: "X" });
-
-    expect(res.ok).toBe(false);
-    expect(res.error).toBe("Network error");
-  });
-});
-
-/* ── PUT ───────────────────────────────────────────────── */
-
-describe("api.put", () => {
-  it("calls fetch with PUT method", async () => {
-    mockFetch(200, { id: 1 });
-    await api.put("/documents/1", { title: "Updated" });
-
-    expect(fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ method: "PUT" }),
-    );
-  });
-
-  it("returns data on success", async () => {
-    mockFetch(200, { id: 1, title: "Updated" });
-    const res = await api.put<{ id: number }>("/documents/1", {
-      title: "Updated",
+    await apiClient("/documents", {
+      credentials: "same-origin",
+      auth: false,
     });
 
-    expect(res.ok).toBe(true);
-    expect(res.data?.id).toBe(1);
+    expect(vi.mocked(fetch).mock.calls[0][1]?.credentials).toBe("same-origin");
   });
-});
 
-/* ── PATCH ─────────────────────────────────────────────── */
+  it("does not set Content-Type for FormData", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { id: 1 }));
+    const body = new FormData();
+    body.append("file", "contents");
 
-describe("api.patch", () => {
-  it("calls fetch with PATCH method", async () => {
-    mockFetch(200, {});
-    await api.patch("/documents/1", { title: "Patched" });
+    await apiClient("/documents", { method: "POST", body });
 
-    expect(fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ method: "PATCH" }),
+    const init = vi.mocked(fetch).mock.calls[0][1];
+    expect(new Headers(init?.headers).has("Content-Type")).toBe(false);
+    expect(init?.body).toBe(body);
+  });
+
+  it("returns null for an empty successful response", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(204, null));
+
+    await expect(apiClient("/documents/1", { method: "DELETE" })).resolves.toBeNull();
+  });
+
+  it("supports the flat backend error shape", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse(400, {
+        success: false,
+        message: "Invalid document",
+        error: "INVALID_DOCUMENT",
+        details: { field: "title" },
+      }),
     );
-  });
-});
 
-/* ── DELETE ────────────────────────────────────────────── */
-
-describe("api.delete", () => {
-  it("calls fetch with DELETE method", async () => {
-    mockFetch(204, null);
-    await api.delete("/documents/1");
-
-    expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:5000/documents/1",
-      expect.objectContaining({ method: "DELETE" }),
-    );
-  });
-
-  it("returns ok on 204 no content", async () => {
-    mockFetch(204, null);
-    const res = await api.delete("/documents/1");
-
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe(204);
-    expect(res.data).toBeNull();
+    await expect(apiClient("/documents")).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_DOCUMENT",
+      message: "Invalid document",
+      details: { field: "title" },
+    });
   });
 });
