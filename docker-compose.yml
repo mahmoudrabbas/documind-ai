@@ -13,14 +13,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "node -e \"fetch('http://127.0.0.1:5000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""
-        ]
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,7 +31,7 @@ services:
       - "3000:3000"
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - ./app:/app
       - /app/node_modules
@@ -83,15 +77,11 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mongosh --quiet --eval \"quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)\""
-        ]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 5
+      start_period: 15s
 
 volumes:
   mongo_data:
