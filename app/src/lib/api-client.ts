@@ -1,4 +1,5 @@
 import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-tokens";
+import { getLocaleFromCookie } from "./i18n/i18n.utils";
 
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"
@@ -234,6 +235,12 @@ async function executeRequest<T>(
     headers.set("Authorization", `Bearer ${accessToken}`);
   } else {
     headers.delete("Authorization");
+  }
+
+  /* Set Accept-Language from the persisted locale preference so the API
+     can return locale-aware responses (e.g. error messages, dates). */
+  if (!headers.has("Accept-Language")) {
+    headers.set("Accept-Language", getLocaleFromCookie());
   }
 
   let response: Response;
