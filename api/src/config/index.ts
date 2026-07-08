@@ -8,6 +8,6 @@ import { Env, parseEnv } from "./env.js";
  *
  * @example
  * import { config } from "./config/index.js";
- * console.log(config.PORT);
+ * const port = config.PORT;
  */
 export const config: Env = parseEnv(process.env);

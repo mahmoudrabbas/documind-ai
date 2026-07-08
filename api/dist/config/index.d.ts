@@ -7,7 +7,7 @@ import { Env } from "./env.js";
  *
  * @example
  * import { config } from "./config/index.js";
- * console.log(config.PORT);
+ * const port = config.PORT;
  */
 export declare const config: Env;
 //# sourceMappingURL=index.d.ts.map

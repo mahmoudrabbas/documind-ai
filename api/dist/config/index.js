@@ -7,7 +7,7 @@ import { parseEnv } from "./env.js";
  *
  * @example
  * import { config } from "./config/index.js";
- * console.log(config.PORT);
+ * const port = config.PORT;
  */
 export const config = parseEnv(process.env);
 //# sourceMappingURL=index.js.map

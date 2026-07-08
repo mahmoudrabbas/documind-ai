@@ -1256,6 +1256,114 @@ test("/healthz returns 200 with status ok", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(body.status, "ok");
+    assert.ok(response.headers.get("x-request-id"));
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("preserves a valid incoming X-Request-ID", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+      headers: { "x-request-id": "test-request-123" },
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-request-id"), "test-request-123");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("uses X-Correlation-ID when X-Request-ID is missing", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+      headers: { "x-correlation-id": "correlation-123" },
+    });
+
+    assert.equal(response.headers.get("x-request-id"), "correlation-123");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("replaces an invalid request ID", async () => {
+  const server = await createServer();
+  const invalidRequestId = "a".repeat(129);
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+      headers: { "x-request-id": invalidRequestId },
+    });
+    const requestId = response.headers.get("x-request-id");
+
+    assert.ok(requestId);
+    assert.notEqual(requestId, invalidRequestId);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("includes the request ID in error responses", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/unknown-route`, {
+      headers: { "x-request-id": "error-test-123" },
+    });
+    const body = (await response.json()) as {
+      error: {
+        code: string;
+        message: string;
+        details: unknown;
+        path: string;
+        method: string;
+        requestId: string;
+        timestamp: string;
+      };
+    };
+
+    assert.equal(response.status, 404);
+    assert.equal(body.error.requestId, "error-test-123");
+    assert.equal(body.error.code, "NOT_FOUND");
+    assert.equal(typeof body.error.message, "string");
+    assert.equal(body.error.details, null);
+    assert.equal(body.error.path, "/unknown-route");
+    assert.equal(body.error.method, "GET");
+    assert.match(body.error.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("includes the same request ID header in validation errors", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/signup`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "validation-test-123",
+      },
+      body: JSON.stringify({ email: "invalid" }),
+    });
+    const body = (await response.json()) as {
+      error: { requestId: string };
+    };
+
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get("x-request-id"), "validation-test-123");
+    assert.equal(body.error.requestId, "validation-test-123");
   } finally {
     await closeServer(server);
   }

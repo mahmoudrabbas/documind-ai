@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "../common/logger/logger.js";
 /**
  * Zod schema for API service environment variables.
  * Validates and parses all required and optional env vars at startup.
@@ -51,6 +52,10 @@ const envSchema = z.object({
     LOG_LEVEL: z
         .enum(["debug", "info", "warn", "error"])
         .default("info"),
+    LOG_PRETTY: z
+        .string()
+        .default("false")
+        .transform((value) => value.toLowerCase() === "true"),
 });
 /**
  * Parses and validates environment variables.
@@ -59,10 +64,12 @@ const envSchema = z.object({
 export function parseEnv(env) {
     const result = envSchema.safeParse(env);
     if (!result.success) {
-        console.error("❌ Invalid environment variables:");
-        for (const issue of result.error.issues) {
-            console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
-        }
+        logger.error({
+            issues: result.error.issues.map((issue) => ({
+                path: issue.path.join("."),
+                message: issue.message,
+            })),
+        }, "Invalid environment variables");
         process.exit(1);
     }
     return result.data;
