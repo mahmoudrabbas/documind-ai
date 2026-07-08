@@ -1,4 +1,4 @@
-import type { LoginResult, RefreshResult, RegisterResult, RegisterInput, VerifyEmailResult } from "./auth.types.js";
+import type { LoginResult, RefreshRotationResult, RefreshTokenContext, RegisterResult, RegisterInput, VerifyEmailResult } from "./auth.types.js";
 type CreatedUserRecord = {
     _id: {
         toString(): string;
@@ -18,8 +18,10 @@ export declare function resendVerificationEmail(input: unknown): Promise<{
     success: boolean;
     message: string;
 }>;
-export declare function login(input: unknown): Promise<LoginResult>;
-export declare function refreshAccessToken(token: string): Promise<RefreshResult>;
+export declare function login(input: unknown, context?: RefreshTokenContext): Promise<LoginResult>;
+export declare function refreshAccessToken(token: string, context?: RefreshTokenContext): Promise<RefreshRotationResult>;
+export declare function logout(token: string, context?: RefreshTokenContext): Promise<void>;
+export declare function revokeAllRefreshTokensForUser(userId: string, tenantId: string): Promise<void>;
 export declare function createEmailVerificationTokenForUser(user: Pick<CreatedUserRecord, "_id" | "tenantId" | "email">, options?: {
     purpose?: string;
     expiresIn?: string;

@@ -7,16 +7,18 @@ import {
   EMAIL_NOT_VERIFIED,
   ACCOUNT_NOT_ACTIVE,
   INVALID_CREDENTIALS,
-  INVALID_REFRESH_TOKEN,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
+  REFRESH_TOKEN_REUSED,
   REGISTRATION_FAILED,
+  SESSION_EXPIRED,
   TENANT_NOT_ACTIVE,
   TENANT_ALREADY_EXISTS,
 } from "../../common/errors/errorCodes.js";
 import type {
   AuthTokenClaims,
   LoginResult,
-  RefreshResult,
+  RefreshRotationResult,
+  RefreshTokenContext,
   RegisterResult,
   RegisterInput,
   VerifyEmailResult,
@@ -29,16 +31,23 @@ import {
 } from "./emailVerificationToken.js";
 import {
   activateTenantIfPendingVerification,
+  claimRefreshTokenForRotation,
   createTenant,
   createUser,
+  createRefreshTokenRecord,
   deleteTenantById,
   deleteUserById,
   findTenantById,
   findTenantBySlug,
+  findRefreshTokenRecord,
   findUserDocumentByEmail,
   findUserDocumentById,
   findUserDocumentByTenantAndEmail,
-  findUserById,
+  findUserByTenantAndId,
+  markReuseAndRevokeTokenFamily,
+  revokeAllRefreshTokensForTenantUser,
+  revokeRefreshToken,
+  setRefreshTokenReplacement,
   updateUserVerificationToken,
 } from "./auth.repository.js";
 import {
@@ -49,6 +58,11 @@ import {
 } from "./auth.validator.js";
 import { hashPassword, verifyPassword } from "./passwordHashing.js";
 import { signJwt, verifyJwt } from "./jwtTokens.js";
+import { durationToMilliseconds } from "./jwtTokens.js";
+import {
+  hashRefreshToken,
+  hashRefreshTokenJti,
+} from "./refreshTokenHashing.js";
 
 type CreatedTenantRecord = {
   _id: { toString(): string };
@@ -417,7 +431,10 @@ function createAccessToken(user: CreatedUserRecord, tenant: CreatedTenantRecord)
   );
 }
 
-export async function login(input: unknown): Promise<LoginResult> {
+export async function login(
+  input: unknown,
+  context: RefreshTokenContext = {}
+): Promise<LoginResult> {
   const payload = validateLoginInput(input);
   const tenant = await findTenantBySlug(payload.companySlug);
 
@@ -440,16 +457,32 @@ export async function login(input: unknown): Promise<LoginResult> {
 
   assertAccountCanSignIn(user, tenant);
 
+  const jti = randomUUID();
+  const familyId = randomUUID();
   const refreshToken = signJwt(
     {
       sub: user.id,
       tenantId: tenant._id.toString(),
       type: "refresh",
-      jti: randomUUID(),
+      jti,
+      familyId,
     },
     config.JWT_REFRESH_SECRET,
     config.JWT_REFRESH_EXPIRES_IN
   );
+
+  await createRefreshTokenRecord({
+    tenantId: tenant._id.toString(),
+    userId: user.id,
+    tokenHash: hashRefreshToken(refreshToken),
+    jtiHash: hashRefreshTokenJti(jti),
+    familyId,
+    expiresAt: new Date(
+      Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)
+    ),
+    createdByIp: context.ip,
+    userAgent: context.userAgent,
+  });
 
   return {
     user: serializeVerifiedUser(user),
@@ -469,7 +502,30 @@ export async function login(input: unknown): Promise<LoginResult> {
   };
 }
 
-export async function refreshAccessToken(token: string): Promise<RefreshResult> {
+function sessionExpiredError() {
+  return new AppError(
+    401,
+    SESSION_EXPIRED,
+    "Session expired. Please sign in again."
+  );
+}
+
+function refreshTokenReusedError() {
+  return new AppError(
+    401,
+    REFRESH_TOKEN_REUSED,
+    "Session security check failed. Please sign in again."
+  );
+}
+
+export async function refreshAccessToken(
+  token: string,
+  context: RefreshTokenContext = {}
+): Promise<RefreshRotationResult> {
+  if (!token) {
+    throw sessionExpiredError();
+  }
+
   try {
     const claims = verifyJwt<AuthTokenClaims>(
       token,
@@ -480,27 +536,99 @@ export async function refreshAccessToken(token: string): Promise<RefreshResult> 
       claims.type !== "refresh" ||
       !claims.sub ||
       !claims.tenantId ||
-      !claims.jti
+      !claims.jti ||
+      !claims.familyId
     ) {
       throw new Error("Invalid refresh token claims");
     }
 
+    const tokenRecord = await findRefreshTokenRecord(
+      hashRefreshToken(token),
+      hashRefreshTokenJti(claims.jti)
+    );
+
+    if (
+      !tokenRecord ||
+      tokenRecord.familyId !== claims.familyId ||
+      tokenRecord.tenantId.toString() !== claims.tenantId ||
+      tokenRecord.userId.toString() !== claims.sub
+    ) {
+      throw sessionExpiredError();
+    }
+
+    if (tokenRecord.revokedAt) {
+      await markReuseAndRevokeTokenFamily(
+        tokenRecord.familyId,
+        tokenRecord.tenantId.toString(),
+        tokenRecord.userId.toString(),
+        tokenRecord.id,
+        new Date(),
+        context.ip
+      );
+      throw refreshTokenReusedError();
+    }
+
+    if (tokenRecord.expiresAt.getTime() <= Date.now()) {
+      await revokeRefreshToken(tokenRecord.id, new Date(), context.ip);
+      throw sessionExpiredError();
+    }
+
     const [user, tenant] = await Promise.all([
-      findUserById(claims.sub),
+      findUserByTenantAndId(claims.tenantId, claims.sub),
       findTenantById(claims.tenantId),
     ]);
 
-    if (
-      !user ||
-      !tenant ||
-      user.tenantId.toString() !== claims.tenantId
-    ) {
-      throw new Error("Invalid refresh token subject");
-    }
+    if (!user || !tenant) throw sessionExpiredError();
 
     assertAccountCanSignIn(user, tenant);
 
+    const rotatedAt = new Date();
+    const claimedToken = await claimRefreshTokenForRotation(
+      tokenRecord.id,
+      rotatedAt
+    );
+
+    if (!claimedToken) {
+      await markReuseAndRevokeTokenFamily(
+        tokenRecord.familyId,
+        tokenRecord.tenantId.toString(),
+        tokenRecord.userId.toString(),
+        tokenRecord.id,
+        rotatedAt,
+        context.ip
+      );
+      throw refreshTokenReusedError();
+    }
+
+    const newJti = randomUUID();
+    const newRefreshToken = signJwt(
+      {
+        sub: claims.sub,
+        tenantId: claims.tenantId,
+        type: "refresh",
+        jti: newJti,
+        familyId: tokenRecord.familyId,
+      },
+      config.JWT_REFRESH_SECRET,
+      config.JWT_REFRESH_EXPIRES_IN
+    );
+    const replacement = await createRefreshTokenRecord({
+      tenantId: claims.tenantId,
+      userId: claims.sub,
+      tokenHash: hashRefreshToken(newRefreshToken),
+      jtiHash: hashRefreshTokenJti(newJti),
+      familyId: tokenRecord.familyId,
+      expiresAt: new Date(
+        Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)
+      ),
+      createdByIp: context.ip,
+      userAgent: context.userAgent,
+    });
+
+    await setRefreshTokenReplacement(tokenRecord.id, replacement.id);
+
     return {
+      refreshToken: newRefreshToken,
       tokens: {
         accessToken: createAccessToken(user, tenant),
         tokenType: "Bearer",
@@ -510,19 +638,58 @@ export async function refreshAccessToken(token: string): Promise<RefreshResult> 
   } catch (error) {
     if (
       error instanceof AppError &&
-      [EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, TENANT_NOT_ACTIVE].includes(
-        error.code
-      )
+      [SESSION_EXPIRED, REFRESH_TOKEN_REUSED].includes(error.code)
     ) {
       throw error;
     }
 
-    throw new AppError(
-      401,
-      INVALID_REFRESH_TOKEN,
-      "Invalid or expired refresh token"
-    );
+    throw sessionExpiredError();
   }
+}
+
+export async function logout(
+  token: string,
+  context: RefreshTokenContext = {}
+) {
+  if (!token) return;
+
+  try {
+    const claims = verifyJwt<AuthTokenClaims>(
+      token,
+      config.JWT_REFRESH_SECRET
+    );
+
+    if (
+      claims.type !== "refresh" ||
+      !claims.jti ||
+      !claims.sub ||
+      !claims.tenantId
+    ) {
+      return;
+    }
+
+    const record = await findRefreshTokenRecord(
+      hashRefreshToken(token),
+      hashRefreshTokenJti(claims.jti)
+    );
+
+    if (
+      record &&
+      record.userId.toString() === claims.sub &&
+      record.tenantId.toString() === claims.tenantId
+    ) {
+      await revokeRefreshToken(record.id, new Date(), context.ip);
+    }
+  } catch {
+    // Logout is intentionally idempotent, including for invalid cookies.
+  }
+}
+
+export async function revokeAllRefreshTokensForUser(
+  userId: string,
+  tenantId: string
+) {
+  await revokeAllRefreshTokensForTenantUser(userId, tenantId, new Date());
 }
 
 export async function createEmailVerificationTokenForUser(

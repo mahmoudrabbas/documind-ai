@@ -63,6 +63,11 @@ export interface AuthTokenClaims {
     role?: string;
     email?: string;
     jti?: string;
+    familyId?: string;
+}
+export interface RefreshTokenContext {
+    ip?: string;
+    userAgent?: string;
 }
 export interface RefreshResult {
     tokens: {
@@ -70,5 +75,8 @@ export interface RefreshResult {
         tokenType: "Bearer";
         expiresIn: string;
     };
+}
+export interface RefreshRotationResult extends RefreshResult {
+    refreshToken: string;
 }
 //# sourceMappingURL=auth.types.d.ts.map

@@ -1,5 +1,6 @@
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import RefreshTokenModel from "../../db/models/refreshToken.model.js";
 export async function findTenantBySlug(slug) {
     return TenantModel.findOne({ slug }).lean().exec();
 }
@@ -19,6 +20,44 @@ export function findUserDocumentById(userId) {
 }
 export function findUserById(userId) {
     return UserModel.findById(userId).lean().exec();
+}
+export function findUserByTenantAndId(tenantId, userId) {
+    return UserModel.findOne({ _id: userId, tenantId })
+        .lean()
+        .exec();
+}
+export function createRefreshTokenRecord(input) {
+    return RefreshTokenModel.create(input);
+}
+export function findRefreshTokenRecord(tokenHash, jtiHash) {
+    return RefreshTokenModel.findOne({ tokenHash, jtiHash }).exec();
+}
+export function claimRefreshTokenForRotation(tokenId, revokedAt) {
+    return RefreshTokenModel.findOneAndUpdate({ _id: tokenId, revokedAt: null }, { $set: { revokedAt } }, { returnDocument: "after" }).exec();
+}
+export function setRefreshTokenReplacement(tokenId, replacementId) {
+    return RefreshTokenModel.updateOne({ _id: tokenId }, { $set: { replacedByTokenId: replacementId } }).exec();
+}
+export function revokeRefreshToken(tokenId, revokedAt, revokedByIp) {
+    return RefreshTokenModel.updateOne({ _id: tokenId, revokedAt: null }, { $set: { revokedAt, ...(revokedByIp ? { revokedByIp } : {}) } }).exec();
+}
+export function markReuseAndRevokeTokenFamily(familyId, tenantId, userId, reusedTokenId, revokedAt, revokedByIp) {
+    const ipUpdate = revokedByIp ? { revokedByIp } : {};
+    return Promise.all([
+        RefreshTokenModel.updateOne({ _id: reusedTokenId, reuseDetectedAt: null }, { $set: { reuseDetectedAt: revokedAt, ...ipUpdate } }).exec(),
+        RefreshTokenModel.updateMany({ familyId, tenantId, userId, revokedAt: null }, { $set: { revokedAt, ...ipUpdate } }).exec(),
+    ]);
+}
+export function revokeRefreshTokenFamily(familyId, tenantId, userId, revokedAt, revokedByIp) {
+    return RefreshTokenModel.updateMany({ familyId, tenantId, userId, revokedAt: null }, {
+        $set: {
+            revokedAt,
+            ...(revokedByIp ? { revokedByIp } : {}),
+        },
+    }).exec();
+}
+export function revokeAllRefreshTokensForTenantUser(userId, tenantId, revokedAt) {
+    return RefreshTokenModel.updateMany({ userId, tenantId, revokedAt: null }, { $set: { revokedAt } }).exec();
 }
 export async function createTenant(input, session) {
     const [tenant] = await TenantModel.create([input], { session });
