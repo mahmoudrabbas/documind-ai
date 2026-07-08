@@ -7,10 +7,10 @@ POST http://localhost:5000/auth/register
 Content-Type: application/json
 
 {
-  "companyName": "AIs",
-  "companySlug": "AIss-ss-test",
+  "companyName": "MMA",
+  "companySlug": "MMA-TEST",
   "adminName": "Same Email User",
-  "email": "same-email-test2@example.com",
+  "email": "yafejo4407@acoxs.com",
   "password": "StrongPass123!"
 }
 

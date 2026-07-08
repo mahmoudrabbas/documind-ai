@@ -14,6 +14,12 @@ export interface ResendVerificationEmailInput {
   email: string;
 }
 
+export interface LoginInput {
+  companySlug: string;
+  email: string;
+  password: string;
+}
+
 export interface TenantPublicView {
   id: string;
   name: string;
@@ -44,5 +50,24 @@ export interface VerifyEmailResult {
   tenant: {
     id: string;
     status: string;
+  };
+}
+
+export interface LoginResult {
+  user: Omit<UserPublicView, "createdAt">;
+  tenant: Omit<TenantPublicView, "createdAt">;
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    tokenType: "Bearer";
+    expiresIn: string;
+  };
+}
+
+export interface RefreshResult {
+  tokens: {
+    accessToken: string;
+    tokenType: "Bearer";
+    expiresIn: string;
   };
 }
