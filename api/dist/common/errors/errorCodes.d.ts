@@ -1,0 +1,17 @@
+export declare const INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR";
+export declare const NOT_FOUND = "NOT_FOUND";
+export declare const BAD_REQUEST = "BAD_REQUEST";
+export declare const VALIDATION_ERROR = "VALIDATION_ERROR";
+export declare const UNAUTHORIZED = "UNAUTHORIZED";
+export declare const FORBIDDEN = "FORBIDDEN";
+export declare const DATABASE_ERROR = "DATABASE_ERROR";
+export declare const TENANT_ALREADY_EXISTS = "TENANT_ALREADY_EXISTS";
+export declare const EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS";
+export declare const REGISTRATION_FAILED = "REGISTRATION_FAILED";
+export declare const INVALID_OR_EXPIRED_VERIFICATION_TOKEN = "INVALID_OR_EXPIRED_VERIFICATION_TOKEN";
+export declare const EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED";
+export declare const INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
+export declare const ACCOUNT_NOT_ACTIVE = "ACCOUNT_NOT_ACTIVE";
+export declare const TENANT_NOT_ACTIVE = "TENANT_NOT_ACTIVE";
+export declare const INVALID_REFRESH_TOKEN = "INVALID_REFRESH_TOKEN";
+//# sourceMappingURL=errorCodes.d.ts.map

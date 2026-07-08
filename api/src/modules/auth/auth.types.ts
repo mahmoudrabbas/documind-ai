@@ -64,6 +64,16 @@ export interface LoginResult {
   };
 }
 
+export interface AuthTokenClaims {
+  [key: string]: unknown;
+  sub: string;
+  tenantId: string;
+  type: "access" | "refresh";
+  role?: string;
+  email?: string;
+  jti?: string;
+}
+
 export interface RefreshResult {
   tokens: {
     accessToken: string;

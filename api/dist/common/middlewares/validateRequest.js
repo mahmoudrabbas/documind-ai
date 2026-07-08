@@ -1,4 +1,4 @@
-import { AppError } from "../errors/appError.js";
+import { AppError } from "../errors/AppError.js";
 export function validateRequest(schema, options = {}) {
     const errorCode = options.errorCode || "VALIDATION_ERROR";
     return (req, _res, next) => {
@@ -13,10 +13,11 @@ export function validateRequest(schema, options = {}) {
             errors.push(...schema.params(req));
         }
         if (errors.length > 0) {
-            return next(new AppError("Validation failed", 400, errorCode, {
+            return next(new AppError(400, errorCode, "Validation failed", {
                 errors,
             }));
         }
         next();
     };
 }
+//# sourceMappingURL=validateRequest.js.map

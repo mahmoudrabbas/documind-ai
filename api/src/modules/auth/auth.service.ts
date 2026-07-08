@@ -1,13 +1,22 @@
 import mongoose from "mongoose";
+import { randomUUID } from "node:crypto";
 import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   EMAIL_ALREADY_EXISTS,
+  EMAIL_NOT_VERIFIED,
+  ACCOUNT_NOT_ACTIVE,
+  INVALID_CREDENTIALS,
+  INVALID_REFRESH_TOKEN,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
   REGISTRATION_FAILED,
+  TENANT_NOT_ACTIVE,
   TENANT_ALREADY_EXISTS,
 } from "../../common/errors/errorCodes.js";
 import type {
+  AuthTokenClaims,
+  LoginResult,
+  RefreshResult,
   RegisterResult,
   RegisterInput,
   VerifyEmailResult,
@@ -28,14 +37,18 @@ import {
   findTenantBySlug,
   findUserDocumentByEmail,
   findUserDocumentById,
+  findUserDocumentByTenantAndEmail,
+  findUserById,
   updateUserVerificationToken,
 } from "./auth.repository.js";
 import {
   validateRegisterInput,
+  validateLoginInput,
   validateResendVerificationEmailInput,
   validateVerifyEmailInput,
 } from "./auth.validator.js";
-import { hashPassword } from "./passwordHashing.js";
+import { hashPassword, verifyPassword } from "./passwordHashing.js";
+import { signJwt, verifyJwt } from "./jwtTokens.js";
 
 type CreatedTenantRecord = {
   _id: { toString(): string };
@@ -359,6 +372,157 @@ export async function resendVerificationEmail(input: unknown) {
   });
 
   return genericResponse;
+}
+
+function invalidCredentialsError() {
+  return new AppError(
+    401,
+    INVALID_CREDENTIALS,
+    "Invalid company, email, or password"
+  );
+}
+
+function assertAccountCanSignIn(
+  user: CreatedUserRecord,
+  tenant: CreatedTenantRecord
+) {
+  if (!user.emailVerified || user.status === "pending_email_verification") {
+    throw new AppError(
+      403,
+      EMAIL_NOT_VERIFIED,
+      "Please verify your email before signing in"
+    );
+  }
+
+  if (user.status !== "active") {
+    throw new AppError(403, ACCOUNT_NOT_ACTIVE, "Account is not active");
+  }
+
+  if (tenant.status !== "active") {
+    throw new AppError(403, TENANT_NOT_ACTIVE, "Tenant is not active");
+  }
+}
+
+function createAccessToken(user: CreatedUserRecord, tenant: CreatedTenantRecord) {
+  return signJwt(
+    {
+      sub: user.id ?? user._id.toString(),
+      tenantId: tenant.id ?? tenant._id.toString(),
+      role: user.role,
+      email: user.email,
+      type: "access",
+    },
+    config.JWT_SECRET,
+    config.JWT_EXPIRES_IN
+  );
+}
+
+export async function login(input: unknown): Promise<LoginResult> {
+  const payload = validateLoginInput(input);
+  const tenant = await findTenantBySlug(payload.companySlug);
+
+  if (!tenant) {
+    throw invalidCredentialsError();
+  }
+
+  const user = await findUserDocumentByTenantAndEmail(
+    tenant._id.toString(),
+    payload.email
+  );
+
+  if (
+    !user ||
+    !user.passwordHash ||
+    !(await verifyPassword(user.passwordHash, payload.password))
+  ) {
+    throw invalidCredentialsError();
+  }
+
+  assertAccountCanSignIn(user, tenant);
+
+  const refreshToken = signJwt(
+    {
+      sub: user.id,
+      tenantId: tenant._id.toString(),
+      type: "refresh",
+      jti: randomUUID(),
+    },
+    config.JWT_REFRESH_SECRET,
+    config.JWT_REFRESH_EXPIRES_IN
+  );
+
+  return {
+    user: serializeVerifiedUser(user),
+    tenant: {
+      id: tenant._id.toString(),
+      name: tenant.name,
+      slug: tenant.slug,
+      status: tenant.status,
+      plan: tenant.plan,
+    },
+    tokens: {
+      accessToken: createAccessToken(user, tenant),
+      refreshToken,
+      tokenType: "Bearer",
+      expiresIn: config.JWT_EXPIRES_IN,
+    },
+  };
+}
+
+export async function refreshAccessToken(token: string): Promise<RefreshResult> {
+  try {
+    const claims = verifyJwt<AuthTokenClaims>(
+      token,
+      config.JWT_REFRESH_SECRET
+    );
+
+    if (
+      claims.type !== "refresh" ||
+      !claims.sub ||
+      !claims.tenantId ||
+      !claims.jti
+    ) {
+      throw new Error("Invalid refresh token claims");
+    }
+
+    const [user, tenant] = await Promise.all([
+      findUserById(claims.sub),
+      findTenantById(claims.tenantId),
+    ]);
+
+    if (
+      !user ||
+      !tenant ||
+      user.tenantId.toString() !== claims.tenantId
+    ) {
+      throw new Error("Invalid refresh token subject");
+    }
+
+    assertAccountCanSignIn(user, tenant);
+
+    return {
+      tokens: {
+        accessToken: createAccessToken(user, tenant),
+        tokenType: "Bearer",
+        expiresIn: config.JWT_EXPIRES_IN,
+      },
+    };
+  } catch (error) {
+    if (
+      error instanceof AppError &&
+      [EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, TENANT_NOT_ACTIVE].includes(
+        error.code
+      )
+    ) {
+      throw error;
+    }
+
+    throw new AppError(
+      401,
+      INVALID_REFRESH_TOKEN,
+      "Invalid or expired refresh token"
+    );
+  }
 }
 
 export async function createEmailVerificationTokenForUser(
