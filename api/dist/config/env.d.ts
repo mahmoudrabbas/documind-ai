@@ -12,6 +12,10 @@ declare const envSchema: z.ZodObject<{
     PORT: z.ZodPipe<z.ZodPipe<z.ZodDefault<z.ZodString>, z.ZodTransform<number, string>>, z.ZodNumber>;
     HOST: z.ZodDefault<z.ZodString>;
     MONGODB_URI: z.ZodDefault<z.ZodString>;
+    MONGODB_MAX_RETRIES: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    MONGODB_RETRY_DELAY_MS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    MONGODB_RETRY_BACKOFF_FACTOR: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    MONGODB_RETRY_MAX_DELAY_MS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
     REDIS_URL: z.ZodDefault<z.ZodString>;
     APP_FRONTEND_URL: z.ZodDefault<z.ZodString>;
     JWT_SECRET: z.ZodDefault<z.ZodString>;

@@ -1,12 +1,17 @@
 import test, { after, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import mongoose from "mongoose";
 
 process.env.NODE_ENV = "test";
 
 import app from "./app.js";
-import { connectDB, isMongoConnected } from "./db/connection.js";
+import {
+  calculateRetryDelay,
+  connectDB,
+  disconnectDB,
+  getMongoConnectionState,
+  isMongoConnected,
+} from "./db/connection.js";
 import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
@@ -139,7 +144,7 @@ beforeEach(async () => {
 
 after(async () => {
   await disconnectRedis();
-  await mongoose.disconnect();
+  await disconnectDB();
 });
 
 test("builds a verification email with html and plain text content", () => {
@@ -1369,6 +1374,32 @@ test("includes the same request ID header in validation errors", async () => {
   }
 });
 
-test("isMongoConnected returns true after connectDB", () => {
+test("reports the connected MongoDB state after connectDB", () => {
   assert.equal(isMongoConnected(), true);
+  assert.equal(getMongoConnectionState(), "connected");
+});
+
+test("calculates capped exponential MongoDB retry delays", () => {
+  assert.equal(calculateRetryDelay(1, 100, 2, 250), 100);
+  assert.equal(calculateRetryDelay(2, 100, 2, 250), 200);
+  assert.equal(calculateRetryDelay(3, 100, 2, 250), 250);
+});
+
+test("disconnectDB is idempotent and readiness reflects disconnection", async () => {
+  await disconnectDB();
+  await disconnectDB();
+
+  assert.equal(isMongoConnected(), false);
+  assert.equal(getMongoConnectionState(), "disconnected");
+
+  const server = await createServer();
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/readyz`);
+
+    assert.equal(response.status, 503);
+  } finally {
+    await closeServer(server);
+    await connectDB();
+  }
 });
