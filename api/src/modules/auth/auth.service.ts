@@ -13,10 +13,12 @@ import {
   SESSION_EXPIRED,
   TENANT_NOT_ACTIVE,
   TENANT_ALREADY_EXISTS,
+  UNAUTHORIZED,
 } from "../../common/errors/errorCodes.js";
 import type {
   AuthTokenClaims,
   LoginResult,
+  MeResult,
   RefreshRotationResult,
   RefreshTokenContext,
   RegisterResult,
@@ -720,5 +722,56 @@ export function createRegisterPayload(input: RegisterInput) {
     adminName: input.adminName,
     email: input.email,
     password: input.password,
+  };
+}
+
+/**
+ * Returns the currently authenticated user and tenant for a given access token.
+ *
+ * Verifies the access token signature/expiry, ensures it is an access token,
+ * loads the user and tenant from the database, and asserts the account is
+ * still allowed to sign in (active + email verified + tenant active).
+ *
+ * @param accessToken - Raw JWT access token (without the `Bearer ` prefix).
+ * @throws {AppError} 401 when the token is missing, invalid, or expired.
+ * @throws {AppError} 403 when the user/tenant is no longer active.
+ */
+export async function getMe(accessToken: string): Promise<MeResult> {
+  if (!accessToken) {
+    throw new AppError(401, UNAUTHORIZED, "Authentication required");
+  }
+
+  let claims: AuthTokenClaims;
+
+  try {
+    claims = verifyJwt<AuthTokenClaims>(accessToken, config.JWT_SECRET);
+  } catch {
+    throw new AppError(401, UNAUTHORIZED, "Invalid or expired access token");
+  }
+
+  if (claims.type !== "access" || !claims.sub || !claims.tenantId) {
+    throw new AppError(401, UNAUTHORIZED, "Invalid access token claims");
+  }
+
+  const [user, tenant] = await Promise.all([
+    findUserByTenantAndId(claims.tenantId, claims.sub),
+    findTenantById(claims.tenantId),
+  ]);
+
+  if (!user || !tenant) {
+    throw new AppError(401, UNAUTHORIZED, "Account no longer exists");
+  }
+
+  assertAccountCanSignIn(user, tenant);
+
+  return {
+    user: serializeVerifiedUser(user),
+    tenant: {
+      id: tenant._id.toString(),
+      name: tenant.name,
+      slug: tenant.slug,
+      status: tenant.status,
+      plan: tenant.plan,
+    },
   };
 }

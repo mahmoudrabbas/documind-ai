@@ -91,3 +91,8 @@ export interface RefreshResult {
 export interface RefreshRotationResult extends RefreshResult {
   refreshToken: string;
 }
+
+export interface MeResult {
+  user: Omit<UserPublicView, "createdAt">;
+  tenant: Omit<TenantPublicView, "createdAt">;
+}

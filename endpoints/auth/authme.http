@@ -1,0 +1,10 @@
+# GET /auth/me (no token) 
+GET http://127.0.0.1:3000/auth/me
+
+# GET /auth/me (with access token)
+GET http://127.0.0.1:3000/auth/me
+Authorization: Bearer ACCESS_TOKEN
+
+# Notes
+# - Replace ACCESS_TOKEN with a valid access token obtained from /auth/login.
+# - The dev server in tests runs on a dynamic port; adjust the host:port as needed.
