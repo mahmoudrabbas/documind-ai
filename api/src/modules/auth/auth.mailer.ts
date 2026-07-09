@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import { AppError } from "../../common/errors/AppError.js";
+import { EMAIL_SENDING_FAILED } from "../../common/errors/errorCodes.js";
 import { config } from "../../config/index.js";
 
 interface SendVerificationEmailInput {
@@ -94,7 +96,30 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
     return;
   }
 
-  assertSmtpConfigured();
+  const missingFields: string[] = [];
+
+  if (!config.SMTP_HOST) missingFields.push("SMTP_HOST");
+  if (!config.SMTP_USER) missingFields.push("SMTP_USER");
+  if (!config.SMTP_PASS) missingFields.push("SMTP_PASS");
+  if (!config.SMTP_FROM) missingFields.push("SMTP_FROM");
+
+  if (missingFields.length > 0) {
+    const message = `Missing SMTP config: ${missingFields.join(", ")}`;
+
+    if (config.NODE_ENV !== "production") {
+      console.warn(
+        `[email-verification] ${message}. Verification URL: ${input.verificationUrl}`,
+      );
+      return;
+    }
+
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "SMTP is not configured",
+      { missingFields },
+    );
+  }
 
   const template = buildEmailVerificationTemplate({
     adminName: input.adminName,
@@ -113,18 +138,30 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
     },
   });
 
-  await transporter.sendMail({
-    from: config.SMTP_FROM,
-    to: input.to,
-    subject: template.subject,
-    text: template.text,
-    html: template.html,
-  });
-}
+  try {
+    await transporter.sendMail({
+      from: config.SMTP_FROM,
+      to: input.to,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to send verification email";
 
-function assertSmtpConfigured() {
-  if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS || !config.SMTP_FROM) {
-    throw new Error("SMTP is not configured");
+    if (config.NODE_ENV !== "production") {
+      console.warn(
+        `[email-verification] ${message}. Verification URL: ${input.verificationUrl}`,
+      );
+      return;
+    }
+
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "Unable to send verification email",
+      { details: message },
+    );
   }
 }
 

@@ -260,6 +260,7 @@ export default function RegisterPage() {
                 type="text"
                 value={companyName}
                 onChange={(e) => handleCompanyNameChange(e.target.value)}
+                autoComplete="organization"
                 placeholder={t("auth.companyNamePlaceholder")}
                 disabled={isSubmitting}
                 aria-invalid={Boolean(errors.companyName)}
@@ -314,6 +315,7 @@ export default function RegisterPage() {
                 type="text"
                 value={adminName}
                 onChange={(e) => setAdminName(e.target.value)}
+                autoComplete="name"
                 placeholder={t("auth.adminNamePlaceholder")}
                 disabled={isSubmitting}
                 aria-invalid={Boolean(errors.adminName)}
@@ -339,6 +341,7 @@ export default function RegisterPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 placeholder={t("auth.emailPlaceholder")}
                 disabled={isSubmitting}
                 aria-invalid={Boolean(errors.email)}
@@ -364,6 +367,7 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
                 placeholder={t("auth.passwordPlaceholder")}
                 disabled={isSubmitting}
                 aria-invalid={Boolean(errors.password)}
@@ -389,6 +393,7 @@ export default function RegisterPage() {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
                 placeholder={t("auth.confirmPasswordPlaceholder")}
                 disabled={isSubmitting}
                 aria-invalid={Boolean(errors.confirmPassword)}
