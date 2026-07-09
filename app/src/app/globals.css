@@ -208,6 +208,8 @@
   --radius-2xl: 1.5rem; /* 24px — DESIGN.md `rounded.xl` */
   --radius-full: 9999px;
 
+  --max-width-sm: 24rem;
+
   /* ---- Spacing: named utilities on top of the default 4px scale ---------
    * DESIGN.md's named spacing scale (xs/sm/md/lg/xl/2xl), exposed as e.g.
    * `p-md`, `gap-lg` alongside Tailwind's default numeric scale (`p-4`).

@@ -84,6 +84,40 @@ const ar: TranslationDictionary = {
   "landing.trustPrivateTitle": "إجابات خاصة",
   "landing.trustPrivateDesc":
     "الردود مبنية على مستندات داخلية معتمدة.",
+
+  /* ── auth/register ─────────────────────────────────────── */
+  "auth.signUp": "إنشاء حساب",
+  "auth.createAccount": "إنشاء حساب جديد",
+  "auth.registerTitle": "سجّل شركتك وابدأ تشغيل مساحة عملك الآمنة.",
+  "auth.registerDescription": "أنشئ حدود عزل المستأجرين، وقم بتهيئة تفاصيل مؤسستك، وجهّز مساحة عملك الخاصة لاسترجاع المستندات باللغة الطبيعية.",
+  "auth.registerSuccess": "تم إنشاء المستأجر ومسؤول الشركة بنجاح. يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب.",
+  "auth.registering": "جاري التسجيل...",
+  "auth.register": "تسجيل",
+  "auth.alreadyHaveAccount": "هل لديك حساب بالفعل؟ تسجيل الدخول",
+  "auth.adminName": "اسم المسؤول",
+  "auth.adminNamePlaceholder": "سارة أحمد",
+  "auth.adminNameRequired": "اسم المسؤول مطلوب.",
+  "auth.adminNameInvalid": "يجب أن يتكون الاسم من حرفين على الأقل.",
+  "auth.companyName": "اسم الشركة",
+  "auth.companyNamePlaceholder": "إيكمي للاستشارات",
+  "auth.companyNameRequired": "اسم الشركة مطلوب.",
+  "auth.companyNameInvalid": "يجب أن يتكون اسم الشركة من حرفين على الأقل وأن يحتوي فقط على أحرف وأرقام ومسافات وعلامات & و . و ( و ) و -",
+  "auth.companySlugInvalid": "يجب أن يحتوي معرّف الشركة فقط على أحرف صغيرة وأرقام وواصلات (-).",
+  "auth.passwordInvalid": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل وتحتوي على حرف واحد ورقم واحد على الأقل.",
+  "auth.confirmPassword": "تأكيد كلمة المرور",
+  "auth.confirmPasswordPlaceholder": "••••••••",
+  "auth.confirmPasswordRequired": "يرجى تأكيد كلمة المرور.",
+  "auth.passwordsMustMatch": "يجب أن تتطابق كلمتا المرور.",
+  "auth.backToLogin": "العودة إلى تسجيل الدخول",
+  "auth.secureRegistration": "تسجيل آمن",
+  "auth.tenantIsolationTitle": "عزل المستأجرين",
+  "auth.tenantIsolationDesc": "كل مساحة عمل مفصولة حسب حدود الشركة.",
+  "auth.verifiedAccessTitle": "وصول موثّق",
+  "auth.verifiedAccessDesc": "يمكن للمستخدمين المفعّلين فقط الوصول إلى معرفة الشركة.",
+  "auth.privateAnswersTitle": "إجابات خاصة",
+  "auth.privateAnswersDesc": "الردود مبنية على مستندات داخلية معتمدة.",
+  "auth.registerNow": "سجّل الآن",
 };
+
 
 export default ar;
