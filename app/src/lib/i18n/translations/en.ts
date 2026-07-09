@@ -84,6 +84,40 @@ const en: TranslationDictionary = {
   "landing.trustPrivateTitle": "Private answers",
   "landing.trustPrivateDesc":
     "Responses are grounded in approved internal documents.",
+
+  /* ── auth/register ─────────────────────────────────────── */
+  "auth.signUp": "Sign up",
+  "auth.createAccount": "Create an account",
+  "auth.registerTitle": "Register your company and boot up your secure workspace.",
+  "auth.registerDescription": "Establish your tenant isolation boundaries, configure your organization details, and prepare your private workspace for natural-language document retrieval.",
+  "auth.registerSuccess": "Tenant and company admin created successfully. Please verify your email to activate the account.",
+  "auth.registering": "Registering...",
+  "auth.register": "Register",
+  "auth.alreadyHaveAccount": "Already have an account? Sign in",
+  "auth.adminName": "Administrator Name",
+  "auth.adminNamePlaceholder": "Sarah Ahmed",
+  "auth.adminNameRequired": "Administrator name is required.",
+  "auth.adminNameInvalid": "Name must be at least 2 characters.",
+  "auth.companyName": "Company Name",
+  "auth.companyNamePlaceholder": "Acme Consulting",
+  "auth.companyNameRequired": "Company name is required.",
+  "auth.companyNameInvalid": "Company name must be at least 2 characters and contain only letters, numbers, spaces, and '&.()-.",
+  "auth.companySlugInvalid": "Company slug must contain only lowercase letters, numbers, and hyphens.",
+  "auth.passwordInvalid": "Password must be at least 8 characters and contain at least one letter and one number.",
+  "auth.confirmPassword": "Confirm Password",
+  "auth.confirmPasswordPlaceholder": "••••••••",
+  "auth.confirmPasswordRequired": "Please confirm your password.",
+  "auth.passwordsMustMatch": "Passwords must match.",
+  "auth.backToLogin": "Back to Sign In",
+  "auth.secureRegistration": "Secure registration",
+  "auth.tenantIsolationTitle": "Tenant isolated",
+  "auth.tenantIsolationDesc": "Every workspace is separated by company boundary.",
+  "auth.verifiedAccessTitle": "Verified access",
+  "auth.verifiedAccessDesc": "Only activated users can access company knowledge.",
+  "auth.privateAnswersTitle": "Private answers",
+  "auth.privateAnswersDesc": "Responses are grounded in approved internal documents.",
+  "auth.registerNow": "Register now",
 };
+
 
 export default en;
