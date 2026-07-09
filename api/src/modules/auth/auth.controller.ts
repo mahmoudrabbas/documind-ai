@@ -7,6 +7,7 @@ import {
   registerTenantAndAdmin,
   resendVerificationEmail,
   verifyEmail,
+  getMe,
 } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -98,6 +99,30 @@ function readCookie(req: Request, name: string) {
   }
 
   return "";
+}
+
+function extractBearerToken(authorization: string | undefined): string {
+  if (!authorization) return "";
+
+  const trimmed = authorization.trim();
+
+  if (!trimmed.toLowerCase().startsWith("bearer ")) return "";
+
+  return trimmed.slice(7).trim();
+}
+
+export async function meController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = extractBearerToken(req.headers.authorization);
+    const result = await getMe(token);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    handleAuthError(error, res, next);
+  }
 }
 
 export async function refreshController(req: Request, res: Response, next: NextFunction) {

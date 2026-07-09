@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   loginController,
   logoutController,
+  meController,
   refreshController,
   registerController,
   resendVerificationEmailController,
@@ -16,5 +17,6 @@ router.post("/refresh", refreshController);
 router.post("/logout", logoutController);
 router.post("/verify-email", verifyEmailController);
 router.post("/resend-verification-email", resendVerificationEmailController);
+router.get("/me", meController);
 
 export default router;

@@ -1403,3 +1403,50 @@ test("disconnectDB is idempotent and readiness reflects disconnection", async ()
     await connectDB();
   }
 });
+
+// Tests for GET /auth/me (T2.2.5)
+test("GET /auth/me returns 401 when no access token is provided", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/auth/me`);
+    const body = await response.json();
+
+    assert.equal(response.status, 401);
+    // Controller maps AppError.code to the `error` field
+    assert.equal(body.error, "UNAUTHORIZED");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /auth/me returns the current user and tenant for a valid access token", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    // Login to receive an access token
+    const loginResponse = await postLogin(port, tenant.slug, user.email);
+    const loginBody = await loginResponse.json();
+    const accessToken = loginBody.data?.tokens?.accessToken;
+
+    assert.ok(accessToken, "login should return an accessToken");
+
+    const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.ok(body.data?.user);
+    assert.equal(body.data.user.email, user.email);
+    assert.equal(body.data.tenant?.id, tenant.id);
+    assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
