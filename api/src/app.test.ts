@@ -22,6 +22,8 @@ import {
   hashPassword,
   verifyPassword,
 } from "./modules/auth/passwordHashing.js";
+import { signJwt } from "./modules/auth/jwtTokens.js";
+import { config } from "./config/index.js";
 
 function createServer() {
   return new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -1414,8 +1416,7 @@ test("GET /auth/me returns 401 when no access token is provided", async () => {
     const body = await response.json();
 
     assert.equal(response.status, 401);
-    // Controller maps AppError.code to the `error` field
-    assert.equal(body.error, "UNAUTHORIZED");
+    assert.equal(body.error?.code, "UNAUTHORIZED");
   } finally {
     await closeServer(server);
   }
@@ -1446,6 +1447,49 @@ test("GET /auth/me returns the current user and tenant for a valid access token"
     assert.equal(body.data.user.email, user.email);
     assert.equal(body.data.tenant?.id, tenant.id);
     assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /auth/me returns 401 for an invalid or malformed access token", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
+      headers: { Authorization: `Bearer not-a-valid-jwt` },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 401);
+    assert.equal(body.error?.code, "UNAUTHORIZED");
+    assert.equal(body.error?.message, "Invalid or expired access token");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /auth/me returns 401 for an expired access token", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const expiredToken = signJwt(
+      { sub: user.id, tenantId: tenant.id, type: "access" },
+      config.JWT_SECRET,
+      "0s"
+    );
+
+    const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
+      headers: { Authorization: `Bearer ${expiredToken}` },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 401);
+    assert.equal(body.error?.code, "UNAUTHORIZED");
+    assert.equal(body.error?.message, "Invalid or expired access token");
   } finally {
     await closeServer(server);
   }

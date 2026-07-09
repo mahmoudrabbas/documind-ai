@@ -101,20 +101,12 @@ function readCookie(req: Request, name: string) {
   return "";
 }
 
-function extractBearerToken(authorization: string | undefined): string {
-  if (!authorization) return "";
-
-  const trimmed = authorization.trim();
-
-  if (!trimmed.toLowerCase().startsWith("bearer ")) return "";
-
-  return trimmed.slice(7).trim();
-}
-
 export async function meController(req: Request, res: Response, next: NextFunction) {
   try {
-    const token = extractBearerToken(req.headers.authorization);
-    const result = await getMe(token);
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+    const result = await getMe(req.auth);
 
     res.status(200).json({
       success: true,
