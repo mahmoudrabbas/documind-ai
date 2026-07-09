@@ -46,7 +46,7 @@ test("tenantScoping middleware", async (t) => {
         assert.strictEqual(mockReq.tenantId, testTenantId);
         assert.strictEqual(mockNext.mock.calls.length, 1);
         assert.strictEqual(mockNext.mock.calls[0][0], undefined);
-      }
+      },
     );
 
     await tc.test(
@@ -63,33 +63,30 @@ test("tenantScoping middleware", async (t) => {
 
         assert.strictEqual(mockReq.tenantId, testTenantId);
         assert.strictEqual(mockNext.mock.calls.length, 1);
-      }
+      },
     );
 
-    await tc.test(
-      "should enhance request logging with tenantId",
-      () => {
-        createMocks();
-        const testTenantId = "tenant-555";
-        const childCalls: unknown[] = [];
-        mockReq.auth = {
-          userId: "user-123",
-          tenantId: testTenantId,
-        };
-        mockReq.log = {
-          child: (obj: Record<string, unknown>) => {
-            childCalls.push(obj);
-            return {};
-          },
-        } as unknown;
+    await tc.test("should enhance request logging with tenantId", () => {
+      createMocks();
+      const testTenantId = "tenant-555";
+      const childCalls: unknown[] = [];
+      mockReq.auth = {
+        userId: "user-123",
+        tenantId: testTenantId,
+      };
+      mockReq.log = {
+        child: (obj: Record<string, unknown>) => {
+          childCalls.push(obj);
+          return {};
+        },
+      } as unknown as Request["log"];
 
-        tenantScoping(mockReq as Request, mockRes as Response, mockNext);
+      tenantScoping(mockReq as Request, mockRes as Response, mockNext);
 
-        assert.strictEqual(childCalls.length, 1);
-        assert.deepStrictEqual(childCalls[0], { tenantId: testTenantId });
-        assert.strictEqual(mockNext.mock.calls.length, 1);
-      }
-    );
+      assert.strictEqual(childCalls.length, 1);
+      assert.deepStrictEqual(childCalls[0], { tenantId: testTenantId });
+      assert.strictEqual(mockNext.mock.calls.length, 1);
+    });
 
     await tc.test("should work when req.log is undefined", () => {
       createMocks();
@@ -261,7 +258,7 @@ test("tenantScoping middleware", async (t) => {
 
         assert.strictEqual(mockNext.mock.calls.length, 1);
         assert(mockNext.mock.calls[0][0] instanceof AppError);
-      }
+      },
     );
 
     await tc.test("should not throw synchronously, always call next()", () => {
@@ -294,7 +291,7 @@ test("tenantScoping middleware", async (t) => {
         assert.strictEqual(mockReq.tenantId, "tenant-abc");
         assert.strictEqual(mockReq.auth?.userId, "user-123");
         assert.strictEqual(mockNext.mock.calls.length, 1);
-      }
+      },
     );
 
     await tc.test(
@@ -306,13 +303,13 @@ test("tenantScoping middleware", async (t) => {
           tenantId: undefined,
           role: "user",
           email: "user@example.com",
-        } as unknown as Record<string, unknown>;
+        } as unknown as Request["auth"];
 
         tenantScoping(mockReq as Request, mockRes as Response, mockNext);
 
         assert.strictEqual(mockNext.mock.calls.length, 1);
         assert(mockNext.mock.calls[0][0] instanceof AppError);
-      }
+      },
     );
   });
 });
