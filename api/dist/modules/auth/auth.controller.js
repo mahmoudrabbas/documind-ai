@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { login, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, } from "./auth.service.js";
+import { login, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
@@ -80,6 +80,27 @@ function readCookie(req, name) {
         }
     }
     return "";
+}
+function extractBearerToken(authorization) {
+    if (!authorization)
+        return "";
+    const trimmed = authorization.trim();
+    if (!trimmed.toLowerCase().startsWith("bearer "))
+        return "";
+    return trimmed.slice(7).trim();
+}
+export async function meController(req, res, next) {
+    try {
+        const token = extractBearerToken(req.headers.authorization);
+        const result = await getMe(token);
+        res.status(200).json({
+            success: true,
+            data: result,
+        });
+    }
+    catch (error) {
+        handleAuthError(error, res, next);
+    }
 }
 export async function refreshController(req, res, next) {
     try {
