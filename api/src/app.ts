@@ -28,7 +28,7 @@ const parseAllowedOrigins = () => {
       .filter(Boolean)
       .flatMap((origin) => String(origin).split(","))
       .map((origin) => origin.trim().replace(/\/$/, ""))
-      .filter(Boolean)
+      .filter(Boolean),
   );
 };
 
@@ -102,7 +102,7 @@ app.get("/readyz", (_req, res) => {
     },
   });
 });
-  
+
 if (config.NODE_ENV !== "production") {
   app.get("/boom", () => {
     throw new AppError(400, BAD_REQUEST, "Bad request", {
@@ -126,11 +126,11 @@ if (config.NODE_ENV !== "production") {
           return errors;
         },
       },
-      { errorCode: "AUTH_SIGNUP_VALIDATION_ERROR" }
+      { errorCode: "AUTH_SIGNUP_VALIDATION_ERROR" },
     ),
     (_req, res) => {
       res.status(201).json({ ok: true });
-    }
+    },
   );
 }
 
