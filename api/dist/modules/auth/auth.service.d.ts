@@ -1,4 +1,4 @@
-import type { LoginResult, MeResult, RefreshRotationResult, RefreshTokenContext, RegisterResult, RegisterInput, VerifyEmailResult } from "./auth.types.js";
+import type { LoginResult, MeResult, RefreshRotationResult, RefreshTokenContext, RegisterResult, RegisterInput, VerifyEmailResult, AuthIdentity } from "./auth.types.js";
 type CreatedUserRecord = {
     _id: {
         toString(): string;
@@ -34,16 +34,14 @@ export declare function createRegisterPayload(input: RegisterInput): {
     password: string;
 };
 /**
- * Returns the currently authenticated user and tenant for a given access token.
+ * Returns the currently authenticated user and tenant for a given identity.
  *
- * Verifies the access token signature/expiry, ensures it is an access token,
- * loads the user and tenant from the database, and asserts the account is
- * still allowed to sign in (active + email verified + tenant active).
+ * Ensure the identity is retrieved from an access token via middleware.
  *
- * @param accessToken - Raw JWT access token (without the `Bearer ` prefix).
- * @throws {AppError} 401 when the token is missing, invalid, or expired.
+ * @param identity - Authenticated user identity (from req.auth).
+ * @throws {AppError} 401 when the user or tenant no longer exists.
  * @throws {AppError} 403 when the user/tenant is no longer active.
  */
-export declare function getMe(accessToken: string): Promise<MeResult>;
+export declare function getMe(identity: AuthIdentity): Promise<MeResult>;
 export {};
 //# sourceMappingURL=auth.service.d.ts.map
