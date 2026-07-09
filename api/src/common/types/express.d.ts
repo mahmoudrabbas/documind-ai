@@ -11,6 +11,11 @@ declare global {
        * Populated by the `authenticate` middleware for protected routes.
        */
       auth?: AuthIdentity;
+      /**
+       * Tenant ID extracted from the verified JWT.
+       * Populated by the `tenantScoping` middleware for tenant-scoped routes.
+       */
+      tenantId?: string;
     }
   }
 }
