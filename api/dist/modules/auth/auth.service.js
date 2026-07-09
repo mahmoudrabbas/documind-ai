@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { EMAIL_ALREADY_EXISTS, EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, REFRESH_TOKEN_REUSED, REGISTRATION_FAILED, SESSION_EXPIRED, TENANT_NOT_ACTIVE, TENANT_ALREADY_EXISTS, } from "../../common/errors/errorCodes.js";
+import { EMAIL_ALREADY_EXISTS, EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, REFRESH_TOKEN_REUSED, REGISTRATION_FAILED, SESSION_EXPIRED, TENANT_NOT_ACTIVE, TENANT_ALREADY_EXISTS, UNAUTHORIZED, } from "../../common/errors/errorCodes.js";
 import { sendVerificationEmail } from "./auth.mailer.js";
 import { createEmailVerificationToken, hashVerificationJti, verifyEmailVerificationToken, } from "./emailVerificationToken.js";
 import { activateTenantIfPendingVerification, claimRefreshTokenForRotation, createTenant, createUser, createRefreshTokenRecord, deleteTenantById, deleteUserById, findTenantById, findTenantBySlug, findRefreshTokenRecord, findUserDocumentByEmail, findUserDocumentById, findUserDocumentByTenantAndEmail, findUserByTenantAndId, markReuseAndRevokeTokenFamily, revokeAllRefreshTokensForTenantUser, revokeRefreshToken, setRefreshTokenReplacement, updateUserVerificationToken, } from "./auth.repository.js";
@@ -431,6 +431,50 @@ export function createRegisterPayload(input) {
         adminName: input.adminName,
         email: input.email,
         password: input.password,
+    };
+}
+/**
+ * Returns the currently authenticated user and tenant for a given access token.
+ *
+ * Verifies the access token signature/expiry, ensures it is an access token,
+ * loads the user and tenant from the database, and asserts the account is
+ * still allowed to sign in (active + email verified + tenant active).
+ *
+ * @param accessToken - Raw JWT access token (without the `Bearer ` prefix).
+ * @throws {AppError} 401 when the token is missing, invalid, or expired.
+ * @throws {AppError} 403 when the user/tenant is no longer active.
+ */
+export async function getMe(accessToken) {
+    if (!accessToken) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+    }
+    let claims;
+    try {
+        claims = verifyJwt(accessToken, config.JWT_SECRET);
+    }
+    catch {
+        throw new AppError(401, UNAUTHORIZED, "Invalid or expired access token");
+    }
+    if (claims.type !== "access" || !claims.sub || !claims.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Invalid access token claims");
+    }
+    const [user, tenant] = await Promise.all([
+        findUserByTenantAndId(claims.tenantId, claims.sub),
+        findTenantById(claims.tenantId),
+    ]);
+    if (!user || !tenant) {
+        throw new AppError(401, UNAUTHORIZED, "Account no longer exists");
+    }
+    assertAccountCanSignIn(user, tenant);
+    return {
+        user: serializeVerifiedUser(user),
+        tenant: {
+            id: tenant._id.toString(),
+            name: tenant.name,
+            slug: tenant.slug,
+            status: tenant.status,
+            plan: tenant.plan,
+        },
     };
 }
 //# sourceMappingURL=auth.service.js.map

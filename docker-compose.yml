@@ -1,8 +1,8 @@
 services:
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "5000:5000"
     env_file:
@@ -25,8 +25,8 @@ services:
 
   app:
     build:
-      context: ./app
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: app/Dockerfile
     ports:
       - "3000:3000"
     depends_on:
@@ -38,8 +38,8 @@ services:
 
   worker:
     build:
-      context: ./workers
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: workers/Dockerfile
     depends_on:
       mongodb:
         condition: service_healthy
