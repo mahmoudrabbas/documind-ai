@@ -24,6 +24,7 @@ import type {
   RegisterResult,
   RegisterInput,
   VerifyEmailResult,
+  AuthIdentity,
 } from "./auth.types.js";
 import { sendVerificationEmail } from "./auth.mailer.js";
 import {
@@ -726,36 +727,18 @@ export function createRegisterPayload(input: RegisterInput) {
 }
 
 /**
- * Returns the currently authenticated user and tenant for a given access token.
+ * Returns the currently authenticated user and tenant for a given identity.
  *
- * Verifies the access token signature/expiry, ensures it is an access token,
- * loads the user and tenant from the database, and asserts the account is
- * still allowed to sign in (active + email verified + tenant active).
+ * Ensure the identity is retrieved from an access token via middleware.
  *
- * @param accessToken - Raw JWT access token (without the `Bearer ` prefix).
- * @throws {AppError} 401 when the token is missing, invalid, or expired.
+ * @param identity - Authenticated user identity (from req.auth).
+ * @throws {AppError} 401 when the user or tenant no longer exists.
  * @throws {AppError} 403 when the user/tenant is no longer active.
  */
-export async function getMe(accessToken: string): Promise<MeResult> {
-  if (!accessToken) {
-    throw new AppError(401, UNAUTHORIZED, "Authentication required");
-  }
-
-  let claims: AuthTokenClaims;
-
-  try {
-    claims = verifyJwt<AuthTokenClaims>(accessToken, config.JWT_SECRET);
-  } catch {
-    throw new AppError(401, UNAUTHORIZED, "Invalid or expired access token");
-  }
-
-  if (claims.type !== "access" || !claims.sub || !claims.tenantId) {
-    throw new AppError(401, UNAUTHORIZED, "Invalid access token claims");
-  }
-
+export async function getMe(identity: AuthIdentity): Promise<MeResult> {
   const [user, tenant] = await Promise.all([
-    findUserByTenantAndId(claims.tenantId, claims.sub),
-    findTenantById(claims.tenantId),
+    findUserByTenantAndId(identity.tenantId, identity.userId),
+    findTenantById(identity.tenantId),
   ]);
 
   if (!user || !tenant) {

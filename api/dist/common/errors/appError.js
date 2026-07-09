@@ -3,15 +3,13 @@ export class AppError extends Error {
     code;
     details;
     isOperational;
-    constructor(message, statusCode = 500, code = "INTERNAL_SERVER_ERROR", details, options) {
+    constructor(statusCode, code, message, details, isOperational = true) {
         super(message);
         this.name = "AppError";
         this.statusCode = statusCode;
         this.code = code;
-        this.details = details;
-        this.isOperational = true;
-        if (options?.cause !== undefined) {
-            this.cause = options.cause;
-        }
+        this.details = details ?? null;
+        this.isOperational = isOperational;
     }
 }
+//# sourceMappingURL=AppError.js.map

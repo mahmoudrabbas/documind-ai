@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { AuthIdentity } from "../../modules/auth/auth.types.js";
 
 declare global {
   namespace Express {
@@ -9,12 +10,7 @@ declare global {
        * Authenticated user claims decoded from the access token.
        * Populated by the `authenticate` middleware for protected routes.
        */
-      auth?: {
-        userId: string;
-        tenantId: string;
-        role?: string;
-        email?: string;
-      };
+      auth?: AuthIdentity;
     }
   }
 }
