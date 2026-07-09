@@ -83,4 +83,10 @@ export interface MeResult {
     user: Omit<UserPublicView, "createdAt">;
     tenant: Omit<TenantPublicView, "createdAt">;
 }
+export interface AuthIdentity {
+    userId: string;
+    tenantId: string;
+    role?: string;
+    email?: string;
+}
 //# sourceMappingURL=auth.types.d.ts.map
