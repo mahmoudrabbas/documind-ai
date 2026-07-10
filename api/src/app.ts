@@ -1,4 +1,5 @@
 import express from "express";
+
 import cors, { type CorsOptions } from "cors";
 import { AppError } from "./common/errors/AppError.js";
 import { BAD_REQUEST } from "./common/errors/errorCodes.js";
@@ -15,6 +16,7 @@ import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
 const app = express();
+app.set("trust proxy", 1);
 const redisClient = getRedisClient();
 
 app.locals.redisClient = redisClient;
