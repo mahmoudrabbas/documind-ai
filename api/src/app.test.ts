@@ -345,6 +345,118 @@ test("verifies email with a valid token and activates user and tenant", async ()
   }
 });
 
+test("invites a user with a valid company admin token", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    await createActiveTenantAdmin();
+
+    const loginResponse = await postLogin(address.port);
+    assert.equal(loginResponse.status, 200);
+
+    const loginBody = (await loginResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/users`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+      },
+      body: JSON.stringify({
+        name: "Alex Employee",
+        email: "alex@acme.com",
+        role: "EMPLOYEE",
+      }),
+    });
+    const body = (await response.json()) as {
+      success: boolean;
+      message: string;
+      data: {
+        user: {
+          id: string;
+          tenantId: string;
+          name: string;
+          email: string;
+          role: string;
+          status: string;
+          emailVerified: boolean;
+          createdAt: string;
+        };
+      };
+    };
+
+    assert.equal(response.status, 201);
+    assert.equal(body.success, true);
+    assert.equal(body.data.user.name, "Alex Employee");
+    assert.equal(body.data.user.email, "alex@acme.com");
+    assert.equal(body.data.user.role, "EMPLOYEE");
+    assert.equal(body.data.user.status, "pending_email_verification");
+    assert.equal(body.data.user.emailVerified, false);
+    assertNoSensitiveFields(body);
+
+    const user = await UserModel.findById(body.data.user.id).select(
+      "+emailVerificationTokenHash +emailVerificationExpiresAt",
+    );
+
+    assert.ok(user);
+    assert.equal(user?.status, "pending_email_verification");
+    assert.equal(user?.emailVerified, false);
+    assert.ok(user?.emailVerificationTokenHash);
+    assert.ok(user?.emailVerificationExpiresAt instanceof Date);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("rejects invalid invite payloads", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    await createActiveTenantAdmin();
+
+    const loginResponse = await postLogin(address.port);
+    assert.equal(loginResponse.status, 200);
+
+    const loginBody = (await loginResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/users`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+      },
+      body: JSON.stringify({
+        name: "A",
+        email: "invalid-email",
+      }),
+    });
+    const body = (await response.json()) as {
+      success: false;
+      message: string;
+      error: string;
+      details: Array<{ field: string; message: string }> | null;
+    };
+
+    assert.equal(response.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.details));
+    assert.ok(body.details?.some((detail) => detail.field === "name"));
+    assert.ok(body.details?.some((detail) => detail.field === "email"));
+    assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("rejects invalid email verification tokens", async () => {
   const server = await createServer();
 
