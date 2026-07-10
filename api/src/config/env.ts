@@ -32,6 +32,9 @@ const envSchema = z.object({
     .default(10000),
 
   REDIS_URL: z.string().default("redis://redis:6379"),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1).default(15 * 60 * 1000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).default(100),
+  RATE_LIMIT_MESSAGE: z.string().default("Too many requests, please try again later."),
 
   APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
 
