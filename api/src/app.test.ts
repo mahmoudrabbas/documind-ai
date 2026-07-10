@@ -12,7 +12,12 @@ import {
   getMongoConnectionState,
   isMongoConnected,
 } from "./db/connection.js";
-import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
+import {
+  connectRedis,
+  disconnectRedis,
+  getRedisClient,
+  isRedisConnected,
+} from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
 import AuditLogModel from "./db/models/auditLog.model.js";
@@ -40,11 +45,13 @@ function closeServer(server: ReturnType<typeof app.listen>) {
 
 const TEST_PASSWORD = "StrongPass123!";
 
-async function createActiveTenantAdmin(options: {
-  slug?: string;
-  companyName?: string;
-  email?: string;
-} = {}) {
+async function createActiveTenantAdmin(
+  options: {
+    slug?: string;
+    companyName?: string;
+    email?: string;
+  } = {},
+) {
   const tenant = await TenantModel.create({
     name: options.companyName ?? "Acme Consulting",
     slug: options.slug ?? "acme-consulting",
@@ -76,7 +83,11 @@ function getRefreshCookie(response: Response) {
   return { cookie, setCookie, rawToken: cookie.slice(cookie.indexOf("=") + 1) };
 }
 
-async function postLogin(port: number, companySlug = "acme-consulting", email = "sarah@acme.com") {
+async function postLogin(
+  port: number,
+  companySlug = "acme-consulting",
+  email = "sarah@acme.com",
+) {
   return fetch(`http://127.0.0.1:${port}/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -95,7 +106,9 @@ type RegisterValidationErrorBody = {
   details: Array<{ field: string; message: string }> | null;
 };
 
-function assertNoDuplicateDetailFields(details: Array<{ field: string; message: string }> | null) {
+function assertNoDuplicateDetailFields(
+  details: Array<{ field: string; message: string }> | null,
+) {
   assert.ok(Array.isArray(details));
 
   const fields = details.map((detail) => detail.field);
@@ -126,7 +139,11 @@ function assertNoSensitiveFields(value: unknown) {
     }
 
     for (const [key, nestedValue] of Object.entries(candidate)) {
-      assert.equal(sensitiveFields.has(key), false, `response exposed sensitive field ${key}`);
+      assert.equal(
+        sensitiveFields.has(key),
+        false,
+        `response exposed sensitive field ${key}`,
+      );
       inspect(nestedValue);
     }
   }
@@ -162,14 +179,22 @@ test("builds a verification email with html and plain text content", () => {
 
   assert.equal(template.subject, "Verify your DocuMind AI account");
   assert.match(template.text, /Hi Sarah Ahmed,/);
-  assert.match(template.text, /Please verify your DocuMind AI account for Acme Consulting\./);
+  assert.match(
+    template.text,
+    /Please verify your DocuMind AI account for Acme Consulting\./,
+  );
   assert.ok(template.text.includes(verificationUrl));
   assert.ok(template.html.includes(`<a href="${verificationUrl}"`));
   assert.ok(template.html.includes(">Verify Email</a>"));
   assert.match(template.html, /Sarah Ahmed/);
   assert.match(template.html, /Acme Consulting/);
 
-  for (const secret of ["passwordHash", "SMTP_PASS", "refreshTokens", "internalSecret"]) {
+  for (const secret of [
+    "passwordHash",
+    "SMTP_PASS",
+    "refreshTokens",
+    "internalSecret",
+  ]) {
     assert.equal(template.html.includes(secret), false);
   }
 });
@@ -194,7 +219,10 @@ test("verifyPassword accepts the correct password and rejects the wrong one", as
 });
 
 test("verifyPassword safely rejects malformed hashes", async () => {
-  assert.equal(await verifyPassword("not-an-argon2-hash", "StrongPass123!"), false);
+  assert.equal(
+    await verifyPassword("not-an-argon2-hash", "StrongPass123!"),
+    false,
+  );
 });
 
 test("registers a tenant and first company admin", async () => {
@@ -202,24 +230,34 @@ test("registers a tenant and first company admin", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          companySlug: "acme-consulting",
+          adminName: "Sarah Ahmed",
+          email: "sarah@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        companySlug: "acme-consulting",
-        adminName: "Sarah Ahmed",
-        email: "sarah@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
+    );
     const body = (await response.json()) as {
       success: boolean;
       message: string;
       data: {
-        tenant: { id: string; name: string; slug: string; status: string; plan: string; createdAt: string };
+        tenant: {
+          id: string;
+          name: string;
+          slug: string;
+          status: string;
+          plan: string;
+          createdAt: string;
+        };
         user: {
           id: string;
           tenantId: string;
@@ -237,7 +275,7 @@ test("registers a tenant and first company admin", async () => {
     assert.equal(body.success, true);
     assert.equal(
       body.message,
-      "Tenant and company admin created successfully. Please verify your email to activate the account."
+      "Tenant and company admin created successfully. Please verify your email to activate the account.",
     );
     assert.equal(body.data.tenant.name, "Acme Consulting");
     assert.equal(body.data.tenant.slug, "acme-consulting");
@@ -252,7 +290,9 @@ test("registers a tenant and first company admin", async () => {
     assert.equal(typeof body.data.user.tenantId, "string");
     assertNoSensitiveFields(body);
 
-    const tenant = await TenantModel.findById(body.data.tenant.id).lean().exec();
+    const tenant = await TenantModel.findById(body.data.tenant.id)
+      .lean()
+      .exec();
     const user = await UserModel.findById(body.data.user.id)
       .select("+passwordHash")
       .lean()
@@ -263,7 +303,10 @@ test("registers a tenant and first company admin", async () => {
     assert.equal(user?.emailVerified, false);
     assert.equal(user?.emailVerifiedAt, null);
     assert.match(user?.passwordHash ?? "", /^\$argon2id\$/);
-    assert.equal(await verifyPassword(user?.passwordHash ?? "", "StrongPass123!"), true);
+    assert.equal(
+      await verifyPassword(user?.passwordHash ?? "", "StrongPass123!"),
+      true,
+    );
     assert.equal("passwordHash" in body.data.user, false);
   } finally {
     await closeServer(server);
@@ -275,56 +318,70 @@ test("verifies email with a valid token and activates user and tenant", async ()
 
   try {
     const address = server.address() as AddressInfo;
-    const registerResponse = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const registerResponse = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          companySlug: "acme-consulting",
+          adminName: "Sarah Ahmed",
+          email: "sarah@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        companySlug: "acme-consulting",
-        adminName: "Sarah Ahmed",
-        email: "sarah@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
+    );
 
     assert.equal(registerResponse.status, 201);
 
-  const registerBody = (await registerResponse.json()) as {
-    success: true;
-    data: {
-      tenant: { id: string };
-      user: { id: string; tenantId: string; email: string };
+    const registerBody = (await registerResponse.json()) as {
+      success: true;
+      data: {
+        tenant: { id: string };
+        user: { id: string; tenantId: string; email: string };
+      };
     };
-  };
 
-  const user = await UserModel.findById(registerBody.data.user.id).exec();
+    const user = await UserModel.findById(registerBody.data.user.id).exec();
 
-  assert.ok(user);
-  assert.equal(user.tenantId.toString(), registerBody.data.tenant.id);
-  assert.equal(user.email, "sarah@acme.com");
+    assert.ok(user);
+    assert.equal(user.tenantId.toString(), registerBody.data.tenant.id);
+    assert.equal(user.email, "sarah@acme.com");
 
-  const token = await createEmailVerificationTokenForUser(user);
-      const verifyResponse = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
+    const token = await createEmailVerificationTokenForUser(user);
+    const verifyResponse = await fetch(
+      `http://127.0.0.1:${address.port}/auth/verify-email`,
+      {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
         body: JSON.stringify({ token }),
-      });
-      const body = (await verifyResponse.json()) as {
-        success: boolean;
-        message: string;
-        data: {
-          user: { id: string; tenantId: string; status: string; emailVerified: boolean };
-          tenant: { id: string; status: string };
+      },
+    );
+    const body = (await verifyResponse.json()) as {
+      success: boolean;
+      message: string;
+      data: {
+        user: {
+          id: string;
+          tenantId: string;
+          status: string;
+          emailVerified: boolean;
         };
+        tenant: { id: string; status: string };
       };
+    };
 
     assert.equal(verifyResponse.status, 200);
     assert.equal(body.success, true);
-    assert.equal(body.message, "Email verified successfully. You can now sign in.");
+    assert.equal(
+      body.message,
+      "Email verified successfully. You can now sign in.",
+    );
     assert.equal(body.data.user.status, "active");
     assert.equal(body.data.user.emailVerified, true);
     assert.equal(body.data.tenant.status, "active");
@@ -334,7 +391,9 @@ test("verifies email with a valid token and activates user and tenant", async ()
       .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
       .lean()
       .exec();
-    const activatedTenant = await TenantModel.findById(user.tenantId).lean().exec();
+    const activatedTenant = await TenantModel.findById(user.tenantId)
+      .lean()
+      .exec();
 
     assert.equal(verifiedUser?.status, "active");
     assert.equal(verifiedUser?.emailVerified, true);
@@ -440,17 +499,20 @@ test("updates a tenant user role and status and writes an audit log", async () =
       data: { tokens: { accessToken: string } };
     };
 
-    const response = await fetch(`http://127.0.0.1:${address.port}/users/${employee.id}`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/users/${employee.id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+        body: JSON.stringify({
+          role: "COMPANY_ADMIN",
+          status: "active",
+        }),
       },
-      body: JSON.stringify({
-        role: "COMPANY_ADMIN",
-        status: "active",
-      }),
-    });
+    );
 
     const body = (await response.json()) as {
       success: boolean;
@@ -510,16 +572,19 @@ test("rejects invalid user update payloads", async () => {
       data: { tokens: { accessToken: string } };
     };
 
-    const response = await fetch(`http://127.0.0.1:${address.port}/users/000000000000000000000000`, {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/users/000000000000000000000000`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+        body: JSON.stringify({
+          role: "EXECUTIVE",
+        }),
       },
-      body: JSON.stringify({
-        role: "EXECUTIVE",
-      }),
-    });
+    );
 
     const body = (await response.json()) as {
       success: false;
@@ -624,7 +689,8 @@ test("returns a paginated list of tenant users", async () => {
       `http://127.0.0.1:${address.port}/users?page=1&pageSize=2`,
       {
         headers: {
-        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
       },
     );
 
@@ -656,7 +722,10 @@ test("returns a paginated list of tenant users", async () => {
     assert.equal(body.data.pagination.totalRecords, 3);
     assert.equal(body.data.pagination.totalPages, 2);
     assert.equal(body.data.users.length, 2);
-    assert.ok(body.data.users.some((user) => user.email === "alice@acme.com") || body.data.users.some((user) => user.email === "bob@acme.com"));
+    assert.ok(
+      body.data.users.some((user) => user.email === "alice@acme.com") ||
+        body.data.users.some((user) => user.email === "bob@acme.com"),
+    );
     assertNoSensitiveFields(body);
   } finally {
     await closeServer(server);
@@ -683,7 +752,7 @@ test("rejects invalid pagination query parameters", async () => {
       {
         headers: {
           Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
-        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
       },
     );
 
@@ -711,13 +780,16 @@ test("rejects invalid email verification tokens", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/verify-email`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ token: "not-a-jwt" }),
       },
-      body: JSON.stringify({ token: "not-a-jwt" }),
-    });
+    );
     const body = (await response.json()) as {
       success: false;
       message: string;
@@ -757,15 +829,24 @@ test("rejects expired email verification tokens", async () => {
     const user = await UserModel.findOne({ email: "sarah@acme.com" }).exec();
     assert.ok(user);
 
-    const token = await createEmailVerificationTokenForUser(user, { expiresIn: "0s" });
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ token }),
+    const token = await createEmailVerificationTokenForUser(user, {
+      expiresIn: "0s",
     });
-    const body = (await response.json()) as { success: false; message: string; error: string };
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/verify-email`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      },
+    );
+    const body = (await response.json()) as {
+      success: false;
+      message: string;
+      error: string;
+    };
 
     assert.equal(response.status, 400);
     assert.equal(body.success, false);
@@ -798,15 +879,24 @@ test("rejects email verification tokens with the wrong purpose", async () => {
     const user = await UserModel.findOne({ email: "sarah@acme.com" }).exec();
     assert.ok(user);
 
-    const token = await createEmailVerificationTokenForUser(user, { purpose: "password_reset" });
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ token }),
+    const token = await createEmailVerificationTokenForUser(user, {
+      purpose: "password_reset",
     });
-    const body = (await response.json()) as { success: false; message: string; error: string };
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/verify-email`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      },
+    );
+    const body = (await response.json()) as {
+      success: false;
+      message: string;
+      error: string;
+    };
 
     assert.equal(response.status, 400);
     assert.equal(body.success, false);
@@ -836,20 +926,26 @@ test("resend verification email returns a generic response", async () => {
       }),
     });
 
-    const knownResponse = await fetch(`http://127.0.0.1:${address.port}/auth/resend-verification-email`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const knownResponse = await fetch(
+      `http://127.0.0.1:${address.port}/auth/resend-verification-email`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ email: "sarah@acme.com" }),
       },
-      body: JSON.stringify({ email: "sarah@acme.com" }),
-    });
-    const unknownResponse = await fetch(`http://127.0.0.1:${address.port}/auth/resend-verification-email`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    );
+    const unknownResponse = await fetch(
+      `http://127.0.0.1:${address.port}/auth/resend-verification-email`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ email: "missing@example.com" }),
       },
-      body: JSON.stringify({ email: "missing@example.com" }),
-    });
+    );
     const knownBody = await knownResponse.json();
     const unknownBody = await unknownResponse.json();
 
@@ -857,7 +953,8 @@ test("resend verification email returns a generic response", async () => {
     assert.equal(unknownResponse.status, 200);
     assert.deepEqual(knownBody, {
       success: true,
-      message: "If the email exists and is not verified, a verification email has been sent",
+      message:
+        "If the email exists and is not verified, a verification email has been sent",
     });
     assert.deepEqual(unknownBody, knownBody);
     assertNoSensitiveFields(knownBody);
@@ -872,18 +969,21 @@ test("rejects missing companyName", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companySlug: "acme-consulting",
+          adminName: "Sarah Ahmed",
+          email: "sarah@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companySlug: "acme-consulting",
-        adminName: "Sarah Ahmed",
-        email: "sarah@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
+    );
     const body = (await response.json()) as RegisterValidationErrorBody;
 
     assert.equal(response.status, 400);
@@ -904,18 +1004,21 @@ test("rejects invalid email", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          adminName: "Sarah Ahmed",
+          email: "invalid-email",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        adminName: "Sarah Ahmed",
-        email: "invalid-email",
-        password: "StrongPass123!",
-      }),
-    });
+    );
     const body = (await response.json()) as RegisterValidationErrorBody;
 
     assert.equal(response.status, 400);
@@ -934,18 +1037,21 @@ test("rejects weak password", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          adminName: "Sarah Ahmed",
+          email: "sarah@acme.com",
+          password: "123",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        adminName: "Sarah Ahmed",
-        email: "sarah@acme.com",
-        password: "123",
-      }),
-    });
+    );
     const body = (await response.json()) as RegisterValidationErrorBody;
 
     assert.equal(response.status, 400);
@@ -955,7 +1061,8 @@ test("rejects weak password", async () => {
     assert.deepEqual(body.details, [
       {
         field: "password",
-        message: "password must be at least 8 characters and contain at least one letter and one number",
+        message:
+          "password must be at least 8 characters and contain at least one letter and one number",
       },
     ]);
     assertNoDuplicateDetailFields(body.details);
@@ -969,18 +1076,21 @@ test("rejects invalid email and weak password with one detail per field", async 
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          adminName: "Sarah Ahmed",
+          email: "invalid-email",
+          password: "123",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        adminName: "Sarah Ahmed",
-        email: "invalid-email",
-        password: "123",
-      }),
-    });
+    );
     const body = (await response.json()) as RegisterValidationErrorBody;
 
     assert.equal(response.status, 400);
@@ -994,7 +1104,8 @@ test("rejects invalid email and weak password with one detail per field", async 
       },
       {
         field: "password",
-        message: "password must be at least 8 characters and contain at least one letter and one number",
+        message:
+          "password must be at least 8 characters and contain at least one letter and one number",
       },
     ]);
     assertNoDuplicateDetailFields(body.details);
@@ -1009,33 +1120,39 @@ test("allows the same email across different tenants", async () => {
   try {
     const address = server.address() as AddressInfo;
 
-    const first = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const first = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          companySlug: "acme-consulting-same-email-test",
+          adminName: "Sarah Ahmed",
+          email: "sarah@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        companySlug: "acme-consulting-same-email-test",
-        adminName: "Sarah Ahmed",
-        email: "sarah@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
+    );
 
-    const second = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const second = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Solutions",
+          companySlug: "acme-solutions-same-email-test",
+          adminName: "Jane Smith",
+          email: "sarah@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Solutions",
-        companySlug: "acme-solutions-same-email-test",
-        adminName: "Jane Smith",
-        email: "sarah@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
+    );
 
     assert.equal(first.status, 201);
     assert.equal(second.status, 201);
@@ -1077,7 +1194,10 @@ test("allows the same email across different tenants", async () => {
     assert.equal(secondBody.data.user.email, "sarah@acme.com");
 
     assert.notEqual(firstBody.data.tenant.id, secondBody.data.tenant.id);
-    assert.notEqual(firstBody.data.user.tenantId, secondBody.data.user.tenantId);
+    assert.notEqual(
+      firstBody.data.user.tenantId,
+      secondBody.data.user.tenantId,
+    );
 
     assert.equal(firstBody.data.user.tenantId, firstBody.data.tenant.id);
     assert.equal(secondBody.data.user.tenantId, secondBody.data.tenant.id);
@@ -1091,18 +1211,21 @@ test("register error response never returns empty error object", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companySlug: "acme-consulting",
+          adminName: "Sarah Ahmed",
+          email: "invalid-email",
+          password: "123",
+        }),
       },
-      body: JSON.stringify({
-        companySlug: "acme-consulting",
-        adminName: "Sarah Ahmed",
-        email: "invalid-email",
-        password: "123",
-      }),
-    });
+    );
     const body = await response.json();
 
     assert.equal(response.status, 400);
@@ -1120,32 +1243,38 @@ test("rejects duplicate tenant slugs", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const first = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const first = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          companySlug: "acme-consulting",
+          adminName: "Sarah Ahmed",
+          email: "sarah@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        companySlug: "acme-consulting",
-        adminName: "Sarah Ahmed",
-        email: "sarah@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
-    const second = await fetch(`http://127.0.0.1:${address.port}/auth/register`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    );
+    const second = await fetch(
+      `http://127.0.0.1:${address.port}/auth/register`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          companyName: "Acme Consulting",
+          companySlug: "acme-consulting",
+          adminName: "Jane Smith",
+          email: "jane@acme.com",
+          password: "StrongPass123!",
+        }),
       },
-      body: JSON.stringify({
-        companyName: "Acme Consulting",
-        companySlug: "acme-consulting",
-        adminName: "Jane Smith",
-        email: "jane@acme.com",
-        password: "StrongPass123!",
-      }),
-    });
+    );
 
     assert.equal(first.status, 201);
     assert.equal(second.status, 409);
@@ -1204,7 +1333,9 @@ test("returns a standardized 404 envelope for unknown routes", async () => {
 
   try {
     const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}/does-not-exist`);
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/does-not-exist`,
+    );
     const body = (await response.json()) as {
       success: boolean;
       error: {
@@ -1324,7 +1455,9 @@ test("login stores a hashed refresh token record without exposing the token", as
     const records = await RefreshTokenModel.find({
       tenantId: tenant.id,
       userId: user.id,
-    }).lean().exec();
+    })
+      .lean()
+      .exec();
 
     assert.equal(records.length, 1);
     assert.ok(records[0]?.tokenHash);
@@ -1347,10 +1480,13 @@ test("refresh rotates the persisted refresh token within the same family", async
     const oldRecord = await RefreshTokenModel.findOne().lean().exec();
     assert.ok(oldRecord);
 
-    const refreshResponse = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
-      method: "POST",
-      headers: { cookie: originalCookie.cookie },
-    });
+    const refreshResponse = await fetch(
+      `http://127.0.0.1:${port}/auth/refresh`,
+      {
+        method: "POST",
+        headers: { cookie: originalCookie.cookie },
+      },
+    );
     const body = (await refreshResponse.json()) as {
       success: boolean;
       data: { tokens: { accessToken: string } };
@@ -1368,7 +1504,9 @@ test("refresh rotates the persisted refresh token within the same family", async
     const activeRecord = await RefreshTokenModel.findOne({
       familyId: oldRecord.familyId,
       revokedAt: null,
-    }).lean().exec();
+    })
+      .lean()
+      .exec();
 
     assert.ok(persistedOldRecord?.revokedAt instanceof Date);
     assert.ok(persistedOldRecord?.replacedByTokenId);
@@ -1378,7 +1516,7 @@ test("refresh rotates the persisted refresh token within the same family", async
     assert.notEqual(activeRecord.jtiHash, oldRecord.jtiHash);
     assert.equal(
       persistedOldRecord.replacedByTokenId?.toString(),
-      activeRecord._id.toString()
+      activeRecord._id.toString(),
     );
   } finally {
     await closeServer(server);
@@ -1416,12 +1554,16 @@ test("reusing a rotated refresh token revokes its whole family", async () => {
 
     const familyRecords = await RefreshTokenModel.find({
       familyId: originalRecord.familyId,
-    }).lean().exec();
+    })
+      .lean()
+      .exec();
 
     assert.equal(familyRecords.length, 2);
-    assert.ok(familyRecords.every((record) => record.revokedAt instanceof Date));
     assert.ok(
-      familyRecords.some((record) => record.reuseDetectedAt instanceof Date)
+      familyRecords.every((record) => record.revokedAt instanceof Date),
+    );
+    assert.ok(
+      familyRecords.some((record) => record.reuseDetectedAt instanceof Date),
     );
   } finally {
     await closeServer(server);
@@ -1564,18 +1706,22 @@ test("refresh token records isolate the same email across tenants", async () => 
       RefreshTokenModel.find({
         tenantId: tenantA.id,
         userId: userA.id,
-      }).lean().exec(),
+      })
+        .lean()
+        .exec(),
       RefreshTokenModel.find({
         tenantId: tenantB.id,
         userId: userB.id,
-      }).lean().exec(),
+      })
+        .lean()
+        .exec(),
     ]);
 
     assert.equal(recordsA.length, 1);
     assert.equal(recordsB.length, 1);
     assert.notEqual(
       recordsA[0]?.tenantId.toString(),
-      recordsB[0]?.tenantId.toString()
+      recordsB[0]?.tenantId.toString(),
     );
     assert.notEqual(recordsA[0]?.tokenHash, recordsB[0]?.tokenHash);
   } finally {
@@ -1819,7 +1965,7 @@ test("GET /auth/me returns 401 for an invalid or malformed access token", async 
   try {
     const port = (server.address() as AddressInfo).port;
     const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: "Bearer not-a-valid-token" },
     });
     const body = await response.json();
 
@@ -1840,11 +1986,11 @@ test("GET /auth/me returns 401 for an expired access token", async () => {
     const expiredToken = signJwt(
       { sub: user.id, tenantId: tenant.id, type: "access" },
       config.JWT_SECRET,
-      "0s"
+      "0s",
     );
 
     const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${expiredToken}` },
     });
     const body = await response.json();
 
