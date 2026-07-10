@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { AppError } from "../../common/errors/AppError.js";
-import { EMAIL_ALREADY_EXISTS, NOT_FOUND, REGISTRATION_FAILED } from "../../common/errors/errorCodes.js";
+import {
+  EMAIL_ALREADY_EXISTS,
+  NOT_FOUND,
+  REGISTRATION_FAILED,
+  USER_UPDATE_FAILED,
+} from "../../common/errors/errorCodes.js";
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
 import { sendVerificationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
@@ -11,9 +16,19 @@ import {
   findUserDocumentByTenantAndEmail,
   countUsersByTenant,
   findUsersByTenant,
+  updateUserByTenantAndId,
 } from "./users.repository.js";
-import { validateInviteUserInput, validateListUsersInput } from "./users.validator.js";
-import type { InviteUserResult, ListUsersResult } from "./users.types.js";
+import { createAuditLog } from "../audit/audit.repository.js";
+import {
+  validateInviteUserInput,
+  validateListUsersInput,
+  validateUpdateUserInput,
+} from "./users.validator.js";
+import type {
+  InviteUserResult,
+  ListUsersResult,
+  UpdateUserResult,
+} from "./users.types.js";
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
 
@@ -121,6 +136,70 @@ export async function inviteUser(
 
     console.error("[users-invite]", error);
     throw new AppError(500, REGISTRATION_FAILED, "Failed to invite user");
+  }
+}
+
+export async function updateUser(
+  input: unknown,
+  tenantId: string,
+  targetUserId: string,
+  updater: { userId: string; email?: string; role?: string },
+): Promise<UpdateUserResult> {
+  const payload = validateUpdateUserInput(input);
+
+  const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
+  if (!existingUser) {
+    throw new AppError(404, NOT_FOUND, "User not found");
+  }
+
+  const changes: Record<string, unknown> = {};
+  const update: Partial<Pick<UserDocument, "role" | "status">> = {};
+
+  if (payload.role !== undefined) {
+    update.role = payload.role;
+    changes.role = {
+      before: existingUser.role,
+      after: payload.role,
+    };
+  }
+
+  if (payload.status !== undefined) {
+    update.status = payload.status;
+    changes.status = {
+      before: existingUser.status,
+      after: payload.status,
+    };
+  }
+
+  try {
+    const updatedUser = await updateUserByTenantAndId(tenantId, targetUserId, update);
+
+    if (!updatedUser) {
+      throw new AppError(404, NOT_FOUND, "User not found");
+    }
+
+    await createAuditLog({
+      tenantId,
+      userId: updatedUser._id.toString(),
+      resourceType: "User",
+      resourceId: updatedUser._id.toString(),
+      action: "USER_UPDATED",
+      actorId: updater.userId,
+      actorEmail: updater.email ?? "",
+      actorRole: updater.role ?? "UNKNOWN",
+      changes,
+    });
+
+    return {
+      user: serializeUser(updatedUser),
+    };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    console.error("[users-update]", error);
+    throw new AppError(500, USER_UPDATE_FAILED, "Failed to update user");
   }
 }
 

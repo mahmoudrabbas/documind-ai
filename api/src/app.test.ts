@@ -15,6 +15,7 @@ import {
 import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
+import AuditLogModel from "./db/models/auditLog.model.js";
 import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { buildEmailVerificationTemplate } from "./modules/auth/auth.mailer.js";
@@ -140,6 +141,7 @@ before(async () => {
 
 beforeEach(async () => {
   await RefreshTokenModel.deleteMany({});
+  await AuditLogModel.deleteMany({});
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
 });
@@ -412,6 +414,129 @@ test("invites a user with a valid company admin token", async () => {
   }
 });
 
+test("updates a tenant user role and status and writes an audit log", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+
+    const employee = await UserModel.create({
+      tenantId: tenant.id,
+      name: "Dev Employee",
+      email: "dev@acme.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "EMPLOYEE",
+      status: "pending_email_verification",
+      emailVerified: false,
+      emailVerifiedAt: null,
+    });
+
+    const loginResponse = await postLogin(address.port);
+    assert.equal(loginResponse.status, 200);
+
+    const loginBody = (await loginResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/users/${employee.id}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+      },
+      body: JSON.stringify({
+        role: "COMPANY_ADMIN",
+        status: "active",
+      }),
+    });
+
+    const body = (await response.json()) as {
+      success: boolean;
+      data: {
+        user: {
+          id: string;
+          tenantId: string;
+          role: string;
+          status: string;
+          email: string;
+          emailVerified: boolean;
+          createdAt: string;
+        };
+      };
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.data.user.id, employee.id);
+    assert.equal(body.data.user.role, "COMPANY_ADMIN");
+    assert.equal(body.data.user.status, "active");
+    assert.equal(body.data.user.email, "dev@acme.com");
+    assertNoSensitiveFields(body);
+
+    const auditRecord = await AuditLogModel.findOne({
+      tenantId: employee.tenantId,
+      resourceType: "User",
+      resourceId: employee.id,
+    })
+      .lean()
+      .exec();
+
+    assert.ok(auditRecord, "expected audit log record to be created");
+    assert.equal(auditRecord?.action, "USER_UPDATED");
+    assert.equal(auditRecord?.actorEmail, "sarah@acme.com");
+    assert.deepEqual(auditRecord?.changes, {
+      role: { before: "EMPLOYEE", after: "COMPANY_ADMIN" },
+      status: { before: "pending_email_verification", after: "active" },
+    });
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("rejects invalid user update payloads", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    await createActiveTenantAdmin();
+
+    const loginResponse = await postLogin(address.port);
+    assert.equal(loginResponse.status, 200);
+
+    const loginBody = (await loginResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/users/000000000000000000000000`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+      },
+      body: JSON.stringify({
+        role: "EXECUTIVE",
+      }),
+    });
+
+    const body = (await response.json()) as {
+      success: false;
+      message: string;
+      error: string;
+      details: Array<{ field: string; message: string }> | null;
+    };
+
+    assert.equal(response.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.details));
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("rejects invalid invite payloads", async () => {
   const server = await createServer();
 
@@ -499,8 +624,7 @@ test("returns a paginated list of tenant users", async () => {
       `http://127.0.0.1:${address.port}/users?page=1&pageSize=2`,
       {
         headers: {
-          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
-        },
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
       },
     );
 
@@ -559,7 +683,7 @@ test("rejects invalid pagination query parameters", async () => {
       {
         headers: {
           Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
-        },
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
       },
     );
 
@@ -1695,7 +1819,7 @@ test("GET /auth/me returns 401 for an invalid or malformed access token", async 
   try {
     const port = (server.address() as AddressInfo).port;
     const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
-      headers: { Authorization: `Bearer not-a-valid-jwt` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     const body = await response.json();
 
@@ -1720,7 +1844,7 @@ test("GET /auth/me returns 401 for an expired access token", async () => {
     );
 
     const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
-      headers: { Authorization: `Bearer ${expiredToken}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     const body = await response.json();
 

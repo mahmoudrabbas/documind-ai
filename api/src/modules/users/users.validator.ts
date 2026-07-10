@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { InviteUserInput, ListUsersInput } from "./users.types.js";
+import type {
+  InviteUserInput,
+  ListUsersInput,
+  UpdateUserInput,
+} from "./users.types.js";
 
 const inviteUserSchema = z
   .object({
@@ -18,6 +22,18 @@ const inviteUserSchema = z
   })
   .strict();
 
+const updateUserSchema = z
+  .object({
+    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
+    status: z
+      .enum(["active", "pending", "pending_email_verification", "disabled"])
+      .optional(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one of role or status must be provided",
+  });
+
 const listUsersSchema = z
   .object({
     page: z
@@ -31,6 +47,16 @@ const listUsersSchema = z
 
 export function validateInviteUserInput(input: unknown): InviteUserInput {
   const result = inviteUserSchema.safeParse(input);
+
+  if (!result.success) {
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+  }
+
+  return result.data;
+}
+
+export function validateUpdateUserInput(input: unknown): UpdateUserInput {
+  const result = updateUserSchema.safeParse(input);
 
   if (!result.success) {
     throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
