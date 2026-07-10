@@ -18,3 +18,16 @@ export async function findTenantsByFilter(
     .lean<TenantDocument[]>()
     .exec();
 }
+
+export async function updateTenantById(
+  id: string,
+  updateData: Record<string, unknown>,
+): Promise<TenantDocument | null> {
+  return TenantModel.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true, runValidators: true },
+  )
+    .lean<TenantDocument>()
+    .exec();
+}

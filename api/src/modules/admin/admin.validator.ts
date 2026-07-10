@@ -68,3 +68,49 @@ export function validateListTenantsInput(input: unknown): ListTenantsInput {
 
   return result.data;
 }
+
+
+const updateTenantBodySchema = z
+  .object({
+    status: z.enum(["active", "trial", "suspended"]).optional(),
+    plan: z.enum(["free", "trial", "pro"]).optional(),
+  })
+  .strict()
+  .refine((data) => data.status !== undefined || data.plan !== undefined, {
+    message: "At least one field (status or plan) must be provided for update",
+    path: [],
+  });
+
+const updateTenantParamsSchema = z.object({
+  id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
+});
+
+export function validateUpdateTenantInput(
+  params: unknown,
+  body: unknown,
+): UpdateTenantInput {
+  const paramsResult = updateTenantParamsSchema.safeParse(params);
+  if (!paramsResult.success) {
+    throw new AppError(
+      400,
+      VALIDATION_ERROR,
+      "Validation failed",
+      groupValidationIssues(paramsResult.error.issues),
+    );
+  }
+
+  const bodyResult = updateTenantBodySchema.safeParse(body);
+  if (!bodyResult.success) {
+    throw new AppError(
+      400,
+      VALIDATION_ERROR,
+      "Validation failed",
+      groupValidationIssues(bodyResult.error.issues),
+    );
+  }
+
+  return {
+    id: paramsResult.data.id,
+    ...bodyResult.data,
+  };
+}
