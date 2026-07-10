@@ -13,12 +13,18 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/healthz"]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5000/readyz').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))\""
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
     volumes:
       - ./api:/app
       - /app/node_modules
@@ -35,6 +41,7 @@ services:
     volumes:
       - ./app:/app
       - /app/node_modules
+      - /app/.next
 
   worker:
     build:
