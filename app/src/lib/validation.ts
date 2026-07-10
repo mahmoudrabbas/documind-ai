@@ -80,6 +80,55 @@ export function validateConfirmPassword(password: string, confirm: string): stri
  * Automatically format a company name into a clean URL-friendly slug.
  * Replaces non-alphanumeric chars with hyphens, collapses hyphens, and trims.
  */
+const ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+];
+
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+export function validateDocumentTitle(title: string): string | null {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    return "documents.metadataTitleRequired";
+  }
+  if (trimmed.length < 2 || trimmed.length > 200) {
+    return "documents.metadataTitleRequired";
+  }
+  return null;
+}
+
+export function validateDocumentDescription(description: string): string | null {
+  if (description && description.trim().length > 1000) {
+    return "documents.metadataDescription";
+  }
+  return null;
+}
+
+export function validateFileType(file: File): string | null {
+  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    return "documents.fileTypeNotSupported";
+  }
+  return null;
+}
+
+export function validateFileSize(file: File): string | null {
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return "documents.fileTooLarge";
+  }
+  return null;
+}
+
+export function getFileSizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function generateCompanySlug(name: string): string {
   return name
     .toLowerCase()

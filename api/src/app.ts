@@ -1,4 +1,5 @@
 import express from "express";
+
 import cors, { type CorsOptions } from "cors";
 import { AppError } from "./common/errors/AppError.js";
 import { BAD_REQUEST } from "./common/errors/errorCodes.js";
@@ -10,10 +11,13 @@ import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import usersRoutes from "./modules/users/users.routes.js";
+import adminRoutes from "./modules/admin/admin.routes.js";
+import documentsRoutes from "./modules/documents/documents.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
 const app = express();
+app.set("trust proxy", 1);
 const redisClient = getRedisClient();
 
 app.locals.redisClient = redisClient;
@@ -82,6 +86,8 @@ app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/users", usersRoutes);
+app.use("/platform", adminRoutes);
+app.use("/documents", documentsRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });
