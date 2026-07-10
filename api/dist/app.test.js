@@ -1441,8 +1441,10 @@ test("GET /auth/me returns 401 for an expired access token", async () => {
 // GET /platform/tenants - List all tenants (SUPER_ADMIN only)
 // ────────────────────────────────────────────────────────────────────────────
 async function createSuperAdminUser() {
-    // Create a super admin without a tenant (platform-level admin)
+    // Create a super admin with a platform-level tenantId (required by User schema)
+    // SUPER_ADMIN users operate at platform level and have access to all tenants
     const user = await UserModel.create({
+        tenantId: "platform",
         name: "Platform Admin",
         email: "admin@platform.com",
         passwordHash: await hashPassword(TEST_PASSWORD),
