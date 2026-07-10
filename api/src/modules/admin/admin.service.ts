@@ -33,7 +33,7 @@ export async function listTenants(
   const { page, pageSize, status, plan, search } = input;
 
   // Build filter object
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { slug: { $ne: "__documind_platform__" } };
 
   if (status) {
     filter.status = status;

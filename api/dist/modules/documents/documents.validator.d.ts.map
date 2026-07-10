@@ -1,1 +1,1 @@
-{"version":3,"file":"documents.validator.d.ts","sourceRoot":"","sources":["../../../src/modules/documents/documents.validator.ts"],"names":[],"mappings":""}
+{"version":3,"file":"documents.validator.d.ts","sourceRoot":"","sources":["../../../src/modules/documents/documents.validator.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EACV,mBAAmB,EACnB,kBAAkB,EAClB,2BAA2B,EAC5B,MAAM,sBAAsB,CAAC;AAmF9B,wBAAgB,2BAA2B,CAAC,KAAK,EAAE,OAAO,GAAG,mBAAmB,CAa/E;AAED,wBAAgB,0BAA0B,CAAC,KAAK,EAAE,OAAO,GAAG,kBAAkB,CAa7E;AAED,wBAAgB,mCAAmC,CAAC,KAAK,EAAE,OAAO,GAAG,2BAA2B,CAa/F"}

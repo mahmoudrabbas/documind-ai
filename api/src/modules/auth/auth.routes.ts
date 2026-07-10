@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   loginController,
+  superAdminLoginController,
   logoutController,
   meController,
   refreshController,
@@ -18,6 +19,7 @@ router.use(authRateLimiter());
 
 router.post("/register", registerController);
 router.post("/login", loginController);
+router.post("/super-admin/login", superAdminLoginController);
 router.post("/refresh", refreshController);
 router.post("/logout", logoutController);
 router.post("/verify-email", verifyEmailController);

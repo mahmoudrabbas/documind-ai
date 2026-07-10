@@ -4,6 +4,7 @@ import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import type {
   RegisterInput,
   LoginInput,
+  SuperAdminLoginInput,
   ResendVerificationEmailInput,
   VerifyEmailInput,
 } from "./auth.types.js";
@@ -50,6 +51,7 @@ const loginSchema = z
     password: z.string().min(1, "password is required").max(128, "password must be at most 128 characters"),
   })
   .strict();
+const superAdminLoginSchema = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(1).max(128) }).strict();
 
 export function validateRegisterInput(input: unknown): RegisterInput {
   const result = registerSchema.safeParse(input);
@@ -68,6 +70,7 @@ export function validateVerifyEmailInput(input: unknown): VerifyEmailInput {
 export function validateLoginInput(input: unknown): LoginInput {
   return parseAuthInput(loginSchema, input);
 }
+export function validateSuperAdminLoginInput(input: unknown): SuperAdminLoginInput { return parseAuthInput(superAdminLoginSchema, input); }
 
 export function validateResendVerificationEmailInput(input: unknown): ResendVerificationEmailInput {
   return parseAuthInput(resendVerificationEmailSchema, input);

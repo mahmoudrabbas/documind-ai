@@ -75,6 +75,7 @@ userSchema.index({ tenantId: 1, email: 1 }, {
     unique: true,
     name: "uniq_user_tenant_email",
 });
+userSchema.index({ role: 1 }, { unique: true, partialFilterExpression: { role: "SUPER_ADMIN" }, name: "uniq_initial_super_admin" });
 userSchema.index({ email: 1 }, {
     name: "idx_user_email",
 });

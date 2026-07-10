@@ -106,6 +106,11 @@ userSchema.index(
 );
 
 userSchema.index(
+  { role: 1 },
+  { unique: true, partialFilterExpression: { role: "SUPER_ADMIN" }, name: "uniq_initial_super_admin" },
+);
+
+userSchema.index(
   { email: 1 },
   {
     name: "idx_user_email",

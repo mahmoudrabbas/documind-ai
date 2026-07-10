@@ -38,6 +38,8 @@ const envSchema = z.object({
         .min(1)
         .default("development-only-refresh-jwt-secret"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+    ENABLE_SUPER_ADMIN_BOOTSTRAP: z.string().default("false").transform((value) => value.toLowerCase() === "true"),
+    SUPER_ADMIN_BOOTSTRAP_KEY: z.string().default(""),
     EMAIL_VERIFICATION_JWT_SECRET: z
         .string()
         .min(1)
@@ -60,6 +62,11 @@ const envSchema = z.object({
     SMTP_USER: z.string().default(""),
     SMTP_PASS: z.string().default(""),
     SMTP_FROM: z.string().default("DocuMind AI <no-reply@localhost>"),
+    UPLOAD_DIR: z.string().default("./uploads"),
+    MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(50 * 1024 * 1024),
+    ALLOWED_MIME_TYPES: z
+        .string()
+        .default("application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"),
     LOG_LEVEL: z
         .enum(["debug", "info", "warn", "error"])
         .default("info"),
@@ -67,6 +74,10 @@ const envSchema = z.object({
         .string()
         .default("false")
         .transform((value) => value.toLowerCase() === "true"),
+}).superRefine((env, context) => {
+    if (env.ENABLE_SUPER_ADMIN_BOOTSTRAP && env.SUPER_ADMIN_BOOTSTRAP_KEY.length < 32) {
+        context.addIssue({ code: "custom", path: ["SUPER_ADMIN_BOOTSTRAP_KEY"], message: "must contain at least 32 characters when bootstrap is enabled" });
+    }
 });
 /**
  * Parses and validates environment variables.

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
@@ -25,7 +24,6 @@ type FormFields = "companyName" | "companySlug" | "adminName" | "email" | "passw
 type FormErrors = Partial<Record<FormFields, string>>;
 
 export default function RegisterPage() {
-  const router = useRouter();
   const { t, dir } = useI18n();
 
   const [companyName, setCompanyName] = useState("");

@@ -43,6 +43,9 @@ export async function findUserDocumentByTenantAndEmail(tenantId: string, email: 
     .select("+passwordHash")
     .exec();
 }
+export function findSuperAdminByEmail(email: string) {
+  return UserModel.findOne({ email, role: "SUPER_ADMIN" }).select("+passwordHash").exec();
+}
 
 export function findUserDocumentById(userId: string) {
   return UserModel.findById(userId)

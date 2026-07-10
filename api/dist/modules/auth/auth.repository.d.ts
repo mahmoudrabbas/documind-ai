@@ -27,6 +27,13 @@ export declare function findUserDocumentByEmail(email: string): Promise<(import(
     id: string;
 }) | null>;
 export declare function findUserDocumentByTenantAndEmail(tenantId: string, email: string): Promise<any>;
+export declare function findSuperAdminByEmail(email: string): Promise<(import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & UserDocument & Required<{
+    _id: import("mongoose").Types.ObjectId;
+}> & {
+    __v: number;
+} & {
+    id: string;
+}) | null>;
 export declare function findUserDocumentById(userId: string): Promise<(import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & UserDocument & Required<{
     _id: import("mongoose").Types.ObjectId;
 }> & {

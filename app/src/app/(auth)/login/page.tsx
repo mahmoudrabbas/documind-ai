@@ -1,10 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
-import { setAccessToken } from "@/lib/auth-tokens";
+import { useAuth, type AuthTenant, type AuthUser } from "@/providers/auth-provider";
+import { getSafeReturnTo } from "@/lib/safe-return-to";
+import { getRoleHome } from "@/lib/role-home";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { validateEmail, validateCompanySlug } from "@/lib/validation";
@@ -15,6 +17,8 @@ type LoginResponse = {
     tokens: {
       accessToken: string;
     };
+    user: AuthUser;
+    tenant: AuthTenant;
   };
 };
 
@@ -22,6 +26,9 @@ type FormErrors = Partial<Record<"companySlug" | "email" | "password", string>>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { establishSession } = useAuth();
+  const submissionPending = useRef(false);
   const { t, dir } = useI18n();
 
   const [companySlug, setCompanySlug] = useState("");
@@ -85,12 +92,14 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionPending.current) return;
     setFormError("");
 
     if (!validate()) {
       return;
     }
 
+    submissionPending.current = true;
     setIsSubmitting(true);
 
     try {
@@ -105,11 +114,17 @@ export default function LoginPage() {
         },
       });
 
-      setAccessToken(response.data.tokens.accessToken);
-      router.push("/");
+      establishSession(response.data.tokens.accessToken, {
+        user: response.data.user,
+        tenant: response.data.tenant,
+      });
+      const destination = getSafeReturnTo(searchParams.get("returnTo")) ?? getRoleHome(response.data.user.role);
+      router.replace(destination);
+      router.refresh();
     } catch (error) {
       setFormError(messageForError(error));
     } finally {
+      submissionPending.current = false;
       setIsSubmitting(false);
     }
   }

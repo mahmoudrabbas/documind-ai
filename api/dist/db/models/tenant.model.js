@@ -18,7 +18,7 @@ const tenantSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ["active", "trial", "pending", "pending_verification"],
+        enum: ["active", "trial", "pending", "pending_verification", "suspended"],
         default: "pending_verification",
     },
     plan: {

@@ -19,6 +19,7 @@ export declare function resendVerificationEmail(input: unknown): Promise<{
     message: string;
 }>;
 export declare function login(input: unknown, context?: RefreshTokenContext): Promise<LoginResult>;
+export declare function superAdminLogin(input: unknown, context?: RefreshTokenContext): Promise<LoginResult>;
 export declare function refreshAccessToken(token: string, context?: RefreshTokenContext): Promise<RefreshRotationResult>;
 export declare function logout(token: string, context?: RefreshTokenContext): Promise<void>;
 export declare function revokeAllRefreshTokensForUser(userId: string, tenantId: string): Promise<void>;

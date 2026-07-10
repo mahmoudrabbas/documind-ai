@@ -40,6 +40,7 @@ const loginSchema = z
     password: z.string().min(1, "password is required").max(128, "password must be at most 128 characters"),
 })
     .strict();
+const superAdminLoginSchema = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(1).max(128) }).strict();
 export function validateRegisterInput(input) {
     const result = registerSchema.safeParse(input);
     if (!result.success) {
@@ -53,6 +54,7 @@ export function validateVerifyEmailInput(input) {
 export function validateLoginInput(input) {
     return parseAuthInput(loginSchema, input);
 }
+export function validateSuperAdminLoginInput(input) { return parseAuthInput(superAdminLoginSchema, input); }
 export function validateResendVerificationEmailInput(input) {
     return parseAuthInput(resendVerificationEmailSchema, input);
 }

@@ -5,8 +5,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import { EMAIL_ALREADY_EXISTS, EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, REFRESH_TOKEN_REUSED, REGISTRATION_FAILED, SESSION_EXPIRED, TENANT_NOT_ACTIVE, TENANT_ALREADY_EXISTS, UNAUTHORIZED, } from "../../common/errors/errorCodes.js";
 import { sendVerificationEmail } from "./auth.mailer.js";
 import { createEmailVerificationToken, hashVerificationJti, verifyEmailVerificationToken, } from "./emailVerificationToken.js";
-import { activateTenantIfPendingVerification, claimRefreshTokenForRotation, createTenant, createUser, createRefreshTokenRecord, deleteTenantById, deleteUserById, findTenantById, findTenantBySlug, findRefreshTokenRecord, findUserDocumentByEmail, findUserDocumentById, findUserDocumentByTenantAndEmail, findUserByTenantAndId, markReuseAndRevokeTokenFamily, revokeAllRefreshTokensForTenantUser, revokeRefreshToken, setRefreshTokenReplacement, updateUserVerificationToken, } from "./auth.repository.js";
-import { validateRegisterInput, validateLoginInput, validateResendVerificationEmailInput, validateVerifyEmailInput, } from "./auth.validator.js";
+import { activateTenantIfPendingVerification, claimRefreshTokenForRotation, createTenant, createUser, createRefreshTokenRecord, deleteTenantById, deleteUserById, findTenantById, findTenantBySlug, findRefreshTokenRecord, findUserDocumentByEmail, findUserDocumentById, findUserDocumentByTenantAndEmail, findSuperAdminByEmail, findUserByTenantAndId, markReuseAndRevokeTokenFamily, revokeAllRefreshTokensForTenantUser, revokeRefreshToken, setRefreshTokenReplacement, updateUserVerificationToken, } from "./auth.repository.js";
+import { validateRegisterInput, validateLoginInput, validateSuperAdminLoginInput, validateResendVerificationEmailInput, validateVerifyEmailInput, } from "./auth.validator.js";
 import { hashPassword, verifyPassword } from "./passwordHashing.js";
 import { signJwt, verifyJwt } from "./jwtTokens.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -72,6 +72,9 @@ export async function registerTenantAndAdmin(input) {
     const payload = validateRegisterInput(input);
     const normalizedEmail = payload.email.toLowerCase().trim();
     const normalizedSlug = normalizeSlug(payload.companySlug, payload.companyName);
+    if (normalizedSlug === "__documind_platform__") {
+        throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
+    }
     const tenantExists = await findTenantBySlug(normalizedSlug);
     if (tenantExists) {
         throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
@@ -304,6 +307,21 @@ export async function login(input, context = {}) {
             expiresIn: config.JWT_EXPIRES_IN,
         },
     };
+}
+export async function superAdminLogin(input, context = {}) {
+    const payload = validateSuperAdminLoginInput(input);
+    const user = await findSuperAdminByEmail(payload.email);
+    if (!user || user.role !== "SUPER_ADMIN" || user.status !== "active" || !user.emailVerified || !user.passwordHash || !(await verifyPassword(user.passwordHash, payload.password))) {
+        throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
+    }
+    const tenant = await findTenantById(user.tenantId.toString());
+    if (!tenant || tenant.slug !== "__documind_platform__" || tenant.status !== "active")
+        throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
+    const jti = randomUUID();
+    const familyId = randomUUID();
+    const refreshToken = signJwt({ sub: user.id, tenantId: tenant._id.toString(), type: "refresh", jti, familyId }, config.JWT_REFRESH_SECRET, config.JWT_REFRESH_EXPIRES_IN);
+    await createRefreshTokenRecord({ tenantId: tenant._id.toString(), userId: user.id, tokenHash: hashRefreshToken(refreshToken), jtiHash: hashRefreshTokenJti(jti), familyId, expiresAt: new Date(Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)), createdByIp: context.ip, userAgent: context.userAgent });
+    return { user: serializeVerifiedUser(user), tenant: { id: tenant._id.toString(), name: tenant.name, slug: tenant.slug, status: tenant.status, plan: tenant.plan }, tokens: { accessToken: createAccessToken(user, tenant), refreshToken, tokenType: "Bearer", expiresIn: config.JWT_EXPIRES_IN } };
 }
 function sessionExpiredError() {
     return new AppError(401, SESSION_EXPIRED, "Session expired. Please sign in again.");

@@ -1,4 +1,5 @@
-import { countTenantsByFilter, findTenantsByFilter, } from "./admin.repository.js";
+import { countTenantsByFilter, findTenantsByFilter, updateTenantById } from "./admin.repository.js";
+import { AppError } from "../../common/errors/AppError.js";
 function serializeTenant(tenant) {
     const id = tenant._id?.toString() ?? "";
     return {
@@ -14,7 +15,7 @@ function serializeTenant(tenant) {
 export async function listTenants(input) {
     const { page, pageSize, status, plan, search } = input;
     // Build filter object
-    const filter = {};
+    const filter = { slug: { $ne: "__documind_platform__" } };
     if (status) {
         filter.status = status;
     }
@@ -43,5 +44,13 @@ export async function listTenants(input) {
             totalRecords,
         },
     };
+}
+export async function updateTenant(input) {
+    const { id, ...updateData } = input;
+    const updatedTenant = await updateTenantById(id, updateData);
+    if (!updatedTenant) {
+        throw new AppError(404, "NOT_FOUND", "Tenant not found");
+    }
+    return serializeTenant(updatedTenant);
 }
 //# sourceMappingURL=admin.service.js.map

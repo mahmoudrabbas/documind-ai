@@ -16,6 +16,10 @@ export interface LoginInput {
     email: string;
     password: string;
 }
+export interface SuperAdminLoginInput {
+    email: string;
+    password: string;
+}
 export interface TenantPublicView {
     id: string;
     name: string;

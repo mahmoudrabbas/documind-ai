@@ -12,6 +12,7 @@ import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import usersRoutes from "./modules/users/users.routes.js";
 import adminRoutes from "./modules/admin/admin.routes.js";
+import bootstrapRoutes from "./modules/bootstrap/bootstrap.routes.js";
 import documentsRoutes from "./modules/documents/documents.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
@@ -87,6 +88,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/users", usersRoutes);
 app.use("/platform", adminRoutes);
+app.use("/internal/bootstrap", bootstrapRoutes);
 app.use("/documents", documentsRoutes);
 
 app.get("/", (_, res) => {

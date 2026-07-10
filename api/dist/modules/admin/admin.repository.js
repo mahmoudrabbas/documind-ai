@@ -10,4 +10,9 @@ export async function findTenantsByFilter(filter, page, pageSize) {
         .lean()
         .exec();
 }
+export async function updateTenantById(id, updateData) {
+    return TenantModel.findByIdAndUpdate(id, { $set: updateData }, { new: true, runValidators: true })
+        .lean()
+        .exec();
+}
 //# sourceMappingURL=admin.repository.js.map

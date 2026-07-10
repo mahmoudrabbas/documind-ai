@@ -18,4 +18,6 @@ export declare const TENANT_NOT_ACTIVE = "TENANT_NOT_ACTIVE";
 export declare const INVALID_REFRESH_TOKEN = "INVALID_REFRESH_TOKEN";
 export declare const SESSION_EXPIRED = "SESSION_EXPIRED";
 export declare const REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED";
+export declare const FILE_UPLOAD_ERROR = "FILE_UPLOAD_ERROR";
+export declare const UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE";
 //# sourceMappingURL=errorCodes.d.ts.map

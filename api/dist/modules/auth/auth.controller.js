@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { login, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, } from "./auth.service.js";
+import { login, superAdminLogin, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
@@ -64,6 +64,17 @@ export async function loginController(req, res, next) {
                 tokens: publicTokens,
             },
         });
+    }
+    catch (error) {
+        handleAuthError(error, res, next);
+    }
+}
+export async function superAdminLoginController(req, res, next) {
+    try {
+        const result = await superAdminLogin(req.body, { ip: req.ip, userAgent: req.get("user-agent") });
+        const { refreshToken, ...publicTokens } = result.tokens;
+        res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
+        res.status(200).json({ success: true, message: "Login successful", data: { user: result.user, tenant: result.tenant, tokens: publicTokens } });
     }
     catch (error) {
         handleAuthError(error, res, next);

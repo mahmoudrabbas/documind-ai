@@ -46,6 +46,7 @@ import {
   findUserDocumentByEmail,
   findUserDocumentById,
   findUserDocumentByTenantAndEmail,
+  findSuperAdminByEmail,
   findUserByTenantAndId,
   markReuseAndRevokeTokenFamily,
   revokeAllRefreshTokensForTenantUser,
@@ -56,6 +57,7 @@ import {
 import {
   validateRegisterInput,
   validateLoginInput,
+  validateSuperAdminLoginInput,
   validateResendVerificationEmailInput,
   validateVerifyEmailInput,
 } from "./auth.validator.js";
@@ -166,6 +168,10 @@ export async function registerTenantAndAdmin(
 
   const normalizedEmail = payload.email.toLowerCase().trim();
   const normalizedSlug = normalizeSlug(payload.companySlug, payload.companyName);
+
+  if (normalizedSlug === "__documind_platform__") {
+    throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
+  }
 
   const tenantExists = await findTenantBySlug(normalizedSlug);
 
@@ -503,6 +509,20 @@ export async function login(
       expiresIn: config.JWT_EXPIRES_IN,
     },
   };
+}
+
+export async function superAdminLogin(input: unknown, context: RefreshTokenContext = {}): Promise<LoginResult> {
+  const payload = validateSuperAdminLoginInput(input);
+  const user = await findSuperAdminByEmail(payload.email);
+  if (!user || user.role !== "SUPER_ADMIN" || user.status !== "active" || !user.emailVerified || !user.passwordHash || !(await verifyPassword(user.passwordHash, payload.password))) {
+    throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
+  }
+  const tenant = await findTenantById(user.tenantId.toString());
+  if (!tenant || tenant.slug !== "__documind_platform__" || tenant.status !== "active") throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
+  const jti = randomUUID(); const familyId = randomUUID();
+  const refreshToken = signJwt({ sub: user.id, tenantId: tenant._id.toString(), type: "refresh", jti, familyId }, config.JWT_REFRESH_SECRET, config.JWT_REFRESH_EXPIRES_IN);
+  await createRefreshTokenRecord({ tenantId: tenant._id.toString(), userId: user.id, tokenHash: hashRefreshToken(refreshToken), jtiHash: hashRefreshTokenJti(jti), familyId, expiresAt: new Date(Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)), createdByIp: context.ip, userAgent: context.userAgent });
+  return { user: serializeVerifiedUser(user), tenant: { id: tenant._id.toString(), name: tenant.name, slug: tenant.slug, status: tenant.status, plan: tenant.plan }, tokens: { accessToken: createAccessToken(user, tenant), refreshToken, tokenType: "Bearer", expiresIn: config.JWT_EXPIRES_IN } };
 }
 
 function sessionExpiredError() {

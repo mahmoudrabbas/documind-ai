@@ -23,4 +23,10 @@ export interface ListTenantsResult {
         totalRecords: number;
     };
 }
+export interface UpdateTenantInput {
+    id: string;
+    status?: "active" | "trial" | "suspended";
+    plan?: "free" | "trial" | "pro";
+}
+export type UpdateTenantResult = TenantPublicView;
 //# sourceMappingURL=admin.types.d.ts.map

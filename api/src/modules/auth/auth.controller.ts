@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   login,
+  superAdminLogin,
   logout,
   refreshAccessToken,
   registerTenantAndAdmin,
@@ -83,6 +84,15 @@ export async function loginController(req: Request, res: Response, next: NextFun
   } catch (error) {
     handleAuthError(error, res, next);
   }
+}
+
+export async function superAdminLoginController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await superAdminLogin(req.body, { ip: req.ip, userAgent: req.get("user-agent") });
+    const { refreshToken, ...publicTokens } = result.tokens;
+    res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
+    res.status(200).json({ success: true, message: "Login successful", data: { user: result.user, tenant: result.tenant, tokens: publicTokens } });
+  } catch (error) { handleAuthError(error, res, next); }
 }
 
 function readCookie(req: Request, name: string) {

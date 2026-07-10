@@ -45,6 +45,8 @@ const envSchema = z.object({
     .min(1)
     .default("development-only-refresh-jwt-secret"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+  ENABLE_SUPER_ADMIN_BOOTSTRAP: z.string().default("false").transform((value) => value.toLowerCase() === "true"),
+  SUPER_ADMIN_BOOTSTRAP_KEY: z.string().default(""),
 
   EMAIL_VERIFICATION_JWT_SECRET: z
     .string()
@@ -82,6 +84,10 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value.toLowerCase() === "true"),
+}).superRefine((env, context) => {
+  if (env.ENABLE_SUPER_ADMIN_BOOTSTRAP && env.SUPER_ADMIN_BOOTSTRAP_KEY.length < 32) {
+    context.addIssue({ code: "custom", path: ["SUPER_ADMIN_BOOTSTRAP_KEY"], message: "must contain at least 32 characters when bootstrap is enabled" });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
