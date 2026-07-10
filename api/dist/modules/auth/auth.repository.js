@@ -1,6 +1,7 @@
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
+import { tenantScopedCreate, tenantScopedFindById, tenantScopedFindOne, } from "../../db/repositories/tenantScopedRepository.js";
 export async function findTenantBySlug(slug) {
     return TenantModel.findOne({ slug }).lean().exec();
 }
@@ -11,7 +12,9 @@ export async function findUserDocumentByEmail(email) {
     return UserModel.findOne({ email }).select("+emailVerificationTokenHash").exec();
 }
 export async function findUserDocumentByTenantAndEmail(tenantId, email) {
-    return UserModel.findOne({ tenantId, email }).select("+passwordHash").exec();
+    return tenantScopedFindOne(UserModel, tenantId, { tenantId, email })
+        .select("+passwordHash")
+        .exec();
 }
 export function findUserDocumentById(userId) {
     return UserModel.findById(userId)
@@ -22,15 +25,15 @@ export function findUserById(userId) {
     return UserModel.findById(userId).lean().exec();
 }
 export function findUserByTenantAndId(tenantId, userId) {
-    return UserModel.findOne({ _id: userId, tenantId })
+    return tenantScopedFindById(UserModel, tenantId, userId)
         .lean()
         .exec();
 }
 export function createRefreshTokenRecord(input) {
-    return RefreshTokenModel.create(input);
+    return tenantScopedCreate(RefreshTokenModel, input);
 }
-export function findRefreshTokenRecord(tokenHash, jtiHash) {
-    return RefreshTokenModel.findOne({ tokenHash, jtiHash }).exec();
+export function findRefreshTokenRecord(tenantId, tokenHash, jtiHash) {
+    return tenantScopedFindOne(RefreshTokenModel, tenantId, { tokenHash, jtiHash }).exec();
 }
 export function claimRefreshTokenForRotation(tokenId, revokedAt) {
     return RefreshTokenModel.findOneAndUpdate({ _id: tokenId, revokedAt: null }, { $set: { revokedAt } }, { returnDocument: "after" }).exec();

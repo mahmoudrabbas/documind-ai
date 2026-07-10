@@ -17,6 +17,9 @@ declare const envSchema: z.ZodObject<{
     MONGODB_RETRY_BACKOFF_FACTOR: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
     MONGODB_RETRY_MAX_DELAY_MS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
     REDIS_URL: z.ZodDefault<z.ZodString>;
+    RATE_LIMIT_WINDOW_MS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    RATE_LIMIT_MAX_REQUESTS: z.ZodDefault<z.ZodCoercedNumber<unknown>>;
+    RATE_LIMIT_MESSAGE: z.ZodDefault<z.ZodString>;
     APP_FRONTEND_URL: z.ZodDefault<z.ZodString>;
     JWT_SECRET: z.ZodDefault<z.ZodString>;
     JWT_EXPIRES_IN: z.ZodDefault<z.ZodString>;

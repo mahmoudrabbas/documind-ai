@@ -26,13 +26,7 @@ export declare function findUserDocumentByEmail(email: string): Promise<(import(
 } & {
     id: string;
 }) | null>;
-export declare function findUserDocumentByTenantAndEmail(tenantId: string, email: string): Promise<(import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & UserDocument & Required<{
-    _id: import("mongoose").Types.ObjectId;
-}> & {
-    __v: number;
-} & {
-    id: string;
-}) | null>;
+export declare function findUserDocumentByTenantAndEmail(tenantId: string, email: string): Promise<any>;
 export declare function findUserDocumentById(userId: string): Promise<(import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & UserDocument & Required<{
     _id: import("mongoose").Types.ObjectId;
 }> & {
@@ -51,20 +45,8 @@ export declare function createRefreshTokenRecord(input: {
     expiresAt: Date;
     createdByIp?: string;
     userAgent?: string;
-}): Promise<import("mongoose").Document<unknown, {}, import("../../db/models/refreshToken.model.js").RefreshTokenDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../db/models/refreshToken.model.js").RefreshTokenDocument & Required<{
-    _id: import("mongoose").Types.ObjectId;
-}> & {
-    __v: number;
-} & {
-    id: string;
-}>;
-export declare function findRefreshTokenRecord(tokenHash: string, jtiHash: string): Promise<(import("mongoose").Document<unknown, {}, import("../../db/models/refreshToken.model.js").RefreshTokenDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../db/models/refreshToken.model.js").RefreshTokenDocument & Required<{
-    _id: import("mongoose").Types.ObjectId;
-}> & {
-    __v: number;
-} & {
-    id: string;
-}) | null>;
+}): Promise<any>;
+export declare function findRefreshTokenRecord(tenantId: string, tokenHash: string, jtiHash: string): Promise<any>;
 export declare function claimRefreshTokenForRotation(tokenId: string, revokedAt: Date): Promise<(import("mongoose").Document<unknown, {}, import("../../db/models/refreshToken.model.js").RefreshTokenDocument, {}, import("mongoose").DefaultSchemaOptions> & import("../../db/models/refreshToken.model.js").RefreshTokenDocument & Required<{
     _id: import("mongoose").Types.ObjectId;
 }> & {

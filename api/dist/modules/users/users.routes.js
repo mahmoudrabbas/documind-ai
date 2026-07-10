@@ -1,2 +1,12 @@
-export {};
+import { Router } from "express";
+import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
+import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
+import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { inviteUserController, listUsersController, updateUserController, setPasswordFromInviteController, } from "./users.controller.js";
+const router = Router();
+router.get("/", authenticate, tenantScoping, authorize("COMPANY_ADMIN", "EMPLOYEE"), listUsersController);
+router.patch("/:id", authenticate, tenantScoping, authorize("COMPANY_ADMIN"), updateUserController);
+router.post("/", authenticate, tenantScoping, authorize("COMPANY_ADMIN"), inviteUserController);
+router.post("/set-password-from-invite", setPasswordFromInviteController);
+export default router;
 //# sourceMappingURL=users.routes.js.map

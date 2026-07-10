@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { loginController, logoutController, meController, refreshController, registerController, resendVerificationEmailController, verifyEmailController, } from "./auth.controller.js";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
+import { authRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 const router = Router();
+router.use(authRateLimiter());
 router.post("/register", registerController);
 router.post("/login", loginController);
 router.post("/refresh", refreshController);

@@ -101,12 +101,13 @@ test("tenantScoping middleware", async (t) => {
     await t.test("error cases - missing tenantId", async (tc) => {
         await tc.test("should throw 401 when tenantId is missing from auth", () => {
             createMocks();
-            mockReq.auth = {
+            const invalidAuth = {
                 userId: "user-123",
                 tenantId: undefined,
                 role: "admin",
                 email: "user@example.com",
             };
+            mockReq.auth = invalidAuth;
             tenantScoping(mockReq, mockRes, mockNext);
             assert.strictEqual(mockNext.mock.calls.length, 1);
             const error = mockNext.mock.calls[0][0];
@@ -117,11 +118,12 @@ test("tenantScoping middleware", async (t) => {
         });
         await tc.test("should throw 401 when tenantId is empty string", () => {
             createMocks();
-            mockReq.auth = {
+            const invalidAuth = {
                 userId: "user-123",
                 tenantId: "",
                 role: "admin",
             };
+            mockReq.auth = invalidAuth;
             tenantScoping(mockReq, mockRes, mockNext);
             assert.strictEqual(mockNext.mock.calls.length, 1);
             const error = mockNext.mock.calls[0][0];
@@ -130,11 +132,12 @@ test("tenantScoping middleware", async (t) => {
         });
         await tc.test("should throw 401 when tenantId is null", () => {
             createMocks();
-            mockReq.auth = {
+            const invalidAuth = {
                 userId: "user-123",
                 tenantId: null,
                 role: "admin",
             };
+            mockReq.auth = invalidAuth;
             tenantScoping(mockReq, mockRes, mockNext);
             assert.strictEqual(mockNext.mock.calls.length, 1);
             const error = mockNext.mock.calls[0][0];
@@ -143,10 +146,11 @@ test("tenantScoping middleware", async (t) => {
         });
         await tc.test("should throw 401 when tenantId is undefined", () => {
             createMocks();
-            mockReq.auth = {
+            const invalidAuth = {
                 userId: "user-123",
                 tenantId: undefined,
             };
+            mockReq.auth = invalidAuth;
             tenantScoping(mockReq, mockRes, mockNext);
             assert.strictEqual(mockNext.mock.calls.length, 1);
             const error = mockNext.mock.calls[0][0];
@@ -199,7 +203,8 @@ test("tenantScoping middleware", async (t) => {
         });
         await tc.test("should not throw synchronously, always call next()", () => {
             createMocks();
-            mockReq.auth = { userId: "user-123", tenantId: undefined };
+            const invalidAuth = { userId: "user-123", tenantId: undefined };
+            mockReq.auth = invalidAuth;
             assert.doesNotThrow(() => {
                 tenantScoping(mockReq, mockRes, mockNext);
             });

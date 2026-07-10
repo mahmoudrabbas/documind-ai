@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 process.env.NODE_ENV = "test";
 import app from "./app.js";
 import { calculateRetryDelay, connectDB, disconnectDB, getMongoConnectionState, isMongoConnected, } from "./db/connection.js";
-import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected } from "./db/redis.js";
+import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected, } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
+import AuditLogModel from "./db/models/auditLog.model.js";
 import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { buildEmailVerificationTemplate } from "./modules/auth/auth.mailer.js";
@@ -100,6 +101,7 @@ before(async () => {
 });
 beforeEach(async () => {
     await RefreshTokenModel.deleteMany({});
+    await AuditLogModel.deleteMany({});
     await TenantModel.deleteMany({});
     await UserModel.deleteMany({});
 });
@@ -123,7 +125,12 @@ test("builds a verification email with html and plain text content", () => {
     assert.ok(template.html.includes(">Verify Email</a>"));
     assert.match(template.html, /Sarah Ahmed/);
     assert.match(template.html, /Acme Consulting/);
-    for (const secret of ["passwordHash", "SMTP_PASS", "refreshTokens", "internalSecret"]) {
+    for (const secret of [
+        "passwordHash",
+        "SMTP_PASS",
+        "refreshTokens",
+        "internalSecret",
+    ]) {
         assert.equal(template.html.includes(secret), false);
     }
 });
@@ -178,7 +185,9 @@ test("registers a tenant and first company admin", async () => {
         assert.equal(typeof body.data.user.createdAt, "string");
         assert.equal(typeof body.data.user.tenantId, "string");
         assertNoSensitiveFields(body);
-        const tenant = await TenantModel.findById(body.data.tenant.id).lean().exec();
+        const tenant = await TenantModel.findById(body.data.tenant.id)
+            .lean()
+            .exec();
         const user = await UserModel.findById(body.data.user.id)
             .select("+passwordHash")
             .lean()
@@ -238,13 +247,248 @@ test("verifies email with a valid token and activates user and tenant", async ()
             .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
             .lean()
             .exec();
-        const activatedTenant = await TenantModel.findById(user.tenantId).lean().exec();
+        const activatedTenant = await TenantModel.findById(user.tenantId)
+            .lean()
+            .exec();
         assert.equal(verifiedUser?.status, "active");
         assert.equal(verifiedUser?.emailVerified, true);
         assert.ok(verifiedUser?.emailVerifiedAt instanceof Date);
         assert.equal(verifiedUser?.emailVerificationTokenHash, null);
         assert.equal(verifiedUser?.emailVerificationExpiresAt, null);
         assert.equal(activatedTenant?.status, "active");
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("invites a user with a valid company admin token", async () => {
+    const server = await createServer();
+    try {
+        const address = server.address();
+        await createActiveTenantAdmin();
+        const loginResponse = await postLogin(address.port);
+        assert.equal(loginResponse.status, 200);
+        const loginBody = (await loginResponse.json());
+        const response = await fetch(`http://127.0.0.1:${address.port}/users`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+            },
+            body: JSON.stringify({
+                name: "Alex Employee",
+                email: "alex@acme.com",
+                role: "EMPLOYEE",
+            }),
+        });
+        const body = (await response.json());
+        assert.equal(response.status, 201);
+        assert.equal(body.success, true);
+        assert.equal(body.data.user.name, "Alex Employee");
+        assert.equal(body.data.user.email, "alex@acme.com");
+        assert.equal(body.data.user.role, "EMPLOYEE");
+        assert.equal(body.data.user.status, "pending_email_verification");
+        assert.equal(body.data.user.emailVerified, false);
+        assertNoSensitiveFields(body);
+        const user = await UserModel.findById(body.data.user.id).select("+emailVerificationTokenHash +emailVerificationExpiresAt");
+        assert.ok(user);
+        assert.equal(user?.status, "pending_email_verification");
+        assert.equal(user?.emailVerified, false);
+        assert.ok(user?.emailVerificationTokenHash);
+        assert.ok(user?.emailVerificationExpiresAt instanceof Date);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("updates a tenant user role and status and writes an audit log", async () => {
+    const server = await createServer();
+    try {
+        const address = server.address();
+        const { tenant } = await createActiveTenantAdmin();
+        const employee = await UserModel.create({
+            tenantId: tenant.id,
+            name: "Dev Employee",
+            email: "dev@acme.com",
+            passwordHash: await hashPassword(TEST_PASSWORD),
+            role: "EMPLOYEE",
+            status: "pending_email_verification",
+            emailVerified: false,
+            emailVerifiedAt: null,
+        });
+        const loginResponse = await postLogin(address.port);
+        assert.equal(loginResponse.status, 200);
+        const loginBody = (await loginResponse.json());
+        const response = await fetch(`http://127.0.0.1:${address.port}/users/${employee.id}`, {
+            method: "PATCH",
+            headers: {
+                "content-type": "application/json",
+                Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+            },
+            body: JSON.stringify({
+                role: "COMPANY_ADMIN",
+                status: "active",
+            }),
+        });
+        const body = (await response.json());
+        assert.equal(response.status, 200);
+        assert.equal(body.success, true);
+        assert.equal(body.data.user.id, employee.id);
+        assert.equal(body.data.user.role, "COMPANY_ADMIN");
+        assert.equal(body.data.user.status, "active");
+        assert.equal(body.data.user.email, "dev@acme.com");
+        assertNoSensitiveFields(body);
+        const auditRecord = await AuditLogModel.findOne({
+            tenantId: employee.tenantId,
+            resourceType: "User",
+            resourceId: employee.id,
+        })
+            .lean()
+            .exec();
+        assert.ok(auditRecord, "expected audit log record to be created");
+        assert.equal(auditRecord?.action, "USER_UPDATED");
+        assert.equal(auditRecord?.actorEmail, "sarah@acme.com");
+        assert.deepEqual(auditRecord?.changes, {
+            role: { before: "EMPLOYEE", after: "COMPANY_ADMIN" },
+            status: { before: "pending_email_verification", after: "active" },
+        });
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("rejects invalid user update payloads", async () => {
+    const server = await createServer();
+    try {
+        const address = server.address();
+        await createActiveTenantAdmin();
+        const loginResponse = await postLogin(address.port);
+        assert.equal(loginResponse.status, 200);
+        const loginBody = (await loginResponse.json());
+        const response = await fetch(`http://127.0.0.1:${address.port}/users/000000000000000000000000`, {
+            method: "PATCH",
+            headers: {
+                "content-type": "application/json",
+                Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+            },
+            body: JSON.stringify({
+                role: "EXECUTIVE",
+            }),
+        });
+        const body = (await response.json());
+        assert.equal(response.status, 400);
+        assert.equal(body.success, false);
+        assert.equal(body.error, "VALIDATION_ERROR");
+        assert.ok(Array.isArray(body.details));
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("rejects invalid invite payloads", async () => {
+    const server = await createServer();
+    try {
+        const address = server.address();
+        await createActiveTenantAdmin();
+        const loginResponse = await postLogin(address.port);
+        assert.equal(loginResponse.status, 200);
+        const loginBody = (await loginResponse.json());
+        const response = await fetch(`http://127.0.0.1:${address.port}/users`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+            },
+            body: JSON.stringify({
+                name: "A",
+                email: "invalid-email",
+            }),
+        });
+        const body = (await response.json());
+        assert.equal(response.status, 400);
+        assert.equal(body.success, false);
+        assert.equal(body.error, "VALIDATION_ERROR");
+        assert.ok(Array.isArray(body.details));
+        assert.ok(body.details?.some((detail) => detail.field === "name"));
+        assert.ok(body.details?.some((detail) => detail.field === "email"));
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("returns a paginated list of tenant users", async () => {
+    const server = await createServer();
+    try {
+        const address = server.address();
+        const { tenant } = await createActiveTenantAdmin();
+        await Promise.all([
+            UserModel.create({
+                tenantId: tenant.id,
+                name: "Alice Employee",
+                email: "alice@acme.com",
+                passwordHash: await hashPassword(TEST_PASSWORD),
+                role: "EMPLOYEE",
+                status: "active",
+                emailVerified: true,
+                emailVerifiedAt: new Date(),
+            }),
+            UserModel.create({
+                tenantId: tenant.id,
+                name: "Bob Employee",
+                email: "bob@acme.com",
+                passwordHash: await hashPassword(TEST_PASSWORD),
+                role: "EMPLOYEE",
+                status: "active",
+                emailVerified: true,
+                emailVerifiedAt: new Date(),
+            }),
+        ]);
+        const loginResponse = await postLogin(address.port);
+        assert.equal(loginResponse.status, 200);
+        const loginBody = (await loginResponse.json());
+        const response = await fetch(`http://127.0.0.1:${address.port}/users?page=1&pageSize=2`, {
+            headers: {
+                Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+            },
+        });
+        const body = (await response.json());
+        assert.equal(response.status, 200);
+        assert.equal(body.success, true);
+        assert.equal(body.data.pagination.page, 1);
+        assert.equal(body.data.pagination.pageSize, 2);
+        assert.equal(body.data.pagination.totalRecords, 3);
+        assert.equal(body.data.pagination.totalPages, 2);
+        assert.equal(body.data.users.length, 2);
+        assert.ok(body.data.users.some((user) => user.email === "alice@acme.com") ||
+            body.data.users.some((user) => user.email === "bob@acme.com"));
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("rejects invalid pagination query parameters", async () => {
+    const server = await createServer();
+    try {
+        const address = server.address();
+        await createActiveTenantAdmin();
+        const loginResponse = await postLogin(address.port);
+        assert.equal(loginResponse.status, 200);
+        const loginBody = (await loginResponse.json());
+        const response = await fetch(`http://127.0.0.1:${address.port}/users?page=0&pageSize=-1`, {
+            headers: {
+                Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+            },
+        });
+        const body = (await response.json());
+        assert.equal(response.status, 400);
+        assert.equal(body.success, false);
+        assert.equal(body.error, "VALIDATION_ERROR");
+        assert.ok(Array.isArray(body.details));
+        assert.ok(body.details?.some((detail) => detail.field === "page"));
+        assert.ok(body.details?.some((detail) => detail.field === "pageSize"));
+        assertNoSensitiveFields(body);
     }
     finally {
         await closeServer(server);
@@ -291,7 +535,9 @@ test("rejects expired email verification tokens", async () => {
         });
         const user = await UserModel.findOne({ email: "sarah@acme.com" }).exec();
         assert.ok(user);
-        const token = await createEmailVerificationTokenForUser(user, { expiresIn: "0s" });
+        const token = await createEmailVerificationTokenForUser(user, {
+            expiresIn: "0s",
+        });
         const response = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
             method: "POST",
             headers: {
@@ -328,7 +574,9 @@ test("rejects email verification tokens with the wrong purpose", async () => {
         });
         const user = await UserModel.findOne({ email: "sarah@acme.com" }).exec();
         assert.ok(user);
-        const token = await createEmailVerificationTokenForUser(user, { purpose: "password_reset" });
+        const token = await createEmailVerificationTokenForUser(user, {
+            purpose: "password_reset",
+        });
         const response = await fetch(`http://127.0.0.1:${address.port}/auth/verify-email`, {
             method: "POST",
             headers: {
@@ -745,7 +993,9 @@ test("login stores a hashed refresh token record without exposing the token", as
         const records = await RefreshTokenModel.find({
             tenantId: tenant.id,
             userId: user.id,
-        }).lean().exec();
+        })
+            .lean()
+            .exec();
         assert.equal(records.length, 1);
         assert.ok(records[0]?.tokenHash);
         assert.ok(records[0]?.jtiHash);
@@ -781,7 +1031,9 @@ test("refresh rotates the persisted refresh token within the same family", async
         const activeRecord = await RefreshTokenModel.findOne({
             familyId: oldRecord.familyId,
             revokedAt: null,
-        }).lean().exec();
+        })
+            .lean()
+            .exec();
         assert.ok(persistedOldRecord?.revokedAt instanceof Date);
         assert.ok(persistedOldRecord?.replacedByTokenId);
         assert.ok(activeRecord);
@@ -817,7 +1069,9 @@ test("reusing a rotated refresh token revokes its whole family", async () => {
         assert.equal(body.error, "REFRESH_TOKEN_REUSED");
         const familyRecords = await RefreshTokenModel.find({
             familyId: originalRecord.familyId,
-        }).lean().exec();
+        })
+            .lean()
+            .exec();
         assert.equal(familyRecords.length, 2);
         assert.ok(familyRecords.every((record) => record.revokedAt instanceof Date));
         assert.ok(familyRecords.some((record) => record.reuseDetectedAt instanceof Date));
@@ -944,11 +1198,15 @@ test("refresh token records isolate the same email across tenants", async () => 
             RefreshTokenModel.find({
                 tenantId: tenantA.id,
                 userId: userA.id,
-            }).lean().exec(),
+            })
+                .lean()
+                .exec(),
             RefreshTokenModel.find({
                 tenantId: tenantB.id,
                 userId: userB.id,
-            }).lean().exec(),
+            })
+                .lean()
+                .exec(),
         ]);
         assert.equal(recordsA.length, 1);
         assert.equal(recordsB.length, 1);
@@ -1150,7 +1408,7 @@ test("GET /auth/me returns 401 for an invalid or malformed access token", async 
     try {
         const port = server.address().port;
         const response = await fetch(`http://127.0.0.1:${port}/auth/me`, {
-            headers: { Authorization: `Bearer not-a-valid-jwt` },
+            headers: { Authorization: "Bearer not-a-valid-token" },
         });
         const body = await response.json();
         assert.equal(response.status, 401);
