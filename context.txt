@@ -1,184 +1,731 @@
 ================================================================================
-FILE: ./api/node_modules/@types/node/package.json
+FILE: README.md
+================================================================================
+# DocuMind AI
+
+DocuMind AI is a private, multi-tenant knowledge assistant for companies. Admins upload internal documents (HR policies, SOPs, contracts) in Arabic or English; employees ask natural-language questions and get answers generated only from those documents, with source citations — or an honest refusal when there isn't enough evidence. Every tenant's data is fully isolated.
+
+---
+
+# Tech Stack
+
+### Frontend
+- Next.js
+- TypeScript
+
+### Backend
+- Node.js
+- Express
+- TypeScript
+
+### Database
+- MongoDB
+
+### Containerization
+- Docker
+- Docker Compose
+
+---
+
+# Project Structure
+
+```text
+docsai/
+│
+├── app/                  # Frontend (Next.js)
+├── api/                  # Backend (Node.js + Express)
+├── docs/                 # Project documentation
+├── docker-compose.yml
+└── README.md
+```
+
+---
+
+# Requirements
+
+Before running the project, install:
+
+- Docker
+- Docker Compose
+
+No need to install MongoDB locally.
+
+---
+
+# Setup
+
+Clone the repository:
+
+```bash
+git clone https://github.com/mahmoudrabbas/documind-ai
+cd documind-ai
+```
+
+---
+
+# Environment Variables
+
+Create the following file:
+
+```text
+api/.env
+```
+
+Example:
+
+```env
+PORT=5000
+MONGODB_URI=mongodb://mongodb:27017/docsai
+```
+
+---
+
+# Run the Project
+
+Build and start all services:
+
+```bash
+docker compose up --build
+```
+
+For the next runs:
+
+```bash
+docker compose up
+```
+
+Stop the project:
+
+```bash
+docker compose down
+```
+
+---
+
+# Application URLs
+
+Frontend
+
+```
+http://localhost:3000
+```
+
+Backend API
+
+```
+http://localhost:5000
+```
+
+MongoDB runs inside Docker and connects automatically to the backend.
+
+---
+
+# Backend Architecture
+
+The backend follows a feature-based architecture.
+
+Each module contains:
+
+```text
+module/
+├── controller
+├── service
+├── repository
+├── routes
+├── dto
+├── validator
+└── types
+```
+
+Current modules:
+
+- Auth
+- Users
+- Tenants
+- Documents
+- Processing
+- Retrieval
+- Chat
+- Citations
+- Feedback
+- Knowledge Gaps
+- Analytics
+- Admin
+
+---
+
+# Frontend Architecture
+
+The frontend is organized by features.
+
+```text
+src/
+├── app/
+├── components/
+├── hooks/
+├── services/
+├── providers/
+├── schemas/
+├── lib/
+├── constants/
+└── types/
+```
+
+---
+
+# For Teammates – Git Development Workflow
+
+Follow these steps for every task.
+
+## 1. Pick an Issue
+- Open the Project Board.
+- Choose an issue assigned to you from the current sprint.
+- Read the description, acceptance criteria, and dependencies.
+- Make sure all dependency tasks are already merged into `main`.
+
+---
+
+## 2. Create a Feature Branch
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature/<task-id>-<short-description>
+```
+
+**Example**
+
+```bash
+git checkout -b feature/t2.1.1-tenant-user-schemas
+```
+
+---
+
+## 3. Implement the Task
+- Work only inside your assigned module.
+- Follow the issue requirements.
+- Keep your changes focused on the current task.
+
+---
+
+## 4. Commit Your Changes
+
+```bash
+git add .
+git commit -m "feat(auth): add tenant and user schemas"
+```
+
+Use **Conventional Commits**, such as:
+- `feat`
+- `fix`
+- `refactor`
+- `docs`
+- `test`
+- `chore`
+
+---
+
+## 5. Push Your Branch
+
+```bash
+git push origin feature/<task-id>-<short-description>
+```
+
+---
+
+## 6. Open a Pull Request
+- Create a Pull Request targeting **main**.
+- Complete the PR template.
+- Add the following to the PR description:
+
+```text
+Closes #<issue-number>
+```
+
+This will:
+- Link the PR to the issue.
+- Move the issue to **In Progress** automatically.
+- Close the issue automatically after the PR is merged.
+
+---
+
+## 7. Wait for Review
+- Wait for CI checks (when available).
+- Request a code review.
+- Move the task to **Code Review** manually.
+
+If changes are requested:
+
+```bash
+git add .
+git commit -m "fix(auth): address review comments"
+git push
+```
+
+Continue pushing to the **same branch** until the PR is approved.
+
+---
+
+## 8. Testing (If Needed)
+- Move the task to **Testing**.
+- Verify everything works correctly.
+
+---
+
+## 9. Merge the Pull Request
+Once the PR is approved:
+
+- Use **Squash and Merge**.
+
+GitHub will automatically:
+- Close the linked issue.
+- Move the task to **Done**.
+
+---
+
+## 10. Clean Up
+
+```bash
+git checkout main
+git pull origin main
+git branch -d feature/<task-id>-<short-description>
+```
+
+Then delete the remote branch from GitHub.
+
+---
+
+## 11. Notify the Team
+
+Example:
+
+```text
+T2.1.1 merged into main. It now unblocks T2.1.2 and T2.1.3.
+```
+
+---
+
+# Workflow Summary
+
+```text
+Pick Issue
+    ↓
+Create Branch
+    ↓
+Implement Task
+    ↓
+Commit Changes
+    ↓
+Push Branch
+    ↓
+Open PR (Closes #Issue)
+    ↓
+Auto → In Progress
+    ↓
+Code Review
+    ↓
+Testing (if needed)
+    ↓
+Squash & Merge
+    ↓
+Auto → Done
+    ↓
+Delete Branch
+    ↓
+Notify Team
+```
+---
+
+# Notes
+
+- Do not commit `.env` files.
+- Do not commit `node_modules`.
+- Keep each feature inside its own module.
+- Put shared code in shared folders.
+- Discuss changes before modifying shared files like:
+  - `docker-compose.yml`
+  - configuration files
+  - project structure
+
+================================================================================
+FILE: CICD_DESIGN.md
+================================================================================
+# DocuMind AI — CI/CD Pipeline Design
+
+Scoped intentionally small: **1 required workflow, 0-1 optional workflow, zero deploy YAML if you take the recommended path.** Everything below is sized for a 6-person student team, not an enterprise platform team.
+
+---
+
+## 1. Folder Structure
+
+```
+documind-ai/
+└── .github/
+    ├── workflows/
+    │   └── ci.yml                 # the only required workflow
+    ├── CODEOWNERS                 # you already have this
+    └── PULL_REQUEST_TEMPLATE.md   # you already have this
+```
+
+That's it. No `deploy-frontend.yml` and no `deploy-backend.yml` in the required set — see point 8 for why, and point 10 for an optional one if you want it anyway.
+
+---
+
+## 2. How Many Workflows
+
+**One.** `ci.yml`. It runs on every push and PR targeting `main`, and internally splits into a backend job and a frontend job (since you're a monorepo with `api/` and `app/`) using path filtering — so touching only the frontend doesn't waste minutes rebuilding the backend, and vice versa.
+
+If you later add the optional deploy trigger from point 10, that's workflow #2. You do not need more than that for a project this size. Enterprise setups add separate workflows per environment (staging/prod), per service, security scanning, dependency-bots, etc. — deliberately out of scope here per your ask.
+
+---
+
+## 3. What the Workflow Does
+
+**`ci.yml`** runs on every `push` to `main` and every `pull_request` targeting `main`:
+
+1. **Detect what changed** — a small filter job checks whether `api/**` or `app/**` files changed in this push/PR.
+2. **Backend job** (only runs if `api/**` changed):
+   - Checkout code
+   - Setup Node.js with npm cache (this is the "cache dependencies" step — GitHub's official `setup-node` action handles it natively, no extra config needed)
+   - `npm ci` (install)
+   - ESLint
+   - `tsc --noEmit` (type-check without emitting files)
+   - Unit tests (if present)
+   - Build
+3. **Frontend job** (only runs if `app/**` changed): identical shape, using `app/`'s scripts.
+4. **Any failed step fails the whole job**, which blocks merge once branch protection is turned on (point 7).
+
+Both jobs run in parallel, not sequentially — so a PR touching both frontend and backend still finishes in the time of the slower one, not the sum of both.
+
+---
+
+## 4. Best Practices Applied (and why each one matters here)
+
+- **Path-filtered jobs, not one giant job** — avoids wasting free-tier Actions minutes rebuilding the backend when only a frontend file changed. GitHub Actions free tier gives you 2,000 minutes/month on a private repo; this stretches that further.
+- **`npm ci` not `npm install`** — installs exactly what's in `package-lock.json`, reproducible and faster in CI. `npm install` can silently update the lockfile, which you don't want happening inside CI.
+- **Dependency caching via `setup-node`'s built-in cache** — avoids re-downloading `node_modules` from npm's registry on every run; this alone often cuts CI time by 30-60%.
+- **`--if-present` on lint/test scripts** — right now your `api/package.json` has no `lint` or `test` script yet, and `app/package.json` has no `test` script. Using `--if-present` means the workflow won't hard-fail on a missing script today, but will start enforcing it the moment you add one — no workflow edit needed later. **You should still add these scripts soon** (see the gap flagged below).
+- **`tsc --noEmit` as a separate step from build** — catches type errors explicitly and quickly, rather than relying on the bundler's type-checking (which can be slower or, in some Next.js configs, skipped by default).
+- **Fail-fast, not fail-silent** — every step's non-zero exit code fails the job by default; no step deliberately swallows errors.
+- **Required checks, not required workflows** — branch protection (point 7) references the specific job names (`backend-ci`, `frontend-ci`), not the workflow file itself, so a skipped job (because that path didn't change) still counts as passing rather than blocking your merge.
+
+**Gap to close soon, not blocking:** neither `api/package.json` nor `app/package.json` currently defines a `test` script (no Jest/Vitest installed yet), and `api/package.json` has no `lint` script. The CI workflow is written to tolerate this today, but real coverage requires adding: `jest` + `supertest` + `mongodb-memory-server` to `api/` (matches the tech recommendations from your architecture review), and `vitest` or Jest to `app/`. Until then, the "Run unit tests" step effectively does nothing — worth being honest with your supervisor about that gap rather than letting a green checkmark imply test coverage that doesn't exist yet.
+
+---
+
+## 5. Required GitHub Secrets
+
+**For the CI workflow itself: none.** Linting, type-checking, and building don't need real database credentials or API keys.
+
+**For the optional deploy workflow (point 10), if you choose to use it:**
+
+| Secret | Used for |
+|---|---|
+| `RENDER_DEPLOY_HOOK_URL` | Triggers a Render deploy via a plain HTTPS POST — no API key needed, Render generates this URL per-service |
+
+That's the only one. You do **not** need to put `MONGODB_URI`, JWT secrets, or LLM API keys into GitHub Secrets at all, because — per point 8 — GitHub Actions isn't the thing running your app in production. Those live in Vercel's and Render's own dashboards instead.
+
+---
+
+## 6. Required Environment Variables
+
+These are **not** GitHub Secrets — they're configured directly in each hosting platform's dashboard, since that's where your app actually runs.
+
+**Backend (Render/Railway/Fly dashboard):**
+```
+NODE_ENV=production
+PORT=5000
+MONGODB_URI=<your MongoDB Atlas connection string>
+JWT_ACCESS_SECRET=<random string, 32+ chars>
+JWT_REFRESH_SECRET=<different random string, 32+ chars>
+CORS_ORIGIN=https://your-app.vercel.app
+```
+Add later as those modules land: `REDIS_URL` (once BullMQ/rate-limiting is built), an LLM provider key (`OPENAI_API_KEY` or equivalent), and embedding/OCR provider config.
+
+**Frontend (Vercel dashboard):**
+```
+NEXT_PUBLIC_API_URL=https://your-backend.onrender.com
+NODE_ENV=production
+```
+Anything prefixed `NEXT_PUBLIC_` is bundled into client-side JS and is **not** a secret by the time it ships — never put a real secret behind that prefix.
+
+**Local development (`.env` files, already gitignored):** unchanged from what you have — this doc only concerns CI/deploy, not local dev.
+
+---
+
+## 7. Branch Protection Rules
+
+On `main`, in repo Settings → Branches → Add rule:
+
+- ✅ **Require a pull request before merging** — no direct pushes to `main`, including for repo admins (check "Include administrators")
+- ✅ **Require approvals: 1** (bump to 2 for paths matching your CODEOWNERS entries touching `api/src/common/middlewares/` or `api/src/modules/auth/` — tenant-isolation-critical code, per your existing Git workflow doc)
+- ✅ **Require status checks to pass before merging** — select `backend-ci` and `frontend-ci` specifically (not the path-filter job) as required checks
+- ✅ **Require branches to be up to date before merging** — forces a rebase/merge of `main` into the PR branch first, catching conflicts before merge rather than after
+- ✅ **Require conversation resolution before merging** — no unresolved PR review comments at merge time
+- ❌ Do not allow force pushes to `main`
+- ❌ Do not allow deletion of `main`
+
+This is what actually gates bad code — the CI workflow only produces a red/green signal; branch protection is what makes that signal binding.
+
+---
+
+## 8. Should Deployment Be GitHub Actions, or Native Vercel/Render?
+
+**Native Vercel/Render, not GitHub Actions.** This is the single biggest simplification available to you, and it's genuinely the production-standard choice for exactly this stack, not a "beginner shortcut."
+
+**Why:**
+- Both Vercel and Render have a **native GitHub App integration**: connect the repo once, tell it which folder to build from (`app/` or `api/`), and it deploys automatically on every push to `main` — zero YAML, zero secrets in GitHub, zero maintenance.
+- They each run their **own build step** as part of deploying (`next build` for Vercel, `npm run build && npm start` for Render), so a broken build still fails the deploy even without GitHub Actions being involved.
+- Using GitHub Actions to deploy would mean managing deploy credentials as GitHub Secrets, writing and maintaining deploy scripts, and duplicating logic these platforms already provide for free — pure added complexity for a team of 6 students, with no corresponding benefit at this scale.
+- The quality gate still exists — it just lives in **branch protection**, not in the deploy step. Nothing merges to `main` unless `backend-ci`/`frontend-ci` pass; only merged code ever reaches Vercel/Render. That's the same safety property an Actions-based deploy pipeline would give you, achieved with less to maintain.
+
+**Setup (one-time, ~10 minutes each):**
+- **Vercel:** New Project → Import your GitHub repo → set Root Directory to `app` → deploy. Every push to `main` (i.e., every merged PR) auto-deploys; every PR also gets its own free preview URL automatically, which is a nice bonus for reviewing UI changes before merge.
+- **Render:** New Web Service → connect the same repo → set Root Directory to `api`, Build Command `npm install && npm run build`, Start Command `npm start` → deploy. Same auto-deploy-on-merge behavior.
+
+---
+
+## 9. Complete CI/CD Architecture Diagram
+
+```
+Developer                                                                
+    │
+    │  git push origin feature/t2.1.1-...
+    ▼
+┌─────────────────────────────┐
+│   Pull Request opened        │
+│   (target: main)             │
+└───────────────┬──────────────┘
+                │  triggers
+                ▼
+┌───────────────────────────────────────────────────────────┐
+│  GitHub Actions: ci.yml                                    │
+│                                                              │
+│   ┌────────────────┐                                        │
+│   │  changes job    │  detects api/** or app/** touched      │
+│   └───────┬─────────┘                                        │
+│           │                                                  │
+│   ┌───────┴────────┐          ┌────────────────┐            │
+│   │  backend-ci     │          │  frontend-ci    │            │
+│   │  (if api/** )   │          │  (if app/** )   │            │
+│   │  npm ci          │          │  npm ci          │            │
+│   │  eslint          │          │  eslint          │            │
+│   │  tsc --noEmit    │          │  tsc --noEmit    │            │
+│   │  tests           │          │  tests           │            │
+│   │  build           │          │  build           │            │
+│   └───────┬─────────┘          └────────┬─────────┘            │
+│           │                              │                      │
+│           └──────────┬───────────────────┘                      │
+└──────────────────────┼──────────────────────────────────────────┘
+                        │  both green?
+                        ▼
+        ┌───────────────────────────────┐
+        │  Branch protection on main     │
+        │  - status checks required      │
+        │  - 1-2 approvals required      │
+        └───────────────┬────────────────┘
+                         │  merge allowed
+                         ▼
+              ┌────────────────────┐
+              │  Merge to main       │
+              └──────────┬───────────┘
+                         │
+        ┌────────────────┴─────────────────┐
+        │  triggers (native, not Actions)   │
+        ▼                                    ▼
+┌───────────────────┐              ┌────────────────────┐
+│  Vercel             │              │  Render              │
+│  builds app/         │              │  builds+runs api/     │
+│  deploys frontend     │              │  deploys backend       │
+│  → your-app.vercel.app│              │  → your-api.onrender.com│
+└──────────┬──────────┘              └──────────┬───────────┘
+           │                                     │
+           │          both talk to               │
+           └───────────────┬─────────────────────┘
+                            ▼
+                 ┌────────────────────────┐
+                 │  MongoDB Atlas           │
+                 │  (always-on, no deploy    │
+                 │   step — just a           │
+                 │   connection string)       │
+                 └────────────────────────┘
+```
+
+---
+
+## 10. Example Workflow Files
+
+`ci.yml` is the required file — see the companion file for the ready-to-use version.
+
+An **optional** `deploy-backend.yml` is also included, only for the case where you specifically want a visible "Deploy" entry in your Actions tab in addition to Render's native dashboard. It is *not* required if you set up Render's native GitHub integration per point 8 — that already auto-deploys on merge with no YAML at all. Only add this file if you disable Render's auto-deploy-on-push and want deploys explicitly gated behind `ci.yml` passing first (a slightly more conservative setup some teams prefer).
+
+
+================================================================================
+FILE: docker-compose.yml
+================================================================================
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./api/.env
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./app:/app
+      - /app/node_modules
+
+  worker:
+    build:
+      context: .
+      dockerfile: workers/Dockerfile
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./workers:/app
+      - /app/node_modules
+    env_file:
+      - ./workers/.env
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - REDIS_URL=redis://redis:6379
+
+  redis:
+    image: redis:7
+    container_name: docsai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:8
+    container_name: docsai-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: docsai
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  mongo_data:
+  redis_data:
+
+
+================================================================================
+FILE: package.json
 ================================================================================
 {
-    "name": "@types/node",
-    "version": "26.1.0",
-    "description": "TypeScript definitions for node",
-    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node",
-    "license": "MIT",
-    "contributors": [
-        {
-            "name": "Microsoft TypeScript",
-            "githubUsername": "Microsoft",
-            "url": "https://github.com/Microsoft"
-        },
-        {
-            "name": "Alberto Schiabel",
-            "githubUsername": "jkomyno",
-            "url": "https://github.com/jkomyno"
-        },
-        {
-            "name": "Andrew Makarov",
-            "githubUsername": "r3nya",
-            "url": "https://github.com/r3nya"
-        },
-        {
-            "name": "Benjamin Toueg",
-            "githubUsername": "btoueg",
-            "url": "https://github.com/btoueg"
-        },
-        {
-            "name": "David Junger",
-            "githubUsername": "touffy",
-            "url": "https://github.com/touffy"
-        },
-        {
-            "name": "Mohsen Azimi",
-            "githubUsername": "mohsen1",
-            "url": "https://github.com/mohsen1"
-        },
-        {
-            "name": "Nikita Galkin",
-            "githubUsername": "galkin",
-            "url": "https://github.com/galkin"
-        },
-        {
-            "name": "Sebastian Silbermann",
-            "githubUsername": "eps1lon",
-            "url": "https://github.com/eps1lon"
-        },
-        {
-            "name": "Wilco Bakker",
-            "githubUsername": "WilcoBakker",
-            "url": "https://github.com/WilcoBakker"
-        },
-        {
-            "name": "Marcin Kopacz",
-            "githubUsername": "chyzwar",
-            "url": "https://github.com/chyzwar"
-        },
-        {
-            "name": "Trivikram Kamat",
-            "githubUsername": "trivikr",
-            "url": "https://github.com/trivikr"
-        },
-        {
-            "name": "Junxiao Shi",
-            "githubUsername": "yoursunny",
-            "url": "https://github.com/yoursunny"
-        },
-        {
-            "name": "Ilia Baryshnikov",
-            "githubUsername": "qwelias",
-            "url": "https://github.com/qwelias"
-        },
-        {
-            "name": "ExE Boss",
-            "githubUsername": "ExE-Boss",
-            "url": "https://github.com/ExE-Boss"
-        },
-        {
-            "name": "Piotr Błażejewicz",
-            "githubUsername": "peterblazejewicz",
-            "url": "https://github.com/peterblazejewicz"
-        },
-        {
-            "name": "Anna Henningsen",
-            "githubUsername": "addaleax",
-            "url": "https://github.com/addaleax"
-        },
-        {
-            "name": "Victor Perin",
-            "githubUsername": "victorperin",
-            "url": "https://github.com/victorperin"
-        },
-        {
-            "name": "NodeJS Contributors",
-            "githubUsername": "NodeJS",
-            "url": "https://github.com/NodeJS"
-        },
-        {
-            "name": "Linus Unnebäck",
-            "githubUsername": "LinusU",
-            "url": "https://github.com/LinusU"
-        },
-        {
-            "name": "wafuwafu13",
-            "githubUsername": "wafuwafu13",
-            "url": "https://github.com/wafuwafu13"
-        },
-        {
-            "name": "Matteo Collina",
-            "githubUsername": "mcollina",
-            "url": "https://github.com/mcollina"
-        },
-        {
-            "name": "Dmitry Semigradsky",
-            "githubUsername": "Semigradsky",
-            "url": "https://github.com/Semigradsky"
-        },
-        {
-            "name": "René",
-            "githubUsername": "Renegade334",
-            "url": "https://github.com/Renegade334"
-        },
-        {
-            "name": "Yagiz Nizipli",
-            "githubUsername": "anonrig",
-            "url": "https://github.com/anonrig"
-        }
-    ],
-    "main": "",
-    "types": "index.d.ts",
-    "typesVersions": {
-        "<=5.6": {
-            "*": [
-                "ts5.6/*"
-            ]
-        },
-        "<=5.7": {
-            "*": [
-                "ts5.7/*"
-            ]
-        }
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
-        "directory": "types/node"
-    },
-    "scripts": {},
-    "dependencies": {
-        "undici-types": "~8.3.0"
-    },
-    "peerDependencies": {},
-    "typesPublisherContentHash": "bac6fe2369bbd2e0f2cf6643373e8c398ed66b886a72749c8d1fb0b9b60031ab",
-    "typeScriptVersion": "5.6"
+  "name": "documind-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DocuMind AI monorepo — Next.js frontend, Express backend, and background workers.",
+  "workspaces": [
+    "api",
+    "app",
+    "workers"
+  ],
+  "scripts": {
+    "dev": "docker compose up --build",
+    "dev:api": "npm run dev --workspace api",
+    "dev:app": "npm run dev --workspace app",
+    "dev:workers": "npm run dev --workspace workers",
+    "build": "npm run build --workspaces --if-present",
+    "build:api": "npm run build --workspace api",
+    "build:app": "npm run build --workspace app",
+    "build:workers": "npm run build --workspace workers",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "install:all": "npm install --workspaces --include-workspace-root"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.4",
+    "typescript-eslint": "^8.62.1"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "keywords": [
+    "docsai",
+    "documind",
+    "ai",
+    "rag",
+    "monorepo"
+  ],
+  "license": "UNLICENSED"
+}
+
+
+================================================================================
+FILE: tsconfig.base.json
+================================================================================
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  }
 }
 
 ================================================================================
-FILE: ./api/node_modules/@types/node/README.md
-================================================================================
-# Installation
-> `npm install --save @types/node`
-
-# Summary
-This package contains type definitions for node (https://nodejs.org/).
-
-# Details
-Files were exported from https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node.
-
-### Additional Details
- * Last updated: Wed, 01 Jul 2026 11:03:38 GMT
- * Dependencies: [undici-types](https://npmjs.com/package/undici-types)
-
-# Credits
-These definitions were written by [Microsoft TypeScript](https://github.com/Microsoft), [Alberto Schiabel](https://github.com/jkomyno), [Andrew Makarov](https://github.com/r3nya), [Benjamin Toueg](https://github.com/btoueg), [David Junger](https://github.com/touffy), [Mohsen Azimi](https://github.com/mohsen1), [Nikita Galkin](https://github.com/galkin), [Sebastian Silbermann](https://github.com/eps1lon), [Wilco Bakker](https://github.com/WilcoBakker), [Marcin Kopacz](https://github.com/chyzwar), [Trivikram Kamat](https://github.com/trivikr), [Junxiao Shi](https://github.com/yoursunny), [Ilia Baryshnikov](https://github.com/qwelias), [ExE Boss](https://github.com/ExE-Boss), [Piotr Błażejewicz](https://github.com/peterblazejewicz), [Anna Henningsen](https://github.com/addaleax), [Victor Perin](https://github.com/victorperin), [NodeJS Contributors](https://github.com/NodeJS), [Linus Unnebäck](https://github.com/LinusU), [wafuwafu13](https://github.com/wafuwafu13), [Matteo Collina](https://github.com/mcollina), [Dmitry Semigradsky](https://github.com/Semigradsky), [René](https://github.com/Renegade334), and [Yagiz Nizipli](https://github.com/anonrig).
-
-
-================================================================================
-FILE: ./api/package.json
+FILE: api/package.json
 ================================================================================
 {
   "name": "api",
@@ -192,7 +739,9 @@ FILE: ./api/package.json
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/app.test.ts"
+    "test": "find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test",
+    "test:local": "MONGODB_URI='mongodb://127.0.0.1:27017/docsai' REDIS_URL='redis://127.0.0.1:6379' find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test",
+    "test:compose": "MONGODB_URI='mongodb://mongodb:27017/docsai' REDIS_URL='redis://redis:6379' find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test"
   },
   "keywords": [],
   "author": "",
@@ -203,10 +752,12 @@ FILE: ./api/package.json
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "ioredis": "^5.11.1",
     "mongoose": "^9.7.3",
     "nodemailer": "^9.0.3",
     "pino": "^10.3.1",
+    "rate-limit-redis": "^5.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -218,6 +769,7 @@ FILE: ./api/package.json
     "@types/nodemailer": "^8.0.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
+    "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.14",
     "pino-pretty": "^13.1.3",
     "tsx": "^4.23.0",
@@ -228,7 +780,61 @@ FILE: ./api/package.json
 
 
 ================================================================================
-FILE: ./api/src/app.ts
+FILE: api/src/server.ts
+================================================================================
+import dotenv from "dotenv";
+import app from "./app.js";
+import { connectDB, disconnectDB } from "./db/connection.js";
+import { connectRedis, disconnectRedis } from "./db/redis.js";
+import { config } from "./config/index.js";
+import { logger } from "./common/logger/logger.js";
+
+dotenv.config();
+
+let shuttingDown = false;
+
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
+  logger.info({ signal }, "graceful shutdown started");
+
+  await new Promise<void>((resolve) => {
+    server.close(() => {
+      logger.info("HTTP server closed");
+      resolve();
+    });
+  });
+
+  await Promise.allSettled([disconnectRedis(), disconnectDB()]);
+
+  process.exit(0);
+}
+
+try {
+  await connectDB();
+  await connectRedis();
+} catch (err) {
+  logger.fatal({ err }, "API startup failed");
+  process.exit(1);
+}
+
+const server = app.listen(config.PORT, () => {
+  logger.info({ port: config.PORT }, "API server started");
+});
+
+process.on("SIGTERM", () => {
+  void gracefulShutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+  void gracefulShutdown("SIGINT");
+});
+
+
+================================================================================
+FILE: api/src/app.ts
 ================================================================================
 import express from "express";
 import cors, { type CorsOptions } from "cors";
@@ -373,7 +979,139 @@ export default app;
 
 
 ================================================================================
-FILE: ./api/src/common/errors/AppError.ts
+FILE: api/src/routes.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/config/env.ts
+================================================================================
+import { z } from "zod";
+import { logger } from "../common/logger/logger.js";
+
+/**
+ * Zod schema for API service environment variables.
+ * Validates and parses all required and optional env vars at startup.
+ */
+const envSchema = z.object({
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
+
+  PORT: z
+    .string()
+    .default("5000")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().positive().int()),
+
+  HOST: z.string().default("0.0.0.0"),
+
+  MONGODB_URI: z
+    .string()
+    .url()
+    .default("mongodb://mongodb:27017/docsai"),
+  MONGODB_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
+  MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
+  MONGODB_RETRY_BACKOFF_FACTOR: z.coerce.number().min(1).default(2),
+  MONGODB_RETRY_MAX_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(10000),
+
+  REDIS_URL: z.string().default("redis://redis:6379"),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1).default(15 * 60 * 1000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).default(100),
+  RATE_LIMIT_MESSAGE: z.string().default("Too many requests, please try again later."),
+
+  APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
+
+  JWT_SECRET: z.string().min(1).default("development-only-jwt-secret"),
+  JWT_EXPIRES_IN: z.string().default("15m"),
+  JWT_REFRESH_SECRET: z
+    .string()
+    .min(1)
+    .default("development-only-refresh-jwt-secret"),
+  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+
+  EMAIL_VERIFICATION_JWT_SECRET: z
+    .string()
+    .min(1)
+    .default("development-only-email-verification-secret"),
+  EMAIL_VERIFICATION_JWT_EXPIRES_IN: z.string().default("24h"),
+  SEND_EMAILS: z
+    .string()
+    .default("false")
+    .transform((value) => value.toLowerCase() === "true"),
+  SMTP_HOST: z.string().default(""),
+  SMTP_PORT: z
+    .string()
+    .default("587")
+    .transform((value) => parseInt(value, 10))
+    .pipe(z.number().positive().int()),
+  SMTP_SECURE: z
+    .string()
+    .default("false")
+    .transform((value) => value.toLowerCase() === "true"),
+  SMTP_USER: z.string().default(""),
+  SMTP_PASS: z.string().default(""),
+  SMTP_FROM: z.string().default("DocuMind AI <no-reply@localhost>"),
+
+  LOG_LEVEL: z
+    .enum(["debug", "info", "warn", "error"])
+    .default("info"),
+  LOG_PRETTY: z
+    .string()
+    .default("false")
+    .transform((value) => value.toLowerCase() === "true"),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+/**
+ * Parses and validates environment variables.
+ * Exits the process with a clear error message if validation fails.
+ */
+export function parseEnv(env: Record<string, string | undefined>): Env {
+  const result = envSchema.safeParse(env);
+
+  if (!result.success) {
+    logger.error(
+      {
+        issues: result.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      },
+      "Invalid environment variables"
+    );
+    process.exit(1);
+  }
+
+  return result.data;
+}
+
+
+================================================================================
+FILE: api/src/config/index.ts
+================================================================================
+import { Env, parseEnv } from "./env.js";
+
+/**
+ * Application-wide configuration object.
+ * Parsed once at startup from environment variables with Zod validation.
+ *
+ * Import this singleton anywhere in the API service to access validated config values.
+ *
+ * @example
+ * import { config } from "./config/index.js";
+ * const port = config.PORT;
+ */
+export const config: Env = parseEnv(process.env);
+
+
+================================================================================
+FILE: api/src/common/errors/AppError.ts
 ================================================================================
 export type ErrorDetails = unknown;
 
@@ -401,7 +1139,7 @@ export class AppError extends Error {
 
 
 ================================================================================
-FILE: ./api/src/common/errors/errorCodes.ts
+FILE: api/src/common/errors/errorCodes.ts
 ================================================================================
 export const INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR";
 export const NOT_FOUND = "NOT_FOUND";
@@ -425,7 +1163,7 @@ export const REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED";
 
 
 ================================================================================
-FILE: ./api/src/common/logger/logger.ts
+FILE: api/src/common/logger/logger.ts
 ================================================================================
 import pino from "pino";
 
@@ -480,7 +1218,35 @@ export const logger = pino(
 
 
 ================================================================================
-FILE: ./api/src/common/middlewares/authenticate.middleware.ts
+FILE: api/src/common/types/express.d.ts
+================================================================================
+import type { Logger } from "pino";
+import type { AuthIdentity } from "../../modules/auth/auth.types.js";
+
+declare global {
+  namespace Express {
+    interface Request {
+      requestId: string;
+      log: Logger;
+      /**
+       * Authenticated user claims decoded from the access token.
+       * Populated by the `authenticate` middleware for protected routes.
+       */
+      auth?: AuthIdentity;
+      /**
+       * Tenant ID extracted from the verified JWT.
+       * Populated by the `tenantScoping` middleware for tenant-scoped routes.
+       */
+      tenantId?: string;
+    }
+  }
+}
+
+export {};
+
+
+================================================================================
+FILE: api/src/common/middlewares/authenticate.middleware.ts
 ================================================================================
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/AppError.js";
@@ -548,7 +1314,201 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
 
 ================================================================================
-FILE: ./api/src/common/middlewares/errorHandler.middleware.ts
+FILE: api/src/common/middlewares/authorize.middleware.ts
+================================================================================
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../errors/AppError.js";
+import { FORBIDDEN, UNAUTHORIZED } from "../errors/errorCodes.js";
+
+/**
+ * Creates an Express middleware that enforces role-based authorization.
+ *
+ * Use this after `authenticate` and optionally after `tenantScoping`.
+ *
+ * @example
+ * router.get("/admin", authenticate, tenantScoping, authorize("COMPANY_ADMIN"), controller);
+ */
+export function authorize(...allowedRoles: string[]) {
+  if (allowedRoles.length === 0) {
+    throw new Error("authorize middleware requires at least one role");
+  }
+
+  const allowedRolesSet = new Set(allowedRoles);
+
+  return function authorizeMiddleware(
+    req: Request,
+    _res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      if (!req.auth) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const role = req.auth.role;
+
+      if (!role || !allowedRolesSet.has(role)) {
+        throw new AppError(
+          403,
+          FORBIDDEN,
+          `Forbidden: requires one of the following roles: ${allowedRoles.join(", ")}`,
+        );
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+
+================================================================================
+FILE: api/src/common/middlewares/tenantScoping.middleware.ts
+================================================================================
+import type { NextFunction, Request, Response } from "express";
+import { AppError } from "../errors/AppError.js";
+import { UNAUTHORIZED } from "../errors/errorCodes.js";
+
+/**
+ * Express middleware that extracts and validates tenantId from a verified JWT.
+ *
+ * This middleware MUST run after the `authenticate` middleware, which verifies
+ * the JWT signature and populates `req.auth` with the decoded claims.
+ *
+ * On success it:
+ * - Extracts `tenantId` from `req.auth.tenantId` (already verified by JWT)
+ * - Stores it in `req.tenantId` for downstream use
+ * - Enhances request logging with tenant context
+ * - Calls `next()`
+ *
+ * On failure (missing tenantId) it throws a 401 AppError which is handled by
+ * the centralized error handler.
+ *
+ * Usage:
+ * ```typescript
+ * router.get("/protected", authenticate, tenantScoping, controller);
+ * ```
+ */
+export function tenantScoping(req: Request, _res: Response, next: NextFunction) {
+  try {
+    // Validate that authenticate middleware ran first and set req.auth
+    if (!req.auth) {
+      throw new AppError(
+        401,
+        UNAUTHORIZED,
+        "Authentication required before tenant scoping"
+      );
+    }
+
+    // Extract and validate tenantId from the verified JWT
+    const tenantId = req.auth.tenantId;
+    if (!tenantId) {
+      throw new AppError(
+        401,
+        UNAUTHORIZED,
+        "Tenant context required (tenantId missing from token)"
+      );
+    }
+
+    // Store tenantId in request for downstream middleware/controllers
+    req.tenantId = tenantId;
+
+    // Enhance request logging with tenant context for better traceability
+    if (req.log) {
+      req.log = req.log.child({ tenantId });
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+
+================================================================================
+FILE: api/src/common/middlewares/requestContext.middleware.ts
+================================================================================
+import { randomUUID } from "node:crypto";
+import type { RequestHandler } from "express";
+import { logger } from "../logger/logger.js";
+
+const MAX_REQUEST_ID_LENGTH = 128;
+const VALID_REQUEST_ID = /^[\x21-\x7e]+$/;
+
+function getRequestId(value: string | undefined): string | undefined {
+  if (
+    value === undefined ||
+    value.length === 0 ||
+    value.length > MAX_REQUEST_ID_LENGTH ||
+    !VALID_REQUEST_ID.test(value)
+  ) {
+    return undefined;
+  }
+
+  return value;
+}
+
+export const requestContextMiddleware: RequestHandler = (req, res, next) => {
+  const incomingRequestId =
+    getRequestId(req.get("x-request-id")) ??
+    getRequestId(req.get("x-correlation-id"));
+  const requestId = incomingRequestId ?? randomUUID();
+
+  req.requestId = requestId;
+  try {
+    req.log = logger.child({ requestId });
+  } catch {
+    req.log = logger;
+  }
+  res.setHeader("X-Request-ID", requestId);
+
+  next();
+};
+
+
+================================================================================
+FILE: api/src/common/middlewares/requestLogger.middleware.ts
+================================================================================
+import type { RequestHandler } from "express";
+import { logger } from "../logger/logger.js";
+
+export const requestLoggerMiddleware: RequestHandler = (req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    try {
+      const requestLogger = req.log ?? logger;
+      const durationMs =
+        Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const event = {
+        ...(req.log ? {} : { requestId: req.requestId }),
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs: Number(durationMs.toFixed(2)),
+        userAgent: req.get("user-agent"),
+        ip: req.ip,
+      };
+
+      if (res.statusCode >= 500) {
+        requestLogger.error(event, "request completed");
+      } else if (res.statusCode >= 400) {
+        requestLogger.warn(event, "request completed");
+      } else {
+        requestLogger.info(event, "request completed");
+      }
+    } catch {
+      // Logging must never affect the completed response or crash the process.
+    }
+  });
+
+  next();
+};
+
+
+================================================================================
+FILE: api/src/common/middlewares/errorHandler.middleware.ts
 ================================================================================
 import type { ErrorRequestHandler } from "express";
 import { AppError } from "../errors/AppError.js";
@@ -643,7 +1603,7 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
 
 
 ================================================================================
-FILE: ./api/src/common/middlewares/notFound.middleware.ts
+FILE: api/src/common/middlewares/notFound.middleware.ts
 ================================================================================
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/AppError.js";
@@ -654,151 +1614,60 @@ export function notFoundMiddleware(_req: Request, _res: Response, next: NextFunc
 
 
 ================================================================================
-FILE: ./api/src/common/middlewares/requestContext.middleware.ts
-================================================================================
-import { randomUUID } from "node:crypto";
-import type { RequestHandler } from "express";
-import { logger } from "../logger/logger.js";
-
-const MAX_REQUEST_ID_LENGTH = 128;
-const VALID_REQUEST_ID = /^[\x21-\x7e]+$/;
-
-function getRequestId(value: string | undefined): string | undefined {
-  if (
-    value === undefined ||
-    value.length === 0 ||
-    value.length > MAX_REQUEST_ID_LENGTH ||
-    !VALID_REQUEST_ID.test(value)
-  ) {
-    return undefined;
-  }
-
-  return value;
-}
-
-export const requestContextMiddleware: RequestHandler = (req, res, next) => {
-  const incomingRequestId =
-    getRequestId(req.get("x-request-id")) ??
-    getRequestId(req.get("x-correlation-id"));
-  const requestId = incomingRequestId ?? randomUUID();
-
-  req.requestId = requestId;
-  try {
-    req.log = logger.child({ requestId });
-  } catch {
-    req.log = logger;
-  }
-  res.setHeader("X-Request-ID", requestId);
-
-  next();
-};
-
-
-================================================================================
-FILE: ./api/src/common/middlewares/requestLogger.middleware.ts
+FILE: api/src/common/middlewares/rateLimit.middleware.ts
 ================================================================================
 import type { RequestHandler } from "express";
-import { logger } from "../logger/logger.js";
+import { rateLimit, type Store } from "express-rate-limit";
+import RedisStore from "rate-limit-redis";
+import { Command } from "ioredis";
+import { config } from "../../config/index.js";
+import { getRedisClient } from "../../db/redis.js";
 
-export const requestLoggerMiddleware: RequestHandler = (req, res, next) => {
-  const startedAt = process.hrtime.bigint();
-
-  res.on("finish", () => {
-    try {
-      const requestLogger = req.log ?? logger;
-      const durationMs =
-        Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-      const event = {
-        ...(req.log ? {} : { requestId: req.requestId }),
-        method: req.method,
-        path: req.originalUrl,
-        statusCode: res.statusCode,
-        durationMs: Number(durationMs.toFixed(2)),
-        userAgent: req.get("user-agent"),
-        ip: req.ip,
-      };
-
-      if (res.statusCode >= 500) {
-        requestLogger.error(event, "request completed");
-      } else if (res.statusCode >= 400) {
-        requestLogger.warn(event, "request completed");
-      } else {
-        requestLogger.info(event, "request completed");
-      }
-    } catch {
-      // Logging must never affect the completed response or crash the process.
-    }
+function createRedisStore(redisClient = getRedisClient()): Store {
+  return new RedisStore({
+    sendCommand: (...args: string[]) => {
+      const [commandName, ...commandArgs] = args;
+      const redisCommand = new Command(commandName, commandArgs);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return redisClient.sendCommand(redisCommand) as Promise<any>;
+    },
+    prefix: "rate-limit:",
+    resetExpiryOnChange: true,
   });
+}
 
-  next();
-};
+export function createRateLimiter(options: {
+  windowMs?: number;
+  max?: number;
+  message?: string;
+  store?: Store;
+  redisClient?: ReturnType<typeof getRedisClient>;
+} = {}): RequestHandler {
+  const windowMs = options.windowMs ?? config.RATE_LIMIT_WINDOW_MS;
+  const max = options.max ?? config.RATE_LIMIT_MAX_REQUESTS;
+  const message = options.message ?? config.RATE_LIMIT_MESSAGE;
+  const store =
+    options.store ??
+    (options.redisClient ? createRedisStore(options.redisClient) : createRedisStore());
 
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipFailedRequests: true,
+    message: { error: message },
+    store,
+  });
+}
 
-================================================================================
-FILE: ./api/src/common/middlewares/tenantScoping.middleware.ts
-================================================================================
-import type { NextFunction, Request, Response } from "express";
-import { AppError } from "../errors/AppError.js";
-import { UNAUTHORIZED } from "../errors/errorCodes.js";
-
-/**
- * Express middleware that extracts and validates tenantId from a verified JWT.
- *
- * This middleware MUST run after the `authenticate` middleware, which verifies
- * the JWT signature and populates `req.auth` with the decoded claims.
- *
- * On success it:
- * - Extracts `tenantId` from `req.auth.tenantId` (already verified by JWT)
- * - Stores it in `req.tenantId` for downstream use
- * - Enhances request logging with tenant context
- * - Calls `next()`
- *
- * On failure (missing tenantId) it throws a 401 AppError which is handled by
- * the centralized error handler.
- *
- * Usage:
- * ```typescript
- * router.get("/protected", authenticate, tenantScoping, controller);
- * ```
- */
-export function tenantScoping(req: Request, _res: Response, next: NextFunction) {
-  try {
-    // Validate that authenticate middleware ran first and set req.auth
-    if (!req.auth) {
-      throw new AppError(
-        401,
-        UNAUTHORIZED,
-        "Authentication required before tenant scoping"
-      );
-    }
-
-    // Extract and validate tenantId from the verified JWT
-    const tenantId = req.auth.tenantId;
-    if (!tenantId) {
-      throw new AppError(
-        401,
-        UNAUTHORIZED,
-        "Tenant context required (tenantId missing from token)"
-      );
-    }
-
-    // Store tenantId in request for downstream middleware/controllers
-    req.tenantId = tenantId;
-
-    // Enhance request logging with tenant context for better traceability
-    if (req.log) {
-      req.log = req.log.child({ tenantId });
-    }
-
-    next();
-  } catch (error) {
-    next(error);
-  }
+export function authRateLimiter() {
+  return createRateLimiter();
 }
 
 
 ================================================================================
-FILE: ./api/src/common/middlewares/validateRequest.ts
+FILE: api/src/common/middlewares/validateRequest.ts
 ================================================================================
 import type { RequestHandler } from "express";
 import { AppError } from "../errors/AppError.js";
@@ -848,159 +1717,7 @@ export function validateRequest(
 
 
 ================================================================================
-FILE: ./api/src/common/types/express.d.ts
-================================================================================
-import type { Logger } from "pino";
-import type { AuthIdentity } from "../../modules/auth/auth.types.js";
-
-declare global {
-  namespace Express {
-    interface Request {
-      requestId: string;
-      log: Logger;
-      /**
-       * Authenticated user claims decoded from the access token.
-       * Populated by the `authenticate` middleware for protected routes.
-       */
-      auth?: AuthIdentity;
-      /**
-       * Tenant ID extracted from the verified JWT.
-       * Populated by the `tenantScoping` middleware for tenant-scoped routes.
-       */
-      tenantId?: string;
-    }
-  }
-}
-
-export {};
-
-
-================================================================================
-FILE: ./api/src/config/env.ts
-================================================================================
-import { z } from "zod";
-import { logger } from "../common/logger/logger.js";
-
-/**
- * Zod schema for API service environment variables.
- * Validates and parses all required and optional env vars at startup.
- */
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
-
-  PORT: z
-    .string()
-    .default("5000")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().positive().int()),
-
-  HOST: z.string().default("0.0.0.0"),
-
-  MONGODB_URI: z
-    .string()
-    .url()
-    .default("mongodb://mongodb:27017/docsai"),
-  MONGODB_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
-  MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
-  MONGODB_RETRY_BACKOFF_FACTOR: z.coerce.number().min(1).default(2),
-  MONGODB_RETRY_MAX_DELAY_MS: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .default(10000),
-
-  REDIS_URL: z.string().default("redis://redis:6379"),
-
-  APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
-
-  JWT_SECRET: z.string().min(1).default("development-only-jwt-secret"),
-  JWT_EXPIRES_IN: z.string().default("15m"),
-  JWT_REFRESH_SECRET: z
-    .string()
-    .min(1)
-    .default("development-only-refresh-jwt-secret"),
-  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
-
-  EMAIL_VERIFICATION_JWT_SECRET: z
-    .string()
-    .min(1)
-    .default("development-only-email-verification-secret"),
-  EMAIL_VERIFICATION_JWT_EXPIRES_IN: z.string().default("24h"),
-  SEND_EMAILS: z
-    .string()
-    .default("false")
-    .transform((value) => value.toLowerCase() === "true"),
-  SMTP_HOST: z.string().default(""),
-  SMTP_PORT: z
-    .string()
-    .default("587")
-    .transform((value) => parseInt(value, 10))
-    .pipe(z.number().positive().int()),
-  SMTP_SECURE: z
-    .string()
-    .default("false")
-    .transform((value) => value.toLowerCase() === "true"),
-  SMTP_USER: z.string().default(""),
-  SMTP_PASS: z.string().default(""),
-  SMTP_FROM: z.string().default("DocuMind AI <no-reply@localhost>"),
-
-  LOG_LEVEL: z
-    .enum(["debug", "info", "warn", "error"])
-    .default("info"),
-  LOG_PRETTY: z
-    .string()
-    .default("false")
-    .transform((value) => value.toLowerCase() === "true"),
-});
-
-export type Env = z.infer<typeof envSchema>;
-
-/**
- * Parses and validates environment variables.
- * Exits the process with a clear error message if validation fails.
- */
-export function parseEnv(env: Record<string, string | undefined>): Env {
-  const result = envSchema.safeParse(env);
-
-  if (!result.success) {
-    logger.error(
-      {
-        issues: result.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          message: issue.message,
-        })),
-      },
-      "Invalid environment variables"
-    );
-    process.exit(1);
-  }
-
-  return result.data;
-}
-
-
-================================================================================
-FILE: ./api/src/config/index.ts
-================================================================================
-import { Env, parseEnv } from "./env.js";
-
-/**
- * Application-wide configuration object.
- * Parsed once at startup from environment variables with Zod validation.
- *
- * Import this singleton anywhere in the API service to access validated config values.
- *
- * @example
- * import { config } from "./config/index.js";
- * const port = config.PORT;
- */
-export const config: Env = parseEnv(process.env);
-
-
-================================================================================
-FILE: ./api/src/db/connection.ts
+FILE: api/src/db/connection.ts
 ================================================================================
 import mongoose from "mongoose";
 import { logger } from "../common/logger/logger.js";
@@ -1137,37 +1854,154 @@ export async function disconnectDB(): Promise<void> {
 
 
 ================================================================================
-FILE: ./api/src/db/models/citation.model.ts
+FILE: api/src/db/redis.ts
+================================================================================
+import { Redis, type RedisOptions } from "ioredis";
+import { config } from "../config/index.js";
+
+let client: Redis | null = null;
+let isConnected = false;
+
+function isTestEnv(): boolean {
+  return process.env.NODE_ENV === "test";
+}
+
+function createClient(): Redis {
+  const options: RedisOptions = {
+    retryStrategy(times: number) {
+      const maxAttempts = isTestEnv() ? 1 : 10;
+
+      if (times > maxAttempts) {
+        if (!isTestEnv()) {
+          console.warn(
+            `[redis] Max reconnect attempts (${maxAttempts}) reached. Giving up.`
+          );
+        }
+        return null;
+      }
+
+      const baseDelay = isTestEnv() ? 10 : 500;
+      const delay = Math.min(
+        baseDelay * 2 ** (times - 1),
+        10_000
+      );
+
+      if (!isTestEnv()) {
+        console.warn(`[redis] Reconnecting in ${delay}ms (attempt ${times})`);
+      }
+
+      return delay;
+    },
+    maxRetriesPerRequest: null,
+    enableOfflineQueue: !isTestEnv(),
+    lazyConnect: false,
+  };
+
+  const redis = new Redis(config.REDIS_URL, options);
+
+  redis.on("connect", () => {
+    if (!isTestEnv()) console.log("[redis] Connecting...");
+  });
+
+  redis.on("ready", () => {
+    isConnected = true;
+    if (!isTestEnv()) console.log("✅ Redis Connected");
+  });
+
+  redis.on("error", (err: Error) => {
+    isConnected = false;
+    if (!isTestEnv()) console.error("❌ Redis Error:", err.message);
+  });
+
+  redis.on("close", () => {
+    isConnected = false;
+    if (!isTestEnv()) console.warn("[redis] Connection closed");
+  });
+
+  redis.on("reconnecting", () => {
+    if (!isTestEnv()) console.warn("[redis] Reconnecting...");
+  });
+
+  return redis;
+}
+
+export function getRedisClient(): Redis {
+  if (!client) {
+    client = createClient();
+  }
+
+  return client;
+}
+
+export async function connectRedis(): Promise<void> {
+  try {
+    const redis = getRedisClient();
+
+    await redis.ping();
+    isConnected = true;
+  } catch (err) {
+    if (!isTestEnv()) {
+      console.warn(
+        "[redis] Initial connection failed. App will run without Redis.",
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+}
+
+export async function disconnectRedis(): Promise<void> {
+  if (!client) {
+    return;
+  }
+
+  try {
+    await client.quit();
+    if (!isTestEnv()) console.log("[redis] Disconnected gracefully");
+  } catch (err) {
+    console.error("[redis] Error during disconnect:", err);
+  } finally {
+    client = null;
+    isConnected = false;
+  }
+}
+
+export function isRedisConnected(): boolean {
+  return isConnected;
+}
+
+
+================================================================================
+FILE: api/src/db/models/citation.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/conversation.model.ts
+FILE: api/src/db/models/conversation.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/documentChunk.model.ts
+FILE: api/src/db/models/documentChunk.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/document.model.ts
+FILE: api/src/db/models/document.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/knowledgeGap.model.ts
+FILE: api/src/db/models/knowledgeGap.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/message.model.ts
+FILE: api/src/db/models/message.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/refreshToken.model.ts
+FILE: api/src/db/models/refreshToken.model.ts
 ================================================================================
 import mongoose, { Schema } from "mongoose";
 
@@ -1226,7 +2060,7 @@ export default RefreshTokenModel;
 
 
 ================================================================================
-FILE: ./api/src/db/models/tenant.model.ts
+FILE: api/src/db/models/tenant.model.ts
 ================================================================================
 import mongoose, { Schema } from "mongoose";
 
@@ -1290,12 +2124,12 @@ export default TenantModel;
 
 
 ================================================================================
-FILE: ./api/src/db/models/usageLog.model.ts
+FILE: api/src/db/models/usageLog.model.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/db/models/user.model.ts
+FILE: api/src/db/models/user.model.ts
 ================================================================================
 import mongoose, { Schema } from "mongoose";
 
@@ -1417,194 +2251,183 @@ export default UserModel;
 
 
 ================================================================================
-FILE: ./api/src/db/redis.ts
+FILE: api/src/db/repositories/tenantScopedRepository.ts
 ================================================================================
-import { Redis, type RedisOptions } from "ioredis";
-import { config } from "../config/index.js";
+import type { Model, QueryFilter, UpdateQuery } from "mongoose";
+import { AppError } from "../../common/errors/AppError.js";
+import { BAD_REQUEST } from "../../common/errors/errorCodes.js";
 
-let client: Redis | null = null;
-let isConnected = false;
-
-function isTestEnv(): boolean {
-  return process.env.NODE_ENV === "test";
-}
-
-function createClient(): Redis {
-  const options: RedisOptions = {
-    retryStrategy(times: number) {
-      const maxAttempts = isTestEnv() ? 1 : 10;
-
-      if (times > maxAttempts) {
-        if (!isTestEnv()) {
-          console.warn(
-            `[redis] Max reconnect attempts (${maxAttempts}) reached. Giving up.`
-          );
-        }
-        return null;
-      }
-
-      const baseDelay = isTestEnv() ? 10 : 500;
-      const delay = Math.min(
-        baseDelay * 2 ** (times - 1),
-        10_000
-      );
-
-      if (!isTestEnv()) {
-        console.warn(`[redis] Reconnecting in ${delay}ms (attempt ${times})`);
-      }
-
-      return delay;
-    },
-    maxRetriesPerRequest: null,
-    enableOfflineQueue: !isTestEnv(),
-    lazyConnect: false,
-  };
-
-  const redis = new Redis(config.REDIS_URL, options);
-
-  redis.on("connect", () => {
-    if (!isTestEnv()) console.log("[redis] Connecting...");
-  });
-
-  redis.on("ready", () => {
-    isConnected = true;
-    if (!isTestEnv()) console.log("✅ Redis Connected");
-  });
-
-  redis.on("error", (err: Error) => {
-    isConnected = false;
-    if (!isTestEnv()) console.error("❌ Redis Error:", err.message);
-  });
-
-  redis.on("close", () => {
-    isConnected = false;
-    if (!isTestEnv()) console.warn("[redis] Connection closed");
-  });
-
-  redis.on("reconnecting", () => {
-    if (!isTestEnv()) console.warn("[redis] Reconnecting...");
-  });
-
-  return redis;
-}
-
-export function getRedisClient(): Redis {
-  if (!client) {
-    client = createClient();
+function validateTenantId(tenantId: unknown): string {
+  if (typeof tenantId !== "string") {
+    throw new AppError(400, BAD_REQUEST, "tenantId is required and must be a non-empty string");
   }
 
-  return client;
-}
+  const normalizedTenantId = tenantId.trim();
 
-export async function connectRedis(): Promise<void> {
-  try {
-    const redis = getRedisClient();
-
-    await redis.ping();
-    isConnected = true;
-  } catch (err) {
-    if (!isTestEnv()) {
-      console.warn(
-        "[redis] Initial connection failed. App will run without Redis.",
-        err instanceof Error ? err.message : String(err)
-      );
-    }
-  }
-}
-
-export async function disconnectRedis(): Promise<void> {
-  if (!client) {
-    return;
+  if (!normalizedTenantId) {
+    throw new AppError(400, BAD_REQUEST, "tenantId is required and must be a non-empty string");
   }
 
-  try {
-    await client.quit();
-    if (!isTestEnv()) console.log("[redis] Disconnected gracefully");
-  } catch (err) {
-    console.error("[redis] Error during disconnect:", err);
-  } finally {
-    client = null;
-    isConnected = false;
-  }
+  return normalizedTenantId;
 }
 
-export function isRedisConnected(): boolean {
-  return isConnected;
+function tenantScopedFilter<T>(tenantId: string, filter?: QueryFilter<T>) {
+  return {
+    ...(filter ?? {}),
+    tenantId,
+  } as QueryFilter<T>;
 }
 
+export function tenantScopedFindOne<T extends object>(
+  model: Model<T>,
+  tenantId: unknown,
+  filter: QueryFilter<T>,
+) {
+  return model.findOne(tenantScopedFilter(validateTenantId(tenantId), filter));
+}
 
-================================================================================
-FILE: ./api/src/modules/admin/admin.controller.ts
-================================================================================
+export function tenantScopedFind<T extends object>(
+  model: Model<T>,
+  tenantId: unknown,
+  filter: QueryFilter<T>,
+) {
+  return model.find(tenantScopedFilter(validateTenantId(tenantId), filter));
+}
 
+export function tenantScopedFindById<T extends object>(
+  model: Model<T>,
+  tenantId: unknown,
+  id: string,
+) {
+  return model.findOne({ _id: id, tenantId: validateTenantId(tenantId) });
+}
 
-================================================================================
-FILE: ./api/src/modules/admin/admin.dto.ts
-================================================================================
+export function tenantScopedUpdateOne<T extends object>(
+  model: Model<T>,
+  tenantId: unknown,
+  filter: QueryFilter<T>,
+  update: UpdateQuery<T>,
+  options?: Parameters<Model<T>["updateOne"]>[2],
+) {
+  return model.updateOne(
+    tenantScopedFilter(validateTenantId(tenantId), filter),
+    update,
+    options,
+  );
+}
 
+export function tenantScopedDeleteOne<T extends object>(
+  model: Model<T>,
+  tenantId: unknown,
+  filter: QueryFilter<T>,
+) {
+  return model.deleteOne(tenantScopedFilter(validateTenantId(tenantId), filter));
+}
 
-================================================================================
-FILE: ./api/src/modules/admin/admin.repository.ts
-================================================================================
+export function tenantScopedCreate<T extends object>(
+  model: Model<T>,
+  document: T & { tenantId: unknown },
+) {
+  validateTenantId(document.tenantId);
 
+  return model.create(document);
+}
 
-================================================================================
-FILE: ./api/src/modules/admin/admin.routes.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/admin/admin.service.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/admin/admin.types.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/admin/admin.validator.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/analytics/analytics.controller.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/analytics/analytics.dto.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/analytics/analytics.repository.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/analytics/analytics.routes.ts
-================================================================================
-
-
-================================================================================
-FILE: ./api/src/modules/analytics/analytics.service.ts
-================================================================================
+export { validateTenantId as requireTenantId };
 
 
 ================================================================================
-FILE: ./api/src/modules/analytics/analytics.types.ts
+FILE: api/src/providers/embedding/index.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/analytics/analytics.validator.ts
+FILE: api/src/providers/llm/index.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.controller.ts
+FILE: api/src/providers/ocr/index.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/providers/storage/index.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.controller.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.dto.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.repository.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.routes.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.service.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.types.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/admin/admin.validator.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.controller.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.dto.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.repository.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.routes.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.service.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.types.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/analytics/analytics.validator.ts
+================================================================================
+
+
+================================================================================
+FILE: api/src/modules/auth/auth.controller.ts
 ================================================================================
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
@@ -1789,7 +2612,7 @@ function handleAuthError(error: unknown, res: Response, next: NextFunction) {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.dto.ts
+FILE: api/src/modules/auth/auth.dto.ts
 ================================================================================
 export interface RegisterRequestDto {
   companyName: string;
@@ -1809,7 +2632,7 @@ export interface ResendVerificationEmailRequestDto {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.mailer.ts
+FILE: api/src/modules/auth/auth.mailer.ts
 ================================================================================
 import nodemailer from "nodemailer";
 import { AppError } from "../../common/errors/AppError.js";
@@ -1989,12 +2812,17 @@ function escapeHtml(value: string) {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.repository.ts
+FILE: api/src/modules/auth/auth.repository.ts
 ================================================================================
 import type { ClientSession } from "mongoose";
 import TenantModel, { type TenantDocument } from "../../db/models/tenant.model.js";
 import UserModel, { type UserDocument } from "../../db/models/user.model.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
+import {
+  tenantScopedCreate,
+  tenantScopedFindById,
+  tenantScopedFindOne,
+} from "../../db/repositories/tenantScopedRepository.js";
 
 export interface TenantCreateInput {
   name: string;
@@ -2027,7 +2855,9 @@ export async function findUserDocumentByEmail(email: string) {
 }
 
 export async function findUserDocumentByTenantAndEmail(tenantId: string, email: string) {
-  return UserModel.findOne({ tenantId, email }).select("+passwordHash").exec();
+  return tenantScopedFindOne(UserModel, tenantId, { tenantId, email })
+    .select("+passwordHash")
+    .exec();
 }
 
 export function findUserDocumentById(userId: string) {
@@ -2041,7 +2871,7 @@ export function findUserById(userId: string) {
 }
 
 export function findUserByTenantAndId(tenantId: string, userId: string) {
-  return UserModel.findOne({ _id: userId, tenantId })
+  return tenantScopedFindById(UserModel, tenantId, userId)
     .lean<UserDocument>()
     .exec();
 }
@@ -2056,14 +2886,15 @@ export function createRefreshTokenRecord(input: {
   createdByIp?: string;
   userAgent?: string;
 }) {
-  return RefreshTokenModel.create(input);
+  return tenantScopedCreate(RefreshTokenModel, input);
 }
 
 export function findRefreshTokenRecord(
+  tenantId: string,
   tokenHash: string,
   jtiHash: string
 ) {
-  return RefreshTokenModel.findOne({ tokenHash, jtiHash }).exec();
+  return tenantScopedFindOne(RefreshTokenModel, tenantId, { tokenHash, jtiHash }).exec();
 }
 
 export function claimRefreshTokenForRotation(
@@ -2199,7 +3030,7 @@ export async function deleteUserById(userId: string) {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.routes.ts
+FILE: api/src/modules/auth/auth.routes.ts
 ================================================================================
 import { Router } from "express";
 import {
@@ -2212,9 +3043,12 @@ import {
   verifyEmailController,
 } from "./auth.controller.js";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
+import { authRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 
 const router = Router();
+
+router.use(authRateLimiter());
 
 router.post("/register", registerController);
 router.post("/login", loginController);
@@ -2228,7 +3062,7 @@ export default router;
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.service.ts
+FILE: api/src/modules/auth/auth.service.ts
 ================================================================================
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
@@ -2778,6 +3612,7 @@ export async function refreshAccessToken(
     }
 
     const tokenRecord = await findRefreshTokenRecord(
+      claims.tenantId,
       hashRefreshToken(token),
       hashRefreshTokenJti(claims.jti)
     );
@@ -2904,6 +3739,7 @@ export async function logout(
     }
 
     const record = await findRefreshTokenRecord(
+      claims.tenantId,
       hashRefreshToken(token),
       hashRefreshTokenJti(claims.jti)
     );
@@ -2993,7 +3829,7 @@ export async function getMe(identity: AuthIdentity): Promise<MeResult> {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.types.ts
+FILE: api/src/modules/auth/auth.types.ts
 ================================================================================
 export interface RegisterInput {
   companyName: string;
@@ -3103,7 +3939,7 @@ export interface AuthIdentity {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/auth.validator.ts
+FILE: api/src/modules/auth/auth.validator.ts
 ================================================================================
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
@@ -3238,7 +4074,7 @@ function removeRepeatedFieldPrefix(field: string, message: string) {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/emailVerificationToken.ts
+FILE: api/src/modules/auth/emailVerificationToken.ts
 ================================================================================
 import crypto from "node:crypto";
 import { config } from "../../config/index.js";
@@ -3404,7 +4240,7 @@ function parseDurationSeconds(value: string) {
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/jwtTokens.ts
+FILE: api/src/modules/auth/jwtTokens.ts
 ================================================================================
 import crypto from "node:crypto";
 
@@ -3499,7 +4335,7 @@ export function verifyJwt<T extends JwtPayload>(token: string, secret: string): 
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/passwordHashing.ts
+FILE: api/src/modules/auth/passwordHashing.ts
 ================================================================================
 import argon2 from "argon2";
 
@@ -3527,7 +4363,7 @@ export async function verifyPassword(
 
 
 ================================================================================
-FILE: ./api/src/modules/auth/refreshTokenHashing.ts
+FILE: api/src/modules/auth/refreshTokenHashing.ts
 ================================================================================
 import { createHmac } from "node:crypto";
 import { config } from "../../config/index.js";
@@ -3548,603 +4384,446 @@ export function hashRefreshTokenJti(jti: string) {
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.controller.ts
+FILE: api/src/modules/chat/chat.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.dto.ts
+FILE: api/src/modules/chat/chat.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.repository.ts
+FILE: api/src/modules/chat/chat.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.routes.ts
+FILE: api/src/modules/chat/chat.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.service.ts
+FILE: api/src/modules/chat/chat.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.types.ts
+FILE: api/src/modules/chat/chat.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/chat/chat.validator.ts
+FILE: api/src/modules/chat/chat.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.controller.ts
+FILE: api/src/modules/citations/citations.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.dto.ts
+FILE: api/src/modules/citations/citations.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.repository.ts
+FILE: api/src/modules/citations/citations.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.routes.ts
+FILE: api/src/modules/citations/citations.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.service.ts
+FILE: api/src/modules/citations/citations.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.types.ts
+FILE: api/src/modules/citations/citations.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/citations/citations.validator.ts
+FILE: api/src/modules/citations/citations.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.controller.ts
+FILE: api/src/modules/documents/documents.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.dto.ts
+FILE: api/src/modules/documents/documents.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.repository.ts
+FILE: api/src/modules/documents/documents.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.routes.ts
+FILE: api/src/modules/documents/documents.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.service.ts
+FILE: api/src/modules/documents/documents.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.types.ts
+FILE: api/src/modules/documents/documents.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/documents/documents.validator.ts
+FILE: api/src/modules/documents/documents.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.controller.ts
+FILE: api/src/modules/feedback/feedback.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.dto.ts
+FILE: api/src/modules/feedback/feedback.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.repository.ts
+FILE: api/src/modules/feedback/feedback.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.routes.ts
+FILE: api/src/modules/feedback/feedback.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.service.ts
+FILE: api/src/modules/feedback/feedback.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.types.ts
+FILE: api/src/modules/feedback/feedback.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/feedback/feedback.validator.ts
+FILE: api/src/modules/feedback/feedback.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.controller.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.dto.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.repository.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.routes.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.service.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.types.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/knowledge-gaps/knowledge-gaps.validator.ts
+FILE: api/src/modules/knowledge-gaps/knowledge-gaps.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.controller.ts
+FILE: api/src/modules/processing/processing.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.dto.ts
+FILE: api/src/modules/processing/processing.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.repository.ts
+FILE: api/src/modules/processing/processing.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.routes.ts
+FILE: api/src/modules/processing/processing.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.service.ts
+FILE: api/src/modules/processing/processing.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.types.ts
+FILE: api/src/modules/processing/processing.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/processing/processing.validator.ts
+FILE: api/src/modules/processing/processing.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.controller.ts
+FILE: api/src/modules/retrieval/retrieval.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.dto.ts
+FILE: api/src/modules/retrieval/retrieval.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.repository.ts
+FILE: api/src/modules/retrieval/retrieval.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.routes.ts
+FILE: api/src/modules/retrieval/retrieval.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.service.ts
+FILE: api/src/modules/retrieval/retrieval.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.types.ts
+FILE: api/src/modules/retrieval/retrieval.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/retrieval/retrieval.validator.ts
+FILE: api/src/modules/retrieval/retrieval.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.controller.ts
+FILE: api/src/modules/tenants/tenants.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.dto.ts
+FILE: api/src/modules/tenants/tenants.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.repository.ts
+FILE: api/src/modules/tenants/tenants.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.routes.ts
+FILE: api/src/modules/tenants/tenants.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.service.ts
+FILE: api/src/modules/tenants/tenants.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.types.ts
+FILE: api/src/modules/tenants/tenants.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/tenants/tenants.validator.ts
+FILE: api/src/modules/tenants/tenants.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.controller.ts
+FILE: api/src/modules/users/users.controller.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.dto.ts
+FILE: api/src/modules/users/users.dto.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.repository.ts
+FILE: api/src/modules/users/users.repository.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.routes.ts
+FILE: api/src/modules/users/users.routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.service.ts
+FILE: api/src/modules/users/users.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.types.ts
+FILE: api/src/modules/users/users.types.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/modules/users/users.validator.ts
+FILE: api/src/modules/users/users.validator.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./api/src/providers/embedding/index.ts
+FILE: workers/package.json
 ================================================================================
+{
+  "name": "workers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DocuMind AI background workers — document processing, embeddings, and queue consumers.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.0.0"
+  }
+}
 
 
 ================================================================================
-FILE: ./api/src/providers/llm/index.ts
+FILE: workers/src/config/env.ts
 ================================================================================
+import { z } from "zod";
 
+/**
+ * Zod schema for Workers service environment variables.
+ * Validates and parses all required and optional env vars at startup.
+ */
+const envSchema = z.object({
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
 
-================================================================================
-FILE: ./api/src/providers/ocr/index.ts
-================================================================================
+  MONGODB_URI: z
+    .string()
+    .url()
+    .default("mongodb://mongodb:27017/docsai"),
 
+  REDIS_URL: z.string().default("redis://redis:6379"),
 
-================================================================================
-FILE: ./api/src/providers/storage/index.ts
-================================================================================
+  LOG_LEVEL: z
+    .enum(["debug", "info", "warn", "error"])
+    .default("info"),
+
+  WORKER_CONCURRENCY: z
+    .string()
+    .default("1")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().positive().int()),
+});
 
+export type Env = z.infer<typeof envSchema>;
 
+/**
+ * Parses and validates environment variables.
+ * Exits the process with a clear error message if validation fails.
+ */
+export function parseEnv(env: Record<string, string | undefined>): Env {
+  const result = envSchema.safeParse(env);
+
+  if (!result.success) {
+    console.error("❌ Invalid environment variables:");
+    for (const issue of result.error.issues) {
+      console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
+    }
+    process.exit(1);
+  }
+
+  return result.data;
+}
+
+
 ================================================================================
-FILE: ./api/src/routes.ts
+FILE: workers/src/config/index.ts
 ================================================================================
+import { Env, parseEnv } from "./env.js";
 
+/**
+ * Application-wide configuration object for the Workers service.
+ * Parsed once at startup from environment variables with Zod validation.
+ */
+export const config: Env = parseEnv(process.env);
 
+
 ================================================================================
-FILE: ./api/src/server.ts
+FILE: workers/src/index.ts
 ================================================================================
+/**
+ * DocuMind AI — Workers entrypoint
+ *
+ * Background workers for document processing, embedding generation, and
+ * queue consumption. This package is a workspace member of the docsai
+ * monorepo (see root package.json `workspaces`).
+ */
+
 import dotenv from "dotenv";
-import app from "./app.js";
-import { connectDB, disconnectDB } from "./db/connection.js";
-import { connectRedis, disconnectRedis } from "./db/redis.js";
 import { config } from "./config/index.js";
-import { logger } from "./common/logger/logger.js";
 
 dotenv.config();
 
-let shuttingDown = false;
+const WORKER_NAME = "docsai-workers";
 
-async function gracefulShutdown(signal: string) {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
-
-  logger.info({ signal }, "graceful shutdown started");
-
-  await new Promise<void>((resolve) => {
-    server.close(() => {
-      logger.info("HTTP server closed");
-      resolve();
-    });
-  });
-
-  await Promise.allSettled([disconnectRedis(), disconnectDB()]);
-
-  process.exit(0);
+function main(): void {
+  console.log(`[${WORKER_NAME}] starting...`);
+  console.log(`  NODE_ENV:       ${config.NODE_ENV}`);
+  console.log(`  LOG_LEVEL:      ${config.LOG_LEVEL}`);
+  console.log(`  MONGODB_URI:    ${config.MONGODB_URI}`);
+  console.log(`  REDIS_URL:      ${config.REDIS_URL}`);
+  console.log(`  Concurrency:    ${config.WORKER_CONCURRENCY}`);
+  console.log(`[${WORKER_NAME}] no jobs registered yet — exiting cleanly.`);
 }
 
-try {
-  await connectDB();
-  await connectRedis();
-} catch (err) {
-  logger.fatal({ err }, "API startup failed");
-  process.exit(1);
-}
-
-const server = app.listen(config.PORT, () => {
-  logger.info({ port: config.PORT }, "API server started");
-});
-
-process.on("SIGTERM", () => {
-  void gracefulShutdown("SIGTERM");
-});
-process.on("SIGINT", () => {
-  void gracefulShutdown("SIGINT");
-});
+main();
 
 
 ================================================================================
-FILE: ./app/.next/build/package.json
-================================================================================
-{"type": "commonjs"}
-
-================================================================================
-FILE: ./app/.next/dev/build/package.json
-================================================================================
-{"type": "commonjs"}
-
-================================================================================
-FILE: ./app/.next/dev/package.json
-================================================================================
-{
-  "type": "commonjs"
-}
-
-================================================================================
-FILE: ./app/.next/package.json
-================================================================================
-{"type": "commonjs"}
-
-================================================================================
-FILE: ./app/node_modules/typescript/package.json
-================================================================================
-{
-    "name": "typescript",
-    "author": "Microsoft Corp.",
-    "homepage": "https://www.typescriptlang.org/",
-    "version": "5.9.3",
-    "license": "Apache-2.0",
-    "description": "TypeScript is a language for application scale JavaScript development",
-    "keywords": [
-        "TypeScript",
-        "Microsoft",
-        "compiler",
-        "language",
-        "javascript"
-    ],
-    "bugs": {
-        "url": "https://github.com/microsoft/TypeScript/issues"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/microsoft/TypeScript.git"
-    },
-    "main": "./lib/typescript.js",
-    "typings": "./lib/typescript.d.ts",
-    "bin": {
-        "tsc": "./bin/tsc",
-        "tsserver": "./bin/tsserver"
-    },
-    "engines": {
-        "node": ">=14.17"
-    },
-    "files": [
-        "bin",
-        "lib",
-        "!lib/enu",
-        "LICENSE.txt",
-        "README.md",
-        "SECURITY.md",
-        "ThirdPartyNoticeText.txt",
-        "!**/.gitattributes"
-    ],
-    "devDependencies": {
-        "@dprint/formatter": "^0.4.1",
-        "@dprint/typescript": "0.93.4",
-        "@esfx/canceltoken": "^1.0.0",
-        "@eslint/js": "^9.20.0",
-        "@octokit/rest": "^21.1.1",
-        "@types/chai": "^4.3.20",
-        "@types/diff": "^7.0.1",
-        "@types/minimist": "^1.2.5",
-        "@types/mocha": "^10.0.10",
-        "@types/ms": "^0.7.34",
-        "@types/node": "latest",
-        "@types/source-map-support": "^0.5.10",
-        "@types/which": "^3.0.4",
-        "@typescript-eslint/rule-tester": "^8.24.1",
-        "@typescript-eslint/type-utils": "^8.24.1",
-        "@typescript-eslint/utils": "^8.24.1",
-        "azure-devops-node-api": "^14.1.0",
-        "c8": "^10.1.3",
-        "chai": "^4.5.0",
-        "chokidar": "^4.0.3",
-        "diff": "^7.0.0",
-        "dprint": "^0.49.0",
-        "esbuild": "^0.25.0",
-        "eslint": "^9.20.1",
-        "eslint-formatter-autolinkable-stylish": "^1.4.0",
-        "eslint-plugin-regexp": "^2.7.0",
-        "fast-xml-parser": "^4.5.2",
-        "glob": "^10.4.5",
-        "globals": "^15.15.0",
-        "hereby": "^1.10.0",
-        "jsonc-parser": "^3.3.1",
-        "knip": "^5.44.4",
-        "minimist": "^1.2.8",
-        "mocha": "^10.8.2",
-        "mocha-fivemat-progress-reporter": "^0.1.0",
-        "monocart-coverage-reports": "^2.12.1",
-        "ms": "^2.1.3",
-        "picocolors": "^1.1.1",
-        "playwright": "^1.50.1",
-        "source-map-support": "^0.5.21",
-        "tslib": "^2.8.1",
-        "typescript": "^5.7.3",
-        "typescript-eslint": "^8.24.1",
-        "which": "^3.0.1"
-    },
-    "overrides": {
-        "typescript@*": "$typescript"
-    },
-    "scripts": {
-        "test": "hereby runtests-parallel --light=false",
-        "test:eslint-rules": "hereby run-eslint-rules-tests",
-        "build": "npm run build:compiler && npm run build:tests",
-        "build:compiler": "hereby local",
-        "build:tests": "hereby tests",
-        "build:tests:notypecheck": "hereby tests --no-typecheck",
-        "clean": "hereby clean",
-        "gulp": "hereby",
-        "lint": "hereby lint",
-        "knip": "hereby knip",
-        "format": "dprint fmt",
-        "setup-hooks": "node scripts/link-hooks.mjs"
-    },
-    "browser": {
-        "fs": false,
-        "os": false,
-        "path": false,
-        "crypto": false,
-        "buffer": false,
-        "source-map-support": false,
-        "inspector": false,
-        "perf_hooks": false
-    },
-    "packageManager": "npm@8.19.4",
-    "volta": {
-        "node": "20.1.0",
-        "npm": "8.19.4"
-    },
-    "gitHead": "c63de15a992d37f0d6cec03ac7631872838602cb"
-}
-
-
-================================================================================
-FILE: ./app/node_modules/typescript/README.md
-================================================================================
-
-# TypeScript
-
-[![CI](https://github.com/microsoft/TypeScript/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/TypeScript/actions/workflows/ci.yml)
-[![npm version](https://badge.fury.io/js/typescript.svg)](https://www.npmjs.com/package/typescript)
-[![Downloads](https://img.shields.io/npm/dm/typescript.svg)](https://www.npmjs.com/package/typescript)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/microsoft/TypeScript/badge)](https://securityscorecards.dev/viewer/?uri=github.com/microsoft/TypeScript)
-
-
-[TypeScript](https://www.typescriptlang.org/) is a language for application-scale JavaScript. TypeScript adds optional types to JavaScript that support tools for large-scale JavaScript applications for any browser, for any host, on any OS. TypeScript compiles to readable, standards-based JavaScript. Try it out at the [playground](https://www.typescriptlang.org/play/), and stay up to date via [our blog](https://blogs.msdn.microsoft.com/typescript) and [Twitter account](https://twitter.com/typescript).
-
-Find others who are using TypeScript at [our community page](https://www.typescriptlang.org/community/).
-
-## Installing
-
-For the latest stable version:
-
-```bash
-npm install -D typescript
-```
-
-For our nightly builds:
-
-```bash
-npm install -D typescript@next
-```
-
-## Contribute
-
-There are many ways to [contribute](https://github.com/microsoft/TypeScript/blob/main/CONTRIBUTING.md) to TypeScript.
-* [Submit bugs](https://github.com/microsoft/TypeScript/issues) and help us verify fixes as they are checked in.
-* Review the [source code changes](https://github.com/microsoft/TypeScript/pulls).
-* Engage with other TypeScript users and developers on [StackOverflow](https://stackoverflow.com/questions/tagged/typescript).
-* Help each other in the [TypeScript Community Discord](https://discord.gg/typescript).
-* Join the [#typescript](https://twitter.com/search?q=%23TypeScript) discussion on Twitter.
-* [Contribute bug fixes](https://github.com/microsoft/TypeScript/blob/main/CONTRIBUTING.md).
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see
-the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com)
-with any additional questions or comments.
-
-## Documentation
-
-*  [TypeScript in 5 minutes](https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html)
-*  [Programming handbook](https://www.typescriptlang.org/docs/handbook/intro.html)
-*  [Homepage](https://www.typescriptlang.org/)
-
-## Roadmap
-
-For details on our planned features and future direction, please refer to our [roadmap](https://github.com/microsoft/TypeScript/wiki/Roadmap).
-
-
-================================================================================
-FILE: ./app/package.json
+FILE: app/package.json
 ================================================================================
 {
   "name": "app",
@@ -4181,48 +4860,7 @@ FILE: ./app/package.json
 
 
 ================================================================================
-FILE: ./app/README.md
-================================================================================
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-
-================================================================================
-FILE: ./app/src/app/(auth)/layout.tsx
+FILE: app/src/app/(auth)/layout.tsx
 ================================================================================
 import type { ReactNode } from 'react';
 
@@ -4232,7 +4870,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
 
 ================================================================================
-FILE: ./app/src/app/(auth)/login/page.tsx
+FILE: app/src/app/(auth)/login/page.tsx
 ================================================================================
 "use client";
 
@@ -4579,7 +5217,7 @@ export default function LoginPage() {
 }
 
 ================================================================================
-FILE: ./app/src/app/(auth)/register/page.tsx
+FILE: app/src/app/(auth)/register/page.tsx
 ================================================================================
 "use client";
 
@@ -5020,7 +5658,7 @@ export default function RegisterPage() {
 }
 
 ================================================================================
-FILE: ./app/src/app/chat/page.tsx
+FILE: app/src/app/chat/page.tsx
 ================================================================================
 export default function ChatPage() {
   return (
@@ -5033,7 +5671,7 @@ export default function ChatPage() {
 
 
 ================================================================================
-FILE: ./app/src/app/(dashboard)/analytics/page.tsx
+FILE: app/src/app/(dashboard)/analytics/page.tsx
 ================================================================================
 export default function AnalyticsPage() {
   return (
@@ -5046,7 +5684,7 @@ export default function AnalyticsPage() {
 
 
 ================================================================================
-FILE: ./app/src/app/(dashboard)/documents/page.tsx
+FILE: app/src/app/(dashboard)/documents/page.tsx
 ================================================================================
 export default function DocumentsPage() {
   return (
@@ -5059,7 +5697,7 @@ export default function DocumentsPage() {
 
 
 ================================================================================
-FILE: ./app/src/app/(dashboard)/knowledge-gaps/page.tsx
+FILE: app/src/app/(dashboard)/knowledge-gaps/page.tsx
 ================================================================================
 export default function KnowledgeGapsPage() {
   return (
@@ -5072,7 +5710,7 @@ export default function KnowledgeGapsPage() {
 
 
 ================================================================================
-FILE: ./app/src/app/(dashboard)/layout.tsx
+FILE: app/src/app/(dashboard)/layout.tsx
 ================================================================================
 import type { ReactNode } from 'react';
 
@@ -5082,7 +5720,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
 
 ================================================================================
-FILE: ./app/src/app/(dashboard)/settings/page.tsx
+FILE: app/src/app/(dashboard)/settings/page.tsx
 ================================================================================
 export default function SettingsPage() {
   return (
@@ -5095,7 +5733,7 @@ export default function SettingsPage() {
 
 
 ================================================================================
-FILE: ./app/src/app/(dashboard)/users/page.tsx
+FILE: app/src/app/(dashboard)/users/page.tsx
 ================================================================================
 export default function UsersPage() {
   return (
@@ -5108,7 +5746,7 @@ export default function UsersPage() {
 
 
 ================================================================================
-FILE: ./app/src/app/globals.css
+FILE: app/src/app/globals.css
 ================================================================================
 /**
  * DocuMind AI — Base Design System
@@ -5379,7 +6017,7 @@ FILE: ./app/src/app/globals.css
 
 
 ================================================================================
-FILE: ./app/src/app/layout.tsx
+FILE: app/src/app/layout.tsx
 ================================================================================
 import type { Metadata } from "next";
 import { I18nProvider } from "@/providers/i18n-provider";
@@ -5406,7 +6044,7 @@ export default function RootLayout({
 
 
 ================================================================================
-FILE: ./app/src/app/page.tsx
+FILE: app/src/app/page.tsx
 ================================================================================
 "use client";
 
@@ -6112,7 +6750,7 @@ export default function Home() {
 }
 
 ================================================================================
-FILE: ./app/src/app/verify-email/page.tsx
+FILE: app/src/app/verify-email/page.tsx
 ================================================================================
 import { Suspense } from "react";
 
@@ -6144,7 +6782,7 @@ function VerifyEmailShell({ message }: { message: string }) {
 
 
 ================================================================================
-FILE: ./app/src/app/verify-email/verify-email-client.tsx
+FILE: app/src/app/verify-email/verify-email-client.tsx
 ================================================================================
 "use client";
 
@@ -6351,7 +6989,7 @@ function isSafeErrorMessage(message: string, token: string) {
 
 
 ================================================================================
-FILE: ./app/src/components/ui/Avatar.tsx
+FILE: app/src/components/ui/Avatar.tsx
 ================================================================================
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -6415,7 +7053,7 @@ export function Avatar({ src, name, size = "md", className }: AvatarProps) {
 
 
 ================================================================================
-FILE: ./app/src/components/ui/Badge.tsx
+FILE: app/src/components/ui/Badge.tsx
 ================================================================================
 import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
@@ -6446,7 +7084,7 @@ export { resolveBadgeStatus };
 
 
 ================================================================================
-FILE: ./app/src/components/ui/Button.tsx
+FILE: app/src/components/ui/Button.tsx
 ================================================================================
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
@@ -6498,7 +7136,7 @@ Button.displayName = "Button";
 
 
 ================================================================================
-FILE: ./app/src/components/ui/Card.tsx
+FILE: app/src/components/ui/Card.tsx
 ================================================================================
 import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
@@ -6545,7 +7183,7 @@ export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivEleme
 
 
 ================================================================================
-FILE: ./app/src/components/ui/index.ts
+FILE: app/src/components/ui/index.ts
 ================================================================================
 /**
  * Shared UI component barrel.
@@ -6571,7 +7209,7 @@ export type { ButtonVariant, ButtonSize, BadgeStatus } from "./variants";
 
 
 ================================================================================
-FILE: ./app/src/components/ui/Input.tsx
+FILE: app/src/components/ui/Input.tsx
 ================================================================================
 import { forwardRef, useId } from "react";
 import type { InputHTMLAttributes } from "react";
@@ -6631,7 +7269,7 @@ Input.displayName = "Input";
 
 
 ================================================================================
-FILE: ./app/src/components/ui/LanguageSwitcher.tsx
+FILE: app/src/components/ui/LanguageSwitcher.tsx
 ================================================================================
 "use client";
 
@@ -6704,7 +7342,7 @@ export function LanguageSwitcher({ className }: LanguageSwitcherProps) {
 
 
 ================================================================================
-FILE: ./app/src/components/ui/README.md
+FILE: app/src/components/ui/README.md
 ================================================================================
 # DocuMind AI — Base Design System (T1.3.3)
 
@@ -6790,7 +7428,7 @@ environment) are intentionally out of scope for this task — see
 
 
 ================================================================================
-FILE: ./app/src/components/ui/Skeleton.tsx
+FILE: app/src/components/ui/Skeleton.tsx
 ================================================================================
 import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
@@ -6808,7 +7446,7 @@ export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>
 
 
 ================================================================================
-FILE: ./app/src/components/ui/StatCard.tsx
+FILE: app/src/components/ui/StatCard.tsx
 ================================================================================
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -6859,7 +7497,7 @@ export function StatCard({ label, value, tag, trend = "neutral", icon, className
 
 
 ================================================================================
-FILE: ./app/src/components/ui/variants.ts
+FILE: app/src/components/ui/variants.ts
 ================================================================================
 /**
  * Pure class-resolution logic for the shared UI kit.
@@ -7003,39 +7641,39 @@ export function getBadgeClasses(status: BadgeStatus | (string & {})): string {
 
 
 ================================================================================
-FILE: ./app/src/constants/api.ts
+FILE: app/src/constants/api.ts
 ================================================================================
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:5000";
 
 
 ================================================================================
-FILE: ./app/src/constants/routes.ts
+FILE: app/src/constants/routes.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/constants/storage.ts
+FILE: app/src/constants/storage.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/hooks/features/useAuth.ts
+FILE: app/src/hooks/features/useAuth.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/hooks/features/useChat.ts
+FILE: app/src/hooks/features/useChat.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/hooks/features/useDocuments.ts
+FILE: app/src/hooks/features/useDocuments.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/lib/api-client.ts
+FILE: app/src/lib/api-client.ts
 ================================================================================
 import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-tokens";
 import { getLocaleFromCookie } from "./i18n/i18n.utils";
@@ -7369,7 +8007,7 @@ export const api = {
 
 
 ================================================================================
-FILE: ./app/src/lib/auth-tokens.ts
+FILE: app/src/lib/auth-tokens.ts
 ================================================================================
 let accessToken: string | null = null;
 
@@ -7387,7 +8025,7 @@ export function clearAccessToken(): void {
 
 
 ================================================================================
-FILE: ./app/src/lib/design-tokens.ts
+FILE: app/src/lib/design-tokens.ts
 ================================================================================
 /**
  * Typed mirror of DESIGN.md's color tokens, for the handful of places that
@@ -7493,7 +8131,7 @@ export function typographyClass(role: TypographyRole): string {
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/i18n.config.ts
+FILE: app/src/lib/i18n/i18n.config.ts
 ================================================================================
 /**
  * i18n configuration — single source of truth for supported locales,
@@ -7543,7 +8181,7 @@ export function isValidLocale(value: unknown): value is Locale {
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/i18n.types.ts
+FILE: app/src/lib/i18n/i18n.types.ts
 ================================================================================
 /**
  * i18n type definitions.
@@ -7594,7 +8232,7 @@ export interface I18nContextValue {
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/i18n.utils.ts
+FILE: app/src/lib/i18n/i18n.utils.ts
 ================================================================================
 /**
  * Pure i18n utility functions.
@@ -7669,7 +8307,7 @@ export function setLocaleCookie(locale: Locale): void {
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/index.ts
+FILE: app/src/lib/i18n/index.ts
 ================================================================================
 /**
  * i18n public API barrel.
@@ -7706,7 +8344,7 @@ export { default as dictionaries } from "./translations";
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/translations/ar.ts
+FILE: app/src/lib/i18n/translations/ar.ts
 ================================================================================
 /**
  * Arabic translation dictionary.
@@ -7834,7 +8472,7 @@ export default ar;
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/translations/en.ts
+FILE: app/src/lib/i18n/translations/en.ts
 ================================================================================
 /**
  * English translation dictionary.
@@ -7962,7 +8600,7 @@ export default en;
 
 
 ================================================================================
-FILE: ./app/src/lib/i18n/translations/index.ts
+FILE: app/src/lib/i18n/translations/index.ts
 ================================================================================
 /**
  * Translation dictionary barrel.
@@ -7982,7 +8620,7 @@ export default dictionaries;
 
 
 ================================================================================
-FILE: ./app/src/lib/utils.ts
+FILE: app/src/lib/utils.ts
 ================================================================================
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -8040,7 +8678,7 @@ export function truncate(str: string, maxLength: number): string {
 
 
 ================================================================================
-FILE: ./app/src/lib/validation.ts
+FILE: app/src/lib/validation.ts
 ================================================================================
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d).+$/;
@@ -8135,12 +8773,12 @@ export function generateCompanySlug(name: string): string {
 
 
 ================================================================================
-FILE: ./app/src/providers/auth-provider.tsx
+FILE: app/src/providers/auth-provider.tsx
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/providers/i18n-provider.tsx
+FILE: app/src/providers/i18n-provider.tsx
 ================================================================================
 "use client";
 
@@ -8236,1073 +8874,47 @@ export function useDirection(): Direction {
 
 
 ================================================================================
-FILE: ./app/src/providers/query-provider.tsx
+FILE: app/src/providers/query-provider.tsx
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/providers/theme-provider.tsx
+FILE: app/src/providers/theme-provider.tsx
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/schemas/auth.schema.ts
+FILE: app/src/schemas/auth.schema.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/schemas/chat.schema.ts
+FILE: app/src/schemas/chat.schema.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/schemas/document.schema.ts
+FILE: app/src/schemas/document.schema.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/services/analytics.service.ts
+FILE: app/src/services/analytics.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/services/auth.service.ts
+FILE: app/src/services/auth.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/services/chat.service.ts
+FILE: app/src/services/chat.service.ts
 ================================================================================
 
 
 ================================================================================
-FILE: ./app/src/services/documents.service.ts
+FILE: app/src/services/documents.service.ts
 ================================================================================
-
-
-================================================================================
-FILE: ./CICD_DESIGN.md
-================================================================================
-# DocuMind AI — CI/CD Pipeline Design
-
-Scoped intentionally small: **1 required workflow, 0-1 optional workflow, zero deploy YAML if you take the recommended path.** Everything below is sized for a 6-person student team, not an enterprise platform team.
-
----
-
-## 1. Folder Structure
-
-```
-documind-ai/
-└── .github/
-    ├── workflows/
-    │   └── ci.yml                 # the only required workflow
-    ├── CODEOWNERS                 # you already have this
-    └── PULL_REQUEST_TEMPLATE.md   # you already have this
-```
-
-That's it. No `deploy-frontend.yml` and no `deploy-backend.yml` in the required set — see point 8 for why, and point 10 for an optional one if you want it anyway.
-
----
-
-## 2. How Many Workflows
-
-**One.** `ci.yml`. It runs on every push and PR targeting `main`, and internally splits into a backend job and a frontend job (since you're a monorepo with `api/` and `app/`) using path filtering — so touching only the frontend doesn't waste minutes rebuilding the backend, and vice versa.
-
-If you later add the optional deploy trigger from point 10, that's workflow #2. You do not need more than that for a project this size. Enterprise setups add separate workflows per environment (staging/prod), per service, security scanning, dependency-bots, etc. — deliberately out of scope here per your ask.
-
----
-
-## 3. What the Workflow Does
-
-**`ci.yml`** runs on every `push` to `main` and every `pull_request` targeting `main`:
-
-1. **Detect what changed** — a small filter job checks whether `api/**` or `app/**` files changed in this push/PR.
-2. **Backend job** (only runs if `api/**` changed):
-   - Checkout code
-   - Setup Node.js with npm cache (this is the "cache dependencies" step — GitHub's official `setup-node` action handles it natively, no extra config needed)
-   - `npm ci` (install)
-   - ESLint
-   - `tsc --noEmit` (type-check without emitting files)
-   - Unit tests (if present)
-   - Build
-3. **Frontend job** (only runs if `app/**` changed): identical shape, using `app/`'s scripts.
-4. **Any failed step fails the whole job**, which blocks merge once branch protection is turned on (point 7).
-
-Both jobs run in parallel, not sequentially — so a PR touching both frontend and backend still finishes in the time of the slower one, not the sum of both.
-
----
-
-## 4. Best Practices Applied (and why each one matters here)
-
-- **Path-filtered jobs, not one giant job** — avoids wasting free-tier Actions minutes rebuilding the backend when only a frontend file changed. GitHub Actions free tier gives you 2,000 minutes/month on a private repo; this stretches that further.
-- **`npm ci` not `npm install`** — installs exactly what's in `package-lock.json`, reproducible and faster in CI. `npm install` can silently update the lockfile, which you don't want happening inside CI.
-- **Dependency caching via `setup-node`'s built-in cache** — avoids re-downloading `node_modules` from npm's registry on every run; this alone often cuts CI time by 30-60%.
-- **`--if-present` on lint/test scripts** — right now your `api/package.json` has no `lint` or `test` script yet, and `app/package.json` has no `test` script. Using `--if-present` means the workflow won't hard-fail on a missing script today, but will start enforcing it the moment you add one — no workflow edit needed later. **You should still add these scripts soon** (see the gap flagged below).
-- **`tsc --noEmit` as a separate step from build** — catches type errors explicitly and quickly, rather than relying on the bundler's type-checking (which can be slower or, in some Next.js configs, skipped by default).
-- **Fail-fast, not fail-silent** — every step's non-zero exit code fails the job by default; no step deliberately swallows errors.
-- **Required checks, not required workflows** — branch protection (point 7) references the specific job names (`backend-ci`, `frontend-ci`), not the workflow file itself, so a skipped job (because that path didn't change) still counts as passing rather than blocking your merge.
-
-**Gap to close soon, not blocking:** neither `api/package.json` nor `app/package.json` currently defines a `test` script (no Jest/Vitest installed yet), and `api/package.json` has no `lint` script. The CI workflow is written to tolerate this today, but real coverage requires adding: `jest` + `supertest` + `mongodb-memory-server` to `api/` (matches the tech recommendations from your architecture review), and `vitest` or Jest to `app/`. Until then, the "Run unit tests" step effectively does nothing — worth being honest with your supervisor about that gap rather than letting a green checkmark imply test coverage that doesn't exist yet.
-
----
-
-## 5. Required GitHub Secrets
-
-**For the CI workflow itself: none.** Linting, type-checking, and building don't need real database credentials or API keys.
-
-**For the optional deploy workflow (point 10), if you choose to use it:**
-
-| Secret | Used for |
-|---|---|
-| `RENDER_DEPLOY_HOOK_URL` | Triggers a Render deploy via a plain HTTPS POST — no API key needed, Render generates this URL per-service |
-
-That's the only one. You do **not** need to put `MONGODB_URI`, JWT secrets, or LLM API keys into GitHub Secrets at all, because — per point 8 — GitHub Actions isn't the thing running your app in production. Those live in Vercel's and Render's own dashboards instead.
-
----
-
-## 6. Required Environment Variables
-
-These are **not** GitHub Secrets — they're configured directly in each hosting platform's dashboard, since that's where your app actually runs.
-
-**Backend (Render/Railway/Fly dashboard):**
-```
-NODE_ENV=production
-PORT=5000
-MONGODB_URI=<your MongoDB Atlas connection string>
-JWT_ACCESS_SECRET=<random string, 32+ chars>
-JWT_REFRESH_SECRET=<different random string, 32+ chars>
-CORS_ORIGIN=https://your-app.vercel.app
-```
-Add later as those modules land: `REDIS_URL` (once BullMQ/rate-limiting is built), an LLM provider key (`OPENAI_API_KEY` or equivalent), and embedding/OCR provider config.
-
-**Frontend (Vercel dashboard):**
-```
-NEXT_PUBLIC_API_URL=https://your-backend.onrender.com
-NODE_ENV=production
-```
-Anything prefixed `NEXT_PUBLIC_` is bundled into client-side JS and is **not** a secret by the time it ships — never put a real secret behind that prefix.
-
-**Local development (`.env` files, already gitignored):** unchanged from what you have — this doc only concerns CI/deploy, not local dev.
-
----
-
-## 7. Branch Protection Rules
-
-On `main`, in repo Settings → Branches → Add rule:
-
-- ✅ **Require a pull request before merging** — no direct pushes to `main`, including for repo admins (check "Include administrators")
-- ✅ **Require approvals: 1** (bump to 2 for paths matching your CODEOWNERS entries touching `api/src/common/middlewares/` or `api/src/modules/auth/` — tenant-isolation-critical code, per your existing Git workflow doc)
-- ✅ **Require status checks to pass before merging** — select `backend-ci` and `frontend-ci` specifically (not the path-filter job) as required checks
-- ✅ **Require branches to be up to date before merging** — forces a rebase/merge of `main` into the PR branch first, catching conflicts before merge rather than after
-- ✅ **Require conversation resolution before merging** — no unresolved PR review comments at merge time
-- ❌ Do not allow force pushes to `main`
-- ❌ Do not allow deletion of `main`
-
-This is what actually gates bad code — the CI workflow only produces a red/green signal; branch protection is what makes that signal binding.
-
----
-
-## 8. Should Deployment Be GitHub Actions, or Native Vercel/Render?
-
-**Native Vercel/Render, not GitHub Actions.** This is the single biggest simplification available to you, and it's genuinely the production-standard choice for exactly this stack, not a "beginner shortcut."
-
-**Why:**
-- Both Vercel and Render have a **native GitHub App integration**: connect the repo once, tell it which folder to build from (`app/` or `api/`), and it deploys automatically on every push to `main` — zero YAML, zero secrets in GitHub, zero maintenance.
-- They each run their **own build step** as part of deploying (`next build` for Vercel, `npm run build && npm start` for Render), so a broken build still fails the deploy even without GitHub Actions being involved.
-- Using GitHub Actions to deploy would mean managing deploy credentials as GitHub Secrets, writing and maintaining deploy scripts, and duplicating logic these platforms already provide for free — pure added complexity for a team of 6 students, with no corresponding benefit at this scale.
-- The quality gate still exists — it just lives in **branch protection**, not in the deploy step. Nothing merges to `main` unless `backend-ci`/`frontend-ci` pass; only merged code ever reaches Vercel/Render. That's the same safety property an Actions-based deploy pipeline would give you, achieved with less to maintain.
-
-**Setup (one-time, ~10 minutes each):**
-- **Vercel:** New Project → Import your GitHub repo → set Root Directory to `app` → deploy. Every push to `main` (i.e., every merged PR) auto-deploys; every PR also gets its own free preview URL automatically, which is a nice bonus for reviewing UI changes before merge.
-- **Render:** New Web Service → connect the same repo → set Root Directory to `api`, Build Command `npm install && npm run build`, Start Command `npm start` → deploy. Same auto-deploy-on-merge behavior.
-
----
-
-## 9. Complete CI/CD Architecture Diagram
-
-```
-Developer                                                                
-    │
-    │  git push origin feature/t2.1.1-...
-    ▼
-┌─────────────────────────────┐
-│   Pull Request opened        │
-│   (target: main)             │
-└───────────────┬──────────────┘
-                │  triggers
-                ▼
-┌───────────────────────────────────────────────────────────┐
-│  GitHub Actions: ci.yml                                    │
-│                                                              │
-│   ┌────────────────┐                                        │
-│   │  changes job    │  detects api/** or app/** touched      │
-│   └───────┬─────────┘                                        │
-│           │                                                  │
-│   ┌───────┴────────┐          ┌────────────────┐            │
-│   │  backend-ci     │          │  frontend-ci    │            │
-│   │  (if api/** )   │          │  (if app/** )   │            │
-│   │  npm ci          │          │  npm ci          │            │
-│   │  eslint          │          │  eslint          │            │
-│   │  tsc --noEmit    │          │  tsc --noEmit    │            │
-│   │  tests           │          │  tests           │            │
-│   │  build           │          │  build           │            │
-│   └───────┬─────────┘          └────────┬─────────┘            │
-│           │                              │                      │
-│           └──────────┬───────────────────┘                      │
-└──────────────────────┼──────────────────────────────────────────┘
-                        │  both green?
-                        ▼
-        ┌───────────────────────────────┐
-        │  Branch protection on main     │
-        │  - status checks required      │
-        │  - 1-2 approvals required      │
-        └───────────────┬────────────────┘
-                         │  merge allowed
-                         ▼
-              ┌────────────────────┐
-              │  Merge to main       │
-              └──────────┬───────────┘
-                         │
-        ┌────────────────┴─────────────────┐
-        │  triggers (native, not Actions)   │
-        ▼                                    ▼
-┌───────────────────┐              ┌────────────────────┐
-│  Vercel             │              │  Render              │
-│  builds app/         │              │  builds+runs api/     │
-│  deploys frontend     │              │  deploys backend       │
-│  → your-app.vercel.app│              │  → your-api.onrender.com│
-└──────────┬──────────┘              └──────────┬───────────┘
-           │                                     │
-           │          both talk to               │
-           └───────────────┬─────────────────────┘
-                            ▼
-                 ┌────────────────────────┐
-                 │  MongoDB Atlas           │
-                 │  (always-on, no deploy    │
-                 │   step — just a           │
-                 │   connection string)       │
-                 └────────────────────────┘
-```
-
----
-
-## 10. Example Workflow Files
-
-`ci.yml` is the required file — see the companion file for the ready-to-use version.
-
-An **optional** `deploy-backend.yml` is also included, only for the case where you specifically want a visible "Deploy" entry in your Actions tab in addition to Render's native dashboard. It is *not* required if you set up Render's native GitHub integration per point 8 — that already auto-deploys on merge with no YAML at all. Only add this file if you disable Render's auto-deploy-on-push and want deploys explicitly gated behind `ci.yml` passing first (a slightly more conservative setup some teams prefer).
-
-
-================================================================================
-FILE: ./docker-compose.yml
-================================================================================
-services:
-  api:
-    build:
-      context: .
-      dockerfile: api/Dockerfile
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./api/.env
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    volumes:
-      - ./api:/app
-      - /app/node_modules
-
-  app:
-    build:
-      context: .
-      dockerfile: app/Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      api:
-        condition: service_started
-    volumes:
-      - ./app:/app
-      - /app/node_modules
-
-  worker:
-    build:
-      context: .
-      dockerfile: workers/Dockerfile
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./workers:/app
-      - /app/node_modules
-    env_file:
-      - ./workers/.env
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
-      - REDIS_URL=redis://redis:6379
-
-  redis:
-    image: redis:7
-    container_name: docsai-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  mongodb:
-    image: mongo:8
-    container_name: docsai-mongodb
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_DATABASE: docsai
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
-volumes:
-  mongo_data:
-  redis_data:
-
-
-================================================================================
-FILE: ./docs
-================================================================================
-
-
-================================================================================
-FILE: ./.git
-================================================================================
-
-
-================================================================================
-FILE: ./node_modules
-================================================================================
-
-
-================================================================================
-FILE: ./package.json
-================================================================================
-{
-  "name": "documind-ai",
-  "version": "1.0.0",
-  "private": true,
-  "description": "DocuMind AI monorepo — Next.js frontend, Express backend, and background workers.",
-  "workspaces": [
-    "api",
-    "app",
-    "workers"
-  ],
-  "scripts": {
-    "dev": "docker compose up --build",
-    "dev:api": "npm run dev --workspace api",
-    "dev:app": "npm run dev --workspace app",
-    "dev:workers": "npm run dev --workspace workers",
-    "build": "npm run build --workspaces --if-present",
-    "build:api": "npm run build --workspace api",
-    "build:app": "npm run build --workspace app",
-    "build:workers": "npm run build --workspace workers",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "install:all": "npm install --workspaces --include-workspace-root"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.9.4",
-    "typescript-eslint": "^8.62.1"
-  },
-  "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
-  },
-  "keywords": [
-    "docsai",
-    "documind",
-    "ai",
-    "rag",
-    "monorepo"
-  ],
-  "license": "UNLICENSED"
-}
-
-
-================================================================================
-FILE: ./README.md
-================================================================================
-# DocuMind AI
-
-DocuMind AI is a private, multi-tenant knowledge assistant for companies. Admins upload internal documents (HR policies, SOPs, contracts) in Arabic or English; employees ask natural-language questions and get answers generated only from those documents, with source citations — or an honest refusal when there isn't enough evidence. Every tenant's data is fully isolated.
-
----
-
-# Tech Stack
-
-### Frontend
-- Next.js
-- TypeScript
-
-### Backend
-- Node.js
-- Express
-- TypeScript
-
-### Database
-- MongoDB
-
-### Containerization
-- Docker
-- Docker Compose
-
----
-
-# Project Structure
-
-```text
-docsai/
-│
-├── app/                  # Frontend (Next.js)
-├── api/                  # Backend (Node.js + Express)
-├── docs/                 # Project documentation
-├── docker-compose.yml
-└── README.md
-```
-
----
-
-# Requirements
-
-Before running the project, install:
-
-- Docker
-- Docker Compose
-
-No need to install MongoDB locally.
-
----
-
-# Setup
-
-Clone the repository:
-
-```bash
-git clone https://github.com/mahmoudrabbas/documind-ai
-cd documind-ai
-```
-
----
-
-# Environment Variables
-
-Create the following file:
-
-```text
-api/.env
-```
-
-Example:
-
-```env
-PORT=5000
-MONGODB_URI=mongodb://mongodb:27017/docsai
-```
-
----
-
-# Run the Project
-
-Build and start all services:
-
-```bash
-docker compose up --build
-```
-
-For the next runs:
-
-```bash
-docker compose up
-```
-
-Stop the project:
-
-```bash
-docker compose down
-```
-
----
-
-# Application URLs
-
-Frontend
-
-```
-http://localhost:3000
-```
-
-Backend API
-
-```
-http://localhost:5000
-```
-
-MongoDB runs inside Docker and connects automatically to the backend.
-
----
-
-# Backend Architecture
-
-The backend follows a feature-based architecture.
-
-Each module contains:
-
-```text
-module/
-├── controller
-├── service
-├── repository
-├── routes
-├── dto
-├── validator
-└── types
-```
-
-Current modules:
-
-- Auth
-- Users
-- Tenants
-- Documents
-- Processing
-- Retrieval
-- Chat
-- Citations
-- Feedback
-- Knowledge Gaps
-- Analytics
-- Admin
-
----
-
-# Frontend Architecture
-
-The frontend is organized by features.
-
-```text
-src/
-├── app/
-├── components/
-├── hooks/
-├── services/
-├── providers/
-├── schemas/
-├── lib/
-├── constants/
-└── types/
-```
-
----
-
-# For Teammates – Git Development Workflow
-
-Follow these steps for every task.
-
-## 1. Pick an Issue
-- Open the Project Board.
-- Choose an issue assigned to you from the current sprint.
-- Read the description, acceptance criteria, and dependencies.
-- Make sure all dependency tasks are already merged into `main`.
-
----
-
-## 2. Create a Feature Branch
-
-```bash
-git checkout main
-git pull origin main
-git checkout -b feature/<task-id>-<short-description>
-```
-
-**Example**
-
-```bash
-git checkout -b feature/t2.1.1-tenant-user-schemas
-```
-
----
-
-## 3. Implement the Task
-- Work only inside your assigned module.
-- Follow the issue requirements.
-- Keep your changes focused on the current task.
-
----
-
-## 4. Commit Your Changes
-
-```bash
-git add .
-git commit -m "feat(auth): add tenant and user schemas"
-```
-
-Use **Conventional Commits**, such as:
-- `feat`
-- `fix`
-- `refactor`
-- `docs`
-- `test`
-- `chore`
-
----
-
-## 5. Push Your Branch
-
-```bash
-git push origin feature/<task-id>-<short-description>
-```
-
----
-
-## 6. Open a Pull Request
-- Create a Pull Request targeting **main**.
-- Complete the PR template.
-- Add the following to the PR description:
-
-```text
-Closes #<issue-number>
-```
-
-This will:
-- Link the PR to the issue.
-- Move the issue to **In Progress** automatically.
-- Close the issue automatically after the PR is merged.
-
----
-
-## 7. Wait for Review
-- Wait for CI checks (when available).
-- Request a code review.
-- Move the task to **Code Review** manually.
-
-If changes are requested:
-
-```bash
-git add .
-git commit -m "fix(auth): address review comments"
-git push
-```
-
-Continue pushing to the **same branch** until the PR is approved.
-
----
-
-## 8. Testing (If Needed)
-- Move the task to **Testing**.
-- Verify everything works correctly.
-
----
-
-## 9. Merge the Pull Request
-Once the PR is approved:
-
-- Use **Squash and Merge**.
-
-GitHub will automatically:
-- Close the linked issue.
-- Move the task to **Done**.
-
----
-
-## 10. Clean Up
-
-```bash
-git checkout main
-git pull origin main
-git branch -d feature/<task-id>-<short-description>
-```
-
-Then delete the remote branch from GitHub.
-
----
-
-## 11. Notify the Team
-
-Example:
-
-```text
-T2.1.1 merged into main. It now unblocks T2.1.2 and T2.1.3.
-```
-
----
-
-# Workflow Summary
-
-```text
-Pick Issue
-    ↓
-Create Branch
-    ↓
-Implement Task
-    ↓
-Commit Changes
-    ↓
-Push Branch
-    ↓
-Open PR (Closes #Issue)
-    ↓
-Auto → In Progress
-    ↓
-Code Review
-    ↓
-Testing (if needed)
-    ↓
-Squash & Merge
-    ↓
-Auto → Done
-    ↓
-Delete Branch
-    ↓
-Notify Team
-```
----
-
-# Notes
-
-- Do not commit `.env` files.
-- Do not commit `node_modules`.
-- Keep each feature inside its own module.
-- Put shared code in shared folders.
-- Discuss changes before modifying shared files like:
-  - `docker-compose.yml`
-  - configuration files
-  - project structure
-
-================================================================================
-FILE: ./workers/node_modules/typescript/package.json
-================================================================================
-{
-    "name": "typescript",
-    "author": "Microsoft Corp.",
-    "homepage": "https://www.typescriptlang.org/",
-    "version": "5.9.3",
-    "license": "Apache-2.0",
-    "description": "TypeScript is a language for application scale JavaScript development",
-    "keywords": [
-        "TypeScript",
-        "Microsoft",
-        "compiler",
-        "language",
-        "javascript"
-    ],
-    "bugs": {
-        "url": "https://github.com/microsoft/TypeScript/issues"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/microsoft/TypeScript.git"
-    },
-    "main": "./lib/typescript.js",
-    "typings": "./lib/typescript.d.ts",
-    "bin": {
-        "tsc": "./bin/tsc",
-        "tsserver": "./bin/tsserver"
-    },
-    "engines": {
-        "node": ">=14.17"
-    },
-    "files": [
-        "bin",
-        "lib",
-        "!lib/enu",
-        "LICENSE.txt",
-        "README.md",
-        "SECURITY.md",
-        "ThirdPartyNoticeText.txt",
-        "!**/.gitattributes"
-    ],
-    "devDependencies": {
-        "@dprint/formatter": "^0.4.1",
-        "@dprint/typescript": "0.93.4",
-        "@esfx/canceltoken": "^1.0.0",
-        "@eslint/js": "^9.20.0",
-        "@octokit/rest": "^21.1.1",
-        "@types/chai": "^4.3.20",
-        "@types/diff": "^7.0.1",
-        "@types/minimist": "^1.2.5",
-        "@types/mocha": "^10.0.10",
-        "@types/ms": "^0.7.34",
-        "@types/node": "latest",
-        "@types/source-map-support": "^0.5.10",
-        "@types/which": "^3.0.4",
-        "@typescript-eslint/rule-tester": "^8.24.1",
-        "@typescript-eslint/type-utils": "^8.24.1",
-        "@typescript-eslint/utils": "^8.24.1",
-        "azure-devops-node-api": "^14.1.0",
-        "c8": "^10.1.3",
-        "chai": "^4.5.0",
-        "chokidar": "^4.0.3",
-        "diff": "^7.0.0",
-        "dprint": "^0.49.0",
-        "esbuild": "^0.25.0",
-        "eslint": "^9.20.1",
-        "eslint-formatter-autolinkable-stylish": "^1.4.0",
-        "eslint-plugin-regexp": "^2.7.0",
-        "fast-xml-parser": "^4.5.2",
-        "glob": "^10.4.5",
-        "globals": "^15.15.0",
-        "hereby": "^1.10.0",
-        "jsonc-parser": "^3.3.1",
-        "knip": "^5.44.4",
-        "minimist": "^1.2.8",
-        "mocha": "^10.8.2",
-        "mocha-fivemat-progress-reporter": "^0.1.0",
-        "monocart-coverage-reports": "^2.12.1",
-        "ms": "^2.1.3",
-        "picocolors": "^1.1.1",
-        "playwright": "^1.50.1",
-        "source-map-support": "^0.5.21",
-        "tslib": "^2.8.1",
-        "typescript": "^5.7.3",
-        "typescript-eslint": "^8.24.1",
-        "which": "^3.0.1"
-    },
-    "overrides": {
-        "typescript@*": "$typescript"
-    },
-    "scripts": {
-        "test": "hereby runtests-parallel --light=false",
-        "test:eslint-rules": "hereby run-eslint-rules-tests",
-        "build": "npm run build:compiler && npm run build:tests",
-        "build:compiler": "hereby local",
-        "build:tests": "hereby tests",
-        "build:tests:notypecheck": "hereby tests --no-typecheck",
-        "clean": "hereby clean",
-        "gulp": "hereby",
-        "lint": "hereby lint",
-        "knip": "hereby knip",
-        "format": "dprint fmt",
-        "setup-hooks": "node scripts/link-hooks.mjs"
-    },
-    "browser": {
-        "fs": false,
-        "os": false,
-        "path": false,
-        "crypto": false,
-        "buffer": false,
-        "source-map-support": false,
-        "inspector": false,
-        "perf_hooks": false
-    },
-    "packageManager": "npm@8.19.4",
-    "volta": {
-        "node": "20.1.0",
-        "npm": "8.19.4"
-    },
-    "gitHead": "c63de15a992d37f0d6cec03ac7631872838602cb"
-}
-
-
-================================================================================
-FILE: ./workers/node_modules/typescript/README.md
-================================================================================
-
-# TypeScript
-
-[![CI](https://github.com/microsoft/TypeScript/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/TypeScript/actions/workflows/ci.yml)
-[![npm version](https://badge.fury.io/js/typescript.svg)](https://www.npmjs.com/package/typescript)
-[![Downloads](https://img.shields.io/npm/dm/typescript.svg)](https://www.npmjs.com/package/typescript)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/microsoft/TypeScript/badge)](https://securityscorecards.dev/viewer/?uri=github.com/microsoft/TypeScript)
-
-
-[TypeScript](https://www.typescriptlang.org/) is a language for application-scale JavaScript. TypeScript adds optional types to JavaScript that support tools for large-scale JavaScript applications for any browser, for any host, on any OS. TypeScript compiles to readable, standards-based JavaScript. Try it out at the [playground](https://www.typescriptlang.org/play/), and stay up to date via [our blog](https://blogs.msdn.microsoft.com/typescript) and [Twitter account](https://twitter.com/typescript).
-
-Find others who are using TypeScript at [our community page](https://www.typescriptlang.org/community/).
-
-## Installing
-
-For the latest stable version:
-
-```bash
-npm install -D typescript
-```
-
-For our nightly builds:
-
-```bash
-npm install -D typescript@next
-```
-
-## Contribute
-
-There are many ways to [contribute](https://github.com/microsoft/TypeScript/blob/main/CONTRIBUTING.md) to TypeScript.
-* [Submit bugs](https://github.com/microsoft/TypeScript/issues) and help us verify fixes as they are checked in.
-* Review the [source code changes](https://github.com/microsoft/TypeScript/pulls).
-* Engage with other TypeScript users and developers on [StackOverflow](https://stackoverflow.com/questions/tagged/typescript).
-* Help each other in the [TypeScript Community Discord](https://discord.gg/typescript).
-* Join the [#typescript](https://twitter.com/search?q=%23TypeScript) discussion on Twitter.
-* [Contribute bug fixes](https://github.com/microsoft/TypeScript/blob/main/CONTRIBUTING.md).
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see
-the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com)
-with any additional questions or comments.
-
-## Documentation
-
-*  [TypeScript in 5 minutes](https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html)
-*  [Programming handbook](https://www.typescriptlang.org/docs/handbook/intro.html)
-*  [Homepage](https://www.typescriptlang.org/)
-
-## Roadmap
-
-For details on our planned features and future direction, please refer to our [roadmap](https://github.com/microsoft/TypeScript/wiki/Roadmap).
-
-
-================================================================================
-FILE: ./workers/package.json
-================================================================================
-{
-  "name": "workers",
-  "version": "1.0.0",
-  "private": true,
-  "description": "DocuMind AI background workers — document processing, embeddings, and queue consumers.",
-  "type": "module",
-  "main": "dist/index.js",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "dotenv": "^17.4.2",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "tsx": "^4.23.0",
-    "typescript": "^5.0.0"
-  }
-}
-
-
-================================================================================
-FILE: ./workers/src/config/env.ts
-================================================================================
-import { z } from "zod";
-
-/**
- * Zod schema for Workers service environment variables.
- * Validates and parses all required and optional env vars at startup.
- */
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
-
-  MONGODB_URI: z
-    .string()
-    .url()
-    .default("mongodb://mongodb:27017/docsai"),
-
-  REDIS_URL: z.string().default("redis://redis:6379"),
-
-  LOG_LEVEL: z
-    .enum(["debug", "info", "warn", "error"])
-    .default("info"),
-
-  WORKER_CONCURRENCY: z
-    .string()
-    .default("1")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().positive().int()),
-});
-
-export type Env = z.infer<typeof envSchema>;
-
-/**
- * Parses and validates environment variables.
- * Exits the process with a clear error message if validation fails.
- */
-export function parseEnv(env: Record<string, string | undefined>): Env {
-  const result = envSchema.safeParse(env);
-
-  if (!result.success) {
-    console.error("❌ Invalid environment variables:");
-    for (const issue of result.error.issues) {
-      console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
-    }
-    process.exit(1);
-  }
-
-  return result.data;
-}
-
-
-================================================================================
-FILE: ./workers/src/config/index.ts
-================================================================================
-import { Env, parseEnv } from "./env.js";
-
-/**
- * Application-wide configuration object for the Workers service.
- * Parsed once at startup from environment variables with Zod validation.
- */
-export const config: Env = parseEnv(process.env);
-
-
-================================================================================
-FILE: ./workers/src/index.ts
-================================================================================
-/**
- * DocuMind AI — Workers entrypoint
- *
- * Background workers for document processing, embedding generation, and
- * queue consumption. This package is a workspace member of the docsai
- * monorepo (see root package.json `workspaces`).
- */
-
-import dotenv from "dotenv";
-import { config } from "./config/index.js";
-
-dotenv.config();
-
-const WORKER_NAME = "docsai-workers";
-
-function main(): void {
-  console.log(`[${WORKER_NAME}] starting...`);
-  console.log(`  NODE_ENV:       ${config.NODE_ENV}`);
-  console.log(`  LOG_LEVEL:      ${config.LOG_LEVEL}`);
-  console.log(`  MONGODB_URI:    ${config.MONGODB_URI}`);
-  console.log(`  REDIS_URL:      ${config.REDIS_URL}`);
-  console.log(`  Concurrency:    ${config.WORKER_CONCURRENCY}`);
-  console.log(`[${WORKER_NAME}] no jobs registered yet — exiting cleanly.`);
-}
-
-main();
 
 
