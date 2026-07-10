@@ -131,11 +131,15 @@ export default function UsersPage() {
     <main className="p-6">
       <div className="max-w-4xl">
         <h1 className="text-2xl font-semibold">Users</h1>
-        <p className="mt-2 text-sm text-slate-600">Invite teammates and manage user access for your company.</p>
+        <p className="mt-2 text-sm text-slate-600">
+          Invite teammates and manage user access for your company.
+        </p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Name</label>
+            <label className="block text-sm font-medium text-slate-700">
+              Name
+            </label>
             <input
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
               value={name}
@@ -146,7 +150,9 @@ export default function UsersPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700">Email</label>
+            <label className="block text-sm font-medium text-slate-700">
+              Email
+            </label>
             <input
               type="email"
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
@@ -158,7 +164,9 @@ export default function UsersPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700">Role</label>
+            <label className="block text-sm font-medium text-slate-700">
+              Role
+            </label>
             <select
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
               value={role}
@@ -170,11 +178,15 @@ export default function UsersPage() {
           </div>
 
           {status ? (
-            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">{status}</div>
+            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
+              {status}
+            </div>
           ) : null}
 
           {error ? (
-            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">{error}</div>
+            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">
+              {error}
+            </div>
           ) : null}
 
           <button
@@ -190,7 +202,9 @@ export default function UsersPage() {
           <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold">User directory</h2>
-              <p className="mt-1 text-sm text-slate-600">Browse tenant users and review access status.</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Browse tenant users and review access status.
+              </p>
             </div>
             <div className="text-sm text-slate-600">
               Page {pagination.page} of {pagination.totalPages}
@@ -198,7 +212,9 @@ export default function UsersPage() {
           </div>
 
           {fetchError ? (
-            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">{fetchError}</div>
+            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">
+              {fetchError}
+            </div>
           ) : null}
 
           {loadingUsers ? (
@@ -208,29 +224,56 @@ export default function UsersPage() {
               <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-4 py-3 font-medium text-slate-700">Name</th>
-                    <th className="px-4 py-3 font-medium text-slate-700">Email</th>
-                    <th className="px-4 py-3 font-medium text-slate-700">Role</th>
-                    <th className="px-4 py-3 font-medium text-slate-700">Status</th>
-                    <th className="px-4 py-3 font-medium text-slate-700">Verified</th>
-                    <th className="px-4 py-3 font-medium text-slate-700">Created</th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Name
+                    </th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Email
+                    </th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Role
+                    </th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Verified
+                    </th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Created
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {users.length > 0 ? (
                     users.map((user) => (
                       <tr key={user.id}>
-                        <td className="px-4 py-3 text-slate-900">{user.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{user.email}</td>
-                        <td className="px-4 py-3 text-slate-600">{user.role}</td>
-                        <td className="px-4 py-3 text-slate-600">{user.status}</td>
-                        <td className="px-4 py-3 text-slate-600">{user.emailVerified ? "Yes" : "No"}</td>
-                        <td className="px-4 py-3 text-slate-600">{new Date(user.createdAt).toLocaleDateString()}</td>
+                        <td className="px-4 py-3 text-slate-900">
+                          {user.name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.email}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.role}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.status}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {user.emailVerified ? "Yes" : "No"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-sm text-slate-500">
+                      <td
+                        colSpan={6}
+                        className="px-4 py-6 text-sm text-slate-500"
+                      >
                         No users found for this tenant.
                       </td>
                     </tr>
@@ -256,7 +299,11 @@ export default function UsersPage() {
               type="button"
               className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={page >= pagination.totalPages}
-              onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+              onClick={() =>
+                setPage((current) =>
+                  Math.min(pagination.totalPages, current + 1),
+                )
+              }
             >
               Next
             </button>

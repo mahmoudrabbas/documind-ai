@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
-import { inviteUser, listUsers, updateUser } from "./users.service.js";
+import { inviteUser, listUsers, updateUser, setPasswordFromInvite } from "./users.service.js";
 
 export async function inviteUserController(
   req: Request,
@@ -16,7 +16,26 @@ export async function inviteUserController(
 
     res.status(201).json({
       success: true,
-      message: "User invitation created successfully. An email has been sent to the invited user.",
+      message:
+        "User invitation created successfully. An email has been sent to the invited user.",
+      data: result,
+    });
+  } catch (error) {
+    handleUserError(error, res, next);
+  }
+}
+
+export async function setPasswordFromInviteController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const result = await setPasswordFromInvite(req.body);
+
+    res.status(200).json({
+      success: true,
+      message: "Password set successfully. You can now log in.",
       data: result,
     });
   } catch (error) {
@@ -55,7 +74,9 @@ export async function updateUserController(
       throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     }
 
-    const targetUserId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const targetUserId = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
     if (!targetUserId) {
       throw new AppError(400, "BAD_REQUEST", "Missing user id parameter");
     }

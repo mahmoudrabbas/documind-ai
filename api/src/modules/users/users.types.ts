@@ -33,3 +33,12 @@ export interface ListUsersResult {
     totalRecords: number;
   };
 }
+
+export interface SetPasswordFromInviteInput {
+  token: string;
+  password: string;
+}
+
+export interface SetPasswordFromInviteResult {
+  user: UserPublicView;
+}

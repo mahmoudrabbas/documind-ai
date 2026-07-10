@@ -9,6 +9,7 @@ import { requestLoggerMiddleware } from "./common/middlewares/requestLogger.midd
 import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import usersRoutes from "./modules/users/users.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 const app = express();
@@ -64,6 +65,7 @@ app.get("/healthz", (_req, res) => {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/auth", authRoutes);
+app.use("/users", usersRoutes);
 app.get("/", (_, res) => {
     res.json({ message: "API is running :)" });
 });

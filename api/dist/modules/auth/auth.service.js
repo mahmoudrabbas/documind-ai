@@ -324,7 +324,7 @@ export async function refreshAccessToken(token, context = {}) {
             !claims.familyId) {
             throw new Error("Invalid refresh token claims");
         }
-        const tokenRecord = await findRefreshTokenRecord(hashRefreshToken(token), hashRefreshTokenJti(claims.jti));
+        const tokenRecord = await findRefreshTokenRecord(claims.tenantId, hashRefreshToken(token), hashRefreshTokenJti(claims.jti));
         if (!tokenRecord ||
             tokenRecord.familyId !== claims.familyId ||
             tokenRecord.tenantId.toString() !== claims.tenantId ||
@@ -399,7 +399,7 @@ export async function logout(token, context = {}) {
             !claims.tenantId) {
             return;
         }
-        const record = await findRefreshTokenRecord(hashRefreshToken(token), hashRefreshTokenJti(claims.jti));
+        const record = await findRefreshTokenRecord(claims.tenantId, hashRefreshToken(token), hashRefreshTokenJti(claims.jti));
         if (record &&
             record.userId.toString() === claims.sub &&
             record.tenantId.toString() === claims.tenantId) {

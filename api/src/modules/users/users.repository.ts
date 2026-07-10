@@ -11,13 +11,22 @@ import {
   findUserByTenantAndId,
 } from "../auth/auth.repository.js";
 
-export { createUser, findTenantById, findUserDocumentByTenantAndEmail, findUserByTenantAndId };
+export {
+  createUser,
+  findTenantById,
+  findUserDocumentByTenantAndEmail,
+  findUserByTenantAndId,
+};
 
 export function countUsersByTenant(tenantId: string) {
   return tenantScopedFind(UserModel, tenantId, {}).countDocuments().exec();
 }
 
-export function findUsersByTenant(tenantId: string, page: number, pageSize: number) {
+export function findUsersByTenant(
+  tenantId: string,
+  page: number,
+  pageSize: number,
+) {
   return tenantScopedFind(UserModel, tenantId, {})
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
@@ -31,6 +40,11 @@ export async function updateUserByTenantAndId(
   userId: string,
   update: Partial<Pick<UserDocument, "role" | "status">>,
 ) {
-  await tenantScopedUpdateOne(UserModel, tenantId, { _id: userId }, { $set: update }).exec();
+  await tenantScopedUpdateOne(
+    UserModel,
+    tenantId,
+    { _id: userId },
+    { $set: update },
+  ).exec();
   return findUserByTenantAndId(tenantId, userId);
 }
