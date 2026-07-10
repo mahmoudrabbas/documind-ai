@@ -10,6 +10,15 @@ export interface InviteUserResult {
   user: UserPublicView;
 }
 
+export interface UpdateUserInput {
+  role?: "COMPANY_ADMIN" | "EMPLOYEE";
+  status?: "active" | "pending" | "pending_email_verification" | "disabled";
+}
+
+export interface UpdateUserResult {
+  user: UserPublicView;
+}
+
 export interface ListUsersInput {
   page: number;
   pageSize: number;
