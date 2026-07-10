@@ -1,6 +1,7 @@
 import test, { after, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.NODE_ENV = "test";
+import mongoose from "mongoose";
 import app from "./app.js";
 import { calculateRetryDelay, connectDB, disconnectDB, getMongoConnectionState, isMongoConnected, } from "./db/connection.js";
 import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected, } from "./db/redis.js";
@@ -1444,7 +1445,7 @@ async function createSuperAdminUser() {
     // Create a super admin with a platform-level tenantId (required by User schema)
     // SUPER_ADMIN users operate at platform level and have access to all tenants
     const user = await UserModel.create({
-        tenantId: "platform",
+        tenantId: new mongoose.Types.ObjectId(),
         name: "Platform Admin",
         email: "admin@platform.com",
         passwordHash: await hashPassword(TEST_PASSWORD),

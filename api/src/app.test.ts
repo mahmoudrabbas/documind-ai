@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 
 process.env.NODE_ENV = "test";
 
+import mongoose from "mongoose";
 import app from "./app.js";
 import {
   calculateRetryDelay,
@@ -2020,7 +2021,7 @@ async function createSuperAdminUser() {
   // Create a super admin with a platform-level tenantId (required by User schema)
   // SUPER_ADMIN users operate at platform level and have access to all tenants
   const user = await UserModel.create({
-    tenantId: "platform",
+    tenantId: new mongoose.Types.ObjectId(),
     name: "Platform Admin",
     email: "admin@platform.com",
     passwordHash: await hashPassword(TEST_PASSWORD),
