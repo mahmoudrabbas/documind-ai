@@ -18,4 +18,6 @@ export { Avatar, getInitials, type AvatarProps } from "./Avatar";
 export { StatCard, type StatCardProps } from "./StatCard";
 export { Skeleton } from "./Skeleton";
 export { LanguageSwitcher, type LanguageSwitcherProps } from "./LanguageSwitcher";
+export { FileDropzone, type FileDropzoneProps } from "./FileDropzone";
+export { ProgressBar, type ProgressBarProps } from "./ProgressBar";
 export type { ButtonVariant, ButtonSize, BadgeStatus } from "./variants";
