@@ -114,7 +114,7 @@ after(async () => {
 void test("POST /documents — upload a document successfully", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
-  const { tenant } = await createActiveTenantAdmin();
+  await createActiveTenantAdmin();
   const accessToken = await login(port);
 
   const pdfContent = Buffer.from("%PDF-1.4 test document content", "utf-8");
