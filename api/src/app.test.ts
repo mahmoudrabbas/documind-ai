@@ -2385,7 +2385,7 @@ test("GET /platform/tenants rejects invalid pagination values", async () => {
     const body1 = await response1.json();
 
     assert.equal(response1.status, 400);
-    assert.equal(body1.code, "VALIDATION_ERROR");
+    assert.equal(body1.error, "VALIDATION_ERROR");
 
     // Test invalid pageSize (too large)
     const response2 = await fetch(
@@ -2395,7 +2395,7 @@ test("GET /platform/tenants rejects invalid pagination values", async () => {
     const body2 = await response2.json();
 
     assert.equal(response2.status, 400);
-    assert.equal(body2.code, "VALIDATION_ERROR");
+    assert.equal(body2.error, "VALIDATION_ERROR");
 
     assertNoSensitiveFields(body1);
   } finally {
@@ -2418,7 +2418,7 @@ test("GET /platform/tenants rejects invalid filter values", async () => {
     const body1 = await response1.json();
 
     assert.equal(response1.status, 400);
-    assert.equal(body1.code, "VALIDATION_ERROR");
+    assert.equal(body1.error, "VALIDATION_ERROR");
 
     // Test invalid plan
     const response2 = await fetch(
@@ -2428,7 +2428,7 @@ test("GET /platform/tenants rejects invalid filter values", async () => {
     const body2 = await response2.json();
 
     assert.equal(response2.status, 400);
-    assert.equal(body2.code, "VALIDATION_ERROR");
+    assert.equal(body2.error, "VALIDATION_ERROR");
 
     assertNoSensitiveFields(body1);
   } finally {
