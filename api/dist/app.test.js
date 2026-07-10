@@ -1,9 +1,9 @@
 import test, { after, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.NODE_ENV = "test";
-import mongoose from "mongoose";
 import app from "./app.js";
 import { calculateRetryDelay, connectDB, disconnectDB, getMongoConnectionState, isMongoConnected, } from "./db/connection.js";
+import mongoose from "mongoose";
 import { connectRedis, disconnectRedis, getRedisClient, isRedisConnected, } from "./db/redis.js";
 import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";

@@ -4,7 +4,6 @@ import type { AddressInfo } from "node:net";
 
 process.env.NODE_ENV = "test";
 
-import mongoose from "mongoose";
 import app from "./app.js";
 import {
   calculateRetryDelay,
@@ -13,6 +12,8 @@ import {
   getMongoConnectionState,
   isMongoConnected,
 } from "./db/connection.js";
+import type { Types } from "mongoose";
+import mongoose from "mongoose";
 import {
   connectRedis,
   disconnectRedis,
