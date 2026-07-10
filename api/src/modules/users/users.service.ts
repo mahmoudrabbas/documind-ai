@@ -5,8 +5,14 @@ import {
   NOT_FOUND,
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
+  INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
 } from "../../common/errors/errorCodes.js";
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
+import {
+  verifyEmailVerificationToken,
+  hashVerificationJti,
+} from "../auth/emailVerificationToken.js";
+import { findUserDocumentById } from "../auth/auth.repository.js";
 import { sendVerificationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import {
@@ -23,11 +29,13 @@ import {
   validateInviteUserInput,
   validateListUsersInput,
   validateUpdateUserInput,
+  validateSetPasswordFromInviteInput,
 } from "./users.validator.js";
 import type {
   InviteUserResult,
   ListUsersResult,
   UpdateUserResult,
+  SetPasswordFromInviteResult,
 } from "./users.types.js";
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
@@ -58,7 +66,7 @@ function serializeUser(user: CreatedUserRecord) {
 }
 
 function buildVerificationUrl(token: string) {
-  const url = new URL("/verify-email", config.APP_FRONTEND_URL);
+  const url = new URL("/set-password-from-invite", config.APP_FRONTEND_URL);
 
   url.searchParams.set("token", token);
 
@@ -70,7 +78,7 @@ function isDuplicateKeyError(error: unknown) {
     error &&
     typeof error === "object" &&
     "code" in error &&
-    (error as { code?: number }).code === 11000
+    (error as { code?: number }).code === 11000,
   );
 }
 
@@ -81,9 +89,16 @@ export async function inviteUser(
 ): Promise<InviteUserResult> {
   const payload = validateInviteUserInput(input);
 
-  const existingUser = await findUserDocumentByTenantAndEmail(tenantId, payload.email);
+  const existingUser = await findUserDocumentByTenantAndEmail(
+    tenantId,
+    payload.email,
+  );
   if (existingUser) {
-    throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists in this tenant");
+    throw new AppError(
+      409,
+      EMAIL_ALREADY_EXISTS,
+      "Email already exists in this tenant",
+    );
   }
 
   const tenant = await findTenantById(tenantId);
@@ -127,7 +142,11 @@ export async function inviteUser(
     }
 
     if (isDuplicateKeyError(error)) {
-      throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists in this tenant");
+      throw new AppError(
+        409,
+        EMAIL_ALREADY_EXISTS,
+        "Email already exists in this tenant",
+      );
     }
 
     if (error instanceof AppError) {
@@ -172,7 +191,11 @@ export async function updateUser(
   }
 
   try {
-    const updatedUser = await updateUserByTenantAndId(tenantId, targetUserId, update);
+    const updatedUser = await updateUserByTenantAndId(
+      tenantId,
+      targetUserId,
+      update,
+    );
 
     if (!updatedUser) {
       throw new AppError(404, NOT_FOUND, "User not found");
@@ -225,4 +248,90 @@ export async function listUsers(
       totalRecords,
     },
   };
+}
+
+export async function setPasswordFromInvite(
+  input: unknown,
+): Promise<SetPasswordFromInviteResult> {
+  const payload = validateSetPasswordFromInviteInput(input);
+  const invalidTokenError = new AppError(
+    400,
+    INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
+    "Invalid or expired invite token",
+  );
+
+  try {
+    const tokenPayload = verifyEmailVerificationToken(payload.token);
+
+    if (tokenPayload.purpose !== "email_verification") {
+      throw invalidTokenError;
+    }
+
+    const user = await findUserDocumentById(tokenPayload.sub);
+
+    if (
+      !user ||
+      user.tenantId.toString() !== tokenPayload.tenantId ||
+      user.email !== tokenPayload.email
+    ) {
+      throw invalidTokenError;
+    }
+
+    if (
+      user.emailVerified ||
+      user.status !== "pending_email_verification" ||
+      !user.emailVerificationTokenHash ||
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt.getTime() <= Date.now()
+    ) {
+      throw invalidTokenError;
+    }
+
+    if (
+      user.emailVerificationTokenHash !==
+      hashVerificationJti(tokenPayload.jti)
+    ) {
+      throw invalidTokenError;
+    }
+
+    const newPasswordHash = await hashPassword(payload.password);
+
+    user.passwordHash = newPasswordHash;
+    user.emailVerified = true;
+    user.emailVerifiedAt = new Date();
+    user.status = "active";
+    user.emailVerificationTokenHash = null;
+    user.emailVerificationExpiresAt = null;
+
+    await user.save();
+
+    await createAuditLog({
+      tenantId: user.tenantId.toString(),
+      userId: user._id.toString(),
+      resourceType: "User",
+      resourceId: user._id.toString(),
+      action: "PASSWORD_SET_FROM_INVITE",
+      actorId: user._id.toString(),
+      actorEmail: user.email,
+      actorRole: user.role,
+      changes: {
+        status: {
+          before: "pending_email_verification",
+          after: "active",
+        },
+        passwordSet: true,
+      },
+    });
+
+    return {
+      user: serializeUser(user),
+    };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    console.error("[users-set-password-from-invite]", error);
+    throw invalidTokenError;
+  }
 }

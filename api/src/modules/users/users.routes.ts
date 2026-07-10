@@ -6,6 +6,7 @@ import {
   inviteUserController,
   listUsersController,
   updateUserController,
+  setPasswordFromInviteController,
 } from "./users.controller.js";
 
 const router = Router();
@@ -33,5 +34,7 @@ router.post(
   authorize("COMPANY_ADMIN"),
   inviteUserController,
 );
+
+router.post("/set-password-from-invite", setPasswordFromInviteController);
 
 export default router;
