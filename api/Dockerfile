@@ -1,9 +1,10 @@
-FROM node:22-alpine
+FROM node:22-bullseye-slim
 
 WORKDIR /app
 
 COPY api/package*.json ./
 
+RUN apt-get update && apt-get install -y python3 python-is-python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN npm install
 
 COPY api/ .
