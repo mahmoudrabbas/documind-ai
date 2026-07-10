@@ -4,6 +4,10 @@ import RedisStore, { type RedisReply } from "rate-limit-redis";
 import { config } from "../../config/index.js";
 import { getRedisClient } from "../../db/redis.js";
 
+function isTestEnv() {
+  return process.env.NODE_ENV === "test";
+}
+
 function createRedisStore(redisClient = getRedisClient()): Store {
   return new RedisStore({
     sendCommand: (...args: string[]): Promise<RedisReply> => {
@@ -32,9 +36,11 @@ export function createRateLimiter(
   const message = options.message ?? config.RATE_LIMIT_MESSAGE;
   const store =
     options.store ??
-    (options.redisClient
-      ? createRedisStore(options.redisClient)
-      : createRedisStore());
+    (isTestEnv()
+      ? undefined
+      : options.redisClient
+        ? createRedisStore(options.redisClient)
+        : createRedisStore());
 
   return rateLimit({
     windowMs,
