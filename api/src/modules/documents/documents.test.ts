@@ -4,11 +4,10 @@ import type { Server } from "node:http";
 
 process.env.NODE_ENV = "test";
 
-import app from "../../app.js";
-import { connectDB, disconnectDB } from "../../db/connection.js";
+import type { Express } from "express";
+import mongoose from "mongoose";
+import { MongoMemoryServer } from "mongodb-memory-server";
 import { connectRedis, disconnectRedis } from "../../db/redis.js";
-import RefreshTokenModel from "../../db/models/refreshToken.model.js";
-import AuditLogModel from "../../db/models/auditLog.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
@@ -17,8 +16,12 @@ import * as fsp from "node:fs/promises";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 
+const app: Express = (await import("../../app.js")).default;
+
 const TEST_PASSWORD = "StrongPass123!";
 const UPLOAD_TEST_DIR = path.join(process.cwd(), ".test-uploads");
+
+let mongoServer: MongoMemoryServer;
 
 function createServer() {
   return new Promise<Server>((resolve) => {
@@ -68,12 +71,15 @@ async function login(port: number, slug = "acme-consulting", email = "sarah@acme
   return body.data.tokens.accessToken;
 }
 
-function buildMultipartBody(fileName: string, fileContent: Buffer, metadata: Record<string, string>) {
+function buildMultipartBody(fileName: string, fileContent: Buffer, metadata: Record<string, string | string[]>) {
   const boundary = "----TestBoundary" + Date.now();
   const parts: string[] = [];
 
   for (const [key, value] of Object.entries(metadata)) {
-    parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`);
+    const values = Array.isArray(value) ? value : [value];
+    for (const v of values) {
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${v}\r\n`);
+    }
   }
 
   parts.push(
@@ -87,14 +93,15 @@ function buildMultipartBody(fileName: string, fileContent: Buffer, metadata: Rec
 }
 
 before(async () => {
-  await connectDB();
+  mongoServer = await MongoMemoryServer.create({
+    binary: { version: process.env.MONGOMS_VERSION ?? "6.0.20" },
+  });
+  await mongoose.connect(mongoServer.getUri(), { dbName: "documents-test" });
   await connectRedis();
   mkdirSync(UPLOAD_TEST_DIR, { recursive: true });
 });
 
 beforeEach(async () => {
-  await RefreshTokenModel.deleteMany({});
-  await AuditLogModel.deleteMany({});
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
   await DocumentModel.deleteMany({});
@@ -108,7 +115,10 @@ beforeEach(async () => {
 after(async () => {
   await fsp.rm(UPLOAD_TEST_DIR, { recursive: true, force: true }).catch(() => {});
   await disconnectRedis();
-  await disconnectDB();
+  await mongoose.disconnect();
+  if (mongoServer) {
+    await mongoServer.stop();
+  }
 });
 
 void test("POST /documents — upload a document successfully", async () => {
@@ -121,7 +131,7 @@ void test("POST /documents — upload a document successfully", async () => {
   const { buffer, boundary } = buildMultipartBody("report.pdf", pdfContent, {
     title: "Annual Report 2024",
     description: "Company financial report",
-    tags: "finance,annual,2024",
+    tags: ["finance", "annual", "2024"],
   });
 
   const response = await fetch(`http://127.0.0.1:${port}/documents`, {
