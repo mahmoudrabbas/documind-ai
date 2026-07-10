@@ -12,7 +12,7 @@ import type {
 } from "./admin.types.js";
 import type { TenantDocument } from "../../db/models/tenant.model.js";
 import type { Types } from "mongoose";
-
+import { AppError } from "../../common/errors/AppError.js";
 function serializeTenant(tenant: TenantDocument): TenantPublicView {
   const id = (tenant._id as unknown as Types.ObjectId)?.toString() ?? "";
   return {

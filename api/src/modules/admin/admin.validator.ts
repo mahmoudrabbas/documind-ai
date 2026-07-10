@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { ListTenantsInput } from "./admin.types.js";
+import type { ListTenantsInput, UpdateTenantInput } from "./admin.types.js";
 
 const listTenantsSchema = z
   .object({
