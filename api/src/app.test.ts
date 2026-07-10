@@ -2036,7 +2036,13 @@ async function createSuperAdminUser() {
 async function getSuperAdminAccessToken() {
   const user = await createSuperAdminUser();
   const token = signJwt(
-    { sub: user.id, type: "access" },
+    {
+      sub: user.id,
+      tenantId: user.tenantId.toString(),
+      role: user.role,
+      email: user.email,
+      type: "access",
+    },
     config.JWT_SECRET,
     "1h",
   );
