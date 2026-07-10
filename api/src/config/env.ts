@@ -69,6 +69,12 @@ const envSchema = z.object({
   SMTP_PASS: z.string().default(""),
   SMTP_FROM: z.string().default("DocuMind AI <no-reply@localhost>"),
 
+  UPLOAD_DIR: z.string().default("./uploads"),
+  MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(50 * 1024 * 1024),
+  ALLOWED_MIME_TYPES: z
+    .string()
+    .default("application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"),
+
   LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"])
     .default("info"),

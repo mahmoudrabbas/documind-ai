@@ -7,6 +7,10 @@ import {
   validatePassword,
   validateConfirmPassword,
   generateCompanySlug,
+  validateDocumentTitle,
+  validateFileType,
+  validateFileSize,
+  getFileSizeLabel,
 } from "../validation";
 
 describe("validation helpers", () => {
@@ -136,6 +140,74 @@ describe("validation helpers", () => {
 
     it("handles Arabic/unicode characters", () => {
       expect(generateCompanySlug("شركة دكيومند")).toBe("شركة-دكيومند");
+    });
+  });
+
+  describe("validateDocumentTitle", () => {
+    it("rejects empty title", () => {
+      expect(validateDocumentTitle("")).toBe("documents.metadataTitleRequired");
+      expect(validateDocumentTitle("   ")).toBe("documents.metadataTitleRequired");
+    });
+
+    it("rejects title shorter than 2 characters", () => {
+      expect(validateDocumentTitle("A")).toBe("documents.metadataTitleRequired");
+    });
+
+    it("rejects title longer than 200 characters", () => {
+      expect(validateDocumentTitle("A".repeat(201))).toBe("documents.metadataTitleRequired");
+    });
+
+    it("accepts valid title", () => {
+      expect(validateDocumentTitle("Annual Report 2024")).toBe(null);
+      expect(validateDocumentTitle("AB")).toBe(null);
+    });
+  });
+
+  describe("validateFileType", () => {
+    function mockFile(type: string): File {
+      return new File([""], "test", { type });
+    }
+
+    it("accepts PDF", () => {
+      expect(validateFileType(mockFile("application/pdf"))).toBe(null);
+    });
+
+    it("accepts DOCX", () => {
+      expect(validateFileType(mockFile("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))).toBe(null);
+    });
+
+    it("rejects unsupported types", () => {
+      expect(validateFileType(mockFile("image/png"))).toBe("documents.fileTypeNotSupported");
+      expect(validateFileType(mockFile("video/mp4"))).toBe("documents.fileTypeNotSupported");
+    });
+  });
+
+  describe("validateFileSize", () => {
+    function mockFile(size: number): File {
+      return new File([new ArrayBuffer(size)], "test.pdf", { type: "application/pdf" });
+    }
+
+    it("accepts files under the limit", () => {
+      expect(validateFileSize(mockFile(1024))).toBe(null);
+      expect(validateFileSize(mockFile(50 * 1024 * 1024))).toBe(null);
+    });
+
+    it("rejects files over the limit", () => {
+      expect(validateFileSize(mockFile(50 * 1024 * 1024 + 1))).toBe("documents.fileTooLarge");
+    });
+  });
+
+  describe("getFileSizeLabel", () => {
+    it("formats bytes", () => {
+      expect(getFileSizeLabel(500)).toBe("500 B");
+    });
+
+    it("formats kilobytes", () => {
+      expect(getFileSizeLabel(2048)).toBe("2.0 KB");
+    });
+
+    it("formats megabytes", () => {
+      expect(getFileSizeLabel(5 * 1024 * 1024)).toBe("5.0 MB");
     });
   });
 });

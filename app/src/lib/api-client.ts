@@ -327,3 +327,98 @@ export const api = {
     return apiClient<T>(endpoint, { ...options, method: "DELETE" });
   },
 };
+
+export function uploadFile<T = unknown>(
+  endpoint: string,
+  file: File,
+  metadata: Record<string, string>,
+  onProgress?: (progress: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+
+    formData.append("file", file);
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value !== undefined && value !== "") {
+        formData.append(key, value);
+      }
+    }
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        onProgress(percent);
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      const contentType = xhr.getResponseHeader("content-type");
+      let response: unknown;
+
+      try {
+        response = xhr.responseText
+          ? contentType?.includes("json")
+            ? JSON.parse(xhr.responseText)
+            : xhr.responseText
+          : null;
+      } catch {
+        response = xhr.responseText;
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(response as T);
+      } else {
+        const apiError = new ApiError({
+          status: xhr.status,
+          code:
+            response && typeof response === "object" && "error" in response
+              ? String((response as Record<string, unknown>).error)
+              : undefined,
+          message:
+            response && typeof response === "object" && "message" in response
+              ? String((response as Record<string, unknown>).message)
+              : `Upload failed with status ${xhr.status}`,
+          details:
+            response && typeof response === "object" && "details" in response
+              ? (response as Record<string, unknown>).details
+              : undefined,
+        });
+
+        reject(apiError);
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(
+        new ApiError({
+          status: 0,
+          code: "NETWORK_ERROR",
+          message: "Network error during upload",
+        }),
+      );
+    });
+
+    xhr.addEventListener("abort", () => {
+      reject(
+        new ApiError({
+          status: 0,
+          code: "UPLOAD_ABORTED",
+          message: "Upload was cancelled",
+        }),
+      );
+    });
+
+    const accessToken = getAccessToken();
+
+    xhr.open("POST", buildUrl(endpoint));
+    xhr.setRequestHeader("Accept-Language", getLocaleFromCookie());
+    xhr.withCredentials = true;
+
+    if (accessToken) {
+      xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+    }
+
+    xhr.send(formData);
+  });
+}

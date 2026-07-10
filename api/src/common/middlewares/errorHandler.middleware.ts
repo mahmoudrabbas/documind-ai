@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from "express";
+import multer from "multer";
 import { AppError } from "../errors/AppError.js";
 import { BAD_REQUEST, INTERNAL_SERVER_ERROR } from "../errors/errorCodes.js";
 import { logger } from "../logger/logger.js";
@@ -27,6 +28,19 @@ function isSyntaxError(error: unknown): error is SyntaxError {
   );
 }
 
+function isMulterError(error: unknown): error is multer.MulterError {
+  return error instanceof multer.MulterError;
+}
+
+function isMulterFileFilterError(error: unknown): error is Error & { code: string } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: string }).code === "UNSUPPORTED_FILE_TYPE"
+  );
+}
+
 export const errorHandlerMiddleware: ErrorRequestHandler = (
   err,
   req,
@@ -47,6 +61,27 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     code = err.code;
     message = err.message;
     details = err.details ?? null;
+  } else if (isMulterError(err)) {
+    statusCode = 400;
+    code = "FILE_UPLOAD_ERROR";
+
+    switch (err.code) {
+      case "LIMIT_FILE_SIZE":
+        message = "File size exceeds the maximum allowed limit";
+        break;
+      case "LIMIT_UNEXPECTED_FILE":
+        message = "Unexpected file field";
+        break;
+      default:
+        message = err.message;
+    }
+
+    details = { multerCode: err.code };
+  } else if (isMulterFileFilterError(err)) {
+    statusCode = 400;
+    code = "UNSUPPORTED_FILE_TYPE";
+    message = err.message;
+    details = null;
   } else if (isSyntaxError(err)) {
     statusCode = 400;
     code = BAD_REQUEST;
