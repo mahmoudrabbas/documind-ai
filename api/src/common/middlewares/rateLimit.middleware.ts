@@ -1,14 +1,17 @@
 import type { RequestHandler } from "express";
 import { rateLimit, type Store } from "express-rate-limit";
-import RedisStore from "rate-limit-redis";
+import RedisStore, { type RedisReply } from "rate-limit-redis";
 import { config } from "../../config/index.js";
 import { getRedisClient } from "../../db/redis.js";
 
 function createRedisStore(redisClient = getRedisClient()): Store {
   return new RedisStore({
-    sendCommand: (...args: string[]) => {
+    sendCommand: (...args: string[]): Promise<RedisReply> => {
       const [command, ...rest] = args;
-      return redisClient.call(command!, ...rest) as Promise<any>;
+      return redisClient.call(
+        command!,
+        ...rest,
+      ) as unknown as Promise<RedisReply>;
     },
     prefix: "rate-limit:",
     resetExpiryOnChange: true,
