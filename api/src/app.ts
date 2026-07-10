@@ -10,6 +10,7 @@ import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import usersRoutes from "./modules/users/users.routes.js";
+import adminRoutes from "./modules/admin/admin.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -82,6 +83,7 @@ app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/users", usersRoutes);
+app.use("/platform", adminRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

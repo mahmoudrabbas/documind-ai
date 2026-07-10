@@ -1,1 +1,1 @@
-{"version":3,"file":"admin.controller.d.ts","sourceRoot":"","sources":["../../../src/modules/admin/admin.controller.ts"],"names":[],"mappings":""}
+{"version":3,"file":"admin.controller.d.ts","sourceRoot":"","sources":["../../../src/modules/admin/admin.controller.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AAmB/D,wBAAsB,qBAAqB,CACzC,GAAG,EAAE,OAAO,EACZ,GAAG,EAAE,QAAQ,EACb,IAAI,EAAE,YAAY,iBAiBnB"}

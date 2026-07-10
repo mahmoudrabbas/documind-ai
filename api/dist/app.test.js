@@ -1437,4 +1437,346 @@ test("GET /auth/me returns 401 for an expired access token", async () => {
         await closeServer(server);
     }
 });
+// ────────────────────────────────────────────────────────────────────────────
+// GET /platform/tenants - List all tenants (SUPER_ADMIN only)
+// ────────────────────────────────────────────────────────────────────────────
+async function createSuperAdminUser() {
+    // Create a super admin without a tenant (platform-level admin)
+    const user = await UserModel.create({
+        name: "Platform Admin",
+        email: "admin@platform.com",
+        passwordHash: await hashPassword(TEST_PASSWORD),
+        role: "SUPER_ADMIN",
+        status: "active",
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+    });
+    return user;
+}
+async function getSuperAdminAccessToken() {
+    const user = await createSuperAdminUser();
+    const token = signJwt({ sub: user.id, type: "access" }, config.JWT_SECRET, "1h");
+    return token;
+}
+test("GET /platform/tenants returns 401 without authentication", async () => {
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants`);
+        const body = await response.json();
+        assert.equal(response.status, 401);
+        assert.equal(body.error?.code, "UNAUTHORIZED");
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants returns 403 for non-SUPER_ADMIN users", async () => {
+    const { tenant, user } = await createActiveTenantAdmin();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const token = signJwt({ sub: user.id, tenantId: tenant.id, type: "access" }, config.JWT_SECRET, "1h");
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await response.json();
+        assert.equal(response.status, 403);
+        assert.equal(body.error?.code, "FORBIDDEN");
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants returns all tenants for SUPER_ADMIN without filters", async () => {
+    // Create multiple tenants
+    await TenantModel.create([
+        {
+            name: "Acme Corp",
+            slug: "acme-corp",
+            status: "active",
+            plan: "pro",
+        },
+        {
+            name: "Tech Startup",
+            slug: "tech-startup",
+            status: "trial",
+            plan: "trial",
+        },
+        {
+            name: "Small Biz",
+            slug: "small-biz",
+            status: "pending",
+            plan: "free",
+        },
+    ]);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(body.success, true);
+        assert.ok(Array.isArray(body.data?.tenants));
+        assert.equal(body.data.tenants.length, 3);
+        assert.equal(body.data.pagination.page, 1);
+        assert.equal(body.data.pagination.pageSize, 20);
+        assert.equal(body.data.pagination.totalRecords, 3);
+        assert.equal(body.data.pagination.totalPages, 1);
+        // Verify tenant structure
+        const tenant = body.data.tenants[0];
+        assert.ok(tenant.id);
+        assert.ok(tenant.name);
+        assert.ok(tenant.slug);
+        assert.ok(tenant.status);
+        assert.ok(tenant.plan);
+        assert.ok(tenant.createdAt);
+        assert.ok(tenant.updatedAt);
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants supports pagination", async () => {
+    // Create 25 tenants to test pagination
+    const tenants = [];
+    for (let i = 1; i <= 25; i++) {
+        tenants.push({
+            name: `Tenant ${i}`,
+            slug: `tenant-${i}`,
+            status: "active",
+            plan: "free",
+        });
+    }
+    await TenantModel.create(tenants);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        // Test page 1 with pageSize 10
+        const response1 = await fetch(`http://127.0.0.1:${port}/platform/tenants?page=1&pageSize=10`, { headers: { Authorization: `Bearer ${token}` } });
+        const body1 = await response1.json();
+        assert.equal(response1.status, 200);
+        assert.equal(body1.data.tenants.length, 10);
+        assert.equal(body1.data.pagination.page, 1);
+        assert.equal(body1.data.pagination.pageSize, 10);
+        assert.equal(body1.data.pagination.totalRecords, 25);
+        assert.equal(body1.data.pagination.totalPages, 3);
+        // Test page 2
+        const response2 = await fetch(`http://127.0.0.1:${port}/platform/tenants?page=2&pageSize=10`, { headers: { Authorization: `Bearer ${token}` } });
+        const body2 = await response2.json();
+        assert.equal(response2.status, 200);
+        assert.equal(body2.data.tenants.length, 10);
+        assert.equal(body2.data.pagination.page, 2);
+        // Test page 3
+        const response3 = await fetch(`http://127.0.0.1:${port}/platform/tenants?page=3&pageSize=10`, { headers: { Authorization: `Bearer ${token}` } });
+        const body3 = await response3.json();
+        assert.equal(response3.status, 200);
+        assert.equal(body3.data.tenants.length, 5);
+        assert.equal(body3.data.pagination.page, 3);
+        assertNoSensitiveFields(body1);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants filters by status", async () => {
+    await TenantModel.create([
+        { name: "Active Tenant", slug: "active-1", status: "active", plan: "pro" },
+        { name: "Trial Tenant", slug: "trial-1", status: "trial", plan: "trial" },
+        {
+            name: "Active Tenant 2",
+            slug: "active-2",
+            status: "active",
+            plan: "free",
+        },
+        {
+            name: "Pending Tenant",
+            slug: "pending-1",
+            status: "pending",
+            plan: "free",
+        },
+    ]);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants?status=active`, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(body.data.tenants.length, 2);
+        assert.ok(body.data.tenants.every((t) => t.status === "active"));
+        assert.equal(body.data.pagination.totalRecords, 2);
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants filters by plan", async () => {
+    await TenantModel.create([
+        { name: "Free 1", slug: "free-1", status: "active", plan: "free" },
+        { name: "Pro 1", slug: "pro-1", status: "active", plan: "pro" },
+        { name: "Free 2", slug: "free-2", status: "pending", plan: "free" },
+        { name: "Trial 1", slug: "trial-1", status: "trial", plan: "trial" },
+    ]);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants?plan=free`, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(body.data.tenants.length, 2);
+        assert.ok(body.data.tenants.every((t) => t.plan === "free"));
+        assert.equal(body.data.pagination.totalRecords, 2);
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants searches by name and slug", async () => {
+    await TenantModel.create([
+        {
+            name: "Acme Corporation",
+            slug: "acme-corp",
+            status: "active",
+            plan: "pro",
+        },
+        {
+            name: "Acme Consulting",
+            slug: "acme-consult",
+            status: "active",
+            plan: "free",
+        },
+        {
+            name: "TechVision Inc",
+            slug: "techvision",
+            status: "active",
+            plan: "trial",
+        },
+        {
+            name: "Beta Company",
+            slug: "beta-tech",
+            status: "pending",
+            plan: "free",
+        },
+    ]);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants?search=acme`, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(body.data.tenants.length, 2);
+        assert.ok(body.data.tenants.every((t) => t.name.toLowerCase().includes("acme") ||
+            t.slug.toLowerCase().includes("acme")));
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants combines multiple filters", async () => {
+    await TenantModel.create([
+        { name: "Acme Pro", slug: "acme-pro", status: "active", plan: "pro" },
+        { name: "Acme Free", slug: "acme-free", status: "pending", plan: "free" },
+        { name: "Acme Trial", slug: "acme-trial", status: "trial", plan: "trial" },
+        {
+            name: "Other Active Pro",
+            slug: "other-pro",
+            status: "active",
+            plan: "pro",
+        },
+    ]);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants?search=acme&status=active&plan=pro`, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(body.data.tenants.length, 1);
+        assert.equal(body.data.tenants[0].name, "Acme Pro");
+        assert.equal(body.data.tenants[0].status, "active");
+        assert.equal(body.data.tenants[0].plan, "pro");
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants rejects invalid pagination values", async () => {
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        // Test invalid page (0)
+        const response1 = await fetch(`http://127.0.0.1:${port}/platform/tenants?page=0`, { headers: { Authorization: `Bearer ${token}` } });
+        const body1 = await response1.json();
+        assert.equal(response1.status, 400);
+        assert.equal(body1.code, "VALIDATION_ERROR");
+        // Test invalid pageSize (too large)
+        const response2 = await fetch(`http://127.0.0.1:${port}/platform/tenants?pageSize=101`, { headers: { Authorization: `Bearer ${token}` } });
+        const body2 = await response2.json();
+        assert.equal(response2.status, 400);
+        assert.equal(body2.code, "VALIDATION_ERROR");
+        assertNoSensitiveFields(body1);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants rejects invalid filter values", async () => {
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        // Test invalid status
+        const response1 = await fetch(`http://127.0.0.1:${port}/platform/tenants?status=invalid`, { headers: { Authorization: `Bearer ${token}` } });
+        const body1 = await response1.json();
+        assert.equal(response1.status, 400);
+        assert.equal(body1.code, "VALIDATION_ERROR");
+        // Test invalid plan
+        const response2 = await fetch(`http://127.0.0.1:${port}/platform/tenants?plan=invalid`, { headers: { Authorization: `Bearer ${token}` } });
+        const body2 = await response2.json();
+        assert.equal(response2.status, 400);
+        assert.equal(body2.code, "VALIDATION_ERROR");
+        assertNoSensitiveFields(body1);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants returns empty list when no tenants match filters", async () => {
+    await TenantModel.create({
+        name: "Acme Active",
+        slug: "acme-active",
+        status: "active",
+        plan: "pro",
+    });
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const response = await fetch(`http://127.0.0.1:${port}/platform/tenants?status=pending`, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await response.json();
+        assert.equal(response.status, 200);
+        assert.equal(body.data.tenants.length, 0);
+        assert.equal(body.data.pagination.totalRecords, 0);
+        assert.equal(body.data.pagination.totalPages, 0);
+        assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
 //# sourceMappingURL=app.test.js.map
