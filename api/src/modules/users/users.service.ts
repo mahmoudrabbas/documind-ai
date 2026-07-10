@@ -4,9 +4,16 @@ import { EMAIL_ALREADY_EXISTS, NOT_FOUND, REGISTRATION_FAILED } from "../../comm
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
 import { sendVerificationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
-import { createUser, findTenantById, findUserByTenantAndId, findUserDocumentByTenantAndEmail } from "./users.repository.js";
-import { validateInviteUserInput } from "./users.validator.js";
-import type { InviteUserResult } from "./users.types.js";
+import {
+  createUser,
+  findTenantById,
+  findUserByTenantAndId,
+  findUserDocumentByTenantAndEmail,
+  countUsersByTenant,
+  findUsersByTenant,
+} from "./users.repository.js";
+import { validateInviteUserInput, validateListUsersInput } from "./users.validator.js";
+import type { InviteUserResult, ListUsersResult } from "./users.types.js";
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
 
@@ -115,4 +122,28 @@ export async function inviteUser(
     console.error("[users-invite]", error);
     throw new AppError(500, REGISTRATION_FAILED, "Failed to invite user");
   }
+}
+
+export async function listUsers(
+  input: unknown,
+  tenantId: string,
+): Promise<ListUsersResult> {
+  const payload = validateListUsersInput(input);
+
+  const [totalRecords, users] = await Promise.all([
+    countUsersByTenant(tenantId),
+    findUsersByTenant(tenantId, payload.page, payload.pageSize),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / payload.pageSize));
+
+  return {
+    users: users.map(serializeUser),
+    pagination: {
+      page: payload.page,
+      pageSize: payload.pageSize,
+      totalPages,
+      totalRecords,
+    },
+  };
 }

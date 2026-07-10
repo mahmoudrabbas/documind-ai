@@ -457,6 +457,131 @@ test("rejects invalid invite payloads", async () => {
   }
 });
 
+test("returns a paginated list of tenant users", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+
+    await Promise.all([
+      UserModel.create({
+        tenantId: tenant.id,
+        name: "Alice Employee",
+        email: "alice@acme.com",
+        passwordHash: await hashPassword(TEST_PASSWORD),
+        role: "EMPLOYEE",
+        status: "active",
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+      }),
+      UserModel.create({
+        tenantId: tenant.id,
+        name: "Bob Employee",
+        email: "bob@acme.com",
+        passwordHash: await hashPassword(TEST_PASSWORD),
+        role: "EMPLOYEE",
+        status: "active",
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+      }),
+    ]);
+
+    const loginResponse = await postLogin(address.port);
+    assert.equal(loginResponse.status, 200);
+
+    const loginBody = (await loginResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/users?page=1&pageSize=2`,
+      {
+        headers: {
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+      },
+    );
+
+    const body = (await response.json()) as {
+      success: boolean;
+      data: {
+        users: Array<{
+          id: string;
+          name: string;
+          email: string;
+          role: string;
+          status: string;
+          emailVerified: boolean;
+          createdAt: string;
+        }>;
+        pagination: {
+          page: number;
+          pageSize: number;
+          totalPages: number;
+          totalRecords: number;
+        };
+      };
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.data.pagination.page, 1);
+    assert.equal(body.data.pagination.pageSize, 2);
+    assert.equal(body.data.pagination.totalRecords, 3);
+    assert.equal(body.data.pagination.totalPages, 2);
+    assert.equal(body.data.users.length, 2);
+    assert.ok(body.data.users.some((user) => user.email === "alice@acme.com") || body.data.users.some((user) => user.email === "bob@acme.com"));
+    assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("rejects invalid pagination query parameters", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    await createActiveTenantAdmin();
+
+    const loginResponse = await postLogin(address.port);
+    assert.equal(loginResponse.status, 200);
+
+    const loginBody = (await loginResponse.json()) as {
+      success: boolean;
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/users?page=0&pageSize=-1`,
+      {
+        headers: {
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+      },
+    );
+
+    const body = (await response.json()) as {
+      success: false;
+      message: string;
+      error: string;
+      details: Array<{ field: string; message: string }> | null;
+    };
+
+    assert.equal(response.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(body.error, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.details));
+    assert.ok(body.details?.some((detail) => detail.field === "page"));
+    assert.ok(body.details?.some((detail) => detail.field === "pageSize"));
+    assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test("rejects invalid email verification tokens", async () => {
   const server = await createServer();
 

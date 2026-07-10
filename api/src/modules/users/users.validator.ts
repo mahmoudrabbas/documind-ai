@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { InviteUserInput } from "./users.types.js";
+import type { InviteUserInput, ListUsersInput } from "./users.types.js";
 
 const inviteUserSchema = z
   .object({
@@ -18,8 +18,29 @@ const inviteUserSchema = z
   })
   .strict();
 
+const listUsersSchema = z
+  .object({
+    page: z
+      .preprocess((value) => (Array.isArray(value) ? value[0] : value), z.coerce.number().int().positive())
+      .default(1),
+    pageSize: z
+      .preprocess((value) => (Array.isArray(value) ? value[0] : value), z.coerce.number().int().positive().max(100))
+      .default(20),
+  })
+  .strict();
+
 export function validateInviteUserInput(input: unknown): InviteUserInput {
   const result = inviteUserSchema.safeParse(input);
+
+  if (!result.success) {
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+  }
+
+  return result.data;
+}
+
+export function validateListUsersInput(input: unknown): ListUsersInput {
+  const result = listUsersSchema.safeParse(input);
 
   if (!result.success) {
     throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
@@ -32,7 +53,7 @@ function groupValidationIssues(issues: z.ZodIssue[]) {
   const groupedErrors = new Map<string, string[]>();
 
   for (const issue of issues) {
-    const field = issue.path.join(".") || "body";
+    const field = issue.path.join(".") || "query";
 
     if (!groupedErrors.has(field)) {
       groupedErrors.set(field, []);
