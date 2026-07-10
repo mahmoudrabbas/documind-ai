@@ -558,3 +558,133 @@ curl -X POST http://localhost:5000/api/users/set-password-from-invite \
     "password": "MyNewPassword123"
   }'
 ```
+### ================================================================
+###  Endpoints(PATCH /platform/tenants/:id)
+### ================================================================
+
+### 2. Valid Test: Suspend Tenant
+PATCH {{baseUrl}}/platform/tenants/{{tenantId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "status": "suspended"
+}
+
+{
+  "success": true,
+  "data": {
+    "id": "6a50f860b7ae07299e15897f",
+    "name": "Test Company",
+    "slug": "test-company",
+    "status": "suspended",
+    "plan": "pro",
+    "createdAt": "2026-07-10T13:49:20.821Z",
+    "updatedAt": "2026-07-10T14:34:21.700Z"
+  }
+}
+### ----------------------------------------------------------------
+### 3. Valid Test: Reinstate Tenant 
+PATCH {{baseUrl}}/platform/tenants/{{tenantId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "status": "active"
+}
+
+{
+  "success": true,
+  "data": {
+    "id": "6a50f860b7ae07299e15897f",
+    "name": "Test Company",
+    "slug": "test-company",
+    "status": "active",
+    "plan": "pro",
+    "createdAt": "2026-07-10T13:49:20.821Z",
+    "updatedAt": "2026-07-10T14:35:28.865Z"
+  }
+}
+### ----------------------------------------------------------------
+### 4. Valid Test: Change Plan 
+PATCH {{baseUrl}}/platform/tenants/{{tenantId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "plan": "pro"
+}
+
+{
+  "success": true,
+  "data": {
+    "id": "6a50f860b7ae07299e15897f",
+    "name": "Test Company",
+    "slug": "test-company",
+    "status": "active",
+    "plan": "pro",
+    "createdAt": "2026-07-10T13:49:20.821Z",
+    "updatedAt": "2026-07-10T14:36:09.922Z"
+  }
+}
+### ----------------------------------------------------------------
+### 5. Invalid Test: Format Error (ID MongoDB)
+PATCH {{baseUrl}}/platform/tenants/invalid-id-123
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "status": "active"
+}
+
+{
+  "success": false,
+  "message": "Validation failed",
+  "error": "VALIDATION_ERROR",
+  "details": {
+    "id": [
+      "Invalid tenant ID format"
+    ]
+  }
+}
+### ----------------------------------------------------------------
+### 6. Invalid Test: Empty Body 
+PATCH {{baseUrl}}/platform/tenants/{{tenantId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+}
+
+
+{
+  "success": false,
+  "message": "Validation failed",
+  "error": "VALIDATION_ERROR",
+  "details": {
+    "": [
+      "At least one field (status or plan) must be provided for update"
+    ]
+  }
+}
+### ----------------------------------------------------------------
+### 7. Invalid Test: Unallowed Fields 
+PATCH {{baseUrl}}/platform/tenants/{{tenantId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "slug": "new-malicious-slug"
+}
+
+{
+  "success": false,
+  "message": "Validation failed",
+  "error": "VALIDATION_ERROR",
+  "details": {
+    "": [
+      "Unrecognized key: \"slug\""
+    ]
+  }
+}
+

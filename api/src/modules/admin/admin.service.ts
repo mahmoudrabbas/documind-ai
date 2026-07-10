@@ -1,15 +1,18 @@
 import {
   countTenantsByFilter,
   findTenantsByFilter,
+  updateTenantById
 } from "./admin.repository.js";
 import type {
   ListTenantsResult,
   TenantPublicView,
   ListTenantsInput,
+  UpdateTenantInput,
+  UpdateTenantResult
 } from "./admin.types.js";
 import type { TenantDocument } from "../../db/models/tenant.model.js";
 import type { Types } from "mongoose";
-
+import { AppError } from "../../common/errors/AppError.js";
 function serializeTenant(tenant: TenantDocument): TenantPublicView {
   const id = (tenant._id as unknown as Types.ObjectId)?.toString() ?? "";
   return {
@@ -66,4 +69,18 @@ export async function listTenants(
       totalRecords,
     },
   };
+}
+
+export async function updateTenant(
+  input: UpdateTenantInput,
+): Promise<UpdateTenantResult> {
+  const { id, ...updateData } = input;
+
+  const updatedTenant = await updateTenantById(id, updateData);
+
+  if (!updatedTenant) {
+    throw new AppError(404, "NOT_FOUND", "Tenant not found");
+  }
+
+  return serializeTenant(updatedTenant);
 }
