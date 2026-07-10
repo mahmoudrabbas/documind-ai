@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { API_BASE_URL } from "../../constants/api";
 
@@ -31,29 +31,25 @@ export default function SetPasswordFromInviteClient() {
     () => searchParams.get("token")?.trim() ?? "",
     [searchParams],
   );
-  const [state, setState] = useState<SetPasswordState>({
-    status: "loading",
-    message: "Loading your invite...",
-  });
+  const [errorState, setErrorState] = useState<SetPasswordState | null>(null);
   const [form, setForm] = useState<SetPasswordForm>({
     password: "",
     confirmPassword: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (token) {
-      setState({
-        status: "form",
-        message: "Enter a strong password to activate your account.",
-      });
-    } else {
-      setState({
-        status: "error",
-        message: "Invite token is missing.",
-      });
-    }
-  }, [token]);
+  // Derive state from token presence
+  const state: SetPasswordState =
+    errorState ||
+    (token
+      ? {
+          status: "form",
+          message: "Enter a strong password to activate your account.",
+        }
+      : {
+          status: "error",
+          message: "Invite token is missing.",
+        });
 
   function validatePassword(password: string): PasswordValidation {
     const errors: string[] = [];
@@ -86,7 +82,7 @@ export default function SetPasswordFromInviteClient() {
 
     const passwordValidation = validatePassword(form.password);
     if (!passwordValidation.isValid) {
-      setState({
+      setErrorState({
         status: "error",
         message: passwordValidation.errors[0] ?? "Invalid password",
       });
@@ -95,7 +91,7 @@ export default function SetPasswordFromInviteClient() {
     }
 
     if (form.password !== form.confirmPassword) {
-      setState({
+      setErrorState({
         status: "error",
         message: "Passwords do not match",
       });
@@ -119,7 +115,7 @@ export default function SetPasswordFromInviteClient() {
       );
 
       if (response.ok) {
-        setState({
+        setErrorState({
           status: "success",
           message: "Password set successfully. You can now sign in.",
         });
@@ -130,12 +126,12 @@ export default function SetPasswordFromInviteClient() {
       }
 
       const backendMessage = await getBackendErrorMessage(response, token);
-      setState({
+      setErrorState({
         status: "error",
         message: backendMessage,
       });
     } catch {
-      setState({
+      setErrorState({
         status: "error",
         message: FALLBACK_ERROR_MESSAGE,
       });
