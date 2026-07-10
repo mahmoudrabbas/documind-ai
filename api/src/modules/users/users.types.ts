@@ -9,3 +9,18 @@ export interface InviteUserInput {
 export interface InviteUserResult {
   user: UserPublicView;
 }
+
+export interface ListUsersInput {
+  page: number;
+  pageSize: number;
+}
+
+export interface ListUsersResult {
+  users: UserPublicView[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    totalRecords: number;
+  };
+}
