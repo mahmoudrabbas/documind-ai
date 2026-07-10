@@ -2,6 +2,11 @@ import type { ClientSession } from "mongoose";
 import TenantModel, { type TenantDocument } from "../../db/models/tenant.model.js";
 import UserModel, { type UserDocument } from "../../db/models/user.model.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
+import {
+  tenantScopedCreate,
+  tenantScopedFindById,
+  tenantScopedFindOne,
+} from "../../db/repositories/tenantScopedRepository.js";
 
 export interface TenantCreateInput {
   name: string;
@@ -34,7 +39,9 @@ export async function findUserDocumentByEmail(email: string) {
 }
 
 export async function findUserDocumentByTenantAndEmail(tenantId: string, email: string) {
-  return UserModel.findOne({ tenantId, email }).select("+passwordHash").exec();
+  return tenantScopedFindOne(UserModel, tenantId, { tenantId, email })
+    .select("+passwordHash")
+    .exec();
 }
 
 export function findUserDocumentById(userId: string) {
@@ -48,7 +55,7 @@ export function findUserById(userId: string) {
 }
 
 export function findUserByTenantAndId(tenantId: string, userId: string) {
-  return UserModel.findOne({ _id: userId, tenantId })
+  return tenantScopedFindById(UserModel, tenantId, userId)
     .lean<UserDocument>()
     .exec();
 }
@@ -63,14 +70,15 @@ export function createRefreshTokenRecord(input: {
   createdByIp?: string;
   userAgent?: string;
 }) {
-  return RefreshTokenModel.create(input);
+  return tenantScopedCreate(RefreshTokenModel, input);
 }
 
 export function findRefreshTokenRecord(
+  tenantId: string,
   tokenHash: string,
   jtiHash: string
 ) {
-  return RefreshTokenModel.findOne({ tokenHash, jtiHash }).exec();
+  return tenantScopedFindOne(RefreshTokenModel, tenantId, { tokenHash, jtiHash }).exec();
 }
 
 export function claimRefreshTokenForRotation(

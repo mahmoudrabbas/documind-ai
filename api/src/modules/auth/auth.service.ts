@@ -546,6 +546,7 @@ export async function refreshAccessToken(
     }
 
     const tokenRecord = await findRefreshTokenRecord(
+      claims.tenantId,
       hashRefreshToken(token),
       hashRefreshTokenJti(claims.jti)
     );
@@ -672,6 +673,7 @@ export async function logout(
     }
 
     const record = await findRefreshTokenRecord(
+      claims.tenantId,
       hashRefreshToken(token),
       hashRefreshTokenJti(claims.jti)
     );
