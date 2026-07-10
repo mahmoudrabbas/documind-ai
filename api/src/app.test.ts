@@ -12,7 +12,6 @@ import {
   getMongoConnectionState,
   isMongoConnected,
 } from "./db/connection.js";
-import type { Types } from "mongoose";
 import mongoose from "mongoose";
 import {
   connectRedis,
