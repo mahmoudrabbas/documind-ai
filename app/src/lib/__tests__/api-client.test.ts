@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiClient } from "../api-client";
-import { clearAccessToken, getAccessToken, setAccessToken } from "../auth-tokens";
+import {
+  allowSessionRestore,
+  ApiError,
+  apiClient,
+  beginExplicitLogout,
+  refreshAccessToken,
+} from "../api-client";
+import {
+  clearAccessToken,
+  getAccessToken,
+  setAccessToken,
+} from "../auth-tokens";
 
 const localStorageMock = {
   getItem: vi.fn(),
@@ -27,6 +37,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  allowSessionRestore();
   clearAccessToken();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -35,7 +46,9 @@ afterEach(() => {
 describe("apiClient authentication", () => {
   it("attaches Authorization when an access token exists", async () => {
     setAccessToken("stored-token");
-    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { ok: true }));
 
     await apiClient("/documents", { method: "GET" });
 
@@ -45,7 +58,9 @@ describe("apiClient authentication", () => {
 
   it("does not attach Authorization when auth is false", async () => {
     setAccessToken("stored-token");
-    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { ok: true }));
 
     await apiClient("/documents", { method: "GET", auth: false });
 
@@ -93,7 +108,9 @@ describe("apiClient authentication", () => {
           data: { tokens: { accessToken: "fresh-token" } },
         }),
       )
-      .mockResolvedValueOnce(jsonResponse(401, { message: "Still unauthorized" }));
+      .mockResolvedValueOnce(
+        jsonResponse(401, { message: "Still unauthorized" }),
+      );
 
     await expect(apiClient("/documents")).rejects.toMatchObject({
       status: 401,
@@ -101,9 +118,9 @@ describe("apiClient authentication", () => {
     });
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(
-      vi.mocked(fetch).mock.calls.filter(([url]) =>
-        String(url).endsWith("/auth/refresh"),
-      ),
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
     ).toHaveLength(1);
   });
 
@@ -168,6 +185,18 @@ describe("apiClient authentication", () => {
     expect(headers.has("Authorization")).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it("does not refresh or restore a token after explicit logout begins", async () => {
+    setAccessToken("active-token");
+    globalThis.fetch = vi.fn();
+    beginExplicitLogout();
+
+    await expect(refreshAccessToken()).rejects.toMatchObject({
+      code: "LOGOUT_IN_PROGRESS",
+    });
+    expect(getAccessToken()).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("apiClient request and response handling", () => {
@@ -189,7 +218,9 @@ describe("apiClient request and response handling", () => {
   });
 
   it("preserves caller-provided credentials", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { ok: true }));
 
     await apiClient("/documents", {
       credentials: "same-origin",
@@ -214,7 +245,9 @@ describe("apiClient request and response handling", () => {
   it("returns null for an empty successful response", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(204, null));
 
-    await expect(apiClient("/documents/1", { method: "DELETE" })).resolves.toBeNull();
+    await expect(
+      apiClient("/documents/1", { method: "DELETE" }),
+    ).resolves.toBeNull();
   });
 
   it("supports the flat backend error shape", async () => {

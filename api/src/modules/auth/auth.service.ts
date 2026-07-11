@@ -111,9 +111,9 @@ function normalizeSlug(companySlug: string | undefined, companyName: string) {
 function isDuplicateKeyError(error: unknown) {
   return Boolean(
     error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code?: number }).code === 11000
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: number }).code === 11000,
   );
 }
 
@@ -162,14 +162,17 @@ function buildVerificationUrl(token: string) {
 }
 
 export async function registerTenantAndAdmin(
-  input: unknown
+  input: unknown,
 ): Promise<RegisterResult> {
   const payload = validateRegisterInput(input);
 
   const normalizedEmail = payload.email.toLowerCase().trim();
-  const normalizedSlug = normalizeSlug(payload.companySlug, payload.companyName);
+  const normalizedSlug = normalizeSlug(
+    payload.companySlug,
+    payload.companyName,
+  );
 
-  if (normalizedSlug === "__documind_platform__") {
+  if (["__documind_platform__", "documind-ai"].includes(normalizedSlug)) {
     throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
   }
 
@@ -220,7 +223,8 @@ export async function registerTenantAndAdmin(
       });
     } catch (error) {
       const isTransactionUnsupported =
-        error instanceof Error && /replica set|transaction/i.test(error.message);
+        error instanceof Error &&
+        /replica set|transaction/i.test(error.message);
 
       if (isTransactionUnsupported || error instanceof Error) {
         created.tenant = await createTenant(tenantPayload);
@@ -237,7 +241,9 @@ export async function registerTenantAndAdmin(
       throw new AppError(500, REGISTRATION_FAILED, "Registration failed");
     }
 
-    const verificationToken = await createEmailVerificationTokenForUser(created.user);
+    const verificationToken = await createEmailVerificationTokenForUser(
+      created.user,
+    );
 
     await sendVerificationEmail({
       to: created.user.email,
@@ -266,30 +272,30 @@ export async function registerTenantAndAdmin(
         const keyPattern = error.keyPattern as Record<string, unknown>;
 
         if (keyPattern.slug) {
-          throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
+          throw new AppError(
+            409,
+            TENANT_ALREADY_EXISTS,
+            "Tenant already exists",
+          );
         }
 
         if (keyPattern.tenantId && keyPattern.email) {
           throw new AppError(
             409,
             EMAIL_ALREADY_EXISTS,
-            "Email already exists in this tenant"
+            "Email already exists in this tenant",
           );
         }
 
         if (keyPattern.email) {
-          throw new AppError(
-            409,
-            EMAIL_ALREADY_EXISTS,
-            "Email already exists"
-          );
+          throw new AppError(409, EMAIL_ALREADY_EXISTS, "Email already exists");
         }
       }
-        throw new AppError(
-          409,
-          EMAIL_ALREADY_EXISTS,
-          "Email already exists in this tenant"
-        );
+      throw new AppError(
+        409,
+        EMAIL_ALREADY_EXISTS,
+        "Email already exists in this tenant",
+      );
     }
 
     if (error instanceof AppError) {
@@ -309,7 +315,7 @@ export async function verifyEmail(input: unknown): Promise<VerifyEmailResult> {
   const invalidTokenError = new AppError(
     400,
     INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
-    "Invalid or expired verification token"
+    "Invalid or expired verification token",
   );
 
   try {
@@ -321,7 +327,11 @@ export async function verifyEmail(input: unknown): Promise<VerifyEmailResult> {
 
     const user = await findUserDocumentById(tokenPayload.sub);
 
-    if (!user || user.tenantId.toString() !== tokenPayload.tenantId || user.email !== tokenPayload.email) {
+    if (
+      !user ||
+      user.tenantId.toString() !== tokenPayload.tenantId ||
+      user.email !== tokenPayload.email
+    ) {
       throw invalidTokenError;
     }
 
@@ -335,7 +345,9 @@ export async function verifyEmail(input: unknown): Promise<VerifyEmailResult> {
       throw invalidTokenError;
     }
 
-    if (user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)) {
+    if (
+      user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)
+    ) {
       throw invalidTokenError;
     }
 
@@ -375,12 +387,17 @@ export async function resendVerificationEmail(input: unknown) {
   const payload = validateResendVerificationEmailInput(input);
   const genericResponse = {
     success: true,
-    message: "If the email exists and is not verified, a verification email has been sent",
+    message:
+      "If the email exists and is not verified, a verification email has been sent",
   };
 
   const user = await findUserDocumentByEmail(payload.email);
 
-  if (!user || user.emailVerified || user.status !== "pending_email_verification") {
+  if (
+    !user ||
+    user.emailVerified ||
+    user.status !== "pending_email_verification"
+  ) {
     return genericResponse;
   }
 
@@ -401,19 +418,19 @@ function invalidCredentialsError() {
   return new AppError(
     401,
     INVALID_CREDENTIALS,
-    "Invalid company, email, or password"
+    "Invalid company, email, or password",
   );
 }
 
 function assertAccountCanSignIn(
   user: CreatedUserRecord,
-  tenant: CreatedTenantRecord
+  tenant: CreatedTenantRecord,
 ) {
   if (!user.emailVerified || user.status === "pending_email_verification") {
     throw new AppError(
       403,
       EMAIL_NOT_VERIFIED,
-      "Please verify your email before signing in"
+      "Please verify your email before signing in",
     );
   }
 
@@ -426,7 +443,10 @@ function assertAccountCanSignIn(
   }
 }
 
-function createAccessToken(user: CreatedUserRecord, tenant: CreatedTenantRecord) {
+function createAccessToken(
+  user: CreatedUserRecord,
+  tenant: CreatedTenantRecord,
+) {
   return signJwt(
     {
       sub: user.id ?? user._id.toString(),
@@ -436,13 +456,13 @@ function createAccessToken(user: CreatedUserRecord, tenant: CreatedTenantRecord)
       type: "access",
     },
     config.JWT_SECRET,
-    config.JWT_EXPIRES_IN
+    config.JWT_EXPIRES_IN,
   );
 }
 
 export async function login(
   input: unknown,
-  context: RefreshTokenContext = {}
+  context: RefreshTokenContext = {},
 ): Promise<LoginResult> {
   const payload = validateLoginInput(input);
   const tenant = await findTenantBySlug(payload.companySlug);
@@ -453,7 +473,7 @@ export async function login(
 
   const user = await findUserDocumentByTenantAndEmail(
     tenant._id.toString(),
-    payload.email
+    payload.email,
   );
 
   if (
@@ -477,7 +497,7 @@ export async function login(
       familyId,
     },
     config.JWT_REFRESH_SECRET,
-    config.JWT_REFRESH_EXPIRES_IN
+    config.JWT_REFRESH_EXPIRES_IN,
   );
 
   await createRefreshTokenRecord({
@@ -487,7 +507,7 @@ export async function login(
     jtiHash: hashRefreshTokenJti(jti),
     familyId,
     expiresAt: new Date(
-      Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)
+      Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN),
     ),
     createdByIp: context.ip,
     userAgent: context.userAgent,
@@ -511,25 +531,77 @@ export async function login(
   };
 }
 
-export async function superAdminLogin(input: unknown, context: RefreshTokenContext = {}): Promise<LoginResult> {
+export async function superAdminLogin(
+  input: unknown,
+  context: RefreshTokenContext = {},
+): Promise<LoginResult> {
   const payload = validateSuperAdminLoginInput(input);
   const user = await findSuperAdminByEmail(payload.email);
-  if (!user || user.role !== "SUPER_ADMIN" || user.status !== "active" || !user.emailVerified || !user.passwordHash || !(await verifyPassword(user.passwordHash, payload.password))) {
+  if (
+    !user ||
+    user.role !== "SUPER_ADMIN" ||
+    user.status !== "active" ||
+    !user.emailVerified ||
+    !user.passwordHash ||
+    !(await verifyPassword(user.passwordHash, payload.password))
+  ) {
     throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
   }
   const tenant = await findTenantById(user.tenantId.toString());
-  if (!tenant || tenant.slug !== "__documind_platform__" || tenant.status !== "active") throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
-  const jti = randomUUID(); const familyId = randomUUID();
-  const refreshToken = signJwt({ sub: user.id, tenantId: tenant._id.toString(), type: "refresh", jti, familyId }, config.JWT_REFRESH_SECRET, config.JWT_REFRESH_EXPIRES_IN);
-  await createRefreshTokenRecord({ tenantId: tenant._id.toString(), userId: user.id, tokenHash: hashRefreshToken(refreshToken), jtiHash: hashRefreshTokenJti(jti), familyId, expiresAt: new Date(Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)), createdByIp: context.ip, userAgent: context.userAgent });
-  return { user: serializeVerifiedUser(user), tenant: { id: tenant._id.toString(), name: tenant.name, slug: tenant.slug, status: tenant.status, plan: tenant.plan }, tokens: { accessToken: createAccessToken(user, tenant), refreshToken, tokenType: "Bearer", expiresIn: config.JWT_EXPIRES_IN } };
+  if (
+    !tenant ||
+    tenant.slug !== "__documind_platform__" ||
+    tenant.status !== "active"
+  )
+    throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
+  const jti = randomUUID();
+  const familyId = randomUUID();
+  const refreshToken = signJwt(
+    {
+      sub: user.id,
+      tenantId: tenant._id.toString(),
+      type: "refresh",
+      jti,
+      familyId,
+    },
+    config.JWT_REFRESH_SECRET,
+    config.JWT_REFRESH_EXPIRES_IN,
+  );
+  await createRefreshTokenRecord({
+    tenantId: tenant._id.toString(),
+    userId: user.id,
+    tokenHash: hashRefreshToken(refreshToken),
+    jtiHash: hashRefreshTokenJti(jti),
+    familyId,
+    expiresAt: new Date(
+      Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN),
+    ),
+    createdByIp: context.ip,
+    userAgent: context.userAgent,
+  });
+  return {
+    user: serializeVerifiedUser(user),
+    tenant: {
+      id: tenant._id.toString(),
+      name: tenant.name,
+      slug: tenant.slug,
+      status: tenant.status,
+      plan: tenant.plan,
+    },
+    tokens: {
+      accessToken: createAccessToken(user, tenant),
+      refreshToken,
+      tokenType: "Bearer",
+      expiresIn: config.JWT_EXPIRES_IN,
+    },
+  };
 }
 
 function sessionExpiredError() {
   return new AppError(
     401,
     SESSION_EXPIRED,
-    "Session expired. Please sign in again."
+    "Session expired. Please sign in again.",
   );
 }
 
@@ -537,23 +609,20 @@ function refreshTokenReusedError() {
   return new AppError(
     401,
     REFRESH_TOKEN_REUSED,
-    "Session security check failed. Please sign in again."
+    "Session security check failed. Please sign in again.",
   );
 }
 
 export async function refreshAccessToken(
   token: string,
-  context: RefreshTokenContext = {}
+  context: RefreshTokenContext = {},
 ): Promise<RefreshRotationResult> {
   if (!token) {
     throw sessionExpiredError();
   }
 
   try {
-    const claims = verifyJwt<AuthTokenClaims>(
-      token,
-      config.JWT_REFRESH_SECRET
-    );
+    const claims = verifyJwt<AuthTokenClaims>(token, config.JWT_REFRESH_SECRET);
 
     if (
       claims.type !== "refresh" ||
@@ -568,7 +637,7 @@ export async function refreshAccessToken(
     const tokenRecord = await findRefreshTokenRecord(
       claims.tenantId,
       hashRefreshToken(token),
-      hashRefreshTokenJti(claims.jti)
+      hashRefreshTokenJti(claims.jti),
     );
 
     if (
@@ -587,7 +656,7 @@ export async function refreshAccessToken(
         tokenRecord.userId.toString(),
         tokenRecord.id,
         new Date(),
-        context.ip
+        context.ip,
       );
       throw refreshTokenReusedError();
     }
@@ -609,7 +678,7 @@ export async function refreshAccessToken(
     const rotatedAt = new Date();
     const claimedToken = await claimRefreshTokenForRotation(
       tokenRecord.id,
-      rotatedAt
+      rotatedAt,
     );
 
     if (!claimedToken) {
@@ -619,7 +688,7 @@ export async function refreshAccessToken(
         tokenRecord.userId.toString(),
         tokenRecord.id,
         rotatedAt,
-        context.ip
+        context.ip,
       );
       throw refreshTokenReusedError();
     }
@@ -634,7 +703,7 @@ export async function refreshAccessToken(
         familyId: tokenRecord.familyId,
       },
       config.JWT_REFRESH_SECRET,
-      config.JWT_REFRESH_EXPIRES_IN
+      config.JWT_REFRESH_EXPIRES_IN,
     );
     const replacement = await createRefreshTokenRecord({
       tenantId: claims.tenantId,
@@ -643,7 +712,7 @@ export async function refreshAccessToken(
       jtiHash: hashRefreshTokenJti(newJti),
       familyId: tokenRecord.familyId,
       expiresAt: new Date(
-        Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)
+        Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN),
       ),
       createdByIp: context.ip,
       userAgent: context.userAgent,
@@ -671,17 +740,11 @@ export async function refreshAccessToken(
   }
 }
 
-export async function logout(
-  token: string,
-  context: RefreshTokenContext = {}
-) {
+export async function logout(token: string, context: RefreshTokenContext = {}) {
   if (!token) return;
 
   try {
-    const claims = verifyJwt<AuthTokenClaims>(
-      token,
-      config.JWT_REFRESH_SECRET
-    );
+    const claims = verifyJwt<AuthTokenClaims>(token, config.JWT_REFRESH_SECRET);
 
     if (
       claims.type !== "refresh" ||
@@ -695,7 +758,7 @@ export async function logout(
     const record = await findRefreshTokenRecord(
       claims.tenantId,
       hashRefreshToken(token),
-      hashRefreshTokenJti(claims.jti)
+      hashRefreshTokenJti(claims.jti),
     );
 
     if (
@@ -712,14 +775,14 @@ export async function logout(
 
 export async function revokeAllRefreshTokensForUser(
   userId: string,
-  tenantId: string
+  tenantId: string,
 ) {
   await revokeAllRefreshTokensForTenantUser(userId, tenantId, new Date());
 }
 
 export async function createEmailVerificationTokenForUser(
   user: Pick<CreatedUserRecord, "_id" | "tenantId" | "email">,
-  options: { purpose?: string; expiresIn?: string } = {}
+  options: { purpose?: string; expiresIn?: string } = {},
 ) {
   const verificationToken = createEmailVerificationToken({
     userId: user._id.toString(),
@@ -732,7 +795,7 @@ export async function createEmailVerificationTokenForUser(
   await updateUserVerificationToken(
     user._id.toString(),
     verificationToken.tokenHash,
-    verificationToken.expiresAt
+    verificationToken.expiresAt,
   );
 
   return verificationToken.token;

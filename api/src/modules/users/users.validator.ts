@@ -60,6 +60,10 @@ const setPasswordFromInviteSchema = z
       .string()
       .min(8, "password must be at least 8 characters")
       .max(128, "password must be at most 128 characters")
+      .refine(
+        (value) => value === value.trim(),
+        "password must not have leading or trailing whitespace",
+      )
       .regex(/[A-Z]/, "password must contain at least one uppercase letter")
       .regex(/[a-z]/, "password must contain at least one lowercase letter")
       .regex(/[0-9]/, "password must contain at least one digit"),
@@ -119,7 +123,7 @@ export function validateSetPasswordFromInviteInput(
   if (!result.success) {
     throw new AppError(
       400,
-      VALIDATION_ERROR,
+      "PASSWORD_VALIDATION_FAILED",
       "Validation failed",
       groupValidationIssues(result.error.issues),
     );

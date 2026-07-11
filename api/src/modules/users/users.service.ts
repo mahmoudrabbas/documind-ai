@@ -13,7 +13,7 @@ import {
   hashVerificationJti,
 } from "../auth/emailVerificationToken.js";
 import { findUserDocumentById } from "../auth/auth.repository.js";
-import { sendVerificationEmail } from "../auth/auth.mailer.js";
+import { sendInvitationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import {
   createUser,
@@ -127,11 +127,16 @@ export async function inviteUser(
     createdUser = await createUser(userPayload);
     const token = await createEmailVerificationTokenForUser(createdUser);
 
-    await sendVerificationEmail({
+    await sendInvitationEmail({
       to: createdUser.email,
-      adminName: inviterName,
+      inviterName,
+      inviterEmail: inviter?.email,
       companyName: tenant.name,
-      verificationUrl: buildVerificationUrl(token),
+      role: createdUser.role,
+      invitationUrl: buildVerificationUrl(token),
+      expiryDate:
+        createdUser.emailVerificationExpiresAt ??
+        new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
     return {
@@ -366,5 +371,56 @@ export async function setPasswordFromInvite(
 
     console.error("[users-set-password-from-invite]", error);
     throw invalidTokenError;
+  }
+}
+
+export async function getInviteDetails(input: unknown) {
+  const token =
+    typeof input === "object" && input && "token" in input
+      ? String((input as { token: unknown }).token ?? "").trim()
+      : "";
+  if (!token)
+    throw new AppError(400, "INVITE_INVALID", "Invite token is required");
+  try {
+    const tokenPayload = verifyEmailVerificationToken(token);
+    const user = await findUserDocumentById(tokenPayload.sub);
+    if (
+      !user ||
+      user.tenantId.toString() !== tokenPayload.tenantId ||
+      user.email !== tokenPayload.email
+    ) {
+      throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+    }
+    if (user.emailVerified || user.status === "active") {
+      throw new AppError(
+        409,
+        "INVITE_ALREADY_ACCEPTED",
+        "This invitation has already been accepted",
+      );
+    }
+    if (
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt.getTime() <= Date.now()
+    ) {
+      throw new AppError(410, "INVITE_EXPIRED", "This invitation has expired");
+    }
+    if (
+      !user.emailVerificationTokenHash ||
+      user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)
+    ) {
+      throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+    }
+    const tenant = await findTenantById(user.tenantId.toString());
+    if (!tenant)
+      throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+    return {
+      companyName: tenant.name,
+      email: user.email,
+      role: user.role,
+      expiresAt: user.emailVerificationExpiresAt.toISOString(),
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(400, "INVITE_INVALID", "Invalid or expired invitation");
   }
 }

@@ -8,6 +8,7 @@ import {
   updateUserController,
   deleteUserController,
   setPasswordFromInviteController,
+  getInviteDetailsController,
 } from "./users.controller.js";
 
 const router = Router();
@@ -45,5 +46,6 @@ router.delete(
 );
 
 router.post("/set-password-from-invite", setPasswordFromInviteController);
+router.post("/validate-invite", getInviteDetailsController);
 
 export default router;

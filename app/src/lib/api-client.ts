@@ -1,4 +1,8 @@
-import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-tokens";
+import {
+  clearAccessToken,
+  getAccessToken,
+  setAccessToken,
+} from "./auth-tokens";
 import { getLocaleFromCookie } from "./i18n/i18n.utils";
 
 export const API_BASE_URL = (
@@ -54,7 +58,9 @@ export class ApiError extends Error {
 
 function getEndpointPath(endpoint: string): string {
   try {
-    return new URL(endpoint, `${API_BASE_URL}/`).pathname.replace(/\/+$/, "") || "/";
+    return (
+      new URL(endpoint, `${API_BASE_URL}/`).pathname.replace(/\/+$/, "") || "/"
+    );
   } catch {
     return endpoint.split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
   }
@@ -106,7 +112,8 @@ function toApiError(response: Response, payload: unknown): ApiError {
   if (!payload || typeof payload !== "object") {
     return new ApiError({
       status: response.status,
-      message: typeof payload === "string" && payload ? payload : fallbackMessage,
+      message:
+        typeof payload === "string" && payload ? payload : fallbackMessage,
     });
   }
 
@@ -154,8 +161,29 @@ interface RefreshResponse {
 }
 
 let refreshRequest: Promise<string> | null = null;
+let explicitLogout = false;
+
+export function beginExplicitLogout() {
+  explicitLogout = true;
+  clearAccessToken();
+}
+
+export function finishExplicitLogout() {
+  refreshRequest = null;
+}
+
+export function allowSessionRestore() {
+  explicitLogout = false;
+}
 
 export async function refreshAccessToken(): Promise<string> {
+  if (explicitLogout) {
+    throw new ApiError({
+      status: 401,
+      code: "LOGOUT_IN_PROGRESS",
+      message: "Session restoration is disabled during logout",
+    });
+  }
   if (!refreshRequest) {
     refreshRequest = (async () => {
       let response: Response;
@@ -171,7 +199,8 @@ export async function refreshAccessToken(): Promise<string> {
         throw new ApiError({
           status: 0,
           code: "REFRESH_FAILED",
-          message: error instanceof Error ? error.message : "Token refresh failed",
+          message:
+            error instanceof Error ? error.message : "Token refresh failed",
         });
       }
 
@@ -190,6 +219,14 @@ export async function refreshAccessToken(): Promise<string> {
           code: "INVALID_REFRESH_RESPONSE",
           message: "Token refresh response did not include an access token",
           details: payload,
+        });
+      }
+
+      if (explicitLogout) {
+        throw new ApiError({
+          status: 401,
+          code: "LOGOUT_IN_PROGRESS",
+          message: "Session restoration is disabled during logout",
         });
       }
 
@@ -255,16 +292,12 @@ async function executeRequest<T>(
     throw new ApiError({
       status: 0,
       code: "NETWORK_ERROR",
-      message: error instanceof Error ? error.message : "Network request failed",
+      message:
+        error instanceof Error ? error.message : "Network request failed",
     });
   }
 
-  if (
-    response.status === 401 &&
-    auth &&
-    !publicEndpoint &&
-    !retried
-  ) {
+  if (response.status === 401 && auth && !publicEndpoint && !retried) {
     try {
       await refreshAccessToken();
     } catch (error) {

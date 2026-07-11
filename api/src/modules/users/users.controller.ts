@@ -6,6 +6,7 @@ import {
   updateUser,
   deleteUser,
   setPasswordFromInvite,
+  getInviteDetails,
 } from "./users.service.js";
 
 export async function inviteUserController(
@@ -26,6 +27,20 @@ export async function inviteUserController(
         "User invitation created successfully. An email has been sent to the invited user.",
       data: result,
     });
+  } catch (error) {
+    handleUserError(error, res, next);
+  }
+}
+
+export async function getInviteDetailsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    res
+      .status(200)
+      .json({ success: true, data: await getInviteDetails(req.body) });
   } catch (error) {
     handleUserError(error, res, next);
   }

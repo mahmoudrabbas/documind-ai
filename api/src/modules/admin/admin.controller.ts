@@ -1,7 +1,11 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
-import { validateListTenantsInput, validateUpdateTenantInput } from "./admin.validator.js";
-import { listTenants, updateTenant } from "./admin.service.js";
+import {
+  validateListTenantsInput,
+  validateTenantId,
+  validateUpdateTenantInput,
+} from "./admin.validator.js";
+import { getTenant, listTenants, updateTenant } from "./admin.service.js";
 
 function handleAdminError(error: unknown, res: Response, next: NextFunction) {
   if (error instanceof AppError) {
@@ -15,6 +19,19 @@ function handleAdminError(error: unknown, res: Response, next: NextFunction) {
   }
 
   next(error);
+}
+
+export async function getTenantController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const result = await getTenant(validateTenantId(req.params));
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    handleAdminError(error, res, next);
+  }
 }
 
 export async function listTenantsController(
