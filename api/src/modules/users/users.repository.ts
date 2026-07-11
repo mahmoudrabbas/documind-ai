@@ -1,6 +1,7 @@
 import type { UserDocument } from "../../db/models/user.model.js";
 import UserModel from "../../db/models/user.model.js";
 import {
+  tenantScopedDeleteOne,
   tenantScopedFind,
   tenantScopedUpdateOne,
 } from "../../db/repositories/tenantScopedRepository.js";
@@ -47,4 +48,11 @@ export async function updateUserByTenantAndId(
     { $set: update },
   ).exec();
   return findUserByTenantAndId(tenantId, userId);
+}
+
+export async function deleteUserByTenantAndId(
+  tenantId: string,
+  userId: string,
+) {
+  return tenantScopedDeleteOne(UserModel, tenantId, { _id: userId }).exec();
 }

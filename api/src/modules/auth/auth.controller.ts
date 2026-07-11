@@ -14,23 +14,43 @@ import { durationToMilliseconds } from "./jwtTokens.js";
 
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
 
+function isSecureCookieAllowed() {
+  if (config.NODE_ENV === "production") {
+    return true;
+  }
+
+  try {
+    const frontendUrl = new URL(config.APP_FRONTEND_URL);
+    return ["localhost", "127.0.0.1"].includes(frontendUrl.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function refreshCookieOptions() {
+  const secure = isSecureCookieAllowed();
+
   return {
     httpOnly: true,
-    secure: config.NODE_ENV === "production",
-    sameSite: "lax" as const,
+    secure,
+    sameSite: secure ? ("none" as const) : ("lax" as const),
     path: "/auth",
     maxAge: durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN),
   };
 }
 
-export async function registerController(req: Request, res: Response, next: NextFunction) {
+export async function registerController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const result = await registerTenantAndAdmin(req.body);
 
     res.status(201).json({
       success: true,
-      message: "Tenant and company admin created successfully. Please verify your email to activate the account.",
+      message:
+        "Tenant and company admin created successfully. Please verify your email to activate the account.",
       data: result,
     });
   } catch (error) {
@@ -38,7 +58,11 @@ export async function registerController(req: Request, res: Response, next: Next
   }
 }
 
-export async function verifyEmailController(req: Request, res: Response, next: NextFunction) {
+export async function verifyEmailController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const result = await verifyEmail(req.body);
 
@@ -52,7 +76,11 @@ export async function verifyEmailController(req: Request, res: Response, next: N
   }
 }
 
-export async function resendVerificationEmailController(req: Request, res: Response, next: NextFunction) {
+export async function resendVerificationEmailController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const result = await resendVerificationEmail(req.body);
 
@@ -62,7 +90,11 @@ export async function resendVerificationEmailController(req: Request, res: Respo
   }
 }
 
-export async function loginController(req: Request, res: Response, next: NextFunction) {
+export async function loginController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const result = await login(req.body, {
       ip: req.ip,
@@ -101,7 +133,11 @@ function readCookie(req: Request, name: string) {
   return "";
 }
 
-export async function meController(req: Request, res: Response, next: NextFunction) {
+export async function meController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     if (!req.auth) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication required");
@@ -117,14 +153,18 @@ export async function meController(req: Request, res: Response, next: NextFuncti
   }
 }
 
-export async function refreshController(req: Request, res: Response, next: NextFunction) {
+export async function refreshController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const result = await refreshAccessToken(
       readCookie(req, REFRESH_COOKIE_NAME),
       {
         ip: req.ip,
         userAgent: req.get("user-agent"),
-      }
+      },
     );
     const { refreshToken, ...data } = result;
 
@@ -142,8 +182,8 @@ export async function refreshController(req: Request, res: Response, next: NextF
 function clearRefreshCookie(res: Response) {
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
-    secure: config.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isSecureCookieAllowed(),
+    sameSite: isSecureCookieAllowed() ? ("none" as const) : ("lax" as const),
     path: "/auth",
   });
 }
@@ -151,7 +191,7 @@ function clearRefreshCookie(res: Response) {
 export async function logoutController(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) {
   try {
     await logout(readCookie(req, REFRESH_COOKIE_NAME), { ip: req.ip });
@@ -166,15 +206,15 @@ export async function logoutController(
 }
 
 function handleAuthError(error: unknown, res: Response, next: NextFunction) {
-    if (error instanceof AppError) {
-      res.status(error.statusCode).json({
-        success: false,
-        message: error.message,
-        error: error.code,
-        details: error.details ?? null,
-      });
-      return;
-    }
+  if (error instanceof AppError) {
+    res.status(error.statusCode).json({
+      success: false,
+      message: error.message,
+      error: error.code,
+      details: error.details ?? null,
+    });
+    return;
+  }
 
-    next(error);
+  next(error);
 }

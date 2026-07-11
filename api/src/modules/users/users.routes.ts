@@ -6,6 +6,7 @@ import {
   inviteUserController,
   listUsersController,
   updateUserController,
+  deleteUserController,
   setPasswordFromInviteController,
 } from "./users.controller.js";
 
@@ -33,6 +34,14 @@ router.post(
   tenantScoping,
   authorize("COMPANY_ADMIN"),
   inviteUserController,
+);
+
+router.delete(
+  "/:id",
+  authenticate,
+  tenantScoping,
+  authorize("COMPANY_ADMIN"),
+  deleteUserController,
 );
 
 router.post("/set-password-from-invite", setPasswordFromInviteController);
