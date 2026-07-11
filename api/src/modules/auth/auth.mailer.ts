@@ -203,6 +203,150 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
   }
 }
 
+interface SendForgotPasswordEmailInput {
+  to: string;
+  userName: string;
+  resetUrl: string;
+}
+
+export function buildForgotPasswordTemplate(input: {
+  userName: string;
+  resetUrl: string;
+  expiryLabel: string;
+}) {
+  const escapedUserName = escapeHtml(input.userName);
+  const escapedResetUrl = escapeHtml(input.resetUrl);
+  const escapedExpiryLabel = escapeHtml(input.expiryLabel);
+
+  return {
+    subject: "Reset your DocuMind AI password",
+    text: [
+      `Hi ${input.userName},`,
+      "",
+      "We received a request to reset the password for your DocuMind AI account.",
+      "",
+      "Reset your password:",
+      input.resetUrl,
+      "",
+      `This link will expire in ${input.expiryLabel}.`,
+      "",
+      "If you did not request a password reset, you can safely ignore this email.",
+      "",
+      "For security reasons, your password will remain the same until you click the link above and set a new one.",
+    ].join("\n"),
+    html: `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#111827;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 0;">
+      <tr>
+        <td align="center" style="padding:0 16px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e5e7eb;">
+            <tr>
+              <td style="padding:0;">
+                <h1 style="margin:0 0 20px;font-size:24px;line-height:32px;font-weight:700;color:#111827;">DocuMind AI</h1>
+                <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">Hi ${escapedUserName},</p>
+                <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">We received a request to reset the password for your DocuMind AI account.</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
+                  <tr>
+                    <td bgcolor="#4f46e5" style="border-radius:8px;">
+                      <a href="${escapedResetUrl}" style="display:inline-block;padding:12px 22px;font-size:16px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;background:#4f46e5;">Reset Password</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4b5563;">If the button does not work, copy and paste this link into your browser:</p>
+                <p style="margin:0 0 24px;font-size:14px;line-height:22px;word-break:break-all;">
+                  <a href="${escapedResetUrl}" style="color:#4f46e5;text-decoration:underline;">${escapedResetUrl}</a>
+                </p>
+                <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">This link will expire in ${escapedExpiryLabel}.</p>
+                <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#6b7280;">If you did not request a password reset, you can safely ignore this email.</p>
+                <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">For security reasons, your password will remain the same until you click the link above and set a new one.</p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:16px 0 0;font-size:12px;line-height:18px;color:#6b7280;">DocuMind AI password reset</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`,
+  };
+}
+
+export async function sendForgotPasswordEmail(
+  input: SendForgotPasswordEmailInput,
+) {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  if (!config.SEND_EMAILS) {
+    if (config.NODE_ENV === "development") {
+      console.log(`[forgot-password] ${input.resetUrl}`);
+    }
+    return;
+  }
+
+  const missingFields: string[] = [];
+  if (!config.SMTP_HOST) missingFields.push("SMTP_HOST");
+  if (!config.SMTP_USER) missingFields.push("SMTP_USER");
+  if (!config.SMTP_PASS) missingFields.push("SMTP_PASS");
+  if (!config.SMTP_FROM) missingFields.push("SMTP_FROM");
+
+  if (missingFields.length > 0) {
+    const message = `Missing SMTP config: ${missingFields.join(", ")}`;
+    if (config.NODE_ENV !== "production") {
+      console.warn(
+        `[forgot-password] ${message}. Reset URL: ${input.resetUrl}`,
+      );
+      return;
+    }
+    throw new AppError(500, EMAIL_SENDING_FAILED, "SMTP is not configured", {
+      missingFields,
+    });
+  }
+
+  const template = buildForgotPasswordTemplate({
+    userName: input.userName,
+    resetUrl: input.resetUrl,
+    expiryLabel: "15 minutes",
+  });
+
+  const transporter = nodemailer.createTransport({
+    host: config.SMTP_HOST,
+    port: config.SMTP_PORT,
+    secure: config.SMTP_SECURE,
+    auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
+  });
+
+  try {
+    await transporter.sendMail({
+      from: config.SMTP_FROM,
+      to: input.to,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send password reset email";
+
+    if (config.NODE_ENV !== "production") {
+      console.warn(
+        `[forgot-password] ${message}. Reset URL: ${input.resetUrl}`,
+      );
+      return;
+    }
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "Unable to send password reset email",
+      { details: message },
+    );
+  }
+}
+
 export async function sendInvitationEmail(
   input: InvitationTemplateInput & { to: string },
 ) {

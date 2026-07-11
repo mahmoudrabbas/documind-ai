@@ -14,6 +14,7 @@ import {
   TENANT_NOT_ACTIVE,
   TENANT_ALREADY_EXISTS,
   UNAUTHORIZED,
+  PASSWORD_RESET_FAILED,
 } from "../../common/errors/errorCodes.js";
 import type {
   AuthTokenClaims,
@@ -25,8 +26,10 @@ import type {
   RegisterInput,
   VerifyEmailResult,
   AuthIdentity,
+  ForgotPasswordResult,
+  ResetPasswordResult,
 } from "./auth.types.js";
-import { sendVerificationEmail } from "./auth.mailer.js";
+import { sendVerificationEmail, sendForgotPasswordEmail } from "./auth.mailer.js";
 import {
   createEmailVerificationToken,
   hashVerificationJti,
@@ -53,6 +56,11 @@ import {
   revokeRefreshToken,
   setRefreshTokenReplacement,
   updateUserVerificationToken,
+  updateUserPasswordResetToken,
+  findUserByEmailWithPasswordResetToken,
+  findUserByIdWithPasswordResetToken,
+  clearUserPasswordResetToken,
+  updateUserPassword,
 } from "./auth.repository.js";
 import {
   validateRegisterInput,
@@ -60,7 +68,14 @@ import {
   validateSuperAdminLoginInput,
   validateResendVerificationEmailInput,
   validateVerifyEmailInput,
+  validateForgotPasswordInput,
+  validateResetPasswordInput,
 } from "./auth.validator.js";
+import {
+  createPasswordResetToken,
+  hashPasswordResetJti,
+  verifyPasswordResetToken,
+} from "./passwordResetToken.js";
 import { hashPassword, verifyPassword } from "./passwordHashing.js";
 import { signJwt, verifyJwt } from "./jwtTokens.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -159,6 +174,96 @@ function buildVerificationUrl(token: string) {
   url.searchParams.set("token", token);
 
   return url.toString();
+}
+
+function buildResetPasswordUrl(token: string) {
+  const url = new URL("/reset-password", config.APP_FRONTEND_URL);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export async function forgotPassword(
+  input: unknown,
+): Promise<ForgotPasswordResult> {
+  const payload = validateForgotPasswordInput(input);
+  const genericMessage =
+    "If an account with that email exists, a password reset link has been sent.";
+
+  const user = await findUserDocumentByEmail(payload.email);
+
+  if (
+    !user ||
+    user.status === "pending_email_verification"
+  ) {
+    return { success: true, message: genericMessage };
+  }
+
+  const resetToken = createPasswordResetToken({
+    userId: user.id,
+    email: user.email,
+  });
+
+  await updateUserPasswordResetToken(
+    user.id,
+    resetToken.tokenHash,
+    resetToken.expiresAt,
+  );
+
+  await sendForgotPasswordEmail({
+    to: user.email,
+    userName: user.name,
+    resetUrl: buildResetPasswordUrl(resetToken.token),
+  });
+
+  return { success: true, message: genericMessage };
+}
+
+export async function resetPassword(
+  input: unknown,
+): Promise<ResetPasswordResult> {
+  const payload = validateResetPasswordInput(input);
+  const invalidTokenError = new AppError(
+    400,
+    PASSWORD_RESET_FAILED,
+    "Invalid or expired password reset token",
+  );
+
+  try {
+    const tokenPayload = verifyPasswordResetToken(payload.token);
+
+    const user = await findUserByIdWithPasswordResetToken(tokenPayload.sub);
+
+    if (
+      !user ||
+      user.email !== tokenPayload.email ||
+      !user.passwordResetTokenHash ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt.getTime() <= Date.now()
+    ) {
+      throw invalidTokenError;
+    }
+
+    if (
+      user.passwordResetTokenHash !== hashPasswordResetJti(tokenPayload.jti)
+    ) {
+      throw invalidTokenError;
+    }
+
+    const passwordHash = await hashPassword(payload.password);
+
+    await updateUserPassword(user.id, passwordHash);
+    await clearUserPasswordResetToken(user.id);
+
+    return {
+      success: true,
+      message: "Password has been reset successfully. You can now sign in.",
+    };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw invalidTokenError;
+  }
 }
 
 export async function registerTenantAndAdmin(
