@@ -201,11 +201,11 @@
   --text-label-sm--font-weight: 600;
 
   /* ---- Radius: rounded-* (DESIGN.md > rounded) -------------------------- */
-  --radius-sm: 0.25rem; /* 4px */
-  --radius-md: 0.5rem; /* 8px — DESIGN.md `rounded.DEFAULT`, base component radius */
-  --radius-lg: 0.75rem; /* 12px — DESIGN.md `rounded.md`, card radius */
-  --radius-xl: 1rem; /* 16px — DESIGN.md `rounded.lg`, large component radius */
-  --radius-2xl: 1.5rem; /* 24px — DESIGN.md `rounded.xl` */
+  --radius-sm: 0.25rem;
+  --radius: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
   --radius-full: 9999px;
 
   --max-width-sm: 24rem;

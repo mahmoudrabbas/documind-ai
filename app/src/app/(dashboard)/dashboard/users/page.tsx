@@ -285,20 +285,23 @@ export default function UsersPage() {
   }
 
   return (
-    <main className="p-6">
-      <div className="max-w-4xl">
-        <h1 className="text-2xl font-semibold">Users</h1>
-        <p className="mt-2 text-sm text-slate-600">
+    <main className="p-lg max-w-[1600px] mx-auto w-full flex-1">
+      <div className="mb-xl mt-6">
+        <h1 className="text-headline-lg font-bold text-primary">Team Management</h1>
+        <p className="mt-2 text-body-md text-on-surface-variant">
           Invite teammates and manage user access for your company.
         </p>
+      </div>
 
-        <form id="invite" className="mt-6 space-y-4" onSubmit={handleSubmit}>
+      <div className="bg-surface-container-lowest p-lg md:p-xl rounded-3xl shadow-sm border border-outline-variant/30 mb-xl max-w-2xl">
+        <h2 className="text-title-lg font-bold text-primary mb-6">Invite New User</h2>
+        <form id="invite" className="space-y-6" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-label-md font-bold text-on-surface-variant mb-2">
               Name
             </label>
             <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Invitee name"
@@ -307,12 +310,12 @@ export default function UsersPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-label-md font-bold text-on-surface-variant mb-2">
               Email
             </label>
             <input
               type="email"
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="invitee@example.com"
@@ -321,11 +324,11 @@ export default function UsersPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-label-md font-bold text-on-surface-variant mb-2">
               Role
             </label>
             <select
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               value={role}
               onChange={(event) => setRole(event.target.value)}
             >
@@ -340,82 +343,91 @@ export default function UsersPage() {
           </div>
 
           {status ? (
-            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
+            <div className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900 border border-emerald-200">
               {status}
             </div>
           ) : null}
 
           {error ? (
-            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">
+            <div className="rounded-xl bg-red-50 p-4 text-sm text-red-900 border border-red-200">
               {error}
             </div>
           ) : null}
 
           <button
             type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm hover:bg-secondary-container hover:text-on-secondary-container transition-all disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isSubmitting}
           >
+            {isSubmitting ? (
+              <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+            ) : (
+              <span className="material-symbols-outlined text-[18px]">person_add</span>
+            )}
             {isSubmitting ? "Sending invitation..." : "Send invite"}
           </button>
         </form>
+      </div>
 
-        <section className="mt-10 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <section className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold">User directory</h2>
-              <p className="mt-1 text-sm text-slate-600">
+              <h2 className="text-title-lg font-bold text-primary">User Directory</h2>
+              <p className="mt-1 text-body-sm text-on-surface-variant">
                 Browse tenant users and review access status.
               </p>
             </div>
-            <div className="text-sm text-slate-600">
+            <div className="text-label-sm font-bold text-on-surface-variant bg-surface-container-low px-3 py-1 rounded-full">
               Page {pagination.page} of {pagination.totalPages}
             </div>
           </div>
 
           {fetchError ? (
-            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">
+            <div className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-900 border border-red-200">
               {fetchError}
             </div>
           ) : null}
 
           {updateMessage ? (
-            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
+            <div className="mb-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900 border border-emerald-200">
               {updateMessage}
             </div>
           ) : null}
 
           {loadingUsers ? (
-            <div className="text-sm text-slate-600">Loading users...</div>
+            <div className="flex items-center gap-2 text-sm text-on-surface-variant py-8 justify-center">
+              <span className="material-symbols-outlined animate-spin">progress_activity</span>
+              Loading directory...
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                <thead className="bg-slate-50">
+            <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+              <table className="min-w-full divide-y divide-outline-variant/30 text-left text-sm">
+                <thead className="bg-surface-container-low">
                   <tr>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Name
                     </th>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Email
                     </th>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Role
                     </th>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Verified
                     </th>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Created
                     </th>
-                    <th className="px-4 py-3 font-medium text-slate-700">
+                    <th className="px-4 py-3 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-outline-variant/30 bg-surface-container-lowest">
                   {users.length > 0 ? (
                     users.map((user) => {
                       const update = rowUpdates[user.id] ?? {
@@ -429,16 +441,21 @@ export default function UsersPage() {
                       const isDeleting = deletingUserIds[user.id] === true;
 
                       return (
-                        <tr key={user.id}>
-                          <td className="px-4 py-3 text-slate-900">
-                            {user.name}
+                        <tr key={user.id} className="hover:bg-surface-container-low/50 transition-colors">
+                          <td className="px-4 py-4 text-on-surface font-medium">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs shrink-0">
+                                {user.name.charAt(0).toUpperCase()}
+                              </div>
+                              {user.name}
+                            </div>
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
+                          <td className="px-4 py-4 text-on-surface-variant">
                             {user.email}
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
+                          <td className="px-4 py-4 text-on-surface-variant">
                             <select
-                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                               value={update.role}
                               onChange={(event) =>
                                 handleRowChange(
@@ -457,12 +474,12 @@ export default function UsersPage() {
                               )}
                             </select>
                             {user.customRoleName ? (
-                              <p className="mt-1 text-xs text-slate-500">{getRoleLabel(user)}</p>
+                              <p className="mt-1 text-[11px] text-outline font-medium">{getRoleLabel(user)}</p>
                             ) : null}
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
+                          <td className="px-4 py-4 text-on-surface-variant">
                             <select
-                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                               value={update.status}
                               onChange={(event) =>
                                 handleRowChange(
@@ -479,27 +496,35 @@ export default function UsersPage() {
                               ))}
                             </select>
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
-                            {user.emailVerified ? "Yes" : "No"}
+                          <td className="px-4 py-4 text-on-surface-variant">
+                            {user.emailVerified ? (
+                              <span className="inline-flex items-center gap-1 text-tertiary-fixed-dim bg-tertiary-container/30 px-2 py-0.5 rounded-full text-xs font-bold">
+                                <span className="material-symbols-outlined text-[14px]">verified</span> Yes
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full text-xs font-medium">
+                                No
+                              </span>
+                            )}
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
+                          <td className="px-4 py-4 text-on-surface-variant text-sm whitespace-nowrap">
                             {new Date(user.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="px-4 py-3 text-slate-600">
+                          <td className="px-4 py-4 text-on-surface-variant">
                             <div className="flex flex-col gap-2 sm:flex-row">
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex items-center justify-center rounded-md bg-secondary text-on-secondary px-3 py-1.5 text-xs font-bold shadow-sm hover:bg-secondary-container hover:text-on-secondary-container transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                                 disabled={
                                   !isChanged || update.isSaving || isDeleting
                                 }
                                 onClick={() => void handleUserUpdate(user.id)}
                               >
-                                {update.isSaving ? "Updating..." : "Update"}
+                                {update.isSaving ? "Saving..." : "Update"}
                               </button>
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex items-center justify-center rounded-md border border-error/30 bg-surface px-3 py-1.5 text-xs font-bold text-error shadow-sm hover:bg-error-container hover:text-on-error-container transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                                 disabled={isDeleting}
                                 onClick={() => void handleUserDelete(user.id)}
                               >
@@ -507,7 +532,7 @@ export default function UsersPage() {
                               </button>
                             </div>
                             {update.error ? (
-                              <p className="mt-2 text-xs text-rose-600">
+                              <p className="mt-2 text-[11px] text-error">
                                 {update.error}
                               </p>
                             ) : null}
@@ -519,7 +544,7 @@ export default function UsersPage() {
                     <tr>
                       <td
                         colSpan={7}
-                        className="px-4 py-6 text-sm text-slate-500"
+                        className="px-4 py-8 text-center text-sm text-on-surface-variant"
                       >
                         No users found for this tenant.
                       </td>
@@ -530,21 +555,22 @@ export default function UsersPage() {
             </div>
           )}
 
-          <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
             <button
               type="button"
-              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm hover:bg-surface-container-low transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               disabled={page <= 1}
               onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
+              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
               Previous
             </button>
-            <div className="text-sm text-slate-600">
+            <div className="text-label-sm text-on-surface-variant font-medium">
               Showing {users.length} of {pagination.totalRecords} users
             </div>
             <button
               type="button"
-              className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-md font-bold text-on-primary shadow-sm hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               disabled={page >= pagination.totalPages}
               onClick={() =>
                 setPage((current) =>
@@ -553,10 +579,10 @@ export default function UsersPage() {
               }
             >
               Next
+              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
             </button>
           </div>
         </section>
-      </div>
     </main>
   );
 }

@@ -138,96 +138,51 @@ export default function LoginPage() {
   return (
     <main
       dir={dir}
-      className="min-h-screen bg-white text-slate-950 flex flex-col lg:flex-row w-full overflow-x-hidden"
+      className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
-      {/* Left panel (Navy Info Panel) */}
-      <section className="bg-[#001524] text-white w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 min-h-[40vh] lg:min-h-screen relative overflow-hidden">
-        {/* Subtle radial glow effect */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08)_0%,transparent_70%)] pointer-events-none" />
-
-        <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px] flex flex-col items-center relative z-10">
-          {/* Logo element centered */}
-          <div className="flex flex-col items-center gap-2">
-            <span
-              className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-lg shadow-blue-500/20"
-              aria-hidden="true"
-            >
-              DM
-            </span>
-            <p className="text-xl font-bold tracking-tight text-white mt-2">
-              {t("landing.appName")}
-            </p>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-              {t("landing.tagline")}
-            </p>
-          </div>
-
-          <h1 className="mt-8 text-2xl lg:text-3xl font-bold leading-tight tracking-tight text-white text-center w-full block">
-            {t("landing.heroTitle")}
-          </h1>
-
-          <p className="mt-4 text-sm leading-relaxed text-slate-300 text-center w-full max-w-sm block">
-            {t("landing.heroDescription")}
-          </p>
-
-          {/* Trust cards */}
-          <div className="mt-10 grid grid-cols-1 gap-3 w-full">
-            {trustItems.map((item) => (
-              <div
-                key={item.title}
-                className="rounded-2xl border border-white/10 bg-white/5 p-4 flex gap-3.5 items-start backdrop-blur-sm text-start"
-              >
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-sm font-bold text-blue-400"
-                  aria-hidden="true"
-                >
-                  ✓
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-white">
-                    {item.title}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400 leading-normal">
-                    {item.description}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Right panel (White Form Panel) */}
-      <section className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 bg-white min-h-[60vh] lg:min-h-screen relative">
-        {/* Language switcher inside White Panel */}
-        <div
-          className={`absolute top-6 ${dir === "rtl" ? "left-6" : "right-6"} z-20 `}
-        >
+      {/* Left panel (Form Panel) */}
+      <section className="z-10 flex h-full w-full flex-col p-lg shadow-xl md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
+        {/* Language switcher */}
+        <div className="absolute top-6 right-6 z-20">
           <LanguageSwitcher />
         </div>
 
-        <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px]">
-          <div className="text-start w-full">
-            <p className="text-sm font-semibold text-blue-600 w-full block">
-              {t("auth.secureSignIn")}
-            </p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-900 w-full block">
-              {t("auth.signIn")}
-            </h2>
-            <p className="mt-2 text-sm text-slate-600 w-full block">
-              {t("auth.accessWorkspace")}
-            </p>
+        {/* Brand Header */}
+        <div className="mb-12">
+          <div className="mb-sm flex items-center gap-base">
+            <span
+              className="material-symbols-outlined text-3xl text-primary"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              neurology
+            </span>
+            <h1 className="text-headline-md font-bold tracking-tight text-primary">
+              DocuMind AI
+            </h1>
           </div>
+          <p className="max-w-sm text-body-md text-on-surface-variant">
+            Private AI Knowledge Assistant for Company Documents
+          </p>
+        </div>
+
+        {/* Login Form */}
+        <div className="flex flex-grow flex-col justify-center">
+          <h2 className="mb-base text-headline-lg font-bold text-primary">
+            Welcome Back
+          </h2>
+          <p className="mb-xl text-body-md text-on-surface-variant">
+            Access your enterprise intelligence portal.
+          </p>
 
           <form
-            className="mt-8 space-y-5 w-full"
+            className="space-y-md w-full"
             onSubmit={handleSubmit}
             noValidate
           >
             <div aria-live="polite" className="w-full">
               {formError ? (
                 <div
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full"
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                   role="alert"
                 >
                   {formError}
@@ -235,10 +190,10 @@ export default function LoginPage() {
               ) : null}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="companySlug"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.companySlug")}
               </label>
@@ -251,33 +206,17 @@ export default function LoginPage() {
                 autoComplete="organization"
                 placeholder={t("auth.companySlugPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.companySlug)}
-                aria-describedby={
-                  errors.companySlug ? "companySlug-error" : "companySlug-help"
-                }
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.companySlug ? (
-                <p
-                  id="companySlug-error"
-                  className="mt-1.5 text-xs text-red-600"
-                >
-                  {errors.companySlug}
-                </p>
-              ) : (
-                <p
-                  id="companySlug-help"
-                  className="mt-1.5 text-xs text-slate-500"
-                >
-                  {t("auth.companySlugHelp")}
-                </p>
+              {errors.companySlug && (
+                <p className="mt-1.5 text-xs text-error">{errors.companySlug}</p>
               )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.email")}
               </label>
@@ -290,21 +229,17 @@ export default function LoginPage() {
                 autoComplete="email"
                 placeholder={t("auth.emailPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.email)}
-                aria-describedby={errors.email ? "email-error" : undefined}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.email ? (
-                <p id="email-error" className="mt-1.5 text-xs text-red-600">
-                  {errors.email}
-                </p>
-              ) : null}
+              {errors.email && (
+                <p className="mt-1.5 text-xs text-error">{errors.email}</p>
+              )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.password")}
               </label>
@@ -317,58 +252,72 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 placeholder={t("auth.passwordPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.password)}
-                aria-describedby={
-                  errors.password ? "password-error" : undefined
-                }
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.password ? (
-                <p id="password-error" className="mt-1.5 text-xs text-red-600">
-                  {errors.password}
-                </p>
-              ) : null}
+              {errors.password && (
+                <p className="mt-1.5 text-xs text-error">{errors.password}</p>
+              )}
+            </div>
 
-              <div className="mt-1 text-end">
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium text-blue-600 hover:text-blue-700 transition"
-                >
-                  {t("auth.forgotPassword")}
-                </Link>
-              </div>
+            <div className="flex items-center justify-between py-xs">
+              <label className="flex cursor-pointer items-center gap-xs">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
+                />
+                <span className="text-label-md text-on-surface-variant">Remember me</span>
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-label-md text-on-secondary-container hover:underline"
+              >
+                {t("auth.forgotPassword")}
+              </Link>
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting}
-              aria-busy={isSubmitting || undefined}
-              className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/10 transition hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:text-white"
+              className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2"
             >
               {isSubmitting ? (
-                <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  aria-hidden="true"
-                />
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
               ) : null}
-              {isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+              {isSubmitting ? t("auth.signingIn") : "Sign In"}
             </button>
 
             <div className="text-center mt-5">
               <Link
                 href="/register"
-                className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition"
+                className="text-sm font-semibold text-primary hover:underline transition"
               >
                 {t("auth.registerNow")}
               </Link>
             </div>
-
-            <p className="text-center text-xs leading-relaxed text-slate-500 mt-6">
-              {t("auth.sessionNote")}
-            </p>
           </form>
         </div>
+
+        {/* Security Footer */}
+        <div className="mt-auto flex flex-col gap-sm border-t border-outline-variant pt-xl">
+          <div className="flex items-center gap-sm">
+            <span
+              className="material-symbols-outlined text-xl text-on-tertiary-container"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              verified_user
+            </span>
+            <span className="text-label-sm text-on-surface-variant">
+              AES-256 Encrypted & SOC2 Compliant
+            </span>
+          </div>
+          <p className="text-body-sm text-outline">
+            © {new Date().getFullYear()} DocuMind Intelligence Systems. All rights reserved.
+          </p>
+        </div>
       </section>
+
+      {/* Right Section: Visual Panel */}
+      <AuthHeroPanel />
     </main>
   );
 }

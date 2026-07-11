@@ -108,23 +108,22 @@ export default function DocumentsPage() {
   }
 
   return (
-    <main dir={dir} className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+    <main dir={dir} className="p-lg max-w-[1600px] mx-auto w-full flex-1">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-xl mt-6">
+        <div>
+          <h1 className="text-headline-lg font-bold text-primary">
             {t("documents.title")}
           </h1>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-2 text-body-md text-on-surface-variant">
             {t("documents.subtitle")}
           </p>
         </div>
+      </div>
 
-        {/* Upload Section */}
-        <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-slate-900">
-            {t("documents.upload")}
-          </h2>
+      <div className="bg-surface-container-lowest p-lg rounded-3xl shadow-sm border border-outline-variant/30 mb-xl max-w-2xl">
+        <h2 className="mb-6 text-title-lg font-bold text-primary">
+          {t("documents.upload")}
+        </h2>
 
           <FileDropzone
             onFilesSelected={handleFilesSelected}
@@ -137,11 +136,11 @@ export default function DocumentsPage() {
           />
 
           {selectedFiles.length > 0 && !isUploading ? (
-            <div className="mt-6 space-y-4">
+            <div className="mt-8 space-y-6">
               <div>
                 <label
                   htmlFor="doc-title"
-                  className="block text-sm font-medium text-slate-700"
+                  className="block text-label-md font-bold text-on-surface-variant mb-2"
                 >
                   {t("documents.metadataTitle")}
                 </label>
@@ -155,17 +154,17 @@ export default function DocumentsPage() {
                   }}
                   placeholder={t("documents.metadataTitlePlaceholder")}
                   aria-invalid={Boolean(titleError)}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 {titleError ? (
-                  <p className="mt-1 text-xs text-red-600">{titleError}</p>
+                  <p className="mt-1 text-xs text-error">{titleError}</p>
                 ) : null}
               </div>
 
               <div>
                 <label
                   htmlFor="doc-description"
-                  className="block text-sm font-medium text-slate-700"
+                  className="block text-label-md font-bold text-on-surface-variant mb-2"
                 >
                   {t("documents.metadataDescription")}
                 </label>
@@ -175,14 +174,14 @@ export default function DocumentsPage() {
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={t("documents.metadataDescriptionPlaceholder")}
                   rows={2}
-                  className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="doc-tags"
-                  className="block text-sm font-medium text-slate-700"
+                  className="block text-label-md font-bold text-on-surface-variant mb-2"
                 >
                   {t("documents.metadataTags")}
                 </label>
@@ -192,14 +191,14 @@ export default function DocumentsPage() {
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                   placeholder={t("documents.metadataTagsPlaceholder")}
-                  className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 />
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-outline">
                   {t("documents.metadataTagsHint")}
                 </p>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <Button onClick={handleUpload}>
                   {t("documents.upload")}
                 </Button>
@@ -211,7 +210,7 @@ export default function DocumentsPage() {
           ) : null}
 
           {isUploading && uploadProgress !== null ? (
-            <div className="mt-6">
+            <div className="mt-8">
               <ProgressBar
                 value={uploadProgress}
                 label={t("documents.uploading")}
@@ -221,26 +220,25 @@ export default function DocumentsPage() {
           ) : null}
 
           {uploadError ? (
-            <p className="mt-3 text-sm text-red-600" role="alert">
+            <p className="mt-4 text-sm text-error bg-error-container text-on-error-container p-3 rounded-xl border border-error/20" role="alert">
               {uploadError}
             </p>
           ) : null}
         </div>
 
         {/* Document List */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="text-lg font-semibold text-slate-900">
+        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm overflow-hidden">
+          <div className="border-b border-outline-variant/30 px-lg py-md bg-surface-container-low/50">
+            <h2 className="text-title-lg font-bold text-primary">
               {t("nav.documents")}
             </h2>
           </div>
 
           {error ? (
-            <div className="p-6 text-center">
-              <p className="text-sm text-red-600">{t(error)}</p>
+            <div className="p-12 text-center">
+              <p className="text-sm text-error mb-4">{t(error)}</p>
               <Button
-                variant="ghost"
-                className="mt-2"
+                variant="outline"
                 onClick={() => goToPage(page)}
               >
                 {t("common.retry")}
@@ -249,17 +247,20 @@ export default function DocumentsPage() {
           ) : null}
 
           {isLoading ? (
-            <div className="space-y-3 p-6">
+            <div className="space-y-4 p-8">
               {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                <Skeleton key={i} className="h-16 w-full rounded-xl bg-surface-container" />
               ))}
             </div>
           ) : null}
 
           {!isLoading && !error && documents.length === 0 ? (
-            <div className="p-12 text-center">
-              <p className="text-slate-500">{t("documents.noDocuments")}</p>
-              <p className="mt-1 text-sm text-slate-400">
+            <div className="p-16 text-center">
+              <div className="w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="material-symbols-outlined text-outline text-[32px]">folder_off</span>
+              </div>
+              <p className="text-title-md font-bold text-on-surface mb-2">{t("documents.noDocuments")}</p>
+              <p className="text-body-sm text-on-surface-variant max-w-sm mx-auto">
                 {t("documents.noDocumentsHint")}
               </p>
             </div>
@@ -267,45 +268,52 @@ export default function DocumentsPage() {
 
           {!isLoading && !error && documents.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500">
-                    <th className="px-6 py-3 font-medium">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead className="bg-surface-container-low border-b border-outline-variant/30">
+                  <tr>
+                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       {t("documents.tableName")}
                     </th>
-                    <th className="px-6 py-3 font-medium">
+                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       {t("documents.tableSize")}
                     </th>
-                    <th className="px-6 py-3 font-medium">
+                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       {t("documents.tableType")}
                     </th>
-                    <th className="px-6 py-3 font-medium">
+                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       {t("documents.tableStatus")}
                     </th>
-                    <th className="px-6 py-3 font-medium">
+                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
                       {t("documents.tableDate")}
                     </th>
-                    <th className="px-6 py-3 font-medium">
+                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider text-right">
                       {t("documents.tableActions")}
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-outline-variant/30 bg-surface-container-lowest">
                   {documents.map((doc) => (
                     <tr
                       key={doc.id}
-                      className="transition-colors hover:bg-slate-50"
+                      className="transition-colors hover:bg-surface-container-low/50 group cursor-default"
                     >
-                      <td className="max-w-xs truncate px-6 py-4 font-medium text-slate-900">
-                        {doc.metadata.title || doc.fileName}
+                      <td className="max-w-xs truncate px-lg py-4 font-bold text-on-surface">
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                            description
+                          </span>
+                          <span className="truncate">{doc.metadata.title || doc.fileName}</span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-600">
+                      <td className="px-lg py-4 text-on-surface-variant text-body-sm">
                         {getFileSizeLabel(doc.fileSize)}
                       </td>
-                      <td className="px-6 py-4 text-slate-600">
-                        {doc.mimeType.split("/").pop()?.toUpperCase() ?? "-"}
+                      <td className="px-lg py-4">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold bg-surface-container text-on-surface-variant uppercase tracking-wider border border-outline-variant/30">
+                          {doc.mimeType.split("/").pop() ?? "-"}
+                        </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-lg py-4">
                         <Badge
                           status={
                             STATUS_BADGE_MAP[doc.status] as
@@ -321,13 +329,14 @@ export default function DocumentsPage() {
                           )}
                         </Badge>
                       </td>
-                      <td className="px-6 py-4 text-slate-600">
+                      <td className="px-lg py-4 text-on-surface-variant text-body-sm whitespace-nowrap">
                         {new Date(doc.createdAt).toLocaleDateString()}
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-lg py-4 text-right">
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-error hover:bg-error-container hover:text-on-error-container"
                           isLoading={deletingId === doc.id}
                           onClick={async () => {
                             setDeletingId(doc.id);
@@ -335,7 +344,7 @@ export default function DocumentsPage() {
                             setDeletingId(null);
                           }}
                         >
-                          {t("common.delete")}
+                          <span className="material-symbols-outlined text-[20px]">delete</span>
                         </Button>
                       </td>
                     </tr>
@@ -347,32 +356,35 @@ export default function DocumentsPage() {
 
           {/* Pagination */}
           {totalPages > 1 ? (
-            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
-              <p className="text-sm text-slate-600">
+            <div className="flex items-center justify-between border-t border-outline-variant/30 px-lg py-md bg-surface-container-lowest">
+              <p className="text-label-sm font-medium text-on-surface-variant bg-surface-container-low px-3 py-1 rounded-full">
                 {t("common.page")} {page} / {totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-outline-variant text-on-surface hover:bg-surface-container-low"
                   disabled={page <= 1}
                   onClick={() => goToPage(page - 1)}
                 >
+                  <span className="material-symbols-outlined text-[18px] mr-1">chevron_left</span>
                   {t("common.back")}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-outline-variant text-on-surface hover:bg-surface-container-low"
                   disabled={page >= totalPages}
                   onClick={() => goToPage(page + 1)}
                 >
                   {t("common.next")}
+                  <span className="material-symbols-outlined text-[18px] ml-1">chevron_right</span>
                 </Button>
               </div>
             </div>
           ) : null}
         </div>
-      </div>
     </main>
   );
 }

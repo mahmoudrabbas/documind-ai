@@ -139,39 +139,50 @@ export default function RolesPage() {
   }
 
   return (
-    <main className="p-6">
-      <div className="max-w-4xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Custom Roles</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Define custom roles that map to existing permission levels.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
-            onClick={() => {
-              setShowCreateForm(!showCreateForm);
-              setCreateError(null);
-            }}
-          >
-            {showCreateForm ? "Cancel" : "Create Role"}
-          </button>
+    <main className="p-lg max-w-[1600px] mx-auto w-full flex-1">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-xl mt-6">
+        <div>
+          <h1 className="text-headline-lg font-bold text-primary">Custom Roles</h1>
+          <p className="mt-2 text-body-md text-on-surface-variant">
+            Define custom roles that map to existing permission levels.
+          </p>
         </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm hover:bg-secondary-container hover:text-on-secondary-container transition-all"
+          onClick={() => {
+            setShowCreateForm(!showCreateForm);
+            setCreateError(null);
+          }}
+        >
+          {showCreateForm ? (
+            <>
+              <span className="material-symbols-outlined text-[18px]">close</span>
+              Cancel
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Create Role
+            </>
+          )}
+        </button>
+      </div>
 
-        {successMessage ? (
-          <div className="mt-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
-            {successMessage}
-          </div>
-        ) : null}
+      {successMessage ? (
+        <div className="mb-8 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900 border border-emerald-200">
+          {successMessage}
+        </div>
+      ) : null}
 
-        {showCreateForm ? (
-          <form className="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm" onSubmit={(event) => void handleCreate(event)}>
+      {showCreateForm ? (
+        <div className="bg-surface-container-lowest p-lg md:p-xl rounded-3xl shadow-sm border border-outline-variant/30 mb-xl max-w-2xl">
+          <h2 className="text-title-lg font-bold text-primary mb-6">Create New Role</h2>
+          <form className="space-y-6" onSubmit={(event) => void handleCreate(event)}>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Role Name</label>
+              <label className="block text-label-md font-bold text-on-surface-variant mb-2">Role Name</label>
               <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 value={createName}
                 onChange={(e) => setCreateName(e.target.value)}
                 placeholder="e.g. HR, IT, Sales"
@@ -179,9 +190,9 @@ export default function RolesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Permission Level</label>
+              <label className="block text-label-md font-bold text-on-surface-variant mb-2">Permission Level</label>
               <select
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 value={createBaseRole}
                 onChange={(e) => setCreateBaseRole(e.target.value as "COMPANY_ADMIN" | "EMPLOYEE")}
               >
@@ -190,56 +201,70 @@ export default function RolesPage() {
               </select>
             </div>
             {createError ? (
-              <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">{createError}</div>
+              <div className="rounded-xl bg-red-50 p-4 text-sm text-red-900 border border-red-200">{createError}</div>
             ) : null}
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               disabled={createSubmitting}
             >
+              {createSubmitting ? (
+                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+              ) : (
+                <span className="material-symbols-outlined text-[18px]">save</span>
+              )}
               {createSubmitting ? "Creating..." : "Create Role"}
             </button>
           </form>
-        ) : null}
+        </div>
+      ) : null}
 
-        <section className="mt-8 overflow-x-auto">
-          {loading ? (
-            <div className="text-sm text-slate-600">Loading roles...</div>
-          ) : error ? (
-            <div className="rounded-md bg-rose-50 p-3 text-sm text-rose-900">{error}</div>
-          ) : roles.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              No custom roles yet. Create your first role above.
+      <section className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-on-surface-variant p-12 justify-center">
+            <span className="material-symbols-outlined animate-spin">progress_activity</span>
+            Loading roles...
+          </div>
+        ) : error ? (
+          <div className="p-8"><div className="rounded-xl bg-red-50 p-4 text-sm text-red-900 border border-red-200">{error}</div></div>
+        ) : roles.length === 0 ? (
+          <div className="p-16 text-center">
+            <div className="w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="material-symbols-outlined text-outline text-[32px]">shield_person</span>
             </div>
-          ) : (
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-              <thead className="bg-slate-50">
+            <p className="text-title-md font-bold text-on-surface mb-2">No custom roles yet</p>
+            <p className="text-body-sm text-on-surface-variant max-w-sm mx-auto">Create your first custom role to fine-tune access for your teammates.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-outline-variant/30 text-left text-sm border-collapse">
+              <thead className="bg-surface-container-low">
                 <tr>
-                  <th className="px-4 py-3 font-medium text-slate-700">Name</th>
-                  <th className="px-4 py-3 font-medium text-slate-700">Permission Level</th>
-                  <th className="px-4 py-3 font-medium text-slate-700">Users</th>
-                  <th className="px-4 py-3 font-medium text-slate-700">Created</th>
-                  <th className="px-4 py-3 font-medium text-slate-700">Actions</th>
+                  <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">Name</th>
+                  <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">Permission Level</th>
+                  <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">Users</th>
+                  <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">Created</th>
+                  <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-outline-variant/30 bg-surface-container-lowest">
                 {roles.map((role) => (
-                  <tr key={role.id}>
+                  <tr key={role.id} className="transition-colors hover:bg-surface-container-low/50">
                     {editingRole === role.id ? (
                       <>
-                        <td className="px-4 py-3">
+                        <td className="px-lg py-4">
                           <input
-                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                            className="w-full rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
                           />
                           {editError ? (
-                            <p className="mt-1 text-xs text-rose-600">{editError}</p>
+                            <p className="mt-1 text-[11px] text-error">{editError}</p>
                           ) : null}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-lg py-4">
                           <select
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                            className="w-full rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             value={editBaseRole}
                             onChange={(e) => setEditBaseRole(e.target.value as "COMPANY_ADMIN" | "EMPLOYEE")}
                           >
@@ -247,15 +272,15 @@ export default function RolesPage() {
                             <option value="COMPANY_ADMIN">Company Admin</option>
                           </select>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{role.userCount}</td>
-                        <td className="px-4 py-3 text-slate-600">
+                        <td className="px-lg py-4 text-on-surface-variant">{role.userCount}</td>
+                        <td className="px-lg py-4 text-on-surface-variant text-body-sm whitespace-nowrap">
                           {new Date(role.createdAt).toLocaleDateString()}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-lg py-4">
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex items-center justify-center rounded-md bg-secondary text-on-secondary px-3 py-1.5 text-xs font-bold shadow-sm hover:bg-secondary-container hover:text-on-secondary-container transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                               disabled={editSubmitting}
                               onClick={() => void handleEdit(role.id)}
                             >
@@ -263,7 +288,7 @@ export default function RolesPage() {
                             </button>
                             <button
                               type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                              className="inline-flex items-center justify-center rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-xs font-bold text-on-surface-variant shadow-sm hover:bg-surface-container-low transition-colors"
                               onClick={() => setEditingRole(null)}
                             >
                               Cancel
@@ -273,26 +298,28 @@ export default function RolesPage() {
                       </>
                     ) : (
                       <>
-                        <td className="px-4 py-3 font-medium text-slate-900">{role.name}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {role.baseRole === "COMPANY_ADMIN" ? "Company Admin" : "Employee"}
+                        <td className="px-lg py-4 font-bold text-on-surface">{role.name}</td>
+                        <td className="px-lg py-4 text-on-surface-variant">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold bg-surface-container text-on-surface-variant uppercase tracking-wider border border-outline-variant/30">
+                            {role.baseRole === "COMPANY_ADMIN" ? "Company Admin" : "Employee"}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{role.userCount}</td>
-                        <td className="px-4 py-3 text-slate-600">
+                        <td className="px-lg py-4 text-on-surface-variant font-medium">{role.userCount}</td>
+                        <td className="px-lg py-4 text-on-surface-variant text-body-sm whitespace-nowrap">
                           {new Date(role.createdAt).toLocaleDateString()}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-lg py-4">
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                              className="inline-flex items-center justify-center rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-xs font-bold text-on-surface-variant shadow-sm hover:bg-surface-container-low transition-colors"
                               onClick={() => startEdit(role)}
                             >
                               Edit
                             </button>
                             <button
                               type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex items-center justify-center rounded-md border border-error/30 bg-surface px-3 py-1.5 text-xs font-bold text-error shadow-sm hover:bg-error-container hover:text-on-error-container transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                               disabled={deletingRoleId === role.id}
                               onClick={() => {
                                 if (window.confirm(`Delete role "${role.name}"? This cannot be undone.`)) {
@@ -304,7 +331,7 @@ export default function RolesPage() {
                             </button>
                           </div>
                           {deleteError && deletingRoleId === role.id ? (
-                            <p className="mt-1 text-xs text-rose-600">{deleteError}</p>
+                            <p className="mt-2 text-[11px] text-error">{deleteError}</p>
                           ) : null}
                         </td>
                       </>
@@ -313,8 +340,9 @@ export default function RolesPage() {
                 ))}
               </tbody>
             </table>
-          )}
-        </section>
+          </div>
+        )}
+      </section>
       </div>
     </main>
   );

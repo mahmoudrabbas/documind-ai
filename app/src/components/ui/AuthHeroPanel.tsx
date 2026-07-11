@@ -2,85 +2,90 @@
 
 import { useI18n } from "@/providers/i18n-provider";
 
-interface AuthHeroPanelProps {
-  title: string;
-  description: string;
-}
 
-export function AuthHeroPanel({ title, description }: AuthHeroPanelProps) {
+export function AuthHeroPanel() {
   const { t } = useI18n();
 
-  const trustItems = [
-    {
-      title: t("auth.tenantIsolationTitle"),
-      description: t("auth.tenantIsolationDesc"),
-    },
-    {
-      title: t("auth.verifiedAccessTitle"),
-      description: t("auth.verifiedAccessDesc"),
-    },
-    {
-      title: t("auth.privateAnswersTitle"),
-      description: t("auth.privateAnswersDesc"),
-    },
-  ];
-
   return (
-    <section className="bg-[#001524] text-white w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 min-h-[40vh] lg:min-h-screen relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08)_0%,transparent_70%)] pointer-events-none" />
-
-      <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px] flex flex-col items-center relative z-10">
-        <div className="flex flex-col items-center gap-2">
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-lg shadow-blue-500/20"
-            aria-hidden="true"
-          >
-            DM
-          </span>
-          <p className="text-xl font-bold tracking-tight text-white mt-2">
-            {t("landing.appName")}
-          </p>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-            {t("landing.tagline")}
-          </p>
-        </div>
-
-        <div className="mt-8 text-center w-full">
-          <span className="inline-flex items-center rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-400 mb-4">
-            {t("landing.badge")}
-          </span>
-
-          <h1 className="text-2xl lg:text-3xl font-bold leading-tight tracking-tight text-white text-center w-full block">
-            {title}
-          </h1>
-
-          <p className="mt-4 text-sm leading-relaxed text-slate-300 text-center w-full max-w-sm block">
-            {description}
-          </p>
-        </div>
-
-        <div className="mt-10 grid grid-cols-1 gap-3 w-full">
-          {trustItems.map((item) => (
-            <div
-              key={item.title}
-              className="rounded-2xl border border-white/10 bg-white/5 p-4 flex gap-3.5 items-start backdrop-blur-sm text-start"
-            >
-              <span
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-sm font-bold text-blue-400"
-                aria-hidden="true"
-              >
-                ✓
-              </span>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-white">{item.title}</p>
-                <p className="mt-0.5 text-xs text-slate-400 leading-normal">
-                  {item.description}
-                </p>
-              </div>
+    <aside className="hidden flex-1 relative overflow-hidden items-center justify-center bg-surface-dim p-2xl lg:flex">
+      {/* Background Pattern */}
+      <div 
+        className="absolute inset-0 opacity-20" 
+        style={{ backgroundImage: "radial-gradient(#0F2A3D 1px, transparent 1px)", backgroundSize: "32px 32px" }}
+      />
+      {/* Large Background Icon */}
+      <span 
+        className="material-symbols-outlined absolute text-[400px] text-primary opacity-[0.03] select-none" 
+        style={{ fontVariationSettings: "'wght' 200" }}
+      >
+        lock
+      </span>
+      
+      {/* Floating UI Elements */}
+      <div className="relative w-full max-w-2xl h-[600px]">
+        {/* Document Card 1 */}
+        <div className="absolute top-10 left-10 w-64 bg-white p-md rounded-xl shadow-card z-20 transition-transform hover:-translate-y-1">
+          <div className="flex items-center gap-sm mb-sm">
+            <span className="material-symbols-outlined text-error text-3xl">picture_as_pdf</span>
+            <div className="overflow-hidden">
+              <p className="font-medium text-label-md text-on-surface truncate">Q4_Market_Report.pdf</p>
+              <p className="text-[10px] text-outline">Size: 4.2MB • 82 Pages</p>
             </div>
-          ))}
+          </div>
+          <div className="h-2 bg-surface-container rounded-full w-full">
+            <div className="h-full bg-on-tertiary-container rounded-full w-3/4" />
+          </div>
+          <p className="text-[10px] text-on-tertiary-container font-bold mt-xs">Parsed & Indexed</p>
         </div>
+
+        {/* AI Chat Bubble */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-surface-bright/80 backdrop-blur border border-tertiary-container/10 p-lg rounded-2xl shadow-card z-30 transition-transform hover:scale-[1.02]">
+          <div className="flex items-start gap-sm mb-md">
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-white text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>smart_toy</span>
+            </div>
+            <div>
+              <p className="text-body-sm text-primary leading-relaxed">
+                "The growth projection for 2024 is estimated at 12.5%, primarily driven by expansion into the EMEA region."
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-xs px-sm py-xs bg-secondary-container/30 border border-secondary-container rounded-lg">
+            <span className="material-symbols-outlined text-secondary text-sm">description</span>
+            <span className="text-[11px] font-bold text-on-secondary-container">Source: Annual_Review.pdf (Page 42)</span>
+          </div>
+        </div>
+
+        {/* Document Card 2 */}
+        <div className="absolute bottom-12 right-10 w-56 bg-white p-md rounded-xl shadow-card z-20 transition-transform hover:-translate-y-1">
+          <div className="flex items-center gap-sm mb-sm">
+            <span className="material-symbols-outlined text-primary text-3xl">description</span>
+            <div className="overflow-hidden">
+              <p className="font-medium text-label-md text-on-surface truncate">Legal_Contract_v2.doc</p>
+              <p className="text-[10px] text-outline">Added 2h ago</p>
+            </div>
+          </div>
+          <div className="flex gap-xs mt-sm">
+            <span className="w-2 h-2 rounded-full bg-secondary" />
+            <span className="w-2 h-2 rounded-full bg-secondary" />
+            <span className="w-2 h-2 rounded-full bg-outline-variant" />
+          </div>
+        </div>
+
+        {/* Connecting "Intelligence" Lines */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-20" xmlns="http://www.w3.org/2000/svg">
+          <path d="M150 150 Q 300 250 400 300" fill="none" stroke="#0F2A3D" strokeDasharray="4 4" strokeWidth="2" />
+          <path d="M500 500 Q 400 400 350 350" fill="none" stroke="#0F2A3D" strokeDasharray="4 4" strokeWidth="2" />
+        </svg>
       </div>
-    </section>
+
+      {/* Bottom Quote/Feature */}
+      <div className="absolute bottom-16 left-1/2 -translate-x-1/2 text-center max-w-sm">
+        <h3 className="text-title-lg font-bold text-primary mb-xs">Enterprise Security First</h3>
+        <p className="text-body-sm text-on-surface-variant">
+          Your documents never leave your secure DocuMind environment. Our AI runs in a sandboxed private cloud.
+        </p>
+      </div>
+    </aside>
   );
 }
