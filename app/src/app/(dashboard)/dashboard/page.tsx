@@ -278,8 +278,8 @@ export default function DashboardPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-body-sm text-on-surface leading-relaxed">
-                  <span className="font-bold">Mark Thompson</span> asked: "What
-                  are our compliance protocols for GDPR?"
+                  <span className="font-bold">Mark Thompson</span> asked: What
+                  are our compliance protocols for GDPR?
                 </p>
                 <p className="text-[12px] text-on-surface-variant mt-0.5">
                   22 minutes ago • Source: Compliance_Manual_v2.pdf
@@ -329,7 +329,7 @@ export default function DashboardPage() {
                 Knowledge Gaps Detected
               </h3>
               <p className="text-body-md leading-relaxed text-on-primary-container max-w-2xl">
-                Users are frequently asking about "Project Phoenix" which has 0
+                Users are frequently asking about Project Phoenix, which has 0
                 relevant documents. Consider uploading the project charter to
                 improve response accuracy.
               </p>
@@ -347,15 +347,24 @@ export default function DashboardPage() {
           reserved.
         </p>
         <div className="flex gap-lg">
-          className="text-label-sm hover:text-primary transition-colors"
-          href="#"
-          <a>Privacy Policy</a>
-          className="text-label-sm hover:text-primary transition-colors"
-          href="#"
-          <a>Terms of Service</a>
-          className="text-label-sm hover:text-primary transition-colors"
-          href="#"
-          <a>Support</a>
+          <a
+            href="#"
+            className="text-label-sm hover:text-primary transition-colors"
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="#"
+            className="text-label-sm hover:text-primary transition-colors"
+          >
+            Terms of Service
+          </a>
+          <a
+            href="#"
+            className="text-label-sm hover:text-primary transition-colors"
+          >
+            Support
+          </a>
         </div>
       </footer>
     </div>

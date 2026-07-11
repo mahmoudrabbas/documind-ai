@@ -20,7 +20,7 @@ export default function AnalyticsPage() {
           Analytics Dashboard Coming Soon
         </h2>
         <p className="text-body-md leading-relaxed text-on-surface-variant max-w-md text-center">
-          We're building powerful new visualization tools to help you track
+          We are building powerful new visualization tools to help you track
           knowledge gaps, user engagement, and document usage.
         </p>
       </div>

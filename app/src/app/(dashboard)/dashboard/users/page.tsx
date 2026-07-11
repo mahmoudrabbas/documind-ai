@@ -82,7 +82,9 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
-    void loadRoles();
+    (async () => {
+      await loadRoles();
+    })();
   }, [loadRoles]);
 
   function getRoleDropdownOptions() {
@@ -141,7 +143,9 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    void loadUsers(page);
+    (async () => {
+      await loadUsers(page);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 

@@ -106,8 +106,8 @@ export function AuthHeroPanel() {
               </span>
             </div>
             <p className="text-body-sm leading-relaxed text-primary">
-              "The growth projection for 2024 is estimated at 12.5%, primarily
-              driven by expansion into the EMEA region."
+              The growth projection for 2024 is estimated at 12.5%, primarily
+              driven by expansion into the EMEA region.
             </p>
           </div>
           <div className="flex items-center gap-xs rounded-lg border border-secondary-container bg-secondary-container/30 px-sm py-xs">
