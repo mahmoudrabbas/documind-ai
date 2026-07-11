@@ -6,7 +6,7 @@ const PASSWORD_RESET_PURPOSE = "password_reset";
 
 export interface PasswordResetTokenPayload extends Record<string, unknown> {
   sub: string;
-  email: string;
+  tenantId: string;
   purpose: typeof PASSWORD_RESET_PURPOSE;
   jti: string;
   exp: number;
@@ -14,7 +14,7 @@ export interface PasswordResetTokenPayload extends Record<string, unknown> {
 
 interface SignPasswordResetTokenInput {
   userId: string;
-  email: string;
+  tenantId: string;
   expiresIn?: string;
 }
 
@@ -32,7 +32,7 @@ export function createPasswordResetToken(
   const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
   const payload: PasswordResetTokenPayload = {
     sub: input.userId,
-    email: input.email,
+    tenantId: input.tenantId,
     purpose: PASSWORD_RESET_PURPOSE,
     jti,
     exp: Math.floor(expiresAt.getTime() / 1000),

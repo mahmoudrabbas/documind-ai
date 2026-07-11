@@ -206,24 +206,27 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
 interface SendForgotPasswordEmailInput {
   to: string;
   userName: string;
+  companyName: string;
   resetUrl: string;
 }
 
 export function buildForgotPasswordTemplate(input: {
   userName: string;
+  companyName: string;
   resetUrl: string;
   expiryLabel: string;
 }) {
   const escapedUserName = escapeHtml(input.userName);
+  const escapedCompanyName = escapeHtml(input.companyName);
   const escapedResetUrl = escapeHtml(input.resetUrl);
   const escapedExpiryLabel = escapeHtml(input.expiryLabel);
 
   return {
-    subject: "Reset your DocuMind AI password",
+    subject: `Reset your ${input.companyName} DocuMind AI password`,
     text: [
       `Hi ${input.userName},`,
       "",
-      "We received a request to reset the password for your DocuMind AI account.",
+      `We received a request to reset the password for your ${input.companyName} DocuMind AI account.`,
       "",
       "Reset your password:",
       input.resetUrl,
@@ -245,7 +248,7 @@ export function buildForgotPasswordTemplate(input: {
               <td style="padding:0;">
                 <h1 style="margin:0 0 20px;font-size:24px;line-height:32px;font-weight:700;color:#111827;">DocuMind AI</h1>
                 <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">Hi ${escapedUserName},</p>
-                <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">We received a request to reset the password for your DocuMind AI account.</p>
+                <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">We received a request to reset the password for your ${escapedCompanyName} DocuMind AI account.</p>
                 <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
                   <tr>
                     <td bgcolor="#4f46e5" style="border-radius:8px;">
@@ -281,7 +284,7 @@ export async function sendForgotPasswordEmail(
 
   if (!config.SEND_EMAILS) {
     if (config.NODE_ENV === "development") {
-      console.log(`[forgot-password] ${input.resetUrl}`);
+      console.info("[forgot-password] email delivery disabled");
     }
     return;
   }
@@ -296,7 +299,7 @@ export async function sendForgotPasswordEmail(
     const message = `Missing SMTP config: ${missingFields.join(", ")}`;
     if (config.NODE_ENV !== "production") {
       console.warn(
-        `[forgot-password] ${message}. Reset URL: ${input.resetUrl}`,
+        `[forgot-password] ${message}`,
       );
       return;
     }
@@ -307,6 +310,7 @@ export async function sendForgotPasswordEmail(
 
   const template = buildForgotPasswordTemplate({
     userName: input.userName,
+    companyName: input.companyName,
     resetUrl: input.resetUrl,
     expiryLabel: "15 minutes",
   });
@@ -334,7 +338,7 @@ export async function sendForgotPasswordEmail(
 
     if (config.NODE_ENV !== "production") {
       console.warn(
-        `[forgot-password] ${message}. Reset URL: ${input.resetUrl}`,
+        `[forgot-password] ${message}`,
       );
       return;
     }

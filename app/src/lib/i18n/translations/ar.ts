@@ -121,8 +121,8 @@ const ar: TranslationDictionary = {
   /* ── auth/forgot-password ───────────────────────────────── */
   "auth.forgotPassword": "هل نسيت كلمة المرور؟",
   "auth.forgotPasswordTitle": "إعادة تعيين كلمة المرور",
-  "auth.forgotPasswordDescription": "أدخل عنوان بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.",
-  "auth.forgotPasswordEmailSent": "إذا كان هناك حساب بهذا البريد الإلكتروني، فقد تم إرسال رابط إعادة تعيين كلمة المرور.",
+  "auth.forgotPasswordDescription": "أدخل معرّف شركتك وعنوان بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.",
+  "auth.forgotPasswordEmailSent": "إذا تطابق حساب مع الشركة والبريد الإلكتروني المقدّمين، فسيتم إرسال تعليمات إعادة تعيين كلمة المرور.",
   "auth.forgotPasswordSubmit": "إرسال رابط إعادة التعيين",
   "auth.forgotPasswordSending": "جارٍ الإرسال…",
   "auth.forgotPasswordSuccess": "تحقق من بريدك الإلكتروني",

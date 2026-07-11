@@ -57,9 +57,8 @@ import {
   setRefreshTokenReplacement,
   updateUserVerificationToken,
   updateUserPasswordResetToken,
-  findUserByIdWithPasswordResetToken,
-  clearUserPasswordResetToken,
-  updateUserPassword,
+  findUserByTenantAndIdWithPasswordResetToken,
+  consumePasswordResetTokenAndUpdatePassword,
 } from "./auth.repository.js";
 import {
   validateRegisterInput,
@@ -175,9 +174,10 @@ function buildVerificationUrl(token: string) {
   return url.toString();
 }
 
-function buildResetPasswordUrl(token: string) {
+function buildResetPasswordUrl(token: string, slug: string) {
   const url = new URL("/reset-password", config.APP_FRONTEND_URL);
   url.searchParams.set("token", token);
+  url.searchParams.set("slug", slug);
   return url.toString();
 }
 
@@ -186,33 +186,45 @@ export async function forgotPassword(
 ): Promise<ForgotPasswordResult> {
   const payload = validateForgotPasswordInput(input);
   const genericMessage =
-    "If an account with that email exists, a password reset link has been sent.";
+    "If an account matches the provided company and email, password reset instructions will be sent.";
 
-  const user = await findUserDocumentByEmail(payload.email);
+  const tenant = await findTenantBySlug(payload.slug);
+  if (!tenant) {
+    return { success: true, message: genericMessage };
+  }
+  const tenantId = tenant._id.toString();
+
+  const user = await findUserDocumentByTenantAndEmail(tenantId, payload.email);
 
   if (
     !user ||
-    user.status === "pending_email_verification"
+    user.status !== "active"
   ) {
     return { success: true, message: genericMessage };
   }
 
   const resetToken = createPasswordResetToken({
     userId: user.id,
-    email: user.email,
+    tenantId,
   });
 
   await updateUserPasswordResetToken(
+    tenantId,
     user.id,
     resetToken.tokenHash,
     resetToken.expiresAt,
   );
 
-  await sendForgotPasswordEmail({
-    to: user.email,
-    userName: user.name,
-    resetUrl: buildResetPasswordUrl(resetToken.token),
-  });
+  try {
+    await sendForgotPasswordEmail({
+      to: user.email,
+      userName: user.name,
+      companyName: tenant.name,
+      resetUrl: buildResetPasswordUrl(resetToken.token, tenant.slug),
+    });
+  } catch {
+    // Keep the public response indistinguishable when delivery is unavailable.
+  }
 
   return { success: true, message: genericMessage };
 }
@@ -229,12 +241,16 @@ export async function resetPassword(
 
   try {
     const tokenPayload = verifyPasswordResetToken(payload.token);
+    const tenant = await findTenantBySlug(payload.slug);
+    if (!tenant || tokenPayload.tenantId !== tenant._id.toString()) {
+      throw invalidTokenError;
+    }
+    const tenantId = tenant._id.toString();
 
-    const user = await findUserByIdWithPasswordResetToken(tokenPayload.sub);
+    const user = await findUserByTenantAndIdWithPasswordResetToken(tenantId, tokenPayload.sub);
 
     if (
       !user ||
-      user.email !== tokenPayload.email ||
       !user.passwordResetTokenHash ||
       !user.passwordResetExpiresAt ||
       user.passwordResetExpiresAt.getTime() <= Date.now()
@@ -250,8 +266,16 @@ export async function resetPassword(
 
     const passwordHash = await hashPassword(payload.password);
 
-    await updateUserPassword(user.id, passwordHash);
-    await clearUserPasswordResetToken(user.id);
+    const consumedUser = await consumePasswordResetTokenAndUpdatePassword(
+      tenantId,
+      user.id,
+      user.passwordResetTokenHash,
+      passwordHash,
+    );
+    if (!consumedUser) {
+      throw invalidTokenError;
+    }
+    await revokeAllRefreshTokensForTenantUser(user.id, tenantId, new Date());
 
     return {
       success: true,

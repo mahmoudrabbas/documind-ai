@@ -121,8 +121,8 @@ const en: TranslationDictionary = {
   /* ── auth/forgot-password ───────────────────────────────── */
   "auth.forgotPassword": "Forgot password?",
   "auth.forgotPasswordTitle": "Reset your password",
-  "auth.forgotPasswordDescription": "Enter your email address and we'll send you a link to reset your password.",
-  "auth.forgotPasswordEmailSent": "If an account with that email exists, a password reset link has been sent.",
+  "auth.forgotPasswordDescription": "Enter your company slug and email address and we'll send you a link to reset your password.",
+  "auth.forgotPasswordEmailSent": "If an account matches the provided company and email, password reset instructions will be sent.",
   "auth.forgotPasswordSubmit": "Send reset link",
   "auth.forgotPasswordSending": "Sending…",
   "auth.forgotPasswordSuccess": "Check your email",

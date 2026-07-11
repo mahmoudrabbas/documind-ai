@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
@@ -15,9 +15,9 @@ type ResetPasswordResponse = {
 type FormErrors = Partial<Record<"password" | "confirmPassword", string>>;
 
 export default function ResetPasswordPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
+  const slug = searchParams.get("slug")?.trim().toLowerCase();
   const { t, dir } = useI18n();
   const submissionPending = useRef(false);
 
@@ -28,12 +28,12 @@ export default function ResetPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  if (!token) {
+  if (!token || !slug) {
     return (
       <main dir={dir} className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
         <div className="text-center max-w-md">
           <h2 className="text-2xl font-bold text-slate-900">{t("common.error")}</h2>
-          <p className="mt-2 text-sm text-slate-600">Missing or invalid reset token.</p>
+          <p className="mt-2 text-sm text-slate-600">Missing or invalid password reset link.</p>
           <div className="mt-6">
             <Link href="/forgot-password" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition">
               {t("auth.forgotPassword")}
@@ -75,7 +75,7 @@ export default function ResetPasswordPage() {
         method: "POST",
         auth: false,
         credentials: "include",
-        body: { token, password },
+        body: { token, slug, password, confirmPassword },
       });
       setIsSuccess(true);
     } catch (err) {
@@ -151,6 +151,7 @@ export default function ResetPasswordPage() {
           <div className="text-start w-full">
             <p className="text-sm font-semibold text-blue-600 w-full block">{t("auth.resetPasswordSecure")}</p>
             <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-900 w-full block">{t("auth.resetPasswordTitle")}</h2>
+            <p className="mt-2 text-sm font-medium text-slate-700">{t("auth.companySlug")}: {slug}</p>
           </div>
 
           <form className="mt-8 space-y-5 w-full" onSubmit={handleSubmit} noValidate>

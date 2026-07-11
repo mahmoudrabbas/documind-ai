@@ -16,11 +16,14 @@ export interface ResendVerificationEmailInput {
 
 export interface ForgotPasswordInput {
   email: string;
+  slug: string;
 }
 
 export interface ResetPasswordInput {
   token: string;
+  slug: string;
   password: string;
+  confirmPassword: string;
 }
 
 export interface ForgotPasswordResult {

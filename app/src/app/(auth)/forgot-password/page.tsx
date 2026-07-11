@@ -5,7 +5,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { validateEmail } from "@/lib/validation";
+import { validateCompanySlug, validateEmail } from "@/lib/validation";
 
 type ForgotPasswordResponse = {
   success: boolean;
@@ -17,19 +17,20 @@ export default function ForgotPasswordPage() {
   const submissionPending = useRef(false);
 
   const [email, setEmail] = useState("");
+  const [companySlug, setCompanySlug] = useState("");
   const [error, setError] = useState("");
-  const [fieldError, setFieldError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"companySlug" | "email", string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSent, setIsSent] = useState(false);
 
   function validate() {
-    const err = validateEmail(email);
-    if (err) {
-      setFieldError(t(err));
-      return false;
-    }
-    setFieldError("");
-    return true;
+    const next: Partial<Record<"companySlug" | "email", string>> = {};
+    const slugError = validateCompanySlug(companySlug.trim().toLowerCase());
+    const emailError = validateEmail(email);
+    if (slugError) next.companySlug = t(slugError);
+    if (emailError) next.email = t(emailError);
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -49,6 +50,7 @@ export default function ForgotPasswordPage() {
         credentials: "include",
         body: {
           email: email.trim().toLowerCase(),
+          slug: companySlug.trim().toLowerCase(),
         },
       });
       setIsSent(true);
@@ -139,6 +141,12 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div className="w-full text-start">
+              <label htmlFor="companySlug" className="block text-sm font-medium text-slate-700">{t("auth.companySlug")}</label>
+              <input id="companySlug" name="companySlug" type="text" value={companySlug} onChange={(event) => setCompanySlug(event.target.value)} autoComplete="organization" placeholder={t("auth.companySlugPlaceholder")} disabled={isSubmitting} aria-invalid={Boolean(fieldErrors.companySlug)} aria-describedby={fieldErrors.companySlug ? "companySlug-error" : "companySlug-help"} className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
+              {fieldErrors.companySlug ? <p id="companySlug-error" className="mt-1.5 text-xs text-red-600">{fieldErrors.companySlug}</p> : <p id="companySlug-help" className="mt-1.5 text-xs text-slate-500">{t("auth.companySlugHelp")}</p>}
+            </div>
+
+            <div className="w-full text-start">
               <label htmlFor="email" className="block text-sm font-medium text-slate-700">
                 {t("auth.email")}
               </label>
@@ -151,12 +159,12 @@ export default function ForgotPasswordPage() {
                 autoComplete="email"
                 placeholder={t("auth.emailPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(fieldError)}
-                aria-describedby={fieldError ? "email-error" : undefined}
+                aria-invalid={Boolean(fieldErrors.email)}
+                aria-describedby={fieldErrors.email ? "email-error" : undefined}
                 className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
-              {fieldError ? (
-                <p id="email-error" className="mt-1.5 text-xs text-red-600">{fieldError}</p>
+              {fieldErrors.email ? (
+                <p id="email-error" className="mt-1.5 text-xs text-red-600">{fieldErrors.email}</p>
               ) : null}
             </div>
 

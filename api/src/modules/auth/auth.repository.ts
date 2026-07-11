@@ -194,12 +194,13 @@ export async function updateUserVerificationToken(
 }
 
 export async function updateUserPasswordResetToken(
+  tenantId: string,
   userId: string,
   tokenHash: string,
   expiresAt: Date,
 ) {
   await UserModel.updateOne(
-    { _id: userId },
+    { _id: userId, tenantId },
     {
       $set: {
         passwordResetTokenHash: tokenHash,
@@ -209,37 +210,33 @@ export async function updateUserPasswordResetToken(
   ).exec();
 }
 
-export function findUserByEmailWithPasswordResetToken(email: string) {
-  return UserModel.findOne({ email })
+export function findUserByTenantAndIdWithPasswordResetToken(tenantId: string, userId: string) {
+  return UserModel.findOne({ _id: userId, tenantId })
     .select("+passwordResetTokenHash +passwordResetExpiresAt")
     .exec();
 }
 
-export function findUserByIdWithPasswordResetToken(userId: string) {
-  return UserModel.findById(userId)
-    .select("+passwordResetTokenHash +passwordResetExpiresAt")
-    .exec();
-}
-
-export async function clearUserPasswordResetToken(userId: string) {
-  await UserModel.updateOne(
-    { _id: userId },
+export function consumePasswordResetTokenAndUpdatePassword(
+  tenantId: string,
+  userId: string,
+  tokenHash: string,
+  passwordHash: string,
+) {
+  return UserModel.findOneAndUpdate(
+    {
+      _id: userId,
+      tenantId,
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: { $gt: new Date() },
+    },
     {
       $set: {
+        passwordHash,
         passwordResetTokenHash: null,
         passwordResetExpiresAt: null,
       },
     },
-  ).exec();
-}
-
-export async function updateUserPassword(
-  userId: string,
-  passwordHash: string,
-) {
-  await UserModel.updateOne(
-    { _id: userId },
-    { $set: { passwordHash } },
+    { returnDocument: "after" },
   ).exec();
 }
 

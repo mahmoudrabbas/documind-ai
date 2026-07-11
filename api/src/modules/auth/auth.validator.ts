@@ -58,17 +58,24 @@ const superAdminLoginSchema = z.object({ email: z.string().trim().toLowerCase().
 const forgotPasswordSchema = z
   .object({
     email: z.string().trim().toLowerCase().email("email must be a valid address"),
+    slug: z.string().trim().toLowerCase().min(2, "slug is required").max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug contains invalid characters"),
   })
   .strict();
 
 const resetPasswordSchema = z
   .object({
     token: z.string().trim().min(1, "token is required"),
+    slug: z.string().trim().toLowerCase().min(2, "slug is required").max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug contains invalid characters"),
     password: z
       .string()
       .min(8, "password must be at least 8 characters")
       .max(128, "password must be at most 128 characters")
       .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, "password must contain at least one letter and one number"),
+    confirmPassword: z.string().min(1, "confirmPassword is required").max(128),
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "passwords must match",
   })
   .strict();
 
