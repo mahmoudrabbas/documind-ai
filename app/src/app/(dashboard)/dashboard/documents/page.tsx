@@ -108,22 +108,48 @@ export default function DocumentsPage() {
   }
 
   return (
-    <main dir={dir} className="p-lg max-w-[1600px] mx-auto w-full flex-1">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-xl mt-6">
-        <div>
-          <h1 className="text-headline-lg font-bold text-primary">
+    <main dir={dir} className="mx-auto w-full max-w-[1600px] flex-1 p-lg">
+      <div className="mb-xl mt-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
+            <span className="material-symbols-outlined text-[16px]">
+              folder
+            </span>
+            Knowledge base
+          </div>
+          <h1 className="mt-3 text-headline-lg font-bold text-primary">
             {t("documents.title")}
           </h1>
-          <p className="mt-2 text-body-md text-on-surface-variant">
+          <p className="mt-2 max-w-2xl text-body-md leading-relaxed text-on-surface-variant">
             {t("documents.subtitle")}
+          </p>
+        </div>
+
+        <div className="w-full shrink-0 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm lg:w-auto">
+          <p className="font-semibold text-on-surface">Upload and organize</p>
+          <p className="mt-1 max-w-xs text-on-surface-variant">
+            Keep your documents structured so answers stay accurate and
+            searchable.
           </p>
         </div>
       </div>
 
-      <div className="bg-surface-container-lowest p-lg rounded-3xl shadow-sm border border-outline-variant/30 mb-xl max-w-2xl">
-        <h2 className="mb-6 text-title-lg font-bold text-primary">
-          {t("documents.upload")}
-        </h2>
+      <section className="mb-xl grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm md:p-xl">
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-title-lg font-bold text-primary">
+                {t("documents.upload")}
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+                Add a file, enrich it with metadata, and let the system prepare
+                it for retrieval.
+              </p>
+            </div>
+            <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+              New upload
+            </div>
+          </div>
 
           <FileDropzone
             onFilesSelected={handleFilesSelected}
@@ -136,11 +162,11 @@ export default function DocumentsPage() {
           />
 
           {selectedFiles.length > 0 && !isUploading ? (
-            <div className="mt-8 space-y-6">
+            <div className="mt-8 space-y-6 rounded-2xl border border-outline-variant/30 bg-surface-container p-5">
               <div>
                 <label
                   htmlFor="doc-title"
-                  className="block text-label-md font-bold text-on-surface-variant mb-2"
+                  className="mb-2 block text-label-md font-bold text-on-surface-variant"
                 >
                   {t("documents.metadataTitle")}
                 </label>
@@ -164,7 +190,7 @@ export default function DocumentsPage() {
               <div>
                 <label
                   htmlFor="doc-description"
-                  className="block text-label-md font-bold text-on-surface-variant mb-2"
+                  className="mb-2 block text-label-md font-bold text-on-surface-variant"
                 >
                   {t("documents.metadataDescription")}
                 </label>
@@ -181,7 +207,7 @@ export default function DocumentsPage() {
               <div>
                 <label
                   htmlFor="doc-tags"
-                  className="block text-label-md font-bold text-on-surface-variant mb-2"
+                  className="mb-2 block text-label-md font-bold text-on-surface-variant"
                 >
                   {t("documents.metadataTags")}
                 </label>
@@ -198,10 +224,8 @@ export default function DocumentsPage() {
                 </p>
               </div>
 
-              <div className="flex gap-3 pt-2">
-                <Button onClick={handleUpload}>
-                  {t("documents.upload")}
-                </Button>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button onClick={handleUpload}>{t("documents.upload")}</Button>
                 <Button variant="ghost" onClick={resetForm}>
                   {t("common.cancel")}
                 </Button>
@@ -220,171 +244,243 @@ export default function DocumentsPage() {
           ) : null}
 
           {uploadError ? (
-            <p className="mt-4 text-sm text-error bg-error-container text-on-error-container p-3 rounded-xl border border-error/20" role="alert">
+            <p
+              className="mt-4 rounded-xl border border-error/20 bg-error-container p-3 text-sm text-on-error-container"
+              role="alert"
+            >
               {uploadError}
             </p>
           ) : null}
         </div>
 
-        {/* Document List */}
-        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm overflow-hidden">
-          <div className="border-b border-outline-variant/30 px-lg py-md bg-surface-container-low/50">
-            <h2 className="text-title-lg font-bold text-primary">
-              {t("nav.documents")}
-            </h2>
-          </div>
+        <div className="group relative overflow-hidden rounded-[28px] border border-outline-variant/30 bg-gradient-to-br from-surface-container via-surface-container-low to-surface-container-lowest p-lg shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-lg md:p-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10" />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
+                <span className="material-symbols-outlined text-[16px]">
+                  auto_awesome
+                </span>
+                AI-assisted prep
+              </div>
+              <h3 className="mt-4 text-title-md font-bold text-primary">
+                Turn uploads into sharper answers
+              </h3>
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-on-surface-variant">
+                Strong titles, clear descriptions, and thoughtful tags help the
+                retrieval layer surface the right context faster.
+              </p>
 
-          {error ? (
-            <div className="p-12 text-center">
-              <p className="text-sm text-error mb-4">{t(error)}</p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                  Better retrieval
+                </span>
+                <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                  Cleaner context
+                </span>
+                <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                  Faster answers
+                </span>
+              </div>
+            </div>
+
+            <div className="w-full max-w-[280px] rounded-2xl border border-outline-variant/40 bg-surface/80 p-4 shadow-sm backdrop-blur">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-label-sm font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
+                    Next step
+                  </p>
+                  <p className="mt-1 text-title-sm font-semibold text-on-surface">
+                    Preview suggestions
+                  </p>
+                </div>
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <span className="material-symbols-outlined text-[22px]">
+                    bolt
+                  </span>
+                </div>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-on-surface-variant">
+                A thoughtful upload makes downstream AI answers more reliable
+                and easier to trust.
+              </p>
+              <div className="mt-4 flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-sm text-on-surface">
+                <span>Ready to refine</span>
+                <span className="text-primary">↗</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm">
+        <div className="border-b border-outline-variant/30 bg-surface-container-low/50 px-lg py-md">
+          <h2 className="text-title-lg font-bold text-primary">
+            {t("nav.documents")}
+          </h2>
+        </div>
+
+        {error ? (
+          <div className="p-12 text-center">
+            <p className="mb-4 text-sm text-error">{t(error)}</p>
+            <Button variant="outline" onClick={() => goToPage(page)}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : null}
+
+        {isLoading ? (
+          <div className="space-y-4 p-8">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton
+                key={i}
+                className="h-16 w-full rounded-xl bg-surface-container"
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {!isLoading && !error && documents.length === 0 ? (
+          <div className="p-16 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container-low">
+              <span className="material-symbols-outlined text-[32px] text-outline">
+                folder_off
+              </span>
+            </div>
+            <p className="mb-2 text-title-md font-bold text-on-surface">
+              {t("documents.noDocuments")}
+            </p>
+            <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">
+              {t("documents.noDocumentsHint")}
+            </p>
+          </div>
+        ) : null}
+
+        {!isLoading && !error && documents.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead className="border-b border-outline-variant/30 bg-surface-container-low">
+                <tr>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("documents.tableName")}
+                  </th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("documents.tableSize")}
+                  </th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("documents.tableType")}
+                  </th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("documents.tableStatus")}
+                  </th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("documents.tableDate")}
+                  </th>
+                  <th className="px-lg py-4 text-right text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("documents.tableActions")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/30 bg-surface-container-lowest">
+                {documents.map((doc) => (
+                  <tr
+                    key={doc.id}
+                    className="cursor-default transition-colors hover:bg-surface-container-low/50 group"
+                  >
+                    <td className="max-w-xs truncate px-lg py-4 font-bold text-on-surface">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="material-symbols-outlined text-secondary"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          description
+                        </span>
+                        <span className="truncate">
+                          {doc.metadata.title || doc.fileName}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-lg py-4 text-body-sm text-on-surface-variant">
+                      {getFileSizeLabel(doc.fileSize)}
+                    </td>
+                    <td className="px-lg py-4">
+                      <span className="inline-flex items-center rounded-md border border-outline-variant/30 bg-surface-container px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                        {doc.mimeType.split("/").pop() ?? "-"}
+                      </span>
+                    </td>
+                    <td className="px-lg py-4">
+                      <Badge
+                        status={
+                          STATUS_BADGE_MAP[doc.status] as
+                            "success" | "info" | "warning" | "error" | undefined
+                        }
+                      >
+                        {t(
+                          `documents.status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`,
+                        )}
+                      </Badge>
+                    </td>
+                    <td className="px-lg py-4 whitespace-nowrap text-body-sm text-on-surface-variant">
+                      {new Date(doc.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-lg py-4 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-error opacity-0 transition-opacity hover:bg-error-container hover:text-on-error-container group-hover:opacity-100"
+                        isLoading={deletingId === doc.id}
+                        onClick={async () => {
+                          setDeletingId(doc.id);
+                          await remove(doc.id);
+                          setDeletingId(null);
+                        }}
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          delete
+                        </span>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {totalPages > 1 ? (
+          <div className="flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-lowest px-lg py-md">
+            <p className="rounded-full bg-surface-container-low px-3 py-1 text-label-sm font-medium text-on-surface-variant">
+              {t("common.page")} {page} / {totalPages}
+            </p>
+            <div className="flex gap-2">
               <Button
                 variant="outline"
-                onClick={() => goToPage(page)}
+                size="sm"
+                className="border-outline-variant text-on-surface hover:bg-surface-container-low"
+                disabled={page <= 1}
+                onClick={() => goToPage(page - 1)}
               >
-                {t("common.retry")}
+                <span className="material-symbols-outlined mr-1 text-[18px]">
+                  chevron_left
+                </span>
+                {t("common.back")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-outline-variant text-on-surface hover:bg-surface-container-low"
+                disabled={page >= totalPages}
+                onClick={() => goToPage(page + 1)}
+              >
+                {t("common.next")}
+                <span className="material-symbols-outlined ml-1 text-[18px]">
+                  chevron_right
+                </span>
               </Button>
             </div>
-          ) : null}
-
-          {isLoading ? (
-            <div className="space-y-4 p-8">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full rounded-xl bg-surface-container" />
-              ))}
-            </div>
-          ) : null}
-
-          {!isLoading && !error && documents.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="material-symbols-outlined text-outline text-[32px]">folder_off</span>
-              </div>
-              <p className="text-title-md font-bold text-on-surface mb-2">{t("documents.noDocuments")}</p>
-              <p className="text-body-sm text-on-surface-variant max-w-sm mx-auto">
-                {t("documents.noDocumentsHint")}
-              </p>
-            </div>
-          ) : null}
-
-          {!isLoading && !error && documents.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-collapse">
-                <thead className="bg-surface-container-low border-b border-outline-variant/30">
-                  <tr>
-                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
-                      {t("documents.tableName")}
-                    </th>
-                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
-                      {t("documents.tableSize")}
-                    </th>
-                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
-                      {t("documents.tableType")}
-                    </th>
-                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
-                      {t("documents.tableStatus")}
-                    </th>
-                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
-                      {t("documents.tableDate")}
-                    </th>
-                    <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider text-right">
-                      {t("documents.tableActions")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant/30 bg-surface-container-lowest">
-                  {documents.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      className="transition-colors hover:bg-surface-container-low/50 group cursor-default"
-                    >
-                      <td className="max-w-xs truncate px-lg py-4 font-bold text-on-surface">
-                        <div className="flex items-center gap-3">
-                          <span className="material-symbols-outlined text-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                            description
-                          </span>
-                          <span className="truncate">{doc.metadata.title || doc.fileName}</span>
-                        </div>
-                      </td>
-                      <td className="px-lg py-4 text-on-surface-variant text-body-sm">
-                        {getFileSizeLabel(doc.fileSize)}
-                      </td>
-                      <td className="px-lg py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold bg-surface-container text-on-surface-variant uppercase tracking-wider border border-outline-variant/30">
-                          {doc.mimeType.split("/").pop() ?? "-"}
-                        </span>
-                      </td>
-                      <td className="px-lg py-4">
-                        <Badge
-                          status={
-                            STATUS_BADGE_MAP[doc.status] as
-                              | "success"
-                              | "info"
-                              | "warning"
-                              | "error"
-                              | undefined
-                          }
-                        >
-                          {t(
-                            `documents.status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`,
-                          )}
-                        </Badge>
-                      </td>
-                      <td className="px-lg py-4 text-on-surface-variant text-body-sm whitespace-nowrap">
-                        {new Date(doc.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-lg py-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-error hover:bg-error-container hover:text-on-error-container"
-                          isLoading={deletingId === doc.id}
-                          onClick={async () => {
-                            setDeletingId(doc.id);
-                            await remove(doc.id);
-                            setDeletingId(null);
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-[20px]">delete</span>
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : null}
-
-          {/* Pagination */}
-          {totalPages > 1 ? (
-            <div className="flex items-center justify-between border-t border-outline-variant/30 px-lg py-md bg-surface-container-lowest">
-              <p className="text-label-sm font-medium text-on-surface-variant bg-surface-container-low px-3 py-1 rounded-full">
-                {t("common.page")} {page} / {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-outline-variant text-on-surface hover:bg-surface-container-low"
-                  disabled={page <= 1}
-                  onClick={() => goToPage(page - 1)}
-                >
-                  <span className="material-symbols-outlined text-[18px] mr-1">chevron_left</span>
-                  {t("common.back")}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-outline-variant text-on-surface hover:bg-surface-container-low"
-                  disabled={page >= totalPages}
-                  onClick={() => goToPage(page + 1)}
-                >
-                  {t("common.next")}
-                  <span className="material-symbols-outlined text-[18px] ml-1">chevron_right</span>
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+      </div>
     </main>
   );
 }

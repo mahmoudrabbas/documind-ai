@@ -3,22 +3,55 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, apiClient } from "@/lib/api-client";
-import { useAuth, type AuthTenant, type AuthUser } from "@/providers/auth-provider";
+import {
+  useAuth,
+  type AuthTenant,
+  type AuthUser,
+} from "@/providers/auth-provider";
 import { AuthHeroPanel } from "@/components/ui/AuthHeroPanel";
 
-type Response = { success: true; data: { user: AuthUser; tenant: AuthTenant; tokens: { accessToken: string } } };
+type Response = {
+  success: true;
+  data: { user: AuthUser; tenant: AuthTenant; tokens: { accessToken: string } };
+};
 
 export default function SuperAdminLoginPage() {
-  const router = useRouter(); const auth = useAuth(); const pending = useRef(false);
-  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState("");
+  const router = useRouter();
+  const auth = useAuth();
+  const pending = useRef(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (pending.current) return; setError(""); pending.current = true; setSubmitting(true);
+    event.preventDefault();
+    if (pending.current) return;
+    setError("");
+    pending.current = true;
+    setSubmitting(true);
     try {
-      const response = await apiClient<Response>("/auth/super-admin/login", { method: "POST", auth: false, credentials: "include", body: { email: email.trim().toLowerCase(), password } });
-      auth.establishSession(response.data.tokens.accessToken, { user: response.data.user, tenant: response.data.tenant });
-      router.replace("/super-admin/tenants"); router.refresh();
-    } catch (caught) { setError(caught instanceof ApiError && caught.status === 401 ? "Invalid email or password." : "Unable to sign in. Please try again."); }
-    finally { pending.current = false; setSubmitting(false); }
+      const response = await apiClient<Response>("/auth/super-admin/login", {
+        method: "POST",
+        auth: false,
+        credentials: "include",
+        body: { email: email.trim().toLowerCase(), password },
+      });
+      auth.establishSession(response.data.tokens.accessToken, {
+        user: response.data.user,
+        tenant: response.data.tenant,
+      });
+      router.replace("/super-admin/tenants");
+      router.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError && caught.status === 401
+          ? "Invalid email or password."
+          : "Unable to sign in. Please try again.",
+      );
+    } finally {
+      pending.current = false;
+      setSubmitting(false);
+    }
   }
   return (
     <main className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest">
@@ -109,7 +142,9 @@ export default function SuperAdminLoginPage() {
               className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
             >
               {submitting ? (
-                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                <span className="material-symbols-outlined animate-spin">
+                  progress_activity
+                </span>
               ) : null}
               {submitting ? "Signing in…" : "Sign in"}
             </button>
@@ -130,7 +165,8 @@ export default function SuperAdminLoginPage() {
             </span>
           </div>
           <p className="text-body-sm text-outline">
-            © {new Date().getFullYear()} DocuMind Intelligence Systems. All rights reserved.
+            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
+            rights reserved.
           </p>
         </div>
       </section>
@@ -139,3 +175,4 @@ export default function SuperAdminLoginPage() {
       <AuthHeroPanel />
     </main>
   );
+}

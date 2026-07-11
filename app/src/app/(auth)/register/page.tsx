@@ -44,6 +44,43 @@ type LoginResponse = {
   };
 };
 
+// TODO: point this at your backend's OAuth entrypoints (same ones used on
+// the login page). Each route should kick off the provider's OAuth flow and
+// redirect back into the app once a session/token has been established.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+type SocialProvider = "google" | "github";
+
+function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <path
+        fill="#4285F4"
+        d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.46 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.26v3.11A12 12 0 0 0 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.27 14.28A7.2 7.2 0 0 1 4.89 12c0-.79.14-1.56.38-2.28V6.61H1.26A12 12 0 0 0 0 12c0 1.94.46 3.77 1.26 5.39z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.76 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.26 6.61l4.01 3.11C6.22 6.86 8.87 4.75 12 4.75z"
+      />
+    </svg>
+  );
+}
+
+function GitHubIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.75 2.69 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.23-1.28-5.23-5.67 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.4-2.69 5.37-5.25 5.66.41.36.78 1.07.78 2.16 0 1.56-.01 2.81-.01 3.2 0 .3.2.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z" />
+    </svg>
+  );
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const { t, dir } = useI18n();
@@ -191,7 +228,17 @@ export default function RegisterPage() {
     }
   }
 
-  return (
+  function handleSocialSignup(provider: SocialProvider) {
+    const url = new URL(
+      `${API_BASE_URL}/auth/${provider}`,
+      window.location.origin,
+    );
+    if (companySlug.trim()) {
+      url.searchParams.set("companySlug", companySlug.trim().toLowerCase());
+    }
+    window.location.href = url.toString();
+  }
+
   return (
     <main
       dir={dir}
@@ -223,7 +270,7 @@ export default function RegisterPage() {
         </div>
 
         {/* Register Form */}
-        <div className="flex flex-grow flex-col justify-center">
+        <div className="flex flex-grow flex-col justify-start">
           <h2 className="mb-base text-headline-lg font-bold text-primary">
             {t("auth.signUp")}
           </h2>
@@ -275,7 +322,9 @@ export default function RegisterPage() {
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
               {errors.companyName && (
-                <p className="mt-1.5 text-xs text-error">{errors.companyName}</p>
+                <p className="mt-1.5 text-xs text-error">
+                  {errors.companyName}
+                </p>
               )}
             </div>
 
@@ -297,9 +346,13 @@ export default function RegisterPage() {
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
               {errors.companySlug ? (
-                <p className="mt-1.5 text-xs text-error">{errors.companySlug}</p>
+                <p className="mt-1.5 text-xs text-error">
+                  {errors.companySlug}
+                </p>
               ) : (
-                <p className="mt-1.5 text-xs text-outline">{t("auth.companySlugHelp")}</p>
+                <p className="mt-1.5 text-xs text-outline">
+                  {t("auth.companySlugHelp")}
+                </p>
               )}
             </div>
 
@@ -391,7 +444,9 @@ export default function RegisterPage() {
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
               {errors.confirmPassword && (
-                <p className="mt-1.5 text-xs text-error">{errors.confirmPassword}</p>
+                <p className="mt-1.5 text-xs text-error">
+                  {errors.confirmPassword}
+                </p>
               )}
             </div>
 
@@ -401,10 +456,42 @@ export default function RegisterPage() {
               className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
             >
               {isSubmitting ? (
-                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                <span className="material-symbols-outlined animate-spin">
+                  progress_activity
+                </span>
               ) : null}
               {isSubmitting ? t("auth.registering") : t("auth.register")}
             </button>
+
+            {/* Social signup */}
+            <div className="relative flex items-center py-base">
+              <div className="flex-grow border-t border-outline-variant"></div>
+              <span className="mx-md flex-shrink text-label-sm text-outline">
+                OR CONTINUE WITH
+              </span>
+              <div className="flex-grow border-t border-outline-variant"></div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-sm">
+              <button
+                type="button"
+                onClick={() => handleSocialSignup("google")}
+                disabled={isSubmitting}
+                aria-label="Continue with Google"
+                className="flex items-center justify-center gap-xs rounded-lg border border-outline-variant py-sm text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <GoogleIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSocialSignup("github")}
+                disabled={isSubmitting}
+                aria-label="Continue with GitHub"
+                className="flex items-center justify-center gap-xs rounded-lg border border-outline-variant py-sm text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <GitHubIcon className="h-5 w-5" />
+              </button>
+            </div>
 
             <div className="text-center mt-5">
               <Link
@@ -431,7 +518,8 @@ export default function RegisterPage() {
             </span>
           </div>
           <p className="text-body-sm text-outline">
-            © {new Date().getFullYear()} DocuMind Intelligence Systems. All rights reserved.
+            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
+            rights reserved.
           </p>
         </div>
       </section>
