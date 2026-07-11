@@ -202,7 +202,7 @@ export default function CompanyDashboardPage() {
                 Knowledge Gaps Detected
               </h2>
               <p className="mt-3 max-w-xl text-sm text-slate-300">
-                Users are frequently asking about "Project Phoenix" which has 0
+                Users are frequently asking about 'Project Phoenix' which has 0
                 relevant documents. Consider uploading the project charter to
                 improve response accuracy.
               </p>

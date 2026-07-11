@@ -23,6 +23,7 @@ import {
   countUsersByTenant,
   findUsersByTenant,
   updateUserByTenantAndId,
+  deleteUserByTenantAndId,
 } from "./users.repository.js";
 import { createAuditLog } from "../audit/audit.repository.js";
 import {

@@ -4,6 +4,7 @@ import {
   inviteUser,
   listUsers,
   updateUser,
+  deleteUser,
   setPasswordFromInvite,
 } from "./users.service.js";
 
