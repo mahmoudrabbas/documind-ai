@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
+import { AuthBrand, AuthPageShell } from "@/components/auth/auth-page-shell";
 
 type InviteDetails = {
   companyName: string;
@@ -188,159 +189,139 @@ export default function SetPasswordFromInviteClient() {
 
   const terminal = state.status === "error" || state.status === "success";
   return (
-    <main
-      dir={dir}
-      className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-10 text-slate-950 sm:px-6"
-    >
-      <section
-        className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60 sm:p-10"
-        aria-labelledby="invite-title"
+    <AuthPageShell dir={dir} labelledBy="invite-title">
+      <AuthBrand label={t("landing.appName") || "DocuMind AI"} />
+      <h1 id="invite-title" className="mt-2 text-center text-3xl font-bold">
+        {state.status === "success"
+          ? "Account activated"
+          : state.status === "error"
+            ? "Invitation unavailable"
+            : "Set up your account"}
+      </h1>
+      <p
+        className="mx-auto mt-3 max-w-[32rem] text-center text-sm leading-6 text-slate-600"
+        role={state.status === "error" ? "alert" : "status"}
       >
-        <p className="text-center text-sm font-bold text-blue-700">
-          {t("landing.appName") || "DocuMind AI"}
-        </p>
-        <h1 id="invite-title" className="mt-2 text-center text-3xl font-bold">
-          {state.status === "success"
-            ? "Account activated"
-            : state.status === "error"
-              ? "Invitation unavailable"
-              : "Set your password"}
-        </h1>
-        <p
-          className="mx-auto mt-3 max-w-md text-center text-sm leading-6 text-slate-600"
-          role={state.status === "error" ? "alert" : "status"}
-        >
-          {state.message}
-        </p>
-        {state.status === "loading" ? (
-          <div
-            className="mx-auto mt-8 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"
-            aria-label="Checking invitation"
-          />
-        ) : null}
-        {state.status === "form" && details ? (
-          <>
-            <dl className="mt-6 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-slate-500">Company</dt>
-                <dd className="mt-1 font-semibold">{details.companyName}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Role</dt>
-                <dd className="mt-1 font-semibold">
-                  {details.role.replaceAll("_", " ")}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-slate-500">Invited email</dt>
-                <dd className="mt-1 break-words font-semibold">
-                  {details.email}
-                </dd>
-              </div>
-            </dl>
-            <form onSubmit={submit} noValidate className="mt-6 space-y-5">
-              <label className="block text-sm font-semibold" htmlFor="password">
-                Password
-                <div className="relative mt-2">
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      setErrors((current) => ({
-                        ...current,
-                        password: undefined,
-                      }));
-                    }}
-                    aria-invalid={Boolean(errors.password)}
-                    aria-describedby="password-help password-error"
-                    className="h-12 w-full rounded-xl border border-slate-300 px-4 pe-16 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((value) => !value)}
-                    className="absolute inset-y-0 end-2 px-2 text-xs font-semibold text-blue-700"
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                  >
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
-              </label>
-              {errors.password ? (
-                <p
-                  id="password-error"
-                  role="alert"
-                  className="text-sm text-red-700"
-                >
-                  {errors.password}
-                </p>
-              ) : null}
-              <ul
-                id="password-help"
-                className="grid gap-1 text-sm sm:grid-cols-2"
-              >
-                {rules.map(([label, check]) => (
-                  <li
-                    key={label}
-                    className={
-                      check(password) ? "text-emerald-700" : "text-slate-500"
-                    }
-                  >
-                    {check(password) ? "Passed:" : "Required:"} {label}
-                  </li>
-                ))}
-              </ul>
-              <label
-                className="block text-sm font-semibold"
-                htmlFor="confirmPassword"
-              >
-                Confirm password
+        {state.status === "form" && details
+          ? `You have been invited to join ${details.companyName} as ${details.role.replaceAll("_", " ").toLowerCase()}.`
+          : state.message}
+      </p>
+      {state.status === "loading" ? (
+        <div
+          className="mx-auto mt-8 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"
+          aria-label="Checking invitation"
+        />
+      ) : null}
+      {state.status === "form" && details ? (
+        <>
+          <dl className="mt-6 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+            <div className="min-w-0">
+              <dt className="text-slate-500">Invited email</dt>
+              <dd className="mt-1 break-words font-semibold">
+                {details.email}
+              </dd>
+            </div>
+          </dl>
+          <form onSubmit={submit} noValidate className="mt-6 space-y-5">
+            <label className="block text-sm font-semibold" htmlFor="password">
+              Password
+              <div className="relative mt-2">
                 <input
-                  id="confirmPassword"
+                  id="password"
                   type={showPassword ? "text" : "password"}
-                  value={confirmPassword}
+                  value={password}
                   onChange={(event) => {
-                    setConfirmPassword(event.target.value);
+                    setPassword(event.target.value);
                     setErrors((current) => ({
                       ...current,
-                      confirmPassword: undefined,
+                      password: undefined,
                     }));
                   }}
-                  aria-invalid={Boolean(errors.confirmPassword)}
-                  aria-describedby="confirm-error"
-                  className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"
+                  aria-invalid={Boolean(errors.password)}
+                  aria-describedby="password-help password-error"
+                  className="h-12 w-full rounded-xl border border-slate-300 px-4 pe-16 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"
                 />
-              </label>
-              {errors.confirmPassword ? (
-                <p
-                  id="confirm-error"
-                  role="alert"
-                  className="text-sm text-red-700"
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute inset-y-0 end-2 px-2 text-xs font-semibold text-blue-700"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  {errors.confirmPassword}
-                </p>
-              ) : null}
-              <button
-                disabled={!formValid || isSubmitting}
-                className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </label>
+            {errors.password ? (
+              <p
+                id="password-error"
+                role="alert"
+                className="text-sm text-red-700"
               >
-                {isSubmitting ? "Setting password..." : "Set password"}
-              </button>
-            </form>
-          </>
-        ) : null}
-        {terminal ? (
-          <Link
-            href="/login"
-            className="mt-8 flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            Go to sign in
-          </Link>
-        ) : null}
-      </section>
-    </main>
+                {errors.password}
+              </p>
+            ) : null}
+            <ul
+              id="password-help"
+              className="grid gap-1 text-sm sm:grid-cols-2"
+            >
+              {rules.map(([label, check]) => (
+                <li
+                  key={label}
+                  className={
+                    check(password) ? "text-emerald-700" : "text-slate-500"
+                  }
+                >
+                  {check(password) ? "Passed:" : "Required:"} {label}
+                </li>
+              ))}
+            </ul>
+            <label
+              className="block text-sm font-semibold"
+              htmlFor="confirmPassword"
+            >
+              Confirm password
+              <input
+                id="confirmPassword"
+                type={showPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(event) => {
+                  setConfirmPassword(event.target.value);
+                  setErrors((current) => ({
+                    ...current,
+                    confirmPassword: undefined,
+                  }));
+                }}
+                aria-invalid={Boolean(errors.confirmPassword)}
+                aria-describedby="confirm-error"
+                className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+            {errors.confirmPassword ? (
+              <p
+                id="confirm-error"
+                role="alert"
+                className="text-sm text-red-700"
+              >
+                {errors.confirmPassword}
+              </p>
+            ) : null}
+            <button
+              disabled={!formValid || isSubmitting}
+              className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {isSubmitting ? "Setting password..." : "Set password"}
+            </button>
+          </form>
+        </>
+      ) : null}
+      {terminal ? (
+        <Link
+          href="/login"
+          className="mt-8 flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Go to sign in
+        </Link>
+      ) : null}
+    </AuthPageShell>
   );
 }

@@ -11,36 +11,25 @@ import {
 
 describe("verify-email view state", () => {
   it("uses a polished loading title while verification is pending", () => {
-    expect(
-      getVerificationTitle(LOADING_VERIFICATION.status),
-    ).toBe("Verifying your email");
+    expect(getVerificationTitle(LOADING_VERIFICATION.status)).toBe(
+      "Verifying your email",
+    );
   });
 
   it("shows the sign-in action for successful verification", () => {
-    expect(getVerificationTitle("success")).toBe(
-      "Email verified successfully",
-    );
+    expect(getVerificationTitle("success")).toBe("Email verified successfully");
 
-    expect(getVerificationActionLabel("success")).toBe(
-      "Continue to sign in",
-    );
+    expect(getVerificationActionLabel("success")).toBe("Continue to sign in");
   });
 
   it("shows a friendly failure state when the token is missing", () => {
-    const displayed = getDisplayedVerification(
-      "",
-      LOADING_VERIFICATION,
-    );
+    const displayed = getDisplayedVerification("", LOADING_VERIFICATION);
 
     expect(displayed.status).toBe("error");
 
-    expect(displayed.message).toContain(
-      "verification token is missing",
-    );
+    expect(displayed.message).toContain("verification token is missing");
 
-    expect(getVerificationTitle(displayed.status)).toBe(
-      "Verification failed",
-    );
+    expect(getVerificationTitle(displayed.status)).toBe("Verification failed");
 
     expect(getVerificationActionLabel(displayed.status)).toBe(
       "Back to sign in",
@@ -86,8 +75,7 @@ describe("verify-email view state", () => {
     expect(
       getSafeBackendErrorMessage(
         {
-          message:
-            "MongoDB exception at node_modules/auth/service.js",
+          message: "MongoDB exception at node_modules/auth/service.js",
         },
         "token",
       ),

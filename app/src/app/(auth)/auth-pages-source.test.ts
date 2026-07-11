@@ -16,7 +16,9 @@ describe("auth page source", () => {
     expect(source).toContain('name="email"');
     expect(source).toContain('name="password"');
     expect(source).toContain('credentials: "include"');
-    expect(source).toContain("establishSession(response.data.tokens.accessToken");
+    expect(source).toContain(
+      "establishSession(response.data.tokens.accessToken",
+    );
     expect(source).not.toMatch(/localStorage|sessionStorage/);
   });
 
@@ -38,8 +40,7 @@ describe("auth page source", () => {
   it("keeps verify-email styled as a full auth card with a login action", async () => {
     const source = await readSource("verify-email-client.tsx", verifyEmailDir);
 
-    expect(source).toContain("rounded-3xl");
-    expect(source).toContain("shadow-xl shadow-slate-200/70");
+    expect(source).toContain("AuthPageShell");
     expect(source).toContain('href="/login"');
     expect(source).not.toMatch(/localStorage|sessionStorage/);
   });

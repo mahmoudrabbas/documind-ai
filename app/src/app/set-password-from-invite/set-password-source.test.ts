@@ -21,7 +21,7 @@ describe("invite password page source", () => {
     expect(source).toContain("details.companyName");
     expect(source).toContain("details.role");
     expect(source).toContain("details.email");
-    expect(source).toContain("max-w-xl");
+    expect(source).toContain("AuthPageShell");
     expect(source).toContain("Show password");
   });
 });
