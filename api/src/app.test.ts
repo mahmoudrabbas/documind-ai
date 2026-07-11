@@ -55,6 +55,7 @@ function createServer() {
 
 function closeServer(server: ReturnType<typeof app.listen>) {
   return new Promise<void>((resolve, reject) => {
+    server.closeAllConnections?.();
     server.close((err) => (err ? reject(err) : resolve()));
   });
 }

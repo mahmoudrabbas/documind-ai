@@ -11,6 +11,7 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import RoleModel from "../../db/models/role.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
+import { disconnectRedis } from "../../db/redis.js";
 
 const app: Express = (await import("../../app.js")).default;
 
@@ -46,6 +47,7 @@ async function createServer() {
 
 function closeServer(server: Server) {
   return new Promise<void>((resolve, reject) => {
+    server.closeAllConnections?.();
     server.close((err) => (err ? reject(err) : resolve()));
   });
 }
@@ -76,6 +78,7 @@ beforeEach(async () => {
 });
 
 after(async () => {
+  await disconnectRedis();
   await mongoose.disconnect();
   if (mongoServer) {
     await mongoServer.stop();
