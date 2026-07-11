@@ -3,7 +3,9 @@ export interface UserView {
   tenantId: string;
   name: string;
   email: string;
-  role: "COMPANY_ADMIN" | "EMPLOYEE";
+  role: string;
+  customRoleId?: string;
+  customRoleName?: string;
   status: "active" | "pending" | "pending_email_verification" | "disabled";
   emailVerified: boolean;
   createdAt: string;
@@ -11,3 +13,17 @@ export interface UserView {
 
 export interface UsersPagination { page: number; pageSize: number; totalPages: number; totalRecords: number }
 export interface UsersResponse { success: true; data: { users: UserView[]; pagination: UsersPagination } }
+
+export interface RoleView {
+  id: string;
+  tenantId: string;
+  name: string;
+  baseRole: "COMPANY_ADMIN" | "EMPLOYEE";
+  userCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListRolesResponse { success: true; data: { roles: RoleView[] } }
+export interface CreateRoleResponse { success: true; message: string; data: { role: RoleView } }
+export interface UpdateRoleResponse { success: true; message: string; data: { role: RoleView } }

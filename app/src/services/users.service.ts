@@ -5,7 +5,12 @@ export function listUsers(page = 1, pageSize = 20, signal?: AbortSignal) {
   return apiClient<UsersResponse>(`/users?page=${page}&pageSize=${pageSize}`, { signal });
 }
 
-export function inviteUser(input: { name: string; email: string; role: "COMPANY_ADMIN" | "EMPLOYEE" }) {
+export function inviteUser(input: {
+  name: string;
+  email: string;
+  role?: "COMPANY_ADMIN" | "EMPLOYEE";
+  customRoleId?: string;
+}) {
   return apiClient<{ success: true; message: string; data: { user: UserView } }>("/users", { method: "POST", body: input });
 }
 

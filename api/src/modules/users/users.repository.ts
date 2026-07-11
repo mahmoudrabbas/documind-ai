@@ -32,6 +32,10 @@ export function findUsersByTenant(
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
+    .populate<{ customRoleId: { _id: string; name: string } | null }>(
+      "customRoleId",
+      "name",
+    )
     .lean<UserDocument[]>()
     .exec();
 }
@@ -39,7 +43,7 @@ export function findUsersByTenant(
 export async function updateUserByTenantAndId(
   tenantId: string,
   userId: string,
-  update: Partial<Pick<UserDocument, "role" | "status">>,
+  update: Record<string, unknown>,
 ) {
   await tenantScopedUpdateOne(
     UserModel,

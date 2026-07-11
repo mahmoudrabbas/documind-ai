@@ -58,6 +58,8 @@ export interface UserPublicView {
   name: string;
   email: string;
   role: string;
+  customRoleId?: string;
+  customRoleName?: string;
   status: string;
   emailVerified: boolean;
   createdAt: string;

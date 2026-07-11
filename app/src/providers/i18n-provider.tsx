@@ -22,7 +22,7 @@ import {
 } from "react";
 
 import type { Direction, I18nContextValue, Locale } from "@/lib/i18n/i18n.types";
-import { DEFAULT_LOCALE, getDirection } from "@/lib/i18n/i18n.config";
+import { getDirection } from "@/lib/i18n/i18n.config";
 import {
   t as translateKey,
   getLocaleFromCookie,

@@ -8,6 +8,7 @@ import { useAuth } from "@/providers/auth-provider";
 const companyLinks = [
   ["Dashboard", "/dashboard", false],
   ["Team", "/dashboard/users", false],
+  ["Roles", "/dashboard/roles", false],
   ["Documents", "/dashboard/documents", false],
   ["Chat", "/chat", true],
   ["Analytics", "/dashboard/analytics", false],

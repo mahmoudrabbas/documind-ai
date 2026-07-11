@@ -20,20 +20,29 @@ const inviteUserSchema = z
       .trim()
       .toLowerCase()
       .email("email must be a valid address"),
-    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).default("EMPLOYEE"),
+    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
+    customRoleId: z.string().min(1, "customRoleId must not be empty").optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => data.role !== undefined || data.customRoleId !== undefined,
+    {
+      message: "Either role or customRoleId must be provided",
+      path: ["role"],
+    },
+  );
 
 const updateUserSchema = z
   .object({
     role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
+    customRoleId: z.string().min(1, "customRoleId must not be empty").optional(),
     status: z
       .enum(["active", "pending", "pending_email_verification", "disabled"])
       .optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one of role or status must be provided",
+    message: "At least one of role, customRoleId, or status must be provided",
   });
 
 const listUsersSchema = z
