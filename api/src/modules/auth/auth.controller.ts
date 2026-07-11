@@ -9,6 +9,8 @@ import {
   resendVerificationEmail,
   verifyEmail,
   getMe,
+  forgotPassword,
+  resetPassword,
 } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -210,6 +212,32 @@ export async function logoutController(
       success: true,
       message: "Logged out successfully",
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function forgotPasswordController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const result = await forgotPassword(req.body);
+    res.status(200).json({ success: true, message: result.message });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function resetPasswordController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const result = await resetPassword(req.body);
+    res.status(200).json({ success: true, message: result.message });
   } catch (error) {
     next(error);
   }
