@@ -21,6 +21,24 @@ type Pagination = {
   totalRecords: number;
 };
 
+type UserUpdateState = {
+  role: string;
+  status: string;
+  isSaving: boolean;
+  error?: string | null;
+};
+
+const STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "pending_email_verification", label: "Pending verification" },
+  { value: "disabled", label: "Disabled" },
+];
+
+const ROLE_OPTIONS = [
+  { value: "EMPLOYEE", label: "Employee" },
+  { value: "COMPANY_ADMIN", label: "Company Admin" },
+];
+
 const DEFAULT_PAGE_SIZE = 10;
 
 export default function UsersPage() {
@@ -33,6 +51,13 @@ export default function UsersPage() {
 
   const [users, setUsers] = useState<UserView[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [rowUpdates, setRowUpdates] = useState<Record<string, UserUpdateState>>(
+    {},
+  );
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [deletingUserIds, setDeletingUserIds] = useState<
+    Record<string, boolean>
+  >({});
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<Pagination>({
@@ -56,6 +81,21 @@ export default function UsersPage() {
 
       setUsers(response.data.users);
       setPagination(response.data.pagination);
+      setRowUpdates(
+        response.data.users.reduce(
+          (acc, user) => {
+            acc[user.id] = {
+              role: user.role,
+              status: user.status,
+              isSaving: false,
+              error: null,
+            };
+            return acc;
+          },
+          {} as Record<string, UserUpdateState>,
+        ),
+      );
+      setDeletingUserIds({});
     } catch (err) {
       if (err instanceof ApiError) {
         setFetchError(err.message);
@@ -68,32 +108,7 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    const loadPage = async () => {
-      setFetchError(null);
-      setLoadingUsers(true);
-
-      try {
-        const response = await apiClient<{
-          success: boolean;
-          data: { users: UserView[]; pagination: Pagination };
-        }>(`/users?page=${page}&pageSize=${DEFAULT_PAGE_SIZE}`, {
-          method: "GET",
-        });
-
-        setUsers(response.data.users);
-        setPagination(response.data.pagination);
-      } catch (err) {
-        if (err instanceof ApiError) {
-          setFetchError(err.message);
-        } else {
-          setFetchError("Unable to load users. Please try again.");
-        }
-      } finally {
-        setLoadingUsers(false);
-      }
-    };
-
-    void loadPage();
+    void loadUsers(page);
   }, [page]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -125,6 +140,103 @@ export default function UsersPage() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleUserUpdate(userId: string) {
+    const update = rowUpdates[userId];
+    if (!update) return;
+
+    const user = users.find((item) => item.id === userId);
+    if (!user) return;
+
+    if (update.role === user.role && update.status === user.status) {
+      return;
+    }
+
+    setRowUpdates((prev) => ({
+      ...prev,
+      [userId]: { ...prev[userId], isSaving: true, error: null },
+    }));
+    setUpdateMessage(null);
+
+    try {
+      const response = await apiClient<{
+        success: boolean;
+        data: { user: UserView };
+      }>(`/users/${userId}`, {
+        method: "PATCH",
+        body: {
+          role: update.role,
+          status: update.status,
+        },
+      });
+
+      setUsers((current) =>
+        current.map((item) =>
+          item.id === userId ? { ...item, ...response.data.user } : item,
+        ),
+      );
+      setRowUpdates((prev) => ({
+        ...prev,
+        [userId]: {
+          role: response.data.user.role,
+          status: response.data.user.status,
+          isSaving: false,
+          error: null,
+        },
+      }));
+      setUpdateMessage("User updated successfully.");
+    } catch (err) {
+      setRowUpdates((prev) => ({
+        ...prev,
+        [userId]: {
+          ...prev[userId],
+          isSaving: false,
+          error:
+            err instanceof ApiError ? err.message : "Failed to update user.",
+        },
+      }));
+    }
+  }
+
+  async function handleUserDelete(userId: string) {
+    setDeletingUserIds((prev) => ({ ...prev, [userId]: true }));
+    setFetchError(null);
+    setUpdateMessage(null);
+
+    try {
+      const response = await apiClient<{ success: boolean; message: string }>(
+        `/users/${userId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      setUpdateMessage(response.message ?? "User deleted successfully.");
+      void loadUsers(page);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setFetchError(err.message);
+      } else {
+        setFetchError("Unable to delete user. Please try again.");
+      }
+    } finally {
+      setDeletingUserIds((prev) => ({ ...prev, [userId]: false }));
+    }
+  }
+
+  function handleRowChange(
+    userId: string,
+    field: keyof Omit<UserUpdateState, "isSaving" | "error">,
+    value: string,
+  ) {
+    setRowUpdates((prev) => ({
+      ...prev,
+      [userId]: {
+        ...prev[userId],
+        [field]: value,
+      } as UserUpdateState,
+    }));
   }
 
   return (
@@ -217,6 +329,12 @@ export default function UsersPage() {
             </div>
           ) : null}
 
+          {updateMessage ? (
+            <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
+              {updateMessage}
+            </div>
+          ) : null}
+
           {loadingUsers ? (
             <div className="text-sm text-slate-600">Loading users...</div>
           ) : (
@@ -242,36 +360,110 @@ export default function UsersPage() {
                     <th className="px-4 py-3 font-medium text-slate-700">
                       Created
                     </th>
+                    <th className="px-4 py-3 font-medium text-slate-700">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {users.length > 0 ? (
-                    users.map((user) => (
-                      <tr key={user.id}>
-                        <td className="px-4 py-3 text-slate-900">
-                          {user.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {user.email}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {user.role}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {user.status}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {user.emailVerified ? "Yes" : "No"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {new Date(user.createdAt).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))
+                    users.map((user) => {
+                      const update = rowUpdates[user.id] ?? {
+                        role: user.role,
+                        status: user.status,
+                        isSaving: false,
+                      };
+                      const isChanged =
+                        update.role !== user.role ||
+                        update.status !== user.status;
+                      const isDeleting = deletingUserIds[user.id] === true;
+
+                      return (
+                        <tr key={user.id}>
+                          <td className="px-4 py-3 text-slate-900">
+                            {user.name}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {user.email}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            <select
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              value={update.role}
+                              onChange={(event) =>
+                                handleRowChange(
+                                  user.id,
+                                  "role",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {ROLE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            <select
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              value={update.status}
+                              onChange={(event) =>
+                                handleRowChange(
+                                  user.id,
+                                  "status",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {STATUS_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {user.emailVerified ? "Yes" : "No"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {new Date(user.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={
+                                  !isChanged || update.isSaving || isDeleting
+                                }
+                                onClick={() => void handleUserUpdate(user.id)}
+                              >
+                                {update.isSaving ? "Updating..." : "Update"}
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isDeleting}
+                                onClick={() => void handleUserDelete(user.id)}
+                              >
+                                {isDeleting ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                            {update.error ? (
+                              <p className="mt-2 text-xs text-rose-600">
+                                {update.error}
+                              </p>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="px-4 py-6 text-sm text-slate-500"
                       >
                         No users found for this tenant.

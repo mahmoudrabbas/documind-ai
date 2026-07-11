@@ -5,17 +5,17 @@ import { useEffect } from "react";
 const pageCss = `
 
   :root{
-    --ink:#202020;
-    --panel:#2A2A2A;
-    --panel-2:#333333;
-    --overlay:#333333ed;
-    --paper:#ECEAE6;
-    --muted:#9B9B9B;
-    --amber:#F2B84B;
-    --teal:#4FD1C5;
-    --redact:#C1443B;
-    --rule:rgba(255,255,255,0.10);
-    --rule-strong:rgba(255,255,255,0.22);
+    --ink:#001524;
+    --panel:#0b2038;
+    --panel-2:#122a44;
+    --overlay:rgba(0,21,36,0.88);
+    --paper:#f8fafc;
+    --muted:#cbd5e1;
+    --amber:#3b82f6;
+    --teal:#60a5fa;
+    --redact:#ea718f;
+    --rule:rgba(255,255,255,0.08);
+    --rule-strong:rgba(255,255,255,0.18);
     --maxw:1180px;
   }
   *{box-sizing:border-box;}
@@ -29,7 +29,7 @@ const pageCss = `
     line-height:1.6;
     -webkit-font-smoothing:antialiased;
   }
-  ::selection{ background:var(--amber); color:#201804; }
+  ::selection{ background:var(--amber); color:#02234a; }
   a{ color:inherit; }
   img{ max-width:100%; display:block; }
   .wrap{ max-width:var(--maxw); margin:0 auto; padding:0 28px; }
@@ -63,7 +63,7 @@ const pageCss = `
     text-decoration:none; color:var(--paper); white-space:nowrap;
     transition:border-color .2s ease, background .2s ease, transform .2s ease;
   }
-  .nav-cta:hover{ border-color:var(--amber); background:rgba(242,184,75,0.08); transform:translateY(-1px); }
+  .nav-cta:hover{ border-color:var(--amber); background:rgba(59,130,246,0.15); transform:translateY(-1px); }
   @media (max-width:760px){ .nav-links{ display:none; } }
 
   /* ===== HERO ===== */
@@ -78,8 +78,8 @@ const pageCss = `
     padding:13px 22px; border-radius:2px; text-decoration:none; display:inline-flex; align-items:center; gap:8px;
     transition:transform .2s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
   }
-  .btn-primary{ background:var(--amber); color:#201804; font-weight:600; }
-  .btn-primary:hover{ transform:translateY(-2px); box-shadow:0 10px 24px -10px rgba(242,184,75,0.5); }
+  .btn-primary{ background:var(--amber); color:var(--ink); font-weight:600; }
+  .btn-primary:hover{ transform:translateY(-2px); box-shadow:0 10px 24px -10px rgba(59,130,246,0.5); }
   .btn-ghost{ border:1px solid var(--rule-strong); color:var(--paper); }
   .btn-ghost:hover{ border-color:var(--paper); transform:translateY(-2px); }
 
@@ -185,7 +185,7 @@ const pageCss = `
   .feature-card:hover{ background:var(--panel); }
   .feature-tab{
     font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.1em;
-    color:var(--teal); border:1px solid rgba(79,209,197,0.35); display:inline-block;
+    color:var(--amber); border:1px solid rgba(59,130,246,0.35); display:inline-block;
     padding:3px 8px; border-radius:2px; margin-bottom:16px;
   }
   .feature-card.warn .feature-tab{ color:var(--redact); border-color:rgba(193,68,59,0.35); }
@@ -291,21 +291,21 @@ const bodyHtml = `
 
 <header class="nav">
   <div class="nav-inner">
-    <a href="#" class="brand">
+    <a href="/" class="brand">
       <svg class="brand-mark" viewBox="0 0 24 24" fill="none">
-        <rect x="3" y="3" width="18" height="18" rx="3" stroke="#F2B84B" stroke-width="1.6"/>
-        <path d="M7.5 9.5H16.5" stroke="#ECEAE6" stroke-width="1.4" stroke-linecap="round"/>
-        <path d="M7.5 13H13" stroke="#ECEAE6" stroke-width="1.4" stroke-linecap="round"/>
-        <circle cx="15.5" cy="13" r="1.4" fill="#4FD1C5"/>
+        <rect x="3" y="3" width="18" height="18" rx="3" stroke="#3b82f6" stroke-width="1.6"/>
+        <path d="M7.5 9.5H16.5" stroke="#f8fafc" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M7.5 13H13" stroke="#f8fafc" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="15.5" cy="13" r="1.4" fill="#60a5fa"/>
       </svg>
       DocuMind AI
     </a>
     <nav class="nav-links">
-      <a href="#what">What it does</a>
-      <a href="#flow">How it works</a>
+      <a href="/register">Register</a>
+      <a href="/login">Login</a>
       <a href="#crew">Contributors</a>
     </nav>
-    <a class="nav-cta" href="https://github.com/mahmoudrabbas/documind-ai" target="_blank" rel="noopener">View source ↗</a>
+    <a class="nav-cta" href="/register">Get started</a>
   </div>
 </header>
 
@@ -313,13 +313,11 @@ const bodyHtml = `
   <div class="wrap">
     <div class="hero-head">
       <span class="eyebrow">Private · Multi-tenant · Bilingual</span>
-      <h1>Every answer,<br><em>traceable to a page.</em></h1>
-      <p class="lede">DocuMind AI lets a company upload its own policies, contracts, and SOPs — then answers employee questions using only that evidence. A citation for every claim. A refusal when there isn't one.</p>
+      <h1>Enterprise Q&A with<br><em>auth-first identity and access.</em></h1>
+      <p class="lede">DocuMind AI uses the same color, tone, and trusted layout as the register and login experience: secure, polished, and built for identity-first workflows.</p>
       <div class="hero-ctas">
-        <a class="btn btn-primary" href="https://github.com/mahmoudrabbas/documind-ai" target="_blank" rel="noopener">Explore the repository</a>
-        <a class="btn btn-ghost" href="#crew">Meet the team</a>
-      </div>
-    </div>
+        <a class="btn btn-primary" href="/register">Create an account</a>
+        <a class="btn btn-ghost" href="/login">Sign in</a>
 
     <div class="demo">
       <div class="demo-bar">
@@ -553,7 +551,8 @@ export default function Home() {
 
     const fontLink = document.createElement("link");
     fontLink.rel = "stylesheet";
-    fontLink.href = "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap";
+    fontLink.href =
+      "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap";
     document.head.appendChild(fontLink);
 
     // --- Same interactive behavior as the standalone site (hero demo toggles,
