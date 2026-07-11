@@ -193,6 +193,56 @@ export async function updateUserVerificationToken(
   ).exec();
 }
 
+export async function updateUserPasswordResetToken(
+  userId: string,
+  tokenHash: string,
+  expiresAt: Date,
+) {
+  await UserModel.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        passwordResetTokenHash: tokenHash,
+        passwordResetExpiresAt: expiresAt,
+      },
+    },
+  ).exec();
+}
+
+export function findUserByEmailWithPasswordResetToken(email: string) {
+  return UserModel.findOne({ email })
+    .select("+passwordResetTokenHash +passwordResetExpiresAt")
+    .exec();
+}
+
+export function findUserByIdWithPasswordResetToken(userId: string) {
+  return UserModel.findById(userId)
+    .select("+passwordResetTokenHash +passwordResetExpiresAt")
+    .exec();
+}
+
+export async function clearUserPasswordResetToken(userId: string) {
+  await UserModel.updateOne(
+    { _id: userId },
+    {
+      $set: {
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+      },
+    },
+  ).exec();
+}
+
+export async function updateUserPassword(
+  userId: string,
+  passwordHash: string,
+) {
+  await UserModel.updateOne(
+    { _id: userId },
+    { $set: { passwordHash } },
+  ).exec();
+}
+
 export async function activateTenantIfPendingVerification(tenantId: string) {
   return TenantModel.findOneAndUpdate(
     { _id: tenantId, status: "pending_verification" },
