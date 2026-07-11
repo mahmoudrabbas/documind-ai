@@ -23,6 +23,7 @@ import {
   countUsersByTenant,
   findUsersByTenant,
   updateUserByTenantAndId,
+  deleteUserByTenantAndId,
 } from "./users.repository.js";
 import { createAuditLog } from "../audit/audit.repository.js";
 import {
@@ -226,6 +227,39 @@ export async function updateUser(
   }
 }
 
+export async function deleteUser(
+  tenantId: string,
+  targetUserId: string,
+  deleter: { userId: string; email?: string; role?: string },
+) {
+  const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
+  if (!existingUser) {
+    throw new AppError(404, NOT_FOUND, "User not found");
+  }
+
+  await deleteUserByTenantAndId(tenantId, targetUserId);
+
+  await createAuditLog({
+    tenantId,
+    userId: existingUser._id.toString(),
+    resourceType: "User",
+    resourceId: existingUser._id.toString(),
+    action: "USER_DELETED",
+    actorId: deleter.userId,
+    actorEmail: deleter.email ?? "",
+    actorRole: deleter.role ?? "UNKNOWN",
+    changes: {
+      before: serializeUser(existingUser),
+      after: null,
+    },
+  });
+
+  return {
+    success: true,
+    message: "User deleted successfully.",
+  };
+}
+
 export async function listUsers(
   input: unknown,
   tenantId: string,
@@ -288,8 +322,7 @@ export async function setPasswordFromInvite(
     }
 
     if (
-      user.emailVerificationTokenHash !==
-      hashVerificationJti(tokenPayload.jti)
+      user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)
     ) {
       throw invalidTokenError;
     }
