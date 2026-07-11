@@ -208,7 +208,28 @@
   --radius-xl: 1.5rem;
   --radius-full: 9999px;
 
+  /* ---- Max-width scale (explicit aliases for the resolution chain) ---------
+   * Tailwind v4's `max-w-{name}` utilities resolve theme keys in this order:
+   *   --max-width-{name} → --spacing-{name} → --container-{name}
+   *
+   * Because we define --spacing-xs … --spacing-2xl (see below), the spacing
+   * values shadow the default --container-* values.  By adding --max-width-*
+   * aliases here (with the correct container/v3 sizes) we ensure the
+   * resolution engine finds the right value first.
+   *
+   * Values match Tailwind v3 / the default container scale.
+   */
+  --max-width-xs: 20rem;
   --max-width-sm: 24rem;
+  --max-width-md: 28rem;
+  --max-width-lg: 32rem;
+  --max-width-xl: 36rem;
+  --max-width-2xl: 42rem;
+  --max-width-3xl: 48rem;
+  --max-width-4xl: 56rem;
+  --max-width-5xl: 64rem;
+  --max-width-6xl: 72rem;
+  --max-width-7xl: 80rem;
 
   /* ---- Spacing: named utilities on top of the default 4px scale ---------
    * DESIGN.md's named spacing scale (xs/sm/md/lg/xl/2xl), exposed as e.g.
