@@ -44,6 +44,43 @@ type LoginResponse = {
   };
 };
 
+// TODO: point this at your backend's OAuth entrypoints (same ones used on
+// the login page). Each route should kick off the provider's OAuth flow and
+// redirect back into the app once a session/token has been established.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+type SocialProvider = "google" | "github";
+
+function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <path
+        fill="#4285F4"
+        d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.46 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.26v3.11A12 12 0 0 0 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.27 14.28A7.2 7.2 0 0 1 4.89 12c0-.79.14-1.56.38-2.28V6.61H1.26A12 12 0 0 0 0 12c0 1.94.46 3.77 1.26 5.39z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.76 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.26 6.61l4.01 3.11C6.22 6.86 8.87 4.75 12 4.75z"
+      />
+    </svg>
+  );
+}
+
+function GitHubIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.75 2.69 1.25 3.34.96.1-.74.4-1.25.73-1.54-2.55-.29-5.23-1.28-5.23-5.67 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.18-1.49 3.14-1.18 3.14-1.18.63 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.4-2.69 5.37-5.25 5.66.41.36.78 1.07.78 2.16 0 1.56-.01 2.81-.01 3.2 0 .3.2.66.79.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z" />
+    </svg>
+  );
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const { t, dir } = useI18n();
@@ -191,46 +228,65 @@ export default function RegisterPage() {
     }
   }
 
+  function handleSocialSignup(provider: SocialProvider) {
+    const url = new URL(
+      `${API_BASE_URL}/auth/${provider}`,
+      window.location.origin,
+    );
+    if (companySlug.trim()) {
+      url.searchParams.set("companySlug", companySlug.trim().toLowerCase());
+    }
+    window.location.href = url.toString();
+  }
+
   return (
     <main
       dir={dir}
-      className="min-h-screen bg-white text-slate-950 flex flex-col lg:flex-row w-full overflow-x-hidden"
+      className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
-      <AuthHeroPanel
-        title={t("auth.registerTitle")}
-        description={t("auth.registerDescription")}
-      />
-
-      {/* Right column (Registration form) */}
-      <section className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 bg-white min-h-[60vh] lg:min-h-screen relative">
-        <div
-          className={`absolute top-6 ${dir === "rtl" ? "left-6" : "right-6"} z-20`}
-        >
+      {/* Left panel (Form Panel) */}
+      <section className="z-10 flex h-full w-full flex-col p-lg shadow-xl md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
+        {/* Language switcher */}
+        <div className="absolute top-6 right-6 z-20">
           <LanguageSwitcher />
         </div>
 
-        <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px]">
-          <div className="text-start w-full">
-            <p className="text-sm font-semibold text-blue-600 w-full block">
-              {t("auth.secureRegistration")}
-            </p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-900 w-full block">
-              {t("auth.signUp")}
-            </h2>
-            <p className="mt-2 text-sm text-slate-600 w-full block">
-              {t("auth.createAccount")}
-            </p>
+        {/* Brand Header */}
+        <div className="mb-12">
+          <div className="mb-sm flex items-center gap-base">
+            <span
+              className="material-symbols-outlined text-3xl text-primary"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              neurology
+            </span>
+            <h1 className="text-headline-md font-bold tracking-tight text-primary">
+              DocuMind AI
+            </h1>
           </div>
+          <p className="max-w-sm text-body-md text-on-surface-variant">
+            {t("auth.registerDescription")}
+          </p>
+        </div>
+
+        {/* Register Form */}
+        <div className="flex flex-grow flex-col justify-start">
+          <h2 className="mb-base text-headline-lg font-bold text-primary">
+            {t("auth.signUp")}
+          </h2>
+          <p className="mb-xl text-body-md text-on-surface-variant">
+            {t("auth.createAccount")}
+          </p>
 
           <form
-            className="mt-8 space-y-5 w-full"
+            className="space-y-md w-full"
             onSubmit={handleSubmit}
             noValidate
           >
             <div aria-live="polite" className="w-full">
               {formError ? (
                 <div
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full"
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                   role="alert"
                 >
                   {formError}
@@ -239,7 +295,7 @@ export default function RegisterPage() {
 
               {successMessage ? (
                 <div
-                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 w-full"
+                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 w-full mb-4"
                   role="status"
                 >
                   {successMessage}
@@ -247,10 +303,10 @@ export default function RegisterPage() {
               ) : null}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="companyName"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.companyName")}
               </label>
@@ -263,20 +319,19 @@ export default function RegisterPage() {
                 autoComplete="organization"
                 placeholder={t("auth.companyNamePlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.companyName)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.companyName ? (
-                <p className="mt-1.5 text-xs text-red-600">
+              {errors.companyName && (
+                <p className="mt-1.5 text-xs text-error">
                   {errors.companyName}
                 </p>
-              ) : null}
+              )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="companySlug"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.companySlug")}
               </label>
@@ -288,24 +343,23 @@ export default function RegisterPage() {
                 onChange={(e) => handleCompanySlugChange(e.target.value)}
                 placeholder={t("auth.companySlugPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.companySlug)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
               {errors.companySlug ? (
-                <p className="mt-1.5 text-xs text-red-600">
+                <p className="mt-1.5 text-xs text-error">
                   {errors.companySlug}
                 </p>
               ) : (
-                <p className="mt-1.5 text-xs text-slate-500">
+                <p className="mt-1.5 text-xs text-outline">
                   {t("auth.companySlugHelp")}
                 </p>
               )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="adminName"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.adminName")}
               </label>
@@ -318,20 +372,17 @@ export default function RegisterPage() {
                 autoComplete="name"
                 placeholder={t("auth.adminNamePlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.adminName)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.adminName ? (
-                <p className="mt-1.5 text-xs text-red-600">
-                  {errors.adminName}
-                </p>
-              ) : null}
+              {errors.adminName && (
+                <p className="mt-1.5 text-xs text-error">{errors.adminName}</p>
+              )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.email")}
               </label>
@@ -344,18 +395,17 @@ export default function RegisterPage() {
                 autoComplete="email"
                 placeholder={t("auth.emailPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.email)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.email ? (
-                <p className="mt-1.5 text-xs text-red-600">{errors.email}</p>
-              ) : null}
+              {errors.email && (
+                <p className="mt-1.5 text-xs text-error">{errors.email}</p>
+              )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.password")}
               </label>
@@ -368,18 +418,17 @@ export default function RegisterPage() {
                 autoComplete="new-password"
                 placeholder={t("auth.passwordPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.password)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.password ? (
-                <p className="mt-1.5 text-xs text-red-600">{errors.password}</p>
-              ) : null}
+              {errors.password && (
+                <p className="mt-1.5 text-xs text-error">{errors.password}</p>
+              )}
             </div>
 
-            <div className="w-full text-start">
+            <div>
               <label
                 htmlFor="confirmPassword"
-                className="block text-sm font-medium text-slate-700"
+                className="mb-xs block text-label-md text-on-surface-variant"
               >
                 {t("auth.confirmPassword")}
               </label>
@@ -392,42 +441,91 @@ export default function RegisterPage() {
                 autoComplete="new-password"
                 placeholder={t("auth.confirmPasswordPlaceholder")}
                 disabled={isSubmitting}
-                aria-invalid={Boolean(errors.confirmPassword)}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
-              {errors.confirmPassword ? (
-                <p className="mt-1.5 text-xs text-red-600">
+              {errors.confirmPassword && (
+                <p className="mt-1.5 text-xs text-error">
                   {errors.confirmPassword}
                 </p>
-              ) : null}
+              )}
             </div>
 
             <button
               type="submit"
               disabled={isSubmitting}
-              aria-busy={isSubmitting || undefined}
-              className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/10 transition hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:text-white"
+              className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
             >
               {isSubmitting ? (
-                <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  aria-hidden="true"
-                />
+                <span className="material-symbols-outlined animate-spin">
+                  progress_activity
+                </span>
               ) : null}
               {isSubmitting ? t("auth.registering") : t("auth.register")}
             </button>
 
+            {/* Social signup */}
+            <div className="relative flex items-center py-base">
+              <div className="flex-grow border-t border-outline-variant"></div>
+              <span className="mx-md flex-shrink text-label-sm text-outline">
+                OR CONTINUE WITH
+              </span>
+              <div className="flex-grow border-t border-outline-variant"></div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-sm">
+              <button
+                type="button"
+                onClick={() => handleSocialSignup("google")}
+                disabled={isSubmitting}
+                aria-label="Continue with Google"
+                className="flex items-center justify-center gap-xs rounded-lg border border-outline-variant py-sm text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <GoogleIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSocialSignup("github")}
+                disabled={isSubmitting}
+                aria-label="Continue with GitHub"
+                className="flex items-center justify-center gap-xs rounded-lg border border-outline-variant py-sm text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <GitHubIcon className="h-5 w-5" />
+              </button>
+            </div>
+
             <div className="text-center mt-5">
               <Link
                 href="/login"
-                className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition"
+                className="text-sm font-semibold text-primary hover:underline transition"
               >
                 {t("auth.alreadyHaveAccount")}
               </Link>
             </div>
           </form>
         </div>
+
+        {/* Security Footer */}
+        <div className="mt-auto flex flex-col gap-sm border-t border-outline-variant pt-xl">
+          <div className="flex items-center gap-sm">
+            <span
+              className="material-symbols-outlined text-xl text-on-tertiary-container"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              verified_user
+            </span>
+            <span className="text-label-sm text-on-surface-variant">
+              AES-256 Encrypted & SOC2 Compliant
+            </span>
+          </div>
+          <p className="text-body-sm text-outline">
+            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
+            rights reserved.
+          </p>
+        </div>
       </section>
+
+      {/* Right Section: Visual Panel */}
+      <AuthHeroPanel />
     </main>
   );
 }

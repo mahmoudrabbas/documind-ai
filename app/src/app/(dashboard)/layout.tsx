@@ -4,6 +4,8 @@ import { Suspense, type ReactNode } from "react";
 import { AppNavigation } from "@/components/auth/app-navigation";
 import { ProtectedRoute } from "@/components/auth/auth-guard";
 
+import { TopNavBar } from "@/components/ui/TopNavBar";
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <Suspense
@@ -14,9 +16,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     >
       <ProtectedRoute>
-        <div className="min-h-dvh bg-slate-50 text-slate-950">
+        <div className="flex min-h-dvh bg-background text-on-background">
           <AppNavigation />
-          <div className="mx-auto w-full max-w-7xl">{children}</div>
+          <div className="flex-1 md:ml-[280px] flex flex-col">
+            <TopNavBar />
+            {children}
+          </div>
         </div>
       </ProtectedRoute>
     </Suspense>

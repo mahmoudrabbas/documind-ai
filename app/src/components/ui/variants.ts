@@ -37,8 +37,8 @@ const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
 
 const BUTTON_SIZE_CLASSES: Record<ButtonSize, string> = {
   sm: "h-8 px-3 text-label-sm rounded-sm gap-1.5",
-  md: "h-10 px-4 text-label-md rounded-md gap-2",
-  lg: "h-12 px-6 text-body-md rounded-md gap-2",
+  md: "h-10 px-4 text-label-md rounded gap-2",
+  lg: "h-12 px-6 text-body-md rounded gap-2",
 };
 
 const BUTTON_BASE_CLASSES =
