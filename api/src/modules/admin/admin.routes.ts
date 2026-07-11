@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authorize } from "../../common/middlewares/authorize.middleware.js";
-import { listTenantsController, updateTenantController } from "./admin.controller.js";
+import {
+  getTenantController,
+  listTenantsController,
+  updateTenantController,
+} from "./admin.controller.js";
 
 const router = Router();
 
@@ -15,6 +19,13 @@ router.get(
   authenticate,
   authorize("SUPER_ADMIN"),
   listTenantsController,
+);
+
+router.get(
+  "/tenants/:id",
+  authenticate,
+  authorize("SUPER_ADMIN"),
+  getTenantController,
 );
 
 /**

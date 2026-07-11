@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import SetPasswordFromInviteClient from "./set-password-from-invite-client";
+import { AuthBrand, AuthPageShell } from "@/components/auth/auth-page-shell";
 
 export default function SetPasswordFromInvitePage() {
   return (
@@ -14,16 +15,22 @@ export default function SetPasswordFromInvitePage() {
 
 function SetPasswordFromInviteShell({ message }: { message: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          DocuMind AI
-        </p>
-        <h1 className="mt-3 text-2xl font-semibold text-slate-950">
-          Set your password
-        </h1>
-        <p className="mt-4 text-sm text-slate-600">{message}</p>
-      </div>
-    </main>
+    <AuthPageShell labelledBy="invite-loading-title">
+      <AuthBrand />
+      <h1
+        id="invite-loading-title"
+        className="mt-6 text-center text-2xl font-bold text-slate-950"
+      >
+        Set up your account
+      </h1>
+      <p className="mt-3 text-center text-sm leading-6 text-slate-600">
+        {message}
+      </p>
+      <div
+        className="mx-auto mt-7 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"
+        role="status"
+        aria-label={message}
+      />
+    </AuthPageShell>
   );
 }

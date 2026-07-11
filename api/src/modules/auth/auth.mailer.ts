@@ -23,8 +23,46 @@ interface EmailVerificationTemplate {
   html: string;
 }
 
+export interface InvitationTemplateInput {
+  companyName: string;
+  inviterName?: string;
+  inviterEmail?: string;
+  role: string;
+  invitationUrl: string;
+  expiryDate: Date;
+}
+
+export function buildInvitationTemplate(
+  input: InvitationTemplateInput,
+): EmailVerificationTemplate {
+  const companyName = escapeHtml(input.companyName);
+  const inviterName = escapeHtml(
+    input.inviterName || "A company administrator",
+  );
+  const inviterEmail = input.inviterEmail
+    ? ` (${escapeHtml(input.inviterEmail)})`
+    : "";
+  const role = escapeHtml(input.role.replaceAll("_", " ").toLowerCase());
+  const invitationUrl = escapeHtml(input.invitationUrl);
+  const expiry = escapeHtml(input.expiryDate.toUTCString());
+  return {
+    subject: `You have been invited to join ${input.companyName} on DocuMind AI`,
+    text: [
+      `You have been invited to join ${input.companyName}`,
+      "",
+      `${input.inviterName || "A company administrator"}${input.inviterEmail ? ` (${input.inviterEmail})` : ""} invited you to join ${input.companyName} as ${input.role.replaceAll("_", " ").toLowerCase()} on DocuMind AI.`,
+      "",
+      "Accept invitation:",
+      input.invitationUrl,
+      "",
+      `This invitation expires on ${input.expiryDate.toUTCString()}. If you were not expecting it, you can ignore this email.`,
+    ].join("\n"),
+    html: `<!doctype html><html><body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#111827;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;"><tr><td><p style="margin:0 0 12px;color:#2563eb;font-weight:700;">DocuMind AI</p><h1 style="margin:0 0 18px;font-size:24px;line-height:32px;">You have been invited to join ${companyName}</h1><p style="margin:0 0 22px;font-size:16px;line-height:24px;color:#374151;">${inviterName}${inviterEmail} invited you to join ${companyName} as <strong>${role}</strong> on DocuMind AI.</p><table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#2563eb" style="border-radius:10px;"><a href="${invitationUrl}" style="display:inline-block;padding:13px 22px;color:#fff;text-decoration:none;font-weight:700;">Accept invitation</a></td></tr></table><p style="margin:24px 0 8px;font-size:13px;line-height:20px;color:#64748b;">If the button does not work, use this link:</p><p style="margin:0 0 22px;font-size:13px;line-height:20px;word-break:break-all;"><a href="${invitationUrl}" style="color:#2563eb;">${invitationUrl}</a></p><p style="margin:0;font-size:13px;line-height:20px;color:#64748b;">This invitation expires on ${expiry}. If you were not expecting it, you can ignore this email.</p></td></tr></table></td></tr></table></body></html>`,
+  };
+}
+
 export function buildEmailVerificationTemplate(
-  input: BuildEmailVerificationTemplateInput
+  input: BuildEmailVerificationTemplateInput,
 ): EmailVerificationTemplate {
   const subject = "Verify your DocuMind AI account";
   const escapedAdminName = escapeHtml(input.adminName);
@@ -113,12 +151,9 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
       return;
     }
 
-    throw new AppError(
-      500,
-      EMAIL_SENDING_FAILED,
-      "SMTP is not configured",
-      { missingFields },
-    );
+    throw new AppError(500, EMAIL_SENDING_FAILED, "SMTP is not configured", {
+      missingFields,
+    });
   }
 
   const template = buildEmailVerificationTemplate({
@@ -147,7 +182,10 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
       html: template.html,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to send verification email";
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send verification email";
 
     if (config.NODE_ENV !== "production") {
       console.warn(
@@ -163,6 +201,31 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
       { details: message },
     );
   }
+}
+
+export async function sendInvitationEmail(
+  input: InvitationTemplateInput & { to: string },
+) {
+  const template = buildInvitationTemplate(input);
+  if (process.env.NODE_ENV === "test") return;
+  if (!config.SEND_EMAILS) {
+    if (config.NODE_ENV === "development")
+      console.info("[user-invitation] email delivery disabled");
+    return;
+  }
+  const transporter = nodemailer.createTransport({
+    host: config.SMTP_HOST,
+    port: config.SMTP_PORT,
+    secure: config.SMTP_SECURE,
+    auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
+  });
+  await transporter.sendMail({
+    from: config.SMTP_FROM,
+    to: input.to,
+    subject: template.subject,
+    text: template.text,
+    html: template.html,
+  });
 }
 
 function escapeHtml(value: string) {

@@ -1,4 +1,9 @@
-export const TENANT_STATUSES = ["active", "trial", "pending", "pending_verification"] as const;
+export const TENANT_STATUSES = [
+  "active",
+  "trial",
+  "pending",
+  "pending_verification",
+] as const;
 export const TENANT_PLANS = ["free", "trial", "pro"] as const;
 export const PAGE_SIZES = [10, 20, 50, 100] as const;
 
@@ -13,6 +18,7 @@ export interface PlatformTenant {
   plan: TenantPlan;
   createdAt: string;
   updatedAt: string;
+  stats: { users: number; documents: number; questions: number };
 }
 
 export interface TenantListQuery {
@@ -27,6 +33,11 @@ export interface TenantListResponse {
   success: true;
   data: {
     tenants: PlatformTenant[];
-    pagination: { page: number; pageSize: number; totalPages: number; totalRecords: number };
+    pagination: {
+      page: number;
+      pageSize: number;
+      totalPages: number;
+      totalRecords: number;
+    };
   };
 }

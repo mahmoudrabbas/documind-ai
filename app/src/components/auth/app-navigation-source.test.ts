@@ -15,7 +15,7 @@ describe("authenticated navigation source", () => {
     const source = await readFile(sourceUrl, "utf8");
     expect(source).toContain('auth.user.role === "SUPER_ADMIN"');
     expect(source).toContain('auth.user.role === "COMPANY_ADMIN"');
-    expect(source).toContain('"Tenant Management", "/super-admin/tenants"');
-    expect(source).toContain('"Team", "/users"');
+    expect(source).toContain('"Tenant Management", "/platform/tenants"');
+    expect(source).toContain('"Team", "/dashboard/users"');
   });
 });

@@ -6,6 +6,11 @@ export interface TenantPublicView {
   plan: "free" | "trial" | "pro";
   createdAt: string;
   updatedAt: string;
+  stats: {
+    users: number;
+    documents: number;
+    questions: number;
+  };
 }
 
 export interface ListTenantsInput {
@@ -32,3 +37,6 @@ export interface UpdateTenantInput {
   plan?: "free" | "trial" | "pro";
 }
 export type UpdateTenantResult = TenantPublicView;
+export interface GetTenantInput {
+  id: string;
+}

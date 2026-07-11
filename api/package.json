@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test",
     "test:local": "MONGODB_URI='mongodb://127.0.0.1:27017/docsai' REDIS_URL='redis://127.0.0.1:6379' find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test",
-    "test:compose": "MONGODB_URI='mongodb://mongodb:27017/docsai' REDIS_URL='redis://redis:6379' find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test"
+    "test:compose": "MONGODB_URI='mongodb://mongodb:27017/docsai' REDIS_URL='redis://redis:6379' find src -name '*.test.ts' -print0 | xargs -0 node --import tsx --test",
+    "seed:super-admin": "tsx src/scripts/seed-super-admin.ts"
   },
   "keywords": [],
   "author": "",

@@ -4,7 +4,9 @@ WORKDIR /app
 
 COPY api/package*.json ./
 
-RUN apt-get update && apt-get install -y python3 python-is-python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python-is-python3 make g++ ca-certificates libcurl4 \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install
 
 COPY api/ .

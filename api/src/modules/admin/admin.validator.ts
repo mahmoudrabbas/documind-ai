@@ -69,7 +69,6 @@ export function validateListTenantsInput(input: unknown): ListTenantsInput {
   return result.data;
 }
 
-
 const updateTenantBodySchema = z
   .object({
     status: z.enum(["active", "trial", "suspended"]).optional(),
@@ -84,6 +83,19 @@ const updateTenantBodySchema = z
 const updateTenantParamsSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
 });
+
+export function validateTenantId(params: unknown): string {
+  const result = updateTenantParamsSchema.safeParse(params);
+  if (!result.success) {
+    throw new AppError(
+      400,
+      VALIDATION_ERROR,
+      "Validation failed",
+      groupValidationIssues(result.error.issues),
+    );
+  }
+  return result.data.id;
+}
 
 export function validateUpdateTenantInput(
   params: unknown,

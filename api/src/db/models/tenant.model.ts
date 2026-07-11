@@ -5,6 +5,7 @@ export interface TenantDocument extends mongoose.Document {
   slug: string;
   status: string;
   plan: string;
+  isSystemTenant: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,19 +38,27 @@ const tenantSchema = new Schema<TenantDocument>(
       enum: ["free", "trial", "pro"],
       default: "free",
     },
+    isSystemTenant: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
     toJSON: {
       transform(_doc, ret) {
-        const record = ret as Record<string, unknown> & { _id?: unknown; __v?: number };
+        const record = ret as Record<string, unknown> & {
+          _id?: unknown;
+          __v?: number;
+        };
         record.id = record._id?.toString?.() ?? "";
         delete record._id;
         delete record.__v;
         return record;
       },
     },
-  }
+  },
 );
 
 tenantSchema.index({ status: 1 });

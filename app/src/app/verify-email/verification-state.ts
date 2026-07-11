@@ -12,8 +12,7 @@ export type VerificationState =
       message: string;
     };
 
-export const FALLBACK_ERROR_MESSAGE =
-  "Invalid or expired verification link.";
+export const FALLBACK_ERROR_MESSAGE = "Invalid or expired verification link.";
 
 export const LOADING_VERIFICATION: VerificationState = {
   status: "loading",
@@ -33,9 +32,7 @@ export function getDisplayedVerification(
   return token ? verification : MISSING_TOKEN_VERIFICATION;
 }
 
-export function getVerificationTitle(
-  status: VerificationState["status"],
-) {
+export function getVerificationTitle(status: VerificationState["status"]) {
   switch (status) {
     case "success":
       return "Email verified successfully";
@@ -51,15 +48,10 @@ export function getVerificationTitle(
 export function getVerificationActionLabel(
   status: VerificationState["status"],
 ) {
-  return status === "success"
-    ? "Continue to sign in"
-    : "Back to sign in";
+  return status === "success" ? "Continue to sign in" : "Back to sign in";
 }
 
-export function getSafeBackendErrorMessage(
-  payload: unknown,
-  token: string,
-) {
+export function getSafeBackendErrorMessage(payload: unknown, token: string) {
   const message = extractErrorMessage(payload);
 
   if (!message) {
@@ -123,10 +115,7 @@ function isSafeErrorMessage(message: string, token: string) {
   const lowercaseMessage = message.toLowerCase();
   const lowercaseToken = token.trim().toLowerCase();
 
-  if (
-    lowercaseToken &&
-    lowercaseMessage.includes(lowercaseToken)
-  ) {
+  if (lowercaseToken && lowercaseMessage.includes(lowercaseToken)) {
     return false;
   }
 
