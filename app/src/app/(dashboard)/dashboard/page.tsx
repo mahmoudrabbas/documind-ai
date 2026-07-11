@@ -1,6 +1,10 @@
 "use client";
 
 import { useAuth } from "@/providers/auth-provider";
+import {
+  DashboardPage as DashboardPageShell,
+  DashboardPageHeader,
+} from "@/components/ui/DashboardPage";
 
 export default function DashboardPage() {
   const auth = useAuth();
@@ -8,37 +12,33 @@ export default function DashboardPage() {
   if (auth.status !== "authenticated") return null;
 
   return (
-    <div className="p-lg max-w-[1600px] mx-auto w-full flex-1">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-xl mt-6">
-        <div>
-          <h2 className="text-headline-lg font-bold text-primary">
-            System Overview
-          </h2>
-          <p className="text-body-md text-on-surface-variant">
-            Real-time performance and repository metrics for DocuMind AI.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-sm">
-          <button className="flex items-center gap-2 px-4 py-2 border border-outline rounded-lg text-label-md font-bold hover:bg-surface-container-high transition-colors">
-            <span className="material-symbols-outlined text-[18px]">
-              calendar_today
-            </span>
-            Last 24 Hours
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg text-label-md font-bold hover:opacity-90 transition-opacity">
-            <span className="material-symbols-outlined text-[18px]">
-              download
-            </span>
-            Export PDF
-          </button>
-        </div>
-      </div>
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="System Overview"
+        description="Real-time performance and repository metrics for DocuMind AI."
+        actions={
+          <div className="grid w-full grid-cols-1 gap-sm min-[390px]:grid-cols-2 sm:flex sm:w-auto sm:flex-wrap">
+            <button className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-outline px-4 py-2 text-label-md font-bold transition-colors hover:bg-surface-container-high">
+              <span className="material-symbols-outlined text-[18px]">
+                calendar_today
+              </span>
+              Last 24 Hours
+            </button>
+            <button className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-secondary-container px-4 py-2 text-label-md font-bold text-on-secondary-container transition-opacity hover:opacity-90">
+              <span className="material-symbols-outlined text-[18px]">
+                download
+              </span>
+              Export PDF
+            </button>
+          </div>
+        }
+      />
 
       {/* Bento Grid Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="grid min-w-0 auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 xl:gap-5">
         {/* Card 1: Total Docs */}
-        <div className="col-span-1 bg-surface-container-lowest p-lg rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between transition-transform hover:-translate-y-1">
-          <div className="flex justify-between items-start mb-4">
+        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
+          <div className="mb-3 flex items-start justify-between">
             <div className="p-3 bg-primary-container text-on-primary-container rounded-xl">
               <span
                 className="material-symbols-outlined"
@@ -58,10 +58,10 @@ export default function DashboardPage() {
             <p className="text-label-md text-on-surface-variant">
               Total Documents
             </p>
-            <h3 className="text-display-lg font-bold text-primary leading-none">
+            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
               1,284
             </h3>
-            <div className="mt-4 flex flex-wrap gap-4">
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
               <div className="flex items-center gap-1">
                 <span className="w-2 h-2 bg-tertiary-fixed-dim rounded-full" />
                 <span className="text-label-sm text-on-surface-variant">
@@ -79,8 +79,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 2: AI Interaction */}
-        <div className="col-span-1 bg-surface-container-lowest p-lg rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between transition-transform hover:-translate-y-1">
-          <div className="flex justify-between items-start mb-4">
+        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
+          <div className="mb-3 flex items-start justify-between">
             <div className="p-3 bg-secondary-container text-on-secondary-container rounded-xl">
               <span
                 className="material-symbols-outlined"
@@ -97,10 +97,10 @@ export default function DashboardPage() {
             <p className="text-label-md text-on-surface-variant">
               Total Questions
             </p>
-            <h3 className="text-display-lg font-bold text-primary leading-none">
+            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
               15.2k
             </h3>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="p-2 bg-surface-container rounded-lg">
                 <p className="text-[10px] uppercase font-bold text-on-surface-variant">
                   Answered
@@ -118,8 +118,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 3: Performance */}
-        <div className="col-span-1 bg-surface-container-lowest p-lg rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between transition-transform hover:-translate-y-1">
-          <div className="flex justify-between items-start mb-4">
+        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
+          <div className="mb-3 flex items-start justify-between">
             <div className="p-3 bg-tertiary-fixed text-on-tertiary-fixed rounded-xl">
               <span
                 className="material-symbols-outlined"
@@ -133,10 +133,10 @@ export default function DashboardPage() {
             <p className="text-label-md text-on-surface-variant">
               Avg Response Time
             </p>
-            <h3 className="text-display-lg font-bold text-primary leading-none">
+            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
               1.2s
             </h3>
-            <p className="mt-4 text-label-sm text-on-surface-variant flex items-center gap-1">
+            <p className="mt-3 flex items-center gap-1 text-label-sm text-on-surface-variant">
               <span className="material-symbols-outlined text-[16px] text-tertiary-fixed-dim">
                 verified
               </span>{" "}
@@ -146,8 +146,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 4: Costs */}
-        <div className="col-span-1 bg-surface-container-lowest p-lg rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col justify-between transition-transform hover:-translate-y-1">
-          <div className="flex justify-between items-start mb-4">
+        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
+          <div className="mb-3 flex items-start justify-between">
             <div className="p-3 bg-primary text-on-primary rounded-xl">
               <span
                 className="material-symbols-outlined"
@@ -164,10 +164,10 @@ export default function DashboardPage() {
             <p className="text-label-md text-on-surface-variant">
               Estimated AI Cost
             </p>
-            <h3 className="text-display-lg font-bold text-primary leading-none">
+            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
               $142.50
             </h3>
-            <div className="mt-4 h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-container">
               <div className="h-full bg-primary w-[65%]" />
             </div>
             <p className="mt-2 text-[10px] text-on-surface-variant">
@@ -177,33 +177,35 @@ export default function DashboardPage() {
         </div>
 
         {/* System Health Widget */}
-        <div className="col-span-1 md:col-span-2 bg-surface-container-lowest p-lg rounded-2xl shadow-sm border border-outline-variant/30">
-          <div className="flex justify-between items-center mb-6">
-            <h4 className="text-title-lg font-bold text-primary flex items-center gap-2">
+        <div className="col-span-1 min-h-0 min-w-0 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm sm:col-span-2 lg:p-5">
+          <div className="mb-4 flex min-w-0 flex-col gap-3 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between">
+            <h2 className="flex min-w-0 items-center gap-2 text-title-lg font-bold text-primary">
               <span className="material-symbols-outlined">
                 health_and_safety
               </span>
               System Health
-            </h4>
-            <span className="text-label-sm font-bold text-tertiary-fixed-dim bg-tertiary-container/30 px-3 py-1 rounded-full flex items-center gap-1">
+            </h2>
+            <span className="flex w-fit items-center gap-1 rounded-full bg-tertiary-container/30 px-3 py-1 text-label-sm font-bold text-tertiary-fixed-dim">
               <span className="w-2 h-2 bg-tertiary-fixed-dim rounded-full animate-pulse" />
               All Systems Operational
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-4 bg-surface-container-low rounded-xl flex items-center justify-between border border-outline-variant/20">
-              <div className="flex items-center gap-3">
+          <div className="grid auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2">
+            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="material-symbols-outlined text-primary-container">
                   api
                 </span>
-                <span className="text-body-md font-medium">API Endpoint</span>
+                <span className="min-w-0 break-words text-body-md font-medium">
+                  API Endpoint
+                </span>
               </div>
               <span className="text-label-md text-tertiary-fixed-dim font-bold">
                 Online
               </span>
             </div>
-            <div className="p-4 bg-surface-container-low rounded-xl flex items-center justify-between border border-outline-variant/20">
-              <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="material-symbols-outlined text-primary-container">
                   database
                 </span>
@@ -213,8 +215,8 @@ export default function DashboardPage() {
                 Connected
               </span>
             </div>
-            <div className="p-4 bg-surface-container-low rounded-xl flex items-center justify-between border border-outline-variant/20">
-              <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="material-symbols-outlined text-primary-container">
                   hub
                 </span>
@@ -224,8 +226,8 @@ export default function DashboardPage() {
                 Connected
               </span>
             </div>
-            <div className="p-4 bg-surface-container-low rounded-xl flex items-center justify-between border border-outline-variant/20">
-              <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="material-symbols-outlined text-primary-container">
                   psychology_alt
                 </span>
@@ -239,8 +241,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Recent Activity Feed */}
-        <div className="col-span-1 md:col-span-2 bg-surface-container-lowest p-lg rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
+        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm sm:col-span-2 lg:p-5">
+          <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
             <h4 className="text-title-lg font-bold text-primary flex items-center gap-2">
               <span className="material-symbols-outlined">history</span>
               Recent Activity
@@ -249,7 +251,7 @@ export default function DashboardPage() {
               View All
             </button>
           </div>
-          <div className="space-y-4 flex-1">
+          <div className="space-y-2">
             <div className="flex gap-4 p-3 hover:bg-surface-container-low rounded-xl transition-colors cursor-pointer">
               <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-on-secondary-container text-[20px]">
@@ -310,7 +312,7 @@ export default function DashboardPage() {
       </div>
 
       {/* AI Insight Section */}
-      <section className="mt-xl p-lg md:p-xl bg-primary-container rounded-3xl relative overflow-hidden text-on-primary">
+      <section className="relative mt-6 min-w-0 overflow-hidden rounded-3xl bg-primary-container p-4 text-on-primary sm:p-lg lg:mt-8 lg:p-xl">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-lg w-full">
           <div className="flex min-w-0 flex-1 items-start gap-4">
             <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-tertiary text-on-tertiary sm:flex">
@@ -341,12 +343,12 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <footer className="p-lg mt-xl border-t border-outline-variant/30 flex flex-col sm:flex-row justify-between items-center text-on-surface-variant gap-4">
+      <footer className="mt-8 flex min-w-0 flex-col items-center justify-between gap-4 border-t border-outline-variant/30 px-0 py-6 text-center text-on-surface-variant sm:flex-row sm:text-start">
         <p className="text-label-sm">
           © {new Date().getFullYear()} DocuMind AI Enterprise. All rights
           reserved.
         </p>
-        <div className="flex gap-lg">
+        <div className="flex flex-wrap justify-center gap-x-lg gap-y-2 sm:justify-end">
           <a
             href="#"
             className="text-label-sm hover:text-primary transition-colors"
@@ -367,6 +369,6 @@ export default function DashboardPage() {
           </a>
         </div>
       </footer>
-    </div>
+    </DashboardPageShell>
   );
 }

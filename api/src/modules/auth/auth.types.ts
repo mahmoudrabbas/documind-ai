@@ -4,6 +4,7 @@ export interface RegisterInput {
   adminName: string;
   email: string;
   password: string;
+  packageCode?: string;
 }
 
 export interface VerifyEmailInput {
@@ -120,6 +121,17 @@ export interface RefreshRotationResult extends RefreshResult {
 export interface MeResult {
   user: Omit<UserPublicView, "createdAt">;
   tenant: Omit<TenantPublicView, "createdAt">;
+}
+
+export interface CompleteTrialResult {
+  success: boolean;
+  subscription: {
+    id: string;
+    packageId: string;
+    packageName: string;
+    status: string;
+    startedAt: string;
+  };
 }
 
 export interface AuthIdentity {

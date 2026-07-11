@@ -67,7 +67,7 @@ export async function updateTenantController(
     }
 
     const input = validateUpdateTenantInput(req.params, req.body);
-    const result = await updateTenant(input);
+    const result = await updateTenant(input, req.auth);
 
     res.status(200).json({
       success: true,

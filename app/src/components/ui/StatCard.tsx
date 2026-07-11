@@ -20,9 +20,16 @@ const TREND_CLASSES: Record<NonNullable<StatCardProps["trend"]>, string> = {
 };
 
 /** KPI tile used across Overview / Analytics dashboards. */
-export function StatCard({ label, value, tag, trend = "neutral", icon, className }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  tag,
+  trend = "neutral",
+  icon,
+  className,
+}: StatCardProps) {
   return (
-    <Card className={cn("flex flex-col gap-6 p-md", className)}>
+    <Card className={cn("flex min-h-0 flex-col gap-3 p-4 lg:p-5", className)}>
       <div className="flex items-start justify-between">
         {icon ? (
           <span className="flex h-10 w-10 items-center justify-center rounded-md bg-surface-container-high text-on-surface">
@@ -32,7 +39,12 @@ export function StatCard({ label, value, tag, trend = "neutral", icon, className
           <span />
         )}
         {tag ? (
-          <span className={cn("rounded-full px-2.5 py-0.5 text-label-sm", TREND_CLASSES[trend])}>
+          <span
+            className={cn(
+              "rounded-full px-2.5 py-0.5 text-label-sm",
+              TREND_CLASSES[trend],
+            )}
+          >
             {tag}
           </span>
         ) : null}

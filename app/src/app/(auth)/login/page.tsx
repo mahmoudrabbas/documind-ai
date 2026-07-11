@@ -145,6 +145,7 @@ export default function LoginPage() {
         user: response.data.user,
         tenant: response.data.tenant,
       });
+
       const destination =
         getSafeReturnTo(searchParams.get("returnTo")) ??
         getRoleHome(response.data.user.role);

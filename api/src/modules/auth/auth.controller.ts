@@ -11,6 +11,7 @@ import {
   getMe,
   forgotPassword,
   resetPassword,
+  completeTrial,
 } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -88,6 +89,27 @@ export async function resendVerificationEmailController(
     const result = await resendVerificationEmail(req.body);
 
     res.status(200).json(result);
+  } catch (error) {
+    handleAuthError(error, res, next);
+  }
+}
+
+export async function completeTrialController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+    const result = await completeTrial(req.auth);
+
+    res.status(200).json({
+      success: true,
+      message: "Trial subscription activated successfully",
+      data: result,
+    });
   } catch (error) {
     handleAuthError(error, res, next);
   }

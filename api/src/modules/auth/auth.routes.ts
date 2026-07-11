@@ -10,6 +10,7 @@ import {
   verifyEmailController,
   forgotPasswordController,
   resetPasswordController,
+  completeTrialController,
 } from "./auth.controller.js";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
@@ -24,6 +25,7 @@ router.post("/login", loginController);
 router.post("/super-admin/login", superAdminLoginController);
 router.post("/refresh", refreshController);
 router.post("/logout", logoutController);
+router.post("/complete-trial", authenticate, completeTrialController);
 router.post("/verify-email", verifyEmailController);
 router.post("/resend-verification-email", resendVerificationEmailController);
 router.post("/forgot-password", forgotPasswordController);

@@ -1,12 +1,14 @@
 "use client";
 
-import { Suspense, type ReactNode } from "react";
+import { Suspense, type ReactNode, useState } from "react";
 import { AppNavigation } from "@/components/auth/app-navigation";
 import { ProtectedRoute } from "@/components/auth/auth-guard";
 
 import { TopNavBar } from "@/components/ui/TopNavBar";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  const [navigationOpen, setNavigationOpen] = useState(false);
+
   return (
     <Suspense
       fallback={
@@ -16,11 +18,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     >
       <ProtectedRoute>
-        <div className="flex min-h-dvh bg-background text-on-background">
-          <AppNavigation />
-          <div className="flex-1 md:ml-[280px] flex flex-col">
-            <TopNavBar />
-            {children}
+        <div className="flex min-h-dvh overflow-x-clip bg-background text-on-background">
+          <AppNavigation
+            open={navigationOpen}
+            onClose={() => setNavigationOpen(false)}
+          />
+          <div className="flex min-w-0 flex-1 flex-col md:ms-[280px]">
+            <TopNavBar onNavigationOpen={() => setNavigationOpen(true)} />
+            <main className="flex min-w-0 flex-1 flex-col">{children}</main>
           </div>
         </div>
       </ProtectedRoute>

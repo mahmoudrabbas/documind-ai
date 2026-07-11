@@ -23,7 +23,37 @@ export type NavLink = {
  */
 export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
   [ROLES.SUPER_ADMIN]: [
-    { label: "Tenant Management", href: "/platform/tenants", icon: "business" },
+    { label: "Overview", href: "/super-admin", icon: "dashboard" },
+    { label: "Companies", href: "/super-admin/companies", icon: "business" },
+    { label: "Packages", href: "/super-admin/packages", icon: "inventory_2" },
+    {
+      label: "Subscriptions",
+      href: "/super-admin/subscriptions",
+      icon: "payments",
+    },
+    { label: "Platform Users", href: "/super-admin/users", icon: "group" },
+    { label: "Usage & Costs", href: "/super-admin/usage", icon: "monitoring" },
+    {
+      label: "Processing Jobs",
+      href: "/super-admin/jobs",
+      icon: "manufacturing",
+    },
+    {
+      label: "System Health",
+      href: "/super-admin/system-health",
+      icon: "health_and_safety",
+    },
+    {
+      label: "AI Configuration",
+      href: "/super-admin/ai-configuration",
+      icon: "psychology",
+    },
+    { label: "Security & Audit", href: "/super-admin/audit", icon: "policy" },
+    {
+      label: "Global Settings",
+      href: "/super-admin/settings",
+      icon: "settings",
+    },
   ],
   [ROLES.COMPANY_ADMIN]: [
     { label: "Overview", href: "/dashboard", icon: "dashboard" },
@@ -60,8 +90,9 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
  */
 export const TOPBAR_LINKS: Record<Role, readonly NavLink[]> = {
   [ROLES.SUPER_ADMIN]: [
-    { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
-    { label: "Tenant Management", href: "/platform/tenants", icon: "business" },
+    { label: "Overview", href: "/super-admin", icon: "dashboard" },
+    { label: "Companies", href: "/super-admin/companies", icon: "business" },
+    { label: "Packages", href: "/super-admin/packages", icon: "inventory_2" },
   ],
   [ROLES.COMPANY_ADMIN]: [
     { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
@@ -78,6 +109,7 @@ export const TOPBAR_LINKS: Record<Role, readonly NavLink[]> = {
  * exists.
  */
 export const SETTINGS_HREF_BY_ROLE: Partial<Record<Role, string>> = {
+  [ROLES.SUPER_ADMIN]: "/super-admin/settings",
   [ROLES.COMPANY_ADMIN]: "/dashboard/settings",
 };
 

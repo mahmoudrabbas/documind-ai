@@ -13,6 +13,7 @@ export interface TenantCreateInput {
   slug: string;
   status: string;
   plan: string;
+  selectedPackageCode?: string;
 }
 
 export interface UserCreateInput {

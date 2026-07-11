@@ -85,7 +85,7 @@ export function FileDropzone({
         onDrop={handleDrop}
         aria-disabled={disabled}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors",
+          "flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 transition-colors sm:p-6",
           isDragOver
             ? "border-blue-500 bg-blue-50"
             : "border-slate-300 bg-slate-50 hover:border-slate-400",

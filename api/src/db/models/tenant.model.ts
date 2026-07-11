@@ -6,6 +6,7 @@ export interface TenantDocument extends mongoose.Document {
   status: string;
   plan: string;
   isSystemTenant: boolean;
+  selectedPackageCode?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +43,10 @@ const tenantSchema = new Schema<TenantDocument>(
       type: Boolean,
       default: false,
       index: true,
+    },
+    selectedPackageCode: {
+      type: String,
+      default: null,
     },
   },
   {

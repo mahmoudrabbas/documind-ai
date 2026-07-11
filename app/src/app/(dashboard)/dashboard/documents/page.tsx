@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
+  DashboardPage,
+  DashboardPageHeader,
+  DashboardPanel,
+} from "@/components/ui/DashboardPage";
+import {
   validateDocumentTitle,
   validateFileType,
   validateFileSize,
@@ -108,35 +113,32 @@ export default function DocumentsPage() {
   }
 
   return (
-    <main dir={dir} className="mx-auto w-full max-w-[1600px] flex-1 p-lg">
-      <div className="mb-xl mt-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 flex-1">
+    <DashboardPage dir={dir}>
+      <DashboardPageHeader
+        eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">
               folder
             </span>
             Knowledge base
           </div>
-          <h1 className="mt-3 text-headline-lg font-bold text-primary">
-            {t("documents.title")}
-          </h1>
-          <p className="mt-2 max-w-2xl text-body-md leading-relaxed text-on-surface-variant">
-            {t("documents.subtitle")}
-          </p>
-        </div>
+        }
+        title={t("documents.title")}
+        description={t("documents.subtitle")}
+        actions={
+          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm">
+            <p className="font-semibold text-on-surface">Upload and organize</p>
+            <p className="mt-1 max-w-xs text-on-surface-variant">
+              Keep your documents structured so answers stay accurate and
+              searchable.
+            </p>
+          </div>
+        }
+      />
 
-        <div className="w-full shrink-0 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm lg:w-auto">
-          <p className="font-semibold text-on-surface">Upload and organize</p>
-          <p className="mt-1 max-w-xs text-on-surface-variant">
-            Keep your documents structured so answers stay accurate and
-            searchable.
-          </p>
-        </div>
-      </div>
-
-      <section className="mb-xl grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm md:p-xl">
-          <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="mb-6 grid auto-rows-auto items-start gap-3 sm:gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:gap-5">
+        <DashboardPanel>
+          <div className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <h2 className="text-title-lg font-bold text-primary">
                 {t("documents.upload")}
@@ -162,7 +164,7 @@ export default function DocumentsPage() {
           />
 
           {selectedFiles.length > 0 && !isUploading ? (
-            <div className="mt-8 space-y-6 rounded-2xl border border-outline-variant/30 bg-surface-container p-5">
+            <div className="mt-4 space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container p-4">
               <div>
                 <label
                   htmlFor="doc-title"
@@ -251,12 +253,12 @@ export default function DocumentsPage() {
               {uploadError}
             </p>
           ) : null}
-        </div>
+        </DashboardPanel>
 
-        <div className="group relative overflow-hidden rounded-[28px] border border-outline-variant/30 bg-gradient-to-br from-surface-container via-surface-container-low to-surface-container-lowest p-lg shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-lg md:p-xl">
+        <DashboardPanel className="group relative overflow-hidden bg-gradient-to-br from-surface-container via-surface-container-low to-surface-container-lowest transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-lg">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10" />
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
+          <div className="relative flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 max-w-2xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
                 <span className="material-symbols-outlined text-[16px]">
                   auto_awesome
@@ -284,7 +286,7 @@ export default function DocumentsPage() {
               </div>
             </div>
 
-            <div className="w-full max-w-[280px] rounded-2xl border border-outline-variant/40 bg-surface/80 p-4 shadow-sm backdrop-blur">
+            <div className="w-full rounded-2xl border border-outline-variant/40 bg-surface/80 p-4 shadow-sm backdrop-blur lg:max-w-[280px]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-label-sm font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
@@ -310,10 +312,10 @@ export default function DocumentsPage() {
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </DashboardPanel>
+      </div>
 
-      <div className="overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm">
+      <DashboardPanel padding="none">
         <div className="border-b border-outline-variant/30 bg-surface-container-low/50 px-lg py-md">
           <h2 className="text-title-lg font-bold text-primary">
             {t("nav.documents")}
@@ -321,7 +323,7 @@ export default function DocumentsPage() {
         </div>
 
         {error ? (
-          <div className="p-12 text-center">
+          <div className="p-6 text-center sm:p-8">
             <p className="mb-4 text-sm text-error">{t(error)}</p>
             <Button variant="outline" onClick={() => goToPage(page)}>
               {t("common.retry")}
@@ -330,7 +332,7 @@ export default function DocumentsPage() {
         ) : null}
 
         {isLoading ? (
-          <div className="space-y-4 p-8">
+          <div className="space-y-3 p-4 sm:p-6">
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton
                 key={i}
@@ -341,7 +343,7 @@ export default function DocumentsPage() {
         ) : null}
 
         {!isLoading && !error && documents.length === 0 ? (
-          <div className="p-16 text-center">
+          <div className="p-6 text-center sm:p-10">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container-low">
               <span className="material-symbols-outlined text-[32px] text-outline">
                 folder_off
@@ -357,8 +359,8 @@ export default function DocumentsPage() {
         ) : null}
 
         {!isLoading && !error && documents.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
+          <div className="max-w-full overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse text-start text-sm">
               <thead className="border-b border-outline-variant/30 bg-surface-container-low">
                 <tr>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
@@ -376,7 +378,7 @@ export default function DocumentsPage() {
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
                     {t("documents.tableDate")}
                   </th>
-                  <th className="px-lg py-4 text-right text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
+                  <th className="px-lg py-4 text-end text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
                     {t("documents.tableActions")}
                   </th>
                 </tr>
@@ -423,11 +425,11 @@ export default function DocumentsPage() {
                     <td className="px-lg py-4 whitespace-nowrap text-body-sm text-on-surface-variant">
                       {new Date(doc.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="px-lg py-4 text-right">
+                    <td className="px-lg py-4 text-end">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-error opacity-0 transition-opacity hover:bg-error-container hover:text-on-error-container group-hover:opacity-100"
+                        className="text-error transition-opacity hover:bg-error-container hover:text-on-error-container md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                         isLoading={deletingId === doc.id}
                         onClick={async () => {
                           setDeletingId(doc.id);
@@ -448,7 +450,7 @@ export default function DocumentsPage() {
         ) : null}
 
         {totalPages > 1 ? (
-          <div className="flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-lowest px-lg py-md">
+          <div className="flex flex-col gap-3 border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between sm:px-lg">
             <p className="rounded-full bg-surface-container-low px-3 py-1 text-label-sm font-medium text-on-surface-variant">
               {t("common.page")} {page} / {totalPages}
             </p>
@@ -460,7 +462,7 @@ export default function DocumentsPage() {
                 disabled={page <= 1}
                 onClick={() => goToPage(page - 1)}
               >
-                <span className="material-symbols-outlined mr-1 text-[18px]">
+                <span className="material-symbols-outlined me-1 text-[18px] rtl:rotate-180">
                   chevron_left
                 </span>
                 {t("common.back")}
@@ -473,14 +475,14 @@ export default function DocumentsPage() {
                 onClick={() => goToPage(page + 1)}
               >
                 {t("common.next")}
-                <span className="material-symbols-outlined ml-1 text-[18px]">
+                <span className="material-symbols-outlined ms-1 text-[18px] rtl:rotate-180">
                   chevron_right
                 </span>
               </Button>
             </div>
           </div>
         ) : null}
-      </div>
-    </main>
+      </DashboardPanel>
+    </DashboardPage>
   );
 }

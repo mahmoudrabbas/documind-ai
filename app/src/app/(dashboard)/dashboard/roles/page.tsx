@@ -9,6 +9,11 @@ import {
   deleteRole,
 } from "@/services/roles.service";
 import type { RoleView } from "@/types/api/users.types";
+import {
+  DashboardPage,
+  DashboardPageHeader,
+  DashboardPanel,
+} from "@/components/ui/DashboardPage";
 
 export default function RolesPage() {
   const [roles, setRoles] = useState<RoleView[]>([]);
@@ -158,49 +163,47 @@ export default function RolesPage() {
   }
 
   return (
-    <main className="p-lg max-w-[1600px] mx-auto w-full flex-1">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-xl mt-6">
-        <div>
-          <h1 className="text-headline-lg font-bold text-primary">
-            Custom Roles
-          </h1>
-          <p className="mt-2 text-body-md text-on-surface-variant">
-            Define custom roles that map to existing permission levels.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm hover:bg-secondary-container hover:text-on-secondary-container transition-all"
-          onClick={() => {
-            setShowCreateForm(!showCreateForm);
-            setCreateError(null);
-          }}
-        >
-          {showCreateForm ? (
-            <>
-              <span className="material-symbols-outlined text-[18px]">
-                close
-              </span>
-              Cancel
-            </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              Create Role
-            </>
-          )}
-        </button>
-      </div>
+    <DashboardPage>
+      <DashboardPageHeader
+        title="Custom Roles"
+        description="Define custom roles that map to existing permission levels."
+        actions={
+          <button
+            type="button"
+            className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm transition-all hover:bg-secondary-container hover:text-on-secondary-container sm:w-auto"
+            onClick={() => {
+              setShowCreateForm(!showCreateForm);
+              setCreateError(null);
+            }}
+          >
+            {showCreateForm ? (
+              <>
+                <span className="material-symbols-outlined text-[18px]">
+                  close
+                </span>
+                Cancel
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[18px]">
+                  add
+                </span>
+                Create Role
+              </>
+            )}
+          </button>
+        }
+      />
 
       {successMessage ? (
-        <div className="mb-8 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900 border border-emerald-200">
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           {successMessage}
         </div>
       ) : null}
 
       {showCreateForm ? (
-        <div className="mb-xl rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm md:p-xl">
-          <div className="mb-6 flex flex-col gap-3 border-b border-outline-variant/30 pb-6">
+        <DashboardPanel className="mb-6">
+          <div className="mb-4 flex flex-col gap-3 border-b border-outline-variant/30 pb-4">
             <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
               <span className="material-symbols-outlined text-[16px]">
                 shield_person
@@ -221,10 +224,10 @@ export default function RolesPage() {
           </div>
 
           <form
-            className="space-y-6"
+            className="space-y-4"
             onSubmit={(event) => void handleCreate(event)}
           >
-            <div className="grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
+            <div className="grid min-w-0 auto-rows-auto items-start gap-4 lg:grid-cols-[1.3fr_0.9fr]">
               <div className="space-y-5">
                 <div>
                   <label className="mb-2 block text-label-md font-bold text-on-surface-variant">
@@ -294,13 +297,13 @@ export default function RolesPage() {
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-outline-variant/30 pt-4">
+            <div className="flex flex-col gap-3 border-t border-outline-variant/30 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-on-surface-variant">
                 You can update this role later if access needs change.
               </p>
               <button
                 type="submit"
-                className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 disabled={createSubmitting || !createName.trim()}
               >
                 {createSubmitting ? (
@@ -316,25 +319,25 @@ export default function RolesPage() {
               </button>
             </div>
           </form>
-        </div>
+        </DashboardPanel>
       ) : null}
 
-      <section className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm overflow-hidden">
+      <DashboardPanel padding="none">
         {loading ? (
-          <div className="flex items-center gap-2 text-sm text-on-surface-variant p-12 justify-center">
+          <div className="flex items-center justify-center gap-2 p-6 text-sm text-on-surface-variant sm:p-8">
             <span className="material-symbols-outlined animate-spin">
               progress_activity
             </span>
             Loading roles...
           </div>
         ) : error ? (
-          <div className="p-8">
+          <div className="p-4 sm:p-6">
             <div className="rounded-xl bg-red-50 p-4 text-sm text-red-900 border border-red-200">
               {error}
             </div>
           </div>
         ) : roles.length === 0 ? (
-          <div className="p-16 text-center">
+          <div className="p-6 text-center sm:p-10">
             <div className="w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="material-symbols-outlined text-outline text-[32px]">
                 shield_person
@@ -349,8 +352,8 @@ export default function RolesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-outline-variant/30 text-left text-sm border-collapse">
+          <div className="max-w-full overflow-x-auto">
+            <table className="min-w-[720px] w-full border-collapse divide-y divide-outline-variant/30 text-start text-sm">
               <thead className="bg-surface-container-low">
                 <tr>
                   <th className="px-lg py-4 font-bold text-on-surface-variant text-label-sm uppercase tracking-wider">
@@ -490,7 +493,7 @@ export default function RolesPage() {
             </table>
           </div>
         )}
-      </section>
-    </main>
+      </DashboardPanel>
+    </DashboardPage>
   );
 }
