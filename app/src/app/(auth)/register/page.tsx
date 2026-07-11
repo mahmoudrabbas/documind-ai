@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import {
@@ -44,6 +45,7 @@ type LoginResponse = {
 };
 
 export default function RegisterPage() {
+  const router = useRouter();
   const { t, dir } = useI18n();
   const [isCheckingSession, setIsCheckingSession] = useState(true);
 
