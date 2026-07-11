@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { useI18n } from "@/providers/i18n-provider";
+
 import { API_BASE_URL } from "../../constants/api";
 import {
   FALLBACK_ERROR_MESSAGE,
@@ -19,7 +21,11 @@ const verifiedTokenRequests = new Map<string, Promise<VerificationState>>();
 
 export default function VerifyEmailClient() {
   const searchParams = useSearchParams();
-  const token = useMemo(() => searchParams.get("token")?.trim() ?? "", [searchParams]);
+  const { t, dir } = useI18n();
+  const token = useMemo(
+    () => searchParams.get("token")?.trim() ?? "",
+    [searchParams],
+  );
   const [verification, setVerification] =
     useState<VerificationState>(LOADING_VERIFICATION);
 
@@ -48,7 +54,10 @@ export default function VerifyEmailClient() {
   const isLoading = displayedVerification.status === "loading";
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-5 py-8 text-slate-950">
+    <main
+      dir={dir}
+      className="flex min-h-dvh items-center justify-center bg-slate-50 px-5 py-8 text-slate-950"
+    >
       <section
         className="w-full min-w-0 max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl shadow-slate-200/70 sm:p-10"
         aria-labelledby="verify-email-title"
@@ -57,7 +66,7 @@ export default function VerifyEmailClient() {
           DM
         </div>
         <p className="mt-4 whitespace-normal text-lg font-bold tracking-tight text-slate-950">
-          DocuMind AI
+          {t("landing.appName") || "DocuMind AI"}
         </p>
         <p className="mt-2 inline-flex max-w-full items-center justify-center rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-center text-xs font-semibold text-blue-700">
           Email verification

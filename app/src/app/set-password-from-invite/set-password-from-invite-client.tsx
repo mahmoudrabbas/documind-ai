@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { API_BASE_URL } from "../../constants/api";
+import { useI18n } from "@/providers/i18n-provider"; 
 
 type SetPasswordState =
   | { status: "loading"; message: string }
@@ -27,6 +28,8 @@ interface PasswordValidation {
 export default function SetPasswordFromInviteClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { t, dir } = useI18n(); 
+  
   const token = useMemo(
     () => searchParams.get("token")?.trim() ?? "",
     [searchParams],
@@ -38,7 +41,6 @@ export default function SetPasswordFromInviteClient() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Derive state from token presence
   const state: SetPasswordState =
     errorState ||
     (token
@@ -145,18 +147,25 @@ export default function SetPasswordFromInviteClient() {
   const isForm = state.status === "form";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          DocuMind AI
+    <main dir={dir} className="flex min-h-screen items-center justify-center bg-slate-50 p-6 w-full overflow-x-hidden">
+      <div className="w-full max-w-[440px] min-w-[290px] sm:min-w-[400px] rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/50">
+        
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400 block w-full text-center">
+          {t("landing.appName") || "DocuMind AI"}
         </p>
-        <h1 className="mt-3 text-2xl font-semibold text-slate-950">
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 block w-full text-center">
           Set your password
         </h1>
 
+        {isForm && state.message && (
+          <p className="mt-3 text-xs text-center leading-relaxed text-slate-500 max-w-sm mx-auto">
+            {state.message}
+          </p>
+        )}
+
         {isForm && (
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            <div>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5 w-full">
+            <div className="w-full text-start">
               <label
                 htmlFor="password"
                 className="block text-sm font-medium text-slate-700"
@@ -166,20 +175,19 @@ export default function SetPasswordFromInviteClient() {
               <input
                 id="password"
                 type="password"
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder="Enter password"
                 disabled={isSubmitting}
                 required
               />
-              <p className="mt-2 text-xs text-slate-600">
-                Must be at least 8 characters with uppercase, lowercase, and
-                digits.
+              <p className="mt-2 text-[11px] leading-normal text-slate-500">
+                Must be at least 8 characters with uppercase, lowercase, and digits.
               </p>
             </div>
 
-            <div>
+            <div className="w-full text-start">
               <label
                 htmlFor="confirmPassword"
                 className="block text-sm font-medium text-slate-700"
@@ -189,7 +197,7 @@ export default function SetPasswordFromInviteClient() {
               <input
                 id="confirmPassword"
                 type="password"
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed"
                 value={form.confirmPassword}
                 onChange={(e) =>
                   setForm({ ...form, confirmPassword: e.target.value })
@@ -202,43 +210,50 @@ export default function SetPasswordFromInviteClient() {
 
             <button
               type="submit"
-              className="w-full inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/10 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Setting password..." : "Set password"}
+              {isSubmitting ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />
+                  <span>Setting password...</span>
+                </>
+              ) : (
+                "Set password"
+              )}
             </button>
           </form>
         )}
 
         {!isForm && (
-          <>
+          <div className="flex flex-col items-center w-full">
             <div
-              className={`mx-auto mt-6 flex h-12 w-12 items-center justify-center rounded-full border ${
+              className={`mx-auto mt-6 flex h-14 w-14 shrink-0 items-center justify-center rounded-full border transition-all duration-300 ${
                 isSuccess
-                  ? "border-emerald-200 bg-emerald-50"
+                  ? "border-emerald-200 bg-emerald-50 shadow-sm shadow-emerald-100"
                   : isError
-                    ? "border-rose-200 bg-rose-50"
+                    ? "border-rose-200 bg-rose-50 shadow-sm shadow-rose-100"
                     : "border-slate-200 bg-slate-50"
               }`}
               aria-hidden="true"
             >
               <span
-                className={`h-3 w-3 rounded-full ${
+                className={`h-3 w-3 rounded-full transition-all duration-300 ${
                   isSuccess
-                    ? "bg-emerald-500"
+                    ? "bg-emerald-500 scale-110"
                     : isError
-                      ? "bg-rose-500"
+                      ? "bg-rose-500 scale-110"
                       : "bg-slate-400"
                 }`}
               />
             </div>
 
             <p
-              className={`mt-5 text-center text-sm ${
+              className={`mt-6 text-sm text-center leading-relaxed block w-full px-2 whitespace-normal break-words ${
                 isSuccess
-                  ? "text-emerald-700"
+                  ? "text-emerald-700 font-medium"
                   : isError
-                    ? "text-rose-700"
+                    ? "text-rose-700 font-medium"
                     : "text-slate-600"
               }`}
               role={isError ? "alert" : "status"}
@@ -249,12 +264,12 @@ export default function SetPasswordFromInviteClient() {
             {state.status !== "loading" && (
               <Link
                 href="/login"
-                className="mt-6 inline-flex w-full min-h-10 items-center justify-center rounded-lg bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                className="mt-8 flex h-11 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/10 transition hover:bg-blue-700"
               >
                 {isSuccess ? "Go to Login" : "Back to Login"}
               </Link>
             )}
-          </>
+          </div>
         )}
       </div>
     </main>
