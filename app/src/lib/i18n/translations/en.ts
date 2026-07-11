@@ -118,6 +118,23 @@ const en: TranslationDictionary = {
   "auth.privateAnswersDesc": "Responses are grounded in approved internal documents.",
   "auth.registerNow": "Register now",
 
+  /* ── auth/forgot-password ───────────────────────────────── */
+  "auth.forgotPassword": "Forgot password?",
+  "auth.forgotPasswordTitle": "Reset your password",
+  "auth.forgotPasswordDescription": "Enter your email address and we'll send you a link to reset your password.",
+  "auth.forgotPasswordEmailSent": "If an account with that email exists, a password reset link has been sent.",
+  "auth.forgotPasswordSubmit": "Send reset link",
+  "auth.forgotPasswordSending": "Sending…",
+  "auth.forgotPasswordSuccess": "Check your email",
+
+  /* ── auth/reset-password ────────────────────────────────── */
+  "auth.resetPassword": "Set new password",
+  "auth.resetPasswordTitle": "Set your new password",
+  "auth.resetPasswordSecure": "Secure password reset",
+  "auth.resetPasswordSuccess": "Password has been reset successfully. You can now sign in.",
+  "auth.resettingPassword": "Resetting…",
+  "auth.resetPasswordSubmit": "Reset password",
+
   /* ── documents ──────────────────────────────────────────── */
   "documents.title": "Documents",
   "documents.subtitle": "Upload and manage your company documents.",
