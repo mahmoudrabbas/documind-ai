@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { listRoles } from "@/services/roles.service";
+import type { RoleView } from "@/types/api/users.types";
 
 type UserView = {
   id: string;
@@ -9,6 +11,8 @@ type UserView = {
   name: string;
   email: string;
   role: string;
+  customRoleId?: string;
+  customRoleName?: string;
   status: string;
   emailVerified: boolean;
   createdAt: string;
@@ -27,6 +31,11 @@ type UserUpdateState = {
   isSaving: boolean;
   error?: string | null;
 };
+
+const SYSTEM_ROLES = [
+  { value: "EMPLOYEE", label: "Employee" },
+  { value: "COMPANY_ADMIN", label: "Company Admin" },
+];
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -66,6 +75,35 @@ export default function UsersPage() {
     totalPages: 1,
     totalRecords: 0,
   });
+
+  const [customRoles, setCustomRoles] = useState<RoleView[]>([]);
+
+  const loadRoles = useCallback(async () => {
+    try {
+      const response = await listRoles();
+      setCustomRoles(response.data.roles);
+    } catch {
+      // Roles are optional for the users page
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRoles();
+  }, [loadRoles]);
+
+  function getRoleDropdownOptions() {
+    if (customRoles.length === 0) return ROLE_OPTIONS;
+    return [
+      ...ROLE_OPTIONS,
+      { value: "---divider---", label: "─── Custom Roles ───", disabled: true },
+      ...customRoles.map((r) => ({ value: `custom:${r.id}`, label: r.name })),
+    ];
+  }
+
+  function getRoleLabel(role: UserView) {
+    if (role.customRoleName) return role.customRoleName;
+    return role.role === "COMPANY_ADMIN" ? "Company Admin" : role.role === "EMPLOYEE" ? "Employee" : role.role;
+  }
 
   async function loadUsers(pageToLoad: number) {
     setFetchError(null);
@@ -118,11 +156,18 @@ export default function UsersPage() {
     setIsSubmitting(true);
 
     try {
+      const body: Record<string, unknown> = { name, email };
+      if (role.startsWith("custom:")) {
+        body.customRoleId = role.slice("custom:".length);
+      } else {
+        body.role = role;
+      }
+
       const response = await apiClient<{ success: boolean; message: string }>(
         "/users",
         {
           method: "POST",
-          body: { name, email, role },
+          body,
         },
       );
 
@@ -160,15 +205,20 @@ export default function UsersPage() {
     setUpdateMessage(null);
 
     try {
+      const body: Record<string, unknown> = {};
+      if (update.role.startsWith("custom:")) {
+        body.customRoleId = update.role.slice("custom:".length);
+      } else {
+        body.role = update.role;
+      }
+      body.status = update.status;
+
       const response = await apiClient<{
         success: boolean;
         data: { user: UserView };
       }>(`/users/${userId}`, {
         method: "PATCH",
-        body: {
-          role: update.role,
-          status: update.status,
-        },
+        body,
       });
 
       setUsers((current) =>
@@ -284,8 +334,13 @@ export default function UsersPage() {
               value={role}
               onChange={(event) => setRole(event.target.value)}
             >
-              <option value="EMPLOYEE">Employee</option>
-              <option value="COMPANY_ADMIN">Company Admin</option>
+              {getRoleDropdownOptions().map((opt) =>
+                "disabled" in opt && opt.disabled ? (
+                  <option key={opt.value} disabled>{opt.label}</option>
+                ) : (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                )
+              )}
             </select>
           </div>
 
@@ -398,12 +453,17 @@ export default function UsersPage() {
                                 )
                               }
                             >
-                              {ROLE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
+                              {getRoleDropdownOptions().map((opt) =>
+                                "disabled" in opt && opt.disabled ? (
+                                  <option key={opt.value} disabled>{opt.label}</option>
+                                ) : (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                )
+                              )}
                             </select>
+                            {user.customRoleName ? (
+                              <p className="mt-1 text-xs text-slate-500">{getRoleLabel(user)}</p>
+                            ) : null}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
                             <select

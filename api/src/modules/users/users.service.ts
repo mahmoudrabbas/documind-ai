@@ -6,7 +6,9 @@ import {
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
+  VALIDATION_ERROR,
 } from "../../common/errors/errorCodes.js";
+import RoleModel from "../../db/models/role.model.js";
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
 import {
   verifyEmailVerificationToken,
@@ -51,10 +53,14 @@ type CreatedUserRecord = {
   status: string;
   emailVerified: boolean;
   createdAt?: Date;
+  customRoleId?:
+    | { _id?: { toString(): string }; toString(): string; name?: string }
+    | string
+    | null;
 };
 
 function serializeUser(user: CreatedUserRecord) {
-  return {
+  const result: Record<string, unknown> = {
     id: user.id ?? user._id.toString(),
     tenantId: user.tenantId?.toString() ?? "",
     name: user.name,
@@ -64,6 +70,18 @@ function serializeUser(user: CreatedUserRecord) {
     emailVerified: user.emailVerified,
     createdAt: user.createdAt?.toISOString() ?? new Date().toISOString(),
   };
+
+  if (user.customRoleId) {
+    if (typeof user.customRoleId === "object") {
+      result.customRoleId =
+        user.customRoleId._id?.toString() ?? user.customRoleId.toString();
+      result.customRoleName = user.customRoleId.name;
+    } else {
+      result.customRoleId = user.customRoleId;
+    }
+  }
+
+  return result as unknown as import("../../modules/auth/auth.types.js").UserPublicView;
 }
 
 function buildVerificationUrl(token: string) {
@@ -110,15 +128,39 @@ export async function inviteUser(
   const inviter = await findUserByTenantAndId(tenantId, inviterId);
   const inviterName = inviter?.name ?? "Your administrator";
 
-  const userPayload = {
+  let resolvedRole: string;
+  let resolvedCustomRoleId: string | undefined;
+
+  if (payload.customRoleId) {
+    const customRole = await RoleModel.findOne({
+      _id: payload.customRoleId,
+      tenantId,
+    }).exec();
+
+    if (!customRole) {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Custom role not found in this tenant",
+      );
+    }
+
+    resolvedRole = customRole.baseRole;
+    resolvedCustomRoleId = customRole._id.toString();
+  } else {
+    resolvedRole = payload.role ?? "EMPLOYEE";
+  }
+
+  const userPayload: import("../../modules/auth/auth.repository.js").UserCreateInput = {
     tenantId,
     name: payload.name.trim(),
     email: payload.email.toLowerCase().trim(),
     passwordHash: await hashPassword(randomUUID()),
-    role: payload.role,
+    role: resolvedRole,
     status: "pending_email_verification",
     emailVerified: false,
     emailVerifiedAt: null,
+    customRoleId: resolvedCustomRoleId,
   };
 
   let createdUser: UserDocument | null = null;
@@ -178,14 +220,45 @@ export async function updateUser(
   }
 
   const changes: Record<string, unknown> = {};
-  const update: Partial<Pick<UserDocument, "role" | "status">> = {};
+  const update: Record<string, unknown> = {};
 
-  if (payload.role !== undefined) {
+  if (payload.customRoleId) {
+    const customRole = await RoleModel.findOne({
+      _id: payload.customRoleId,
+      tenantId,
+    }).exec();
+
+    if (!customRole) {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Custom role not found in this tenant",
+      );
+    }
+
+    update.role = customRole.baseRole;
+    update.customRoleId = customRole._id.toString();
+    changes.role = {
+      before: existingUser.role,
+      after: customRole.baseRole,
+    };
+    changes.customRoleId = {
+      before: existingUser.customRoleId?.toString() ?? null,
+      after: customRole._id.toString(),
+    };
+  } else if (payload.role !== undefined) {
     update.role = payload.role;
+    update.customRoleId = null;
     changes.role = {
       before: existingUser.role,
       after: payload.role,
     };
+    if (existingUser.customRoleId) {
+      changes.customRoleId = {
+        before: existingUser.customRoleId.toString(),
+        after: null,
+      };
+    }
   }
 
   if (payload.status !== undefined) {

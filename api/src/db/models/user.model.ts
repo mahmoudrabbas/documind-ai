@@ -13,6 +13,7 @@ export interface UserDocument extends mongoose.Document {
   emailVerificationExpiresAt: Date | null;
   passwordResetTokenHash: string | null;
   passwordResetExpiresAt: Date | null;
+  customRoleId: mongoose.Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -63,8 +64,12 @@ const userSchema = new Schema<UserDocument>(
     },
     role: {
       type: String,
-      enum: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
       required: true,
+    },
+    customRoleId: {
+      type: Schema.Types.ObjectId,
+      ref: "Role",
+      default: null,
     },
     status: {
       type: String,

@@ -24,6 +24,7 @@ export interface UserCreateInput {
   status: string;
   emailVerified: boolean;
   emailVerifiedAt: Date | null;
+  customRoleId?: string;
 }
 
 export async function findTenantBySlug(slug: string) {
@@ -59,6 +60,10 @@ export function findUserById(userId: string) {
 
 export function findUserByTenantAndId(tenantId: string, userId: string) {
   return tenantScopedFindById(UserModel, tenantId, userId)
+    .populate<{ customRoleId: { _id: string; name: string } | null }>(
+      "customRoleId",
+      "name",
+    )
     .lean<UserDocument>()
     .exec();
 }
