@@ -32,11 +32,6 @@ type UserUpdateState = {
   error?: string | null;
 };
 
-const SYSTEM_ROLES = [
-  { value: "EMPLOYEE", label: "Employee" },
-  { value: "COMPANY_ADMIN", label: "Company Admin" },
-];
-
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
   { value: "pending_email_verification", label: "Pending verification" },

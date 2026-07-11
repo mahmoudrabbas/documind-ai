@@ -2,7 +2,6 @@ import { apiClient } from "@/lib/api-client";
 import type {
   CreateRoleResponse,
   ListRolesResponse,
-  RoleView,
   UpdateRoleResponse,
 } from "@/types/api/users.types";
 

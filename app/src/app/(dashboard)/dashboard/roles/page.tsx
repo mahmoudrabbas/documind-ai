@@ -45,8 +45,22 @@ export default function RolesPage() {
   }, []);
 
   useEffect(() => {
-    void loadRoles();
-  }, [loadRoles]);
+    async function fetchRoles() {
+      try {
+        const response = await listRoles();
+        setRoles(response.data.roles);
+      } catch (err) {
+        if (err instanceof ApiError) {
+          setError(err.message);
+        } else {
+          setError("Failed to load roles");
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchRoles();
+  }, []);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
