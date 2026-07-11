@@ -53,6 +53,11 @@ const envSchema = z.object({
     .min(1)
     .default("development-only-email-verification-secret"),
   EMAIL_VERIFICATION_JWT_EXPIRES_IN: z.string().default("24h"),
+  PASSWORD_RESET_JWT_SECRET: z
+    .string()
+    .min(1)
+    .default("development-only-password-reset-secret"),
+  PASSWORD_RESET_JWT_EXPIRES_IN: z.string().default("15m"),
   SEND_EMAILS: z
     .string()
     .default("false")
