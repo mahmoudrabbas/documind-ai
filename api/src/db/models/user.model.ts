@@ -11,6 +11,8 @@ export interface UserDocument extends mongoose.Document {
   emailVerifiedAt: Date | null;
   emailVerificationTokenHash: string | null;
   emailVerificationExpiresAt: Date | null;
+  passwordResetTokenHash: string | null;
+  passwordResetExpiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,6 +28,8 @@ function sanitizeUserTransform(
   delete ret.passwordHash;
   delete ret.emailVerificationTokenHash;
   delete ret.emailVerificationExpiresAt;
+  delete ret.passwordResetTokenHash;
+  delete ret.passwordResetExpiresAt;
 
   return ret;
 }
@@ -81,6 +85,16 @@ const userSchema = new Schema<UserDocument>(
       select: false,
     },
     emailVerificationExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordResetExpiresAt: {
       type: Date,
       default: null,
       select: false,

@@ -7,6 +7,8 @@ import type {
   SuperAdminLoginInput,
   ResendVerificationEmailInput,
   VerifyEmailInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
 } from "./auth.types.js";
 
 const registerSchema = z
@@ -53,6 +55,23 @@ const loginSchema = z
   .strict();
 const superAdminLoginSchema = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(1).max(128) }).strict();
 
+const forgotPasswordSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email("email must be a valid address"),
+  })
+  .strict();
+
+const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(1, "token is required"),
+    password: z
+      .string()
+      .min(8, "password must be at least 8 characters")
+      .max(128, "password must be at most 128 characters")
+      .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, "password must contain at least one letter and one number"),
+  })
+  .strict();
+
 export function validateRegisterInput(input: unknown): RegisterInput {
   const result = registerSchema.safeParse(input);
 
@@ -74,6 +93,14 @@ export function validateSuperAdminLoginInput(input: unknown): SuperAdminLoginInp
 
 export function validateResendVerificationEmailInput(input: unknown): ResendVerificationEmailInput {
   return parseAuthInput(resendVerificationEmailSchema, input);
+}
+
+export function validateForgotPasswordInput(input: unknown): ForgotPasswordInput {
+  return parseAuthInput(forgotPasswordSchema, input);
+}
+
+export function validateResetPasswordInput(input: unknown): ResetPasswordInput {
+  return parseAuthInput(resetPasswordSchema, input);
 }
 
 function parseAuthInput<T>(schema: z.ZodType<T>, input: unknown): T {

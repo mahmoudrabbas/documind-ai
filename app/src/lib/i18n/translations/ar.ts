@@ -118,6 +118,23 @@ const ar: TranslationDictionary = {
   "auth.privateAnswersDesc": "الردود مبنية على مستندات داخلية معتمدة.",
   "auth.registerNow": "سجّل الآن",
 
+  /* ── auth/forgot-password ───────────────────────────────── */
+  "auth.forgotPassword": "هل نسيت كلمة المرور؟",
+  "auth.forgotPasswordTitle": "إعادة تعيين كلمة المرور",
+  "auth.forgotPasswordDescription": "أدخل عنوان بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.",
+  "auth.forgotPasswordEmailSent": "إذا كان هناك حساب بهذا البريد الإلكتروني، فقد تم إرسال رابط إعادة تعيين كلمة المرور.",
+  "auth.forgotPasswordSubmit": "إرسال رابط إعادة التعيين",
+  "auth.forgotPasswordSending": "جارٍ الإرسال…",
+  "auth.forgotPasswordSuccess": "تحقق من بريدك الإلكتروني",
+
+  /* ── auth/reset-password ────────────────────────────────── */
+  "auth.resetPassword": "تعيين كلمة مرور جديدة",
+  "auth.resetPasswordTitle": "تعيين كلمة المرور الجديدة",
+  "auth.resetPasswordSecure": "إعادة تعيين آمنة لكلمة المرور",
+  "auth.resetPasswordSuccess": "تم إعادة تعيين كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول.",
+  "auth.resettingPassword": "جارٍ إعادة التعيين…",
+  "auth.resetPasswordSubmit": "إعادة تعيين كلمة المرور",
+
   /* ── documents ──────────────────────────────────────────── */
   "documents.title": "المستندات",
   "documents.subtitle": "رفع وإدارة مستندات شركتك.",
