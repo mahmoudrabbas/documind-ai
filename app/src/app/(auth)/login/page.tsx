@@ -74,21 +74,6 @@ export default function LoginPage() {
     );
   }
 
-  const trustItems = [
-    {
-      title: t("auth.tenantIsolationTitle"),
-      description: t("auth.tenantIsolationDesc"),
-    },
-    {
-      title: t("auth.verifiedAccessTitle"),
-      description: t("auth.verifiedAccessDesc"),
-    },
-    {
-      title: t("auth.privateAnswersTitle"),
-      description: t("auth.privateAnswersDesc"),
-    },
-  ];
-
   function messageForError(error: unknown) {
     if (!(error instanceof ApiError)) {
       return t("auth.errorGeneric");
