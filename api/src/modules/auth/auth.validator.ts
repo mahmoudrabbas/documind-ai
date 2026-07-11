@@ -31,6 +31,7 @@ const registerSchema = z
       .min(8, "password must be at least 8 characters")
       .max(128, "password must be at most 128 characters")
       .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, "password must contain at least one letter and one number"),
+    packageCode: z.string().trim().max(50).optional(),
   })
   .strict();
 

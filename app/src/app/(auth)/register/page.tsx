@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import {
   clearAccessToken,
@@ -83,8 +83,14 @@ function GitHubIcon(props: React.SVGProps<SVGSVGElement>) {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t, dir } = useI18n();
   const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  const selectedPackageCode = useMemo(
+    () => searchParams.get("package")?.trim() ?? "",
+    [searchParams],
+  );
 
   useEffect(() => {
     if (getAccessToken()) {
@@ -188,16 +194,22 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
+      const body: Record<string, unknown> = {
+        companyName: companyName.trim(),
+        companySlug: companySlug.trim().toLowerCase(),
+        adminName: adminName.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+      };
+
+      if (selectedPackageCode) {
+        body.packageCode = selectedPackageCode;
+      }
+
       await apiClient<RegisterResponse>("/auth/register", {
         method: "POST",
         auth: false,
-        body: {
-          companyName: companyName.trim(),
-          companySlug: companySlug.trim().toLowerCase(),
-          adminName: adminName.trim(),
-          email: email.trim().toLowerCase(),
-          password,
-        },
+        body,
       });
 
       setSuccessMessage(t("auth.registerSuccess"));
