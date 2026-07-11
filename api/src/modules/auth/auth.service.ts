@@ -57,7 +57,6 @@ import {
   setRefreshTokenReplacement,
   updateUserVerificationToken,
   updateUserPasswordResetToken,
-  findUserByEmailWithPasswordResetToken,
   findUserByIdWithPasswordResetToken,
   clearUserPasswordResetToken,
   updateUserPassword,
