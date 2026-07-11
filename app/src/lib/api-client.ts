@@ -16,6 +16,8 @@ const PUBLIC_AUTH_ENDPOINTS = new Set([
   "/auth/verify-email",
   "/auth/resend-verification-email",
   "/auth/logout",
+  "/auth/forgot-password",
+  "/auth/reset-password",
 ]);
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";

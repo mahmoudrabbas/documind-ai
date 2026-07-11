@@ -328,6 +328,15 @@ export default function LoginPage() {
                   {errors.password}
                 </p>
               ) : null}
+
+              <div className="mt-1 text-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700 transition"
+                >
+                  {t("auth.forgotPassword")}
+                </Link>
+              </div>
             </div>
 
             <button
