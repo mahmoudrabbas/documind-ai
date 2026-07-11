@@ -146,10 +146,6 @@ export default function LoginPage() {
         tenant: response.data.tenant,
       });
 
-      // Activate trial subscription if registration included a packageCode.
-      // The backend silently rejects when no trial is pending.
-      apiClient("/auth/complete-trial", { method: "POST" }).catch(() => {});
-
       const destination =
         getSafeReturnTo(searchParams.get("returnTo")) ??
         getRoleHome(response.data.user.role);

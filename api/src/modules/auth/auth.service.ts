@@ -680,6 +680,34 @@ export async function login(
 
   assertAccountCanSignIn(user, tenant);
 
+  // Activate trial subscription if registration included a packageCode.
+  if (tenant.selectedPackageCode && tenant.plan === "free") {
+    try {
+      const trialPkg = await PackageModel.findOne({ code: tenant.selectedPackageCode, active: true }).lean().exec();
+      if (trialPkg) {
+        const existingSub = await SubscriptionModel.findOne({ tenantId: tenant._id }).lean().exec();
+        if (!existingSub) {
+          const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+          await SubscriptionModel.create({
+            tenantId: tenant._id,
+            packageId: trialPkg._id,
+            packageVersion: trialPkg.version,
+            status: "trialing",
+            startedAt: new Date(),
+            renewsAt: trialEnd,
+          });
+          await TenantModel.updateOne(
+            { _id: tenant._id },
+            { $set: { plan: "trial" }, $unset: { selectedPackageCode: "" } },
+          ).exec();
+          tenant.plan = "trial";
+        }
+      }
+    } catch {
+      // Non-blocking — login succeeds even if trial activation fails
+    }
+  }
+
   const jti = randomUUID();
   const familyId = randomUUID();
   const refreshToken = signJwt(
