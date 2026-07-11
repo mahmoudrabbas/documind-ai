@@ -15,6 +15,8 @@ import type {
 import type { TenantDocument } from "../../db/models/tenant.model.js";
 import type { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
+import type { AuthIdentity } from "../auth/auth.types.js";
+import AuditLogModel from "../../db/models/auditLog.model.js";
 function serializeTenant(
   tenant: TenantDocument,
   stats: TenantPublicView["stats"] = { users: 0, documents: 0, questions: 0 },
@@ -103,6 +105,7 @@ export async function getTenant(id: string): Promise<TenantPublicView> {
 
 export async function updateTenant(
   input: UpdateTenantInput,
+  actor?: AuthIdentity,
 ): Promise<UpdateTenantResult> {
   const { id, ...updateData } = input;
 
@@ -110,6 +113,20 @@ export async function updateTenant(
 
   if (!updatedTenant) {
     throw new AppError(404, "NOT_FOUND", "Tenant not found");
+  }
+
+  if (actor) {
+    await AuditLogModel.create({
+      tenantId: updatedTenant._id,
+      userId: actor.userId,
+      resourceType: "tenant",
+      resourceId: id,
+      action: "TENANT_UPDATED",
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      changes: updateData,
+    });
   }
 
   const counts = await aggregateTenantStats([updatedTenant._id]);

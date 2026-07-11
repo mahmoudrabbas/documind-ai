@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { listRoles } from "@/services/roles.service";
 import type { RoleView } from "@/types/api/users.types";
+import {
+  DashboardPage,
+  DashboardPageHeader,
+  DashboardPanel,
+} from "@/components/ui/DashboardPage";
 
 type UserView = {
   id: string;
@@ -146,7 +151,6 @@ export default function UsersPage() {
     (async () => {
       await loadUsers(page);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -298,33 +302,31 @@ export default function UsersPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] flex-1 p-lg">
-      <div className="mb-xl mt-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 flex-1">
+    <DashboardPage>
+      <DashboardPageHeader
+        eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">group</span>
             Team access
           </div>
-          <h1 className="mt-3 text-headline-lg font-bold text-primary">
-            Team Management
-          </h1>
-          <p className="mt-2 max-w-2xl text-body-md leading-relaxed text-on-surface-variant">
-            Invite teammates and manage user access for your company in one
-            place.
-          </p>
-        </div>
+        }
+        title="Team Management"
+        description="Invite teammates and manage user access for your company in one place."
+        actions={
+          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm">
+            <p className="font-semibold text-on-surface">
+              Manage access quickly
+            </p>
+            <p className="mt-1 max-w-xs text-on-surface-variant">
+              Keep your team members aligned with the right roles and status.
+            </p>
+          </div>
+        }
+      />
 
-        <div className="w-full shrink-0 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm lg:w-auto">
-          <p className="font-semibold text-on-surface">Manage access quickly</p>
-          <p className="mt-1 max-w-xs text-on-surface-variant">
-            Keep your team members aligned with the right roles and status.
-          </p>
-        </div>
-      </div>
-
-      <section className="mb-xl grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm md:p-xl">
-          <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="mb-6 grid auto-rows-auto items-start gap-3 sm:gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:gap-5">
+        <DashboardPanel>
+          <div className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <h2 className="text-title-lg font-bold text-primary">
                 Invite New User
@@ -339,7 +341,7 @@ export default function UsersPage() {
             </div>
           </div>
 
-          <form id="invite" className="space-y-6" onSubmit={handleSubmit}>
+          <form id="invite" className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="mb-2 block text-label-md font-bold text-on-surface-variant">
                 Name
@@ -404,7 +406,7 @@ export default function UsersPage() {
 
             <button
               type="submit"
-              className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm transition-all hover:bg-secondary-container hover:text-on-secondary-container disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm transition-all hover:bg-secondary-container hover:text-on-secondary-container disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               disabled={isSubmitting}
             >
               {isSubmitting ? (
@@ -419,9 +421,9 @@ export default function UsersPage() {
               {isSubmitting ? "Sending invitation..." : "Send invite"}
             </button>
           </form>
-        </div>
+        </DashboardPanel>
 
-        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container p-lg shadow-sm md:p-xl">
+        <DashboardPanel tone="muted">
           <h3 className="text-title-md font-bold text-primary">
             What you can control
           </h3>
@@ -444,15 +446,15 @@ export default function UsersPage() {
             </li>
           </ul>
 
-          <div className="mt-8 rounded-2xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm leading-relaxed text-on-surface-variant">
+          <div className="mt-5 rounded-2xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm leading-relaxed text-on-surface-variant">
             Tip: use custom roles when a teammate needs a more specific
             permission setup.
           </div>
-        </div>
-      </section>
+        </DashboardPanel>
+      </div>
 
-      <section className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-lg shadow-sm">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <DashboardPanel>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-title-lg font-bold text-primary">
               User Directory
@@ -486,8 +488,8 @@ export default function UsersPage() {
             Loading directory...
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
-            <table className="min-w-full divide-y divide-outline-variant/30 text-left text-sm">
+          <div className="max-w-full overflow-x-auto rounded-xl border border-outline-variant/30">
+            <table className="w-full min-w-[940px] divide-y divide-outline-variant/30 text-start text-sm">
               <thead className="bg-surface-container-low">
                 <tr>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
@@ -653,7 +655,7 @@ export default function UsersPage() {
           </div>
         )}
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="mt-4 flex flex-col gap-3 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between">
           <button
             type="button"
             className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
@@ -662,7 +664,7 @@ export default function UsersPage() {
               setPage((current: number): number => Math.max(1, current - 1))
             }
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
               chevron_left
             </span>
             Previous
@@ -681,12 +683,12 @@ export default function UsersPage() {
             }
           >
             Next
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
               chevron_right
             </span>
           </button>
         </div>
-      </section>
-    </main>
+      </DashboardPanel>
+    </DashboardPage>
   );
 }

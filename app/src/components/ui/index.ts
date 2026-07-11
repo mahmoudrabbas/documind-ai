@@ -31,4 +31,9 @@ export { AuthHeroPanel } from "./AuthHeroPanel";
 export { FileDropzone, type FileDropzoneProps } from "./FileDropzone";
 export { ProgressBar, type ProgressBarProps } from "./ProgressBar";
 export { TopNavBar } from "./TopNavBar";
+export {
+  DashboardPage,
+  DashboardPageHeader,
+  DashboardPanel,
+} from "./DashboardPage";
 export type { ButtonVariant, ButtonSize, BadgeStatus } from "./variants";

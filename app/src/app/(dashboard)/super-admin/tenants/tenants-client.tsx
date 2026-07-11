@@ -54,8 +54,8 @@ export function TenantsClient() {
         ...changes,
         page: resetPage ? 1 : (changes.page ?? query.page),
       };
-      const target = `/platform/tenants?${buildTenantListSearch(next)}`;
-      if (target !== `/platform/tenants?${searchParams.toString()}`)
+      const target = `/super-admin/companies?${buildTenantListSearch(next)}`;
+      if (target !== `/super-admin/companies?${searchParams.toString()}`)
         router.replace(target, { scroll: false });
     },
     [query, router, searchParams],
@@ -105,12 +105,17 @@ export function TenantsClient() {
   }, [load]);
   useEffect(() => {
     if (editing) {
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
       dialogRef.current?.focus();
       const close = (event: KeyboardEvent) => {
         if (event.key === "Escape" && !pending) setEditing(null);
       };
       window.addEventListener("keydown", close);
-      return () => window.removeEventListener("keydown", close);
+      return () => {
+        document.body.style.overflow = previousOverflow;
+        window.removeEventListener("keydown", close);
+      };
     }
   }, [editing, pending]);
 
@@ -137,13 +142,13 @@ export function TenantsClient() {
 
   const filtered = Boolean(query.search || query.status || query.plan);
   return (
-    <main className="mx-auto max-w-6xl p-4 sm:p-8">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-4 py-6 sm:px-5 lg:px-8 lg:py-8 2xl:px-10">
       <header>
-        <p className="text-sm font-semibold text-blue-700">Super Admin</p>
-        <h1 className="mt-1 text-3xl font-bold text-slate-950">
-          Tenant management
+        <p className="text-sm font-semibold text-secondary">Super Admin</p>
+        <h1 className="mt-1 text-headline-lg-mobile font-bold text-primary sm:text-headline-lg">
+          Companies
         </h1>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm text-on-surface-variant">
           Search, review, and manage organizations across DocuMind AI.
         </p>
       </header>
@@ -154,7 +159,7 @@ export function TenantsClient() {
       </p>
       <section
         aria-label="Tenant filters"
-        className="mt-4 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end"
+        className="mt-4 grid gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 sm:gap-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end"
       >
         <label className="text-sm font-medium text-slate-700">
           Search tenants
@@ -258,7 +263,7 @@ export function TenantsClient() {
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[1050px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1050px] border-collapse text-start text-sm">
             <thead className="bg-slate-50 text-slate-700">
               <tr>
                 {[
@@ -301,7 +306,7 @@ export function TenantsClient() {
                   <td className="px-4 py-4">
                     <div className="flex gap-2">
                       <a
-                        href={`/platform/tenants/${tenant.id}`}
+                        href={`/super-admin/companies/${tenant.id}`}
                         className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white"
                       >
                         Open
@@ -343,7 +348,7 @@ export function TenantsClient() {
                   true,
                 )
               }
-              className="ml-2 rounded-lg border p-2"
+              className="ms-2 rounded-lg border p-2"
             >
               {PAGE_SIZES.map((v) => (
                 <option key={v}>{v}</option>
@@ -384,7 +389,7 @@ export function TenantsClient() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="tenant-dialog-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl outline-none"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl outline-none sm:p-6"
           >
             <h2 id="tenant-dialog-title" className="text-xl font-bold">
               Manage {editing.name}
