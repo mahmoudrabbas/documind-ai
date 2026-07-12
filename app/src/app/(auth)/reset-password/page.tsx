@@ -140,7 +140,7 @@ export default function ResetPasswordPage() {
 
   return (
     <main
-      key={locale}
+      key={locale} 
       dir={dir}
       className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
