@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 
 import { useI18n } from "@/providers/i18n-provider";
 import { AuthPageShell } from "@/components/auth/auth-page-shell";
@@ -20,7 +20,7 @@ import {
 
 const verifiedTokenRequests = new Map<string, Promise<VerificationState>>();
 
-export default function VerifyEmailClient() {
+function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const { t, dir } = useI18n();
   const token = useMemo(
@@ -128,6 +128,20 @@ export default function VerifyEmailClient() {
         </Link>
       ) : null}
     </AuthPageShell>
+  );
+}
+
+export default function VerifyEmailClient() {
+  return (
+    <Suspense 
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50">
+          <span className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-950" />
+        </div>
+      }
+    >
+      <VerifyEmailContent />
+    </Suspense>
   );
 }
 
