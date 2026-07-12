@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
@@ -69,10 +69,6 @@ export default function ResetPasswordPage() {
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-
-  useEffect(() => {
-    setErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-  }, [locale]);
 
   if (!token || !slug) {
     return (
@@ -144,6 +140,7 @@ export default function ResetPasswordPage() {
 
   return (
     <main
+      key={locale}
       dir={dir}
       className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
