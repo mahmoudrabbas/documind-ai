@@ -71,10 +71,7 @@ export default function ResetPasswordPage() {
   const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
-    setErrors((prev) => {
-      if (Object.keys(prev).length === 0) return prev;
-      return {};
-    });
+    setErrors((prev) => (Object.keys(prev).length === 0 ? prev : {}));
   }, [locale]);
 
   if (!token || !slug) {
