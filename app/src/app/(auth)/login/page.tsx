@@ -84,11 +84,6 @@ export default function LoginPage() {
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Clear field-level validation errors whenever the language changes
-  useEffect(() => {
-    setErrors({});
-  }, [locale]);
-
   function messageForError(error: unknown) {
     if (!(error instanceof ApiError)) {
       return t("auth.errorGeneric");
@@ -98,7 +93,7 @@ export default function LoginPage() {
       case "EMAIL_NOT_VERIFIED":
         return t("auth.errorEmailNotVerified");
       case "INVALID_CREDENTIALS":
-        return t("auth.errorInvalidCredentials");
+        return t("auth.errorINVALID_CREDENTIALS");
       case "ACCOUNT_NOT_ACTIVE":
         return t("auth.errorAccountNotActive");
       case "TENANT_NOT_ACTIVE":
@@ -169,6 +164,7 @@ export default function LoginPage() {
 
   return (
     <main
+      key={locale}
       dir={dir}
       className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
@@ -344,7 +340,7 @@ export default function LoginPage() {
                   progress_activity
                 </span>
               ) : null}
-              {isSubmitting ? t("auth.signingIn") : "Sign In"}
+              {isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
             </button>
 
             <div className="text-center mt-5">

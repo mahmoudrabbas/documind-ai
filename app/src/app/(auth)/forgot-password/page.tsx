@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
@@ -38,11 +38,6 @@ export default function ForgotPasswordPage() {
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSent, setIsSent] = useState(false);
-
-  // Clear field-level validation errors whenever the language changes
-  useEffect(() => {
-    setFieldErrors({});
-  }, [locale]);
 
   function validate() {
     const next: FormErrors = {};
@@ -89,6 +84,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <main
+      key={locale}
       dir={dir}
       className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >

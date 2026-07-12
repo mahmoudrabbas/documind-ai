@@ -135,11 +135,6 @@ export default function RegisterPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Clear field-level validation errors whenever the language changes
-  useEffect(() => {
-    setErrors({});
-  }, [locale]);
-
   if (isCheckingSession) {
     return (
       <main className="min-h-screen bg-white text-slate-950 flex items-center justify-center px-6 py-12">
@@ -257,6 +252,7 @@ export default function RegisterPage() {
 
   return (
     <main
+      key={locale}
       dir={dir}
       className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
