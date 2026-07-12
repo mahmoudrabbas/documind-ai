@@ -70,7 +70,6 @@ export default function ResetPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Clear field-level validation errors whenever the language changes
   useEffect(() => {
     setErrors({});
   }, [locale]);
