@@ -5,6 +5,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { AuthHeroPanel } from "@/components/ui";
 import { validateCompanySlug, validateEmail } from "@/lib/validation";
 
 type ForgotPasswordResponse = {
@@ -12,19 +13,34 @@ type ForgotPasswordResponse = {
   message: string;
 };
 
+type FormErrors = Partial<Record<"companySlug" | "email", string>>;
+
+/** Clears a single field's error from a FormErrors-shaped state object, no-op if already clear */
+function clearFieldError<K extends string>(
+  setter: React.Dispatch<React.SetStateAction<Partial<Record<K, string>>>>,
+  field: K,
+) {
+  setter((prev) => {
+    if (!prev[field]) return prev;
+    const next = { ...prev };
+    delete next[field];
+    return next;
+  });
+}
+
 export default function ForgotPasswordPage() {
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
   const submissionPending = useRef(false);
 
   const [email, setEmail] = useState("");
   const [companySlug, setCompanySlug] = useState("");
   const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"companySlug" | "email", string>>>({});
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSent, setIsSent] = useState(false);
 
   function validate() {
-    const next: Partial<Record<"companySlug" | "email", string>> = {};
+    const next: FormErrors = {};
     const slugError = validateCompanySlug(companySlug.trim().toLowerCase());
     const emailError = validateEmail(email);
     if (slugError) next.companySlug = t(slugError);
@@ -66,128 +82,204 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  if (isSent) {
-    return (
-      <main
-        dir={dir}
-        className="min-h-screen bg-white text-slate-950 flex flex-col lg:flex-row w-full overflow-x-hidden"
-      >
-        <section className="bg-[#001524] text-white w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 min-h-[40vh] lg:min-h-screen relative overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08)_0%,transparent_70%)] pointer-events-none" />
-          <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px] flex flex-col items-center relative z-10">
-            <div className="flex flex-col items-center gap-2">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-lg shadow-blue-500/20" aria-hidden="true">DM</span>
-              <p className="text-xl font-bold tracking-tight text-white mt-2">{t("landing.appName")}</p>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">{t("landing.tagline")}</p>
-            </div>
-          </div>
-        </section>
-        <section className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 bg-white min-h-[60vh] lg:min-h-screen relative">
-          <div className={`absolute top-6 ${dir === "rtl" ? "left-6" : "right-6"} z-20`}>
-            <LanguageSwitcher />
-          </div>
-          <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px]">
-            <div className="text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 mb-4">
-                <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">{t("auth.forgotPasswordSuccess")}</h2>
-              <p className="mt-3 text-sm text-slate-600">{t("auth.forgotPasswordEmailSent")}</p>
-              <div className="mt-8">
-                <Link href="/login" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition">{t("auth.backToLogin")}</Link>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-    );
-  }
-
   return (
     <main
+      key={locale}
       dir={dir}
-      className="min-h-screen bg-white text-slate-950 flex flex-col lg:flex-row w-full overflow-x-hidden"
+      className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
-      <section className="bg-[#001524] text-white w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 min-h-[40vh] lg:min-h-screen relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08)_0%,transparent_70%)] pointer-events-none" />
-        <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px] flex flex-col items-center relative z-10">
-          <div className="flex flex-col items-center gap-2">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-lg shadow-blue-500/20" aria-hidden="true">DM</span>
-            <p className="text-xl font-bold tracking-tight text-white mt-2">{t("landing.appName")}</p>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">{t("landing.tagline")}</p>
-          </div>
-        </div>
-      </section>
-      <section className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 lg:px-16 bg-white min-h-[60vh] lg:min-h-screen relative">
-        <div className={`absolute top-6 ${dir === "rtl" ? "left-6" : "right-6"} z-20`}>
+      {/* Left panel (Form Panel) */}
+      <section className="z-10 flex min-h-screen w-full flex-col border-r border-outline-variant p-lg md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
+        {/* Language switcher */}
+        <div className="absolute top-6 right-6 z-20">
           <LanguageSwitcher />
         </div>
-        <div className="max-w-md w-full min-w-[280px] sm:min-w-[400px]">
-          <div className="text-start w-full">
-            <p className="text-sm font-semibold text-blue-600 w-full block">{t("auth.secureSignIn")}</p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-900 w-full block">{t("auth.forgotPasswordTitle")}</h2>
-            <p className="mt-2 text-sm text-slate-600 w-full block">{t("auth.forgotPasswordDescription")}</p>
-          </div>
 
-          <form className="mt-8 space-y-5 w-full" onSubmit={handleSubmit} noValidate>
-            <div aria-live="polite" className="w-full">
-              {error ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full" role="alert">
-                  {error}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="w-full text-start">
-              <label htmlFor="companySlug" className="block text-sm font-medium text-slate-700">{t("auth.companySlug")}</label>
-              <input id="companySlug" name="companySlug" type="text" value={companySlug} onChange={(event) => setCompanySlug(event.target.value)} autoComplete="organization" placeholder={t("auth.companySlugPlaceholder")} disabled={isSubmitting} aria-invalid={Boolean(fieldErrors.companySlug)} aria-describedby={fieldErrors.companySlug ? "companySlug-error" : "companySlug-help"} className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500" />
-              {fieldErrors.companySlug ? <p id="companySlug-error" className="mt-1.5 text-xs text-red-600">{fieldErrors.companySlug}</p> : <p id="companySlug-help" className="mt-1.5 text-xs text-slate-500">{t("auth.companySlugHelp")}</p>}
-            </div>
-
-            <div className="w-full text-start">
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-                {t("auth.email")}
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
-                placeholder={t("auth.emailPlaceholder")}
-                disabled={isSubmitting}
-                aria-invalid={Boolean(fieldErrors.email)}
-                aria-describedby={fieldErrors.email ? "email-error" : undefined}
-                className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-              />
-              {fieldErrors.email ? (
-                <p id="email-error" className="mt-1.5 text-xs text-red-600">{fieldErrors.email}</p>
-              ) : null}
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              aria-busy={isSubmitting || undefined}
-              className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-blue-500/10 transition hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:text-white"
+        {/* Brand Header */}
+        <div className="mb-12">
+          <div className="mb-sm flex items-center gap-base">
+            <span
+              className="material-symbols-outlined text-3xl text-primary"
+              style={{ fontVariationSettings: "'FILL' 1" }}
             >
-              {isSubmitting ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />
-              ) : null}
-              {isSubmitting ? t("auth.forgotPasswordSending") : t("auth.forgotPasswordSubmit")}
-            </button>
+              neurology
+            </span>
+            <h1 className="text-headline-md font-bold tracking-tight text-primary">
+              DocuMind AI
+            </h1>
+          </div>
+          <p className="max-w-sm text-body-md text-on-surface-variant">
+            Private AI Knowledge Assistant for Company Documents
+          </p>
+        </div>
 
-            <div className="text-center mt-5">
-              <Link href="/login" className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition">
+        {/* Forgot Password Form */}
+        <div className="flex flex-grow flex-col justify-start">
+          {isSent ? (
+            <>
+              <div className="mb-base flex h-14 w-14 items-center justify-center rounded-full bg-tertiary-container">
+                <span
+                  className="material-symbols-outlined text-3xl text-on-tertiary-container"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  mark_email_read
+                </span>
+              </div>
+              <h2 className="mb-base text-headline-lg font-bold text-primary">
+                {t("auth.forgotPasswordSuccess")}
+              </h2>
+              <p className="mb-xl text-body-md text-on-surface-variant">
+                {t("auth.forgotPasswordEmailSent")}
+              </p>
+              <Link
+                href="/login"
+                className="text-label-md font-semibold text-on-secondary-container hover:underline"
+              >
                 {t("auth.backToLogin")}
               </Link>
-            </div>
-          </form>
+            </>
+          ) : (
+            <>
+              <h2 className="mb-base text-headline-lg font-bold text-primary">
+                {t("auth.forgotPasswordTitle")}
+              </h2>
+              <p className="mb-xl text-body-md text-on-surface-variant">
+                {t("auth.forgotPasswordDescription")}
+              </p>
+
+              <form
+                className="space-y-md w-full"
+                onSubmit={handleSubmit}
+                noValidate
+              >
+                <div aria-live="polite" className="w-full">
+                  {error ? (
+                    <div
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
+                      role="alert"
+                    >
+                      {error}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="companySlug"
+                    className="mb-xs block text-label-md text-on-surface-variant"
+                  >
+                    {t("auth.companySlug")}
+                  </label>
+                  <input
+                    id="companySlug"
+                    name="companySlug"
+                    type="text"
+                    value={companySlug}
+                    onChange={(event) => {
+                      setCompanySlug(event.target.value);
+                      clearFieldError(setFieldErrors, "companySlug");
+                    }}
+                    autoComplete="organization"
+                    placeholder={t("auth.companySlugPlaceholder")}
+                    disabled={isSubmitting}
+                    aria-invalid={Boolean(fieldErrors.companySlug)}
+                    aria-describedby={
+                      fieldErrors.companySlug ? "companySlug-error" : "companySlug-help"
+                    }
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  {fieldErrors.companySlug ? (
+                    <p id="companySlug-error" className="mt-1.5 text-xs text-error">
+                      {fieldErrors.companySlug}
+                    </p>
+                  ) : (
+                    <p id="companySlug-help" className="mt-1.5 text-xs text-on-surface-variant">
+                      {t("auth.companySlugHelp")}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="mb-xs block text-label-md text-on-surface-variant"
+                  >
+                    {t("auth.email")}
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      clearFieldError(setFieldErrors, "email");
+                    }}
+                    autoComplete="email"
+                    placeholder={t("auth.emailPlaceholder")}
+                    disabled={isSubmitting}
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={fieldErrors.email ? "email-error" : undefined}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  {fieldErrors.email && (
+                    <p id="email-error" className="mt-1.5 text-xs text-error">
+                      {fieldErrors.email}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  aria-busy={isSubmitting || undefined}
+                  className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <span className="material-symbols-outlined animate-spin">
+                      progress_activity
+                    </span>
+                  ) : null}
+                  {isSubmitting
+                    ? t("auth.forgotPasswordSending")
+                    : t("auth.forgotPasswordSubmit")}
+                </button>
+
+                <div className="text-center mt-5">
+                  <Link
+                    href="/login"
+                    className="text-sm font-semibold text-primary hover:underline transition"
+                  >
+                    {t("auth.backToLogin")}
+                  </Link>
+                </div>
+              </form>
+            </>
+          )}
+        </div>
+
+        {/* Security Footer */}
+        <div className="mt-auto flex flex-col gap-sm border-t border-outline-variant pt-xl">
+          <div className="flex items-center gap-sm">
+            <span
+              className="material-symbols-outlined text-xl text-on-tertiary-container"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              verified_user
+            </span>
+            <span className="text-label-sm text-on-surface-variant">
+              AES-256 Encrypted & SOC2 Compliant
+            </span>
+          </div>
+          <p className="text-body-sm text-outline">
+            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
+            rights reserved.
+          </p>
         </div>
       </section>
+
+      {/* Right Section: Visual Panel */}
+      <AuthHeroPanel />
     </main>
   );
 }
