@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getSecretValue } from "../secretEnv.js";
 
 /**
  * Zod schema for Workers service environment variables.
@@ -9,16 +10,11 @@ const envSchema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
 
-  MONGODB_URI: z
-    .string()
-    .url()
-    .default("mongodb://mongodb:27017/docsai"),
+  MONGODB_URI: z.string().url().default("mongodb://mongodb:27017/docsai"),
 
   REDIS_URL: z.string().default("redis://redis:6379"),
 
-  LOG_LEVEL: z
-    .enum(["debug", "info", "warn", "error"])
-    .default("info"),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
   WORKER_CONCURRENCY: z
     .string()
@@ -34,7 +30,13 @@ export type Env = z.infer<typeof envSchema>;
  * Exits the process with a clear error message if validation fails.
  */
 export function parseEnv(env: Record<string, string | undefined>): Env {
-  const result = envSchema.safeParse(env);
+  const normalizedEnv = {
+    ...env,
+    MONGODB_URI: getSecretValue("MONGODB_URI", env.MONGODB_URI),
+    REDIS_URL: getSecretValue("REDIS_URL", env.REDIS_URL),
+  };
+
+  const result = envSchema.safeParse(normalizedEnv);
 
   if (!result.success) {
     console.error("❌ Invalid environment variables:");

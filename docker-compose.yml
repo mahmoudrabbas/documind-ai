@@ -10,6 +10,19 @@ services:
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/docsai
       - REDIS_URL=redis://redis:6379
+      - JWT_SECRET_FILE=/run/secrets/api_jwt_secret
+      - JWT_REFRESH_SECRET_FILE=/run/secrets/api_refresh_secret
+      - EMAIL_VERIFICATION_JWT_SECRET_FILE=/run/secrets/api_email_verification_secret
+      - PASSWORD_RESET_JWT_SECRET_FILE=/run/secrets/api_password_reset_secret
+      - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
+      - SUPER_ADMIN_BOOTSTRAP_KEY_FILE=/run/secrets/api_super_admin_bootstrap_key
+    secrets:
+      - api_jwt_secret
+      - api_refresh_secret
+      - api_email_verification_secret
+      - api_password_reset_secret
+      - api_smtp_pass
+      - api_super_admin_bootstrap_key
     depends_on:
       mongodb:
         condition: service_healthy
@@ -72,6 +85,11 @@ services:
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/docsai
       - REDIS_URL=redis://redis:6379
+      - MONGODB_URI_FILE=/run/secrets/worker_mongodb_uri
+      - REDIS_URL_FILE=/run/secrets/worker_redis_url
+    secrets:
+      - worker_mongodb_uri
+      - worker_redis_url
 
   redis:
     image: redis:7
@@ -105,3 +123,21 @@ services:
 volumes:
   mongo_data:
   redis_data:
+
+secrets:
+  api_jwt_secret:
+    file: ./secrets/api_jwt_secret.txt
+  api_refresh_secret:
+    file: ./secrets/api_refresh_secret.txt
+  api_email_verification_secret:
+    file: ./secrets/api_email_verification_secret.txt
+  api_password_reset_secret:
+    file: ./secrets/api_password_reset_secret.txt
+  api_smtp_pass:
+    file: ./secrets/api_smtp_pass.txt
+  api_super_admin_bootstrap_key:
+    file: ./secrets/api_super_admin_bootstrap_key.txt
+  worker_mongodb_uri:
+    file: ./secrets/worker_mongodb_uri.txt
+  worker_redis_url:
+    file: ./secrets/worker_redis_url.txt
