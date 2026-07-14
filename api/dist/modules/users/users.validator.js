@@ -14,19 +14,25 @@ const inviteUserSchema = z
         .trim()
         .toLowerCase()
         .email("email must be a valid address"),
-    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).default("EMPLOYEE"),
+    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
+    customRoleId: z.string().min(1, "customRoleId must not be empty").optional(),
 })
-    .strict();
+    .strict()
+    .refine((data) => data.role !== undefined || data.customRoleId !== undefined, {
+    message: "Either role or customRoleId must be provided",
+    path: ["role"],
+});
 const updateUserSchema = z
     .object({
     role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
+    customRoleId: z.string().min(1, "customRoleId must not be empty").optional(),
     status: z
         .enum(["active", "pending", "pending_email_verification", "disabled"])
         .optional(),
 })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one of role or status must be provided",
+    message: "At least one of role, customRoleId, or status must be provided",
 });
 const listUsersSchema = z
     .object({
@@ -45,6 +51,7 @@ const setPasswordFromInviteSchema = z
         .string()
         .min(8, "password must be at least 8 characters")
         .max(128, "password must be at most 128 characters")
+        .refine((value) => value === value.trim(), "password must not have leading or trailing whitespace")
         .regex(/[A-Z]/, "password must contain at least one uppercase letter")
         .regex(/[a-z]/, "password must contain at least one lowercase letter")
         .regex(/[0-9]/, "password must contain at least one digit"),
@@ -74,7 +81,7 @@ export function validateListUsersInput(input) {
 export function validateSetPasswordFromInviteInput(input) {
     const result = setPasswordFromInviteSchema.safeParse(input);
     if (!result.success) {
-        throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+        throw new AppError(400, "PASSWORD_VALIDATION_FAILED", "Validation failed", groupValidationIssues(result.error.issues));
     }
     return result.data;
 }

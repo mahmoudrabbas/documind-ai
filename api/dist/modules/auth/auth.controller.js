@@ -1,13 +1,26 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { login, superAdminLogin, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, } from "./auth.service.js";
+import { login, superAdminLogin, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, forgotPassword, resetPassword, completeTrial, } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
+function isSecureCookieAllowed() {
+    if (config.NODE_ENV === "production") {
+        return true;
+    }
+    try {
+        const frontendUrl = new URL(config.APP_FRONTEND_URL);
+        return ["localhost", "127.0.0.1"].includes(frontendUrl.hostname);
+    }
+    catch {
+        return false;
+    }
+}
 function refreshCookieOptions() {
+    const secure = isSecureCookieAllowed();
     return {
         httpOnly: true,
-        secure: config.NODE_ENV === "production",
-        sameSite: "lax",
+        secure,
+        sameSite: secure ? "none" : "lax",
         path: "/auth",
         maxAge: durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN),
     };
@@ -42,6 +55,22 @@ export async function resendVerificationEmailController(req, res, next) {
     try {
         const result = await resendVerificationEmail(req.body);
         res.status(200).json(result);
+    }
+    catch (error) {
+        handleAuthError(error, res, next);
+    }
+}
+export async function completeTrialController(req, res, next) {
+    try {
+        if (!req.auth) {
+            throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+        }
+        const result = await completeTrial(req.auth);
+        res.status(200).json({
+            success: true,
+            message: "Trial subscription activated successfully",
+            data: result,
+        });
     }
     catch (error) {
         handleAuthError(error, res, next);
@@ -128,8 +157,8 @@ export async function refreshController(req, res, next) {
 function clearRefreshCookie(res) {
     res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
-        secure: config.NODE_ENV === "production",
-        sameSite: "lax",
+        secure: isSecureCookieAllowed(),
+        sameSite: isSecureCookieAllowed() ? "none" : "lax",
         path: "/auth",
     });
 }
@@ -141,6 +170,24 @@ export async function logoutController(req, res, next) {
             success: true,
             message: "Logged out successfully",
         });
+    }
+    catch (error) {
+        next(error);
+    }
+}
+export async function forgotPasswordController(req, res, next) {
+    try {
+        const result = await forgotPassword(req.body);
+        res.status(200).json({ success: true, message: result.message });
+    }
+    catch (error) {
+        next(error);
+    }
+}
+export async function resetPasswordController(req, res, next) {
+    try {
+        const result = await resetPassword(req.body);
+        res.status(200).json({ success: true, message: result.message });
     }
     catch (error) {
         next(error);

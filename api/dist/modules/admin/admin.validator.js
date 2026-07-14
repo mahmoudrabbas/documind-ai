@@ -52,6 +52,13 @@ const updateTenantBodySchema = z
 const updateTenantParamsSchema = z.object({
     id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenant ID format"),
 });
+export function validateTenantId(params) {
+    const result = updateTenantParamsSchema.safeParse(params);
+    if (!result.success) {
+        throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+    }
+    return result.data.id;
+}
 export function validateUpdateTenantInput(params, body) {
     const paramsResult = updateTenantParamsSchema.safeParse(params);
     if (!paramsResult.success) {

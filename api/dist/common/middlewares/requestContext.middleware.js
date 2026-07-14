@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger/logger.js";
+import { withRequestContext } from "../utils/requestContext.js";
 const MAX_REQUEST_ID_LENGTH = 128;
 const VALID_REQUEST_ID = /^[\x21-\x7e]+$/;
 function getRequestId(value) {
@@ -23,6 +24,8 @@ export const requestContextMiddleware = (req, res, next) => {
         req.log = logger;
     }
     res.setHeader("X-Request-ID", requestId);
-    next();
+    withRequestContext(requestId, () => {
+        next();
+    });
 };
 //# sourceMappingURL=requestContext.middleware.js.map

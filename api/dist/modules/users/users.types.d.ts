@@ -2,13 +2,15 @@ import type { UserPublicView } from "../auth/auth.types.js";
 export interface InviteUserInput {
     name: string;
     email: string;
-    role: "COMPANY_ADMIN" | "EMPLOYEE";
+    role?: "COMPANY_ADMIN" | "EMPLOYEE";
+    customRoleId?: string;
 }
 export interface InviteUserResult {
     user: UserPublicView;
 }
 export interface UpdateUserInput {
     role?: "COMPANY_ADMIN" | "EMPLOYEE";
+    customRoleId?: string;
     status?: "active" | "pending" | "pending_email_verification" | "disabled";
 }
 export interface UpdateUserResult {

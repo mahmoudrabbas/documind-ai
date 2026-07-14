@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { AppError } from "../../common/errors/AppError.js";
-import { EMAIL_ALREADY_EXISTS, NOT_FOUND, REGISTRATION_FAILED, USER_UPDATE_FAILED, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, } from "../../common/errors/errorCodes.js";
+import { EMAIL_ALREADY_EXISTS, NOT_FOUND, REGISTRATION_FAILED, USER_UPDATE_FAILED, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, VALIDATION_ERROR, } from "../../common/errors/errorCodes.js";
+import RoleModel from "../../db/models/role.model.js";
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
 import { verifyEmailVerificationToken, hashVerificationJti, } from "../auth/emailVerificationToken.js";
 import { findUserDocumentById } from "../auth/auth.repository.js";
-import { sendVerificationEmail } from "../auth/auth.mailer.js";
+import { sendInvitationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
-import { createUser, findTenantById, findUserByTenantAndId, findUserDocumentByTenantAndEmail, countUsersByTenant, findUsersByTenant, updateUserByTenantAndId, } from "./users.repository.js";
+import { createUser, findTenantById, findUserByTenantAndId, findUserDocumentByTenantAndEmail, countUsersByTenant, findUsersByTenant, updateUserByTenantAndId, deleteUserByTenantAndId, } from "./users.repository.js";
 import { createAuditLog } from "../audit/audit.repository.js";
 import { validateInviteUserInput, validateListUsersInput, validateUpdateUserInput, validateSetPasswordFromInviteInput, } from "./users.validator.js";
 import { config } from "../../config/index.js";
 function serializeUser(user) {
-    return {
+    const result = {
         id: user.id ?? user._id.toString(),
         tenantId: user.tenantId?.toString() ?? "",
         name: user.name,
@@ -21,6 +22,17 @@ function serializeUser(user) {
         emailVerified: user.emailVerified,
         createdAt: user.createdAt?.toISOString() ?? new Date().toISOString(),
     };
+    if (user.customRoleId) {
+        if (typeof user.customRoleId === "object") {
+            result.customRoleId =
+                user.customRoleId._id?.toString() ?? user.customRoleId.toString();
+            result.customRoleName = user.customRoleId.name;
+        }
+        else {
+            result.customRoleId = user.customRoleId;
+        }
+    }
+    return result;
 }
 function buildVerificationUrl(token) {
     const url = new URL("/set-password-from-invite", config.APP_FRONTEND_URL);
@@ -45,25 +57,46 @@ export async function inviteUser(input, tenantId, inviterId) {
     }
     const inviter = await findUserByTenantAndId(tenantId, inviterId);
     const inviterName = inviter?.name ?? "Your administrator";
+    let resolvedRole;
+    let resolvedCustomRoleId;
+    if (payload.customRoleId) {
+        const customRole = await RoleModel.findOne({
+            _id: payload.customRoleId,
+            tenantId,
+        }).exec();
+        if (!customRole) {
+            throw new AppError(400, VALIDATION_ERROR, "Custom role not found in this tenant");
+        }
+        resolvedRole = customRole.baseRole;
+        resolvedCustomRoleId = customRole._id.toString();
+    }
+    else {
+        resolvedRole = payload.role ?? "EMPLOYEE";
+    }
     const userPayload = {
         tenantId,
         name: payload.name.trim(),
         email: payload.email.toLowerCase().trim(),
         passwordHash: await hashPassword(randomUUID()),
-        role: payload.role,
+        role: resolvedRole,
         status: "pending_email_verification",
         emailVerified: false,
         emailVerifiedAt: null,
+        customRoleId: resolvedCustomRoleId,
     };
     let createdUser = null;
     try {
         createdUser = await createUser(userPayload);
         const token = await createEmailVerificationTokenForUser(createdUser);
-        await sendVerificationEmail({
+        await sendInvitationEmail({
             to: createdUser.email,
-            adminName: inviterName,
+            inviterName,
+            inviterEmail: inviter?.email,
             companyName: tenant.name,
-            verificationUrl: buildVerificationUrl(token),
+            role: createdUser.role,
+            invitationUrl: buildVerificationUrl(token),
+            expiryDate: createdUser.emailVerificationExpiresAt ??
+                new Date(Date.now() + 24 * 60 * 60 * 1000),
         });
         return {
             user: serializeUser(createdUser),
@@ -91,12 +124,38 @@ export async function updateUser(input, tenantId, targetUserId, updater) {
     }
     const changes = {};
     const update = {};
-    if (payload.role !== undefined) {
+    if (payload.customRoleId) {
+        const customRole = await RoleModel.findOne({
+            _id: payload.customRoleId,
+            tenantId,
+        }).exec();
+        if (!customRole) {
+            throw new AppError(400, VALIDATION_ERROR, "Custom role not found in this tenant");
+        }
+        update.role = customRole.baseRole;
+        update.customRoleId = customRole._id.toString();
+        changes.role = {
+            before: existingUser.role,
+            after: customRole.baseRole,
+        };
+        changes.customRoleId = {
+            before: existingUser.customRoleId?.toString() ?? null,
+            after: customRole._id.toString(),
+        };
+    }
+    else if (payload.role !== undefined) {
         update.role = payload.role;
+        update.customRoleId = null;
         changes.role = {
             before: existingUser.role,
             after: payload.role,
         };
+        if (existingUser.customRoleId) {
+            changes.customRoleId = {
+                before: existingUser.customRoleId.toString(),
+                after: null,
+            };
+        }
     }
     if (payload.status !== undefined) {
         update.status = payload.status;
@@ -132,6 +191,31 @@ export async function updateUser(input, tenantId, targetUserId, updater) {
         console.error("[users-update]", error);
         throw new AppError(500, USER_UPDATE_FAILED, "Failed to update user");
     }
+}
+export async function deleteUser(tenantId, targetUserId, deleter) {
+    const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
+    if (!existingUser) {
+        throw new AppError(404, NOT_FOUND, "User not found");
+    }
+    await deleteUserByTenantAndId(tenantId, targetUserId);
+    await createAuditLog({
+        tenantId,
+        userId: existingUser._id.toString(),
+        resourceType: "User",
+        resourceId: existingUser._id.toString(),
+        action: "USER_DELETED",
+        actorId: deleter.userId,
+        actorEmail: deleter.email ?? "",
+        actorRole: deleter.role ?? "UNKNOWN",
+        changes: {
+            before: serializeUser(existingUser),
+            after: null,
+        },
+    });
+    return {
+        success: true,
+        message: "User deleted successfully.",
+    };
 }
 export async function listUsers(input, tenantId) {
     const payload = validateListUsersInput(input);
@@ -171,8 +255,7 @@ export async function setPasswordFromInvite(input) {
             user.emailVerificationExpiresAt.getTime() <= Date.now()) {
             throw invalidTokenError;
         }
-        if (user.emailVerificationTokenHash !==
-            hashVerificationJti(tokenPayload.jti)) {
+        if (user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)) {
             throw invalidTokenError;
         }
         const newPasswordHash = await hashPassword(payload.password);
@@ -210,6 +293,47 @@ export async function setPasswordFromInvite(input) {
         }
         console.error("[users-set-password-from-invite]", error);
         throw invalidTokenError;
+    }
+}
+export async function getInviteDetails(input) {
+    const token = typeof input === "object" && input && "token" in input
+        ? String(input.token ?? "").trim()
+        : "";
+    if (!token)
+        throw new AppError(400, "INVITE_INVALID", "Invite token is required");
+    try {
+        const tokenPayload = verifyEmailVerificationToken(token);
+        const user = await findUserDocumentById(tokenPayload.sub);
+        if (!user ||
+            user.tenantId.toString() !== tokenPayload.tenantId ||
+            user.email !== tokenPayload.email) {
+            throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+        }
+        if (user.emailVerified || user.status === "active") {
+            throw new AppError(409, "INVITE_ALREADY_ACCEPTED", "This invitation has already been accepted");
+        }
+        if (!user.emailVerificationExpiresAt ||
+            user.emailVerificationExpiresAt.getTime() <= Date.now()) {
+            throw new AppError(410, "INVITE_EXPIRED", "This invitation has expired");
+        }
+        if (!user.emailVerificationTokenHash ||
+            user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)) {
+            throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+        }
+        const tenant = await findTenantById(user.tenantId.toString());
+        if (!tenant)
+            throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+        return {
+            companyName: tenant.name,
+            email: user.email,
+            role: user.role,
+            expiresAt: user.emailVerificationExpiresAt.toISOString(),
+        };
+    }
+    catch (error) {
+        if (error instanceof AppError)
+            throw error;
+        throw new AppError(400, "INVITE_INVALID", "Invalid or expired invitation");
     }
 }
 //# sourceMappingURL=users.service.js.map

@@ -2,11 +2,15 @@ import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { EMAIL_ALREADY_EXISTS, EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, REFRESH_TOKEN_REUSED, REGISTRATION_FAILED, SESSION_EXPIRED, TENANT_NOT_ACTIVE, TENANT_ALREADY_EXISTS, UNAUTHORIZED, } from "../../common/errors/errorCodes.js";
-import { sendVerificationEmail } from "./auth.mailer.js";
+import { EMAIL_ALREADY_EXISTS, EMAIL_NOT_VERIFIED, ACCOUNT_NOT_ACTIVE, INVALID_CREDENTIALS, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, REFRESH_TOKEN_REUSED, REGISTRATION_FAILED, SESSION_EXPIRED, TENANT_NOT_ACTIVE, TENANT_ALREADY_EXISTS, UNAUTHORIZED, PASSWORD_RESET_FAILED, } from "../../common/errors/errorCodes.js";
+import { sendVerificationEmail, sendForgotPasswordEmail } from "./auth.mailer.js";
+import PackageModel from "../../db/models/package.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
 import { createEmailVerificationToken, hashVerificationJti, verifyEmailVerificationToken, } from "./emailVerificationToken.js";
-import { activateTenantIfPendingVerification, claimRefreshTokenForRotation, createTenant, createUser, createRefreshTokenRecord, deleteTenantById, deleteUserById, findTenantById, findTenantBySlug, findRefreshTokenRecord, findUserDocumentByEmail, findUserDocumentById, findUserDocumentByTenantAndEmail, findSuperAdminByEmail, findUserByTenantAndId, markReuseAndRevokeTokenFamily, revokeAllRefreshTokensForTenantUser, revokeRefreshToken, setRefreshTokenReplacement, updateUserVerificationToken, } from "./auth.repository.js";
-import { validateRegisterInput, validateLoginInput, validateSuperAdminLoginInput, validateResendVerificationEmailInput, validateVerifyEmailInput, } from "./auth.validator.js";
+import { activateTenantIfPendingVerification, claimRefreshTokenForRotation, createTenant, createUser, createRefreshTokenRecord, deleteTenantById, deleteUserById, findTenantById, findTenantBySlug, findRefreshTokenRecord, findUserDocumentByEmail, findUserDocumentById, findUserDocumentByTenantAndEmail, findSuperAdminByEmail, findUserByTenantAndId, markReuseAndRevokeTokenFamily, revokeAllRefreshTokensForTenantUser, revokeRefreshToken, setRefreshTokenReplacement, updateUserVerificationToken, updateUserPasswordResetToken, findUserByTenantAndIdWithPasswordResetToken, consumePasswordResetTokenAndUpdatePassword, } from "./auth.repository.js";
+import { validateRegisterInput, validateLoginInput, validateSuperAdminLoginInput, validateResendVerificationEmailInput, validateVerifyEmailInput, validateForgotPasswordInput, validateResetPasswordInput, } from "./auth.validator.js";
+import { createPasswordResetToken, hashPasswordResetJti, verifyPasswordResetToken, } from "./passwordResetToken.js";
 import { hashPassword, verifyPassword } from "./passwordHashing.js";
 import { signJwt, verifyJwt } from "./jwtTokens.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -68,11 +72,86 @@ function buildVerificationUrl(token) {
     url.searchParams.set("token", token);
     return url.toString();
 }
+function buildResetPasswordUrl(token, slug) {
+    const url = new URL("/reset-password", config.APP_FRONTEND_URL);
+    url.searchParams.set("token", token);
+    url.searchParams.set("slug", slug);
+    return url.toString();
+}
+export async function forgotPassword(input) {
+    const payload = validateForgotPasswordInput(input);
+    const genericMessage = "If an account matches the provided company and email, password reset instructions will be sent.";
+    const tenant = await findTenantBySlug(payload.slug);
+    if (!tenant) {
+        return { success: true, message: genericMessage };
+    }
+    const tenantId = tenant._id.toString();
+    const user = await findUserDocumentByTenantAndEmail(tenantId, payload.email);
+    if (!user ||
+        user.status !== "active") {
+        return { success: true, message: genericMessage };
+    }
+    const resetToken = createPasswordResetToken({
+        userId: user.id,
+        tenantId,
+    });
+    await updateUserPasswordResetToken(tenantId, user.id, resetToken.tokenHash, resetToken.expiresAt);
+    try {
+        await sendForgotPasswordEmail({
+            to: user.email,
+            userName: user.name,
+            companyName: tenant.name,
+            resetUrl: buildResetPasswordUrl(resetToken.token, tenant.slug),
+        });
+    }
+    catch {
+        // Keep the public response indistinguishable when delivery is unavailable.
+    }
+    return { success: true, message: genericMessage };
+}
+export async function resetPassword(input) {
+    const payload = validateResetPasswordInput(input);
+    const invalidTokenError = new AppError(400, PASSWORD_RESET_FAILED, "Invalid or expired password reset token");
+    try {
+        const tokenPayload = verifyPasswordResetToken(payload.token);
+        const tenant = await findTenantBySlug(payload.slug);
+        if (!tenant || tokenPayload.tenantId !== tenant._id.toString()) {
+            throw invalidTokenError;
+        }
+        const tenantId = tenant._id.toString();
+        const user = await findUserByTenantAndIdWithPasswordResetToken(tenantId, tokenPayload.sub);
+        if (!user ||
+            !user.passwordResetTokenHash ||
+            !user.passwordResetExpiresAt ||
+            user.passwordResetExpiresAt.getTime() <= Date.now()) {
+            throw invalidTokenError;
+        }
+        if (user.passwordResetTokenHash !== hashPasswordResetJti(tokenPayload.jti)) {
+            throw invalidTokenError;
+        }
+        const passwordHash = await hashPassword(payload.password);
+        const consumedUser = await consumePasswordResetTokenAndUpdatePassword(tenantId, user.id, user.passwordResetTokenHash, passwordHash);
+        if (!consumedUser) {
+            throw invalidTokenError;
+        }
+        await revokeAllRefreshTokensForTenantUser(user.id, tenantId, new Date());
+        return {
+            success: true,
+            message: "Password has been reset successfully. You can now sign in.",
+        };
+    }
+    catch (error) {
+        if (error instanceof AppError) {
+            throw error;
+        }
+        throw invalidTokenError;
+    }
+}
 export async function registerTenantAndAdmin(input) {
     const payload = validateRegisterInput(input);
     const normalizedEmail = payload.email.toLowerCase().trim();
     const normalizedSlug = normalizeSlug(payload.companySlug, payload.companyName);
-    if (normalizedSlug === "__documind_platform__") {
+    if (["__documind_platform__", "documind-ai"].includes(normalizedSlug)) {
         throw new AppError(409, TENANT_ALREADY_EXISTS, "Tenant already exists");
     }
     const tenantExists = await findTenantBySlug(normalizedSlug);
@@ -85,6 +164,7 @@ export async function registerTenantAndAdmin(input) {
         slug: normalizedSlug,
         status: "pending_verification",
         plan: "free",
+        ...(payload.packageCode ? { selectedPackageCode: payload.packageCode } : {}),
     };
     const userPayload = {
         tenantId: "",
@@ -110,7 +190,8 @@ export async function registerTenantAndAdmin(input) {
             });
         }
         catch (error) {
-            const isTransactionUnsupported = error instanceof Error && /replica set|transaction/i.test(error.message);
+            const isTransactionUnsupported = error instanceof Error &&
+                /replica set|transaction/i.test(error.message);
             if (isTransactionUnsupported || error instanceof Error) {
                 created.tenant = await createTenant(tenantPayload);
                 userPayload.tenantId = created.tenant._id.toString();
@@ -177,7 +258,9 @@ export async function verifyEmail(input) {
             throw invalidTokenError;
         }
         const user = await findUserDocumentById(tokenPayload.sub);
-        if (!user || user.tenantId.toString() !== tokenPayload.tenantId || user.email !== tokenPayload.email) {
+        if (!user ||
+            user.tenantId.toString() !== tokenPayload.tenantId ||
+            user.email !== tokenPayload.email) {
             throw invalidTokenError;
         }
         if (user.emailVerified ||
@@ -223,7 +306,9 @@ export async function resendVerificationEmail(input) {
         message: "If the email exists and is not verified, a verification email has been sent",
     };
     const user = await findUserDocumentByEmail(payload.email);
-    if (!user || user.emailVerified || user.status !== "pending_email_verification") {
+    if (!user ||
+        user.emailVerified ||
+        user.status !== "pending_email_verification") {
         return genericResponse;
     }
     const token = await createEmailVerificationTokenForUser(user);
@@ -235,6 +320,50 @@ export async function resendVerificationEmail(input) {
         verificationUrl: buildVerificationUrl(token),
     });
     return genericResponse;
+}
+export async function completeTrial(identity) {
+    const tenant = await findTenantById(identity.tenantId);
+    if (!tenant) {
+        throw new AppError(404, "NOT_FOUND", "Tenant not found");
+    }
+    const packageCode = tenant.selectedPackageCode;
+    if (!packageCode) {
+        throw new AppError(400, "NO_PENDING_TRIAL", "No pending trial package found");
+    }
+    if (tenant.plan !== "free") {
+        throw new AppError(400, "TRIAL_ALREADY_ACTIVE", "A plan is already active for this tenant");
+    }
+    const pkg = await PackageModel.findOne({ code: packageCode, active: true }).lean().exec();
+    if (!pkg) {
+        throw new AppError(400, "INVALID_PACKAGE", "Selected package is no longer available");
+    }
+    const existingSubscription = await SubscriptionModel.findOne({
+        tenantId: tenant._id,
+    }).lean().exec();
+    if (existingSubscription) {
+        throw new AppError(400, "SUBSCRIPTION_EXISTS", "A subscription already exists for this tenant");
+    }
+    const now = new Date();
+    const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const subscription = await SubscriptionModel.create({
+        tenantId: tenant._id,
+        packageId: pkg._id,
+        packageVersion: pkg.version,
+        status: "trialing",
+        startedAt: now,
+        renewsAt: trialEnd,
+    });
+    await TenantModel.updateOne({ _id: tenant._id }, { $set: { plan: "trial" }, $unset: { selectedPackageCode: "" } }).exec();
+    return {
+        success: true,
+        subscription: {
+            id: subscription._id.toString(),
+            packageId: pkg._id.toString(),
+            packageName: pkg.name,
+            status: subscription.status,
+            startedAt: subscription.startedAt.toISOString(),
+        },
+    };
 }
 function invalidCredentialsError() {
     return new AppError(401, INVALID_CREDENTIALS, "Invalid company, email, or password");
@@ -272,6 +401,31 @@ export async function login(input, context = {}) {
         throw invalidCredentialsError();
     }
     assertAccountCanSignIn(user, tenant);
+    // Activate trial subscription if registration included a packageCode.
+    if (tenant.selectedPackageCode && tenant.plan === "free") {
+        try {
+            const trialPkg = await PackageModel.findOne({ code: tenant.selectedPackageCode, active: true }).lean().exec();
+            if (trialPkg) {
+                const existingSub = await SubscriptionModel.findOne({ tenantId: tenant._id }).lean().exec();
+                if (!existingSub) {
+                    const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                    await SubscriptionModel.create({
+                        tenantId: tenant._id,
+                        packageId: trialPkg._id,
+                        packageVersion: trialPkg.version,
+                        status: "trialing",
+                        startedAt: new Date(),
+                        renewsAt: trialEnd,
+                    });
+                    await TenantModel.updateOne({ _id: tenant._id }, { $set: { plan: "trial" }, $unset: { selectedPackageCode: "" } }).exec();
+                    tenant.plan = "trial";
+                }
+            }
+        }
+        catch {
+            // Non-blocking — login succeeds even if trial activation fails
+        }
+    }
     const jti = randomUUID();
     const familyId = randomUUID();
     const refreshToken = signJwt({
@@ -311,17 +465,54 @@ export async function login(input, context = {}) {
 export async function superAdminLogin(input, context = {}) {
     const payload = validateSuperAdminLoginInput(input);
     const user = await findSuperAdminByEmail(payload.email);
-    if (!user || user.role !== "SUPER_ADMIN" || user.status !== "active" || !user.emailVerified || !user.passwordHash || !(await verifyPassword(user.passwordHash, payload.password))) {
+    if (!user ||
+        user.role !== "SUPER_ADMIN" ||
+        user.status !== "active" ||
+        !user.emailVerified ||
+        !user.passwordHash ||
+        !(await verifyPassword(user.passwordHash, payload.password))) {
         throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
     }
     const tenant = await findTenantById(user.tenantId.toString());
-    if (!tenant || tenant.slug !== "__documind_platform__" || tenant.status !== "active")
+    if (!tenant ||
+        tenant.slug !== "__documind_platform__" ||
+        tenant.status !== "active")
         throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
     const jti = randomUUID();
     const familyId = randomUUID();
-    const refreshToken = signJwt({ sub: user.id, tenantId: tenant._id.toString(), type: "refresh", jti, familyId }, config.JWT_REFRESH_SECRET, config.JWT_REFRESH_EXPIRES_IN);
-    await createRefreshTokenRecord({ tenantId: tenant._id.toString(), userId: user.id, tokenHash: hashRefreshToken(refreshToken), jtiHash: hashRefreshTokenJti(jti), familyId, expiresAt: new Date(Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)), createdByIp: context.ip, userAgent: context.userAgent });
-    return { user: serializeVerifiedUser(user), tenant: { id: tenant._id.toString(), name: tenant.name, slug: tenant.slug, status: tenant.status, plan: tenant.plan }, tokens: { accessToken: createAccessToken(user, tenant), refreshToken, tokenType: "Bearer", expiresIn: config.JWT_EXPIRES_IN } };
+    const refreshToken = signJwt({
+        sub: user.id,
+        tenantId: tenant._id.toString(),
+        type: "refresh",
+        jti,
+        familyId,
+    }, config.JWT_REFRESH_SECRET, config.JWT_REFRESH_EXPIRES_IN);
+    await createRefreshTokenRecord({
+        tenantId: tenant._id.toString(),
+        userId: user.id,
+        tokenHash: hashRefreshToken(refreshToken),
+        jtiHash: hashRefreshTokenJti(jti),
+        familyId,
+        expiresAt: new Date(Date.now() + durationToMilliseconds(config.JWT_REFRESH_EXPIRES_IN)),
+        createdByIp: context.ip,
+        userAgent: context.userAgent,
+    });
+    return {
+        user: serializeVerifiedUser(user),
+        tenant: {
+            id: tenant._id.toString(),
+            name: tenant.name,
+            slug: tenant.slug,
+            status: tenant.status,
+            plan: tenant.plan,
+        },
+        tokens: {
+            accessToken: createAccessToken(user, tenant),
+            refreshToken,
+            tokenType: "Bearer",
+            expiresIn: config.JWT_EXPIRES_IN,
+        },
+    };
 }
 function sessionExpiredError() {
     return new AppError(401, SESSION_EXPIRED, "Session expired. Please sign in again.");

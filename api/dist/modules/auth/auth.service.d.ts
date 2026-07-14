@@ -1,4 +1,4 @@
-import type { LoginResult, MeResult, RefreshRotationResult, RefreshTokenContext, RegisterResult, RegisterInput, VerifyEmailResult, AuthIdentity } from "./auth.types.js";
+import type { LoginResult, MeResult, RefreshRotationResult, RefreshTokenContext, RegisterResult, RegisterInput, VerifyEmailResult, AuthIdentity, ForgotPasswordResult, ResetPasswordResult, CompleteTrialResult } from "./auth.types.js";
 type CreatedUserRecord = {
     _id: {
         toString(): string;
@@ -12,12 +12,15 @@ type CreatedUserRecord = {
     emailVerified: boolean;
     createdAt?: Date;
 };
+export declare function forgotPassword(input: unknown): Promise<ForgotPasswordResult>;
+export declare function resetPassword(input: unknown): Promise<ResetPasswordResult>;
 export declare function registerTenantAndAdmin(input: unknown): Promise<RegisterResult>;
 export declare function verifyEmail(input: unknown): Promise<VerifyEmailResult>;
 export declare function resendVerificationEmail(input: unknown): Promise<{
     success: boolean;
     message: string;
 }>;
+export declare function completeTrial(identity: AuthIdentity): Promise<CompleteTrialResult>;
 export declare function login(input: unknown, context?: RefreshTokenContext): Promise<LoginResult>;
 export declare function superAdminLogin(input: unknown, context?: RefreshTokenContext): Promise<LoginResult>;
 export declare function refreshAccessToken(token: string, context?: RefreshTokenContext): Promise<RefreshRotationResult>;

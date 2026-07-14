@@ -22,6 +22,7 @@ function createServer() {
 }
 function closeServer(server) {
     return new Promise((resolve, reject) => {
+        server.closeAllConnections?.();
         server.close((err) => (err ? reject(err) : resolve()));
     });
 }

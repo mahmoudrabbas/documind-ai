@@ -9,11 +9,15 @@ import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
 import AuditLogModel from "./db/models/auditLog.model.js";
 import RefreshTokenModel from "./db/models/refreshToken.model.js";
+import DocumentModel from "./db/models/document.model.js";
+import UsageLogModel from "./db/models/usageLog.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { buildEmailVerificationTemplate } from "./modules/auth/auth.mailer.js";
 import { hashPassword, verifyPassword, } from "./modules/auth/passwordHashing.js";
 import { signJwt } from "./modules/auth/jwtTokens.js";
 import { config } from "./config/index.js";
+import { recordQuestionAsked } from "./modules/usage/usage.service.js";
+import { seedSuperAdmin } from "./scripts/seed-super-admin.service.js";
 function createServer() {
     return new Promise((resolve) => {
         const srv = app.listen(0, () => resolve(srv));
@@ -21,6 +25,7 @@ function createServer() {
 }
 function closeServer(server) {
     return new Promise((resolve, reject) => {
+        server.closeAllConnections?.();
         server.close((err) => (err ? reject(err) : resolve()));
     });
 }
@@ -99,12 +104,15 @@ function assertNoSensitiveFields(value) {
 before(async () => {
     await connectDB();
     await connectRedis();
+    await UsageLogModel.syncIndexes();
 });
 beforeEach(async () => {
     await RefreshTokenModel.deleteMany({});
     await AuditLogModel.deleteMany({});
     await TenantModel.deleteMany({});
     await UserModel.deleteMany({});
+    await DocumentModel.deleteMany({});
+    await UsageLogModel.deleteMany({});
 });
 after(async () => {
     await disconnectRedis();
@@ -297,6 +305,71 @@ test("invites a user with a valid company admin token", async () => {
         assert.equal(user?.emailVerified, false);
         assert.ok(user?.emailVerificationTokenHash);
         assert.ok(user?.emailVerificationExpiresAt instanceof Date);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("invalid invite password preserves the token and successful acceptance consumes it once", async () => {
+    const { tenant } = await createActiveTenantAdmin();
+    const user = await UserModel.create({
+        tenantId: tenant.id,
+        name: "Invited Admin",
+        email: "invited-admin@acme.com",
+        passwordHash: await hashPassword("TemporaryPassword123!"),
+        role: "COMPANY_ADMIN",
+        status: "pending_email_verification",
+        emailVerified: false,
+        emailVerifiedAt: null,
+    });
+    const token = await createEmailVerificationTokenForUser(user);
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const endpoint = `http://127.0.0.1:${port}/users/set-password-from-invite`;
+        const invalid = await fetch(endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token, password: "weak" }),
+        });
+        const invalidBody = await invalid.json();
+        assert.equal(invalid.status, 400);
+        assert.equal(invalidBody.error, "PASSWORD_VALIDATION_FAILED");
+        assert.ok(invalidBody.details.some((detail) => detail.field === "password"));
+        const pendingUser = await UserModel.findById(user.id).select("+emailVerificationTokenHash +emailVerificationExpiresAt");
+        assert.equal(pendingUser?.status, "pending_email_verification");
+        assert.equal(pendingUser?.emailVerified, false);
+        assert.ok(pendingUser?.emailVerificationTokenHash);
+        const inspection = await fetch(`http://127.0.0.1:${port}/users/validate-invite`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token }),
+        });
+        const inspectionBody = await inspection.json();
+        assert.equal(inspection.status, 200);
+        assert.equal(inspectionBody.data.companyName, tenant.name);
+        assert.equal(inspectionBody.data.email, user.email);
+        assert.equal(inspectionBody.data.role, "COMPANY_ADMIN");
+        const accepted = await fetch(endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token, password: "ValidPassword123!" }),
+        });
+        assert.equal(accepted.status, 200);
+        const activeUser = await UserModel.findById(user.id).select("+emailVerificationTokenHash");
+        assert.equal(activeUser?.status, "active");
+        assert.equal(activeUser?.emailVerified, true);
+        assert.equal(activeUser?.emailVerificationTokenHash, null);
+        const duplicate = await fetch(endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ token, password: "ValidPassword123!" }),
+        });
+        assert.equal(duplicate.status, 400);
+        assert.equal(await UserModel.countDocuments({
+            tenantId: tenant.id,
+            email: user.email,
+        }), 1);
     }
     finally {
         await closeServer(server);
@@ -1783,6 +1856,226 @@ test("GET /platform/tenants returns empty list when no tenants match filters", a
         assert.equal(body.data.pagination.totalRecords, 0);
         assert.equal(body.data.pagination.totalPages, 0);
         assertNoSensitiveFields(body);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("platform tenant list and detail return isolated usage statistics", async () => {
+    const [tenantA, tenantB] = await TenantModel.create([
+        { name: "Stats A", slug: "stats-a", status: "active", plan: "pro" },
+        { name: "Stats B", slug: "stats-b", status: "active", plan: "free" },
+        {
+            name: "Stats Empty",
+            slug: "stats-empty",
+            status: "active",
+            plan: "free",
+        },
+    ]);
+    const passwordHash = await hashPassword(TEST_PASSWORD);
+    const users = await UserModel.create([
+        {
+            tenantId: tenantA.id,
+            name: "A One",
+            email: "a1@example.com",
+            passwordHash,
+            role: "EMPLOYEE",
+            status: "active",
+            emailVerified: true,
+        },
+        {
+            tenantId: tenantA.id,
+            name: "A Two",
+            email: "a2@example.com",
+            passwordHash,
+            role: "EMPLOYEE",
+            status: "active",
+            emailVerified: true,
+        },
+        {
+            tenantId: tenantB.id,
+            name: "B One",
+            email: "b1@example.com",
+            passwordHash,
+            role: "EMPLOYEE",
+            status: "active",
+            emailVerified: true,
+        },
+    ]);
+    await DocumentModel.create([
+        {
+            tenantId: tenantA.id,
+            fileName: "a-1.pdf",
+            fileSize: 1,
+            mimeType: "application/pdf",
+            storagePath: "a/1",
+            status: "processed",
+            metadata: {},
+            uploadedBy: users[0].id,
+        },
+        {
+            tenantId: tenantA.id,
+            fileName: "a-2.pdf",
+            fileSize: 1,
+            mimeType: "application/pdf",
+            storagePath: "a/2",
+            status: "processed",
+            metadata: {},
+            uploadedBy: users[0].id,
+        },
+        {
+            tenantId: tenantB.id,
+            fileName: "b-1.pdf",
+            fileSize: 1,
+            mimeType: "application/pdf",
+            storagePath: "b/1",
+            status: "processed",
+            metadata: {},
+            uploadedBy: users[2].id,
+        },
+    ]);
+    await UsageLogModel.create([
+        { tenantId: tenantA.id, eventType: "QUESTION_ASKED", requestId: "a-q1" },
+        { tenantId: tenantA.id, eventType: "QUESTION_ASKED", requestId: "a-q2" },
+        {
+            tenantId: tenantA.id,
+            eventType: "ASSISTANT_RESPONSE",
+            requestId: "a-answer",
+        },
+        { tenantId: tenantA.id, eventType: "SYSTEM_EVENT", requestId: "a-system" },
+        { tenantId: tenantB.id, eventType: "QUESTION_ASKED", requestId: "b-q1" },
+        {
+            tenantId: tenantB.id,
+            eventType: "ASSISTANT_RESPONSE",
+            requestId: "b-answer",
+        },
+    ]);
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const headers = { Authorization: `Bearer ${token}` };
+        const listResponse = await fetch(`http://127.0.0.1:${port}/platform/tenants?pageSize=10`, { headers });
+        const listBody = await listResponse.json();
+        assert.equal(listResponse.status, 200);
+        const bySlug = new Map(listBody.data.tenants.map((tenant) => [tenant.slug, tenant]));
+        assert.deepEqual(bySlug.get("stats-a")?.stats, {
+            users: 2,
+            documents: 2,
+            questions: 2,
+        });
+        assert.deepEqual(bySlug.get("stats-b")?.stats, {
+            users: 1,
+            documents: 1,
+            questions: 1,
+        });
+        assert.deepEqual(bySlug.get("stats-empty")?.stats, {
+            users: 0,
+            documents: 0,
+            questions: 0,
+        });
+        const detailResponse = await fetch(`http://127.0.0.1:${port}/platform/tenants/${tenantA.id}`, { headers });
+        const detailBody = await detailResponse.json();
+        assert.equal(detailResponse.status, 200);
+        assert.deepEqual(detailBody.data.stats, {
+            users: 2,
+            documents: 2,
+            questions: 2,
+        });
+        const pageResponse = await fetch(`http://127.0.0.1:${port}/platform/tenants?page=1&pageSize=1`, { headers });
+        const pageBody = await pageResponse.json();
+        assert.equal(pageResponse.status, 200);
+        assert.equal(pageBody.data.tenants.length, 1);
+        assert.equal(typeof pageBody.data.tenants[0].stats.questions, "number");
+        assert.equal(pageBody.data.pagination.totalRecords, 3);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("GET /platform/tenants/:id validates missing and invalid IDs", async () => {
+    const token = await getSuperAdminAccessToken();
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const headers = { Authorization: `Bearer ${token}` };
+        const invalid = await fetch(`http://127.0.0.1:${port}/platform/tenants/not-an-id`, { headers });
+        assert.equal(invalid.status, 400);
+        const missing = await fetch(`http://127.0.0.1:${port}/platform/tenants/${new mongoose.Types.ObjectId()}`, { headers });
+        assert.equal(missing.status, 404);
+    }
+    finally {
+        await closeServer(server);
+    }
+});
+test("question usage recording permits absent request IDs and deduplicates retries", async () => {
+    const tenant = await TenantModel.create({
+        name: "Usage",
+        slug: "usage",
+        status: "active",
+        plan: "free",
+    });
+    await recordQuestionAsked({ tenantId: tenant.id });
+    await recordQuestionAsked({ tenantId: tenant.id });
+    await recordQuestionAsked({ tenantId: tenant.id, requestId: "request-1" });
+    await recordQuestionAsked({ tenantId: tenant.id, requestId: "request-1" });
+    assert.equal(await UsageLogModel.countDocuments({
+        tenantId: tenant.id,
+        eventType: "QUESTION_ASKED",
+    }), 3);
+    await assert.rejects(UsageLogModel.create({
+        tenantId: tenant.id,
+        eventType: "QUESTION_ASKED",
+        requestId: "request-1",
+    }), (error) => Boolean(error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === 11000));
+});
+test("Super Admin seed is idempotent, hashes credentials, and hides its system tenant", async () => {
+    const input = {
+        platformName: "DocuMind AI",
+        platformSlug: "documind-ai",
+        name: "Seed Admin",
+        email: "seed@example.com",
+        password: "SeedPassword123!",
+    };
+    await seedSuperAdmin(input);
+    await seedSuperAdmin(input);
+    assert.equal(await TenantModel.countDocuments({ slug: "documind-ai" }), 1);
+    assert.equal(await UserModel.countDocuments({ role: "SUPER_ADMIN" }), 1);
+    const user = await UserModel.findOne({ role: "SUPER_ADMIN" }).select("+passwordHash");
+    assert.ok(user?.passwordHash);
+    assert.notEqual(user.passwordHash, input.password);
+    assert.equal(await verifyPassword(user.passwordHash, input.password), true);
+    const tenant = await TenantModel.findOne({ slug: "documind-ai" });
+    assert.ok(tenant);
+    const token = signJwt({
+        sub: user.id,
+        tenantId: tenant.id,
+        role: "SUPER_ADMIN",
+        email: user.email,
+        type: "access",
+    }, config.JWT_SECRET, "1h");
+    const server = await createServer();
+    try {
+        const port = server.address().port;
+        const headers = {
+            Authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+        };
+        const list = await fetch(`http://127.0.0.1:${port}/platform/tenants`, {
+            headers,
+        });
+        assert.equal((await list.json()).data.tenants.length, 0);
+        assert.equal((await fetch(`http://127.0.0.1:${port}/platform/tenants/${tenant.id}`, {
+            headers,
+        })).status, 404);
+        assert.equal((await fetch(`http://127.0.0.1:${port}/platform/tenants/${tenant.id}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ plan: "pro" }),
+        })).status, 404);
     }
     finally {
         await closeServer(server);

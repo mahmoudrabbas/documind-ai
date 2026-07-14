@@ -20,4 +20,5 @@ export declare const SESSION_EXPIRED = "SESSION_EXPIRED";
 export declare const REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED";
 export declare const FILE_UPLOAD_ERROR = "FILE_UPLOAD_ERROR";
 export declare const UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE";
+export declare const PASSWORD_RESET_FAILED = "PASSWORD_RESET_FAILED";
 //# sourceMappingURL=errorCodes.d.ts.map

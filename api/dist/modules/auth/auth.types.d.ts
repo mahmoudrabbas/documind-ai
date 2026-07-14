@@ -4,12 +4,31 @@ export interface RegisterInput {
     adminName: string;
     email: string;
     password: string;
+    packageCode?: string;
 }
 export interface VerifyEmailInput {
     token: string;
 }
 export interface ResendVerificationEmailInput {
     email: string;
+}
+export interface ForgotPasswordInput {
+    email: string;
+    slug: string;
+}
+export interface ResetPasswordInput {
+    token: string;
+    slug: string;
+    password: string;
+    confirmPassword: string;
+}
+export interface ForgotPasswordResult {
+    success: boolean;
+    message: string;
+}
+export interface ResetPasswordResult {
+    success: boolean;
+    message: string;
 }
 export interface LoginInput {
     companySlug: string;
@@ -34,6 +53,8 @@ export interface UserPublicView {
     name: string;
     email: string;
     role: string;
+    customRoleId?: string;
+    customRoleName?: string;
     status: string;
     emailVerified: boolean;
     createdAt: string;
@@ -86,6 +107,16 @@ export interface RefreshRotationResult extends RefreshResult {
 export interface MeResult {
     user: Omit<UserPublicView, "createdAt">;
     tenant: Omit<TenantPublicView, "createdAt">;
+}
+export interface CompleteTrialResult {
+    success: boolean;
+    subscription: {
+        id: string;
+        packageId: string;
+        packageName: string;
+        status: string;
+        startedAt: string;
+    };
 }
 export interface AuthIdentity {
     userId: string;
