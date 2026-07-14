@@ -1,4 +1,4 @@
-import pino from "pino";
+import { createStructuredLogger } from "../utils/structuredLogger.js";
 
 const sensitiveFields = [
   "req.headers.authorization",
@@ -18,33 +18,11 @@ const sensitiveFields = [
   "cookie",
 ];
 
-const nodeEnv = process.env.NODE_ENV ?? "development";
-const configuredLevel = process.env.LOG_LEVEL ?? "info";
-const isTest =
-  nodeEnv === "test" || process.env.NODE_TEST_CONTEXT !== undefined;
-const level =
-  isTest && process.env.LOG_LEVEL === undefined
-    ? "silent"
-    : configuredLevel;
+const baseLogger = createStructuredLogger("api");
 
-const transport =
-  process.env.LOG_PRETTY?.toLowerCase() === "true" && nodeEnv !== "production"
-    ? pino.transport({
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-          translateTime: "SYS:standard",
-        },
-      })
-    : undefined;
-
-export const logger = pino(
-  {
-    level,
-    redact: {
-      paths: sensitiveFields,
-      censor: "[Redacted]",
-    },
+export const logger = baseLogger.child({
+  redact: {
+    paths: sensitiveFields,
+    censor: "[Redacted]",
   },
-  transport
-);
+});
