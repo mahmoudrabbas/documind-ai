@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { RequestHandler } from "express";
 import { logger } from "../logger/logger.js";
+import { withRequestContext } from "../utils/requestContext.js";
 
 const MAX_REQUEST_ID_LENGTH = 128;
 const VALID_REQUEST_ID = /^[\x21-\x7e]+$/;
@@ -32,5 +33,7 @@ export const requestContextMiddleware: RequestHandler = (req, res, next) => {
   }
   res.setHeader("X-Request-ID", requestId);
 
-  next();
+  withRequestContext(requestId, () => {
+    next();
+  });
 };
