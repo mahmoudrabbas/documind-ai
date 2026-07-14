@@ -1,4 +1,5 @@
 import { logger } from "../logger/logger.js";
+import { getCurrentRequestId } from "../utils/requestContext.js";
 export const requestLoggerMiddleware = (req, res, next) => {
     const startedAt = process.hrtime.bigint();
     res.on("finish", () => {
@@ -6,7 +7,9 @@ export const requestLoggerMiddleware = (req, res, next) => {
             const requestLogger = req.log ?? logger;
             const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
             const event = {
-                ...(req.log ? {} : { requestId: req.requestId }),
+                ...(req.log
+                    ? {}
+                    : { requestId: req.requestId ?? getCurrentRequestId() }),
                 method: req.method,
                 path: req.originalUrl,
                 statusCode: res.statusCode,

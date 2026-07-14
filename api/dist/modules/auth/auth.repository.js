@@ -29,6 +29,7 @@ export function findUserById(userId) {
 }
 export function findUserByTenantAndId(tenantId, userId) {
     return tenantScopedFindById(UserModel, tenantId, userId)
+        .populate("customRoleId", "name")
         .lean()
         .exec();
 }
@@ -80,6 +81,33 @@ export async function updateUserVerificationToken(userId, tokenHash, expiresAt) 
             emailVerificationExpiresAt: expiresAt,
         },
     }).exec();
+}
+export async function updateUserPasswordResetToken(tenantId, userId, tokenHash, expiresAt) {
+    await UserModel.updateOne({ _id: userId, tenantId }, {
+        $set: {
+            passwordResetTokenHash: tokenHash,
+            passwordResetExpiresAt: expiresAt,
+        },
+    }).exec();
+}
+export function findUserByTenantAndIdWithPasswordResetToken(tenantId, userId) {
+    return UserModel.findOne({ _id: userId, tenantId })
+        .select("+passwordResetTokenHash +passwordResetExpiresAt")
+        .exec();
+}
+export function consumePasswordResetTokenAndUpdatePassword(tenantId, userId, tokenHash, passwordHash) {
+    return UserModel.findOneAndUpdate({
+        _id: userId,
+        tenantId,
+        passwordResetTokenHash: tokenHash,
+        passwordResetExpiresAt: { $gt: new Date() },
+    }, {
+        $set: {
+            passwordHash,
+            passwordResetTokenHash: null,
+            passwordResetExpiresAt: null,
+        },
+    }, { returnDocument: "after" }).exec();
 }
 export async function activateTenantIfPendingVerification(tenantId) {
     return TenantModel.findOneAndUpdate({ _id: tenantId, status: "pending_verification" }, { $set: { status: "active" } }, { returnDocument: "after" })

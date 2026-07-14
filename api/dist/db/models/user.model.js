@@ -6,6 +6,8 @@ function sanitizeUserTransform(_doc, ret) {
     delete ret.passwordHash;
     delete ret.emailVerificationTokenHash;
     delete ret.emailVerificationExpiresAt;
+    delete ret.passwordResetTokenHash;
+    delete ret.passwordResetExpiresAt;
     return ret;
 }
 const userSchema = new Schema({
@@ -36,8 +38,12 @@ const userSchema = new Schema({
     },
     role: {
         type: String,
-        enum: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
         required: true,
+    },
+    customRoleId: {
+        type: Schema.Types.ObjectId,
+        ref: "Role",
+        default: null,
     },
     status: {
         type: String,
@@ -58,6 +64,16 @@ const userSchema = new Schema({
         select: false,
     },
     emailVerificationExpiresAt: {
+        type: Date,
+        default: null,
+        select: false,
+    },
+    passwordResetTokenHash: {
+        type: String,
+        default: null,
+        select: false,
+    },
+    passwordResetExpiresAt: {
         type: Date,
         default: null,
         select: false,

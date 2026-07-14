@@ -6,6 +6,7 @@ export interface TenantCreateInput {
     slug: string;
     status: string;
     plan: string;
+    selectedPackageCode?: string;
 }
 export interface UserCreateInput {
     tenantId: string;
@@ -16,6 +17,7 @@ export interface UserCreateInput {
     status: string;
     emailVerified: boolean;
     emailVerifiedAt: Date | null;
+    customRoleId?: string;
 }
 export declare function findTenantBySlug(slug: string): Promise<TenantDocument | null>;
 export declare function findUserByEmail(email: string): Promise<UserDocument | null>;
@@ -69,6 +71,21 @@ export declare function revokeAllRefreshTokensForTenantUser(userId: string, tena
 export declare function createTenant(input: TenantCreateInput, session?: ClientSession): Promise<TenantDocument>;
 export declare function createUser(input: UserCreateInput, session?: ClientSession): Promise<UserDocument>;
 export declare function updateUserVerificationToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void>;
+export declare function updateUserPasswordResetToken(tenantId: string, userId: string, tokenHash: string, expiresAt: Date): Promise<void>;
+export declare function findUserByTenantAndIdWithPasswordResetToken(tenantId: string, userId: string): Promise<(import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & UserDocument & Required<{
+    _id: import("mongoose").Types.ObjectId;
+}> & {
+    __v: number;
+} & {
+    id: string;
+}) | null>;
+export declare function consumePasswordResetTokenAndUpdatePassword(tenantId: string, userId: string, tokenHash: string, passwordHash: string): Promise<(import("mongoose").Document<unknown, {}, UserDocument, {}, import("mongoose").DefaultSchemaOptions> & UserDocument & Required<{
+    _id: import("mongoose").Types.ObjectId;
+}> & {
+    __v: number;
+} & {
+    id: string;
+}) | null>;
 export declare function activateTenantIfPendingVerification(tenantId: string): Promise<TenantDocument | null>;
 export declare function findTenantById(tenantId: string): Promise<TenantDocument | null>;
 export declare function deleteTenantById(tenantId: string): Promise<void>;

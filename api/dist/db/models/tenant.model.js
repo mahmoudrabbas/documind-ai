@@ -26,6 +26,15 @@ const tenantSchema = new Schema({
         enum: ["free", "trial", "pro"],
         default: "free",
     },
+    isSystemTenant: {
+        type: Boolean,
+        default: false,
+        index: true,
+    },
+    selectedPackageCode: {
+        type: String,
+        default: null,
+    },
 }, {
     timestamps: true,
     toJSON: {

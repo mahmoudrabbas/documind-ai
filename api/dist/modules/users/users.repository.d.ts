@@ -3,5 +3,6 @@ import { createUser, findTenantById, findUserDocumentByTenantAndEmail, findUserB
 export { createUser, findTenantById, findUserDocumentByTenantAndEmail, findUserByTenantAndId, };
 export declare function countUsersByTenant(tenantId: string): Promise<number>;
 export declare function findUsersByTenant(tenantId: string, page: number, pageSize: number): Promise<UserDocument[]>;
-export declare function updateUserByTenantAndId(tenantId: string, userId: string, update: Partial<Pick<UserDocument, "role" | "status">>): Promise<UserDocument | null>;
+export declare function updateUserByTenantAndId(tenantId: string, userId: string, update: Record<string, unknown>): Promise<UserDocument | null>;
+export declare function deleteUserByTenantAndId(tenantId: string, userId: string): Promise<import("mongodb").DeleteResult>;
 //# sourceMappingURL=users.repository.d.ts.map

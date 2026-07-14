@@ -4,6 +4,8 @@ export interface TenantDocument extends mongoose.Document {
     slug: string;
     status: string;
     plan: string;
+    isSystemTenant: boolean;
+    selectedPackageCode?: string;
     createdAt: Date;
     updatedAt: Date;
 }

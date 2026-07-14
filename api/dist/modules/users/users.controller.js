@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { inviteUser, listUsers, updateUser, setPasswordFromInvite } from "./users.service.js";
+import { inviteUser, listUsers, updateUser, deleteUser, setPasswordFromInvite, getInviteDetails, } from "./users.service.js";
 export async function inviteUserController(req, res, next) {
     try {
         if (!req.auth || !req.tenantId) {
@@ -11,6 +11,16 @@ export async function inviteUserController(req, res, next) {
             message: "User invitation created successfully. An email has been sent to the invited user.",
             data: result,
         });
+    }
+    catch (error) {
+        handleUserError(error, res, next);
+    }
+}
+export async function getInviteDetailsController(req, res, next) {
+    try {
+        res
+            .status(200)
+            .json({ success: true, data: await getInviteDetails(req.body) });
     }
     catch (error) {
         handleUserError(error, res, next);
@@ -63,6 +73,31 @@ export async function updateUserController(req, res, next) {
         res.status(200).json({
             success: true,
             data: result,
+        });
+    }
+    catch (error) {
+        handleUserError(error, res, next);
+    }
+}
+export async function deleteUserController(req, res, next) {
+    try {
+        if (!req.auth || !req.tenantId) {
+            throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+        }
+        const targetUserId = Array.isArray(req.params.id)
+            ? req.params.id[0]
+            : req.params.id;
+        if (!targetUserId) {
+            throw new AppError(400, "BAD_REQUEST", "Missing user id parameter");
+        }
+        const result = await deleteUser(req.tenantId, targetUserId, {
+            userId: req.auth.userId,
+            email: req.auth.email,
+            role: req.auth.role,
+        });
+        res.status(200).json({
+            success: true,
+            message: result.message,
         });
     }
     catch (error) {

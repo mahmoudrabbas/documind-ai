@@ -29,6 +29,8 @@ declare const envSchema: z.ZodObject<{
     SUPER_ADMIN_BOOTSTRAP_KEY: z.ZodDefault<z.ZodString>;
     EMAIL_VERIFICATION_JWT_SECRET: z.ZodDefault<z.ZodString>;
     EMAIL_VERIFICATION_JWT_EXPIRES_IN: z.ZodDefault<z.ZodString>;
+    PASSWORD_RESET_JWT_SECRET: z.ZodDefault<z.ZodString>;
+    PASSWORD_RESET_JWT_EXPIRES_IN: z.ZodDefault<z.ZodString>;
     SEND_EMAILS: z.ZodPipe<z.ZodDefault<z.ZodString>, z.ZodTransform<boolean, string>>;
     SMTP_HOST: z.ZodDefault<z.ZodString>;
     SMTP_PORT: z.ZodPipe<z.ZodPipe<z.ZodDefault<z.ZodString>, z.ZodTransform<number, string>>, z.ZodNumber>;

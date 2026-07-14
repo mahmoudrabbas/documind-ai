@@ -1,5 +1,5 @@
 import UserModel from "../../db/models/user.model.js";
-import { tenantScopedFind, tenantScopedUpdateOne, } from "../../db/repositories/tenantScopedRepository.js";
+import { tenantScopedDeleteOne, tenantScopedFind, tenantScopedUpdateOne, } from "../../db/repositories/tenantScopedRepository.js";
 import { createUser, findTenantById, findUserDocumentByTenantAndEmail, findUserByTenantAndId, } from "../auth/auth.repository.js";
 export { createUser, findTenantById, findUserDocumentByTenantAndEmail, findUserByTenantAndId, };
 export function countUsersByTenant(tenantId) {
@@ -10,11 +10,15 @@ export function findUsersByTenant(tenantId, page, pageSize) {
         .sort({ createdAt: -1 })
         .skip((page - 1) * pageSize)
         .limit(pageSize)
+        .populate("customRoleId", "name")
         .lean()
         .exec();
 }
 export async function updateUserByTenantAndId(tenantId, userId, update) {
     await tenantScopedUpdateOne(UserModel, tenantId, { _id: userId }, { $set: update }).exec();
     return findUserByTenantAndId(tenantId, userId);
+}
+export async function deleteUserByTenantAndId(tenantId, userId) {
+    return tenantScopedDeleteOne(UserModel, tenantId, { _id: userId }).exec();
 }
 //# sourceMappingURL=users.repository.js.map

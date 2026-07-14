@@ -10,6 +10,9 @@ export interface UserDocument extends mongoose.Document {
     emailVerifiedAt: Date | null;
     emailVerificationTokenHash: string | null;
     emailVerificationExpiresAt: Date | null;
+    passwordResetTokenHash: string | null;
+    passwordResetExpiresAt: Date | null;
+    customRoleId: mongoose.Types.ObjectId | null;
     createdAt: Date;
     updatedAt: Date;
 }
