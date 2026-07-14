@@ -8,6 +8,7 @@
 
 import dotenv from "dotenv";
 import { config } from "./config/index.js";
+import { startHealthServer } from "./health.js";
 import { logger } from "./logger.js";
 
 dotenv.config();
@@ -15,6 +16,8 @@ dotenv.config();
 const WORKER_NAME = "docsai-workers";
 
 function main(): void {
+  startHealthServer(3001);
+
   logger.info(
     {
       nodeEnv: config.NODE_ENV,
