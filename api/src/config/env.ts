@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { logger } from "../common/logger/logger.js";
 import { getSecretValue } from "../common/utils/secretEnv.js";
 
 /**
@@ -99,6 +98,31 @@ const envSchema = z
       .transform((value) => value.toLowerCase() === "true"),
   })
   .superRefine((env, context) => {
+    const controlledEnvironment = env.NODE_ENV === "production" || env.NODE_ENV === "test";
+    if (controlledEnvironment) {
+      const requiredSecrets = [
+        ["JWT_SECRET", env.JWT_SECRET],
+        ["JWT_REFRESH_SECRET", env.JWT_REFRESH_SECRET],
+        ["EMAIL_VERIFICATION_JWT_SECRET", env.EMAIL_VERIFICATION_JWT_SECRET],
+        ["PASSWORD_RESET_JWT_SECRET", env.PASSWORD_RESET_JWT_SECRET],
+      ] as const;
+      for (const [key, value] of requiredSecrets) {
+        if (value.length < 32 || value.startsWith("development-only-")) {
+          context.addIssue({ code: "custom", path: [key], message: "is required and must contain at least 32 characters" });
+        }
+      }
+      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")
+        context.addIssue({ code: "custom", path: ["MONGODB_URI"], message: "must be explicitly configured" });
+      if (env.REDIS_URL === "redis://redis:6379")
+        context.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be explicitly configured" });
+      if (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(env.APP_FRONTEND_URL))
+        context.addIssue({ code: "custom", path: ["APP_FRONTEND_URL"], message: "must not use localhost" });
+    }
+    if (env.SEND_EMAILS) {
+      for (const [key, value] of [["SMTP_HOST", env.SMTP_HOST], ["SMTP_USER", env.SMTP_USER], ["SMTP_PASS", env.SMTP_PASS]] as const) {
+        if (!value) context.addIssue({ code: "custom", path: [key], message: "is required when email delivery is enabled" });
+      }
+    }
     if (
       env.ENABLE_SUPER_ADMIN_BOOTSTRAP &&
       env.SUPER_ADMIN_BOOTSTRAP_KEY.length < 32
@@ -114,47 +138,51 @@ const envSchema = z
 
 export type Env = z.infer<typeof envSchema>;
 
+export class EnvironmentValidationError extends Error {
+  readonly keys: string[];
+  constructor(keys: string[]) {
+    const uniqueKeys = [...new Set(keys)].sort();
+    super(`Invalid environment configuration: ${uniqueKeys.join(", ")}`);
+    this.name = "EnvironmentValidationError";
+    this.keys = uniqueKeys;
+  }
+}
+
 /**
  * Parses and validates environment variables.
- * Exits the process with a clear error message if validation fails.
+ * Throws a key-name-only error so startup fails without leaking values.
  */
 export function parseEnv(env: Record<string, string | undefined>): Env {
   const normalizedEnv = {
     ...env,
-    JWT_SECRET: getSecretValue("JWT_SECRET", env.JWT_SECRET),
+    JWT_SECRET: getSecretValue("JWT_SECRET", env.JWT_SECRET, env),
     JWT_REFRESH_SECRET: getSecretValue(
       "JWT_REFRESH_SECRET",
       env.JWT_REFRESH_SECRET,
+      env,
     ),
     EMAIL_VERIFICATION_JWT_SECRET: getSecretValue(
       "EMAIL_VERIFICATION_JWT_SECRET",
       env.EMAIL_VERIFICATION_JWT_SECRET,
+      env,
     ),
     PASSWORD_RESET_JWT_SECRET: getSecretValue(
       "PASSWORD_RESET_JWT_SECRET",
       env.PASSWORD_RESET_JWT_SECRET,
+      env,
     ),
-    SMTP_PASS: getSecretValue("SMTP_PASS", env.SMTP_PASS),
+    SMTP_PASS: getSecretValue("SMTP_PASS", env.SMTP_PASS, env),
     SUPER_ADMIN_BOOTSTRAP_KEY: getSecretValue(
       "SUPER_ADMIN_BOOTSTRAP_KEY",
       env.SUPER_ADMIN_BOOTSTRAP_KEY,
+      env,
     ),
   };
 
   const result = envSchema.safeParse(normalizedEnv);
 
-  if (!result.success) {
-    logger.error(
-      {
-        issues: result.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          message: issue.message,
-        })),
-      },
-      "Invalid environment variables",
-    );
-    process.exit(1);
-  }
+  if (!result.success)
+    throw new EnvironmentValidationError(result.error.issues.map((issue) => issue.path.join(".") || "environment"));
 
   return result.data;
 }

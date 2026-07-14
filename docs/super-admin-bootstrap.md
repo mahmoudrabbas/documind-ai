@@ -1,5 +1,7 @@
 # One-time Super Admin bootstrap
 
+> Never put the bootstrap key in a tracked `.env` or documentation. Use a managed deployment secret or the ignored `secrets/api_super_admin_bootstrap_key.txt` file described in `secrets/README.md`. Rotate any key that may previously have been committed.
+
 The platform administrator is created by a backend-only, one-time deployment operation. Vercel frontend deployment does not create this database account, and the frontend never receives the bootstrap key.
 
 1. Deploy the backend and connect it to the production MongoDB database.

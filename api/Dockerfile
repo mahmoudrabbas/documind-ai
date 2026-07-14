@@ -1,19 +1,25 @@
-FROM node:22-bullseye-slim
+FROM node:22-bookworm-slim
 
-WORKDIR /app
+WORKDIR /repo
 
-COPY api/package*.json ./
+RUN test "$(npm --version)" = "10.9.8"
+
+COPY package.json package-lock.json ./
+COPY api/package.json api/package.json
+COPY app/package.json app/package.json
+COPY workers/package.json workers/package.json
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python-is-python3 make g++ ca-certificates libcurl4 \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install
+ENV MONGOMS_DISABLE_POSTINSTALL=1
+RUN npm ci --workspace api --include-workspace-root
 
-COPY api/ .
-COPY tsconfig.base.json /tsconfig.base.json
-COPY eslint.config.mjs /eslint.config.mjs
-RUN ln -s /app/node_modules /node_modules
+COPY api/ api/
+COPY tsconfig.base.json eslint.config.mjs ./
+
+WORKDIR /repo/api
 
 EXPOSE 5000
 
-CMD ["sh", "-c", "npm install --prefer-offline --no-audit --no-fund && npm run dev"]
+CMD ["npm", "run", "dev"]

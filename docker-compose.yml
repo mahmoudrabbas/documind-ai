@@ -6,7 +6,8 @@ services:
     ports:
       - "5000:5000"
     env_file:
-      - ./api/.env
+      - path: ./api/.env
+        required: false
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/docsai
       - REDIS_URL=redis://redis:6379
@@ -39,8 +40,8 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ./api:/app
-      - /app/node_modules
+      - ./api:/repo/api
+      - /repo/node_modules
 
   app:
     build:
@@ -58,9 +59,9 @@ services:
       retries: 5
       start_period: 20s
     volumes:
-      - ./app:/app
-      - /app/node_modules
-      - /app/.next
+      - ./app:/repo/app
+      - /repo/node_modules
+      - /repo/app/.next
 
   worker:
     build:
@@ -78,10 +79,11 @@ services:
       retries: 5
       start_period: 20s
     volumes:
-      - ./workers:/app
-      - /app/node_modules
+      - ./workers:/repo/workers
+      - /repo/node_modules
     env_file:
-      - ./workers/.env
+      - path: ./workers/.env
+        required: false
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/docsai
       - REDIS_URL=redis://redis:6379

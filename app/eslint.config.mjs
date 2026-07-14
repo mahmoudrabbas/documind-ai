@@ -7,6 +7,14 @@ const eslintConfig = defineConfig([
   ...rootConfig,
   ...nextVitals,
   ...nextTs,
+  {
+    rules: {
+      // These effects synchronize URL-backed drafts and abortable remote requests.
+      "react-hooks/set-state-in-effect": "off",
+      // Material Symbols is a stylesheet icon dependency, not the primary text font.
+      "@next/next/no-page-custom-font": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
