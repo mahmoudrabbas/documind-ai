@@ -39,7 +39,6 @@ export default function PlatformTenantDetailPage() {
   useEffect(() => {
     const controller = new AbortController();
     // The request owns subsequent state updates and is cancelled when the ID changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);

@@ -20,4 +20,17 @@ export default tseslint.config(
       "no-console": "warn",
     },
   },
+  {
+    files: ["scripts/**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        URL: "readonly",
+      },
+    },
+    rules: {
+      "no-console": "off",
+    },
+  },
 );

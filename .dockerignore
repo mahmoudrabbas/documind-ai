@@ -1,0 +1,16 @@
+.git
+.github
+**/node_modules
+**/.next
+**/dist
+**/build
+**/out
+**/*.tsbuildinfo
+.env
+.env.*
+**/.env
+**/.env.*
+secrets
+uploads
+api/uploads
+*.log

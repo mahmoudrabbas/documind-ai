@@ -4,10 +4,12 @@ import {
   setAccessToken,
 } from "./auth-tokens";
 import { getLocaleFromCookie } from "./i18n/i18n.utils";
+import { resolvePublicApiUrl } from "@/config/public-env";
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"
-).replace(/\/+$/, "");
+export const API_BASE_URL = resolvePublicApiUrl(
+  process.env.NODE_ENV,
+  process.env.NEXT_PUBLIC_API_URL,
+);
 
 const PUBLIC_AUTH_ENDPOINTS = new Set([
   "/auth/login",

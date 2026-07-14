@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   allowSessionRestore,
   ApiError,
+  API_BASE_URL,
   apiClient,
   beginExplicitLogout,
   refreshAccessToken,
@@ -86,7 +87,7 @@ describe("apiClient authentication", () => {
     expect(result).toEqual({ documents: [] });
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(vi.mocked(fetch).mock.calls[1][0]).toBe(
-      "http://localhost:5000/auth/refresh",
+      `${API_BASE_URL}/auth/refresh`,
     );
     expect(vi.mocked(fetch).mock.calls[1][1]?.credentials).toBe("include");
     const retryHeaders = new Headers(

@@ -13,8 +13,6 @@ import { logger } from "./logger.js";
 
 dotenv.config();
 
-const WORKER_NAME = "docsai-workers";
-
 function main(): void {
   startHealthServer(3001);
 

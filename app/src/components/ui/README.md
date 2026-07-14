@@ -8,7 +8,7 @@ first set of shared components, per EPIC 1 / F1.3.
 | Concern                         | File                                   |
 | -------------------------------- | --------------------------------------- |
 | Color / type / radius / spacing / shadow tokens | `app/src/app/globals.css` (`@theme` block) |
-| Font loading (Inter)             | `app/src/app/layout.tsx`                |
+| System font stack                | `app/src/app/globals.css`               |
 | JS/TS mirror of color tokens (for charts, canvas, inline styles) | `app/src/lib/design-tokens.ts` |
 | Shared components                | `app/src/components/ui/*`               |
 | Pure variant-resolution logic (unit-testable, no JSX) | `app/src/components/ui/variants.ts` |

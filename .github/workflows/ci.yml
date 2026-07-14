@@ -2,96 +2,169 @@ name: CI
 
 on:
   pull_request:
+  push:
     branches: [master]
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: 22.x
+  NPM_VERSION: 10.9.8
+  NEXT_PUBLIC_API_URL: https://api.test.invalid
+  MONGOMS_DISABLE_POSTINSTALL: "1"
+
 jobs:
-  changes:
-    name: Detect changes
+  repository-security:
+    name: Repository security contract
     runs-on: ubuntu-latest
-    outputs:
-      api: ${{ steps.filter.outputs.api }}
-      app: ${{ steps.filter.outputs.app }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
         with:
-          filters: |
-            api:
-              - 'api/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'eslint.config.mjs'
-              - '.github/workflows/ci.yml'
-            app:
-              - 'app/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'eslint.config.mjs'
-              - '.github/workflows/ci.yml'
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
+      - run: npm ci --ignore-scripts
+      - name: Scan committed files and test tooling contracts
+        run: |
+          started=$SECONDS
+          npm run security:secrets
+          npm run test:security
+          duration=$((SECONDS - started))
+          mkdir -p ci-results
+          printf 'repository-security=passed duration_seconds=%s\n' "$duration" | tee ci-results/repository-security.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repository-security-summary
+          path: ci-results/
+          if-no-files-found: error
+          retention-days: 14
 
-  backend:
-    name: Backend (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
+  validate:
+    name: Validate ${{ matrix.workspace }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [api, app, workers]
     services:
       mongodb:
         image: mongo:8
-        ports:
-          - 27017:27017
+        ports: ["27017:27017"]
       redis:
         image: redis:7
-        ports:
-          - 6379:6379
+        ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm install --include-workspace-root --workspace api
-      - run: npm run lint --workspace api
-      - run: npm run typecheck --workspace api
-      - run: npm run test --workspace api --if-present
+      - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
+      - run: npm ci
+      - name: Lint, typecheck, test, and build
         env:
-          MONGODB_URI: mongodb://localhost:27017/docsai-test
-          REDIS_URL: redis://localhost:6379
-      - run: npm run build --workspace api
+          NODE_ENV: test
+          MONGODB_URI: mongodb://127.0.0.1:27017/documind-ci
+          REDIS_URL: redis://127.0.0.1:6379/1
+          APP_FRONTEND_URL: https://app.test.invalid
+          JWT_SECRET: test-only-jwt-secret-value-at-least-32-characters
+          JWT_REFRESH_SECRET: test-only-refresh-secret-value-at-least-32-characters
+          EMAIL_VERIFICATION_JWT_SECRET: test-only-verification-secret-at-least-32-characters
+          PASSWORD_RESET_JWT_SECRET: test-only-password-reset-secret-at-least-32-characters
+        run: |
+          started=$SECONDS
+          npm run lint:${{ matrix.workspace }}
+          npm run typecheck:${{ matrix.workspace }}
+          npm run test:${{ matrix.workspace }}
+          npm run build:${{ matrix.workspace }}
+          duration=$((SECONDS - started))
+          mkdir -p ci-results
+          printf 'workspace=%s status=passed duration_seconds=%s\n' '${{ matrix.workspace }}' "$duration" | tee "ci-results/${{ matrix.workspace }}.txt" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.workspace }}-validation-summary
+          path: ci-results/
+          if-no-files-found: warn
+          retention-days: 14
 
-  frontend:
-    name: Frontend (app)
-    needs: changes
-    if: needs.changes.outputs.app == 'true'
+  docker:
+    name: Docker ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            dockerfile: api/Dockerfile
+          - service: app
+            dockerfile: app/Dockerfile
+          - service: workers
+            dockerfile: workers/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        run: |
+          started=$SECONDS
+          docker build --file '${{ matrix.dockerfile }}' --tag 'documind-${{ matrix.service }}:ci' .
+          duration=$((SECONDS - started))
+          mkdir -p ci-results
+          printf 'image=%s status=passed duration_seconds=%s\n' '${{ matrix.service }}' "$duration" | tee "ci-results/docker-${{ matrix.service }}.txt" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-${{ matrix.service }}-summary
+          path: ci-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  compose:
+    name: Docker Compose contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Create value-free local secret fixtures
+        run: |
+          for example in secrets/*.example; do cp "$example" "${example%.example}"; done
+      - name: Validate Compose
+        run: |
+          started=$SECONDS
+          docker compose config --quiet
+          duration=$((SECONDS - started))
+          mkdir -p ci-results
+          printf 'compose-config=passed duration_seconds=%s\n' "$duration" | tee ci-results/compose.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          node-version: 22.x
-          cache: npm
-      - run: npm install --include-workspace-root --workspace app
-      - run: npm run lint --workspace app
-      - run: npm run typecheck --workspace app
-      - run: npm run test --workspace app --if-present
-      - run: npm run build --workspace app
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:5000
+          name: compose-summary
+          path: ci-results/
+          if-no-files-found: warn
+          retention-days: 14
 
   ci-success:
     name: CI Success
-    needs: [changes, backend, frontend]
     if: always()
+    needs: [repository-security, validate, docker, compose]
     runs-on: ubuntu-latest
     steps:
-      - name: Fail if any required job failed
+      - name: Require every job
+        env:
+          SECURITY_RESULT: ${{ needs.repository-security.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          COMPOSE_RESULT: ${{ needs.compose.result }}
         run: |
-          if [[ "${{ needs.backend.result }}" == "failure" || "${{ needs.frontend.result }}" == "failure" ]]; then
-            echo "A job failed."
-            exit 1
-          fi
-          echo "OK — all applicable jobs passed."
+          for result in "$SECURITY_RESULT" "$VALIDATE_RESULT" "$DOCKER_RESULT" "$COMPOSE_RESULT"; do
+            test "$result" = success || exit 1
+          done
+          echo 'All repository, workspace, image, and Compose checks passed.' >> "$GITHUB_STEP_SUMMARY"

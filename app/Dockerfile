@@ -1,15 +1,19 @@
 FROM node:22-alpine
 
-WORKDIR /app
+WORKDIR /repo
 
-COPY app/package*.json ./
+RUN test "$(npm --version)" = "10.9.8"
 
-RUN npm install
+COPY package.json package-lock.json ./
+COPY api/package.json api/package.json
+COPY app/package.json app/package.json
+COPY workers/package.json workers/package.json
+RUN npm ci --workspace app --include-workspace-root
 
-COPY app/ .
-COPY tsconfig.base.json /tsconfig.base.json
-COPY eslint.config.mjs /eslint.config.mjs
-RUN ln -s /app/node_modules /node_modules
+COPY app/ app/
+COPY tsconfig.base.json eslint.config.mjs ./
+
+WORKDIR /repo/app
 
 EXPOSE 3000
 

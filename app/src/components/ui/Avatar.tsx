@@ -44,7 +44,7 @@ export function Avatar({ src, name, size = "md", className }: AvatarProps) {
       )}
     >
       {showImage ? (
-        // eslint-disable-next-line @next/next/no-img-element -- small avatar, next/image adds no real benefit here
+        // eslint-disable-next-line @next/next/no-img-element -- avatar URLs are user-configured and retain an error fallback
         <img
           src={src ?? undefined}
           alt={name}

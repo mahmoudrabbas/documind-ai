@@ -1,15 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui";
-import { cn } from "@/lib/utils";
 
 function PublicNavbar() {
   const { t, dir } = useI18n();
-  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const scrollTo = (id: string) => {

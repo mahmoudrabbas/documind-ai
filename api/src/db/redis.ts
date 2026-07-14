@@ -100,7 +100,8 @@ export async function disconnectRedis(): Promise<void> {
     await client.quit();
     if (!isTestEnv()) console.log("[redis] Disconnected gracefully");
   } catch (err) {
-    console.error("[redis] Error during disconnect:", err);
+    client.disconnect(false);
+    if (!isTestEnv()) console.error("[redis] Error during disconnect:", err);
   } finally {
     client = null;
     isConnected = false;
