@@ -1,30 +1,42 @@
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger/logger.js";
-import { withRequestContext } from "../utils/requestContext.js";
+import { withTraceContext } from "../utils/requestContext.js";
 const MAX_REQUEST_ID_LENGTH = 128;
 const VALID_REQUEST_ID = /^[\x21-\x7e]+$/;
-function getRequestId(value) {
-    if (value === undefined ||
-        value.length === 0 ||
-        value.length > MAX_REQUEST_ID_LENGTH ||
-        !VALID_REQUEST_ID.test(value)) {
+function getSafeHeader(value) {
+    const str = Array.isArray(value) ? value[0] : value;
+    if (str === undefined ||
+        str.length === 0 ||
+        str.length > MAX_REQUEST_ID_LENGTH ||
+        !VALID_REQUEST_ID.test(str)) {
         return undefined;
     }
-    return value;
+    return str;
 }
 export const requestContextMiddleware = (req, res, next) => {
-    const incomingRequestId = getRequestId(req.get("x-request-id")) ??
-        getRequestId(req.get("x-correlation-id"));
+    const incomingRequestId = getSafeHeader(req.headers["x-request-id"]) ??
+        getSafeHeader(req.headers["x-correlation-id"]);
+    const incomingTraceId = getSafeHeader(req.headers["x-trace-id"]);
     const requestId = incomingRequestId ?? randomUUID();
+    const traceId = incomingTraceId ?? randomUUID();
+    const ctx = {
+        traceId,
+        requestId,
+    };
     req.requestId = requestId;
+    req.traceId = traceId;
     try {
-        req.log = logger.child({ requestId });
+        req.log = logger.child({ traceId, requestId });
     }
     catch {
         req.log = logger;
     }
     res.setHeader("X-Request-ID", requestId);
-    withRequestContext(requestId, () => {
+    res.setHeader("X-Trace-ID", traceId);
+    // We can't set tenantId/actorId yet because authentication hasn't run, 
+    // but they'll be added to the context by later middlewares/services if needed,
+    // or we can just rely on req.auth/req.tenantId in the audit writer.
+    withTraceContext(ctx, () => {
         next();
     });
 };

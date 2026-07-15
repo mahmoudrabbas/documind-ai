@@ -50,9 +50,13 @@ declare const envSchema: z.ZodObject<{
     LOG_PRETTY: z.ZodPipe<z.ZodDefault<z.ZodString>, z.ZodTransform<boolean, string>>;
 }, z.core.$strip>;
 export type Env = z.infer<typeof envSchema>;
+export declare class EnvironmentValidationError extends Error {
+    readonly keys: string[];
+    constructor(keys: string[]);
+}
 /**
  * Parses and validates environment variables.
- * Exits the process with a clear error message if validation fails.
+ * Throws a key-name-only error so startup fails without leaking values.
  */
 export declare function parseEnv(env: Record<string, string | undefined>): Env;
 export {};

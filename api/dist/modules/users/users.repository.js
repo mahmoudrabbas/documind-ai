@@ -14,6 +14,13 @@ export function findUsersByTenant(tenantId, page, pageSize) {
         .lean()
         .exec();
 }
+export function countActiveCompanyAdminsByTenant(tenantId) {
+    return UserModel.countDocuments({
+        tenantId,
+        role: "COMPANY_ADMIN",
+        status: "active",
+    }).exec();
+}
 export async function updateUserByTenantAndId(tenantId, userId, update) {
     await tenantScopedUpdateOne(UserModel, tenantId, { _id: userId }, { $set: update }).exec();
     return findUserByTenantAndId(tenantId, userId);
