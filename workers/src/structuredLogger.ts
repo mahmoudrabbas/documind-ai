@@ -1,5 +1,22 @@
 import pino, { type LoggerOptions } from "pino";
 
+const SENSITIVE_FIELDS = [
+  // Authentication & Session
+  "req.headers.authorization", "req.headers.cookie",
+  "headers.authorization", "headers.cookie",
+  "password", "passwordHash", "accessToken", "refreshToken",
+  "emailVerificationToken", "emailVerificationTokenHash",
+  "tokenHash", "jtiHash", "secret", "jwt", "cookie",
+  // Content
+  "emailBody", "documentText", "documentContent",
+  // PII
+  "ssn", "nationalId", "dateOfBirth", "phoneNumber",
+  // Payment
+  "cardNumber", "cvv", "expiryDate",
+  // Credentials
+  "apiKey", "secretKey", "connectionString",
+];
+
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const configuredLevel = process.env.LOG_LEVEL ?? "info";
 const isTest =
@@ -24,6 +41,10 @@ export function createStructuredLogger(serviceName: string) {
     base: { service: serviceName },
     timestamp: pino.stdTimeFunctions.isoTime,
     messageKey: "message",
+    redact: {
+      paths: [...SENSITIVE_FIELDS],
+      censor: "[Redacted]",
+    },
     formatters: {
       level(label: string) {
         return { level: label };
@@ -33,3 +54,4 @@ export function createStructuredLogger(serviceName: string) {
 
   return pino(options, transport);
 }
+

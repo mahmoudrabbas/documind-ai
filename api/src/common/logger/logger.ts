@@ -1,28 +1,5 @@
 import { createStructuredLogger } from "../utils/structuredLogger.js";
 
-const sensitiveFields = [
-  "req.headers.authorization",
-  "req.headers.cookie",
-  "headers.authorization",
-  "headers.cookie",
-  "password",
-  "passwordHash",
-  "accessToken",
-  "refreshToken",
-  "emailVerificationToken",
-  "emailVerificationTokenHash",
-  "tokenHash",
-  "jtiHash",
-  "secret",
-  "jwt",
-  "cookie",
-];
+// Redaction is configured at logger creation time in structuredLogger.ts
+export const logger = createStructuredLogger("api");
 
-const baseLogger = createStructuredLogger("api");
-
-export const logger = baseLogger.child({
-  redact: {
-    paths: sensitiveFields,
-    censor: "[Redacted]",
-  },
-});

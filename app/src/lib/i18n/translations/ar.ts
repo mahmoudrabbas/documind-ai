@@ -275,7 +275,14 @@ const ar: TranslationDictionary = {
   "documents.statusProcessing": "قيد المعالجة",
   "documents.statusProcessed": "جاهز",
   "documents.statusFailed": "فشل",
-};
 
+  /* ── audit ─────────────────────────────────────────────── */
+  "audit.title": "سجل التدقيق",
+  "audit.description": "مراجعة الإجراءات الإدارية الحساسة عبر المنصة.",
+  "audit.fetchError": "فشل في تحميل سجلات التدقيق",
+  "audit.exportError": "فشل في تصدير سجلات التدقيق",
+  "audit.exporting": "جارٍ التصدير...",
+  "audit.export": "تصدير CSV (30 يومًا)",
+};
 
 export default ar;

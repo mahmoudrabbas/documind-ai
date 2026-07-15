@@ -275,7 +275,14 @@ const en: TranslationDictionary = {
   "documents.statusProcessing": "Processing",
   "documents.statusProcessed": "Ready",
   "documents.statusFailed": "Failed",
-};
 
+  /* ── audit ─────────────────────────────────────────────── */
+  "audit.title": "Audit Log",
+  "audit.description": "Review sensitive administrative actions across the platform.",
+  "audit.fetchError": "Failed to load audit logs",
+  "audit.exportError": "Failed to export audit logs",
+  "audit.exporting": "Exporting...",
+  "audit.export": "Export CSV (30 days)",
+};
 
 export default en;
