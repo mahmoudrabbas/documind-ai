@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPage";
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { getAuditLogs, type AuditLog, type AuditQueryFilter } from "@/services/audit.service";
@@ -10,26 +10,24 @@ export default function TenantAuditPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<AuditQueryFilter>({ page: 1, pageSize: 50 });
-  const [totalPages, setTotalPages] = useState(1);
+  const [filter] = useState<AuditQueryFilter>({ page: 1, pageSize: 50 });
 
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await getAuditLogs(filter);
       setLogs(data.logs);
-      setTotalPages(data.pagination.totalPages);
-    } catch (err) {
+    } catch {
       setError(t("audit.fetchError"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, t]);
 
   useEffect(() => {
     loadLogs();
-  }, [filter]);
+  }, [loadLogs]);
 
   return (
     <DashboardPage>

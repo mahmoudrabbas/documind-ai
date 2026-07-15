@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPage";
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { getAuditLogs, exportAuditLogs, type AuditLog, type AuditQueryFilter } from "@/services/audit.service";
@@ -11,22 +11,20 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [filter, setFilter] = useState<AuditQueryFilter>({ page: 1, pageSize: 50 });
-  const [totalPages, setTotalPages] = useState(1);
+  const [filter] = useState<AuditQueryFilter>({ page: 1, pageSize: 50 });
 
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await getAuditLogs(filter);
       setLogs(data.logs);
-      setTotalPages(data.pagination.totalPages);
-    } catch (err) {
+    } catch {
       setError(t("audit.fetchError"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, t]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -57,7 +55,7 @@ export default function AuditPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
+    } catch {
       setError(t("audit.exportError"));
     } finally {
       setExporting(false);
@@ -66,7 +64,7 @@ export default function AuditPage() {
 
   useEffect(() => {
     loadLogs();
-  }, [filter]);
+  }, [loadLogs]);
 
   return (
     <DashboardPage>

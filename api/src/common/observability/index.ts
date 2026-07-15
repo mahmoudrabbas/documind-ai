@@ -1,5 +1,5 @@
 import type { AuditWriter } from "./auditWriter.js";
-import { MongoAuditWriter, InMemoryAuditWriter } from "./auditWriter.js";
+import { MongoAuditWriter } from "./auditWriter.js";
 import type { MetricRecorder } from "./metricRecorder.js";
 import { LogMetricRecorder, InMemoryMetricRecorder } from "./metricRecorder.js";
 
@@ -8,13 +8,12 @@ let auditWriterInstance: AuditWriter | null = null;
 let metricRecorderInstance: MetricRecorder | null = null;
 
 export function initObservability(isTest = process.env.NODE_ENV === "test") {
-  if (isTest) {
-    auditWriterInstance = new InMemoryAuditWriter();
-    metricRecorderInstance = new InMemoryMetricRecorder();
-  } else {
-    auditWriterInstance = new MongoAuditWriter();
-    metricRecorderInstance = new LogMetricRecorder();
-  }
+  // Always use MongoAuditWriter — tests run against a real MongoDB (mongoms)
+  // and existing tests assert directly on AuditLogModel.
+  auditWriterInstance = new MongoAuditWriter();
+  metricRecorderInstance = isTest
+    ? new InMemoryMetricRecorder()
+    : new LogMetricRecorder();
 }
 
 export function getAuditWriter(): AuditWriter {
@@ -30,3 +29,4 @@ export function getMetricRecorder(): MetricRecorder {
   }
   return metricRecorderInstance!;
 }
+

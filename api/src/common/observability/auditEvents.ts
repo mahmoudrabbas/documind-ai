@@ -38,15 +38,15 @@ export type AuditAction =
   | "SYSTEM_HEALTH_CHECK_FAILED";
 
 export type AuditResourceType =
-  | "user"
-  | "role"
-  | "document"
-  | "package"
-  | "subscription"
-  | "platform_setting"
-  | "tenant"
-  | "session"
-  | "system";
+  | "User"
+  | "Role"
+  | "Document"
+  | "Package"
+  | "Subscription"
+  | "PlatformSetting"
+  | "Tenant"
+  | "Session"
+  | "System";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 

@@ -75,7 +75,7 @@ export const exportLogs = async (req: Request, res: Response, next: NextFunction
 
     await getAuditWriter().write({
       action: "AUDIT_EXPORTED",
-      resourceType: "system",
+      resourceType: "System",
       resourceId: "audit_logs",
       metadata: { filter, count: logs.length }
     });

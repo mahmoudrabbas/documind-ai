@@ -282,7 +282,7 @@ export async function updateUser(
 
     await getAuditWriter().write({
       tenantId,
-      resourceType: "user",
+      resourceType: "User",
       resourceId: updatedUser._id.toString(),
       action: "USER_UPDATED",
       actorId: updater.userId,
@@ -318,7 +318,7 @@ export async function deleteUser(
 
   await getAuditWriter().write({
     tenantId,
-    resourceType: "user",
+    resourceType: "User",
     resourceId: existingUser._id.toString(),
     action: "USER_DELETED",
     actorId: deleter.userId,
@@ -416,7 +416,7 @@ export async function setPasswordFromInvite(
 
     await getAuditWriter().write({
       tenantId: user.tenantId.toString(),
-      resourceType: "user",
+      resourceType: "User",
       resourceId: user._id.toString(),
       action: "PASSWORD_SET_FROM_INVITE",
       actorId: user._id.toString(),

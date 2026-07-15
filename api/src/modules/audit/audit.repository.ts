@@ -1,9 +1,9 @@
 import AuditLogModel from "../../db/models/auditLog.model.js";
-import type { AuditEventInput, AuditQueryFilter } from "./audit.types.js";
+import type { AuditQueryFilter } from "./audit.types.js";
 
 // Keep backward compatibility for existing codebase callers temporarily, 
 // though we will refactor them to use getAuditWriter() directly
-export function createAuditLog(input: any) {
+export function createAuditLog(input: Record<string, unknown>) {
   // We use the model directly here to prevent circular loops 
   // since MongoAuditWriter calls createAuditLog
   return AuditLogModel.create(input);
@@ -25,9 +25,10 @@ export function buildAuditFilter(filter: AuditQueryFilter) {
   if (filter.outcome) query.outcome = filter.outcome;
   
   if (filter.dateFrom || filter.dateTo) {
-    query.createdAt = {};
-    if (filter.dateFrom) (query.createdAt as any).$gte = new Date(filter.dateFrom);
-    if (filter.dateTo) (query.createdAt as any).$lte = new Date(filter.dateTo);
+    const dateFilter: Record<string, Date> = {};
+    if (filter.dateFrom) dateFilter.$gte = new Date(filter.dateFrom);
+    if (filter.dateTo) dateFilter.$lte = new Date(filter.dateTo);
+    query.createdAt = dateFilter;
   }
 
   return query;

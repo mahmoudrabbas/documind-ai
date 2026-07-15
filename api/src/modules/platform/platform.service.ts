@@ -12,7 +12,6 @@ import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
 import type { AuthIdentity } from "../auth/auth.types.js";
 import { getAuditWriter } from "../../common/observability/index.js";
-import type { AuditAction } from "../../common/observability/auditEvents.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
@@ -100,7 +99,7 @@ export async function createPackage(
   });
   await getAuditWriter().write({
     action: "PACKAGE_CREATED",
-    resourceType: "package",
+    resourceType: "Package",
     resourceId: value.id,
     changes: input,
     tenantId: "system",
@@ -129,7 +128,7 @@ export async function updatePackage(
   await existing.save();
   await getAuditWriter().write({
     action: "PACKAGE_UPDATED",
-    resourceType: "package",
+    resourceType: "Package",
     resourceId: id,
     changes: input,
     tenantId: "system",
@@ -180,7 +179,7 @@ export async function updateSubscription(
     .exec();
   await getAuditWriter().write({
     action: "SUBSCRIPTION_UPDATED",
-    resourceType: "subscription",
+    resourceType: "Subscription",
     resourceId: String(value?._id ?? tenantId),
     changes: input,
     tenantId: tenantId,
@@ -375,7 +374,7 @@ export async function updateSetting(
     .exec();
   await getAuditWriter().write({
     action: "PLATFORM_SETTING_UPDATED",
-    resourceType: "platform_setting",
+    resourceType: "PlatformSetting",
     resourceId: key,
     changes: value,
     tenantId: "system",
