@@ -15,12 +15,12 @@ export class MongoAuditWriter implements AuditWriter {
       const ctx = getCurrentTraceContext();
       const redactedChanges = event.changes ? redactObject(event.changes) : {};
       
-      let tenantIdVal: any = event.tenantId ?? ctx?.tenantId ?? "system";
+      let tenantIdVal: string | mongoose.Types.ObjectId = event.tenantId ?? ctx?.tenantId ?? "system";
       if (tenantIdVal !== "system" && typeof tenantIdVal === "string") {
         tenantIdVal = new mongoose.Types.ObjectId(tenantIdVal);
       }
       
-      let actorIdVal: any = event.actorId ?? ctx?.actorId ?? "system";
+      let actorIdVal: string | mongoose.Types.ObjectId = event.actorId ?? ctx?.actorId ?? "system";
       if (actorIdVal !== "system" && typeof actorIdVal === "string") {
         actorIdVal = new mongoose.Types.ObjectId(actorIdVal);
       }
