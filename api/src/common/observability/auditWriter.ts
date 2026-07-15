@@ -3,6 +3,7 @@ import { getCurrentTraceContext } from "../utils/requestContext.js";
 import { redactObject } from "./redactionRules.js";
 import { logger } from "../logger/logger.js";
 import { createAuditLog } from "../../modules/audit/audit.repository.js";
+import mongoose from "mongoose";
 
 export interface AuditWriter {
   write(event: AuditEventInput): Promise<void>;
@@ -14,13 +15,23 @@ export class MongoAuditWriter implements AuditWriter {
       const ctx = getCurrentTraceContext();
       const redactedChanges = event.changes ? redactObject(event.changes) : {};
       
+      let tenantIdVal: any = event.tenantId ?? ctx?.tenantId ?? "system";
+      if (tenantIdVal !== "system" && typeof tenantIdVal === "string") {
+        tenantIdVal = new mongoose.Types.ObjectId(tenantIdVal);
+      }
+      
+      let actorIdVal: any = event.actorId ?? ctx?.actorId ?? "system";
+      if (actorIdVal !== "system" && typeof actorIdVal === "string") {
+        actorIdVal = new mongoose.Types.ObjectId(actorIdVal);
+      }
+
       const payload = {
-        tenantId: event.tenantId ?? ctx?.tenantId ?? "system", // Fallback for platform/system events
-        userId: event.actorId ?? ctx?.actorId ?? "system",
+        tenantId: tenantIdVal,
+        userId: actorIdVal,
         resourceType: event.resourceType,
         resourceId: event.resourceId,
         action: event.action,
-        actorId: event.actorId ?? ctx?.actorId ?? "system",
+        actorId: actorIdVal,
         actorEmail: event.actorEmail ?? "system@documind.ai",
         actorRole: event.actorRole ?? "SYSTEM",
         changes: redactedChanges,
