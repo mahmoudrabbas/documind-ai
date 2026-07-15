@@ -17,6 +17,7 @@ import documentsRoutes from "./modules/documents/documents.routes.js";
 import rolesRoutes from "./modules/roles/roles.routes.js";
 import platformRoutes from "./modules/platform/platform.routes.js";
 import publicRoutes from "./modules/public/public.routes.js";
+import auditRoutes from "./modules/audit/audit.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -96,6 +97,7 @@ app.use("/internal/bootstrap", bootstrapRoutes);
 app.use("/documents", documentsRoutes);
 app.use("/roles", rolesRoutes);
 app.use("/public", publicRoutes);
+app.use("/audit", auditRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

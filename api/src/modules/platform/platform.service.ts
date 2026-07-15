@@ -11,32 +11,13 @@ import { AppError } from "../../common/errors/AppError.js";
 import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
 import type { AuthIdentity } from "../auth/auth.types.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import type { AuditAction } from "../../common/observability/auditEvents.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
   slug: { $nin: ["documind-ai", "__documind_platform__"] },
 };
-
-async function audit(
-  actor: AuthIdentity,
-  action: string,
-  resourceType: string,
-  resourceId: string,
-  changes: Record<string, unknown>,
-  tenantId = actor.tenantId,
-) {
-  await AuditLogModel.create({
-    tenantId,
-    userId: actor.userId,
-    actorId: actor.userId,
-    actorEmail: actor.email,
-    actorRole: actor.role,
-    action,
-    resourceType,
-    resourceId,
-    changes,
-  });
-}
 
 export async function getOverview() {
   const [
@@ -117,7 +98,16 @@ export async function createPackage(
       },
     ],
   });
-  await audit(actor, "PACKAGE_CREATED", "package", value.id, input);
+  await getAuditWriter().write({
+    action: "PACKAGE_CREATED",
+    resourceType: "package",
+    resourceId: value.id,
+    changes: input,
+    tenantId: "system",
+    actorId: actor.userId,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+  });
   return value.toJSON();
 }
 
@@ -137,7 +127,16 @@ export async function updatePackage(
     createdAt: new Date(),
   });
   await existing.save();
-  await audit(actor, "PACKAGE_UPDATED", "package", id, input);
+  await getAuditWriter().write({
+    action: "PACKAGE_UPDATED",
+    resourceType: "package",
+    resourceId: id,
+    changes: input,
+    tenantId: "system",
+    actorId: actor.userId,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+  });
   return existing.toJSON();
 }
 
@@ -179,14 +178,16 @@ export async function updateSubscription(
   )
     .lean()
     .exec();
-  await audit(
-    actor,
-    "SUBSCRIPTION_UPDATED",
-    "subscription",
-    String(value?._id ?? tenantId),
-    input,
-    tenantId,
-  );
+  await getAuditWriter().write({
+    action: "SUBSCRIPTION_UPDATED",
+    resourceType: "subscription",
+    resourceId: String(value?._id ?? tenantId),
+    changes: input,
+    tenantId: tenantId,
+    actorId: actor.userId,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+  });
   return value;
 }
 
@@ -372,12 +373,15 @@ export async function updateSetting(
   )
     .lean()
     .exec();
-  await audit(
-    actor,
-    "PLATFORM_SETTING_UPDATED",
-    "platform_setting",
-    key,
-    value,
-  );
+  await getAuditWriter().write({
+    action: "PLATFORM_SETTING_UPDATED",
+    resourceType: "platform_setting",
+    resourceId: key,
+    changes: value,
+    tenantId: "system",
+    actorId: actor.userId,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+  });
   return setting?.value ?? value;
 }

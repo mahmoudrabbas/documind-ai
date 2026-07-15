@@ -27,7 +27,7 @@ import {
   updateUserByTenantAndId,
   deleteUserByTenantAndId,
 } from "./users.repository.js";
-import { createAuditLog } from "../audit/audit.repository.js";
+import { getAuditWriter } from "../../common/observability/index.js";
 import {
   validateInviteUserInput,
   validateListUsersInput,
@@ -280,10 +280,9 @@ export async function updateUser(
       throw new AppError(404, NOT_FOUND, "User not found");
     }
 
-    await createAuditLog({
+    await getAuditWriter().write({
       tenantId,
-      userId: updatedUser._id.toString(),
-      resourceType: "User",
+      resourceType: "user",
       resourceId: updatedUser._id.toString(),
       action: "USER_UPDATED",
       actorId: updater.userId,
@@ -317,10 +316,9 @@ export async function deleteUser(
 
   await deleteUserByTenantAndId(tenantId, targetUserId);
 
-  await createAuditLog({
+  await getAuditWriter().write({
     tenantId,
-    userId: existingUser._id.toString(),
-    resourceType: "User",
+    resourceType: "user",
     resourceId: existingUser._id.toString(),
     action: "USER_DELETED",
     actorId: deleter.userId,
@@ -416,15 +414,14 @@ export async function setPasswordFromInvite(
 
     await user.save();
 
-    await createAuditLog({
+    await getAuditWriter().write({
       tenantId: user.tenantId.toString(),
-      userId: user._id.toString(),
-      resourceType: "User",
+      resourceType: "user",
       resourceId: user._id.toString(),
       action: "PASSWORD_SET_FROM_INVITE",
       actorId: user._id.toString(),
       actorEmail: user.email,
-      actorRole: user.role,
+      actorRole: user.role ?? "UNKNOWN",
       changes: {
         status: {
           before: "pending_email_verification",
