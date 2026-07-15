@@ -19,7 +19,17 @@ export interface RoleView {
   tenantId: string;
   name: string;
   baseRole: "COMPANY_ADMIN" | "EMPLOYEE";
+  permissions: string[];
+  scopes: {
+    selfOnly: boolean;
+    departmentIds: string[];
+    categories: string[];
+  };
+  status: string;
+  version: number;
   userCount: number;
+  createdBy: string | null;
+  updatedBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,3 +37,5 @@ export interface RoleView {
 export interface ListRolesResponse { success: true; data: { roles: RoleView[] } }
 export interface CreateRoleResponse { success: true; message: string; data: { role: RoleView } }
 export interface UpdateRoleResponse { success: true; message: string; data: { role: RoleView } }
+export interface CloneRoleResponse { success: true; message: string; data: { role: RoleView } }
+export interface ArchiveRoleResponse { success: true; message: string; data: { role: RoleView } }

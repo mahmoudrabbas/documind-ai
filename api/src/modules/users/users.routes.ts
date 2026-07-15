@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
-import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
 import {
   inviteUserController,
   listUsersController,
@@ -17,7 +17,7 @@ router.get(
   "/",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN", "EMPLOYEE"),
+  requirePermission("users:read"),
   listUsersController,
 );
 
@@ -25,7 +25,7 @@ router.patch(
   "/:id",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN"),
+  requirePermission("users:update"),
   updateUserController,
 );
 
@@ -33,7 +33,7 @@ router.post(
   "/",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN"),
+  requirePermission("users:create"),
   inviteUserController,
 );
 
@@ -41,7 +41,7 @@ router.delete(
   "/:id",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN"),
+  requirePermission("users:delete"),
   deleteUserController,
 );
 
