@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   EMAIL_ALREADY_EXISTS,
+  LAST_ADMIN_PROTECTION,
   NOT_FOUND,
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
@@ -18,6 +19,7 @@ import { findUserDocumentById } from "../auth/auth.repository.js";
 import { sendInvitationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import {
+  countActiveCompanyAdminsByTenant,
   createUser,
   findTenantById,
   findUserByTenantAndId,
@@ -220,6 +222,33 @@ export async function updateUser(
     throw new AppError(404, NOT_FOUND, "User not found");
   }
 
+  if (
+    existingUser.role === "COMPANY_ADMIN" &&
+    (payload.role !== undefined || payload.customRoleId !== undefined)
+  ) {
+    const adminCount = await countActiveCompanyAdminsByTenant(tenantId);
+    if (adminCount <= 1) {
+      await getAuditWriter().write({
+        tenantId,
+        resourceType: "User",
+        resourceId: existingUser._id.toString(),
+        action: "LAST_ADMIN_PROTECTION_TRIGGERED",
+        actorId: updater.userId,
+        actorEmail: updater.email ?? "",
+        actorRole: updater.role ?? "UNKNOWN",
+        changes: {
+          reason: "Attempt to change role of last active Company Admin",
+          targetUserId,
+        },
+      });
+      throw new AppError(
+        409,
+        LAST_ADMIN_PROTECTION,
+        "Cannot change the role of the last active Company Admin. Promote another user first.",
+      );
+    }
+  }
+
   const changes: Record<string, unknown> = {};
   const update: Record<string, unknown> = {};
 
@@ -321,6 +350,30 @@ export async function deleteUser(
   const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
   if (!existingUser) {
     throw new AppError(404, NOT_FOUND, "User not found");
+  }
+
+  if (existingUser.role === "COMPANY_ADMIN") {
+    const adminCount = await countActiveCompanyAdminsByTenant(tenantId);
+    if (adminCount <= 1) {
+      await getAuditWriter().write({
+        tenantId,
+        resourceType: "User",
+        resourceId: existingUser._id.toString(),
+        action: "LAST_ADMIN_PROTECTION_TRIGGERED",
+        actorId: deleter.userId,
+        actorEmail: deleter.email ?? "",
+        actorRole: deleter.role ?? "UNKNOWN",
+        changes: {
+          reason: "Attempt to delete last active Company Admin",
+          targetUserId,
+        },
+      });
+      throw new AppError(
+        409,
+        LAST_ADMIN_PROTECTION,
+        "Cannot delete the last active Company Admin. Promote another user first.",
+      );
+    }
   }
 
   await deleteUserByTenantAndId(tenantId, targetUserId);

@@ -5,6 +5,7 @@
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   COMPANY_ADMIN: "COMPANY_ADMIN",
+  EMPLOYEE: "EMPLOYEE",
   USER: "USER",
 } as const;
 
@@ -69,6 +70,15 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
     { label: "Settings", href: "/dashboard/settings", icon: "settings" },
     { label: "Audit Log", href: "/dashboard/audit", icon: "policy" },
   ],
+  [ROLES.EMPLOYEE]: [
+    { label: "Overview", href: "/dashboard", icon: "dashboard" },
+    {
+      label: "Documents",
+      href: "/dashboard/documents",
+      icon: "description",
+    },
+    { label: "Chat", href: "/chat", icon: "forum", comingSoon: true },
+  ],
   [ROLES.USER]: [
     { label: "Overview", href: "/dashboard", icon: "dashboard" },
     {
@@ -100,6 +110,10 @@ export const TOPBAR_LINKS: Record<Role, readonly NavLink[]> = {
     { label: "Documents", href: "/dashboard/documents", icon: "description" },
     { label: "Users", href: "/dashboard/users", icon: "group" },
   ],
+  [ROLES.EMPLOYEE]: [
+    { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
+    { label: "Documents", href: "/dashboard/documents", icon: "description" },
+  ],
   [ROLES.USER]: [{ label: "Dashboard", href: "/dashboard", icon: "dashboard" }],
 };
 
@@ -124,6 +138,7 @@ export function isKnownRole(role: string): role is Role {
   return (
     role === ROLES.SUPER_ADMIN ||
     role === ROLES.COMPANY_ADMIN ||
+    role === ROLES.EMPLOYEE ||
     role === ROLES.USER
   );
 }
