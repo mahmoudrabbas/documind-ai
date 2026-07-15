@@ -28,6 +28,8 @@ import {
   deleteUserByTenantAndId,
 } from "./users.repository.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import { createAuditLog } from "../audit/audit.repository.js";
+import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import {
   validateInviteUserInput,
   validateListUsersInput,
@@ -145,6 +147,14 @@ export async function inviteUser(
       );
     }
 
+    if (customRole.status !== "active") {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Cannot assign an archived custom role",
+      );
+    }
+
     resolvedRole = customRole.baseRole;
     resolvedCustomRoleId = customRole._id.toString();
   } else {
@@ -236,6 +246,14 @@ export async function updateUser(
       );
     }
 
+    if (customRole.status !== "active") {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Cannot assign an archived custom role",
+      );
+    }
+
     update.role = customRole.baseRole;
     update.customRoleId = customRole._id.toString();
     changes.role = {
@@ -281,6 +299,15 @@ export async function updateUser(
     }
 
     await getAuditWriter().write({
+    if (
+      update.customRoleId !== undefined ||
+      update.role !== undefined
+    ) {
+      const evaluator = getPermissionEvaluator();
+      evaluator.evict(targetUserId, tenantId);
+    }
+
+    await createAuditLog({
       tenantId,
       resourceType: "User",
       resourceId: updatedUser._id.toString(),
