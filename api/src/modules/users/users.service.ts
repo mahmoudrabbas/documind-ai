@@ -28,6 +28,7 @@ import {
   deleteUserByTenantAndId,
 } from "./users.repository.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import {
   validateInviteUserInput,
   validateListUsersInput,
@@ -278,6 +279,14 @@ export async function updateUser(
 
     if (!updatedUser) {
       throw new AppError(404, NOT_FOUND, "User not found");
+    }
+
+    if (
+      update.customRoleId !== undefined ||
+      update.role !== undefined
+    ) {
+      const evaluator = getPermissionEvaluator();
+      evaluator.evict(targetUserId, tenantId);
     }
 
     await getAuditWriter().write({
