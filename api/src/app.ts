@@ -17,6 +17,7 @@ import documentsRoutes from "./modules/documents/documents.routes.js";
 import rolesRoutes from "./modules/roles/roles.routes.js";
 import platformRoutes from "./modules/platform/platform.routes.js";
 import publicRoutes from "./modules/public/public.routes.js";
+import permissionsRoutes from "./modules/permissions/permissions.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -95,6 +96,7 @@ app.use("/platform", platformRoutes);
 app.use("/internal/bootstrap", bootstrapRoutes);
 app.use("/documents", documentsRoutes);
 app.use("/roles", rolesRoutes);
+app.use("/permissions", permissionsRoutes);
 app.use("/public", publicRoutes);
 
 app.get("/", (_, res) => {

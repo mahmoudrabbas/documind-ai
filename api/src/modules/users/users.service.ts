@@ -28,6 +28,7 @@ import {
   deleteUserByTenantAndId,
 } from "./users.repository.js";
 import { createAuditLog } from "../audit/audit.repository.js";
+import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import {
   validateInviteUserInput,
   validateListUsersInput,
@@ -145,6 +146,14 @@ export async function inviteUser(
       );
     }
 
+    if (customRole.status !== "active") {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Cannot assign an archived custom role",
+      );
+    }
+
     resolvedRole = customRole.baseRole;
     resolvedCustomRoleId = customRole._id.toString();
   } else {
@@ -236,6 +245,14 @@ export async function updateUser(
       );
     }
 
+    if (customRole.status !== "active") {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Cannot assign an archived custom role",
+      );
+    }
+
     update.role = customRole.baseRole;
     update.customRoleId = customRole._id.toString();
     changes.role = {
@@ -278,6 +295,14 @@ export async function updateUser(
 
     if (!updatedUser) {
       throw new AppError(404, NOT_FOUND, "User not found");
+    }
+
+    if (
+      update.customRoleId !== undefined ||
+      update.role !== undefined
+    ) {
+      const evaluator = getPermissionEvaluator();
+      evaluator.evict(targetUserId, tenantId);
     }
 
     await createAuditLog({
