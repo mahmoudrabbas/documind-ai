@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { AuthHeroPanel } from "@/components/ui";
 import { validateCompanySlug, validateEmail } from "@/lib/validation";
+import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
 
 type ForgotPasswordResponse = {
   success: boolean;
@@ -38,6 +39,16 @@ export default function ForgotPasswordPage() {
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSent, setIsSent] = useState(false);
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(
+    null,
+  );
+
+  function messageForError(error: unknown) {
+    if (!(error instanceof ApiError)) {
+      return t("common.error");
+    }
+    return error.message || t("common.error");
+  }
 
   function validate() {
     const next: FormErrors = {};
@@ -53,6 +64,7 @@ export default function ForgotPasswordPage() {
     event.preventDefault();
     if (submissionPending.current) return;
     setError("");
+    setRateLimitRetryAfter(null);
 
     if (!validate()) return;
 
@@ -71,16 +83,20 @@ export default function ForgotPasswordPage() {
       });
       setIsSent(true);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+      if (err instanceof ApiError && err.status === 429) {
+        setRateLimitRetryAfter(err.retryAfterSeconds ?? 900);
       } else {
-        setError(t("common.error"));
+        setError(messageForError(err));
       }
     } finally {
       submissionPending.current = false;
       setIsSubmitting(false);
     }
   }
+
+  const handleRetryRequest = useCallback(() => {
+    setRateLimitRetryAfter(null);
+  }, []);
 
   return (
     <main
@@ -153,7 +169,14 @@ export default function ForgotPasswordPage() {
                 noValidate
               >
                 <div aria-live="polite" className="w-full">
-                  {error ? (
+                  {rateLimitRetryAfter !== null ? (
+                    <div className="mb-4">
+                      <RateLimitAlert
+                        retryAfterSeconds={rateLimitRetryAfter}
+                        onRetry={handleRetryRequest}
+                      />
+                    </div>
+                  ) : error ? (
                     <div
                       className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                       role="alert"

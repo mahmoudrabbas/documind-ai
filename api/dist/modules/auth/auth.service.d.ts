@@ -25,6 +25,10 @@ export declare function login(input: unknown, context?: RefreshTokenContext): Pr
 export declare function superAdminLogin(input: unknown, context?: RefreshTokenContext): Promise<LoginResult>;
 export declare function refreshAccessToken(token: string, context?: RefreshTokenContext): Promise<RefreshRotationResult>;
 export declare function logout(token: string, context?: RefreshTokenContext): Promise<void>;
+export declare function logoutAll(identity: AuthIdentity, context?: RefreshTokenContext): Promise<{
+    success: boolean;
+    message: string;
+}>;
 export declare function revokeAllRefreshTokensForUser(userId: string, tenantId: string): Promise<void>;
 export declare function createEmailVerificationTokenForUser(user: Pick<CreatedUserRecord, "_id" | "tenantId" | "email">, options?: {
     purpose?: string;

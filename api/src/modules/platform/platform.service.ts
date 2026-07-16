@@ -19,32 +19,12 @@ import {
   listSubscriptions as billingListSubscriptions,
 } from "../billing/subscription.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
+import { getAuditWriter } from "../../common/observability/index.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
   slug: { $nin: ["documind-ai", "__documind_platform__"] },
 };
-
-async function audit(
-  actor: AuthIdentity,
-  action: string,
-  resourceType: string,
-  resourceId: string,
-  changes: Record<string, unknown>,
-  tenantId = actor.tenantId,
-) {
-  await AuditLogModel.create({
-    tenantId,
-    userId: actor.userId,
-    actorId: actor.userId,
-    actorEmail: actor.email,
-    actorRole: actor.role,
-    action,
-    resourceType,
-    resourceId,
-    changes,
-  });
-}
 
 export async function getOverview() {
   const [
@@ -332,12 +312,15 @@ export async function updateSetting(
   )
     .lean()
     .exec();
-  await audit(
-    actor,
-    "PLATFORM_SETTING_UPDATED",
-    "platform_setting",
-    key,
-    value,
-  );
+  await getAuditWriter().write({
+    action: "PLATFORM_SETTING_UPDATED",
+    resourceType: "PlatformSetting",
+    resourceId: key,
+    changes: value,
+    tenantId: "system",
+    actorId: actor.userId,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+  });
   return setting?.value ?? value;
 }

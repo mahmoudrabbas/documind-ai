@@ -239,6 +239,15 @@ const en: TranslationDictionary = {
   "auth.resettingPassword": "Resetting…",
   "auth.resetPasswordSubmit": "Reset password",
 
+  "auth.tokenExpiredTitle": "Link Expired",
+  "auth.tokenExpiredDescription": "This link has expired. Please request a new one.",
+  "auth.tokenUsedTitle": "Link Already Used",
+  "auth.tokenUsedDescription": "This link has already been used. Please request a new one if needed.",
+  "auth.tokenInvalidTitle": "Invalid Link",
+  "auth.tokenInvalidDescription": "This link is invalid or malformed. Please request a new one.",
+  "auth.tokenRevokedTitle": "Link Revoked",
+  "auth.tokenRevokedDescription": "This link has been revoked. Please request a new one.",
+
   /* ── documents ──────────────────────────────────────────── */
   "documents.title": "Documents",
   "documents.subtitle": "Upload and manage your company documents.",
@@ -275,7 +284,14 @@ const en: TranslationDictionary = {
   "documents.statusProcessing": "Processing",
   "documents.statusProcessed": "Ready",
   "documents.statusFailed": "Failed",
-};
 
+  /* ── audit ─────────────────────────────────────────────── */
+  "audit.title": "Audit Log",
+  "audit.description": "Review sensitive administrative actions across the platform.",
+  "audit.fetchError": "Failed to load audit logs",
+  "audit.exportError": "Failed to export audit logs",
+  "audit.exporting": "Exporting...",
+  "audit.export": "Export CSV (30 days)",
+};
 
 export default en;

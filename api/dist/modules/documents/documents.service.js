@@ -1,5 +1,6 @@
 import { AppError } from "../../common/errors/AppError.js";
 import { NOT_FOUND } from "../../common/errors/errorCodes.js";
+import { getAuditWriter } from "../../common/observability/index.js";
 import { storageProvider } from "../../providers/storage/index.js";
 import { createDocument, countDocumentsByTenant, findDocumentsByTenant, findDocumentByTenantAndId, updateDocumentByTenantAndId, deleteDocumentByTenantAndId, } from "./documents.repository.js";
 import { validateUploadDocumentInput, validateListDocumentsInput, validateUpdateDocumentMetadataInput, } from "./documents.validator.js";
@@ -49,6 +50,21 @@ export async function uploadDocument(file, metadataInput, tenantId, userId) {
         await storageProvider.deleteFile(storagePath);
         throw error;
     }
+    await getAuditWriter().write({
+        tenantId,
+        resourceType: "Document",
+        resourceId: created._id.toString(),
+        action: "DOCUMENT_UPLOADED",
+        actorId: userId,
+        actorEmail: "",
+        actorRole: "",
+        changes: {
+            fileName: file.originalname,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            title: metadata.title,
+        },
+    });
     return {
         document: serializeDocument(created),
     };
@@ -83,7 +99,7 @@ export async function getDocument(documentId, tenantId) {
         document: serializeDocument(document),
     };
 }
-export async function updateDocumentMetadata(documentId, input, tenantId) {
+export async function updateDocumentMetadata(documentId, input, tenantId, userId) {
     const payload = validateUpdateDocumentMetadataInput(input);
     const existing = await findDocumentByTenantAndId(tenantId, documentId);
     if (!existing) {
@@ -104,16 +120,51 @@ export async function updateDocumentMetadata(documentId, input, tenantId) {
     if (!updated) {
         throw new AppError(404, NOT_FOUND, "Document not found");
     }
+    await getAuditWriter().write({
+        tenantId,
+        resourceType: "Document",
+        resourceId: documentId,
+        action: "DOCUMENT_METADATA_UPDATED",
+        actorId: userId,
+        actorEmail: "",
+        actorRole: "",
+        changes: {
+            before: {
+                title: existing.metadata?.title ?? null,
+                description: existing.metadata?.description ?? null,
+                tags: existing.metadata?.tags ?? [],
+            },
+            after: {
+                title: payload.title ?? existing.metadata?.title ?? null,
+                description: payload.description ?? existing.metadata?.description ?? null,
+                tags: payload.tags ?? existing.metadata?.tags ?? [],
+            },
+        },
+    });
     return {
         document: serializeDocument(updated),
     };
 }
-export async function deleteDocument(documentId, tenantId) {
+export async function deleteDocument(documentId, tenantId, userId) {
     const document = await findDocumentByTenantAndId(tenantId, documentId);
     if (!document) {
         throw new AppError(404, NOT_FOUND, "Document not found");
     }
     await storageProvider.deleteFile(document.storagePath);
     await deleteDocumentByTenantAndId(tenantId, documentId);
+    await getAuditWriter().write({
+        tenantId,
+        resourceType: "Document",
+        resourceId: documentId,
+        action: "DOCUMENT_DELETED",
+        actorId: userId,
+        actorEmail: "",
+        actorRole: "",
+        changes: {
+            fileName: document.fileName,
+            fileSize: document.fileSize,
+            mimeType: document.mimeType,
+        },
+    });
 }
 //# sourceMappingURL=documents.service.js.map

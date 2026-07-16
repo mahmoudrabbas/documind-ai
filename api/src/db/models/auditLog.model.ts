@@ -1,29 +1,32 @@
 import mongoose, { Schema } from "mongoose";
 
 export interface AuditLogDocument extends mongoose.Document {
-  tenantId: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId;
+  tenantId: mongoose.Types.ObjectId | "system";
+  userId: mongoose.Types.ObjectId | "system";
   resourceType: string;
   resourceId: string;
   action: string;
-  actorId: mongoose.Types.ObjectId;
+  actorId: mongoose.Types.ObjectId | "system";
   actorEmail: string;
   actorRole: string;
   changes: Record<string, unknown>;
+  traceId?: string;
+  requestId?: string;
+  outcome: "SUCCESS" | "FAILURE" | "DENIED";
+  metadata?: Record<string, unknown>;
   createdAt: Date;
+  expiresAt?: Date;
 }
 
 const auditLogSchema = new Schema<AuditLogDocument>(
   {
     tenantId: {
-      type: Schema.Types.ObjectId,
-      ref: "Tenant",
+      type: Schema.Types.Mixed,
       required: true,
       index: true,
     },
     userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
+      type: Schema.Types.Mixed,
       required: true,
     },
     resourceType: {
@@ -39,8 +42,7 @@ const auditLogSchema = new Schema<AuditLogDocument>(
       required: true,
     },
     actorId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
+      type: Schema.Types.Mixed,
       required: true,
     },
     actorEmail: {
@@ -56,6 +58,26 @@ const auditLogSchema = new Schema<AuditLogDocument>(
       required: true,
       default: {},
     },
+    traceId: {
+      type: String,
+      index: true,
+    },
+    requestId: {
+      type: String,
+    },
+    outcome: {
+      type: String,
+      enum: ["SUCCESS", "FAILURE", "DENIED"],
+      default: "SUCCESS",
+      required: true,
+    },
+    metadata: {
+      type: Schema.Types.Mixed,
+    },
+    expiresAt: {
+      type: Date,
+      index: { expires: 0 },
+    },
   },
   {
     collection: "audit_logs",
@@ -64,6 +86,8 @@ const auditLogSchema = new Schema<AuditLogDocument>(
 );
 
 auditLogSchema.index({ tenantId: 1, createdAt: -1 });
+auditLogSchema.index({ tenantId: 1, action: 1, createdAt: -1 });
+auditLogSchema.index({ tenantId: 1, actorId: 1, createdAt: -1 });
 auditLogSchema.index({ tenantId: 1, resourceType: 1, resourceId: 1 });
 
 type AuditLogModelType = mongoose.Model<AuditLogDocument>;

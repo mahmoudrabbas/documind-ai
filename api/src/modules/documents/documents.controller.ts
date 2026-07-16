@@ -134,6 +134,7 @@ export async function updateDocumentMetadataController(
       documentId,
       req.body,
       req.tenantId,
+      req.auth.userId,
     );
 
     res.status(200).json({
@@ -163,7 +164,7 @@ export async function deleteDocumentController(
       throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
     }
 
-    await deleteDocument(documentId, req.tenantId);
+    await deleteDocument(documentId, req.tenantId, req.auth.userId);
 
     res.status(200).json({
       success: true,

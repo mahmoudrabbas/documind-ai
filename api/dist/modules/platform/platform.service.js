@@ -10,23 +10,11 @@ import PlatformSettingModel from "../../db/models/platformSetting.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
+import { getAuditWriter } from "../../common/observability/index.js";
 const tenantFilter = {
     isSystemTenant: { $ne: true },
     slug: { $nin: ["documind-ai", "__documind_platform__"] },
 };
-async function audit(actor, action, resourceType, resourceId, changes, tenantId = actor.tenantId) {
-    await AuditLogModel.create({
-        tenantId,
-        userId: actor.userId,
-        actorId: actor.userId,
-        actorEmail: actor.email,
-        actorRole: actor.role,
-        action,
-        resourceType,
-        resourceId,
-        changes,
-    });
-}
 export async function getOverview() {
     const [companies, activeCompanies, users, documents, questions, failedJobs, storage,] = await Promise.all([
         TenantModel.countDocuments(tenantFilter),
@@ -81,7 +69,16 @@ export async function createPackage(input, actor) {
             },
         ],
     });
-    await audit(actor, "PACKAGE_CREATED", "package", value.id, input);
+    await getAuditWriter().write({
+        action: "PACKAGE_CREATED",
+        resourceType: "Package",
+        resourceId: value.id,
+        changes: input,
+        tenantId: "system",
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        actorRole: actor.role,
+    });
     return value.toJSON();
 }
 export async function updatePackage(id, input, actor) {
@@ -97,7 +94,16 @@ export async function updatePackage(id, input, actor) {
         createdAt: new Date(),
     });
     await existing.save();
-    await audit(actor, "PACKAGE_UPDATED", "package", id, input);
+    await getAuditWriter().write({
+        action: "PACKAGE_UPDATED",
+        resourceType: "Package",
+        resourceId: id,
+        changes: input,
+        tenantId: "system",
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        actorRole: actor.role,
+    });
     return existing.toJSON();
 }
 export async function listSubscriptions() {
@@ -131,7 +137,16 @@ export async function updateSubscription(tenantId, input, actor) {
     }, { upsert: true, new: true, runValidators: true })
         .lean()
         .exec();
-    await audit(actor, "SUBSCRIPTION_UPDATED", "subscription", String(value?._id ?? tenantId), input, tenantId);
+    await getAuditWriter().write({
+        action: "SUBSCRIPTION_UPDATED",
+        resourceType: "Subscription",
+        resourceId: String(value?._id ?? tenantId),
+        changes: input,
+        tenantId: tenantId,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        actorRole: actor.role,
+    });
     return value;
 }
 export async function listPlatformUsers(input) {
@@ -289,7 +304,16 @@ export async function updateSetting(key, value, actor) {
     const setting = await PlatformSettingModel.findOneAndUpdate({ key }, { $set: { value, updatedBy: new Types.ObjectId(actor.userId) } }, { upsert: true, new: true, runValidators: true })
         .lean()
         .exec();
-    await audit(actor, "PLATFORM_SETTING_UPDATED", "platform_setting", key, value);
+    await getAuditWriter().write({
+        action: "PLATFORM_SETTING_UPDATED",
+        resourceType: "PlatformSetting",
+        resourceId: key,
+        changes: value,
+        tenantId: "system",
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        actorRole: actor.role,
+    });
     return setting?.value ?? value;
 }
 //# sourceMappingURL=platform.service.js.map

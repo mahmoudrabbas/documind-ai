@@ -3,6 +3,7 @@ import {
   loginController,
   superAdminLoginController,
   logoutController,
+  logoutAllController,
   meController,
   refreshController,
   registerController,
@@ -25,6 +26,7 @@ router.post("/login", loginController);
 router.post("/super-admin/login", superAdminLoginController);
 router.post("/refresh", refreshController);
 router.post("/logout", logoutController);
+router.post("/logout-all", authenticate, tenantScoping, logoutAllController);
 router.post("/complete-trial", authenticate, completeTrialController);
 router.post("/verify-email", verifyEmailController);
 router.post("/resend-verification-email", resendVerificationEmailController);

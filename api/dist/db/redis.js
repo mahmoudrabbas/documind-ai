@@ -80,7 +80,9 @@ export async function disconnectRedis() {
             console.log("[redis] Disconnected gracefully");
     }
     catch (err) {
-        console.error("[redis] Error during disconnect:", err);
+        client.disconnect(false);
+        if (!isTestEnv())
+            console.error("[redis] Error during disconnect:", err);
     }
     finally {
         client = null;

@@ -150,7 +150,12 @@ test("rate-limiting middleware", async (t) => {
         });
         assert.strictEqual(next.mock.calls.length, 1);
         assert.strictEqual(getStatusCode(), 429);
-        assert.deepStrictEqual(getBody(), { error: "Too many requests, please try again later." });
+        assert.deepStrictEqual(getBody(), {
+            success: false,
+            error: "RATE_LIMITED",
+            message: "Too many requests, please try again later.",
+            retryAfterSeconds: 1,
+        });
     });
 });
 //# sourceMappingURL=rateLimit.middleware.test.js.map

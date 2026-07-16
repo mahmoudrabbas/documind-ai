@@ -2,7 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
-import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
 import { uploadDocumentController, listDocumentsController, getDocumentController, updateDocumentMetadataController, deleteDocumentController, } from "./documents.controller.js";
 const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
@@ -23,10 +24,10 @@ const upload = multer({
     },
 });
 const router = Router();
-router.post("/", authenticate, tenantScoping, authorize("COMPANY_ADMIN", "EMPLOYEE"), upload.single("file"), uploadDocumentController);
-router.get("/", authenticate, tenantScoping, authorize("COMPANY_ADMIN", "EMPLOYEE"), listDocumentsController);
-router.get("/:id", authenticate, tenantScoping, authorize("COMPANY_ADMIN", "EMPLOYEE"), getDocumentController);
-router.patch("/:id", authenticate, tenantScoping, authorize("COMPANY_ADMIN", "EMPLOYEE"), updateDocumentMetadataController);
-router.delete("/:id", authenticate, tenantScoping, authorize("COMPANY_ADMIN", "EMPLOYEE"), deleteDocumentController);
+router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), uploadDocumentController);
+router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
+router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), updateDocumentMetadataController);
+router.delete("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), deleteDocumentController);
 export default router;
 //# sourceMappingURL=documents.routes.js.map

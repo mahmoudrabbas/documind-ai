@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { loginController, superAdminLoginController, logoutController, meController, refreshController, registerController, resendVerificationEmailController, verifyEmailController, forgotPasswordController, resetPasswordController, completeTrialController, } from "./auth.controller.js";
+import { loginController, superAdminLoginController, logoutController, logoutAllController, meController, refreshController, registerController, resendVerificationEmailController, verifyEmailController, forgotPasswordController, resetPasswordController, completeTrialController, } from "./auth.controller.js";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
@@ -10,6 +10,7 @@ router.post("/login", loginController);
 router.post("/super-admin/login", superAdminLoginController);
 router.post("/refresh", refreshController);
 router.post("/logout", logoutController);
+router.post("/logout-all", authenticate, tenantScoping, logoutAllController);
 router.post("/complete-trial", authenticate, completeTrialController);
 router.post("/verify-email", verifyEmailController);
 router.post("/resend-verification-email", resendVerificationEmailController);

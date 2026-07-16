@@ -52,6 +52,7 @@ const AuthContext = createContext<
   | (AuthContextValue & {
       establishSession: (accessToken: string, session: Session) => void;
       logout: () => Promise<void>;
+      logoutAll: () => Promise<void>;
     })
   | null
 >(null);
@@ -136,9 +137,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const logoutAll = useCallback(async () => {
+    beginExplicitLogout();
+    try {
+      await apiClient("/auth/logout-all", {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      clearAccessToken();
+      finishExplicitLogout();
+      setState({
+        status: "unauthenticated",
+        user: null,
+        tenant: null,
+        accessToken: null,
+      });
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ ...state, establishSession, logout }),
-    [state, establishSession, logout],
+    () => ({ ...state, establishSession, logout, logoutAll }),
+    [state, establishSession, logout, logoutAll],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
