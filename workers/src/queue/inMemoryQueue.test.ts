@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { InMemoryQueue } from "../contracts/inMemoryQueue.js";
+import { InMemoryQueue } from "../queue/inMemoryQueue.js";
 import { sampleJobHandler } from "../jobs/sampleJob.js";
-import { RetryableJobError } from "../contracts/retryPolicy.js";
+import { RetryableJobError } from "@documind/contracts";
 
 test("in-memory adapter enqueues, executes, and completes a sample job", async () => {
   const q = new InMemoryQueue();

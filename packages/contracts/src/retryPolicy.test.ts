@@ -6,8 +6,8 @@ import {
   DEFAULT_RETRY_POLICY,
   RetryableJobError,
   PermanentJobError,
-} from "../contracts/retryPolicy.js";
-import { deriveIdempotencyKey, buildDedupKey, hashString } from "../contracts/idempotency.js";
+} from "@documind/contracts";
+import { deriveIdempotencyKey, buildDedupKey, hashString } from "@documind/contracts";
 
 test("classifyError marks PermanentJobError as permanent", () => {
   assert.equal(classifyError(new PermanentJobError("x")), "permanent");

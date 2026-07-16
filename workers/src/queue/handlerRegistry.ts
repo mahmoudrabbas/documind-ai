@@ -4,14 +4,14 @@ import type {
   JobHandlerContext,
   JobHandlerDefinition,
   JobHandlerRegistry,
-} from "./jobDispatcher.js";
+  RetryPolicy,
+} from "@documind/contracts";
 import {
   classifyError,
   computeBackoffMs,
   DEFAULT_RETRY_POLICY,
   PermanentJobError,
-  type RetryPolicy,
-} from "./retryPolicy.js";
+} from "@documind/contracts";
 import { publishJobEvent } from "./metrics.js";
 
 /**
@@ -138,7 +138,6 @@ export async function executeHandler(
     });
 
     if (!shouldRetry) {
-      // Permanent error or final attempt exhausted => dead-letter for replay.
       return {
         ok: false,
         deadLettered: true,
