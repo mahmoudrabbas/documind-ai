@@ -167,8 +167,8 @@ test("logout-all returns 401 without authentication", async () => {
 // ─── Cross-Tenant Token Substitution ─────────────────────────────────────────
 
 test("same email works across different tenants", async () => {
-  await registerTenant("tenant-alpha", "shared@example.com", "Alpha");
-  await registerTenant("tenant-beta", "shared@example.com", "Beta");
+  await createActiveTenantAdmin({ slug: "tenant-alpha", email: "shared@example.com", tenantName: "Alpha" });
+  await createActiveTenantAdmin({ slug: "tenant-beta", email: "shared@example.com", tenantName: "Beta" });
 
   const loginA = await login("tenant-alpha", "shared@example.com");
   const loginB = await login("tenant-beta", "shared@example.com");
@@ -430,7 +430,7 @@ test("resend verification email returns generic response", async () => {
   assert.equal(res.status, 200);
   assert.equal(body.success, true);
   assert.ok(
-    body.message.includes("If an account"),
+    body.message.includes("If the email exists"),
     "should return generic message",
   );
 });
