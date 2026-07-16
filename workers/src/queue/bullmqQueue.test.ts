@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Redis } from "ioredis";
-import { BullMQQueue } from "../contracts/bullmqQueue.js";
+import { BullMQQueue } from "../queue/bullmqQueue.js";
 import { sampleJobHandler } from "../jobs/sampleJob.js";
 
 /**
@@ -116,7 +116,7 @@ test("bullmq adapter dead-letters and replays a failing job", { skip: !REDIS_URL
     description: "always permanent fail",
     payloadSchema: (await import("zod")).z.object({}),
     handle: async () => {
-      throw new (await import("../contracts/retryPolicy.js")).PermanentJobError("nope");
+      throw new (await import("@documind/contracts")).PermanentJobError("nope");
     },
   };
   const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });

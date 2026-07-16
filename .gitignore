@@ -18,3 +18,5 @@ secrets/*
 **/build/
 **/out/
 *.tsbuildinfo
+packages/*/dist/
+*.tsbuildinfo

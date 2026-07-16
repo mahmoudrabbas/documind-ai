@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { JobEnvelope } from "workers/contracts";
+import type { JobEnvelope } from "@documind/contracts";
 import { ApiJobDispatcher } from "./jobDispatcher.js";
 
 /**

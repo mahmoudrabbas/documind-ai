@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { logger } from "../logger.js";
-import type { JobHandlerDefinition } from "../contracts/jobDispatcher.js";
-import { RetryableJobError } from "../contracts/retryPolicy.js";
+import type { JobHandlerDefinition } from "@documind/contracts";
+import { RetryableJobError } from "@documind/contracts";
 
 /**
  * SAMPLE job — NO business impact.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { InMemoryQueue } from "./contracts/inMemoryQueue.js";
+import { InMemoryQueue } from "./queue/inMemoryQueue.js";
 import { sampleJobHandler } from "./jobs/sampleJob.js";
 
 /**
