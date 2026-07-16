@@ -14,6 +14,10 @@ export function RateLimitAlert({
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
 
   useEffect(() => {
+    setSecondsLeft(initialSeconds);
+  }, [initialSeconds]);
+
+  useEffect(() => {
     if (secondsLeft <= 0) return;
     const timer = setInterval(() => {
       setSecondsLeft((prev) => {
@@ -25,7 +29,7 @@ export function RateLimitAlert({
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [initialSeconds]);
+  }, [secondsLeft]);
 
   const handleRetry = useCallback(() => {
     if (onRetry) onRetry();
