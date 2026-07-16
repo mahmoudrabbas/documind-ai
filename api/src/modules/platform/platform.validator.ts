@@ -13,6 +13,16 @@ const limits = z.object({
   questionsPerMonth: z.number().int().nonnegative(),
   storageMb: z.number().int().nonnegative(),
 });
+const entitlements = z.object({
+  employees: z.number().int().nonnegative(),
+  admins: z.number().int().nonnegative(),
+  documents: z.number().int().nonnegative(),
+  storageMb: z.number().int().nonnegative(),
+  fileSizeMb: z.number().int().nonnegative(),
+  queriesPerMonth: z.number().int().nonnegative(),
+  tokensPerMonth: z.number().int().nonnegative(),
+  ocrPagesPerMonth: z.number().int().nonnegative(),
+});
 
 export const packageBodySchema = z
   .object({
@@ -25,8 +35,11 @@ export const packageBodySchema = z
       .max(50),
     description: z.string().trim().max(500).default(""),
     monthlyPrice: z.number().nonnegative(),
+    annualPrice: z.number().nonnegative().default(0),
+    trialDays: z.number().int().nonnegative().default(30),
     currency: z.string().trim().toUpperCase().length(3).default("USD"),
     limits,
+    entitlements,
   })
   .strict();
 export const packageUpdateSchema = z
@@ -34,17 +47,29 @@ export const packageUpdateSchema = z
     name: z.string().trim().min(2).max(80).optional(),
     description: z.string().trim().max(500).optional(),
     monthlyPrice: z.number().nonnegative().optional(),
+    annualPrice: z.number().nonnegative().optional(),
+    trialDays: z.number().int().nonnegative().optional(),
     currency: z.string().trim().toUpperCase().length(3).optional(),
     limits: limits.optional(),
+    entitlements: entitlements.optional(),
     active: z.boolean().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, "Update is required");
 export const subscriptionUpdateSchema = z
   .object({
-    packageId: objectId,
-    status: z.enum(["active", "trialing", "past_due", "cancelled"]),
-    renewsAt: z.iso.datetime().nullable().optional(),
+    status: z.enum([
+      "TRIALING",
+      "INCOMPLETE",
+      "ACTIVE",
+      "PAST_DUE",
+      "PAUSED",
+      "CANCEL_AT_PERIOD_END",
+      "CANCELED",
+      "EXPIRED",
+      "UNPAID",
+    ]),
+    reason: z.string().max(500).optional(),
   })
   .strict();
 export const settingsBodySchema = z

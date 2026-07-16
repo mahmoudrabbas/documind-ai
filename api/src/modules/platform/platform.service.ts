@@ -5,12 +5,20 @@ import DocumentModel from "../../db/models/document.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
 import PackageModel from "../../db/models/package.model.js";
-import SubscriptionModel from "../../db/models/subscription.model.js";
 import PlatformSettingModel from "../../db/models/platformSetting.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
 import type { AuthIdentity } from "../auth/auth.types.js";
+import {
+  createPackage as billingCreatePackage,
+  createVersion as billingCreateVersion,
+} from "../billing/package.service.js";
+import {
+  transitionSubscription as billingTransitionSubscription,
+  listSubscriptions as billingListSubscriptions,
+} from "../billing/subscription.service.js";
+import type { SubscriptionStatus } from "../billing/billing.types.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
@@ -94,6 +102,8 @@ export async function createPackage(
     code: string;
     description: string;
     monthlyPrice: number;
+    annualPrice?: number;
+    trialDays?: number;
     currency: string;
     limits: {
       users: number;
@@ -101,24 +111,20 @@ export async function createPackage(
       questionsPerMonth: number;
       storageMb: number;
     };
+    entitlements: {
+      employees: number;
+      admins: number;
+      documents: number;
+      storageMb: number;
+      fileSizeMb: number;
+      queriesPerMonth: number;
+      tokensPerMonth: number;
+      ocrPagesPerMonth: number;
+    };
   },
   actor: AuthIdentity,
 ) {
-  const createdAt = new Date();
-  const value = await PackageModel.create({
-    ...input,
-    version: 1,
-    versions: [
-      {
-        version: 1,
-        monthlyPrice: input.monthlyPrice,
-        limits: input.limits,
-        createdAt,
-      },
-    ],
-  });
-  await audit(actor, "PACKAGE_CREATED", "package", value.id, input);
-  return value.toJSON();
+  return billingCreatePackage(input, actor);
 }
 
 export async function updatePackage(
@@ -126,68 +132,22 @@ export async function updatePackage(
   input: Record<string, unknown>,
   actor: AuthIdentity,
 ) {
-  const existing = await PackageModel.findById(id).exec();
-  if (!existing) throw new AppError(404, "NOT_FOUND", "Package not found");
-  Object.assign(existing, input);
-  existing.version += 1;
-  existing.versions.push({
-    version: existing.version,
-    monthlyPrice: existing.monthlyPrice,
-    limits: existing.limits,
-    createdAt: new Date(),
-  });
-  await existing.save();
-  await audit(actor, "PACKAGE_UPDATED", "package", id, input);
-  return existing.toJSON();
+  return billingCreateVersion(id, input, actor);
 }
 
 export async function listSubscriptions() {
-  return SubscriptionModel.find()
-    .populate("tenantId", "name slug status")
-    .populate("packageId", "name code version monthlyPrice currency")
-    .sort({ updatedAt: -1 })
-    .lean()
-    .exec();
+  return billingListSubscriptions();
 }
 
 export async function updateSubscription(
   tenantId: string,
-  input: { packageId: string; status: string; renewsAt?: string | null },
+  input: { status: SubscriptionStatus; reason?: string },
   actor: AuthIdentity,
 ) {
-  const [tenant, pkg] = await Promise.all([
-    TenantModel.findOne({ _id: tenantId, ...tenantFilter })
-      .lean()
-      .exec(),
-    PackageModel.findOne({ _id: input.packageId, active: true }).lean().exec(),
-  ]);
-  if (!tenant) throw new AppError(404, "NOT_FOUND", "Tenant not found");
-  if (!pkg) throw new AppError(404, "NOT_FOUND", "Active package not found");
-  const value = await SubscriptionModel.findOneAndUpdate(
-    { tenantId },
-    {
-      $set: {
-        packageId: pkg._id,
-        packageVersion: pkg.version,
-        status: input.status,
-        renewsAt: input.renewsAt ? new Date(input.renewsAt) : null,
-        cancelledAt: input.status === "cancelled" ? new Date() : null,
-      },
-      $setOnInsert: { startedAt: new Date() },
-    },
-    { upsert: true, new: true, runValidators: true },
-  )
-    .lean()
-    .exec();
-  await audit(
+  return billingTransitionSubscription(tenantId, input.status, {
+    reason: input.reason,
     actor,
-    "SUBSCRIPTION_UPDATED",
-    "subscription",
-    String(value?._id ?? tenantId),
-    input,
-    tenantId,
-  );
-  return value;
+  });
 }
 
 export async function listPlatformUsers(input: {

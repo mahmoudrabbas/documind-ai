@@ -41,9 +41,12 @@ export default function PackagesPage() {
             "Package",
             "Version",
             "Price",
-            "Users",
+            "Annual Price",
+            "Trial",
+            "Employees",
             "Documents",
             "Queries",
+            "Visibility",
             "Status",
             "Actions",
           ]}
@@ -59,9 +62,30 @@ export default function PackagesPage() {
               <td className={cell}>
                 {pkg.currency} {pkg.monthlyPrice.toFixed(2)}
               </td>
-              <td className={cell}>{pkg.limits.users}</td>
+              <td className={cell}>
+                {pkg.annualPrice > 0
+                  ? `${pkg.currency} ${pkg.annualPrice.toFixed(2)}`
+                  : "\u2014"}
+              </td>
+              <td className={cell}>
+                {pkg.trialDays > 0 ? `${pkg.trialDays}d` : "\u2014"}
+              </td>
+              <td className={cell}>
+                {pkg.entitlements?.employees ?? pkg.limits.users}
+              </td>
               <td className={cell}>{pkg.limits.documents}</td>
               <td className={cell}>{pkg.limits.questionsPerMonth}</td>
+              <td className={cell}>
+                <span
+                  className={
+                    pkg.visibility === "public"
+                      ? "rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"
+                      : "rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700"
+                  }
+                >
+                  {pkg.visibility}
+                </span>
+              </td>
               <td className={cell}>
                 <StatusPill value={pkg.active ? "active" : "inactive"} />
               </td>

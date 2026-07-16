@@ -107,7 +107,17 @@ export default function SubscriptionsPage() {
               onChange={(event) => setStatus(event.target.value)}
               className={`mt-1 ${control}`}
             >
-              {["active", "trialing", "past_due", "cancelled"].map((value) => (
+              {[
+                "TRIALING",
+                "INCOMPLETE",
+                "ACTIVE",
+                "PAST_DUE",
+                "PAUSED",
+                "CANCEL_AT_PERIOD_END",
+                "CANCELED",
+                "EXPIRED",
+                "UNPAID",
+              ].map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
@@ -138,7 +148,9 @@ export default function SubscriptionsPage() {
             "Package",
             "Version",
             "Status",
-            "Renews",
+            "Period",
+            "Trial",
+            "Payment",
             "Updated",
           ]}
         >
@@ -156,9 +168,17 @@ export default function SubscriptionsPage() {
                 <StatusPill value={item.status} />
               </td>
               <td className={cell}>
-                {item.renewsAt
-                  ? new Date(item.renewsAt).toLocaleDateString()
-                  : "—"}
+                {item.periodStart && item.periodEnd
+                  ? `${new Date(item.periodStart).toLocaleDateString()} - ${new Date(item.periodEnd).toLocaleDateString()}`
+                  : "\u2014"}
+              </td>
+              <td className={cell}>
+                {item.trialEnd
+                  ? new Date(item.trialEnd).toLocaleDateString()
+                  : "\u2014"}
+              </td>
+              <td className={cell}>
+                {item.paymentState ?? "\u2014"}
               </td>
               <td className={cell}>
                 {new Date(item.updatedAt).toLocaleDateString()}

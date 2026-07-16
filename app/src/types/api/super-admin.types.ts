@@ -8,6 +8,17 @@ export type PlatformMetricKey =
   | "storageBytes"
   | "estimatedCost";
 
+export interface PackageEntitlements {
+  employees: number;
+  admins: number;
+  documents: number;
+  storageMb: number;
+  fileSizeMb: number;
+  queriesPerMonth: number;
+  tokensPerMonth: number;
+  ocrPagesPerMonth: number;
+}
+
 export interface PlatformPackage {
   _id: string;
   name: string;
@@ -16,22 +27,45 @@ export interface PlatformPackage {
   active: boolean;
   version: number;
   monthlyPrice: number;
+  annualPrice: number;
   currency: string;
+  trialDays: number;
+  visibility: "public" | "internal";
+  /**
+   * @deprecated Use entitlements instead
+   */
   limits: {
     users: number;
     documents: number;
     questionsPerMonth: number;
     storageMb: number;
   };
+  entitlements: PackageEntitlements;
+  supportedModels: string[];
+  analyticsLevel: string;
+  retentionDays: number;
+  supportLevel: string;
   versions: Array<{
     version: number;
     monthlyPrice: number;
+    annualPrice: number;
     limits: PlatformPackage["limits"];
     createdAt: string;
   }>;
   createdAt: string;
   updatedAt: string;
 }
+
+export type PlatformSubscriptionStatus =
+  | "TRIALING"
+  | "INCOMPLETE"
+  | "ACTIVE"
+  | "PAST_DUE"
+  | "PAUSED"
+  | "CANCEL_AT_PERIOD_END"
+  | "CANCELED"
+  | "EXPIRED"
+  | "UNPAID";
 
 export interface PlatformSubscription {
   _id: string;
@@ -45,8 +79,16 @@ export interface PlatformSubscription {
     currency: string;
   };
   packageVersion: number;
-  status: string;
-  renewsAt: string | null;
+  status: PlatformSubscriptionStatus;
+  periodStart: string | null;
+  periodEnd: string | null;
+  trialStart: string | null;
+  trialEnd: string | null;
+  cancellationReason: string | null;
+  paymentState: string | null;
+  providerCustomerId: string | null;
+  providerSubscriptionId: string | null;
+  providerPriceId: string | null;
   updatedAt: string;
 }
 

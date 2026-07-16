@@ -267,7 +267,8 @@ export function TenantsClient() {
                 {[
                   "Tenant",
                   "Status",
-                  "Plan",
+                  "Plan (deprecated)",
+                  "Effective Plan",
                   "Users",
                   "Documents",
                   "Questions",
@@ -295,6 +296,12 @@ export function TenantsClient() {
                     </span>
                   </td>
                   <td className="px-4 py-4">{label(tenant.plan)}</td>
+                  <td className="px-4 py-4">
+                    <span>{label(tenant.plan)}</span>
+                    <span className="block text-xs italic text-slate-400">
+                      (via subscription)
+                    </span>
+                  </td>
                   <td className="px-4 py-4">{tenant.stats.users}</td>
                   <td className="px-4 py-4">{tenant.stats.documents}</td>
                   <td className="px-4 py-4">{tenant.stats.questions}</td>
@@ -413,6 +420,10 @@ export function TenantsClient() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs italic text-slate-400">
+                  Plan changes will be handled via subscription management in
+                  the future.
+                </p>
               </label>
               <div className="flex flex-wrap gap-2 pt-2">
                 <button

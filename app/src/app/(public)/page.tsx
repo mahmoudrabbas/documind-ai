@@ -14,7 +14,9 @@ type PackageData = {
   active: boolean;
   version: number;
   monthlyPrice: number;
+  annualPrice: number;
   currency: string;
+  trialDays: number;
   limits: {
     users: number;
     documents: number;
@@ -234,6 +236,7 @@ function PricingSection() {
   const { t, dir } = useI18n();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [annual, setAnnual] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -251,10 +254,25 @@ function PricingSection() {
     return () => { active = false; };
   }, []);
 
+  const freePkg = packages.find((p) => p.monthlyPrice === 0 || p.code === "free");
+
   return (
     <section id="pricing" className="bg-surface py-24" dir={dir}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading title={t("landing.pricingTitle")} subtitle={t("landing.pricingSubtitle")} />
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <span className={cn("text-sm font-medium", !annual && "text-primary")}>Monthly</span>
+          <button
+            onClick={() => setAnnual((p) => !p)}
+            className="relative h-6 w-11 rounded-full bg-primary transition-colors"
+          >
+            <span className={cn(
+              "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform",
+              annual && "translate-x-5"
+            )} />
+          </button>
+          <span className={cn("text-sm font-medium", annual && "text-primary")}>Annual</span>
+        </div>
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
@@ -265,10 +283,13 @@ function PricingSection() {
           </div>
         ) : (
           <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3 items-start">
-            <PricingCardFree t={t} />
-            {packages.map((pkg) => (
-              <PricingCard key={pkg._id} pkg={pkg} t={t} />
-            ))}
+            <PricingCardFree t={t} freePkg={freePkg} />
+            {packages
+              .filter((p) => !freePkg || p._id !== freePkg._id)
+              .map((pkg) => (
+                <PricingCard key={pkg._id} pkg={pkg} t={t} annual={annual} />
+              ))
+            }
           </div>
         )}
       </div>
@@ -276,9 +297,14 @@ function PricingSection() {
   );
 }
 
-function PricingCardFree({ t }: { t: (key: string) => string }) {
+function PricingCardFree({ t, freePkg }: { t: (key: string) => string; freePkg?: PackageData }) {
   return (
     <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card">
+      {freePkg && freePkg.trialDays > 0 && (
+        <span className="inline-block rounded-full bg-tertiary-container px-3 py-1 text-label-sm text-on-tertiary-container mb-2">
+          {freePkg.trialDays}-day free trial
+        </span>
+      )}
       <h3 className="text-title-lg font-bold text-primary">{t("landing.pricingFree")}</h3>
       <div className="mt-4 flex items-baseline gap-1">
         <span className="text-display-lg font-bold text-primary">$0</span>
@@ -286,7 +312,15 @@ function PricingCardFree({ t }: { t: (key: string) => string }) {
       </div>
       <p className="mt-2 text-body-sm text-on-surface-variant">{t("landing.pricingFreeDesc")}</p>
       <ul className="mt-8 flex-1 space-y-3">
-        {["3 users", "50 documents", "500 questions/mo", "100 MB storage"].map((item) => (
+        {(freePkg
+          ? [
+              `${freePkg.limits.users} users`,
+              `${freePkg.limits.documents} documents`,
+              `${freePkg.limits.questionsPerMonth.toLocaleString()} questions/mo`,
+              `${freePkg.limits.storageMb} MB storage`,
+            ]
+          : ["3 users", "50 documents", "500 questions/mo", "100 MB storage"]
+        ).map((item) => (
           <li key={item} className="flex items-center gap-2 text-body-sm text-on-surface-variant">
             <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
             {item}
@@ -303,15 +337,33 @@ function PricingCardFree({ t }: { t: (key: string) => string }) {
   );
 }
 
-function PricingCard({ pkg, t }: { pkg: PackageData; t: (key: string) => string }) {
+function PricingCard({ pkg, t, annual }: { pkg: PackageData; t: (key: string) => string; annual?: boolean }) {
   return (
     <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card transition-shadow hover:shadow-popover">
+      {pkg.trialDays > 0 && (
+        <span className="inline-block rounded-full bg-tertiary-container px-3 py-1 text-label-sm text-on-tertiary-container mb-2">
+          {pkg.trialDays}-day free trial
+        </span>
+      )}
       <h3 className="text-title-lg font-bold text-primary">{pkg.name}</h3>
       <div className="mt-4 flex items-baseline gap-1">
         <span className="text-display-lg font-bold text-primary">
-          {pkg.currency === "USD" ? "$" : pkg.currency}{pkg.monthlyPrice}
+          {annual && pkg.annualPrice > 0
+            ? `${pkg.currency === "USD" ? "$" : pkg.currency}${(pkg.annualPrice / 12).toFixed(2)}`
+            : `${pkg.currency === "USD" ? "$" : pkg.currency}${pkg.monthlyPrice}`
+          }
         </span>
-        <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
+        <span className="text-body-sm text-on-surface-variant">
+          {annual && pkg.annualPrice > 0
+            ? "/mo \u2014 billed annually"
+            : t("landing.pricingMonthly")
+          }
+        </span>
+        {annual && pkg.annualPrice > 0 && pkg.monthlyPrice > 0 && (
+          <span className="ml-1 rounded-full bg-tertiary-container px-2 py-0.5 text-label-xs text-on-tertiary-container">
+            Save {Math.round((1 - pkg.annualPrice / (pkg.monthlyPrice * 12)) * 100)}%
+          </span>
+        )}
       </div>
       <p className="mt-2 text-body-sm text-on-surface-variant">{pkg.description}</p>
       <ul className="mt-8 flex-1 space-y-3">

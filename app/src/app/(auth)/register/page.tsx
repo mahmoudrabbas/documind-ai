@@ -120,6 +120,28 @@ export default function RegisterPage() {
     checkSession();
   }, [router]);
 
+  useEffect(() => {
+    if (!selectedPackageCode) return;
+    let active = true;
+    apiClient<{
+      success: boolean;
+      data: Array<{
+        name: string;
+        code: string;
+        trialDays: number;
+        monthlyPrice: number;
+        annualPrice: number;
+      }>;
+    }>("/public/packages", { auth: false })
+      .then((res) => {
+        if (active) setPackagesList(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [selectedPackageCode]);
+
   const [companyName, setCompanyName] = useState("");
   const [companySlug, setCompanySlug] = useState("");
   const [adminName, setAdminName] = useState("");
@@ -134,6 +156,21 @@ export default function RegisterPage() {
   const [formError, setFormError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [packagesList, setPackagesList] = useState<
+    Array<{
+      name: string;
+      code: string;
+      trialDays: number;
+      monthlyPrice: number;
+      annualPrice: number;
+    }>
+  >([]);
+  const [registeredPackage, setRegisteredPackage] = useState<{
+    name: string;
+    trialDays: number;
+    monthlyPrice: number;
+    annualPrice: number;
+  } | null>(null);
 
   if (isCheckingSession) {
     return (
@@ -222,6 +259,24 @@ export default function RegisterPage() {
       });
 
       setSuccessMessage(t("auth.registerSuccess"));
+
+      const pkg = packagesList.find((p) => p.code === selectedPackageCode) ?? null;
+      if (pkg) {
+        setRegisteredPackage({
+          name: pkg.name,
+          trialDays: pkg.trialDays,
+          monthlyPrice: pkg.monthlyPrice,
+          annualPrice: pkg.annualPrice,
+        });
+      } else {
+        setRegisteredPackage({
+          name: "Free",
+          trialDays: 0,
+          monthlyPrice: 0,
+          annualPrice: 0,
+        });
+      }
+
       // Clear form fields
       setCompanyName("");
       setCompanySlug("");
@@ -311,6 +366,48 @@ export default function RegisterPage() {
                   role="status"
                 >
                   {successMessage}
+                </div>
+              ) : null}
+
+              {successMessage && registeredPackage ? (
+                <div className="rounded-xl border border-primary/20 bg-primary-container/10 px-4 py-4 mb-4">
+                  <h3 className="font-bold text-primary text-title-md">
+                    Subscription Active
+                  </h3>
+                  <div className="mt-2 space-y-1 text-sm text-on-surface-variant">
+                    <p>
+                      Plan:{" "}
+                      <strong className="text-on-surface">
+                        {registeredPackage.name}
+                      </strong>
+                    </p>
+                    {registeredPackage.trialDays > 0 && (
+                      <p>
+                        Trial period:{" "}
+                        <strong className="text-on-surface">
+                          {registeredPackage.trialDays} days
+                        </strong>
+                      </p>
+                    )}
+                    {registeredPackage.monthlyPrice > 0 && (
+                      <p>
+                        Billing:{" "}
+                        <strong className="text-on-surface">
+                          {registeredPackage.monthlyPrice ===
+                          registeredPackage.annualPrice / 12
+                            ? `$${registeredPackage.annualPrice}/year ($${registeredPackage.monthlyPrice}/mo)`
+                            : `$${registeredPackage.monthlyPrice}/mo`}
+                        </strong>
+                      </p>
+                    )}
+                    {registeredPackage.monthlyPrice === 0 && (
+                      <p>
+                        You are on the{" "}
+                        <strong className="text-on-surface">Free</strong> plan.
+                        Upgrade anytime from settings.
+                      </p>
+                    )}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -502,19 +599,33 @@ export default function RegisterPage() {
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              aria-busy={isSubmitting || undefined}
-              className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
-            >
-              {isSubmitting ? (
-                <span className="material-symbols-outlined animate-spin">
-                  progress_activity
-                </span>
-              ) : null}
-              {isSubmitting ? t("auth.registering") : t("auth.register")}
-            </button>
+            {successMessage ? (
+              <div className="text-center mt-6">
+                <p className="text-sm text-on-surface-variant mb-3">
+                  Your account is ready. You can close this page or log in.
+                </p>
+                <Link
+                  href="/login"
+                  className="inline-block rounded-lg bg-primary px-6 py-3 text-title-lg font-semibold text-on-primary"
+                >
+                  Go to Login
+                </Link>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                aria-busy={isSubmitting || undefined}
+                className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
+              >
+                {isSubmitting ? (
+                  <span className="material-symbols-outlined animate-spin">
+                    progress_activity
+                  </span>
+                ) : null}
+                {isSubmitting ? t("auth.registering") : t("auth.register")}
+              </button>
+            )}
 
             <div className="text-center mt-5">
               <Link
