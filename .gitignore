@@ -18,3 +18,4 @@ secrets/*
 **/build/
 **/out/
 *.tsbuildinfo
+api/dist/
