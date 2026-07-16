@@ -5,6 +5,7 @@ export type AuditAction =
   | "AUTH_LOGOUT"
   | "AUTH_LOGOUT_ALL"
   | "AUTH_TOKEN_REFRESH"
+  | "AUTH_REFRESH_TOKEN_REUSE"
   | "AUTH_PASSWORD_RESET"
   | "AUTH_EMAIL_VERIFIED"
   // Users

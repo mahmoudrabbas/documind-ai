@@ -32,7 +32,7 @@ import type {
 } from "./auth.types.js";
 import { sendVerificationEmail, sendForgotPasswordEmail } from "./auth.mailer.js";
 import { createAuditLog } from "../audit/audit.repository.js";
-import type { AuditLogInput } from "../audit/audit.types.js";
+import type { AuditEventInput } from "../audit/audit.types.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
@@ -88,8 +88,8 @@ import {
   hashRefreshTokenJti,
 } from "./refreshTokenHashing.js";
 
-function safeAuditLog(input: AuditLogInput) {
-  createAuditLog(input).catch((err) => {
+function safeAuditLog(input: AuditEventInput) {
+  createAuditLog(input as unknown as Record<string, unknown>).catch((err) => {
     console.error("[audit-log-failed]", err);
   });
 }
@@ -685,14 +685,14 @@ export async function login(
   ) {
     safeAuditLog({
       tenantId: tenant._id.toString(),
-      userId: user?._id?.toString() ?? "",
-      resourceType: "auth",
+      resourceType: "User",
       resourceId: payload.email,
-      action: "LOGIN_FAILED",
+      action: "AUTH_LOGIN_FAILURE",
       actorId: user?._id?.toString() ?? "",
       actorEmail: payload.email,
       actorRole: user?.role ?? "",
       changes: { reason: "invalid_credentials", ip: context.ip },
+      metadata: { userId: user?._id?.toString() ?? "" },
     });
     throw invalidCredentialsError();
   }
@@ -702,10 +702,9 @@ export async function login(
   } catch (error) {
     safeAuditLog({
       tenantId: tenant._id.toString(),
-      userId: user._id.toString(),
-      resourceType: "auth",
+      resourceType: "User",
       resourceId: payload.email,
-      action: "LOGIN_FAILED",
+      action: "AUTH_LOGIN_FAILURE",
       actorId: user._id.toString(),
       actorEmail: payload.email,
       actorRole: user.role,
@@ -713,6 +712,7 @@ export async function login(
         reason: error instanceof Error ? error.message : "account_not_active",
         ip: context.ip,
       },
+      metadata: { userId: user._id.toString() },
     });
     throw error;
   }
@@ -774,14 +774,14 @@ export async function login(
 
   safeAuditLog({
     tenantId: tenant._id.toString(),
-    userId: user.id,
-    resourceType: "auth",
+    resourceType: "User",
     resourceId: payload.email,
-    action: "LOGIN_SUCCESS",
+    action: "AUTH_LOGIN_SUCCESS",
     actorId: user.id,
     actorEmail: payload.email,
     actorRole: user.role,
     changes: { ip: context.ip, userAgent: context.userAgent },
+    metadata: { userId: user.id },
   });
 
   return {
@@ -818,14 +818,14 @@ export async function superAdminLogin(
   ) {
     safeAuditLog({
       tenantId: user?.tenantId?.toString() ?? "",
-      userId: user?._id?.toString() ?? "",
-      resourceType: "auth",
+      resourceType: "User",
       resourceId: payload.email,
-      action: "LOGIN_FAILED",
+      action: "AUTH_LOGIN_FAILURE",
       actorId: user?._id?.toString() ?? "",
       actorEmail: payload.email,
       actorRole: user?.role ?? "",
       changes: { reason: "invalid_credentials", ip: context.ip, scope: "super_admin" },
+      metadata: { userId: user?._id?.toString() ?? "" },
     });
     throw new AppError(401, INVALID_CREDENTIALS, "Invalid email or password");
   }
@@ -864,14 +864,14 @@ export async function superAdminLogin(
 
   safeAuditLog({
     tenantId: tenant._id.toString(),
-    userId: user.id,
-    resourceType: "auth",
+    resourceType: "User",
     resourceId: payload.email,
-    action: "LOGIN_SUCCESS",
+    action: "AUTH_LOGIN_SUCCESS",
     actorId: user.id,
     actorEmail: payload.email,
     actorRole: user.role,
     changes: { ip: context.ip, userAgent: context.userAgent, scope: "super_admin" },
+    metadata: { userId: user.id },
   });
 
   return {
@@ -961,10 +961,9 @@ export async function refreshAccessToken(
 
       safeAuditLog({
         tenantId: tokenRecord.tenantId.toString(),
-        userId: tokenRecord.userId.toString(),
-        resourceType: "auth",
+        resourceType: "User",
         resourceId: tokenRecord.id,
-        action: "REFRESH_REUSE_DETECTED",
+        action: "AUTH_REFRESH_TOKEN_REUSE",
         actorId: tokenRecord.userId.toString(),
         actorEmail: reuseUser?.email ?? "unknown",
         actorRole: reuseUser?.role ?? "unknown",
@@ -973,6 +972,7 @@ export async function refreshAccessToken(
           ip: context.ip,
           jtiHash: hashRefreshTokenJti(claims.jti!),
         },
+        metadata: { userId: tokenRecord.userId.toString() },
       });
 
       throw refreshTokenReusedError();
@@ -1102,14 +1102,14 @@ export async function logoutAll(
 
   safeAuditLog({
     tenantId: identity.tenantId,
-    userId: identity.userId,
-    resourceType: "session",
+    resourceType: "Session",
     resourceId: identity.userId,
-    action: "LOGOUT_ALL",
+    action: "AUTH_LOGOUT_ALL",
     actorId: identity.userId,
     actorEmail: identity.email ?? "",
     actorRole: identity.role ?? "",
     changes: { revokedCount: revokedCount.modifiedCount, ip: context.ip },
+    metadata: { userId: identity.userId },
   });
 
   return { success: true, message: "All sessions revoked" };
