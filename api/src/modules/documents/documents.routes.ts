@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
-import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
 import { config } from "../../config/index.js";
 import {
   uploadDocumentController,
@@ -38,7 +38,7 @@ router.post(
   "/",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN", "EMPLOYEE"),
+  requirePermission("documents:create"),
   upload.single("file"),
   uploadDocumentController,
 );
@@ -47,7 +47,7 @@ router.get(
   "/",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN", "EMPLOYEE"),
+  requirePermission("documents:read"),
   listDocumentsController,
 );
 
@@ -55,7 +55,7 @@ router.get(
   "/:id",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN", "EMPLOYEE"),
+  requirePermission("documents:read"),
   getDocumentController,
 );
 
@@ -63,7 +63,7 @@ router.patch(
   "/:id",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN", "EMPLOYEE"),
+  requirePermission("documents:update"),
   updateDocumentMetadataController,
 );
 
@@ -71,7 +71,7 @@ router.delete(
   "/:id",
   authenticate,
   tenantScoping,
-  authorize("COMPANY_ADMIN", "EMPLOYEE"),
+  requirePermission("documents:delete"),
   deleteDocumentController,
 );
 

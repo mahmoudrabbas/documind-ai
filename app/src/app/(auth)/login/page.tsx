@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import {
   useAuth,
@@ -15,6 +15,7 @@ import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { AuthHeroPanel } from "@/components/ui";
 import { validateEmail, validateCompanySlug } from "@/lib/validation";
+import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
 
 type LoginResponse = {
   success: true;
@@ -82,6 +83,9 @@ export default function LoginPage() {
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState("");
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(
+    null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function messageForError(error: unknown) {
@@ -124,6 +128,7 @@ export default function LoginPage() {
     event.preventDefault();
     if (submissionPending.current) return;
     setFormError("");
+    setRateLimitRetryAfter(null);
 
     if (!validate()) {
       return;
@@ -155,12 +160,20 @@ export default function LoginPage() {
       router.replace(destination);
       router.refresh();
     } catch (error) {
-      setFormError(messageForError(error));
+      if (error instanceof ApiError && error.status === 429) {
+        setRateLimitRetryAfter(error.retryAfterSeconds ?? 900);
+      } else {
+        setFormError(messageForError(error));
+      }
     } finally {
       submissionPending.current = false;
       setIsSubmitting(false);
     }
   }
+
+  const handleRetryLogin = useCallback(() => {
+    setRateLimitRetryAfter(null);
+  }, []);
 
   return (
     <main
@@ -208,7 +221,14 @@ export default function LoginPage() {
             noValidate
           >
             <div aria-live="polite" className="w-full">
-              {formError ? (
+              {rateLimitRetryAfter !== null ? (
+                <div className="mb-4">
+                  <RateLimitAlert
+                    retryAfterSeconds={rateLimitRetryAfter}
+                    onRetry={handleRetryLogin}
+                  />
+                </div>
+              ) : formError ? (
                 <div
                   className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                   role="alert"

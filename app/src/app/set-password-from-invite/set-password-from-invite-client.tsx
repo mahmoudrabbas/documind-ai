@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { AuthBrand, AuthPageShell } from "@/components/auth/auth-page-shell";
+import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
 
 type InviteDetails = {
   companyName: string;
@@ -55,6 +56,8 @@ export default function SetPasswordFromInviteClient() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (!token) {
@@ -113,9 +116,21 @@ export default function SetPasswordFromInviteClient() {
     return Object.keys(next).length === 0;
   }
 
+  function messageForError(error: unknown) {
+    if (!(error instanceof ApiError)) {
+      return "We could not save your password. Please try again.";
+    }
+    switch (error.code) {
+      default:
+        return error.message || "We could not save your password. Please try again.";
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current || !validateFields()) return;
+    setRateLimitRetryAfter(null);
+    setFormError("");
     pending.current = true;
     setIsSubmitting(true);
     setState((current) => ({
@@ -175,17 +190,20 @@ export default function SetPasswordFromInviteClient() {
           code: error.code ?? undefined,
           message: error.message,
         });
+      } else if (error instanceof ApiError && error.status === 429) {
+        setRateLimitRetryAfter(error.retryAfterSeconds ?? 900);
       } else {
-        setState({
-          status: "form",
-          message: "We could not save your password. Please try again.",
-        });
+        setFormError(messageForError(error));
       }
     } finally {
       pending.current = false;
       setIsSubmitting(false);
     }
   }
+
+  const handleRetrySubmit = useCallback(() => {
+    setRateLimitRetryAfter(null);
+  }, []);
 
   const terminal = state.status === "error" || state.status === "success";
   return (
@@ -223,6 +241,23 @@ export default function SetPasswordFromInviteClient() {
             </div>
           </dl>
           <form onSubmit={submit} noValidate className="mt-6 space-y-5">
+            <div aria-live="polite" className="w-full">
+              {rateLimitRetryAfter !== null ? (
+                <div className="mb-4">
+                  <RateLimitAlert
+                    retryAfterSeconds={rateLimitRetryAfter}
+                    onRetry={handleRetrySubmit}
+                  />
+                </div>
+              ) : formError ? (
+                <div
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                  role="alert"
+                >
+                  {formError}
+                </div>
+              ) : null}
+            </div>
             <label className="block text-sm font-semibold" htmlFor="password">
               Password
               <div className="relative mt-2">

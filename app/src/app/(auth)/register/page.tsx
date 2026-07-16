@@ -2,15 +2,11 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
-import {
-  clearAccessToken,
-  getAccessToken,
-  setAccessToken,
-} from "@/lib/auth-tokens";
 import { useI18n } from "@/providers/i18n-provider";
 import { AuthHeroPanel, LanguageSwitcher } from "@/components/ui";
+import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
 import {
   validateCompanyName,
   validateCompanySlug,
@@ -87,38 +83,12 @@ export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t, dir, locale } = useI18n();
-  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const submissionPending = useRef(false);
 
   const selectedPackageCode = useMemo(
     () => searchParams.get("package")?.trim() ?? "",
     [searchParams],
   );
-
-  useEffect(() => {
-    if (getAccessToken()) {
-      router.replace("/dashboard");
-      return;
-    }
-
-    async function checkSession() {
-      try {
-        const response = await apiClient<LoginResponse>("/auth/refresh", {
-          method: "POST",
-          auth: false,
-          redirectOnAuthFailure: false,
-        });
-
-        setAccessToken(response.data.tokens.accessToken);
-        router.replace("/dashboard");
-      } catch {
-        clearAccessToken();
-        setIsCheckingSession(false);
-      }
-    }
-
-    checkSession();
-  }, [router]);
 
   const [companyName, setCompanyName] = useState("");
   const [companySlug, setCompanySlug] = useState("");
@@ -132,20 +102,11 @@ export default function RegisterPage() {
   const [isSlugManual, setIsSlugManual] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState("");
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(
+    null,
+  );
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  if (isCheckingSession) {
-    return (
-      <main className="min-h-screen bg-white text-slate-950 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm shadow-slate-200/50">
-          <p className="text-sm font-medium text-slate-500">
-            Checking your session…
-          </p>
-        </div>
-      </main>
-    );
-  }
 
   function handleCompanyNameChange(value: string) {
     setCompanyName(value);
@@ -159,6 +120,25 @@ export default function RegisterPage() {
     setIsSlugManual(true);
     setCompanySlug(value);
     clearFieldError(setErrors, "companySlug");
+  }
+
+  function messageForError(error: unknown) {
+    if (!(error instanceof ApiError)) {
+      return t("auth.errorGeneric");
+    }
+
+    switch (error.code) {
+      case "EMAIL_NOT_VERIFIED":
+        return t("auth.errorEmailNotVerified");
+      case "INVALID_CREDENTIALS":
+        return t("auth.errorINVALID_CREDENTIALS");
+      case "ACCOUNT_NOT_ACTIVE":
+        return t("auth.errorAccountNotActive");
+      case "TENANT_NOT_ACTIVE":
+        return t("auth.errorTenantNotActive");
+      default:
+        return t("auth.errorGeneric");
+    }
   }
 
   function validate() {
@@ -193,6 +173,7 @@ export default function RegisterPage() {
     event.preventDefault();
     if (submissionPending.current) return;
     setFormError("");
+    setRateLimitRetryAfter(null);
     setSuccessMessage("");
 
     if (!validate()) {
@@ -231,24 +212,20 @@ export default function RegisterPage() {
       setConfirmPassword("");
       setIsSlugManual(false);
     } catch (error) {
-      if (error instanceof ApiError) {
-        if (error.code === "DUPLICATE_SLUG" || error.message.includes("slug")) {
-          setErrors((prev) => ({
-            ...prev,
-            companySlug: t("auth.companySlugInvalid"),
-          }));
-          setFormError(error.message);
-        } else {
-          setFormError(error.message);
-        }
+      if (error instanceof ApiError && error.status === 429) {
+        setRateLimitRetryAfter(error.retryAfterSeconds ?? 900);
       } else {
-        setFormError(t("auth.errorGeneric"));
+        setFormError(messageForError(error));
       }
     } finally {
       submissionPending.current = false;
       setIsSubmitting(false);
     }
   }
+
+  const handleRetry = useCallback(() => {
+    setRateLimitRetryAfter(null);
+  }, []);
 
   return (
     <main
@@ -296,7 +273,14 @@ export default function RegisterPage() {
             noValidate
           >
             <div aria-live="polite" className="w-full">
-              {formError ? (
+              {rateLimitRetryAfter !== null ? (
+                <div className="mb-4">
+                  <RateLimitAlert
+                    retryAfterSeconds={rateLimitRetryAfter}
+                    onRetry={handleRetry}
+                  />
+                </div>
+              ) : formError ? (
                 <div
                   className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                   role="alert"
