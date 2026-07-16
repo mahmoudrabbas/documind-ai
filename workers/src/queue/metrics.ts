@@ -1,5 +1,5 @@
 import { logger } from "../logger.js";
-import type { QueueMetrics } from "./jobEnvelope.js";
+import type { QueueMetrics } from "@documind/contracts";
 
 /**
  * Rolling-window tracker for processing durations. Kept in-memory per worker
