@@ -4,14 +4,14 @@ import type {
   JobHandlerContext,
   JobHandlerDefinition,
   JobHandlerRegistry,
-  RetryPolicy,
-} from "@documind/contracts";
+} from "./jobDispatcher.js";
 import {
   classifyError,
   computeBackoffMs,
   DEFAULT_RETRY_POLICY,
   PermanentJobError,
-} from "@documind/contracts";
+  type RetryPolicy,
+} from "./retryPolicy.js";
 import { publishJobEvent } from "./metrics.js";
 
 /**
@@ -118,7 +118,13 @@ export async function executeHandler(
       attemptsMade,
     });
 
-    return { ok: true, deadLettered: false, attemptsMade, shouldRetry: false, nextDelayMs: 0 };
+    return {
+      ok: true,
+      deadLettered: false,
+      attemptsMade,
+      shouldRetry: false,
+      nextDelayMs: 0,
+    };
   } catch (error) {
     const severity = classifyError(error);
     const isLastAttempt = attemptsMade >= policy.maxAttempts;
@@ -138,6 +144,7 @@ export async function executeHandler(
     });
 
     if (!shouldRetry) {
+      // Permanent error or final attempt exhausted => dead-letter for replay.
       return {
         ok: false,
         deadLettered: true,
@@ -159,10 +166,7 @@ export async function executeHandler(
   }
 }
 
-function withAbort<T>(
-  promise: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (!signal.aborted) return promise;
   return Promise.reject(new PermanentJobError("job aborted before start"));
 }

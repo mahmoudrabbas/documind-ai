@@ -1,13 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type {
-  JobDispatcher,
-  JobEnvelope,
-  JobStatus,
-  QueueMetrics,
-  JobHandlerDefinition,
-  RetryPolicy,
-} from "@documind/contracts";
-import { buildDedupKey, DEFAULT_RETRY_POLICY } from "@documind/contracts";
+import type { JobDispatcher } from "./jobDispatcher.js";
+import type { JobEnvelope, JobStatus, QueueMetrics } from "./jobEnvelope.js";
+import type { JobHandlerDefinition } from "./jobDispatcher.js";
+import { buildDedupKey } from "./idempotency.js";
+import { DEFAULT_RETRY_POLICY, type RetryPolicy } from "./retryPolicy.js";
 import { ProcessingDurationTracker, publishJobEvent } from "./metrics.js";
 import { executeHandler, type ExecutionOutcome } from "./handlerRegistry.js";
 
@@ -24,6 +20,14 @@ interface StoredJob {
   failedReason: string | null;
 }
 
+/**
+ * Vendor-free, process-local queue adapter.
+ *
+ * Implements the `JobDispatcher` port AND the consumer loop, so feature teams
+ * can develop typed jobs end-to-end without Redis/Mongo. It mirrors the
+ * production BullMQ adapter's contract (enqueue, dedup, retry, dead-letter)
+ * which is asserted by the shared contract tests.
+ */
 export class InMemoryQueue implements JobDispatcher {
   private readonly jobs = new Map<string, StoredJob>();
   private readonly dedup = new Set<string>();
@@ -110,9 +114,17 @@ export class InMemoryQueue implements JobDispatcher {
       data: { deduplicated: false, jobId },
     });
 
-    return { jobId, idempotencyKey: envelope.idempotencyKey, deduplicated: false };
+    return {
+      jobId,
+      idempotencyKey: envelope.idempotencyKey,
+      deduplicated: false,
+    };
   }
 
+  /**
+   * Starts the in-process consumer loop. The loop respects the abort signal
+   * for graceful shutdown.
+   */
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -182,7 +194,11 @@ export class InMemoryQueue implements JobDispatcher {
         }),
     };
 
-    const outcome: ExecutionOutcome = await executeHandler(handler, ctx, this.policy);
+    const outcome: ExecutionOutcome = await executeHandler(
+      handler,
+      ctx,
+      this.policy,
+    );
     const durationMs = Date.now() - start;
     this.processing.record(durationMs);
 

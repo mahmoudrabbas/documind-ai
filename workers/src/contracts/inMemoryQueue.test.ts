@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { InMemoryQueue } from "../queue/inMemoryQueue.js";
+import { InMemoryQueue } from "../contracts/inMemoryQueue.js";
 import { sampleJobHandler } from "../jobs/sampleJob.js";
-import { RetryableJobError } from "@documind/contracts";
+import { RetryableJobError } from "../contracts/retryPolicy.js";
 
 test("in-memory adapter enqueues, executes, and completes a sample job", async () => {
   const q = new InMemoryQueue();
@@ -80,7 +80,10 @@ test("in-memory adapter retries then completes on failOnce", async () => {
 
   const status = await q.getJobStatus(res.jobId);
   assert.equal(status?.state, "completed");
-  assert.ok((status?.attemptsMade ?? 0) >= 2, "should have retried at least once");
+  assert.ok(
+    (status?.attemptsMade ?? 0) >= 2,
+    "should have retried at least once",
+  );
 
   q.stop();
 });

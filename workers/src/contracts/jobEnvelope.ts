@@ -95,8 +95,7 @@ export function validateJobEnvelope(input: unknown): {
 
 export function isPayloadWithinSizeLimit(payload: unknown): boolean {
   try {
-    const serialized =
-      payload === undefined ? "0" : JSON.stringify(payload);
+    const serialized = payload === undefined ? "0" : JSON.stringify(payload);
     return Buffer.byteLength(serialized, "utf8") <= MAX_JOB_PAYLOAD_BYTES;
   } catch {
     // Un-serializable payloads are rejected by the schema anyway; treat as

@@ -36,10 +36,7 @@ export interface JobDispatcher {
    * same key (and jobType) must not create a second executing job.
    */
   enqueue(
-    input: Omit<
-      JobEnvelope,
-      "schemaVersion" | "createdAt" | "payload"
-    > & {
+    input: Omit<JobEnvelope, "schemaVersion" | "createdAt" | "payload"> & {
       schemaVersion?: JobEnvelope["schemaVersion"];
       payload?: unknown;
       options?: EnqueueOptions;
@@ -107,4 +104,3 @@ export interface JobHandlerRegistry {
   has(jobType: string): boolean;
   list(): ReadonlyArray<JobHandlerDefinition<any>>;
 }
-

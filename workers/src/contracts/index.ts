@@ -2,3 +2,7 @@ export * from "./jobEnvelope.js";
 export * from "./jobDispatcher.js";
 export * from "./retryPolicy.js";
 export * from "./idempotency.js";
+export * from "./metrics.js";
+export * from "./handlerRegistry.js";
+export * from "./inMemoryQueue.js";
+export * from "./bullmqQueue.js";

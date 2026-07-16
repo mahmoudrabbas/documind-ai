@@ -4,7 +4,7 @@ import {
   validateJobEnvelope,
   isPayloadWithinSizeLimit,
   MAX_JOB_PAYLOAD_BYTES,
-} from "@documind/contracts";
+} from "../contracts/jobEnvelope.js";
 
 function validEnvelope(overrides: Record<string, unknown> = {}) {
   return {

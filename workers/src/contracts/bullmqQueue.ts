@@ -1,21 +1,16 @@
 import { Queue, Worker, type Job, type Processor } from "bullmq";
 import type { Redis } from "ioredis";
 import { logger } from "../logger.js";
-import type {
-  JobDispatcher,
-  JobEnvelope,
-  JobStatus,
-  QueueMetrics,
-  JobHandlerDefinition,
-  RetryPolicy,
-} from "@documind/contracts";
+import type { JobDispatcher } from "./jobDispatcher.js";
+import type { JobEnvelope, JobStatus, QueueMetrics } from "./jobEnvelope.js";
+import type { JobHandlerDefinition } from "./jobDispatcher.js";
+import { buildDedupKey, generateTraceId } from "./idempotency.js";
 import {
-  buildDedupKey,
-  generateTraceId,
   DEFAULT_RETRY_POLICY,
   RetryableJobError,
   PermanentJobError,
-} from "@documind/contracts";
+  type RetryPolicy,
+} from "./retryPolicy.js";
 import { ProcessingDurationTracker, publishJobEvent } from "./metrics.js";
 import { executeHandler, type ExecutionOutcome } from "./handlerRegistry.js";
 
@@ -23,11 +18,22 @@ export interface BullMQAdapterOptions {
   queueName: string;
   connection: Redis;
   policy?: RetryPolicy;
+  /** Retention: keep completed/failed jobs for dead-letter & replay. */
   removeOnComplete?: number | boolean;
   removeOnFail?: number | boolean;
   concurrency?: number;
 }
 
+/**
+ * Production queue adapter backed by BullMQ/Redis.
+ *
+ * Implements the `JobDispatcher` port (producer) and runs a BullMQ `Worker`
+ * (consumer). Idempotency is enforced by mapping `jobId` to the dedup key, so
+ * Redis rejects duplicate dispatches atomically. Retry classification is
+ * delegated to the handler registry: retryable failures bubble up as
+ * `RetryableJobError` (BullMQ retries with our backoff policy); permanent
+ * failures bubble as `PermanentJobError` and are retained as dead letters.
+ */
 export class BullMQQueue implements JobDispatcher {
   readonly queue: Queue;
   private worker: Worker | null = null;
@@ -55,6 +61,7 @@ export class BullMQQueue implements JobDispatcher {
         backoff: { type: "custom" },
         removeOnComplete: this.removeOnComplete,
         removeOnFail: this.removeOnFail,
+        // Enforce size cap at the queue layer too (bytes).
         sizeLimit: 256 * 1024,
       },
     });
@@ -83,6 +90,7 @@ export class BullMQQueue implements JobDispatcher {
       displayName: input.options?.displayName ?? input.displayName,
     };
 
+    // BullMQ rejects duplicate `jobId`s within the queue (dedup at source).
     const existing = await this.queue.getJob(jobId);
     if (existing) {
       publishJobEvent({
@@ -93,7 +101,11 @@ export class BullMQQueue implements JobDispatcher {
         event: "enqueue",
         data: { deduplicated: true, jobId },
       });
-      return { jobId, idempotencyKey: envelope.idempotencyKey, deduplicated: true };
+      return {
+        jobId,
+        idempotencyKey: envelope.idempotencyKey,
+        deduplicated: true,
+      };
     }
 
     const job = await this.queue.add(input.jobType, envelope, {
@@ -120,6 +132,11 @@ export class BullMQQueue implements JobDispatcher {
     };
   }
 
+  /**
+   * Starts the BullMQ worker. `signal` triggers graceful shutdown: the worker
+   * closes (waits for in-flight jobs up to `close()` timeout) and stops
+   * accepting new jobs.
+   */
   start(signal?: AbortSignal): void {
     if (this.worker) return;
 
@@ -160,24 +177,30 @@ export class BullMQQueue implements JobDispatcher {
       this.processing.record(Date.now() - start);
 
       if (outcome.ok) {
+        // Resolved => completed.
         return;
       }
 
       if (outcome.deadLettered) {
+        // Permanent failure (or final attempt) => stop retries and retain as a
+        // dead letter. `job.discard()` tells BullMQ not to reschedule, so the
+        // thrown error moves the job straight to the failed set.
         try {
           await job.discard();
         } catch {
-          // discard is best-effort
+          // discard is best-effort; the throw below still finalizes the job.
         }
         throw new PermanentJobError(outcome.failedReason ?? "dead-lettered");
       }
 
+      // Retryable => let BullMQ retry with our backoff policy.
       throw new RetryableJobError(outcome.failedReason ?? "retryable failure");
     };
 
     this.worker = new Worker(this.queueName, processor, {
       connection: this.connection,
       concurrency: this.concurrency,
+      // Map BullMQ's computed backoff to our policy via the attempt number.
       settings: {
         backoffStrategy: (attemptsMade: number) =>
           computeBackoff(attemptsMade, this.policy),
@@ -249,7 +272,8 @@ export class BullMQQueue implements JobDispatcher {
       idempotencyKey: (job.data as JobEnvelope).idempotencyKey,
       state,
       attemptsMade,
-      maxAttempts: attemptsMade + (job.opts?.attempts ?? this.policy.maxAttempts),
+      maxAttempts:
+        attemptsMade + (job.opts?.attempts ?? this.policy.maxAttempts),
       createdAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
       processedAt: job.processedOn
         ? new Date(job.processedOn).toISOString()
@@ -271,6 +295,9 @@ export class BullMQQueue implements JobDispatcher {
       "failed",
     );
 
+    // Count jobs currently retrying (active attempts > 0) — approximate via
+    // active jobs where attemptsMade > 0 is not directly queryable, so we
+    // report active jobs that have been attempted at least once.
     let retrying = 0;
     try {
       const active = await this.queue.getJobs("active", 0, 50);
@@ -293,6 +320,7 @@ export class BullMQQueue implements JobDispatcher {
     };
   }
 
+  /** Dead-letter replay: re-add a failed job by id. Super Admin only (API). */
   async replayJob(jobId: string): Promise<boolean> {
     const job = await this.queue.getJob(jobId);
     if (!job) return false;
@@ -305,6 +333,8 @@ export class BullMQQueue implements JobDispatcher {
   async close(): Promise<void> {
     await this.stop();
     await this.queue.close();
+    // The ioredis connection is owned by the adapter; release it so processes
+    // (and tests) do not hang on open handles.
     try {
       if (this.connection.status !== "end") {
         this.connection.disconnect();

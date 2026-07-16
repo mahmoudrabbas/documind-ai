@@ -1,9 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { InMemoryJobHandlerRegistry, executeHandler } from "../queue/handlerRegistry.js";
-import { PermanentJobError, RetryableJobError } from "@documind/contracts";
-import type { JobEnvelope } from "@documind/contracts";
+import {
+  InMemoryJobHandlerRegistry,
+  executeHandler,
+} from "../contracts/handlerRegistry.js";
+import {
+  PermanentJobError,
+  RetryableJobError,
+} from "../contracts/retryPolicy.js";
+import type { JobEnvelope } from "../contracts/jobEnvelope.js";
 
 function envelope(payload: unknown): JobEnvelope {
   return {
@@ -81,7 +87,12 @@ test("executeHandler classifies retryable error and schedules retry", async () =
       throw new RetryableJobError("transient");
     },
   };
-  const policy = { maxAttempts: 3, baseDelayMs: 100, backoffFactor: 2, maxDelayMs: 1000 };
+  const policy = {
+    maxAttempts: 3,
+    baseDelayMs: 100,
+    backoffFactor: 2,
+    maxDelayMs: 1000,
+  };
   const outcome = await executeHandler(handler, ctx({}, 0), policy);
   assert.equal(outcome.ok, false);
   assert.equal(outcome.shouldRetry, true);

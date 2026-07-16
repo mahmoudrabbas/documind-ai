@@ -10,6 +10,5 @@
     }
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../packages/contracts" }]
+  "exclude": ["src/**/*.test.ts"]
 }

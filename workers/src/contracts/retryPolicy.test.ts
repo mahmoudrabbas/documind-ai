@@ -6,8 +6,12 @@ import {
   DEFAULT_RETRY_POLICY,
   RetryableJobError,
   PermanentJobError,
-} from "@documind/contracts";
-import { deriveIdempotencyKey, buildDedupKey, hashString } from "@documind/contracts";
+} from "../contracts/retryPolicy.js";
+import {
+  deriveIdempotencyKey,
+  buildDedupKey,
+  hashString,
+} from "../contracts/idempotency.js";
 
 test("classifyError marks PermanentJobError as permanent", () => {
   assert.equal(classifyError(new PermanentJobError("x")), "permanent");
@@ -30,7 +34,12 @@ test("classifyError treats network errors as retryable", () => {
 });
 
 test("computeBackoffMs respects policy ceiling", () => {
-  const policy = { ...DEFAULT_RETRY_POLICY, baseDelayMs: 1000, backoffFactor: 2, maxDelayMs: 3000 };
+  const policy = {
+    ...DEFAULT_RETRY_POLICY,
+    baseDelayMs: 1000,
+    backoffFactor: 2,
+    maxDelayMs: 3000,
+  };
   assert.equal(computeBackoffMs(1, policy), 1000);
   assert.equal(computeBackoffMs(2, policy), 2000);
   const far = computeBackoffMs(20, policy);
@@ -38,9 +47,21 @@ test("computeBackoffMs respects policy ceiling", () => {
 });
 
 test("deriveIdempotencyKey is stable and tenant-scoped", () => {
-  const a = deriveIdempotencyKey({ tenantId: "t1", jobType: "jt", resourceId: "r1" });
-  const b = deriveIdempotencyKey({ tenantId: "t1", jobType: "jt", resourceId: "r1" });
-  const c = deriveIdempotencyKey({ tenantId: "t2", jobType: "jt", resourceId: "r1" });
+  const a = deriveIdempotencyKey({
+    tenantId: "t1",
+    jobType: "jt",
+    resourceId: "r1",
+  });
+  const b = deriveIdempotencyKey({
+    tenantId: "t1",
+    jobType: "jt",
+    resourceId: "r1",
+  });
+  const c = deriveIdempotencyKey({
+    tenantId: "t2",
+    jobType: "jt",
+    resourceId: "r1",
+  });
   assert.equal(a, b);
   assert.notEqual(a, c);
 });
