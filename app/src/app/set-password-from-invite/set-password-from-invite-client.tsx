@@ -7,11 +7,12 @@ import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { AuthBrand, AuthPageShell } from "@/components/auth/auth-page-shell";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import type { Role } from "@/constants/routes";
 
 type InviteDetails = {
   companyName: string;
   email: string;
-  role: string;
+  role: Role;
   expiresAt: string;
 };
 type PageState = {

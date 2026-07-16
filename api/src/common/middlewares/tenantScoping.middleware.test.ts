@@ -37,7 +37,7 @@ test("tenantScoping middleware", async (t) => {
         mockReq.auth = {
           userId: "user-456",
           tenantId: testTenantId,
-          role: "admin",
+          role: "COMPANY_ADMIN",
           email: "user@example.com",
         };
 
@@ -282,7 +282,7 @@ test("tenantScoping middleware", async (t) => {
         mockReq.auth = {
           userId: "user-123",
           tenantId: "tenant-abc",
-          role: "user",
+          role: "EMPLOYEE",
           email: "user@example.com",
         };
 

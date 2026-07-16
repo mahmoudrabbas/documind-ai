@@ -6,7 +6,6 @@ export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   COMPANY_ADMIN: "COMPANY_ADMIN",
   EMPLOYEE: "EMPLOYEE",
-  USER: "USER",
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
@@ -79,16 +78,6 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
     },
     { label: "Chat", href: "/chat", icon: "forum", comingSoon: true },
   ],
-  [ROLES.USER]: [
-    { label: "Overview", href: "/dashboard", icon: "dashboard" },
-    {
-      label: "Documents",
-      href: "/documents",
-      icon: "description",
-      comingSoon: true,
-    },
-    { label: "Chat", href: "/chat", icon: "forum", comingSoon: true },
-  ],
 };
 
 /**
@@ -96,8 +85,7 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
  * actually live for that role — deliberately NOT a 1:1 copy of the
  * sidebar, since the top bar has room for far fewer items.
  *
- * NOTE: adjust these per role as real pages ship (e.g. once /chat and
- * /documents are live for USER, they can be added here too).
+ * NOTE: adjust these per role as real pages ship.
  */
 export const TOPBAR_LINKS: Record<Role, readonly NavLink[]> = {
   [ROLES.SUPER_ADMIN]: [
@@ -114,7 +102,6 @@ export const TOPBAR_LINKS: Record<Role, readonly NavLink[]> = {
     { label: "Dashboard", href: "/dashboard", icon: "dashboard" },
     { label: "Documents", href: "/dashboard/documents", icon: "description" },
   ],
-  [ROLES.USER]: [{ label: "Dashboard", href: "/dashboard", icon: "dashboard" }],
 };
 
 /**
@@ -138,7 +125,6 @@ export function isKnownRole(role: string): role is Role {
   return (
     role === ROLES.SUPER_ADMIN ||
     role === ROLES.COMPANY_ADMIN ||
-    role === ROLES.EMPLOYEE ||
-    role === ROLES.USER
+    role === ROLES.EMPLOYEE
   );
 }

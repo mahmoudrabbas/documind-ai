@@ -15,8 +15,11 @@ RUN apt-get update \
 ENV MONGOMS_DISABLE_POSTINSTALL=1
 RUN npm ci --workspace api --include-workspace-root
 
-COPY api/ api/
+COPY workers/ workers/
 COPY tsconfig.base.json eslint.config.mjs ./
+RUN npm run build --workspace workers
+
+COPY api/ api/
 
 WORKDIR /repo/api
 

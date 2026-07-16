@@ -1,139 +1,114 @@
-import UserModel from "../../db/models/user.model.js";
+import { isBaseRole, type BaseRole } from "../../common/auth/baseRoles.js";
+import mongoose from "mongoose";
 import RoleModel from "../../db/models/role.model.js";
-import type { PermissionEvaluator, ResolvedPermissions, PermissionScopes } from "./permissions.types.js";
-import { DEFAULT_SCOPES } from "./permissions.types.js";
-import { BASE_ROLE_DEFAULTS, ALL_PERMISSIONS } from "./permissions.catalog.js";
-
-interface CacheEntry {
-  result: ResolvedPermissions;
-  expiresAt: number;
-}
-
-const SUPER_ADMIN_PERMISSIONS = new Set(ALL_PERMISSIONS);
+import UserModel from "../../db/models/user.model.js";
+import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
+import { ALL_PERMISSIONS, BASE_ROLE_DEFAULTS, PERMISSION_CONTRACT_VERSION, type PermissionValue } from "./permissions.catalog.js";
+import { decidePermission, emptyResolved } from "./permissions.decision.js";
+import { normalizeRoleGrants } from "./permissions.grants.js";
+import type {
+  PermissionActor,
+  PermissionEvaluationInput,
+  PermissionEvaluator,
+  ResolvedPermissions,
+} from "./permissions.types.js";
 
 export class PermissionEvaluatorImpl implements PermissionEvaluator {
-  private cache = new Map<string, CacheEntry>();
-  private cacheTtlMs: number;
-
-  constructor(options?: { cacheTtlMs?: number }) {
-    this.cacheTtlMs = options?.cacheTtlMs ?? 30_000;
-  }
-
-  async resolve(
-    userId: string,
-    tenantId: string,
-  ): Promise<ResolvedPermissions> {
-    const key = `${tenantId}:${userId}`;
-    const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.result;
+  async resolve(actor: PermissionActor): Promise<ResolvedPermissions> {
+    if (!mongoose.isObjectIdOrHexString(actor.actorId) || !mongoose.isObjectIdOrHexString(actor.tenantId)) {
+      return emptyResolved(actor.baseRole);
+    }
+    const user = await UserModel.findOne({ _id: actor.actorId, tenantId: actor.tenantId }).lean().exec();
+    if (!user || !isBaseRole(user.role) || user.status !== "active") {
+      return emptyResolved(actor.baseRole);
     }
 
-    const user = await UserModel.findOne({
-      _id: userId,
-      tenantId,
-    }).lean().exec();
-
-    if (!user) {
-      return {
-        permissions: new Set<string>(),
-        scopes: DEFAULT_SCOPES,
-        baseRole: "EMPLOYEE",
-      };
+    const baseRole = user.role as BaseRole;
+    if (user.roleMigrationState === "pending-session-revocation" || user.permissionBaseline === "legacy-none") {
+      return emptyResolved(baseRole);
+    }
+    const basePermissions = baseRole === "SUPER_ADMIN" ? ALL_PERMISSIONS : BASE_ROLE_DEFAULTS[baseRole];
+    const grants = new Map<PermissionValue, { source: "platform" | "base-role" | "custom-role"; scope: import("./permissions.types.js").PermissionScopes | null }>();
+    for (const permission of basePermissions) {
+      grants.set(permission, { source: baseRole === "SUPER_ADMIN" ? "platform" : "base-role", scope: null });
     }
 
-    if (user.role === "SUPER_ADMIN") {
-      const result: ResolvedPermissions = {
-        permissions: new Set(SUPER_ADMIN_PERMISSIONS),
-        scopes: DEFAULT_SCOPES,
-        baseRole: "SUPER_ADMIN",
-      };
-      this.setCache(key, result);
-      return result;
-    }
+    const customRoleId = user.customRoleId?.toString() ?? null;
+    let roleVersion: number | null = null;
+    let customRoleState: ResolvedPermissions["customRoleState"] = customRoleId ? "missing" : "none";
 
-    const baseDefaults =
-      BASE_ROLE_DEFAULTS[user.role] ?? [];
-    const permissions = new Set<string>(baseDefaults);
-
-    let scopes: PermissionScopes = { ...DEFAULT_SCOPES };
-
-    if (user.customRoleId) {
-      const role = await RoleModel.findOne({
-        _id: user.customRoleId,
-        tenantId,
-        status: "active",
-      }).lean().exec();
-
+    if (customRoleId && baseRole !== "SUPER_ADMIN" && mongoose.isObjectIdOrHexString(customRoleId)) {
+      const role = await RoleModel.findOne({ _id: customRoleId, tenantId: actor.tenantId }).lean().exec();
       if (role) {
-        const rolePermissions =
-          (role as unknown as { permissions?: string[] })
-            .permissions ?? [];
-
-        if (rolePermissions.length > 0) {
-          for (const p of rolePermissions) {
-            permissions.add(p);
+        roleVersion = role.version;
+        customRoleState = role.status === "active" ? "active" : "archived";
+        if (role.status === "active") {
+          try {
+            if (role.baseRole !== baseRole) throw new Error("base-role mismatch");
+            if (role.contractVersion !== PERMISSION_CONTRACT_VERSION) throw new Error("unsupported contract version");
+            if (role.migrationState !== "complete") throw new Error("role migration is incomplete");
+            const actors = [role.createdBy, role.updatedBy];
+            if (actors.some((actorId) => !actorId || !mongoose.isValidObjectId(actorId))) throw new Error("invalid role provenance");
+            const actorIds = actors.filter((actorId): actorId is mongoose.Types.ObjectId =>
+              actorId instanceof mongoose.Types.ObjectId);
+            const actorCount = await UserModel.countDocuments({
+              _id: { $in: actorIds },
+              tenantId: actor.tenantId,
+            });
+            if (actorCount !== new Set(actorIds.map((actorId) => actorId.toString())).size) {
+              throw new Error("cross-tenant role provenance");
+            }
+            const persistedGrants = normalizeRoleGrants(role.grants, { requireCanonical: true });
+            for (const grant of persistedGrants) {
+              if (!grants.has(grant.permission)) {
+                grants.set(grant.permission, { source: "custom-role", scope: grant.scopes ?? null });
+              }
+            }
+          } catch (error) {
+            customRoleState = "invalid";
+            permissionSecurityLogger.warn({
+              event: "invalid_persisted_role",
+              tenantId: actor.tenantId,
+              actorId: actor.actorId,
+              roleId: customRoleId,
+              reason: error instanceof Error ? error.message : "invalid role",
+            }, "Ignored invalid persisted permission role");
           }
         }
-
-        const roleScopes =
-          (role as unknown as { scopes?: PermissionScopes })
-            .scopes;
-        if (roleScopes) {
-          scopes = {
-            selfOnly: roleScopes.selfOnly ?? false,
-            departmentIds: roleScopes.departmentIds ?? [],
-            categories: roleScopes.categories ?? [],
-          };
-        }
       }
+    } else if (customRoleId && baseRole !== "SUPER_ADMIN") {
+      customRoleState = "invalid";
     }
 
-    const result: ResolvedPermissions = {
-      permissions,
-      scopes,
-      baseRole: user.role,
+    return {
+      permissions: new Set(grants.keys()),
+      grants,
+      baseRole,
+      customRoleId,
+      roleVersion,
+      customRoleState,
     };
-
-    this.setCache(key, result);
-    return result;
   }
 
-  evict(userId: string, tenantId: string): void {
-    this.cache.delete(`${tenantId}:${userId}`);
+  async evaluate(input: PermissionEvaluationInput) {
+    return decidePermission(input, await this.resolve(input));
   }
 
-  evictAllForTenant(tenantId: string): void {
-    const prefix = `${tenantId}:`;
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) {
-        this.cache.delete(key);
-      }
-    }
-  }
-
-  private setCache(key: string, result: ResolvedPermissions) {
-    if (this.cache.size > 10_000) {
-      this.cache.clear();
-    }
-    this.cache.set(key, {
-      result,
-      expiresAt: Date.now() + this.cacheTtlMs,
-    });
-  }
+  // Resolution is intentionally uncached so authorization changes are visible across API instances.
+  evict(actorId: string, tenantId: string): void { void actorId; void tenantId; }
+  evictAllForTenant(tenantId: string): void { void tenantId; }
 }
 
-let defaultEvaluator: PermissionEvaluatorImpl | null = null;
+const permissionSecurityLogger = createStructuredLogger("permission-security");
 
-export function getPermissionEvaluator(): PermissionEvaluatorImpl {
-  if (!defaultEvaluator) {
-    defaultEvaluator = new PermissionEvaluatorImpl();
-  }
+let defaultEvaluator: PermissionEvaluator | null = null;
+export function getPermissionEvaluator(): PermissionEvaluator {
+  defaultEvaluator ??= new PermissionEvaluatorImpl();
   return defaultEvaluator;
 }
-
+export function setPermissionEvaluator(evaluator: PermissionEvaluator | null): void {
+  defaultEvaluator = evaluator;
+}
 export function resetPermissionEvaluator(): void {
-  if (defaultEvaluator) {
-    defaultEvaluator = null;
-  }
+  defaultEvaluator = null;
 }

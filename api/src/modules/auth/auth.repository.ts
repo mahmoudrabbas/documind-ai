@@ -1,6 +1,7 @@
 import type { ClientSession } from "mongoose";
 import TenantModel, { type TenantDocument } from "../../db/models/tenant.model.js";
 import UserModel, { type UserDocument } from "../../db/models/user.model.js";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
 import {
   tenantScopedCreate,
@@ -21,7 +22,7 @@ export interface UserCreateInput {
   name: string;
   email: string;
   passwordHash: string;
-  role: string;
+  role: BaseRole;
   status: string;
   emailVerified: boolean;
   emailVerifiedAt: Date | null;

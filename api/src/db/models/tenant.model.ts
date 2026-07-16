@@ -7,6 +7,8 @@ export interface TenantDocument extends mongoose.Document {
   plan: string;
   isSystemTenant: boolean;
   selectedPackageCode?: string;
+  adminGuardVersion: number;
+  roleGuardVersion: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +50,8 @@ const tenantSchema = new Schema<TenantDocument>(
       type: String,
       default: null,
     },
+    adminGuardVersion: { type: Number, default: 0, min: 0 },
+    roleGuardVersion: { type: Number, default: 0, min: 0 },
   },
   {
     timestamps: true,

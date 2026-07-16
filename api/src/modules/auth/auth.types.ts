@@ -1,3 +1,5 @@
+import type { BaseRole } from "../../common/auth/baseRoles.js";
+
 export interface RegisterInput {
   companyName: string;
   companySlug?: string;
@@ -58,7 +60,7 @@ export interface UserPublicView {
   tenantId: string;
   name: string;
   email: string;
-  role: string;
+  role?: BaseRole;
   customRoleId?: string;
   customRoleName?: string;
   status: string;
@@ -95,7 +97,7 @@ export interface AuthTokenClaims {
   sub: string;
   tenantId: string;
   type: "access" | "refresh";
-  role?: string;
+  role?: BaseRole;
   email?: string;
   jti?: string;
   familyId?: string;
@@ -137,6 +139,6 @@ export interface CompleteTrialResult {
 export interface AuthIdentity {
   userId: string;
   tenantId: string;
-  role?: string;
+  role?: BaseRole;
   email?: string;
 }

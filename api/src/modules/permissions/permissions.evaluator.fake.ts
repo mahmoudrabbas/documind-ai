@@ -1,179 +1,97 @@
+import type { BaseRole, TenantRoleBase } from "../../common/auth/baseRoles.js";
+import { ALL_PERMISSIONS, BASE_ROLE_DEFAULTS, PERMISSION_CONTRACT_VERSION, type PermissionValue } from "./permissions.catalog.js";
+import { decidePermission, emptyResolved } from "./permissions.decision.js";
+import { normalizeRoleGrants } from "./permissions.grants.js";
 import type {
+  PermissionActor,
+  PermissionEvaluationInput,
   PermissionEvaluator,
   PermissionScopes,
   ResolvedPermissions,
 } from "./permissions.types.js";
-import { DEFAULT_SCOPES } from "./permissions.types.js";
-import { BASE_ROLE_DEFAULTS, ALL_PERMISSIONS } from "./permissions.catalog.js";
 
 interface FakeRoleRecord {
-  permissions: string[];
-  scopes: PermissionScopes;
-  baseRole: string;
-  status: string;
+  grants: unknown;
+  baseRole: TenantRoleBase;
+  status: "active" | "archived" | string;
+  version: number;
+  contractVersion: number;
+  migrationState?: string;
+  provenanceValid: boolean;
 }
-
 interface FakeUserRecord {
-  baseRole: string;
+  baseRole: BaseRole;
   customRoleId: string | null;
+  status: "active" | "disabled";
+  permissionBaseline: "standard" | "legacy-none";
+  roleMigrationState: "complete" | "pending-session-revocation";
 }
 
-const SUPER_ADMIN_PERMISSIONS = new Set(ALL_PERMISSIONS);
-
-export class InMemoryPermissionEvaluator
-  implements PermissionEvaluator
-{
+export class InMemoryPermissionEvaluator implements PermissionEvaluator {
   private users = new Map<string, FakeUserRecord>();
   private roles = new Map<string, FakeRoleRecord>();
-  private cache = new Map<
-    string,
-    { result: ResolvedPermissions; expiresAt: number }
-  >();
-  private cacheTtlMs: number;
 
-  constructor(options?: { cacheTtlMs?: number }) {
-    this.cacheTtlMs = options?.cacheTtlMs ?? 30_000;
-  }
-
-  addUser(
-    userId: string,
-    tenantId: string,
-    baseRole: string,
-    customRoleId: string | null = null,
-  ) {
+  addUser(userId: string, tenantId: string, baseRole: BaseRole, customRoleId: string | null = null, status: "active" | "disabled" = "active", options: { permissionBaseline?: "standard" | "legacy-none"; roleMigrationState?: "complete" | "pending-session-revocation" } = {}) {
     this.users.set(this.key(userId, tenantId), {
       baseRole,
       customRoleId,
+      status,
+      permissionBaseline: options.permissionBaseline ?? "standard",
+      roleMigrationState: options.roleMigrationState ?? "complete",
     });
   }
 
-  addRole(
-    roleId: string,
-    tenantId: string,
-    baseRole: string,
-    permissions: string[],
-    scopes?: Partial<PermissionScopes>,
-  ) {
+  addRole(roleId: string, tenantId: string, baseRole: TenantRoleBase, grants: unknown, options: { status?: "active" | "archived"; version?: number; contractVersion?: number; raw?: boolean; migrationState?: string; omitMigrationState?: boolean; provenanceValid?: boolean } = {}) {
     this.roles.set(this.key(roleId, tenantId), {
       baseRole,
-      permissions,
-      scopes: { ...DEFAULT_SCOPES, ...scopes },
-      status: "active",
+      grants: options.raw ? grants : normalizeRoleGrants(grants),
+      status: options.status ?? "active",
+      version: options.version ?? 1,
+      contractVersion: options.contractVersion ?? PERMISSION_CONTRACT_VERSION,
+      ...(!options.omitMigrationState ? { migrationState: options.migrationState ?? "complete" } : {}),
+      provenanceValid: options.provenanceValid ?? true,
     });
   }
 
-  addUnmigratedRole(
-    roleId: string,
-    tenantId: string,
-    baseRole: string,
-  ) {
-    this.roles.set(this.key(roleId, tenantId), {
-      baseRole,
-      permissions: [],
-      scopes: DEFAULT_SCOPES,
-      status: "active",
-      version: 0,
-    } as FakeRoleRecord & { version: number });
+  addUnmigratedRole(roleId: string, tenantId: string, baseRole: TenantRoleBase) {
+    this.addRole(roleId, tenantId, baseRole, [], { version: 1 });
   }
 
-  async resolve(
-    userId: string,
-    tenantId: string,
-  ): Promise<ResolvedPermissions> {
-    const cacheKey = this.key(userId, tenantId);
-    const cached = this.cache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.result;
+  async resolve(actor: PermissionActor): Promise<ResolvedPermissions> {
+    const user = this.users.get(this.key(actor.actorId, actor.tenantId));
+    if (!user || user.status !== "active") return emptyResolved(actor.baseRole);
+    if (user.permissionBaseline === "legacy-none" || user.roleMigrationState !== "complete") {
+      return emptyResolved(user.baseRole);
     }
 
-    const userRecord = this.users.get(cacheKey);
-    if (!userRecord) {
-    return {
-        permissions: new Set<string>(),
-        scopes: DEFAULT_SCOPES,
-        baseRole: "EMPLOYEE",
-      };
-    }
+    const defaults = user.baseRole === "SUPER_ADMIN" ? ALL_PERMISSIONS : BASE_ROLE_DEFAULTS[user.baseRole];
+    const grants = new Map<PermissionValue, { source: "platform" | "base-role" | "custom-role"; scope: PermissionScopes | null }>();
+    for (const permission of defaults) grants.set(permission, { source: user.baseRole === "SUPER_ADMIN" ? "platform" : "base-role", scope: null });
 
-    if (userRecord.baseRole === "SUPER_ADMIN") {
-      const result: ResolvedPermissions = {
-        permissions: new Set(SUPER_ADMIN_PERMISSIONS),
-        scopes: DEFAULT_SCOPES,
-        baseRole: "SUPER_ADMIN",
-      };
-      this.setCache(cacheKey, result);
-      return result;
-    }
-
-    const baseDefaults =
-      BASE_ROLE_DEFAULTS[userRecord.baseRole] ?? [];
-    const permissions = new Set<string>(baseDefaults);
-
-    if (userRecord.customRoleId) {
-      const roleKey = this.key(
-        userRecord.customRoleId,
-        tenantId,
-      );
-      const roleRecord = this.roles.get(roleKey);
-
-      if (
-        roleRecord &&
-        roleRecord.status === "active"
-      ) {
-        for (const p of roleRecord.permissions) {
-          permissions.add(p);
+    const role = user.customRoleId ? this.roles.get(this.key(user.customRoleId, actor.tenantId)) : undefined;
+    let customRoleState: ResolvedPermissions["customRoleState"] = !user.customRoleId ? "none" : !role ? "missing" : role.status === "active" ? "active" : "archived";
+    if (role?.status === "active" && user.baseRole !== "SUPER_ADMIN") {
+      try {
+        if (role.baseRole !== user.baseRole || role.contractVersion !== PERMISSION_CONTRACT_VERSION || role.migrationState !== "complete" || !role.provenanceValid) throw new Error("invalid role contract");
+        for (const grant of normalizeRoleGrants(role.grants, { requireCanonical: true })) {
+          if (!grants.has(grant.permission)) grants.set(grant.permission, { source: "custom-role", scope: grant.scopes ?? null });
         }
-
-        const scopes = { ...roleRecord.scopes };
-        const result: ResolvedPermissions = {
-          permissions,
-          scopes,
-          baseRole: userRecord.baseRole,
-        };
-        this.setCache(cacheKey, result);
-        return result;
+      } catch {
+        customRoleState = "invalid";
       }
     }
-
-    const result: ResolvedPermissions = {
-      permissions,
-      scopes: DEFAULT_SCOPES,
-      baseRole: userRecord.baseRole,
+    return {
+      permissions: new Set(grants.keys()), grants, baseRole: user.baseRole,
+      customRoleId: user.customRoleId, roleVersion: role?.version ?? null, customRoleState,
     };
-    this.setCache(cacheKey, result);
-    return result;
   }
 
-  evict(userId: string, tenantId: string) {
-    this.cache.delete(this.key(userId, tenantId));
+  async evaluate(input: PermissionEvaluationInput) {
+    return decidePermission(input, await this.resolve(input));
   }
-
-  evictAllForTenant(tenantId: string) {
-    const prefix = `${tenantId}:`;
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) {
-        this.cache.delete(key);
-      }
-    }
-  }
-
-  clear() {
-    this.users.clear();
-    this.roles.clear();
-    this.cache.clear();
-  }
-
-  private key(id: string, tenantId: string): string {
-    return `${tenantId}:${id}`;
-  }
-
-  private setCache(
-    key: string,
-    result: ResolvedPermissions,
-  ) {
-    this.cache.set(key, {
-      result,
-      expiresAt: Date.now() + this.cacheTtlMs,
-    });
-  }
+  evict(actorId: string, tenantId: string) { void actorId; void tenantId; }
+  evictAllForTenant(tenantId: string) { void tenantId; }
+  clear() { this.users.clear(); this.roles.clear(); }
+  removeRole(roleId: string, tenantId: string) { this.roles.delete(this.key(roleId, tenantId)); }
+  private key(id: string, tenantId: string) { return `${tenantId}:${id}`; }
 }

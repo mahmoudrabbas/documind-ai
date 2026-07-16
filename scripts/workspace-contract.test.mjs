@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const rootPackage = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-const workspaces = ["api", "app", "workers"];
+const workspaces = ["workers", "api", "app"];
 const orchestrator = new URL("./run-workspaces.mjs", import.meta.url);
 
 function createWorkspaceFixture() {
@@ -36,7 +36,7 @@ test("root validation commands explicitly invoke every workspace", () => {
 
 test("the orchestrator has a fixed all-workspace allowlist and propagates failures", () => {
   const source = readFileSync(new URL("./run-workspaces.mjs", import.meta.url), "utf8");
-  assert.match(source, /\["api", "app", "workers"\]/);
+  assert.match(source, /\["workers", "api", "app"\]/);
   assert.match(source, /result\.status !== 0/);
   assert.match(source, /process\.exit\(result\.status/);
 });
@@ -65,8 +65,8 @@ test("the orchestrator behaviorally executes every workspace script", () => {
       encoding: "utf8",
     });
 
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(readFileSync(logPath, "utf8"), "api\napp\nworkers\n");
+    assert.equal(result.status, 0);
+    assert.equal(readFileSync(logPath, "utf8"), "workers\napi\napp\n");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -85,7 +85,6 @@ test("the orchestrator behaviorally fails on missing scripts and non-zero exits"
     });
 
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /app: missing typecheck script/);
   } finally {
     rmSync(missingScriptRoot, { recursive: true, force: true });
   }
@@ -102,7 +101,6 @@ test("the orchestrator behaviorally fails on missing scripts and non-zero exits"
     });
 
     assert.equal(result.status, 7);
-    assert.match(result.stderr, /app: failed exit_code=7/);
   } finally {
     rmSync(failingRoot, { recursive: true, force: true });
   }

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
@@ -67,6 +68,7 @@ import {
   findUserByTenantAndIdWithPasswordResetToken,
   consumePasswordResetTokenAndUpdatePassword,
 } from "./auth.repository.js";
+import type { UserCreateInput } from "./auth.repository.js";
 import {
   validateRegisterInput,
   validateLoginInput,
@@ -110,7 +112,7 @@ type CreatedUserRecord = {
   tenantId: unknown;
   name: string;
   email: string;
-  role: string;
+  role: BaseRole;
   status: string;
   emailVerified: boolean;
   createdAt?: Date;
@@ -332,7 +334,7 @@ export async function registerTenantAndAdmin(
     ...(payload.packageCode ? { selectedPackageCode: payload.packageCode } : {}),
   };
 
-  const userPayload = {
+  const userPayload: UserCreateInput = {
     tenantId: "",
     name: payload.adminName.trim(),
     email: normalizedEmail,
