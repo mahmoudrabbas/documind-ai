@@ -1,5 +1,5 @@
-import { InMemoryJobHandlerRegistry } from "../queue/handlerRegistry.js";
-import type { JobHandlerRegistry } from "@documind/contracts";
+import { InMemoryJobHandlerRegistry } from "../contracts/handlerRegistry.js";
+import type { JobHandlerRegistry } from "../contracts/jobDispatcher.js";
 import { sampleJobHandler } from "./sampleJob.js";
 
 /**

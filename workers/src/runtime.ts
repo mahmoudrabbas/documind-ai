@@ -1,12 +1,20 @@
 import { config } from "./config/index.js";
 import { logger } from "./logger.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
-import { connectMongo, pingMongo, isMongoConnected, disconnectMongo } from "./db/mongo.js";
-import { BullMQQueue } from "./queue/bullmqQueue.js";
-import { InMemoryQueue } from "./queue/inMemoryQueue.js";
-import type { JobDispatcher, JobHandlerRegistry, WorkerReadiness } from "@documind/contracts";
+import {
+  connectMongo,
+  pingMongo,
+  isMongoConnected,
+  disconnectMongo,
+} from "./db/mongo.js";
+import {
+  BullMQQueue,
+  InMemoryQueue,
+  type JobDispatcher,
+} from "./contracts/index.js";
+import type { JobHandlerRegistry, WorkerReadiness } from "./contracts/index.js";
 import { buildHandlerRegistry } from "./jobs/index.js";
-import { publishQueueMetrics } from "./queue/metrics.js";
+import { publishQueueMetrics } from "./contracts/metrics.js";
 
 export const QUEUE_NAME = "documind-jobs";
 
@@ -87,12 +95,12 @@ export async function createWorkerRuntime(): Promise<WorkerRuntime> {
     const redisOk = isRedisConnected();
     const mongoOk = isMongoConnected() && (await pingMongo());
     const handlersRegistered = registry.list().length > 0;
-    const consumerRunning = adapterKind === "bullmq"
-      ? bullmq?.isConsumerRunning() ?? false
-      : inMemory?.isConsumerRunning() ?? false;
+    const consumerRunning =
+      adapterKind === "bullmq"
+        ? (bullmq?.isConsumerRunning() ?? false)
+        : (inMemory?.isConsumerRunning() ?? false);
 
-    const ready =
-      redisOk && mongoOk && handlersRegistered && consumerRunning;
+    const ready = redisOk && mongoOk && handlersRegistered && consumerRunning;
 
     // Surface metrics for the Super Admin status adapter.
     try {

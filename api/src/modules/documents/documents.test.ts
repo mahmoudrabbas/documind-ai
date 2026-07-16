@@ -6,7 +6,7 @@ process.env.NODE_ENV = "test";
 
 import type { Express } from "express";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { connectRedis, disconnectRedis } from "../../db/redis.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
@@ -21,7 +21,7 @@ const app: Express = (await import("../../app.js")).default;
 const TEST_PASSWORD = "StrongPass123!";
 const UPLOAD_TEST_DIR = path.join(process.cwd(), ".test-uploads");
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryReplSet;
 
 function createServer() {
   return new Promise<Server>((resolve) => {
@@ -94,8 +94,10 @@ function buildMultipartBody(fileName: string, fileContent: Buffer, metadata: Rec
 }
 
 before(async () => {
-  mongoServer = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "6.0.20" },
+  mongoServer = await MongoMemoryReplSet.create({
+    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+    replSet: { count: 1 },
+    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
   });
   await mongoose.connect(mongoServer.getUri(), { dbName: "documents-test" });
   await connectRedis();

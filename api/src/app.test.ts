@@ -517,9 +517,9 @@ test("invalid invite password preserves the token and successful acceptance cons
     });
     const invalidBody = await invalid.json();
     assert.equal(invalid.status, 400);
-    assert.equal(invalidBody.error, "PASSWORD_VALIDATION_FAILED");
+    assert.equal((invalidBody.error as unknown as { code: string }).code, "PASSWORD_VALIDATION_FAILED");
     assert.ok(
-      invalidBody.details.some(
+      invalidBody.error.details.some(
         (detail: { field: string }) => detail.field === "password",
       ),
     );
@@ -690,15 +690,13 @@ test("rejects invalid user update payloads", async () => {
 
     const body = (await response.json()) as {
       success: false;
-      message: string;
-      error: string;
-      details: Array<{ field: string; message: string }> | null;
+      error: { code: string; details: Array<{ field: string; message: string }> | null };
     };
 
     assert.equal(response.status, 400);
     assert.equal(body.success, false);
-    assert.equal(body.error, "VALIDATION_ERROR");
-    assert.ok(Array.isArray(body.details));
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.error.details));
   } finally {
     await closeServer(server);
   }
@@ -732,17 +730,15 @@ test("rejects invalid invite payloads", async () => {
     });
     const body = (await response.json()) as {
       success: false;
-      message: string;
-      error: string;
-      details: Array<{ field: string; message: string }> | null;
+      error: { code: string; details: Array<{ field: string; message: string }> | null };
     };
 
     assert.equal(response.status, 400);
     assert.equal(body.success, false);
-    assert.equal(body.error, "VALIDATION_ERROR");
-    assert.ok(Array.isArray(body.details));
-    assert.ok(body.details?.some((detail) => detail.field === "name"));
-    assert.ok(body.details?.some((detail) => detail.field === "email"));
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.error.details));
+    assert.ok(body.error.details?.some((detail) => detail.field === "name"));
+    assert.ok(body.error.details?.some((detail) => detail.field === "email"));
     assertNoSensitiveFields(body);
   } finally {
     await closeServer(server);
@@ -860,17 +856,15 @@ test("rejects invalid pagination query parameters", async () => {
 
     const body = (await response.json()) as {
       success: false;
-      message: string;
-      error: string;
-      details: Array<{ field: string; message: string }> | null;
+      error: { code: string; details: Array<{ field: string; message: string }> | null };
     };
 
     assert.equal(response.status, 400);
     assert.equal(body.success, false);
-    assert.equal(body.error, "VALIDATION_ERROR");
-    assert.ok(Array.isArray(body.details));
-    assert.ok(body.details?.some((detail) => detail.field === "page"));
-    assert.ok(body.details?.some((detail) => detail.field === "pageSize"));
+    assert.equal(body.error.code, "VALIDATION_ERROR");
+    assert.ok(Array.isArray(body.error.details));
+    assert.ok(body.error.details?.some((detail) => detail.field === "page"));
+    assert.ok(body.error.details?.some((detail) => detail.field === "pageSize"));
     assertNoSensitiveFields(body);
   } finally {
     await closeServer(server);
@@ -1783,7 +1777,7 @@ test("refresh token records isolate the same email across tenants", async () => 
     name: "Shared Email User",
     email: "shared@example.com",
     passwordHash,
-    role: "COMPANY_ADMIN",
+    role: "COMPANY_ADMIN" as const,
     status: "active",
     emailVerified: true,
     emailVerifiedAt: new Date(),
@@ -2163,7 +2157,7 @@ test("GET /platform/tenants returns 403 for non-SUPER_ADMIN users", async () => 
   try {
     const port = (server.address() as AddressInfo).port;
     const token = signJwt(
-      { sub: user.id, tenantId: tenant.id, type: "access" },
+      { sub: user.id, tenantId: tenant.id, type: "access", role: "COMPANY_ADMIN" },
       config.JWT_SECRET,
       "1h",
     );

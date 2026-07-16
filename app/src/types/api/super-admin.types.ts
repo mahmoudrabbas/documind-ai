@@ -71,7 +71,7 @@ export interface PlatformUser {
   _id: string;
   name: string;
   email: string;
-  role: string;
+  role: Role;
   status: string;
   emailVerified: boolean;
   tenantId: { _id: string; name: string; slug: string };
@@ -85,3 +85,4 @@ export interface PlatformJob {
   createdAt: string;
   updatedAt: string;
 }
+import type { Role } from "@/constants/routes";

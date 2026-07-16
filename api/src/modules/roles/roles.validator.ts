@@ -1,73 +1,70 @@
+import mongoose from "mongoose";
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
-import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { CreateRoleInput, UpdateRoleInput } from "./roles.types.js";
+import { PRIVILEGE_ESCALATION, UNKNOWN_PERMISSION, VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
+import { GrantValidationError, normalizeRoleGrants } from "../permissions/permissions.grants.js";
+import type { CreateRoleInput, DeleteRoleInput, UpdateRoleInput } from "./roles.types.js";
 
-const RESERVED_NAMES = new Set([
-  "super_admin",
-  "company_admin",
-  "employee",
-]);
-
-const nameSchema = z
-  .string()
-  .trim()
-  .min(2, "name must be at least 2 characters")
-  .max(50, "name must be at most 50 characters")
+const RESERVED_NAMES = new Set(["super admin", "company admin", "employee"]);
+const nameSchema = z.string().trim().min(2).max(50)
   .regex(/^[\p{L}\p{N}\s'&.()-]+$/u, "name contains invalid characters")
-  .refine((val) => !RESERVED_NAMES.has(val.toLowerCase()), {
-    message: "name is reserved and cannot be used",
-  });
+  .refine((value) => !RESERVED_NAMES.has(value.toLowerCase().replaceAll("_", " ")), "name is reserved and cannot be used");
+const scopesSchema = z.object({
+  selfOnly: z.boolean().optional(),
+  departmentIds: z.array(z.string().refine((value) => mongoose.isValidObjectId(value), "department ID must be valid")).optional(),
+  documentCategories: z.array(z.string().trim().min(1).max(100)).optional(),
+  documentClassifications: z.array(z.string().trim().min(1).max(100)).optional(),
+}).strict().optional();
+const grantsSchema = z.array(z.object({
+  permission: z.string().trim().min(1),
+  scopes: scopesSchema,
+}).strict()).default([]);
 
-const createRoleSchema = z
-  .object({
-    name: nameSchema,
-    baseRole: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]),
-  })
-  .strict();
+const createRoleSchema = z.object({
+  name: nameSchema,
+  baseRole: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]),
+  grants: grantsSchema,
+}).strict();
+const updateRoleSchema = z.object({
+  name: nameSchema.optional(),
+  baseRole: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
+  grants: grantsSchema.optional(),
+  status: z.enum(["active", "archived"]).optional(),
+  version: z.number().int().positive(),
+}).strict().refine((data) => Object.keys(data).some((key) => key !== "version"), "At least one mutable field must be provided");
+const deleteRoleSchema = z.object({ version: z.number().int().positive() }).strict();
 
-const updateRoleSchema = z
-  .object({
-    name: nameSchema.optional(),
-    baseRole: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
-  })
-  .strict()
-  .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one of name or baseRole must be provided",
-  });
-
-function validate<T>(schema: z.ZodSchema<T>, input: unknown): T {
+function validate<T extends Record<string, unknown>>(schema: z.ZodSchema<T>, input: unknown): T {
   const result = schema.safeParse(input);
-
   if (!result.success) {
-    const issues = result.error.issues;
-    const groupedErrors = new Map<string, string[]>();
-
-    for (const issue of issues) {
-      const field = issue.path.join(".") || "query";
-      if (!groupedErrors.has(field)) {
-        groupedErrors.set(field, []);
-      }
-      groupedErrors.get(field)?.push(issue.message);
-    }
-
-    const details = Array.from(groupedErrors.entries()).map(
-      ([field, messages]) => ({
-        field,
-        message: messages.join(" and "),
-      }),
-    );
-
-    throw new AppError(400, VALIDATION_ERROR, "Validation failed", details);
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", result.error.issues.map((issue) => ({ field: issue.path.join(".") || "body", message: issue.message })));
   }
-
   return result.data;
 }
 
-export function validateCreateRoleInput(input: unknown): CreateRoleInput {
-  return validate(createRoleSchema, input);
+function normalizeGrant<T extends { grants?: unknown }>(payload: T): T {
+  if (payload.grants === undefined) return payload;
+  try {
+    return { ...payload, grants: normalizeRoleGrants(payload.grants) };
+  } catch (error) {
+    if (error instanceof GrantValidationError && error.code === "UNKNOWN_PERMISSION") {
+      throw new AppError(400, UNKNOWN_PERMISSION, "Unknown, deprecated, or inactive permission identifier");
+    }
+    if (error instanceof GrantValidationError && error.code === "PRIVILEGE_ESCALATION") {
+      throw new AppError(403, PRIVILEGE_ESCALATION, "Permission is not delegable by tenant administrators");
+    }
+    throw new AppError(400, VALIDATION_ERROR, "Invalid permission grant", [{ field: "grants", message: error instanceof Error ? error.message : "Invalid grants" }]);
+  }
 }
 
+export function validateCreateRoleInput(input: unknown): CreateRoleInput {
+  const payload = normalizeGrant(validate(createRoleSchema, input));
+  return { ...payload, grants: payload.grants ?? [] } as CreateRoleInput;
+}
 export function validateUpdateRoleInput(input: unknown): UpdateRoleInput {
-  return validate(updateRoleSchema, input);
+  return normalizeGrant(validate(updateRoleSchema, input)) as UpdateRoleInput;
+}
+
+export function validateDeleteRoleInput(input: unknown): DeleteRoleInput {
+  return validate(deleteRoleSchema, input);
 }

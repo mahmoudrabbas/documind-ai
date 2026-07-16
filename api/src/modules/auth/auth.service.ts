@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
@@ -15,6 +16,7 @@ import {
   TENANT_ALREADY_EXISTS,
   UNAUTHORIZED,
   PASSWORD_RESET_FAILED,
+  AUTH_SESSION_MIGRATION_PENDING,
 } from "../../common/errors/errorCodes.js";
 import type {
   AuthTokenClaims,
@@ -44,10 +46,9 @@ import {
 } from "./emailVerificationToken.js";
 import {
   activateTenantIfPendingVerification,
-  claimRefreshTokenForRotation,
   createTenant,
   createUser,
-  createRefreshTokenRecord,
+  createRefreshTokenRecordForEligibleUser,
   deleteTenantById,
   deleteUserById,
   findTenantById,
@@ -61,12 +62,13 @@ import {
   markReuseAndRevokeTokenFamily,
   revokeAllRefreshTokensForTenantUser,
   revokeRefreshToken,
-  setRefreshTokenReplacement,
+  rotateRefreshTokenForEligibleUser,
   updateUserVerificationToken,
   updateUserPasswordResetToken,
   findUserByTenantAndIdWithPasswordResetToken,
   consumePasswordResetTokenAndUpdatePassword,
 } from "./auth.repository.js";
+import type { UserCreateInput } from "./auth.repository.js";
 import {
   validateRegisterInput,
   validateLoginInput,
@@ -110,7 +112,7 @@ type CreatedUserRecord = {
   tenantId: unknown;
   name: string;
   email: string;
-  role: string;
+  role: BaseRole;
   status: string;
   emailVerified: boolean;
   createdAt?: Date;
@@ -332,7 +334,7 @@ export async function registerTenantAndAdmin(
     ...(payload.packageCode ? { selectedPackageCode: payload.packageCode } : {}),
   };
 
-  const userPayload = {
+  const userPayload: UserCreateInput = {
     tenantId: "",
     name: payload.adminName.trim(),
     email: normalizedEmail,
@@ -759,7 +761,7 @@ export async function login(
     config.JWT_REFRESH_EXPIRES_IN,
   );
 
-  await createRefreshTokenRecord({
+  const issued = await createRefreshTokenRecordForEligibleUser({
     tenantId: tenant._id.toString(),
     userId: user.id,
     tokenHash: hashRefreshToken(refreshToken),
@@ -771,6 +773,7 @@ export async function login(
     createdByIp: context.ip,
     userAgent: context.userAgent,
   });
+  if (!issued.eligible || !issued.record) throw sessionMigrationPendingError();
 
   safeAuditLog({
     tenantId: tenant._id.toString(),
@@ -849,7 +852,7 @@ export async function superAdminLogin(
     config.JWT_REFRESH_SECRET,
     config.JWT_REFRESH_EXPIRES_IN,
   );
-  await createRefreshTokenRecord({
+  const issued = await createRefreshTokenRecordForEligibleUser({
     tenantId: tenant._id.toString(),
     userId: user.id,
     tokenHash: hashRefreshToken(refreshToken),
@@ -861,6 +864,7 @@ export async function superAdminLogin(
     createdByIp: context.ip,
     userAgent: context.userAgent,
   });
+  if (!issued.eligible || !issued.record) throw sessionMigrationPendingError();
 
   safeAuditLog({
     tenantId: tenant._id.toString(),
@@ -897,6 +901,14 @@ function sessionExpiredError() {
     401,
     SESSION_EXPIRED,
     "Session expired. Please sign in again.",
+  );
+}
+
+function sessionMigrationPendingError() {
+  return new AppError(
+    409,
+    AUTH_SESSION_MIGRATION_PENDING,
+    "A new session cannot be created right now. Please try again later.",
   );
 }
 
@@ -993,23 +1005,6 @@ export async function refreshAccessToken(
     assertAccountCanSignIn(user, tenant);
 
     const rotatedAt = new Date();
-    const claimedToken = await claimRefreshTokenForRotation(
-      tokenRecord.id,
-      rotatedAt,
-    );
-
-    if (!claimedToken) {
-      await markReuseAndRevokeTokenFamily(
-        tokenRecord.familyId,
-        tokenRecord.tenantId.toString(),
-        tokenRecord.userId.toString(),
-        tokenRecord.id,
-        rotatedAt,
-        context.ip,
-      );
-      throw refreshTokenReusedError();
-    }
-
     const newJti = randomUUID();
     const newRefreshToken = signJwt(
       {
@@ -1022,7 +1017,7 @@ export async function refreshAccessToken(
       config.JWT_REFRESH_SECRET,
       config.JWT_REFRESH_EXPIRES_IN,
     );
-    const replacement = await createRefreshTokenRecord({
+    const rotation = await rotateRefreshTokenForEligibleUser({
       tenantId: claims.tenantId,
       userId: claims.sub,
       tokenHash: hashRefreshToken(newRefreshToken),
@@ -1033,9 +1028,22 @@ export async function refreshAccessToken(
       ),
       createdByIp: context.ip,
       userAgent: context.userAgent,
-    });
-
-    await setRefreshTokenReplacement(tokenRecord.id, replacement.id);
+    }, tokenRecord.id, rotatedAt);
+    if (rotation.outcome === "migration-blocked") {
+      await revokeRefreshToken(tokenRecord.id, rotatedAt, context.ip);
+      throw sessionMigrationPendingError();
+    }
+    if (rotation.outcome !== "rotated" || !rotation.replacement) {
+      await markReuseAndRevokeTokenFamily(
+        tokenRecord.familyId,
+        tokenRecord.tenantId.toString(),
+        tokenRecord.userId.toString(),
+        tokenRecord.id,
+        rotatedAt,
+        context.ip,
+      );
+      throw refreshTokenReusedError();
+    }
 
     return {
       refreshToken: newRefreshToken,
@@ -1048,7 +1056,7 @@ export async function refreshAccessToken(
   } catch (error) {
     if (
       error instanceof AppError &&
-      [SESSION_EXPIRED, REFRESH_TOKEN_REUSED].includes(error.code)
+      [SESSION_EXPIRED, REFRESH_TOKEN_REUSED, AUTH_SESSION_MIGRATION_PENDING].includes(error.code)
     ) {
       throw error;
     }

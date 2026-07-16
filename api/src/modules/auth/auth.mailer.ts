@@ -27,7 +27,7 @@ export interface InvitationTemplateInput {
   companyName: string;
   inviterName?: string;
   inviterEmail?: string;
-  role: string;
+  role: import("../../common/auth/baseRoles.js").BaseRole;
   invitationUrl: string;
   expiryDate: Date;
 }

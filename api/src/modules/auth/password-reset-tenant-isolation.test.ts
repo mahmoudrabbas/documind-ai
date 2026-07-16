@@ -13,7 +13,8 @@ let mongoServer: MongoMemoryServer;
 
 before(async () => {
   mongoServer = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "6.0.20" },
+    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
   });
   await mongoose.connect(mongoServer.getUri(), { dbName: "password-reset-isolation" });
 });

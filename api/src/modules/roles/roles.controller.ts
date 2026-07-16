@@ -6,20 +6,9 @@ import {
   updateRole,
   deleteRole,
 } from "./roles.service.js";
-
-function handleRoleError(error: unknown, res: Response, next: NextFunction) {
-  if (error instanceof AppError) {
-    res.status(error.statusCode).json({
-      success: false,
-      message: error.message,
-      error: error.code,
-      details: error.details ?? null,
-    });
-    return;
-  }
-
-  next(error);
-}
+import { validateDeleteRoleInput } from "./roles.validator.js";
+import mongoose from "mongoose";
+import { MALFORMED_OBJECT_ID } from "../../common/errors/errorCodes.js";
 
 export async function createRoleController(
   req: Request,
@@ -31,7 +20,7 @@ export async function createRoleController(
       throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     }
 
-    const result = await createRole(req.body, req.tenantId);
+    const result = await createRole(req.body, req.tenantId, req.auth.userId);
 
     res.status(201).json({
       success: true,
@@ -39,7 +28,7 @@ export async function createRoleController(
       data: result,
     });
   } catch (error) {
-    handleRoleError(error, res, next);
+    next(error);
   }
 }
 
@@ -60,7 +49,7 @@ export async function listRolesController(
       data: result,
     });
   } catch (error) {
-    handleRoleError(error, res, next);
+    next(error);
   }
 }
 
@@ -81,7 +70,7 @@ export async function updateRoleController(
       throw new AppError(400, "BAD_REQUEST", "Missing role id parameter");
     }
 
-    const result = await updateRole(req.body, req.tenantId, roleId);
+    const result = await updateRole(req.body, req.tenantId, roleId, req.auth.userId);
 
     res.status(200).json({
       success: true,
@@ -89,7 +78,7 @@ export async function updateRoleController(
       data: result,
     });
   } catch (error) {
-    handleRoleError(error, res, next);
+    next(error);
   }
 }
 
@@ -109,8 +98,12 @@ export async function deleteRoleController(
     if (!roleId) {
       throw new AppError(400, "BAD_REQUEST", "Missing role id parameter");
     }
+    if (!mongoose.isObjectIdOrHexString(roleId)) {
+      throw new AppError(400, MALFORMED_OBJECT_ID, "Malformed identifier");
+    }
 
-    const result = await deleteRole(req.tenantId, roleId);
+    const { version } = validateDeleteRoleInput(req.body);
+    const result = await deleteRole(req.tenantId, roleId, version);
 
     res.status(200).json({
       success: true,
@@ -118,6 +111,6 @@ export async function deleteRoleController(
       data: result,
     });
   } catch (error) {
-    handleRoleError(error, res, next);
+    next(error);
   }
 }

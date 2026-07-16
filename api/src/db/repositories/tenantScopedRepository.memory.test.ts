@@ -38,7 +38,8 @@ before(async () => {
   // This avoids mongodb-memory-server trying the latest version selection that may not
   // be available for the current platform or distro.
   mongoServer = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "6.0.20" },
+    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
   });
   await mongoose.connect(mongoServer.getUri(), {
     dbName: "tenant-scoped-test",

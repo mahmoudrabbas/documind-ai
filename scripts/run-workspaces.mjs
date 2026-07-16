@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 
 const command = process.argv[2];
 const allowedCommands = new Set(["lint", "typecheck", "test", "build"]);
-const workspaces = ["api", "app", "workers"];
+const workspaces = ["workers", "api", "app"];
 
 if (!allowedCommands.has(command)) {
   console.error("Usage: node scripts/run-workspaces.mjs <lint|typecheck|test|build>");

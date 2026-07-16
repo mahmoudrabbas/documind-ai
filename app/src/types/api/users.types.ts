@@ -1,9 +1,11 @@
+import type { Role } from "@/constants/routes";
+
 export interface UserView {
   id: string;
   tenantId: string;
   name: string;
   email: string;
-  role: string;
+  role: Role;
   customRoleId?: string;
   customRoleName?: string;
   status: "active" | "pending" | "pending_email_verification" | "disabled";
@@ -19,6 +21,7 @@ export interface RoleView {
   tenantId: string;
   name: string;
   baseRole: "COMPANY_ADMIN" | "EMPLOYEE";
+  version: number;
   userCount: number;
   createdAt: string;
   updatedAt: string;
@@ -27,3 +30,15 @@ export interface RoleView {
 export interface ListRolesResponse { success: true; data: { roles: RoleView[] } }
 export interface CreateRoleResponse { success: true; message: string; data: { role: RoleView } }
 export interface UpdateRoleResponse { success: true; message: string; data: { role: RoleView } }
+
+export interface PermissionCatalogResponse {
+  success: true;
+  data: {
+    contractVersion: number;
+    groups: Array<{
+      group: string;
+      label: string;
+      permissions: Array<{ id: string; label: string; description: string }>;
+    }>;
+  };
+}
