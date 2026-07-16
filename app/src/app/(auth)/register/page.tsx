@@ -83,6 +83,7 @@ type LoginResponse = {
 };
 
 export default function RegisterPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { t, dir, locale } = useI18n();
   const submissionPending = useRef(false);
