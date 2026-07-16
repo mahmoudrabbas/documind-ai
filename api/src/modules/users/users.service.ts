@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   EMAIL_ALREADY_EXISTS,
+  LAST_ADMIN_PROTECTION,
   NOT_FOUND,
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
@@ -18,6 +19,7 @@ import { findUserDocumentById } from "../auth/auth.repository.js";
 import { sendInvitationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import {
+  countActiveCompanyAdminsByTenant,
   createUser,
   findTenantById,
   findUserByTenantAndId,
@@ -27,7 +29,8 @@ import {
   updateUserByTenantAndId,
   deleteUserByTenantAndId,
 } from "./users.repository.js";
-import { createAuditLog } from "../audit/audit.repository.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import {
   validateInviteUserInput,
   validateListUsersInput,
@@ -219,6 +222,33 @@ export async function updateUser(
     throw new AppError(404, NOT_FOUND, "User not found");
   }
 
+  if (
+    existingUser.role === "COMPANY_ADMIN" &&
+    (payload.role !== undefined || payload.customRoleId !== undefined)
+  ) {
+    const adminCount = await countActiveCompanyAdminsByTenant(tenantId);
+    if (adminCount <= 1) {
+      await getAuditWriter().write({
+        tenantId,
+        resourceType: "User",
+        resourceId: existingUser._id.toString(),
+        action: "LAST_ADMIN_PROTECTION_TRIGGERED",
+        actorId: updater.userId,
+        actorEmail: updater.email ?? "",
+        actorRole: updater.role ?? "UNKNOWN",
+        changes: {
+          reason: "Attempt to change role of last active Company Admin",
+          targetUserId,
+        },
+      });
+      throw new AppError(
+        409,
+        LAST_ADMIN_PROTECTION,
+        "Cannot change the role of the last active Company Admin. Promote another user first.",
+      );
+    }
+  }
+
   const changes: Record<string, unknown> = {};
   const update: Record<string, unknown> = {};
 
@@ -280,9 +310,16 @@ export async function updateUser(
       throw new AppError(404, NOT_FOUND, "User not found");
     }
 
-    await createAuditLog({
+    if (
+      update.customRoleId !== undefined ||
+      update.role !== undefined
+    ) {
+      const evaluator = getPermissionEvaluator();
+      evaluator.evict(targetUserId, tenantId);
+    }
+
+    await getAuditWriter().write({
       tenantId,
-      userId: updatedUser._id.toString(),
       resourceType: "User",
       resourceId: updatedUser._id.toString(),
       action: "USER_UPDATED",
@@ -315,11 +352,34 @@ export async function deleteUser(
     throw new AppError(404, NOT_FOUND, "User not found");
   }
 
+  if (existingUser.role === "COMPANY_ADMIN") {
+    const adminCount = await countActiveCompanyAdminsByTenant(tenantId);
+    if (adminCount <= 1) {
+      await getAuditWriter().write({
+        tenantId,
+        resourceType: "User",
+        resourceId: existingUser._id.toString(),
+        action: "LAST_ADMIN_PROTECTION_TRIGGERED",
+        actorId: deleter.userId,
+        actorEmail: deleter.email ?? "",
+        actorRole: deleter.role ?? "UNKNOWN",
+        changes: {
+          reason: "Attempt to delete last active Company Admin",
+          targetUserId,
+        },
+      });
+      throw new AppError(
+        409,
+        LAST_ADMIN_PROTECTION,
+        "Cannot delete the last active Company Admin. Promote another user first.",
+      );
+    }
+  }
+
   await deleteUserByTenantAndId(tenantId, targetUserId);
 
-  await createAuditLog({
+  await getAuditWriter().write({
     tenantId,
-    userId: existingUser._id.toString(),
     resourceType: "User",
     resourceId: existingUser._id.toString(),
     action: "USER_DELETED",
@@ -416,15 +476,14 @@ export async function setPasswordFromInvite(
 
     await user.save();
 
-    await createAuditLog({
+    await getAuditWriter().write({
       tenantId: user.tenantId.toString(),
-      userId: user._id.toString(),
       resourceType: "User",
       resourceId: user._id.toString(),
       action: "PASSWORD_SET_FROM_INVITE",
       actorId: user._id.toString(),
       actorEmail: user.email,
-      actorRole: user.role,
+      actorRole: user.role ?? "UNKNOWN",
       changes: {
         status: {
           before: "pending_email_verification",

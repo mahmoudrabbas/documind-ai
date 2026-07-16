@@ -1,15 +1,22 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { serializeTraceContext } from "../observability/traceContext.js";
 const asyncLocalStorage = new AsyncLocalStorage();
-export function withRequestContext(requestId, fn) {
-    return asyncLocalStorage.run(requestId, fn);
+export function withTraceContext(ctx, fn) {
+    return asyncLocalStorage.run(ctx, fn);
 }
-export function getCurrentRequestId() {
+// Backward compatible with existing calls
+export function withRequestContext(requestId, fn) {
+    return withTraceContext({ traceId: requestId, requestId }, fn);
+}
+export function getCurrentTraceContext() {
     return asyncLocalStorage.getStore();
 }
-export function getPropagationHeaders(requestId) {
-    return {
-        "x-request-id": requestId,
-        "x-correlation-id": requestId,
-    };
+export function getCurrentRequestId() {
+    return asyncLocalStorage.getStore()?.requestId;
+}
+export function getPropagationHeaders(ctx) {
+    if (!ctx)
+        return {};
+    return serializeTraceContext(ctx);
 }
 //# sourceMappingURL=requestContext.js.map

@@ -4,6 +4,7 @@ import type { AuthIdentity } from "../../modules/auth/auth.types.js";
 declare global {
   namespace Express {
     interface Request {
+      traceId: string;
       requestId: string;
       log: Logger;
       /**
@@ -16,6 +17,11 @@ declare global {
        * Populated by the `tenantScoping` middleware for tenant-scoped routes.
        */
       tenantId?: string;
+      /**
+       * Scope level granted by requirePermission middleware.
+       * "full" = unrestricted, "own" = self-only, null = not set.
+       */
+      permissionScope?: "full" | "own" | null;
     }
   }
 }

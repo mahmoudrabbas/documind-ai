@@ -10,10 +10,10 @@ test("propagates request IDs through async boundaries", async () => {
     assert.equal(result, "req-123");
 });
 test("creates propagation headers for downstream workers and LLM calls", () => {
-    const headers = getPropagationHeaders("req-456");
+    const headers = getPropagationHeaders({ traceId: "req-456", requestId: "req-456" });
     assert.deepEqual(headers, {
+        "x-trace-id": "req-456",
         "x-request-id": "req-456",
-        "x-correlation-id": "req-456",
     });
 });
 //# sourceMappingURL=requestContext.test.js.map

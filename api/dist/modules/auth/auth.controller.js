@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { login, superAdminLogin, logout, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, forgotPassword, resetPassword, completeTrial, } from "./auth.service.js";
+import { login, superAdminLogin, logout, logoutAll, refreshAccessToken, registerTenantAndAdmin, resendVerificationEmail, verifyEmail, getMe, forgotPassword, resetPassword, completeTrial, } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
@@ -173,6 +173,19 @@ export async function logoutController(req, res, next) {
     }
     catch (error) {
         next(error);
+    }
+}
+export async function logoutAllController(req, res, next) {
+    try {
+        if (!req.auth) {
+            throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+        }
+        const result = await logoutAll(req.auth, { ip: req.ip });
+        clearRefreshCookie(res);
+        res.status(200).json({ success: true, message: result.message });
+    }
+    catch (error) {
+        handleAuthError(error, res, next);
     }
 }
 export async function forgotPasswordController(req, res, next) {

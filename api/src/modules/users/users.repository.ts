@@ -40,6 +40,14 @@ export function findUsersByTenant(
     .exec();
 }
 
+export function countActiveCompanyAdminsByTenant(tenantId: string) {
+  return UserModel.countDocuments({
+    tenantId,
+    role: "COMPANY_ADMIN",
+    status: "active",
+  }).exec();
+}
+
 export async function updateUserByTenantAndId(
   tenantId: string,
   userId: string,

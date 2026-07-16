@@ -1,5 +1,6 @@
 import { rateLimit } from "express-rate-limit";
 import RedisStore from "rate-limit-redis";
+import { RATE_LIMITED } from "../errors/errorCodes.js";
 import { config } from "../../config/index.js";
 import { getRedisClient } from "../../db/redis.js";
 function isTestEnv() {
@@ -30,8 +31,13 @@ export function createRateLimiter(options = {}) {
         max,
         standardHeaders: true,
         legacyHeaders: false,
-        skipFailedRequests: true,
-        message: { error: message },
+        skipFailedRequests: false,
+        message: () => ({
+            success: false,
+            error: RATE_LIMITED,
+            message,
+            retryAfterSeconds: Math.ceil(windowMs / 1000),
+        }),
         store,
     });
 }

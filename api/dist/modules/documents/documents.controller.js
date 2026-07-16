@@ -86,7 +86,7 @@ export async function updateDocumentMetadataController(req, res, next) {
         if (!documentId) {
             throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
         }
-        const result = await updateDocumentMetadata(documentId, req.body, req.tenantId);
+        const result = await updateDocumentMetadata(documentId, req.body, req.tenantId, req.auth.userId);
         res.status(200).json({
             success: true,
             data: result,
@@ -107,7 +107,7 @@ export async function deleteDocumentController(req, res, next) {
         if (!documentId) {
             throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
         }
-        await deleteDocument(documentId, req.tenantId);
+        await deleteDocument(documentId, req.tenantId, req.auth.userId);
         res.status(200).json({
             success: true,
             message: "Document deleted successfully",
