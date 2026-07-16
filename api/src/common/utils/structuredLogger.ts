@@ -1,4 +1,4 @@
-import pino from "pino";
+import pino, { type DestinationStream, type LoggerOptions } from "pino";
 import { SENSITIVE_FIELDS } from "../observability/redactionRules.js";
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
@@ -19,24 +19,25 @@ const transport =
       })
     : undefined;
 
-export function createStructuredLogger(serviceName: string) {
-  return pino(
-    {
-      level,
-      base: { service: serviceName },
-      timestamp: pino.stdTimeFunctions.isoTime,
-      messageKey: "message",
-      redact: {
-        paths: [...SENSITIVE_FIELDS],
-        censor: "[Redacted]",
-      },
-      formatters: {
-        level(label) {
-          return { level: label };
-        },
+export function createStructuredLogger(
+  serviceName: string,
+  destination?: DestinationStream,
+) {
+  const options: LoggerOptions = {
+    level,
+    base: { service: serviceName },
+    timestamp: pino.stdTimeFunctions.isoTime,
+    messageKey: "message",
+    redact: {
+      paths: [...SENSITIVE_FIELDS],
+      censor: "[Redacted]",
+    },
+    formatters: {
+      level(label) {
+        return { level: label };
       },
     },
-    transport,
-  );
-}
+  };
 
+  return destination ? pino(options, destination) : pino(options, transport);
+}

@@ -13,8 +13,8 @@ const transport = process.env.LOG_PRETTY?.toLowerCase() === "true" && nodeEnv !=
         },
     })
     : undefined;
-export function createStructuredLogger(serviceName) {
-    return pino({
+export function createStructuredLogger(serviceName, destination) {
+    const options = {
         level,
         base: { service: serviceName },
         timestamp: pino.stdTimeFunctions.isoTime,
@@ -28,6 +28,7 @@ export function createStructuredLogger(serviceName) {
                 return { level: label };
             },
         },
-    }, transport);
+    };
+    return destination ? pino(options, destination) : pino(options, transport);
 }
 //# sourceMappingURL=structuredLogger.js.map

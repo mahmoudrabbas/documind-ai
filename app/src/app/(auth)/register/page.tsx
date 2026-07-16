@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { AuthHeroPanel, LanguageSwitcher } from "@/components/ui";
@@ -30,15 +30,6 @@ type FormFields =
   | "password"
   | "confirmPassword";
 type FormErrors = Partial<Record<FormFields, string>>;
-
-type LoginResponse = {
-  success: true;
-  data: {
-    tokens: {
-      accessToken: string;
-    };
-  };
-};
 
 /** Clears a single field's error from a FormErrors-shaped state object, no-op if already clear */
 function clearFieldError<K extends string>(
@@ -80,7 +71,6 @@ function PasswordVisibilityToggle({
 }
 
 export default function RegisterPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { t, dir, locale } = useI18n();
   const submissionPending = useRef(false);

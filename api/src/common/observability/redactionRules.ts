@@ -1,11 +1,9 @@
-export const SENSITIVE_FIELDS = [
+export const SENSITIVE_FIELD_NAMES = [
   // Authentication & Session
-  "req.headers.authorization",
-  "req.headers.cookie",
-  "headers.authorization",
-  "headers.cookie",
   "password",
   "passwordHash",
+  "authorization",
+  "cookie",
   "accessToken",
   "refreshToken",
   "emailVerificationToken",
@@ -14,7 +12,6 @@ export const SENSITIVE_FIELDS = [
   "jtiHash",
   "secret",
   "jwt",
-  "cookie",
   
   // Content
   "emailBody",
@@ -36,6 +33,25 @@ export const SENSITIVE_FIELDS = [
   "apiKey",
   "secretKey",
   "connectionString",
+  "mongodbUri",
+  "mongoUri",
+  "redisUrl",
+  "databaseUrl",
+  "smtpPassword",
+];
+
+export const SENSITIVE_FIELDS = [
+  "req.headers.authorization",
+  "req.headers.cookie",
+  "headers.authorization",
+  "headers.cookie",
+  ...SENSITIVE_FIELD_NAMES,
+  ...SENSITIVE_FIELD_NAMES.map((field) => `*.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `config.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `database.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `mongo.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `redis.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `smtp.${field}`),
 ];
 
 function isObject(val: unknown): val is Record<string, unknown> {
@@ -51,7 +67,7 @@ export function redactObject(
   const result: Record<string, unknown> = {};
   
   for (const [key, value] of Object.entries(obj)) {
-    if (rules.includes(key)) {
+    if (SENSITIVE_FIELD_NAMES.includes(key) || rules.includes(key)) {
       result[key] = replacement;
     } else if (isObject(value)) {
       result[key] = redactObject(value, rules, replacement);

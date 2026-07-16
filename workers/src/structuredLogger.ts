@@ -1,12 +1,11 @@
-import pino, { type LoggerOptions } from "pino";
+import pino, { type DestinationStream, type LoggerOptions } from "pino";
 
-const SENSITIVE_FIELDS = [
+export const SENSITIVE_FIELD_NAMES = [
   // Authentication & Session
-  "req.headers.authorization", "req.headers.cookie",
-  "headers.authorization", "headers.cookie",
-  "password", "passwordHash", "accessToken", "refreshToken",
+  "password", "passwordHash", "authorization", "cookie",
+  "accessToken", "refreshToken",
   "emailVerificationToken", "emailVerificationTokenHash",
-  "tokenHash", "jtiHash", "secret", "jwt", "cookie",
+  "tokenHash", "jtiHash", "secret", "jwt",
   // Content
   "emailBody", "documentText", "documentContent",
   // PII
@@ -15,6 +14,19 @@ const SENSITIVE_FIELDS = [
   "cardNumber", "cvv", "expiryDate",
   // Credentials
   "apiKey", "secretKey", "connectionString",
+  "mongodbUri", "mongoUri", "redisUrl", "databaseUrl", "smtpPassword",
+];
+
+export const SENSITIVE_FIELDS = [
+  "req.headers.authorization", "req.headers.cookie",
+  "headers.authorization", "headers.cookie",
+  ...SENSITIVE_FIELD_NAMES,
+  ...SENSITIVE_FIELD_NAMES.map((field) => `*.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `config.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `database.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `mongo.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `redis.${field}`),
+  ...SENSITIVE_FIELD_NAMES.map((field) => `smtp.${field}`),
 ];
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
@@ -35,7 +47,7 @@ const transport =
       })
     : undefined;
 
-export function createStructuredLogger(serviceName: string) {
+export function createStructuredLogger(serviceName: string, destination?: DestinationStream) {
   const options: LoggerOptions = {
     level,
     base: { service: serviceName },
@@ -52,6 +64,5 @@ export function createStructuredLogger(serviceName: string) {
     },
   };
 
-  return pino(options, transport);
+  return destination ? pino(options, destination) : pino(options, transport);
 }
-
