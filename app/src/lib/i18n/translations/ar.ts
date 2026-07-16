@@ -239,6 +239,15 @@ const ar: TranslationDictionary = {
   "auth.resettingPassword": "جارٍ إعادة التعيين…",
   "auth.resetPasswordSubmit": "إعادة تعيين كلمة المرور",
 
+  "auth.tokenExpiredTitle": "الرابط منتهي الصلاحية",
+  "auth.tokenExpiredDescription": "هذا الرابط منتهي الصلاحية. يرجى طلب رابط جديد.",
+  "auth.tokenUsedTitle": "تم استخدام الرابط بالفعل",
+  "auth.tokenUsedDescription": "تم استخدام هذا الرابط بالفعل. يرجى طلب رابط جديد إذا لزم الأمر.",
+  "auth.tokenInvalidTitle": "رابط غير صالح",
+  "auth.tokenInvalidDescription": "هذا الرابط غير صالح أو مشوه. يرجى طلب رابط جديد.",
+  "auth.tokenRevokedTitle": "تم إلغاء الرابط",
+  "auth.tokenRevokedDescription": "تم إلغاء هذا الرابط. يرجى طلب رابط جديد.",
+
   /* ── documents ──────────────────────────────────────────── */
   "documents.title": "المستندات",
   "documents.subtitle": "رفع وإدارة مستندات شركتك.",

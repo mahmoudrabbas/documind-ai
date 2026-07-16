@@ -1,7 +1,7 @@
-import nodemailer from "nodemailer";
 import { AppError } from "../../common/errors/AppError.js";
 import { EMAIL_SENDING_FAILED } from "../../common/errors/errorCodes.js";
 import { config } from "../../config/index.js";
+import { getEmailAdapter } from "./email-adapter.js";
 
 interface SendVerificationEmailInput {
   to: string;
@@ -134,28 +134,6 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
     return;
   }
 
-  const missingFields: string[] = [];
-
-  if (!config.SMTP_HOST) missingFields.push("SMTP_HOST");
-  if (!config.SMTP_USER) missingFields.push("SMTP_USER");
-  if (!config.SMTP_PASS) missingFields.push("SMTP_PASS");
-  if (!config.SMTP_FROM) missingFields.push("SMTP_FROM");
-
-  if (missingFields.length > 0) {
-    const message = `Missing SMTP config: ${missingFields.join(", ")}`;
-
-    if (config.NODE_ENV !== "production") {
-      console.warn(
-        `[email-verification] ${message}. Verification URL: ${input.verificationUrl}`,
-      );
-      return;
-    }
-
-    throw new AppError(500, EMAIL_SENDING_FAILED, "SMTP is not configured", {
-      missingFields,
-    });
-  }
-
   const template = buildEmailVerificationTemplate({
     adminName: input.adminName,
     companyName: input.companyName,
@@ -163,19 +141,9 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
     expiryLabel: "24 hours",
   });
 
-  const transporter = nodemailer.createTransport({
-    host: config.SMTP_HOST,
-    port: config.SMTP_PORT,
-    secure: config.SMTP_SECURE,
-    auth: {
-      user: config.SMTP_USER,
-      pass: config.SMTP_PASS,
-    },
-  });
-
+  const adapter = getEmailAdapter();
   try {
-    await transporter.sendMail({
-      from: config.SMTP_FROM,
+    await adapter.send({
       to: input.to,
       subject: template.subject,
       text: template.text,
@@ -289,25 +257,6 @@ export async function sendForgotPasswordEmail(
     return;
   }
 
-  const missingFields: string[] = [];
-  if (!config.SMTP_HOST) missingFields.push("SMTP_HOST");
-  if (!config.SMTP_USER) missingFields.push("SMTP_USER");
-  if (!config.SMTP_PASS) missingFields.push("SMTP_PASS");
-  if (!config.SMTP_FROM) missingFields.push("SMTP_FROM");
-
-  if (missingFields.length > 0) {
-    const message = `Missing SMTP config: ${missingFields.join(", ")}`;
-    if (config.NODE_ENV !== "production") {
-      console.warn(
-        `[forgot-password] ${message}`,
-      );
-      return;
-    }
-    throw new AppError(500, EMAIL_SENDING_FAILED, "SMTP is not configured", {
-      missingFields,
-    });
-  }
-
   const template = buildForgotPasswordTemplate({
     userName: input.userName,
     companyName: input.companyName,
@@ -315,16 +264,9 @@ export async function sendForgotPasswordEmail(
     expiryLabel: "15 minutes",
   });
 
-  const transporter = nodemailer.createTransport({
-    host: config.SMTP_HOST,
-    port: config.SMTP_PORT,
-    secure: config.SMTP_SECURE,
-    auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
-  });
-
+  const adapter = getEmailAdapter();
   try {
-    await transporter.sendMail({
-      from: config.SMTP_FROM,
+    await adapter.send({
       to: input.to,
       subject: template.subject,
       text: template.text,
@@ -361,19 +303,31 @@ export async function sendInvitationEmail(
       console.info("[user-invitation] email delivery disabled");
     return;
   }
-  const transporter = nodemailer.createTransport({
-    host: config.SMTP_HOST,
-    port: config.SMTP_PORT,
-    secure: config.SMTP_SECURE,
-    auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
-  });
-  await transporter.sendMail({
-    from: config.SMTP_FROM,
-    to: input.to,
-    subject: template.subject,
-    text: template.text,
-    html: template.html,
-  });
+  const adapter = getEmailAdapter();
+  try {
+    await adapter.send({
+      to: input.to,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send invitation email";
+
+    if (config.NODE_ENV !== "production") {
+      console.warn(`[user-invitation] ${message}`);
+      return;
+    }
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "Unable to send invitation email",
+      { details: message },
+    );
+  }
 }
 
 function escapeHtml(value: string) {

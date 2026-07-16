@@ -34,29 +34,34 @@ interface ErrorPayload {
   message?: unknown;
   error?: unknown;
   details?: unknown;
+  retryAfterSeconds?: unknown;
 }
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string | null;
   readonly details: unknown;
+  readonly retryAfterSeconds: number | null;
 
   constructor({
     status,
     code = null,
     message,
     details,
+    retryAfterSeconds = null,
   }: {
     status: number;
     code?: string | null;
     message: string;
     details?: unknown;
+    retryAfterSeconds?: number | null;
   }) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -112,16 +117,31 @@ async function parseResponse(response: Response): Promise<unknown> {
 
 function toApiError(response: Response, payload: unknown): ApiError {
   const fallbackMessage = `Request failed with status ${response.status}`;
+  const retryAfterHeader = response.headers.get("retry-after");
+  const parsedHeader = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
+  const retryFromHeader =
+    parsedHeader !== null && !Number.isNaN(parsedHeader) && parsedHeader > 0
+      ? parsedHeader
+      : null;
 
   if (!payload || typeof payload !== "object") {
     return new ApiError({
       status: response.status,
       message:
         typeof payload === "string" && payload ? payload : fallbackMessage,
+      retryAfterSeconds: retryFromHeader,
     });
   }
 
   const body = payload as ErrorPayload;
+  const retryFromBody =
+    typeof body.retryAfterSeconds === "number" &&
+    !Number.isNaN(body.retryAfterSeconds) &&
+    body.retryAfterSeconds > 0
+      ? body.retryAfterSeconds
+      : null;
+  const retryAfterSeconds = retryFromBody ?? retryFromHeader;
+
   if (body.error && typeof body.error === "object") {
     const nested = body.error as ErrorPayload & { code?: unknown };
     return new ApiError({
@@ -130,6 +150,7 @@ function toApiError(response: Response, payload: unknown): ApiError {
       message:
         typeof nested.message === "string" ? nested.message : fallbackMessage,
       details: nested.details,
+      retryAfterSeconds,
     });
   }
 
@@ -138,6 +159,7 @@ function toApiError(response: Response, payload: unknown): ApiError {
     code: typeof body.error === "string" ? body.error : null,
     message: typeof body.message === "string" ? body.message : fallbackMessage,
     details: body.details,
+    retryAfterSeconds,
   });
 }
 

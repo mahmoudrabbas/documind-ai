@@ -4,6 +4,7 @@ import {
   login,
   superAdminLogin,
   logout,
+  logoutAll,
   refreshAccessToken,
   registerTenantAndAdmin,
   resendVerificationEmail,
@@ -236,6 +237,23 @@ export async function logoutController(
     });
   } catch (error) {
     next(error);
+  }
+}
+
+export async function logoutAllController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+    const result = await logoutAll(req.auth, { ip: req.ip });
+    clearRefreshCookie(res);
+    res.status(200).json({ success: true, message: result.message });
+  } catch (error) {
+    handleAuthError(error, res, next);
   }
 }
 

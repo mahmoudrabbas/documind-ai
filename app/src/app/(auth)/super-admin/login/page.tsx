@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, apiClient } from "@/lib/api-client";
 import {
@@ -9,6 +9,7 @@ import {
   type AuthUser,
 } from "@/providers/auth-provider";
 import { AuthHeroPanel } from "@/components/ui/AuthHeroPanel";
+import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
 
 type Response = {
   success: true;
@@ -22,11 +23,21 @@ export default function SuperAdminLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
+
+  function messageForError(err: unknown) {
+    if (err instanceof ApiError && err.status === 401) {
+      return "Invalid email or password.";
+    }
+    return "Unable to sign in. Please try again.";
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current) return;
-    setError("");
+    setFormError("");
+    setRateLimitRetryAfter(null);
     pending.current = true;
     setSubmitting(true);
     try {
@@ -43,16 +54,21 @@ export default function SuperAdminLoginPage() {
       router.replace("/super-admin/tenants");
       router.refresh();
     } catch (caught) {
-      setError(
-        caught instanceof ApiError && caught.status === 401
-          ? "Invalid email or password."
-          : "Unable to sign in. Please try again.",
-      );
+      if (caught instanceof ApiError && caught.status === 429) {
+        setRateLimitRetryAfter(caught.retryAfterSeconds ?? 900);
+      } else {
+        setFormError(messageForError(caught));
+      }
     } finally {
       pending.current = false;
       setSubmitting(false);
     }
   }
+
+  const handleRetryLogin = useCallback(() => {
+    setRateLimitRetryAfter(null);
+  }, []);
+
   return (
     <main className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest">
       {/* Left panel (Form Panel) */}
@@ -86,12 +102,19 @@ export default function SuperAdminLoginPage() {
 
           <form className="space-y-md w-full" onSubmit={submit} noValidate>
             <div aria-live="polite" className="w-full">
-              {error ? (
+              {rateLimitRetryAfter !== null ? (
+                <div className="mb-4">
+                  <RateLimitAlert
+                    retryAfterSeconds={rateLimitRetryAfter}
+                    onRetry={handleRetryLogin}
+                  />
+                </div>
+              ) : formError ? (
                 <div
                   className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                   role="alert"
                 >
-                  {error}
+                  {formError}
                 </div>
               ) : null}
             </div>
