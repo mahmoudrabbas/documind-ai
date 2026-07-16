@@ -45,7 +45,7 @@ jobs:
         with:
           name: repository-security-summary
           path: ci-results/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
   validate:

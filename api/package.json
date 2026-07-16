@@ -17,7 +17,10 @@
     "migrate:roles:phase1": "tsx src/scripts/migrate-roles-phase1.ts --dry-run",
     "migrate:roles:phase1:apply": "tsx src/scripts/migrate-roles-phase1.ts --apply",
     "migrate:users:employee": "tsx src/scripts/migrate-users-employee.ts --dry-run",
-    "migrate:users:employee:apply": "tsx src/scripts/migrate-users-employee.ts --apply"
+    "migrate:users:employee:apply": "tsx src/scripts/migrate-users-employee.ts --apply",
+    "pretypecheck": "npm run build --workspace workers",
+    "prebuild": "npm run build --workspace workers",
+    "pretest": "npm run build --workspace workers"
   },
   "keywords": [],
   "author": "",
@@ -36,7 +39,7 @@
     "nodemailer": "^9.0.3",
     "pino": "^10.3.1",
     "rate-limit-redis": "^5.0.0",
-    "workers": "file:../workers",
+    "workers": "*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
