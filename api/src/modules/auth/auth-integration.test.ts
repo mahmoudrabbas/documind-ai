@@ -1,6 +1,7 @@
 import test, { after, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
+import mongoose from "mongoose";
 
 process.env.NODE_ENV = "test";
 
@@ -14,6 +15,8 @@ import AuditLogModel from "../../db/models/auditLog.model.js";
 import { hashPassword } from "./passwordHashing.js";
 import { signJwt } from "./jwtTokens.js";
 import { config } from "../../config/index.js";
+import { migrateLegacyUsersToEmployee } from "../../scripts/migrate-users-employee.service.js";
+import type { RawMigrationCollection } from "../../scripts/migrate-roles-phase1.service.js";
 
 const TEST_PASSWORD = "StrongPass123!";
 
@@ -179,6 +182,81 @@ test("same email works across different tenants", async () => {
   const bodyA = (await loginA.json()) as { data: { user: { tenantId: string } } };
   const bodyB = (await loginB.json()) as { data: { user: { tenantId: string } } };
   assert.notEqual(bodyA.data.user.tenantId, bodyB.data.user.tenantId);
+});
+
+test("login denies incomplete role migration without creating a refresh session", async () => {
+  const { user } = await createActiveTenantAdmin();
+  await UserModel.updateOne(
+    { _id: user._id },
+    { $set: { roleMigrationState: "pending-session-revocation" } },
+  );
+  const response = await login("acme-consulting", "sarah@acme.com");
+  assert.equal(response.status, 409);
+  const body = (await response.json()) as { error: string };
+  assert.equal(body.error, "AUTH_SESSION_MIGRATION_PENDING");
+  assert.equal(await RefreshTokenModel.countDocuments({ tenantId: user.tenantId, userId: user._id }), 0);
+});
+
+test("refresh denies incomplete role migration and creates no replacement", async () => {
+  const { user } = await createActiveTenantAdmin();
+  const loginResponse = await login("acme-consulting", "sarah@acme.com");
+  const cookie = getRefreshCookie(loginResponse);
+  await UserModel.updateOne(
+    { _id: user._id },
+    { $set: { roleMigrationState: "pending-session-revocation" } },
+  );
+  const response = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+    method: "POST",
+    headers: { cookie },
+  });
+  assert.equal(response.status, 409);
+  const body = (await response.json()) as { error: string };
+  assert.equal(body.error, "AUTH_SESSION_MIGRATION_PENDING");
+  assert.equal(await RefreshTokenModel.countDocuments({
+    tenantId: user.tenantId, userId: user._id, revokedAt: null,
+  }), 0);
+});
+
+test("login between session revocation and migration completion cannot recreate an active session", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+  await UserModel.updateOne(
+    { _id: user._id, tenantId: tenant._id },
+    { $set: {
+      role: "EMPLOYEE",
+      permissionBaseline: "legacy-none",
+      roleMigrationState: "pending-session-revocation",
+    } },
+  );
+  await RefreshTokenModel.create({
+    tenantId: tenant._id,
+    userId: user._id,
+    tokenHash: "already-revoked",
+    jtiHash: "already-revoked",
+    familyId: "already-revoked",
+    expiresAt: new Date(Date.now() + 60_000),
+    revokedAt: new Date(),
+  });
+
+  const attemptedLogin = await login("acme-consulting", "sarah@acme.com");
+  assert.equal(attemptedLogin.status, 409);
+  assert.equal(await RefreshTokenModel.countDocuments({
+    tenantId: tenant._id, userId: user._id,
+    $or: [{ revokedAt: null }, { revokedAt: { $exists: false } }],
+  }), 0);
+
+  if (!mongoose.connection.db) throw new Error("Test database is unavailable");
+  const users = mongoose.connection.db.collection("users") as unknown as RawMigrationCollection;
+  const roles = mongoose.connection.db.collection("roles") as unknown as RawMigrationCollection;
+  const refresh = mongoose.connection.db.collection("refresh_tokens") as unknown as RawMigrationCollection;
+  const report = await migrateLegacyUsersToEmployee(users, roles, refresh, {
+    apply: true, tenantId: tenant._id.toString(),
+  });
+  assert.equal(report.updated, 1);
+  assert.equal((await UserModel.findById(user._id).lean().exec())?.roleMigrationState, "complete");
+  assert.equal(await RefreshTokenModel.countDocuments({
+    tenantId: tenant._id, userId: user._id,
+    $or: [{ revokedAt: null }, { revokedAt: { $exists: false } }],
+  }), 0);
 });
 
 test("duplicate email within same tenant is rejected on registration", async () => {

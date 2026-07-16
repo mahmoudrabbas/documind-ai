@@ -32,6 +32,8 @@ The production catalog contains only documented product permissions. Deprecated 
 
 Legacy `USER` records are converted to the approved `EMPLOYEE` role with `permissionBaseline: "legacy-none"`, no custom role, and a completed session-revocation checkpoint. This compatibility baseline deliberately resolves no inherited or custom grants, preserving the complete pre-migration effective set until an administrator performs a separately authorized access assignment.
 
+While that checkpoint is incomplete, authoritative database state blocks login session issuance and refresh rotation with `AUTH_SESSION_MIGRATION_PENDING`. Migration completion transactionally proves that no tenant-and-user-scoped refresh record with null or missing `revokedAt` remains active.
+
 `allowScoped` attaches a typed `permissionAuthorization` context containing the permission, tenant, actor, source, exact permission-specific scopes, role ID/version, and `resourceContextRequired`. Downstream resource policy must evaluate those constraints before accessing a resource; a boolean scoped marker is never authorization.
 
 ## Denial Precedence

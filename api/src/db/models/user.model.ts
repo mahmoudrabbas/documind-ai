@@ -17,6 +17,7 @@ export interface UserDocument extends mongoose.Document {
   customRoleId: mongoose.Types.ObjectId | null;
   permissionBaseline: "standard" | "legacy-none";
   roleMigrationState: "complete" | "pending-session-revocation";
+  sessionGuardVersion: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,6 +86,7 @@ const userSchema = new Schema<UserDocument>(
       enum: ["complete", "pending-session-revocation"],
       default: "complete",
     },
+    sessionGuardVersion: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
       enum: ["active", "pending", "pending_email_verification", "disabled"],

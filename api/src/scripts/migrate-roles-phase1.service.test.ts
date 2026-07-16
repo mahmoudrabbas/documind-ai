@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { after, before, beforeEach } from "node:test";
 import mongoose from "mongoose";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { Permission } from "../modules/permissions/permissions.catalog.js";
 import { PermissionEvaluatorImpl } from "../modules/permissions/permissions.evaluator.js";
 import { listRoles } from "../modules/roles/roles.service.js";
@@ -11,7 +11,7 @@ import {
 } from "./migrate-roles-phase1.service.js";
 import { migrateLegacyUsersToEmployee } from "./migrate-users-employee.service.js";
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryReplSet;
 
 function collections() {
   if (!mongoose.connection.db) throw new Error("Test database is unavailable");
@@ -44,9 +44,10 @@ function user(tenantId: mongoose.Types.ObjectId, values: Record<string, unknown>
 }
 
 before(async () => {
-  mongoServer = await MongoMemoryServer.create({
+  mongoServer = await MongoMemoryReplSet.create({
     binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
+    replSet: { count: 1 },
+    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
   });
   await mongoose.connect(mongoServer.getUri(), { dbName: "role-phase1-migration" });
 });
@@ -341,9 +342,93 @@ test("legacy user migration retries failures before transition and after revocat
     (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "USER_COMPLETION_FAILED"),
   );
   assert.equal((await rawUsers.findOne({ _id: completionUser._id }))?.roleMigrationState, "pending-session-revocation");
-  assert.equal(await rawRefresh.countDocuments({ tenantId: completionTenant, revokedAt: null }), 0);
+  assert.equal(await rawRefresh.countDocuments({ tenantId: completionTenant, revokedAt: null }), 1);
   const retried = await migrateLegacyUsersToEmployee(users, roles, refresh, { apply: true, tenantId: completionTenant.toHexString() });
   assert.equal(retried.updated, 1);
-  assert.equal(retried.refreshRecordsRevoked, 0);
+  assert.equal(retried.refreshRecordsRevoked, 1);
   assert.equal((await rawUsers.findOne({ _id: completionUser._id }))?.roleMigrationState, "complete");
+});
+
+test("legacy user completion rejects an active session inserted after revocation and retries safely", async () => {
+  const tenantId = new mongoose.Types.ObjectId();
+  const legacy = user(tenantId, { role: "USER" });
+  const { roles, users, refresh, rawUsers, rawRefresh } = collections();
+  await rawUsers.insertOne(legacy);
+  await rawRefresh.insertOne({ tenantId, userId: legacy._id, tokenHash: "existing", revokedAt: null });
+
+  let injected = false;
+  const racingRefresh: RawMigrationCollection = {
+    find: (...args) => refresh.find(...args),
+    updateOne: (...args) => refresh.updateOne(...args),
+    updateMany: async (filter, update, options) => {
+      const result = await refresh.updateMany!(filter, update, options);
+      if (!injected) {
+        injected = true;
+        await rawRefresh.insertOne(
+          { tenantId, userId: legacy._id, tokenHash: "racing", revokedAt: null },
+          { session: options?.session },
+        );
+      }
+      return result;
+    },
+  };
+
+  await assert.rejects(
+    migrateLegacyUsersToEmployee(users, roles, racingRefresh, { apply: true, tenantId: tenantId.toHexString() }),
+    (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "ACTIVE_SESSIONS_REMAIN"),
+  );
+  assert.equal((await rawUsers.findOne({ _id: legacy._id }))?.roleMigrationState, "pending-session-revocation");
+  assert.equal(await rawRefresh.countDocuments({ tenantId, userId: legacy._id, revokedAt: null }), 1);
+
+  const retried = await migrateLegacyUsersToEmployee(users, roles, refresh, { apply: true, tenantId: tenantId.toHexString() });
+  assert.equal(retried.updated, 1);
+  assert.equal((await rawUsers.findOne({ _id: legacy._id }))?.roleMigrationState, "complete");
+  assert.equal(await rawRefresh.countDocuments({ tenantId, userId: legacy._id, revokedAt: null }), 0);
+});
+
+test("legacy user completion uses the canonical active-session definition and tenant scope", async () => {
+  const tenantId = new mongoose.Types.ObjectId();
+  const otherTenantId = new mongoose.Types.ObjectId();
+  const legacy = user(tenantId, { role: "USER" });
+  const { roles, users, refresh, rawUsers, rawRefresh } = collections();
+  await rawUsers.insertOne(legacy);
+  await rawRefresh.insertMany([
+    { tenantId, userId: legacy._id, tokenHash: "null", revokedAt: null },
+    { tenantId, userId: legacy._id, tokenHash: "missing" },
+    { tenantId, userId: legacy._id, tokenHash: "revoked", revokedAt: new Date() },
+    { tenantId: otherTenantId, userId: legacy._id, tokenHash: "other-tenant", revokedAt: null },
+  ]);
+
+  const report = await migrateLegacyUsersToEmployee(users, roles, refresh, {
+    apply: true, tenantId: tenantId.toHexString(),
+  });
+  assert.equal(report.refreshRecordsRevoked, 2);
+  assert.equal((await rawUsers.findOne({ _id: legacy._id }))?.roleMigrationState, "complete");
+  assert.equal(await rawRefresh.countDocuments({
+    tenantId, userId: legacy._id,
+    $or: [{ revokedAt: null }, { revokedAt: { $exists: false } }],
+  }), 0);
+  assert.equal(await rawRefresh.countDocuments({ tenantId: otherTenantId, userId: legacy._id, revokedAt: null }), 1);
+});
+
+test("two migration workers are safe and idempotent", async () => {
+  const tenantId = new mongoose.Types.ObjectId();
+  const legacy = user(tenantId, { role: "USER" });
+  const { roles, users, refresh, rawUsers, rawRefresh } = collections();
+  await rawUsers.insertOne(legacy);
+  await rawRefresh.insertMany([
+    { tenantId, userId: legacy._id, tokenHash: "one", revokedAt: null },
+    { tenantId, userId: legacy._id, tokenHash: "two" },
+  ]);
+
+  const reports = await Promise.all([
+    migrateLegacyUsersToEmployee(users, roles, refresh, { apply: true, tenantId: tenantId.toHexString() }),
+    migrateLegacyUsersToEmployee(users, roles, refresh, { apply: true, tenantId: tenantId.toHexString() }),
+  ]);
+  assert.equal(reports.reduce((sum, report) => sum + report.updated, 0), 1);
+  assert.equal((await rawUsers.findOne({ _id: legacy._id }))?.roleMigrationState, "complete");
+  assert.equal(await rawRefresh.countDocuments({
+    tenantId, userId: legacy._id,
+    $or: [{ revokedAt: null }, { revokedAt: { $exists: false } }],
+  }), 0);
 });

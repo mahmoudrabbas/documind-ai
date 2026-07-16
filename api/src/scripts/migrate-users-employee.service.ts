@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import type { RawMigrationCollection } from "./migrate-roles-phase1.service.js";
+import { ACTIVE_REFRESH_SESSION_FILTER } from "../modules/auth/sessionSecurity.js";
 
 export interface UserEmployeeMigrationOptions {
   apply?: boolean;
@@ -27,7 +28,7 @@ export interface UserEmployeeMigrationReport {
 
 export class UserMigrationError extends Error {
   constructor(
-    public readonly code: "REFRESH_COLLECTION_REQUIRED" | "USER_TRANSITION_FAILED" | "SESSION_REVOCATION_FAILED" | "USER_COMPLETION_FAILED",
+    public readonly code: "REFRESH_COLLECTION_REQUIRED" | "USER_TRANSITION_FAILED" | "SESSION_REVOCATION_FAILED" | "USER_COMPLETION_FAILED" | "ACTIVE_SESSIONS_REMAIN",
     public readonly resumeAfterId: string | null,
   ) {
     super(code);
@@ -118,39 +119,64 @@ export async function migrateLegacyUsersToEmployee(
       }
     }
 
+    let completion: { matchedCount: number; modifiedCount: number } = { matchedCount: 0, modifiedCount: 0 };
+    let revokedCount = 0;
+    const session = await mongoose.startSession();
     try {
-      const revoked = await refreshTokens!.updateMany!(
-        {
-          tenantId: user.tenantId,
-          userId: user._id,
-          $or: [{ revokedAt: null }, { revokedAt: { $exists: false } }],
-        },
-        { $set: { revokedAt: new Date() } },
-      );
-      report.refreshRecordsRevoked += revoked.modifiedCount;
-    } catch {
-      throw new UserMigrationError("SESSION_REVOCATION_FAILED", previousId(report.scannedUserIds));
-    }
-
-    let completion;
-    try {
-      completion = await users.updateOne(
-        {
-          _id: user._id,
-          tenantId: user.tenantId,
-          role: "EMPLOYEE",
-          permissionBaseline: "legacy-none",
-          roleMigrationState: "pending-session-revocation",
-        },
-        { $set: { roleMigrationState: "complete" } },
-      );
-    } catch {
+      await session.withTransaction(async () => {
+        completion = { matchedCount: 0, modifiedCount: 0 };
+        revokedCount = 0;
+        const locked = await users.updateOne(
+          {
+            _id: user._id, tenantId: user.tenantId, role: "EMPLOYEE",
+            permissionBaseline: "legacy-none", roleMigrationState: "pending-session-revocation",
+          },
+          { $inc: { sessionGuardVersion: 1 } },
+          { session },
+        );
+        if (locked.matchedCount !== 1) return;
+        let revoked;
+        try {
+          revoked = await refreshTokens!.updateMany!(
+            { tenantId: user.tenantId, userId: user._id, ...ACTIVE_REFRESH_SESSION_FILTER },
+            { $set: { revokedAt: new Date() } },
+            { session },
+          );
+        } catch {
+          throw new UserMigrationError("SESSION_REVOCATION_FAILED", previousId(report.scannedUserIds));
+        }
+        const remaining = await refreshTokens!.find(
+          { tenantId: user.tenantId, userId: user._id, ...ACTIVE_REFRESH_SESSION_FILTER },
+          { projection: { _id: 1 }, session },
+        ).toArray();
+        if (remaining.length !== 0) {
+          throw new UserMigrationError("ACTIVE_SESSIONS_REMAIN", previousId(report.scannedUserIds));
+        }
+        try {
+          completion = await users.updateOne(
+            {
+              _id: user._id, tenantId: user.tenantId, role: "EMPLOYEE",
+              permissionBaseline: "legacy-none", roleMigrationState: "pending-session-revocation",
+            },
+            { $set: { roleMigrationState: "complete" } },
+            { session },
+          );
+        } catch {
+          throw new UserMigrationError("USER_COMPLETION_FAILED", previousId(report.scannedUserIds));
+        }
+        revokedCount = revoked.modifiedCount;
+      });
+    } catch (error) {
+      if (error instanceof UserMigrationError) throw error;
       throw new UserMigrationError("USER_COMPLETION_FAILED", previousId(report.scannedUserIds));
+    } finally {
+      await session.endSession();
     }
     if (completion.matchedCount !== 1 || completion.modifiedCount !== 1) {
       report.skippedConcurrentChange += 1;
       continue;
     }
+    report.refreshRecordsRevoked += revokedCount;
     report.updated += 1;
     report.updatedUserIds.push(userId);
   }

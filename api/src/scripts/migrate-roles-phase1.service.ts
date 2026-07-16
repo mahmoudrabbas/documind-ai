@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { type ClientSession } from "mongoose";
 import { PERMISSION_CONTRACT_VERSION } from "../modules/permissions/permissions.catalog.js";
 import { normalizeRoleGrants } from "../modules/permissions/permissions.grants.js";
 import { normalizeScopes } from "../modules/permissions/permissions.scope.js";
@@ -6,15 +6,15 @@ import type { PermissionGrant, PermissionScopes } from "../modules/permissions/p
 
 type RawDocument = Record<string, unknown> & { _id?: unknown };
 type Filter = Record<string, unknown>;
-type Update = { $set: Record<string, unknown>; $unset?: Record<string, ""> };
+type Update = { $set?: Record<string, unknown>; $unset?: Record<string, "">; $inc?: Record<string, number> };
 
 export interface RawMigrationCollection {
-  find(filter: Filter, options?: { projection?: Record<string, number> }): {
+  find(filter: Filter, options?: { projection?: Record<string, number>; session?: ClientSession }): {
     sort(sort: Record<string, 1 | -1>): { toArray(): Promise<RawDocument[]> };
     toArray(): Promise<RawDocument[]>;
   };
-  updateOne(filter: Filter, update: Update): Promise<{ matchedCount: number; modifiedCount: number }>;
-  updateMany?(filter: Filter, update: Update): Promise<{ matchedCount: number; modifiedCount: number }>;
+  updateOne(filter: Filter, update: Update, options?: { session?: ClientSession }): Promise<{ matchedCount: number; modifiedCount: number }>;
+  updateMany?(filter: Filter, update: Update, options?: { session?: ClientSession }): Promise<{ matchedCount: number; modifiedCount: number }>;
 }
 
 export interface RoleMigrationOptions {

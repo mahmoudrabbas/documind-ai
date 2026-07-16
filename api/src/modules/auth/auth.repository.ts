@@ -1,8 +1,9 @@
-import type { ClientSession } from "mongoose";
+import mongoose, { type ClientSession } from "mongoose";
 import TenantModel, { type TenantDocument } from "../../db/models/tenant.model.js";
 import UserModel, { type UserDocument } from "../../db/models/user.model.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
+import { ACTIVE_REFRESH_SESSION_FILTER, COMPLETED_ROLE_MIGRATION_STATE } from "./sessionSecurity.js";
 import {
   tenantScopedCreate,
   tenantScopedFindById,
@@ -81,6 +82,70 @@ export function createRefreshTokenRecord(input: {
   userAgent?: string;
 }) {
   return tenantScopedCreate(RefreshTokenModel, input);
+}
+
+export async function createRefreshTokenRecordForEligibleUser(input: Parameters<typeof createRefreshTokenRecord>[0]) {
+  const session = await mongoose.startSession();
+  let created: InstanceType<typeof RefreshTokenModel> | null = null;
+  let eligible = false;
+  try {
+    await session.withTransaction(async () => {
+      eligible = false;
+      created = null;
+      const user = await UserModel.findOneAndUpdate(
+        { _id: input.userId, tenantId: input.tenantId, roleMigrationState: COMPLETED_ROLE_MIGRATION_STATE },
+        { $inc: { sessionGuardVersion: 1 } },
+        { session, returnDocument: "after" },
+      ).exec();
+      if (!user) return;
+      eligible = true;
+      created = await new RefreshTokenModel(input).save({ session });
+    });
+    return { eligible, record: created };
+  } finally {
+    await session.endSession();
+  }
+}
+
+export async function rotateRefreshTokenForEligibleUser(
+  input: Parameters<typeof createRefreshTokenRecord>[0],
+  currentTokenId: string,
+  rotatedAt: Date,
+) {
+  const session = await mongoose.startSession();
+  const result: { outcome: "rotated" | "migration-blocked" | "already-claimed" } = { outcome: "already-claimed" };
+  let replacement: InstanceType<typeof RefreshTokenModel> | null = null;
+  try {
+    await session.withTransaction(async () => {
+      result.outcome = "already-claimed";
+      replacement = null;
+      const user = await UserModel.findOneAndUpdate(
+        { _id: input.userId, tenantId: input.tenantId, roleMigrationState: COMPLETED_ROLE_MIGRATION_STATE },
+        { $inc: { sessionGuardVersion: 1 } },
+        { session, returnDocument: "after" },
+      ).exec();
+      if (!user) {
+        result.outcome = "migration-blocked";
+        return;
+      }
+      const claimed = await RefreshTokenModel.findOneAndUpdate(
+        { _id: currentTokenId, tenantId: input.tenantId, userId: input.userId, ...ACTIVE_REFRESH_SESSION_FILTER } as never,
+        { $set: { revokedAt: rotatedAt } },
+        { session, returnDocument: "after" },
+      ).exec();
+      if (!claimed) return;
+      replacement = await new RefreshTokenModel(input).save({ session });
+      await RefreshTokenModel.updateOne(
+        { _id: currentTokenId, tenantId: input.tenantId, userId: input.userId },
+        { $set: { replacedByTokenId: replacement._id } },
+        { session },
+      ).exec();
+      result.outcome = "rotated";
+    });
+    return { outcome: result.outcome, replacement };
+  } finally {
+    await session.endSession();
+  }
 }
 
 export function findRefreshTokenRecord(
