@@ -87,7 +87,6 @@ export const BASE_ROLE_DEFAULTS: Record<
   ],
   EMPLOYEE: [
     Permission.DOCUMENTS_READ,
-    Permission.DOCUMENTS_CREATE,
     Permission.CHAT_READ,
     Permission.CHAT_CREATE,
     Permission.KNOWLEDGE_GAPS_READ,

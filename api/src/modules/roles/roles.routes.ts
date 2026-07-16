@@ -1,15 +1,12 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
-import { requirePermission } from "../permissions/permissions.middleware.js";
+import { authorize } from "../../common/middlewares/authorize.middleware.js";
 import {
   createRoleController,
-  listRolesController,
-  getRoleController,
-  updateRoleController,
   deleteRoleController,
-  cloneRoleController,
-  archiveRoleController,
+  listRolesController,
+  updateRoleController,
 } from "./roles.controller.js";
 
 const router = Router();
@@ -18,7 +15,7 @@ router.get(
   "/",
   authenticate,
   tenantScoping,
-  requirePermission("roles:read"),
+  authorize("COMPANY_ADMIN"),
   listRolesController,
 );
 
@@ -26,23 +23,15 @@ router.post(
   "/",
   authenticate,
   tenantScoping,
-  requirePermission("roles:create"),
+  authorize("COMPANY_ADMIN"),
   createRoleController,
-);
-
-router.get(
-  "/:id",
-  authenticate,
-  tenantScoping,
-  requirePermission("roles:read"),
-  getRoleController,
 );
 
 router.patch(
   "/:id",
   authenticate,
   tenantScoping,
-  requirePermission("roles:update"),
+  authorize("COMPANY_ADMIN"),
   updateRoleController,
 );
 
@@ -50,24 +39,8 @@ router.delete(
   "/:id",
   authenticate,
   tenantScoping,
-  requirePermission("roles:delete"),
+  authorize("COMPANY_ADMIN"),
   deleteRoleController,
-);
-
-router.post(
-  "/:id/clone",
-  authenticate,
-  tenantScoping,
-  requirePermission("roles:create"),
-  cloneRoleController,
-);
-
-router.post(
-  "/:id/archive",
-  authenticate,
-  tenantScoping,
-  requirePermission("roles:delete"),
-  archiveRoleController,
 );
 
 export default router;

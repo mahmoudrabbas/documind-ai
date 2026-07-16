@@ -3,6 +3,7 @@ import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
 import {
   uploadDocumentController,
@@ -38,7 +39,7 @@ router.post(
   "/",
   authenticate,
   tenantScoping,
-  requirePermission("documents:create"),
+  requirePermission(Permission.DOCUMENTS_CREATE),
   upload.single("file"),
   uploadDocumentController,
 );
@@ -47,7 +48,7 @@ router.get(
   "/",
   authenticate,
   tenantScoping,
-  requirePermission("documents:read"),
+  requirePermission(Permission.DOCUMENTS_READ),
   listDocumentsController,
 );
 
@@ -55,7 +56,7 @@ router.get(
   "/:id",
   authenticate,
   tenantScoping,
-  requirePermission("documents:read"),
+  requirePermission(Permission.DOCUMENTS_READ),
   getDocumentController,
 );
 
@@ -63,7 +64,7 @@ router.patch(
   "/:id",
   authenticate,
   tenantScoping,
-  requirePermission("documents:update"),
+  requirePermission(Permission.DOCUMENTS_UPDATE),
   updateDocumentMetadataController,
 );
 
@@ -71,7 +72,7 @@ router.delete(
   "/:id",
   authenticate,
   tenantScoping,
-  requirePermission("documents:delete"),
+  requirePermission(Permission.DOCUMENTS_DELETE),
   deleteDocumentController,
 );
 

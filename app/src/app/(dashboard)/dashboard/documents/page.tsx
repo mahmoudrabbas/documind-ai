@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useI18n } from "@/providers/i18n-provider";
+import { useAuth } from "@/providers/auth-provider";
 import { useDocuments } from "@/hooks/features/useDocuments";
 import { FileDropzone } from "@/components/ui/FileDropzone";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -30,6 +31,8 @@ const STATUS_BADGE_MAP: Record<string, string> = {
 
 export default function DocumentsPage() {
   const { t, dir } = useI18n();
+  const auth = useAuth();
+  const isCompanyAdmin = auth.status === "authenticated" && auth.user.role === "COMPANY_ADMIN";
   const {
     documents,
     isLoading,
@@ -136,184 +139,186 @@ export default function DocumentsPage() {
         }
       />
 
-      <div className="mb-6 grid auto-rows-auto items-start gap-3 sm:gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:gap-5">
-        <DashboardPanel>
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-title-lg font-bold text-primary">
-                {t("documents.upload")}
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                Add a file, enrich it with metadata, and let the system prepare
-                it for retrieval.
-              </p>
-            </div>
-            <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-              New upload
-            </div>
-          </div>
-
-          <FileDropzone
-            onFilesSelected={handleFilesSelected}
-            disabled={isUploading}
-            error={fileError}
-            dragDropText={t("documents.dragDropText")}
-            dragDropActiveText={t("documents.dragDropActive")}
-            browseText={t("documents.browseFiles")}
-            fileRequirementsText={t("documents.fileRequirements")}
-          />
-
-          {selectedFiles.length > 0 && !isUploading ? (
-            <div className="mt-4 space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container p-4">
-              <div>
-                <label
-                  htmlFor="doc-title"
-                  className="mb-2 block text-label-md font-bold text-on-surface-variant"
-                >
-                  {t("documents.metadataTitle")}
-                </label>
-                <input
-                  id="doc-title"
-                  type="text"
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    setTitleError(null);
-                  }}
-                  placeholder={t("documents.metadataTitlePlaceholder")}
-                  aria-invalid={Boolean(titleError)}
-                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                {titleError ? (
-                  <p className="mt-1 text-xs text-error">{titleError}</p>
-                ) : null}
-              </div>
-
-              <div>
-                <label
-                  htmlFor="doc-description"
-                  className="mb-2 block text-label-md font-bold text-on-surface-variant"
-                >
-                  {t("documents.metadataDescription")}
-                </label>
-                <textarea
-                  id="doc-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t("documents.metadataDescriptionPlaceholder")}
-                  rows={2}
-                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="doc-tags"
-                  className="mb-2 block text-label-md font-bold text-on-surface-variant"
-                >
-                  {t("documents.metadataTags")}
-                </label>
-                <input
-                  id="doc-tags"
-                  type="text"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  placeholder={t("documents.metadataTagsPlaceholder")}
-                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                <p className="mt-1 text-xs text-outline">
-                  {t("documents.metadataTagsHint")}
+      {isCompanyAdmin ? (
+        <div className="mb-6 grid auto-rows-auto items-start gap-3 sm:gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:gap-5">
+          <DashboardPanel>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-title-lg font-bold text-primary">
+                  {t("documents.upload")}
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+                  Add a file, enrich it with metadata, and let the system prepare
+                  it for retrieval.
                 </p>
               </div>
-
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Button onClick={handleUpload}>{t("documents.upload")}</Button>
-                <Button variant="ghost" onClick={resetForm}>
-                  {t("common.cancel")}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {isUploading && uploadProgress !== null ? (
-            <div className="mt-8">
-              <ProgressBar
-                value={uploadProgress}
-                label={t("documents.uploading")}
-                size="md"
-              />
-            </div>
-          ) : null}
-
-          {uploadError ? (
-            <p
-              className="mt-4 rounded-xl border border-error/20 bg-error-container p-3 text-sm text-on-error-container"
-              role="alert"
-            >
-              {uploadError}
-            </p>
-          ) : null}
-        </DashboardPanel>
-
-        <DashboardPanel className="group relative overflow-hidden bg-gradient-to-br from-surface-container via-surface-container-low to-surface-container-lowest transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-lg">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10" />
-          <div className="relative flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0 max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
-                <span className="material-symbols-outlined text-[16px]">
-                  auto_awesome
-                </span>
-                AI-assisted prep
-              </div>
-              <h3 className="mt-4 text-title-md font-bold text-primary">
-                Turn uploads into sharper answers
-              </h3>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-on-surface-variant">
-                Strong titles, clear descriptions, and thoughtful tags help the
-                retrieval layer surface the right context faster.
-              </p>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
-                  Better retrieval
-                </span>
-                <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
-                  Cleaner context
-                </span>
-                <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
-                  Faster answers
-                </span>
+              <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+                New upload
               </div>
             </div>
 
-            <div className="w-full rounded-2xl border border-outline-variant/40 bg-surface/80 p-4 shadow-sm backdrop-blur lg:max-w-[280px]">
-              <div className="flex items-start justify-between gap-3">
+            <FileDropzone
+              onFilesSelected={handleFilesSelected}
+              disabled={isUploading}
+              error={fileError}
+              dragDropText={t("documents.dragDropText")}
+              dragDropActiveText={t("documents.dragDropActive")}
+              browseText={t("documents.browseFiles")}
+              fileRequirementsText={t("documents.fileRequirements")}
+            />
+
+            {selectedFiles.length > 0 && !isUploading ? (
+              <div className="mt-4 space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container p-4">
                 <div>
-                  <p className="text-label-sm font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
-                    Next step
-                  </p>
-                  <p className="mt-1 text-title-sm font-semibold text-on-surface">
-                    Preview suggestions
+                  <label
+                    htmlFor="doc-title"
+                    className="mb-2 block text-label-md font-bold text-on-surface-variant"
+                  >
+                    {t("documents.metadataTitle")}
+                  </label>
+                  <input
+                    id="doc-title"
+                    type="text"
+                    value={title}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      setTitleError(null);
+                    }}
+                    placeholder={t("documents.metadataTitlePlaceholder")}
+                    aria-invalid={Boolean(titleError)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  {titleError ? (
+                    <p className="mt-1 text-xs text-error">{titleError}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="doc-description"
+                    className="mb-2 block text-label-md font-bold text-on-surface-variant"
+                  >
+                    {t("documents.metadataDescription")}
+                  </label>
+                  <textarea
+                    id="doc-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder={t("documents.metadataDescriptionPlaceholder")}
+                    rows={2}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="doc-tags"
+                    className="mb-2 block text-label-md font-bold text-on-surface-variant"
+                  >
+                    {t("documents.metadataTags")}
+                  </label>
+                  <input
+                    id="doc-tags"
+                    type="text"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    placeholder={t("documents.metadataTagsPlaceholder")}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <p className="mt-1 text-xs text-outline">
+                    {t("documents.metadataTagsHint")}
                   </p>
                 </div>
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <span className="material-symbols-outlined text-[22px]">
-                    bolt
+
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <Button onClick={handleUpload}>{t("documents.upload")}</Button>
+                  <Button variant="ghost" onClick={resetForm}>
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {isUploading && uploadProgress !== null ? (
+              <div className="mt-8">
+                <ProgressBar
+                  value={uploadProgress}
+                  label={t("documents.uploading")}
+                  size="md"
+                />
+              </div>
+            ) : null}
+
+            {uploadError ? (
+              <p
+                className="mt-4 rounded-xl border border-error/20 bg-error-container p-3 text-sm text-on-error-container"
+                role="alert"
+              >
+                {uploadError}
+              </p>
+            ) : null}
+          </DashboardPanel>
+
+          <DashboardPanel className="group relative overflow-hidden bg-gradient-to-br from-surface-container via-surface-container-low to-surface-container-lowest transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-lg">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10" />
+            <div className="relative flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 max-w-2xl">
+                <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
+                  <span className="material-symbols-outlined text-[16px]">
+                    auto_awesome
+                  </span>
+                  AI-assisted prep
+                </div>
+                <h3 className="mt-4 text-title-md font-bold text-primary">
+                  Turn uploads into sharper answers
+                </h3>
+                <p className="mt-3 max-w-xl text-sm leading-relaxed text-on-surface-variant">
+                  Strong titles, clear descriptions, and thoughtful tags help the
+                  retrieval layer surface the right context faster.
+                </p>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                    Better retrieval
+                  </span>
+                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                    Cleaner context
+                  </span>
+                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                    Faster answers
                   </span>
                 </div>
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-on-surface-variant">
-                A thoughtful upload makes downstream AI answers more reliable
-                and easier to trust.
-              </p>
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-sm text-on-surface">
-                <span>Ready to refine</span>
-                <span className="text-primary">↗</span>
+
+              <div className="w-full rounded-2xl border border-outline-variant/40 bg-surface/80 p-4 shadow-sm backdrop-blur lg:max-w-[280px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-label-sm font-semibold uppercase tracking-[0.2em] text-on-surface-variant">
+                      Next step
+                    </p>
+                    <p className="mt-1 text-title-sm font-semibold text-on-surface">
+                      Preview suggestions
+                    </p>
+                  </div>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <span className="material-symbols-outlined text-[22px]">
+                      bolt
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-on-surface-variant">
+                  A thoughtful upload makes downstream AI answers more reliable
+                  and easier to trust.
+                </p>
+                <div className="mt-4 flex items-center justify-between rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-sm text-on-surface">
+                  <span>Ready to refine</span>
+                  <span className="text-primary">↗</span>
+                </div>
               </div>
             </div>
-          </div>
-        </DashboardPanel>
-      </div>
+          </DashboardPanel>
+        </div>
+      ) : null}
 
       <DashboardPanel padding="none">
         <div className="border-b border-outline-variant/30 bg-surface-container-low/50 px-lg py-md">
@@ -426,21 +431,27 @@ export default function DocumentsPage() {
                       {new Date(doc.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-lg py-4 text-end">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-error transition-opacity hover:bg-error-container hover:text-on-error-container md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                        isLoading={deletingId === doc.id}
-                        onClick={async () => {
-                          setDeletingId(doc.id);
-                          await remove(doc.id);
-                          setDeletingId(null);
-                        }}
-                      >
-                        <span className="material-symbols-outlined text-[20px]">
-                          delete
+                      {isCompanyAdmin ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-error transition-opacity hover:bg-error-container hover:text-on-error-container md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                          isLoading={deletingId === doc.id}
+                          onClick={async () => {
+                            setDeletingId(doc.id);
+                            await remove(doc.id);
+                            setDeletingId(null);
+                          }}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">
+                            delete
+                          </span>
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-on-surface-variant">
+                          Read only
                         </span>
-                      </Button>
+                      )}
                     </td>
                   </tr>
                 ))}

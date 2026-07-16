@@ -13,8 +13,7 @@
     "test": "node ../scripts/run-api-tests.mjs",
     "test:local": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 env MONGODB_URI='mongodb://127.0.0.1:27017/docsai' REDIS_URL='redis://127.0.0.1:6379' node --import tsx --test",
     "test:compose": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 env MONGODB_URI='mongodb://mongodb:27017/docsai' REDIS_URL='redis://redis:6379' node --import tsx --test",
-    "seed:super-admin": "tsx src/scripts/seed-super-admin.ts",
-    "migrate:role-permissions": "node --import tsx src/scripts/migrate-role-permissions.ts"
+    "seed:super-admin": "tsx src/scripts/seed-super-admin.ts"
   },
   "keywords": [],
   "author": "",

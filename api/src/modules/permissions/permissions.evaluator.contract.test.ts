@@ -33,7 +33,7 @@ function contractTests(
     await cleanup?.();
   });
 
-  test(`${label} — EMPLOYEE gets default employee permissions`, async () => {
+  test(`${label} — EMPLOYEE gets default employee permissions (read-only documents)`, async () => {
     const evaluator = createEvaluator();
     const fake = evaluator as unknown as InMemoryPermissionEvaluator;
     if (fake.addUser) {
@@ -42,7 +42,9 @@ function contractTests(
     const result = await evaluator.resolve("emp-1", "tenant-1");
     assert.equal(result.baseRole, "EMPLOYEE");
     assert.ok(result.permissions.has("documents:read"));
-    assert.ok(result.permissions.has("documents:create"));
+    assert.ok(!result.permissions.has("documents:create"));
+    assert.ok(!result.permissions.has("documents:update"));
+    assert.ok(!result.permissions.has("documents:delete"));
     assert.ok(result.permissions.has("chat:read"));
     assert.ok(!result.permissions.has("users:read"));
     assert.ok(!result.permissions.has("roles:create"));
