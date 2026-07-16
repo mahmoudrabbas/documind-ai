@@ -8,6 +8,7 @@ export declare function superAdminLoginController(req: Request, res: Response, n
 export declare function meController(req: Request, res: Response, next: NextFunction): Promise<void>;
 export declare function refreshController(req: Request, res: Response, next: NextFunction): Promise<void>;
 export declare function logoutController(req: Request, res: Response, next: NextFunction): Promise<void>;
+export declare function logoutAllController(req: Request, res: Response, next: NextFunction): Promise<void>;
 export declare function forgotPasswordController(req: Request, res: Response, next: NextFunction): Promise<void>;
 export declare function resetPasswordController(req: Request, res: Response, next: NextFunction): Promise<void>;
 //# sourceMappingURL=auth.controller.d.ts.map

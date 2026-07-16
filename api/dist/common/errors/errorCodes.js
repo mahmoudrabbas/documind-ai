@@ -26,5 +26,6 @@ export const SCOPE_MISMATCH = "SCOPE_MISMATCH";
 export const ROLE_NOT_ASSIGNABLE = "ROLE_NOT_ASSIGNABLE";
 export const PRIVILEGE_ESCALATION = "PRIVILEGE_ESCALATION";
 export const ROLE_IN_USE = "ROLE_IN_USE";
+export const RATE_LIMITED = "RATE_LIMITED";
 export const LAST_ADMIN_PROTECTION = "LAST_ADMIN_PROTECTION";
 //# sourceMappingURL=errorCodes.js.map

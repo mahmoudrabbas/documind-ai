@@ -5,6 +5,12 @@
   "description": "DocuMind AI background workers — document processing, embeddings, and queue consumers.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    "./contracts": {
+      "types": "./src/contracts/index.ts",
+      "import": "./src/contracts/index.ts"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
@@ -14,7 +20,10 @@
     "test": "find src -name '*.test.ts' -print0 | xargs -0 -r -n 1 node --import tsx --test"
   },
   "dependencies": {
+    "bullmq": "^5.80.5",
     "dotenv": "^17.4.2",
+    "ioredis": "^5.11.1",
+    "mongodb": "^6.21.0",
     "pino": "^10.3.1",
     "zod": "^4.4.3"
   },
