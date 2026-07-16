@@ -1,9 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { delimiter, resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { delimiter, resolve, sep, normalize } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const apiRoot = resolve(root, "api");
+
+/** Tests under src/modules/billing/ use vitest (vi.mock, vi.hoisted) and must run via vitest, not node:test */
+function isVitestTest(filePath) {
+  return normalize(filePath).split(sep).includes("billing");
+}
 
 function findTests(directory) {
   return readdirSync(directory, { withFileTypes: true })
@@ -29,7 +34,7 @@ const testEnvironment = {
     "test-only-password-reset-secret-at-least-32-characters",
 };
 
-const path = [
+const pathEntries = [
   resolve(apiRoot, "node_modules/.bin"),
   resolve(root, "node_modules/.bin"),
   process.env.PATH,
@@ -37,14 +42,22 @@ const path = [
   .filter(Boolean)
   .join(delimiter);
 
+const vitestFiles = [];
+let hasFailure = false;
+
 for (const testFile of findTests(resolve(apiRoot, "src"))) {
+  if (isVitestTest(testFile)) {
+    vitestFiles.push(testFile);
+    continue;
+  }
+
   const result = spawnSync(
     process.execPath,
     ["--import", "tsx", "--test", testFile],
     {
       cwd: apiRoot,
       stdio: "inherit",
-      env: { ...process.env, ...testEnvironment, PATH: path },
+      env: { ...process.env, ...testEnvironment, PATH: pathEntries },
     },
   );
 
@@ -52,5 +65,39 @@ for (const testFile of findTests(resolve(apiRoot, "src"))) {
     console.error(`Unable to start API test ${testFile}: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  if (result.status !== 0) {
+    hasFailure = true;
+    break;
+  }
+}
+
+if (hasFailure) process.exit(1);
+
+/* ── Vitest-based billing tests ─────────────────────────────────────── */
+if (vitestFiles.length > 0) {
+  console.log(`\n── Running ${vitestFiles.length} vitest-based billing test(s) ──\n`);
+  const result = spawnSync(
+    process.execPath,
+    [
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--config", resolve(apiRoot, "vitest.config.ts"),
+      "--reporter", "tap",
+      ...vitestFiles,
+    ],
+    {
+      cwd: root,
+      stdio: "inherit",
+      env: { ...process.env, ...testEnvironment, PATH: pathEntries },
+    },
+  );
+
+  if (result.error) {
+    console.error(`Unable to start vitest: ${result.error.message}`);
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    console.error("Vitest-based billing tests failed.");
+    process.exit(result.status ?? 1);
+  }
 }
