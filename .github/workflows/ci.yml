@@ -30,7 +30,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
+      - run: |
+          echo "npm version: $(npm --version) (expected: ${{ env.NPM_VERSION }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(npm --version)" != "${{ env.NPM_VERSION }}" ]; then
+            echo "npm version mismatch: $(npm --version) != ${{ env.NPM_VERSION }}" >&2
+            exit 1
+          fi
       - run: npm ci --ignore-scripts
       - name: Scan committed files and test tooling contracts
         run: |
@@ -68,8 +73,34 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
+      - run: |
+          echo "npm version: $(npm --version) (expected: ${{ env.NPM_VERSION }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(npm --version)" != "${{ env.NPM_VERSION }}" ]; then
+            echo "npm version mismatch: $(npm --version) != ${{ env.NPM_VERSION }}" >&2
+            exit 1
+          fi
       - run: npm ci
+      - name: Wait for services (MongoDB & Redis)
+        run: |
+          timeout=60
+          echo "Waiting up to ${timeout}s for mongodb:27017..."
+          for i in $(seq 1 $timeout); do
+            nc -z 127.0.0.1 27017 && break
+            sleep 1
+          done
+          if ! nc -z 127.0.0.1 27017; then
+            echo "mongodb did not start in time" >&2
+            exit 1
+          fi
+          echo "Waiting up to ${timeout}s for redis:6379..."
+          for i in $(seq 1 $timeout); do
+            nc -z 127.0.0.1 6379 && break
+            sleep 1
+          done
+          if ! nc -z 127.0.0.1 6379; then
+            echo "redis did not start in time" >&2
+            exit 1
+          fi
       - name: Build shared contracts package
         run: npm run build:contracts
       - name: Lint, typecheck, test, and build
@@ -84,13 +115,41 @@ jobs:
           PASSWORD_RESET_JWT_SECRET: test-only-password-reset-secret-at-least-32-characters
         run: |
           started=$SECONDS
-          npm run lint:${{ matrix.workspace }}
-          npm run typecheck:${{ matrix.workspace }}
-          npm run test:${{ matrix.workspace }}
-          npm run build:${{ matrix.workspace }}
-          duration=$((SECONDS - started))
           mkdir -p ci-results
-          printf 'workspace=%s status=passed duration_seconds=%s\n' '${{ matrix.workspace }}' "$duration" | tee "ci-results/${{ matrix.workspace }}.txt" >> "$GITHUB_STEP_SUMMARY"
+          workspace='${{ matrix.workspace }}'
+          failures=0
+
+          run_and_capture() {
+            name="$1"
+            shift
+            outfile="ci-results/${workspace}-${name}.log"
+            echo "=== $name for $workspace: START ===" >"$outfile"
+            set +e
+            "$@" >>"$outfile" 2>&1
+            rc=$?
+            set -e
+            if [ $rc -ne 0 ]; then
+              echo "=== $name for $workspace: FAILED (rc=$rc) ===" >>"$outfile"
+              failures=$((failures+1))
+            else
+              echo "=== $name for $workspace: PASSED ===" >>"$outfile"
+            fi
+            echo "${workspace} ${name} rc=${rc}" >> "$GITHUB_STEP_SUMMARY" || true
+          }
+
+          run_and_capture lint npm run lint:"${workspace}"
+          run_and_capture typecheck npm run typecheck:"${workspace}"
+          run_and_capture test npm run test:"${workspace}"
+          run_and_capture build npm run build:"${workspace}"
+
+          duration=$((SECONDS - started))
+          printf 'workspace=%s status=%s duration_seconds=%s\n' "${workspace}" \
+            "$( [ $failures -eq 0 ] && echo passed || echo failed )" "$duration" \
+            | tee "ci-results/${workspace}.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [ $failures -ne 0 ]; then
+            echo "One or more commands failed for ${workspace}. See ci-results/*.log for details." >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
