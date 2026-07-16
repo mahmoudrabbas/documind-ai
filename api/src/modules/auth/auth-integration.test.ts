@@ -207,7 +207,7 @@ test("refresh reuse detection revokes entire family", async () => {
     method: "POST",
     headers: { cookie },
   });
-  assert.equal(refreshRes2.status, 200);
+  assert.equal(refreshRes2.status, 401);
 
   const sarah = await UserModel.findOne({ email: "sarah@acme.com" });
   assert.ok(sarah, "sarah user should exist");
@@ -354,35 +354,7 @@ test("reset-password with invalid token returns PASSWORD_RESET_FAILED", async ()
   });
   const body = await res.json();
   assert.equal(res.status, 400);
-  assert.equal(body.error, "PASSWORD_RESET_FAILED");
-});
-
-// ─── Rate Limit Response Shape ───────────────────────────────────────────────
-
-test("429 response includes retryAfterSeconds", async () => {
-  const promises = Array.from({ length: 150 }, () =>
-    fetch(`http://127.0.0.1:${port}/auth/login`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        companySlug: "test",
-        email: "test@test.com",
-        password: "password",
-      }),
-    }),
-  );
-
-  const results = await Promise.all(promises);
-  const rateLimited = results.find((r) => r.status === 429);
-
-  assert.ok(rateLimited, "at least one request should be rate limited (429)");
-  const body = await rateLimited!.json();
-  assert.equal(body.error, "RATE_LIMITED");
-  assert.ok(
-    typeof body.retryAfterSeconds === "number",
-    "should include retryAfterSeconds",
-  );
-  assert.ok(body.retryAfterSeconds > 0, "retryAfterSeconds should be positive");
+  assert.equal(body.error.code, "PASSWORD_RESET_FAILED");
 });
 
 // ─── /auth/me Security ──────────────────────────────────────────────────────
@@ -461,4 +433,32 @@ test("resend verification email returns generic response", async () => {
     body.message.includes("If an account"),
     "should return generic message",
   );
+});
+
+// ─── Rate Limit Response Shape (LAST — exhausts rate limiter) ────────────────
+
+test("429 response includes retryAfterSeconds", async () => {
+  const promises = Array.from({ length: 150 }, () =>
+    fetch(`http://127.0.0.1:${port}/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        companySlug: "test",
+        email: "test@test.com",
+        password: "password",
+      }),
+    }),
+  );
+
+  const results = await Promise.all(promises);
+  const rateLimited = results.find((r) => r.status === 429);
+
+  assert.ok(rateLimited, "at least one request should be rate limited (429)");
+  const body = await rateLimited!.json();
+  assert.equal(body.error, "RATE_LIMITED");
+  assert.ok(
+    typeof body.retryAfterSeconds === "number",
+    "should include retryAfterSeconds",
+  );
+  assert.ok(body.retryAfterSeconds > 0, "retryAfterSeconds should be positive");
 });
