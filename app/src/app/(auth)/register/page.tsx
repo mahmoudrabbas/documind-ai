@@ -93,7 +93,15 @@ export default function RegisterPage() {
     [searchParams],
   );
 
-  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [packagesList, setPackagesList] = useState<
+    Array<{
+      name: string;
+      code: string;
+      trialDays: number;
+      monthlyPrice: number;
+      annualPrice: number;
+    }>
+  >([]);
 
   useEffect(() => {
     if (getAccessToken()) {
@@ -113,7 +121,6 @@ export default function RegisterPage() {
         router.replace("/dashboard");
       } catch {
         clearAccessToken();
-        setIsCheckingSession(false);
       }
     }
 
@@ -159,15 +166,6 @@ export default function RegisterPage() {
   );
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [packagesList, setPackagesList] = useState<
-    Array<{
-      name: string;
-      code: string;
-      trialDays: number;
-      monthlyPrice: number;
-      annualPrice: number;
-    }>
-  >([]);
   const [registeredPackage, setRegisteredPackage] = useState<{
     name: string;
     trialDays: number;
