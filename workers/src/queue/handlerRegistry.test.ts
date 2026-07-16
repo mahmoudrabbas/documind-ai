@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { InMemoryJobHandlerRegistry, executeHandler } from "../contracts/handlerRegistry.js";
-import { PermanentJobError, RetryableJobError } from "../contracts/retryPolicy.js";
-import type { JobEnvelope } from "../contracts/jobEnvelope.js";
+import { InMemoryJobHandlerRegistry, executeHandler } from "../queue/handlerRegistry.js";
+import { PermanentJobError, RetryableJobError } from "@documind/contracts";
+import type { JobEnvelope } from "@documind/contracts";
 
 function envelope(payload: unknown): JobEnvelope {
   return {

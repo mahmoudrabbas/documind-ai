@@ -20,6 +20,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@documind/contracts": "*",
     "argon2": "^0.44.0",
     "bullmq": "^5.80.5",
     "cors": "^2.8.6",
@@ -32,7 +33,6 @@
     "nodemailer": "^9.0.3",
     "pino": "^10.3.1",
     "rate-limit-redis": "^5.0.0",
-    "workers": "file:../workers",
     "zod": "^4.4.3"
   },
   "devDependencies": {

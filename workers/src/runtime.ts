@@ -2,14 +2,11 @@ import { config } from "./config/index.js";
 import { logger } from "./logger.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { connectMongo, pingMongo, isMongoConnected, disconnectMongo } from "./db/mongo.js";
-import {
-  BullMQQueue,
-  InMemoryQueue,
-  type JobDispatcher,
-} from "./contracts/index.js";
-import type { JobHandlerRegistry, WorkerReadiness } from "./contracts/index.js";
+import { BullMQQueue } from "./queue/bullmqQueue.js";
+import { InMemoryQueue } from "./queue/inMemoryQueue.js";
+import type { JobDispatcher, JobHandlerRegistry, WorkerReadiness } from "@documind/contracts";
 import { buildHandlerRegistry } from "./jobs/index.js";
-import { publishQueueMetrics } from "./contracts/metrics.js";
+import { publishQueueMetrics } from "./queue/metrics.js";
 
 export const QUEUE_NAME = "documind-jobs";
 
