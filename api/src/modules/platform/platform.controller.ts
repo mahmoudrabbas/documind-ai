@@ -49,9 +49,31 @@ export const packagesController = endpoint(() => listPackages());
 export const packageController = endpoint((req) =>
   getPackage(parse(idSchema, req.params).id),
 );
+/**
+ * Map legacy `limits` to `entitlements` before validation, so old clients
+ * sending only `limits` still work. If both are present, `entitlements` wins.
+ */
+function migrateLimits(body: Record<string, unknown>): Record<string, unknown> {
+  if (body.entitlements || !body.limits) return body;
+  const l = body.limits as Record<string, number>;
+  return {
+    ...body,
+    entitlements: {
+      employees: l.users,
+      admins: 1,
+      documents: l.documents,
+      storageMb: l.storageMb,
+      fileSizeMb: 10,
+      queriesPerMonth: l.questionsPerMonth ?? l.queriesPerMonth,
+      tokensPerMonth: 0,
+      ocrPagesPerMonth: 0,
+    },
+  };
+}
+
 export const createPackageController = endpoint(async (req, res) => {
   const value = await createPackage(
-    parse(packageBodySchema, req.body),
+    parse(packageBodySchema, migrateLimits(req.body)),
     actor(req),
   );
   res.status(201).json({ success: true, data: value });
@@ -59,7 +81,7 @@ export const createPackageController = endpoint(async (req, res) => {
 export const updatePackageController = endpoint((req) =>
   updatePackage(
     parse(idSchema, req.params).id,
-    parse(packageUpdateSchema, req.body),
+    parse(packageUpdateSchema, migrateLimits(req.body)),
     actor(req),
   ),
 );

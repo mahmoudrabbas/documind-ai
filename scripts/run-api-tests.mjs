@@ -10,12 +10,20 @@ const apiRoot = resolve(root, "api");
 const require = createRequire(resolve(apiRoot, "package.json"));
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
+const billingModuleDir = resolve(apiRoot, "src", "modules", "billing").replace(/\\/g, "/");
+
 function findTests(directory) {
   return readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) return findTests(path);
-      return entry.isFile() && entry.name.endsWith(".test.ts") ? [path] : [];
+      if (entry.isFile() && entry.name.endsWith(".test.ts")) {
+        // Billing tests use vi.mock() which requires vitest, not node --test.
+        const normalized = path.replace(/\\/g, "/");
+        if (normalized.includes(billingModuleDir)) return [];
+        return [path];
+      }
+      return [];
     })
     .sort();
 }
@@ -81,6 +89,23 @@ try {
       exitCode = result;
       break;
     }
+  }
+
+  // Run billing tests with vitest (they use vi.mock() which is incompatible with node --test).
+  if (exitCode === 0) {
+    console.log("\n── Running billing tests with vitest ──\n");
+    exitCode = await new Promise((resolveRun) => {
+      const child = spawn("vitest", ["run"], {
+        cwd: apiRoot,
+        stdio: "inherit",
+        env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },
+      });
+      child.once("error", (error) => {
+        console.error(`Unable to run vitest: ${error.message}`);
+        resolveRun(1);
+      });
+      child.once("exit", (code) => resolveRun(code ?? 1));
+    });
   }
 } finally {
   await mongo.stop();

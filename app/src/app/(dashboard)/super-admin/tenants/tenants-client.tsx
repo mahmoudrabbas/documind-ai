@@ -11,12 +11,16 @@ import {
 } from "@/services/platform.service";
 import {
   PAGE_SIZES,
-  TENANT_PLANS,
   TENANT_STATUSES,
   type PlatformTenant,
   type TenantListQuery,
-  type TenantPlan,
 } from "@/types/api/platform.types";
+import {
+  type PlatformSubscription,
+  type SubscriptionStatus,
+  SUBSCRIPTION_STATUS_COLORS,
+} from "@/types/api/super-admin.types";
+import { listSubscriptions } from "@/services/super-admin.service";
 
 const label = (value: string) =>
   value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -24,6 +28,18 @@ const date = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
     new Date(value),
   );
+
+/** Map subscription statuses to their Tailwind badge classes. */
+function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
+  const colorClass = SUBSCRIPTION_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-800";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${colorClass}`}
+    >
+      {label(status)}
+    </span>
+  );
+}
 
 export function TenantsClient() {
   const router = useRouter();
@@ -34,6 +50,9 @@ export function TenantsClient() {
   );
   const [searchDraft, setSearchDraft] = useState(query.search);
   const [tenants, setTenants] = useState<PlatformTenant[]>([]);
+  const [subscriptions, setSubscriptions] = useState<PlatformSubscription[]>(
+    [],
+  );
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 20,
@@ -78,9 +97,13 @@ export function TenantsClient() {
       setLoading(true);
       setError("");
       try {
-        const response = await listTenants(query, signal);
-        setTenants(response.data.tenants);
-        setPagination(response.data.pagination);
+        const [tenantsRes, subsRes] = await Promise.all([
+          listTenants(query, signal),
+          listSubscriptions(signal),
+        ]);
+        setTenants(tenantsRes.data.tenants);
+        setPagination(tenantsRes.data.pagination);
+        setSubscriptions(subsRes.data);
       } catch (caught) {
         if (signal?.aborted) return;
         setError(
@@ -117,9 +140,22 @@ export function TenantsClient() {
     }
   }, [editing, pending]);
 
+  /** Derive current subscription for a tenant (latest by updatedAt). */
+  const subscriptionByTenant = useMemo(() => {
+    const map = new Map<string, PlatformSubscription>();
+    for (const sub of subscriptions) {
+      const tid =
+        typeof sub.tenantId === "string" ? sub.tenantId : sub.tenantId._id;
+      const existing = map.get(tid);
+      if (!existing || new Date(sub.updatedAt) > new Date(existing.updatedAt)) {
+        map.set(tid, sub);
+      }
+    }
+    return map;
+  }, [subscriptions]);
+
   async function save(update: {
     status?: "active" | "trial" | "suspended";
-    plan?: TenantPlan;
   }) {
     if (!editing || pending) return;
     setPending(true);
@@ -191,7 +227,8 @@ export function TenantsClient() {
           </select>
         </label>
         <label className="text-sm font-medium text-slate-700">
-          Plan
+          {/* @deprecated tenant.plan — kept for backward compatibility */}
+          Plan (legacy)
           <select
             value={query.plan}
             onChange={(e) =>
@@ -203,7 +240,7 @@ export function TenantsClient() {
             className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All plans</option>
-            {TENANT_PLANS.map((v) => (
+            {(["free", "trial", "pro"] as const).map((v) => (
               <option key={v} value={v}>
                 {label(v)}
               </option>
@@ -261,68 +298,110 @@ export function TenantsClient() {
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[1050px] border-collapse text-start text-sm">
+          <table className="w-full min-w-[1200px] border-collapse text-start text-sm">
             <thead className="bg-slate-50 text-slate-700">
               <tr>
                 {[
                   "Tenant",
                   "Status",
-                  "Plan",
+                  "Subscription",
+                  "Effective Plan",
+                  "Period Start",
+                  "Period End",
+                  "Plan (legacy)",
                   "Users",
                   "Documents",
                   "Questions",
                   "Created",
                   "Actions",
                 ].map((h) => (
-                  <th key={h} scope="col" className="px-4 py-3 font-semibold">
+                  <th key={h} scope="col" className="px-4 py-3 font-semibold whitespace-nowrap">
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {tenants.map((tenant) => (
-                <tr key={tenant.id} className="border-t border-slate-200">
-                  <td className="max-w-64 px-4 py-4">
-                    <p className="truncate font-semibold text-slate-950">
-                      {tenant.name}
-                    </p>
-                    <p className="truncate text-slate-500">{tenant.slug}</p>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
-                      {label(tenant.status)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">{label(tenant.plan)}</td>
-                  <td className="px-4 py-4">{tenant.stats.users}</td>
-                  <td className="px-4 py-4">{tenant.stats.documents}</td>
-                  <td className="px-4 py-4">{tenant.stats.questions}</td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    {date(tenant.createdAt)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex gap-2">
-                      <a
-                        href={`/super-admin/companies/${tenant.id}`}
-                        className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white"
-                      >
-                        Open
-                      </a>
-                      <button
-                        onClick={() => {
-                          setNotice("");
-                          setEditing(tenant);
-                        }}
-                        aria-label={`Manage ${tenant.name}`}
-                        className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
-                      >
-                        Manage
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {tenants.map((tenant) => {
+                const sub = subscriptionByTenant.get(tenant.id);
+                return (
+                  <tr key={tenant.id} className="border-t border-slate-200">
+                    <td className="max-w-56 px-4 py-4">
+                      <p className="truncate font-semibold text-slate-950">
+                        {tenant.name}
+                      </p>
+                      <p className="truncate text-slate-500">{tenant.slug}</p>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
+                        {label(tenant.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {sub ? (
+                        <SubscriptionBadge status={sub.status} />
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {sub ? (
+                        <span className="font-medium text-slate-900">
+                          {sub.packageId?.name ?? "—"}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-slate-600">
+                      {sub?.currentPeriodStart
+                        ? date(sub.currentPeriodStart)
+                        : sub?.periodStart
+                          ? date(sub.periodStart)
+                          : "—"}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-slate-600">
+                      {sub?.currentPeriodEnd
+                        ? date(sub.currentPeriodEnd)
+                        : sub?.periodEnd
+                          ? date(sub.periodEnd)
+                          : "—"}
+                    </td>
+                    <td className="px-4 py-4 text-slate-500">
+                      {label(tenant.plan)}
+                      <span className="ml-1 text-[10px] text-slate-400" title="Deprecated">
+                        (old)
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">{tenant.stats.users}</td>
+                    <td className="px-4 py-4">{tenant.stats.documents}</td>
+                    <td className="px-4 py-4">{tenant.stats.questions}</td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {date(tenant.createdAt)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2">
+                        <a
+                          href={`/super-admin/companies/${tenant.id}`}
+                          className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white"
+                        >
+                          Open
+                        </a>
+                        <button
+                          onClick={() => {
+                            setNotice("");
+                            setEditing(tenant);
+                          }}
+                          aria-label={`Manage ${tenant.name}`}
+                          className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
+                        >
+                          Manage
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -393,27 +472,41 @@ export function TenantsClient() {
               Manage {editing.name}
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Choose a supported plan or status change. Status changes take
-              effect immediately.
+              Status changes take effect immediately.
             </p>
             <div className="mt-5 grid gap-3">
-              <label className="text-sm font-medium">
-                Plan
-                <select
-                  defaultValue={editing.plan}
-                  disabled={pending}
-                  onChange={(e) =>
-                    void save({ plan: e.target.value as TenantPlan })
-                  }
-                  className="mt-1 block h-11 w-full rounded-xl border px-3"
-                >
-                  {TENANT_PLANS.map((v) => (
-                    <option key={v} value={v}>
-                      {label(v)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {subscriptionByTenant.has(editing.id) ? (
+                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
+                  <strong className="font-semibold">Subscription:</strong>{" "}
+                  {subscriptionByTenant.get(editing.id)!.packageId?.name ??
+                    "—"}{" "}
+                  &middot;{" "}
+                  <SubscriptionBadge
+                    status={subscriptionByTenant.get(editing.id)!.status}
+                  />
+                  <p className="mt-1 text-blue-700">
+                    Subscription managed via{" "}
+                    <a
+                      href="/super-admin/subscriptions"
+                      className="underline font-semibold"
+                    >
+                      Subscriptions page
+                    </a>
+                    .
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No active subscription. Assign one via the{" "}
+                  <a
+                    href="/super-admin/subscriptions"
+                    className="underline font-semibold"
+                  >
+                    Subscriptions page
+                  </a>
+                  .
+                </p>
+              )}
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   disabled={pending || editing.status === "suspended"}

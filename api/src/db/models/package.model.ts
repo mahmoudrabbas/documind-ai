@@ -1,11 +1,23 @@
 import mongoose, { Schema } from "mongoose";
 
-export interface PackageLimits {
+export interface PackageEntitlements {
+  employees: number;
+  admins: number;
+  documents: number;
+  storageMb: number;
+  fileSizeMb: number;
+  queriesPerMonth: number;
+  tokensPerMonth: number;
+  ocrPagesPerMonth: number;
+}
+
+/** @deprecated Use {@link PackageEntitlements} instead. Kept for backward compat. */
+export type PackageLimits = {
   users: number;
   documents: number;
   questionsPerMonth: number;
   storageMb: number;
-}
+};
 
 export interface PackageDocument extends mongoose.Document {
   name: string;
@@ -15,23 +27,43 @@ export interface PackageDocument extends mongoose.Document {
   version: number;
   monthlyPrice: number;
   currency: string;
+  entitlements: PackageEntitlements;
+  /** Virtual backward-compat — reads from {@link entitlements}. */
   limits: PackageLimits;
+  annualPrice: number;
+  trialDays: number;
+  visibility: "public" | "internal";
+  supportedModels: string[];
+  analyticsLevel: "basic" | "advanced" | "enterprise";
+  retentionDays: number;
+  supportLevel: "community" | "standard" | "priority" | "dedicated";
   versions: Array<{
     version: number;
     monthlyPrice: number;
-    limits: PackageLimits;
+    entitlements: PackageEntitlements;
+    annualPrice: number;
+    trialDays: number;
+    visibility: "public" | "internal";
+    supportedModels: string[];
+    analyticsLevel: "basic" | "advanced" | "enterprise";
+    retentionDays: number;
+    supportLevel: "community" | "standard" | "priority" | "dedicated";
     createdAt: Date;
   }>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const limitsSchema = new Schema<PackageLimits>(
+const entitlementsSchema = new Schema<PackageEntitlements>(
   {
-    users: { type: Number, required: true, min: 1 },
+    employees: { type: Number, required: true, min: 1 },
+    admins: { type: Number, required: true, min: 0, default: 1 },
     documents: { type: Number, required: true, min: 0 },
-    questionsPerMonth: { type: Number, required: true, min: 0 },
     storageMb: { type: Number, required: true, min: 0 },
+    fileSizeMb: { type: Number, required: true, min: 0, default: 10 },
+    queriesPerMonth: { type: Number, required: true, min: 0 },
+    tokensPerMonth: { type: Number, required: true, min: 0, default: 0 },
+    ocrPagesPerMonth: { type: Number, required: true, min: 0, default: 0 },
   },
   { _id: false },
 );
@@ -52,14 +84,52 @@ const packageSchema = new Schema<PackageDocument>(
     version: { type: Number, required: true, min: 1, default: 1 },
     monthlyPrice: { type: Number, required: true, min: 0 },
     currency: { type: String, trim: true, uppercase: true, default: "USD" },
-    limits: { type: limitsSchema, required: true },
+    entitlements: { type: entitlementsSchema, required: true },
+    annualPrice: { type: Number, min: 0, default: 0 },
+    trialDays: { type: Number, min: 0, default: 30 },
+    visibility: {
+      type: String,
+      enum: ["public", "internal"],
+      default: "public",
+    },
+    supportedModels: { type: [String], default: ["basic"] },
+    analyticsLevel: {
+      type: String,
+      enum: ["basic", "advanced", "enterprise"],
+      default: "basic",
+    },
+    retentionDays: { type: Number, min: 0, default: 90 },
+    supportLevel: {
+      type: String,
+      enum: ["community", "standard", "priority", "dedicated"],
+      default: "community",
+    },
     versions: {
       type: [
         new Schema(
           {
             version: { type: Number, required: true },
             monthlyPrice: { type: Number, required: true },
-            limits: { type: limitsSchema, required: true },
+            entitlements: { type: entitlementsSchema, required: true },
+            annualPrice: { type: Number, min: 0, default: 0 },
+            trialDays: { type: Number, min: 0, default: 30 },
+            visibility: {
+              type: String,
+              enum: ["public", "internal"],
+              default: "public",
+            },
+            supportedModels: { type: [String], default: ["basic"] },
+            analyticsLevel: {
+              type: String,
+              enum: ["basic", "advanced", "enterprise"],
+              default: "basic",
+            },
+            retentionDays: { type: Number, min: 0, default: 90 },
+            supportLevel: {
+              type: String,
+              enum: ["community", "standard", "priority", "dedicated"],
+              default: "community",
+            },
             createdAt: { type: Date, required: true },
           },
           { _id: false },
@@ -68,8 +138,21 @@ const packageSchema = new Schema<PackageDocument>(
       default: [],
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
 );
+
+packageSchema.virtual("limits").get(function (this: PackageDocument) {
+  return {
+    users: this.entitlements.employees,
+    documents: this.entitlements.documents,
+    questionsPerMonth: this.entitlements.queriesPerMonth,
+    storageMb: this.entitlements.storageMb,
+  };
+});
 
 const PackageModel = mongoose.model<PackageDocument>("Package", packageSchema);
 export default PackageModel;

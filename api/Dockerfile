@@ -13,7 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python-is-python3 make g++ ca-certificates libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 ENV MONGOMS_DISABLE_POSTINSTALL=1
-RUN npm ci \
+RUN npm install \
     --workspace api \
     --workspace workers \
     --include-workspace-root

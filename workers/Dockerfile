@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 COPY api/package.json api/package.json
 COPY app/package.json app/package.json
 COPY workers/package.json workers/package.json
-RUN npm ci --workspace workers --include-workspace-root --ignore-scripts
+RUN npm install --workspace workers --include-workspace-root --ignore-scripts
 
 COPY workers/ workers/
 COPY tsconfig.base.json eslint.config.mjs ./

@@ -15,6 +15,7 @@ export interface PlatformTenant {
   name: string;
   slug: string;
   status: TenantStatus;
+  /** @deprecated Use subscription data from super-admin subscriptions endpoint instead. */
   plan: TenantPlan;
   createdAt: string;
   updatedAt: string;
