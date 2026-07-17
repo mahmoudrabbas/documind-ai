@@ -11,6 +11,7 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
 import { hashPassword } from "./passwordHashing.js";
 import { signJwt } from "./jwtTokens.js";
 import { config } from "../../config/index.js";
@@ -87,6 +88,7 @@ beforeEach(async () => {
   await Promise.all([
     TenantModel.deleteMany({ slug: { $ne: "___test_cleanup___" } }),
     UserModel.deleteMany({}),
+    SubscriptionModel.deleteMany({}),
     RefreshTokenModel.deleteMany({}),
     AuditLogModel.deleteMany({}),
   ]);
@@ -433,6 +435,66 @@ test("resend verification email returns generic response", async () => {
     body.message.includes("If the email exists"),
     "should return generic message",
   );
+});
+
+// ─── Billing: Registration creates subscription (Issue 04) ────────────────────
+
+test("registration creates a TRIALING subscription for the new tenant", async () => {
+  const res = await registerTenant("sub-test-co", "admin@subtest.com", "Subscription Test Co");
+  assert.equal(res.status, 201, "registration should return 201 Created");
+
+  const body = await res.json() as { data: { tenant: { id: string } } };
+  const tenantId = body.data.tenant.id;
+  assert.ok(tenantId, "tenant should have an id");
+
+  const subscription = await SubscriptionModel.findOne({ tenantId }).lean().exec();
+  assert.ok(subscription, "a subscription should exist for the registered tenant");
+  assert.equal(subscription!.status, "TRIALING", "subscription status should be TRIALING");
+  assert.ok(subscription!.packageId, "subscription should reference a package");
+  assert.ok(subscription!.packageVersion >= 1, "subscription should have a package version");
+});
+
+test("registration with packageCode creates subscription for that package", async () => {
+  // First register to auto-bootstrap the free package
+  await registerTenant("bootstrap-pkg", "bootstrap@subtest.com", "Bootstrap Co");
+
+  const res = await fetch(`http://127.0.0.1:${port}/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      companyName: "Package Selector Co",
+      companySlug: "pkg-selector",
+      adminName: "Admin",
+      email: "admin@pkgselect.com",
+      password: TEST_PASSWORD,
+      packageCode: "free",
+    }),
+  });
+  assert.equal(res.status, 201, "registration with packageCode should return 201 Created");
+
+  const body = await res.json() as { data: { tenant: { id: string } } };
+  const tenantId = body.data.tenant.id;
+
+  const subscription = await SubscriptionModel.findOne({ tenantId }).lean().exec();
+  assert.ok(subscription, "a subscription should exist");
+  assert.equal(subscription!.status, "TRIALING");
+});
+
+test("login does not create a new subscription", async () => {
+  await createActiveTenantAdmin();
+
+  const loginRes = await login("acme-consulting", "sarah@acme.com");
+  assert.equal(loginRes.status, 200);
+
+  // Login should not create a subscription — only registration does
+  const subscriptions = await SubscriptionModel.find({}).lean().exec();
+  // There could be a subscription created during registration of this tenant
+  // in createActiveTenantAdmin — but login itself must not create one
+  // So verify no NEW subscription was created specifically by this login
+  // (subscription count should stay as-is from registration)
+  // createActiveTenantAdmin does not go through registerTenantAndAdmin,
+  // so there should be 0 subscriptions
+  assert.equal(subscriptions.length, 0, "login should not create a subscription");
 });
 
 // ─── Rate Limit Response Shape (LAST — exhausts rate limiter) ────────────────
