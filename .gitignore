@@ -21,3 +21,20 @@ secrets/*
 api/dist/
 packages/*/dist/
 *.tsbuildinfo
+
+# Agent working files
+.omo/
+**/.omo/
+
+# Validation & analysis artifacts
+*-validation-summary/
+artifacts/
+compose-summary/
+docker-api-summary/
+docker-app-summary/
+docker-workers-summary/
+repository-security-summary/
+TEAM_LOCAL_SETUP_AGENT_V2.md
+
+# Stitch design tool output
+app/stitch/

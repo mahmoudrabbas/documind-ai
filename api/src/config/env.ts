@@ -61,6 +61,7 @@ const envSchema = z
       .min(1)
       .default("development-only-password-reset-secret"),
     PASSWORD_RESET_JWT_EXPIRES_IN: z.string().default("15m"),
+    EMAIL_WEBHOOK_SECRET: z.string().default("development-only-webhook-secret"),
     SEND_EMAILS: z
       .string()
       .default("false")
@@ -105,6 +106,7 @@ const envSchema = z
         ["JWT_REFRESH_SECRET", env.JWT_REFRESH_SECRET],
         ["EMAIL_VERIFICATION_JWT_SECRET", env.EMAIL_VERIFICATION_JWT_SECRET],
         ["PASSWORD_RESET_JWT_SECRET", env.PASSWORD_RESET_JWT_SECRET],
+        ["EMAIL_WEBHOOK_SECRET", env.EMAIL_WEBHOOK_SECRET],
       ] as const;
       for (const [key, value] of requiredSecrets) {
         if (value.length < 32 || value.startsWith("development-only-")) {
@@ -169,6 +171,11 @@ export function parseEnv(env: Record<string, string | undefined>): Env {
     PASSWORD_RESET_JWT_SECRET: getSecretValue(
       "PASSWORD_RESET_JWT_SECRET",
       env.PASSWORD_RESET_JWT_SECRET,
+      env,
+    ),
+    EMAIL_WEBHOOK_SECRET: getSecretValue(
+      "EMAIL_WEBHOOK_SECRET",
+      env.EMAIL_WEBHOOK_SECRET,
       env,
     ),
     SMTP_PASS: getSecretValue("SMTP_PASS", env.SMTP_PASS, env),

@@ -7,18 +7,18 @@ import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 
 type PackageData = {
-  _id: string;
+  id: string;
   name: string;
   code: string;
   description: string;
-  active: boolean;
-  version: number;
   monthlyPrice: number;
+  annualPrice?: number;
+  trialDays?: number;
   currency: string;
-  limits: {
-    users: number;
+  entitlements: {
+    employees: number;
     documents: number;
-    questionsPerMonth: number;
+    queriesPerMonth: number;
     storageMb: number;
   };
 };
@@ -234,6 +234,7 @@ function PricingSection() {
   const { t, dir } = useI18n();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [annual, setAnnual] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -255,19 +256,49 @@ function PricingSection() {
     <section id="pricing" className="bg-surface py-24" dir={dir}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading title={t("landing.pricingTitle")} subtitle={t("landing.pricingSubtitle")} />
+
+        {/* Billing toggle */}
+        <div className="mb-10 flex justify-center">
+          <div className="inline-flex items-center rounded-xl border border-outline-variant bg-surface p-1">
+            <button
+              onClick={() => setAnnual(false)}
+              className={cn(
+                "rounded-lg px-5 py-2 text-label-md font-medium transition-all",
+                !annual
+                  ? "bg-primary text-on-primary shadow-sm"
+                  : "text-on-surface-variant hover:text-primary"
+              )}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setAnnual(true)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-5 py-2 text-label-md font-medium transition-all",
+                annual
+                  ? "bg-primary text-on-primary shadow-sm"
+                  : "text-on-surface-variant hover:text-primary"
+              )}
+            >
+              Annual
+              <span className="rounded-full bg-tertiary/10 px-2 py-0.5 text-label-xs text-tertiary">Save</span>
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
           </div>
         ) : packages.length === 0 ? (
           <div className="grid gap-8 md:grid-cols-3">
-            <PricingCardFree t={t} />
+            <PricingCardFree t={t} packages={[]} annual={annual} />
           </div>
         ) : (
           <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3 items-start">
-            <PricingCardFree t={t} />
+            <PricingCardFree t={t} packages={packages} annual={annual} />
             {packages.map((pkg) => (
-              <PricingCard key={pkg._id} pkg={pkg} t={t} />
+              <PricingCard key={pkg.id} pkg={pkg} t={t} annual={annual} />
             ))}
           </div>
         )}
@@ -276,7 +307,49 @@ function PricingSection() {
   );
 }
 
-function PricingCardFree({ t }: { t: (key: string) => string }) {
+function PricingCardFree({ t, packages, annual: _annual }: { t: (key: string) => string; packages: PackageData[]; annual: boolean }) {
+  const freePkg = packages.find((p) => p.code === "free");
+
+  if (freePkg) {
+    return (
+      <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card">
+        {typeof freePkg.trialDays === "number" && freePkg.trialDays > 0 && (
+          <div className="mb-3">
+            <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
+              {freePkg.trialDays}-day free trial
+            </span>
+          </div>
+        )}
+        <h3 className="text-title-lg font-bold text-primary">{freePkg.name}</h3>
+        <div className="mt-4 flex items-baseline gap-1">
+          <span className="text-display-lg font-bold text-primary">$0</span>
+          <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
+        </div>
+        <p className="mt-2 text-body-sm text-on-surface-variant">{freePkg.description}</p>
+        <ul className="mt-8 flex-1 space-y-3">
+          {[
+            `${freePkg.entitlements.employees} users`,
+            `${freePkg.entitlements.documents} documents`,
+            `${freePkg.entitlements.queriesPerMonth.toLocaleString()} questions/mo`,
+            `${freePkg.entitlements.storageMb} MB storage`,
+          ].map((item) => (
+            <li key={item} className="flex items-center gap-2 text-body-sm text-on-surface-variant">
+              <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+        <Link
+          href="/register"
+          className="mt-8 block w-full rounded-xl border border-primary py-3 text-center text-label-md font-semibold text-primary transition-all hover:bg-primary hover:text-on-primary"
+        >
+          {t("landing.pricingFreeCta")}
+        </Link>
+      </div>
+    );
+  }
+
+  // Fallback: hardcoded free card when API data unavailable
   return (
     <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card">
       <h3 className="text-title-lg font-bold text-primary">{t("landing.pricingFree")}</h3>
@@ -303,33 +376,47 @@ function PricingCardFree({ t }: { t: (key: string) => string }) {
   );
 }
 
-function PricingCard({ pkg, t }: { pkg: PackageData; t: (key: string) => string }) {
+function PricingCard({ pkg, t, annual }: { pkg: PackageData; t: (key: string) => string; annual: boolean }) {
+  const effectivePrice = annual && pkg.annualPrice !== undefined
+    ? Math.round(pkg.annualPrice / 12)
+    : pkg.monthlyPrice;
+
   return (
     <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card transition-shadow hover:shadow-popover">
+      {typeof pkg.trialDays === "number" && pkg.trialDays > 0 && (
+        <div className="mb-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
+            {pkg.trialDays}-day free trial
+          </span>
+        </div>
+      )}
       <h3 className="text-title-lg font-bold text-primary">{pkg.name}</h3>
       <div className="mt-4 flex items-baseline gap-1">
         <span className="text-display-lg font-bold text-primary">
-          {pkg.currency === "USD" ? "$" : pkg.currency}{pkg.monthlyPrice}
+          {pkg.currency === "USD" ? "$" : pkg.currency}{effectivePrice}
         </span>
         <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
       </div>
+      {annual && pkg.annualPrice !== undefined && (
+        <p className="mt-1 text-label-xs text-on-surface-variant">billed annually</p>
+      )}
       <p className="mt-2 text-body-sm text-on-surface-variant">{pkg.description}</p>
       <ul className="mt-8 flex-1 space-y-3">
         <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.limits.users} users
+          {pkg.entitlements.employees} users
         </li>
         <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.limits.documents} documents
+          {pkg.entitlements.documents} documents
         </li>
         <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.limits.questionsPerMonth.toLocaleString()} questions/mo
+          {pkg.entitlements.queriesPerMonth.toLocaleString()} questions/mo
         </li>
         <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
           <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.limits.storageMb} MB storage
+          {pkg.entitlements.storageMb} MB storage
         </li>
       </ul>
       <Link

@@ -29,6 +29,11 @@ export function getMongoClient(): MongoClient | null {
   return client;
 }
 
+export function setMockClient(mockClient: MongoClient | null): void {
+  client = mockClient;
+  connected = mockClient !== null;
+}
+
 export async function disconnectMongo(): Promise<void> {
   if (!client) return;
   try {

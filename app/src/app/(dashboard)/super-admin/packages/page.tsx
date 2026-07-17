@@ -40,14 +40,16 @@ export default function PackagesPage() {
           headers={[
             "Package",
             "Version",
-            "Price",
-            "Users",
-            "Documents",
-            "Queries",
+            "Monthly",
+            "Annual",
+            "Trial",
+            "Employees",
+            "Queries/mo",
+            "Visibility",
             "Status",
             "Actions",
           ]}
-          minWidth="900px"
+          minWidth="1100px"
         >
           {state.data.map((pkg) => (
             <tr key={pkg._id}>
@@ -59,9 +61,36 @@ export default function PackagesPage() {
               <td className={cell}>
                 {pkg.currency} {pkg.monthlyPrice.toFixed(2)}
               </td>
-              <td className={cell}>{pkg.limits.users}</td>
-              <td className={cell}>{pkg.limits.documents}</td>
-              <td className={cell}>{pkg.limits.questionsPerMonth}</td>
+              <td className={cell}>
+                {pkg.annualPrice > 0
+                  ? `${pkg.currency} ${pkg.annualPrice.toFixed(2)}`
+                  : "—"}
+              </td>
+              <td className={cell}>
+                {pkg.trialDays > 0 ? `${pkg.trialDays}d` : "—"}
+              </td>
+              <td className={cell}>{pkg.entitlements?.employees ?? pkg.limits.users}</td>
+              <td className={cell}>
+                {(pkg.entitlements?.queriesPerMonth ?? pkg.limits.questionsPerMonth).toLocaleString()}
+              </td>
+              <td className={cell}>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${
+                    pkg.visibility === "public"
+                      ? "bg-tertiary-container/20 text-on-tertiary-container"
+                      : "bg-surface-container text-on-surface-variant"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      pkg.visibility === "public"
+                        ? "bg-tertiary"
+                        : "bg-on-surface-variant"
+                    }`}
+                  />
+                  {pkg.visibility}
+                </span>
+              </td>
               <td className={cell}>
                 <StatusPill value={pkg.active ? "active" : "inactive"} />
               </td>

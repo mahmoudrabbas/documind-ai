@@ -36,9 +36,10 @@ import { sendVerificationEmail, sendForgotPasswordEmail } from "./auth.mailer.js
 import { createAuditLog } from "../audit/audit.repository.js";
 import type { AuditEventInput } from "../audit/audit.types.js";
 import PackageModel from "../../db/models/package.model.js";
-import SubscriptionModel from "../../db/models/subscription.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import { provisionSubscription } from "../billing/registration.service.js";
+import { transitionSubscription } from "../billing/subscription.service.js";
 import {
   createEmailVerificationToken,
   hashVerificationJti,
@@ -235,6 +236,7 @@ export async function forgotPassword(
       userName: user.name,
       companyName: tenant.name,
       resetUrl: buildResetPasswordUrl(resetToken.token, tenant.slug),
+      tenantId: tenantId.toString(),
     });
   } catch {
     // Keep the public response indistinguishable when delivery is unavailable.
@@ -331,7 +333,6 @@ export async function registerTenantAndAdmin(
     slug: normalizedSlug,
     status: "pending_verification",
     plan: "free",
-    ...(payload.packageCode ? { selectedPackageCode: payload.packageCode } : {}),
   };
 
   const userPayload: UserCreateInput = {
@@ -393,7 +394,13 @@ export async function registerTenantAndAdmin(
       adminName: created.user.name,
       companyName: created.tenant.name,
       verificationUrl: buildVerificationUrl(verificationToken),
+      tenantId: created.tenant._id.toString(),
     });
+
+    await provisionSubscription(
+      created.tenant._id.toString(),
+      payload.packageCode,
+    );
 
     return {
       tenant: serializeTenant(created.tenant),
@@ -552,6 +559,7 @@ export async function resendVerificationEmail(input: unknown) {
     adminName: user.name,
     companyName: tenant?.name ?? "your company",
     verificationUrl: buildVerificationUrl(token),
+    tenantId: user.tenantId.toString(),
   });
 
   return genericResponse;
@@ -566,52 +574,26 @@ export async function completeTrial(
     throw new AppError(404, "NOT_FOUND", "Tenant not found");
   }
 
-  const packageCode = tenant.selectedPackageCode;
-  if (!packageCode) {
-    throw new AppError(400, "NO_PENDING_TRIAL", "No pending trial package found");
-  }
-
-  if (tenant.plan !== "free") {
-    throw new AppError(400, "TRIAL_ALREADY_ACTIVE", "A plan is already active for this tenant");
-  }
-
-  const pkg = await PackageModel.findOne({ code: packageCode, active: true }).lean().exec();
-
-  if (!pkg) {
-    throw new AppError(400, "INVALID_PACKAGE", "Selected package is no longer available");
-  }
-
-  const existingSubscription = await SubscriptionModel.findOne({
-    tenantId: tenant._id,
-  }).lean().exec();
-
-  if (existingSubscription) {
-    throw new AppError(400, "SUBSCRIPTION_EXISTS", "A subscription already exists for this tenant");
-  }
-
-  const now = new Date();
-  const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-  const subscription = await SubscriptionModel.create({
-    tenantId: tenant._id,
-    packageId: pkg._id,
-    packageVersion: pkg.version,
-    status: "trialing",
-    startedAt: now,
-    renewsAt: trialEnd,
-  });
+  // Subscription was created during registration; transition TRIALING → ACTIVE.
+  const subscription = await transitionSubscription(
+    identity.tenantId,
+    "ACTIVE",
+    { triggeredBy: "user" },
+  );
 
   await TenantModel.updateOne(
     { _id: tenant._id },
-    { $set: { plan: "trial" }, $unset: { selectedPackageCode: "" } },
+    { $set: { plan: "active" } },
   ).exec();
+
+  const pkg = await PackageModel.findById(subscription.packageId).lean().exec();
 
   return {
     success: true,
     subscription: {
       id: subscription._id.toString(),
-      packageId: pkg._id.toString(),
-      packageName: pkg.name,
+      packageId: subscription.packageId.toString(),
+      packageName: pkg?.name ?? "Unknown",
       status: subscription.status,
       startedAt: subscription.startedAt.toISOString(),
     },
@@ -717,34 +699,6 @@ export async function login(
       metadata: { userId: user._id.toString() },
     });
     throw error;
-  }
-
-  // Activate trial subscription if registration included a packageCode.
-  if (tenant.selectedPackageCode && tenant.plan === "free") {
-    try {
-      const trialPkg = await PackageModel.findOne({ code: tenant.selectedPackageCode, active: true }).lean().exec();
-      if (trialPkg) {
-        const existingSub = await SubscriptionModel.findOne({ tenantId: tenant._id }).lean().exec();
-        if (!existingSub) {
-          const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-          await SubscriptionModel.create({
-            tenantId: tenant._id,
-            packageId: trialPkg._id,
-            packageVersion: trialPkg.version,
-            status: "trialing",
-            startedAt: new Date(),
-            renewsAt: trialEnd,
-          });
-          await TenantModel.updateOne(
-            { _id: tenant._id },
-            { $set: { plan: "trial" }, $unset: { selectedPackageCode: "" } },
-          ).exec();
-          tenant.plan = "trial";
-        }
-      }
-    } catch {
-      // Non-blocking — login succeeds even if trial activation fails
-    }
   }
 
   const jti = randomUUID();

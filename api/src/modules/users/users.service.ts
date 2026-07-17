@@ -161,6 +161,7 @@ export async function inviteUser(
       expiryDate:
         createdUser.emailVerificationExpiresAt ??
         new Date(Date.now() + 24 * 60 * 60 * 1000),
+      tenantId: tenantId.toString(),
     });
 
     return {

@@ -1,6 +1,6 @@
 # DOCUMIND AI — Project Implementation Status
 
-> Audit date: 2026-07-14. Source-of-truth order: executable source and observed command results, then configuration, then repository documentation. Status vocabulary is restricted to: **COMPLETE**, **PARTIAL**, **NOT IMPLEMENTED**, **BLOCKED**, **NEEDS VERIFICATION**, **DOCUMENTATION ONLY**, **FRONTEND ONLY**, **BACKEND ONLY**, **MOCKED / STATIC**, and **DEPRECATED / UNUSED**.
+> Audit date: 2026-07-14 (updated 2026-07-17 for Issue 04). Source-of-truth order: executable source and observed command results, then configuration, then repository documentation. Status vocabulary is restricted to: **COMPLETE**, **PARTIAL**, **NOT IMPLEMENTED**, **BLOCKED**, **NEEDS VERIFICATION**, **DOCUMENTATION ONLY**, **FRONTEND ONLY**, **BACKEND ONLY**, **MOCKED / STATIC**, and **DEPRECATED / UNUSED**.
 
 ## 1. Executive Summary
 
@@ -83,8 +83,8 @@ The frontend protects all dashboard pages from guests, but ordinary `/dashboard/
 | Multi-tenancy/RBAC | PARTIAL | Claim-derived tenant scope, base-role guards | Guest/role guards | Middleware/repository tests | Coarse employee permissions; custom roles are labels |
 | Super Admin | PARTIAL | Real overview/tenant/package/subscription/settings APIs | Broad connected console | Route/validator tests only | Some estimated/derived metrics; no deletion/impersonation |
 | Companies/tenants | PARTIAL | Register/list/detail/suspend/reinstate/plan string | Connected platform/company views | Limited | No deletion/profile/limits lifecycle |
-| Plans/packages | PARTIAL | Catalog CRUD + manual assignment | Public and admin UI connected | Validator/route source tests | No quota enforcement/default/seed |
-| Billing/payments | NOT IMPLEMENTED | None | No checkout/portal | None | Provider, webhooks, invoices, lifecycle |
+| Plans/packages | **COMPLETE** (Issue 04) | Billing domain module with FR-PAY-001 granular entitlements (8 fields), FR-PAY-004 provider-neutral ports, 9-state subscription lifecycle with legal transition rules, package versioning with immutable snapshots, public DTO with no internal leak, registration integration via provisionSubscription, default free-package auto-bootstrap, Super Admin UI, public pricing toggle, migration scripts | Public and admin UI connected | Validator/route/domain tests + public route DTO test + subscription transition tests | Tenant `plan` field is deprecated-but-present; no real payment provider |
+| Billing/payments | PARTIAL (Issue 04 scaffolding) | Provider-neutral SubscriptionProvisioningPort + EntitlementSnapshotPort, fake adapters with contract tests, subscription domain service with legal transitions, audit events for subscription changes | No checkout/portal | Fake-adapter contract tests | No real payment provider, webhooks, invoices, or billing portal |
 | Public landing | PARTIAL | Real public packages | Landing and package-to-register link | No page behavior tests | Terms/privacy `#`; no subscription checkout |
 | Company Admin dashboard | MOCKED / STATIC | No dashboard endpoint | Hard-coded KPIs/activity | None | Real aggregation and actions |
 | Employee management | PARTIAL | Invite/list/update/delete | Connected CRUD UI | No user integration test | No resend/revoke/bulk import/search |
@@ -202,27 +202,38 @@ All `/platform/*` API routes require authentication and `SUPER_ADMIN` (`platform
 
 Company-management layouts include responsive grids, truncation, wrapping, modal sizing, and mobile table containers, but no rendered viewport inspection was performed; visual status is **NEEDS VERIFICATION**. Code evidence does not confirm reported overflow bugs.
 
-## 8. Packages, Plans, Subscriptions, and Billing
+## 8. Packages, Plans, Subscriptions, and Billing (Issue 04 — Normalize Package and Subscription Domain)
 
 ```mermaid
 flowchart LR
   SA[Super Admin] -->|CRUD| PKG[(Package catalog + versions)]
-  PUB[Landing page] -->|GET active| PKG
-  REG[Registration] -->|stores selectedPackageCode only| TEN[(Tenant)]
-  SA -->|manual assignment| SUB[(Subscription)]
-  SUB --> PKG
+  PUB[Landing page] -->|GET public/packages| PKG
+  REG[Registration] -->|provisionSubscription| SUB[(Subscription TRIALING)]
+  SUB -->|package ref + version| PKG
+  SA -->|manual transition| SUB
   SUB -. no middleware .-> Q[Quota enforcement]
   SUB -. no provider .-> PAY[Payments/webhooks/invoices]
 ```
 
+Issue 04 created a coherent package/subscription domain with:
+
+- **FR-PAY-001 (Granular entitlements):** Package model supports 8 entitlement fields (employees, admins, documents, storageMb, fileSizeMb, queriesPerMonth, tokensPerMonth, ocrPagesPerMonth), annual/monthly pricing, trial days, visibility (public/internal), supported models, analytics level, retention days, and support level.
+- **Package versioning:** Each create starts at version=1 with an immutable snapshot. Updates bump the version and push a new snapshot. Existing subscriptions retain the version they were created with.
+- **FR-PAY-004 (Provider-neutral ports):** `SubscriptionProvisioningPort` and `EntitlementSnapshotPort` interfaces with fake adapters and contract tests enable parallel payment-provider work without blocking.
+- **9-state subscription lifecycle:** TRIALING, INCOMPLETE, ACTIVE, PAST_DUE, PAUSED, CANCEL_AT_PERIOD_END, CANCELED, EXPIRED, UNPAID with explicit legal transition rules enforced by `transitionSubscription` service.
+- **Registration integration:** `registerTenantAndAdmin` calls `provisionSubscription` to create an initial TRIALING subscription linked to the selected (or default free) package. Idempotent: no duplicate subscriptions on retry.
+- **Public DTO:** `PublicPackageDTO` exposes only id, name, code, description, monthlyPrice, annualPrice, currency, trialDays, and a 4-field entitlement subset (employees, documents, storageMb, queriesPerMonth) — no version history, no internal fields.
+- **Super Admin UI:** Connected package CRUD forms, subscription list/transition, and public pricing toggle.
+- **Migration scripts:** `migrate-subscriptions.ts` and `seed-default-package.ts` for backfilling existing tenants.
+
 | Layer | Status | Evidence | Gap |
 |---|---|---|---|
-| Billing-ready data structure | PARTIAL | package/subscription models | No interval, trial duration, provider/customer IDs, tax/invoice fields |
-| Internal catalog management | PARTIAL | platform service/routes/forms | No delete/default/seed; limited limits/features |
-| Company-plan assignment | PARTIAL | `updateSubscription` | Manual only; tenant `plan` string can diverge from subscription |
+| Billing-ready data structure | COMPLETE | package/subscription models; FR-PAY-001 granular entitlements; version snapshots | No real payment provider IDs populated |
+| Internal catalog management | COMPLETE | platform service delegates to billing domain; Super Admin package CRUD | No package delete; Super Admin can archive via active=false |
+| Company-plan assignment | COMPLETE | `provisionSubscription` on registration; `transitionSubscription` for state changes; `updateSubscription` for Super Admin overrides | Tenant `plan` string can still diverge — deprecated, left for backward compat |
 | Quota enforcement | NOT IMPLEMENTED | No middleware/service callers | All stored limits unenforced |
-| Subscription lifecycle | NOT IMPLEMENTED | Status/date fields only | No activation/expiry/renewal/grace/cancel jobs |
-| Payment integration | NOT IMPLEMENTED | No SDK/routes/webhooks/UI | Entire provider/checkout/invoice/portal layer |
+| Subscription lifecycle | COMPLETE (domain) | Legal transition state machine; create/transition/get/list operations; audit on every change | No auto-expiry/renewal/cancel cron jobs |
+| Payment integration | PARTIAL (scaffolding) | Provider-neutral ports + fake adapters + contract tests | No real payment provider, webhooks, invoices, or billing portal |
 
 ## 9. Authentication and Account Lifecycle
 
@@ -253,11 +264,11 @@ All responses use the controller/error envelope; input validation is performed i
 | Documents | POST/GET `/documents`; GET/PATCH/DELETE `/documents/:id` | document CRUD | Admin/employee, tenant | upload/list/delete; detail/patch lack clear UI caller | service tests | PARTIAL/BACKEND ONLY |
 | Admin tenants | GET `/platform/tenants`, `/:id`; PATCH `/:id` | admin module | Super Admin | two tenant/company UIs | no direct integration | PARTIAL |
 | Platform | GET `/platform/overview` | platform service | Super Admin | overview | route source test | PARTIAL |
-| Platform | GET/POST `/platform/packages`; GET/PATCH `/:id` | catalog | Super Admin | package pages | validator tests | PARTIAL |
-| Platform | GET `/platform/subscriptions`; PATCH `/:tenantId` | assignments | Super Admin | subscriptions page | validator tests | PARTIAL |
+| Platform | GET/POST `/platform/packages`; GET/PATCH `/:id` | catalog (FR-PAY-001 granular entitlements, versioned) | Super Admin | package pages | validator tests + FR-PAY-001 route test | COMPLETE |
+| Platform | GET `/platform/subscriptions`; PATCH `/:tenantId` | 9-state lifecycle transitions | Super Admin | subscriptions page | validator tests + subscription state machine test | COMPLETE |
 | Platform | GET `/platform/users`, `/usage`, `/jobs`, `/system-health`, `/audit` | aggregations | Super Admin | matching pages | limited | PARTIAL |
 | Platform | GET/PATCH `/platform/ai-configuration`, `/settings` | setting blobs | Super Admin | matching forms | validator tests | PARTIAL |
-| Public | GET `/public/packages` | active packages | Public | landing | none | PARTIAL |
+| Public | GET `/public/packages` | active packages (PublicPackageDTO) | Public | landing | public route DTO test | COMPLETE |
 | Bootstrap | POST `/internal/bootstrap/super-admin` | bootstrap service | Feature flag + key + rate limit | No UI | validator/seed tests | PARTIAL |
 
 No registered routes exist for chat, retrieval, citations, processing, analytics, feedback, knowledge gaps, or the empty tenants module. No frontend call without a matching registered backend route was found among active services; empty `auth.service.ts`, `chat.service.ts`, and `analytics.service.ts` frontend files are unused scaffolds. Duplicate concepts exist for companies/tenants and two verify-email component implementations (`page.tsx` and `verify-email-client.tsx`).
@@ -375,6 +386,7 @@ AI prompt injection/retrieval isolation cannot be evaluated because AI retrieval
 | Custom roles | Tenant CRUD + assignment | role module/pages | Document base-role limitation |
 | Basic document CRUD | Real local storage/API/UI | documents module/page | Correct doc that calls it stubbed |
 | Public dynamic pricing | Active package API + landing fetch | public service/page | Document package-to-register behavior |
+| Issue 04 billing domain | Billing module with FR-PAY-001/004, 9-state subscriptions, provider-neutral ports, public DTO, registration integration, versioned packages | `api/src/modules/billing/`, migration scripts | Documented in §8 above |
 
 Contradictions: `DocuMind-AI-Flow-and-APIs.md:3,22` says documents are empty although document CRUD is implemented; `CICD_DESIGN.md:53-60` says tests/scripts are absent although manifests now contain them; README product wording reads as current behavior rather than target architecture. `checklist.md` acceptance criteria are plans, not evidence of completion.
 
