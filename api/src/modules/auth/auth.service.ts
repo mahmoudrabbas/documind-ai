@@ -36,7 +36,6 @@ import { sendVerificationEmail, sendForgotPasswordEmail } from "./auth.mailer.js
 import { createAuditLog } from "../audit/audit.repository.js";
 import type { AuditEventInput } from "../audit/audit.types.js";
 import PackageModel from "../../db/models/package.model.js";
-import SubscriptionModel from "../../db/models/subscription.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { provisionSubscription } from "../billing/registration.service.js";

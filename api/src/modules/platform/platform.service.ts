@@ -137,7 +137,7 @@ export async function updatePackage(
   await existing.save();
 
   // Delegate version bump + snapshot to billing domain
-  const { package: snapshot } = await PackageService.createVersion(id, {
+  await PackageService.createVersion(id, {
     userId: actor.userId,
     email: actor.email,
     role: actor.role,
