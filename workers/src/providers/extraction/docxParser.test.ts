@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { DocxParser } from "./docxParser.js";
 
-const FIXTURES_DIR = path.resolve(process.cwd(), "api/src/providers/extraction/__fixtures__");
+const FIXTURES_DIR = path.resolve(process.cwd(), "src/providers/extraction/__fixtures__");
 
 test("DocxParser - parses headings and paragraphs", async () => {
   const parser = new DocxParser();

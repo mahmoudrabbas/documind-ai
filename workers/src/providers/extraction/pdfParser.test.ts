@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { PdfParser } from "./pdfParser.js";
 
-const FIXTURES_DIR = path.resolve(process.cwd(), "api/src/providers/extraction/__fixtures__");
+const FIXTURES_DIR = path.resolve(process.cwd(), "src/providers/extraction/__fixtures__");
 
 test("PdfParser - parses simple PDF successfully", async () => {
   const parser = new PdfParser();

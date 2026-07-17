@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { TxtParser } from "./txtParser.js";
 
-const FIXTURES_DIR = path.resolve(process.cwd(), "api/src/providers/extraction/__fixtures__");
+const FIXTURES_DIR = path.resolve(process.cwd(), "src/providers/extraction/__fixtures__");
 
 test("TxtParser - parses plain text and splits into paragraphs", async () => {
   const parser = new TxtParser();

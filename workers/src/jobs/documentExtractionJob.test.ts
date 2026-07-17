@@ -8,7 +8,7 @@ import { config } from "../config/index.js";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
 import { PermanentJobError } from "../contracts/retryPolicy.js";
 
-const FIXTURES_DIR = path.resolve(process.cwd(), "api/src/providers/extraction/__fixtures__");
+const FIXTURES_DIR = path.resolve(process.cwd(), "src/providers/extraction/__fixtures__");
 config.UPLOAD_DIR = FIXTURES_DIR; // Override upload dir for testing
 
 const mockCtx: JobHandlerContext = {
