@@ -1,8 +1,34 @@
 import PackageModel from "../../db/models/package.model.js";
+import type { PublicPackageDTO } from "./public.types.js";
 
-export async function listActivePackages() {
-  return PackageModel.find({ active: true })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- mapper at the boundary, accept any shape
+function mapToPublicDTO(pkg: any): PublicPackageDTO {
+  return {
+    id: String(pkg._id),
+    name: pkg.name,
+    code: pkg.code,
+    description: pkg.description,
+    monthlyPrice: pkg.monthlyPrice,
+    annualPrice: pkg.annualPrice,
+    currency: pkg.currency,
+    trialDays: pkg.trialDays,
+    entitlements: {
+      employees: pkg.entitlements.employees,
+      documents: pkg.entitlements.documents,
+      storageMb: pkg.entitlements.storageMb,
+      queriesPerMonth: pkg.entitlements.queriesPerMonth,
+    },
+    supportedModels: pkg.supportedModels,
+    analyticsLevel: pkg.analyticsLevel,
+    supportLevel: pkg.supportLevel,
+    retentionDays: pkg.retentionDays,
+  };
+}
+
+export async function listPublicPackages(): Promise<PublicPackageDTO[]> {
+  const packages = await PackageModel.find({ active: true, visibility: "public" })
     .sort({ monthlyPrice: 1 })
     .lean()
     .exec();
+  return packages.map(mapToPublicDTO);
 }

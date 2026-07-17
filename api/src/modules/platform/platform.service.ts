@@ -12,6 +12,9 @@ import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
 import type { AuthIdentity } from "../auth/auth.types.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import * as PackageService from "../billing/package.service.js";
+import * as SubscriptionService from "../billing/subscription.service.js";
+import type { SubscriptionStatus } from "../billing/billing.types.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
@@ -58,16 +61,26 @@ export async function getOverview() {
   };
 }
 
+/**
+ * Delegated to {@link PackageService.listPackages}.
+ */
 export async function listPackages() {
-  return PackageModel.find().sort({ createdAt: -1 }).lean().exec();
+  return PackageService.listPackages();
 }
 
+/**
+ * Delegated to {@link PackageService.getPackage}.
+ */
 export async function getPackage(id: string) {
-  const value = await PackageModel.findById(id).lean().exec();
-  if (!value) throw new AppError(404, "NOT_FOUND", "Package not found");
-  return value;
+  return PackageService.getPackage(id);
 }
 
+/**
+ * Create a package — delegates to {@link PackageService.createPackage}.
+ *
+ * Accepts all FR-PAY-001 fields (annualPrice, trialDays, visibility,
+ * entitlements, supportedModels, analyticsLevel, retentionDays, supportLevel).
+ */
 export async function createPackage(
   input: {
     name: string;
@@ -75,41 +88,42 @@ export async function createPackage(
     description: string;
     monthlyPrice: number;
     currency: string;
-    limits: {
-      users: number;
+    entitlements: {
+      employees: number;
+      admins: number;
       documents: number;
-      questionsPerMonth: number;
       storageMb: number;
+      fileSizeMb: number;
+      queriesPerMonth: number;
+      tokensPerMonth: number;
+      ocrPagesPerMonth: number;
     };
+    annualPrice?: number;
+    trialDays?: number;
+    visibility?: "public" | "internal";
+    supportedModels?: string[];
+    analyticsLevel?: "basic" | "advanced" | "enterprise";
+    retentionDays?: number;
+    supportLevel?: "community" | "standard" | "priority" | "dedicated";
   },
   actor: AuthIdentity,
 ) {
-  const createdAt = new Date();
-  const value = await PackageModel.create({
-    ...input,
-    version: 1,
-    versions: [
-      {
-        version: 1,
-        monthlyPrice: input.monthlyPrice,
-        limits: input.limits,
-        createdAt,
-      },
-    ],
+  return PackageService.createPackage(input, {
+    userId: actor.userId,
+    email: actor.email,
+    role: actor.role,
   });
-  await getAuditWriter().write({
-    action: "PACKAGE_CREATED",
-    resourceType: "Package",
-    resourceId: value.id,
-    changes: input,
-    tenantId: "system",
-    actorId: actor.userId,
-    actorEmail: actor.email,
-    actorRole: actor.role,
-  });
-  return value.toJSON();
 }
 
+/**
+ * Update a package — applies field changes then delegates version bump
+ * to {@link PackageService.createVersion}.
+ *
+ * @deprecated Any field edit bumps the version. Use dedicated field-level
+ * endpoints when they exist.
+ *
+ * Returns `{ ...updated, versionBumped: true }`.
+ */
 export async function updatePackage(
   id: string,
   input: Record<string, unknown>,
@@ -117,42 +131,70 @@ export async function updatePackage(
 ) {
   const existing = await PackageModel.findById(id).exec();
   if (!existing) throw new AppError(404, "NOT_FOUND", "Package not found");
+
+  // Apply field changes before version bump
   Object.assign(existing, input);
-  existing.version += 1;
-  existing.versions.push({
-    version: existing.version,
-    monthlyPrice: existing.monthlyPrice,
-    limits: existing.limits,
-    createdAt: new Date(),
-  });
   await existing.save();
-  await getAuditWriter().write({
-    action: "PACKAGE_UPDATED",
-    resourceType: "Package",
-    resourceId: id,
-    changes: input,
-    tenantId: "system",
-    actorId: actor.userId,
-    actorEmail: actor.email,
-    actorRole: actor.role,
+
+  // Delegate version bump + snapshot to billing domain
+  const { package: snapshot } = await PackageService.createVersion(id, {
+    userId: actor.userId,
+    email: actor.email,
+    role: actor.role,
   });
-  return existing.toJSON();
+
+  // Re-read for full backward-compat document shape (includes _id, __v, virtuals)
+  const updated = await PackageModel.findById(id).lean().exec();
+
+  return { ...updated, versionBumped: true };
 }
 
-export async function listSubscriptions() {
-  return SubscriptionModel.find()
-    .populate("tenantId", "name slug status")
-    .populate("packageId", "name code version monthlyPrice currency")
-    .sort({ updatedAt: -1 })
-    .lean()
-    .exec();
+/**
+ * Create a subscription — delegates to {@link SubscriptionService.createSubscription}.
+ */
+export async function createSubscription(
+  tenantId: string,
+  packageId: string,
+  actor: AuthIdentity,
+) {
+  const pkg = await PackageService.getPackage(packageId);
+  return SubscriptionService.createSubscription(
+    tenantId,
+    packageId,
+    pkg.version,
+    "TRIALING",
+    { userId: actor.userId, email: actor.email, role: actor.role },
+  );
 }
 
+/**
+ * List subscriptions — delegates to {@link SubscriptionService.listSubscriptions}
+ * then populates tenant and package references for backward compat.
+ */
+export async function listSubscriptions(filter?: { status?: string }) {
+  const status = filter?.status?.toUpperCase() as SubscriptionStatus | undefined;
+  const subs = await SubscriptionService.listSubscriptions(
+    status ? { status } : undefined,
+  );
+  return SubscriptionModel.populate(subs, [
+    { path: "tenantId", select: "name slug status" },
+    { path: "packageId", select: "name code version monthlyPrice currency" },
+  ]);
+}
+
+/**
+ * Update (transition) a subscription — delegates to
+ * {@link SubscriptionService.transitionSubscription}.
+ *
+ * Maps legacy lowercase status values to UPPERCASE model statuses.
+ * Maps legacy `renewsAt` to `periodEnd`.
+ */
 export async function updateSubscription(
   tenantId: string,
   input: { packageId: string; status: string; renewsAt?: string | null },
   actor: AuthIdentity,
 ) {
+  // Validate tenant and package existence first
   const [tenant, pkg] = await Promise.all([
     TenantModel.findOne({ _id: tenantId, ...tenantFilter })
       .lean()
@@ -161,33 +203,20 @@ export async function updateSubscription(
   ]);
   if (!tenant) throw new AppError(404, "NOT_FOUND", "Tenant not found");
   if (!pkg) throw new AppError(404, "NOT_FOUND", "Active package not found");
-  const value = await SubscriptionModel.findOneAndUpdate(
-    { tenantId },
+
+  const status = input.status.toUpperCase() as SubscriptionStatus;
+
+  return SubscriptionService.transitionSubscription(
+    tenantId,
+    status,
     {
-      $set: {
-        packageId: pkg._id,
-        packageVersion: pkg.version,
-        status: input.status,
-        renewsAt: input.renewsAt ? new Date(input.renewsAt) : null,
-        cancelledAt: input.status === "cancelled" ? new Date() : null,
-      },
-      $setOnInsert: { startedAt: new Date() },
+      packageId: input.packageId,
+      packageVersion: pkg.version,
+      periodEnd: input.renewsAt ? new Date(input.renewsAt) : undefined,
+      triggeredBy: "admin",
     },
-    { upsert: true, new: true, runValidators: true },
-  )
-    .lean()
-    .exec();
-  await getAuditWriter().write({
-    action: "SUBSCRIPTION_UPDATED",
-    resourceType: "Subscription",
-    resourceId: String(value?._id ?? tenantId),
-    changes: input,
-    tenantId: tenantId,
-    actorId: actor.userId,
-    actorEmail: actor.email,
-    actorRole: actor.role,
-  });
-  return value;
+    { userId: actor.userId, email: actor.email, role: actor.role },
+  );
 }
 
 export async function listPlatformUsers(input: {
