@@ -18,9 +18,10 @@ export function findDocumentsByTenant(
   page: number,
   pageSize: number,
   filter?: Record<string, unknown>,
+  sort?: Record<string, 1 | -1>,
 ) {
   const query = tenantScopedFind(DocumentModel, tenantId, filter ?? {})
-    .sort({ createdAt: -1 })
+    .sort(sort ?? { createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize);
 
@@ -53,4 +54,13 @@ export function updateDocumentByTenantAndId(
 
 export function deleteDocumentByTenantAndId(tenantId: string, documentId: string) {
   return tenantScopedDeleteOne(DocumentModel, tenantId, { _id: documentId }).exec();
+}
+
+export function findDocumentByChecksum(tenantId: string, checksum: string) {
+  return tenantScopedFind(DocumentModel, tenantId, {
+    checksum,
+    deletedAt: null,
+  })
+    .lean<DocumentDocument[]>()
+    .exec();
 }

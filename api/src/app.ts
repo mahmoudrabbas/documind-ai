@@ -23,6 +23,10 @@ import emailWebhooks from "./modules/email/email.webhooks.js";
 import permissionsRoutes from "./modules/permissions/permissions.routes.js";
 import jobsRoutes from "./modules/jobs/jobs.routes.js";
 import { agentsRoutes, agentsAdminRoutes } from "./modules/agents/agents.routes.js";
+import checkoutRoutes from "./modules/checkout/checkout.routes.js";
+import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.routes.js";
+import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
+import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -70,6 +74,7 @@ const corsOptions: CorsOptions = {
     "Authorization",
     "X-Request-ID",
     "X-Correlation-ID",
+    "X-Confirm-Logout-All",
   ],
   exposedHeaders: ["X-Request-ID"],
   credentials: true,
@@ -94,6 +99,10 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 
+const rawBodyBuffer = express.raw({ type: "application/json", limit: "100kb" });
+
+app.use("/webhooks/payment/stripe", rawBodyBuffer);
+
 app.use("/auth", authRoutes);
 app.use("/users", usersRoutes);
 app.use("/platform", adminRoutes);
@@ -109,6 +118,10 @@ app.use("/permissions", permissionsRoutes);
 app.use("/", jobsRoutes);
 app.use("/agents", agentsRoutes);
 app.use("/super-admin/agents", agentsAdminRoutes);
+app.use("/webhooks/payment", paymentWebhookRoutes);
+app.use("/super-admin", paymentWebhookAdminRoutes);
+app.use("/super-admin", reconciliationRoutes);
+app.use("/checkout", checkoutRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

@@ -59,6 +59,11 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
       href: "/platform/emails",
       icon: "mail",
     },
+    {
+      label: "Payment Diagnostics",
+      href: "/super-admin/payments",
+      icon: "payments",
+    },
   ],
   [ROLES.COMPANY_ADMIN]: [
     { label: "Overview", href: "/dashboard", icon: "dashboard" },
@@ -71,6 +76,7 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
       icon: "search_off",
     },
     { label: "Analytics", href: "/dashboard/analytics", icon: "analytics" },
+    { label: "Billing", href: "/checkout", icon: "payments" },
     { label: "Settings", href: "/dashboard/settings", icon: "settings" },
     { label: "Audit Log", href: "/dashboard/audit", icon: "policy" },
     { label: "Email Log", href: "/dashboard/emails", icon: "mail" },

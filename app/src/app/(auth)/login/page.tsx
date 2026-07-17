@@ -97,7 +97,7 @@ export default function LoginPage() {
       case "EMAIL_NOT_VERIFIED":
         return t("auth.errorEmailNotVerified");
       case "INVALID_CREDENTIALS":
-        return t("auth.errorINVALID_CREDENTIALS");
+        return t("auth.errorInvalidCredentials");
       case "ACCOUNT_NOT_ACTIVE":
         return t("auth.errorAccountNotActive");
       case "TENANT_NOT_ACTIVE":

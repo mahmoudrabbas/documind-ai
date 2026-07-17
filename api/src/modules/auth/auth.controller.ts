@@ -13,6 +13,7 @@ import {
   forgotPassword,
   resetPassword,
   completeTrial,
+  createTestVerificationToken,
 } from "./auth.service.js";
 import { config } from "../../config/index.js";
 import { durationToMilliseconds } from "./jwtTokens.js";
@@ -249,6 +250,16 @@ export async function logoutAllController(
     if (!req.auth) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     }
+
+    if (req.headers["x-confirm-logout-all"] !== "true") {
+      res.status(409).json({
+        success: false,
+        error: "CONFIRMATION_REQUIRED",
+        message: "Send X-Confirm-Logout-All: true header to revoke all sessions",
+      });
+      return;
+    }
+
     const result = await logoutAll(req.auth, { ip: req.ip });
     clearRefreshCookie(res);
     res.status(200).json({ success: true, message: result.message });
@@ -295,4 +306,34 @@ function handleAuthError(error: unknown, res: Response, next: NextFunction) {
   }
 
   next(error);
+}
+
+export async function testVerificationTokenController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (config.NODE_ENV !== "test") {
+    res.status(403).json({ success: false, message: "Not available" });
+    return;
+  }
+
+  try {
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const companySlug = typeof req.body?.companySlug === "string" ? req.body.companySlug.trim().toLowerCase() : "";
+
+    if (!email || !companySlug) {
+      res.status(400).json({
+        success: false,
+        error: "VALIDATION_ERROR",
+        message: "email and companySlug are required",
+      });
+      return;
+    }
+
+    const token = await createTestVerificationToken(email, companySlug);
+    res.status(200).json({ success: true, data: { token } });
+  } catch (error) {
+    handleAuthError(error, res, next);
+  }
 }

@@ -5,14 +5,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import { config } from "../../config/index.js";
-
-export interface StorageProvider {
-  saveFile(buffer: Buffer, originalName: string, tenantId: string): Promise<string>;
-  saveFileFromStream(stream: Readable, originalName: string, tenantId: string): Promise<string>;
-  deleteFile(storagePath: string): Promise<void>;
-  getFileStream(storagePath: string): Readable;
-  getFullPath(storagePath: string): string;
-}
+import type { StorageProvider } from "./types.js";
 
 class LocalStorageProvider implements StorageProvider {
   private baseDir: string;
@@ -54,8 +47,8 @@ class LocalStorageProvider implements StorageProvider {
     return storagePath;
   }
 
-  async deleteFile(storagePath: string): Promise<void> {
-    const fullPath = path.join(this.baseDir, storagePath);
+  async deleteFile(storageKey: string): Promise<void> {
+    const fullPath = path.join(this.baseDir, storageKey);
 
     try {
       await fsp.unlink(fullPath);
@@ -66,14 +59,22 @@ class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  getFileStream(storagePath: string): Readable {
-    const fullPath = path.join(this.baseDir, storagePath);
+  getFileStream(storageKey: string): Readable {
+    const fullPath = path.join(this.baseDir, storageKey);
 
     return fs.createReadStream(fullPath);
   }
 
-  getFullPath(storagePath: string): string {
-    return path.join(this.baseDir, storagePath);
+  getContentType(originalName: string): string {
+    const ext = originalName.substring(originalName.lastIndexOf(".") + 1).toLowerCase();
+    const map: Record<string, string> = {
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      doc: "application/msword",
+      txt: "text/plain",
+      md: "text/markdown",
+    };
+    return map[ext] ?? "application/octet-stream";
   }
 }
 

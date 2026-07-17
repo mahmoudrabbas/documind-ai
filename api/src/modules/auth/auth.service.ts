@@ -92,9 +92,26 @@ import {
 } from "./refreshTokenHashing.js";
 
 function safeAuditLog(input: AuditEventInput) {
-  createAuditLog({ ...input, userId: input.actorId } as unknown as Record<string, unknown>).catch((err) => {
+  try {
+    const actorId = input.actorId || "system";
+
+    let userId: string | mongoose.Types.ObjectId;
+    if (actorId === "system") {
+      userId = "system";
+    } else {
+      userId = new mongoose.Types.ObjectId(actorId);
+    }
+
+    createAuditLog({
+      ...input,
+      actorId: userId,
+      userId,
+    }).catch((err) => {
+      console.error("[audit-log-failed]", err);
+    });
+  } catch (err) {
     console.error("[audit-log-failed]", err);
-  });
+  }
 }
 
 type CreatedTenantRecord = {
@@ -292,6 +309,18 @@ export async function resetPassword(
       throw invalidTokenError;
     }
     await revokeAllRefreshTokensForTenantUser(user.id, tenantId, new Date());
+
+    safeAuditLog({
+      tenantId,
+      resourceType: "User",
+      resourceId: user.id.toString(),
+      action: "AUTH_PASSWORD_RESET",
+      actorId: user.id.toString(),
+      actorEmail: user.email,
+      actorRole: user.role,
+      changes: {},
+      metadata: { userId: user.id.toString() },
+    });
 
     return {
       success: true,
@@ -516,6 +545,18 @@ export async function verifyEmail(input: unknown): Promise<VerifyEmailResult> {
     if (!activatedTenant) {
       throw invalidTokenError;
     }
+
+    safeAuditLog({
+      tenantId: user.tenantId.toString(),
+      resourceType: "User",
+      resourceId: user._id.toString(),
+      action: "AUTH_EMAIL_VERIFIED",
+      actorId: user._id.toString(),
+      actorEmail: user.email,
+      actorRole: user.role,
+      changes: { emailVerifiedAt: user.emailVerifiedAt },
+      metadata: { userId: user._id.toString() },
+    });
 
     return {
       user: serializeVerifiedUser(user),
@@ -998,6 +1039,19 @@ export async function refreshAccessToken(
       );
       throw refreshTokenReusedError();
     }
+    const replacement = rotation.replacement as { _id: mongoose.Types.ObjectId; id: mongoose.Types.ObjectId };
+
+    safeAuditLog({
+      tenantId: claims.tenantId,
+      resourceType: "Session",
+      resourceId: replacement.id.toString(),
+      action: "AUTH_TOKEN_REFRESH",
+      actorId: claims.sub,
+      actorEmail: user.email,
+      actorRole: user.role,
+      changes: { familyId: tokenRecord.familyId, ip: context.ip },
+      metadata: { userId: claims.sub },
+    });
 
     return {
       refreshToken: newRefreshToken,
@@ -1046,6 +1100,18 @@ export async function logout(token: string, context: RefreshTokenContext = {}) {
       record.tenantId.toString() === claims.tenantId
     ) {
       await revokeRefreshToken(record.id, new Date(), context.ip);
+
+      safeAuditLog({
+        tenantId: claims.tenantId,
+        resourceType: "Session",
+        resourceId: record.id.toString(),
+        action: "AUTH_LOGOUT",
+        actorId: claims.sub,
+        actorEmail: "",
+        actorRole: "",
+        changes: { ip: context.ip },
+        metadata: { userId: claims.sub },
+      });
     }
   } catch {
     // Logout is intentionally idempotent, including for invalid cookies.
@@ -1103,6 +1169,27 @@ export async function createEmailVerificationTokenForUser(
   );
 
   return verificationToken.token;
+}
+
+/**
+ * Test-only: generates a verification token for a given email + companySlug.
+ * Guarded by NODE_ENV check in the controller — never exposed in production.
+ */
+export async function createTestVerificationToken(
+  email: string,
+  companySlug: string,
+): Promise<string> {
+  const tenant = await findTenantBySlug(companySlug);
+  if (!tenant) {
+    throw new AppError(404, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, "Tenant not found");
+  }
+
+  const user = await findUserDocumentByEmail(email);
+  if (!user || user.tenantId?.toString() !== tenant._id.toString()) {
+    throw new AppError(404, INVALID_OR_EXPIRED_VERIFICATION_TOKEN, "User not found");
+  }
+
+  return createEmailVerificationTokenForUser(user);
 }
 
 export function createRegisterPayload(input: RegisterInput) {

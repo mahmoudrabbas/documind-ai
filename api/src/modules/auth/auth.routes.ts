@@ -12,6 +12,7 @@ import {
   forgotPasswordController,
   resetPasswordController,
   completeTrialController,
+  testVerificationTokenController,
 } from "./auth.controller.js";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
@@ -33,5 +34,7 @@ router.post("/resend-verification-email", resendVerificationEmailController);
 router.post("/forgot-password", forgotPasswordController);
 router.post("/reset-password", resetPasswordController);
 router.get("/me", authenticate, tenantScoping, meController);
+
+router.post("/test/verify-email-token", testVerificationTokenController);
 
 export default router;
