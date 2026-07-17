@@ -17,6 +17,8 @@ services:
       - PASSWORD_RESET_JWT_SECRET_FILE=/run/secrets/api_password_reset_secret
       - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
       - SUPER_ADMIN_BOOTSTRAP_KEY_FILE=/run/secrets/api_super_admin_bootstrap_key
+      - STRIPE_SECRET_KEY_FILE=/run/secrets/stripe_secret_key
+      - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/stripe_webhook_secret
     secrets:
       - api_jwt_secret
       - api_refresh_secret
@@ -24,6 +26,8 @@ services:
       - api_password_reset_secret
       - api_smtp_pass
       - api_super_admin_bootstrap_key
+      - stripe_secret_key
+      - stripe_webhook_secret
     depends_on:
       mongodb:
         condition: service_healthy
@@ -136,6 +140,10 @@ secrets:
     file: ./secrets/api_smtp_pass.txt
   api_super_admin_bootstrap_key:
     file: ./secrets/api_super_admin_bootstrap_key.txt
+  stripe_secret_key:
+    file: ./secrets/stripe_secret_key.txt
+  stripe_webhook_secret:
+    file: ./secrets/stripe_webhook_secret.txt
   worker_mongodb_uri:
     file: ./secrets/worker_mongodb_uri.txt
   worker_redis_url:

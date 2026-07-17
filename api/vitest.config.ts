@@ -4,7 +4,8 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
-    include: ["src/modules/billing/**/*.test.ts"],
+    include: ["src/modules/billing/**/*.test.ts", 
+      "src/modules/checkout/__tests__/checkout.service.test.ts"],
     exclude: [
       "**/node_modules/**",
       "**/dist/**",

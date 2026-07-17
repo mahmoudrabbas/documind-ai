@@ -97,6 +97,11 @@ const envSchema = z
       .string()
       .default("false")
       .transform((value) => value.toLowerCase() === "true"),
+
+    PAYMENT_PROVIDER: z.enum(["fake", "stripe"]).default("fake"),
+    STRIPE_SECRET_KEY: z.string().default(""),
+    STRIPE_WEBHOOK_SECRET: z.string().default(""),
+    STRIPE_PUBLISHABLE_KEY: z.string().default(""),
   })
   .superRefine((env, context) => {
     const controlledEnvironment = env.NODE_ENV === "production" || env.NODE_ENV === "test";
@@ -176,6 +181,16 @@ export function parseEnv(env: Record<string, string | undefined>): Env {
     EMAIL_WEBHOOK_SECRET: getSecretValue(
       "EMAIL_WEBHOOK_SECRET",
       env.EMAIL_WEBHOOK_SECRET,
+      env,
+    ),
+    STRIPE_SECRET_KEY: getSecretValue(
+      "STRIPE_SECRET_KEY",
+      env.STRIPE_SECRET_KEY,
+      env,
+    ),
+    STRIPE_WEBHOOK_SECRET: getSecretValue(
+      "STRIPE_WEBHOOK_SECRET",
+      env.STRIPE_WEBHOOK_SECRET,
       env,
     ),
     SMTP_PASS: getSecretValue("SMTP_PASS", env.SMTP_PASS, env),
