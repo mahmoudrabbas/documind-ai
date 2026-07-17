@@ -4,18 +4,18 @@ import { logger } from "../../common/logger/logger.js";
 
 let provider: PaymentProvider | null = null;
 
-export function getPaymentProvider(): PaymentProvider {
+export async function getPaymentProvider(): Promise<PaymentProvider> {
   if (provider) return provider;
 
   if (config.PAYMENT_PROVIDER === "stripe") {
-    const { StripePaymentProvider } = require(
-      "../billing/ports/adapters/stripe-payment-provider.js",
+    const { StripePaymentProvider } = await import(
+      "../billing/ports/adapters/stripe-payment-provider.js"
     );
     provider = new StripePaymentProvider() as PaymentProvider;
     logger.info("Payment provider: Stripe (production)");
   } else {
-    const { FakePaymentProvider } = require(
-      "../billing/ports/fakes/fake-payment-provider.js",
+    const { FakePaymentProvider } = await import(
+      "../billing/ports/fakes/fake-payment-provider.js"
     );
     provider = new FakePaymentProvider() as unknown as PaymentProvider;
     logger.info("Payment provider: Fake (development/test)");

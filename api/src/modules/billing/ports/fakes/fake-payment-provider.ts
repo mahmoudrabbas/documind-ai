@@ -101,7 +101,9 @@ export class FakePaymentProvider implements PaymentProvider {
     };
   }
 
-  verifyWebhookSignature(_body: string, _signature: string): boolean {
+  verifyWebhookSignature(body: string, signature: string): boolean {
+    void body;
+    void signature;
     return true;
   }
 
