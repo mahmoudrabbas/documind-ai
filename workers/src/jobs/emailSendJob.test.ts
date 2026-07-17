@@ -1,17 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ObjectId } from "mongodb";
+import { ObjectId, type MongoClient } from "mongodb";
 import { createEmailSendJobHandler } from "./emailSendJob.js";
 import { setMockClient } from "../db/mongo.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
+import type { EmailDispatchInput, EmailDispatchResult, EmailDispatchPort } from "../providers/emailDispatchPort.js";
 
-const mockPort = {
-  send: async (input: any): Promise<any> => ({}) as any,
+const mockPort: EmailDispatchPort = {
+  send: async (): Promise<EmailDispatchResult> => ({ providerMessageId: null, state: "SENT" }),
 };
 
 const mockCtx: JobHandlerContext = {
-  envelope: {} as any,
+  envelope: {} as JobHandlerContext["envelope"],
   traceId: "trace-1",
   isRetry: false,
   attemptsMade: 0,
@@ -37,30 +38,31 @@ test("happy path: queues email, sends it, transitions to SENT", async () => {
     attemptCount: 0,
   };
 
-  const findOneCalls: any[] = [];
-  const updateOneCalls: any[] = [];
-  const insertOneCalls: any[] = [];
+  const findOneCalls: Array<{ name: string; query: Record<string, unknown> }> = [];
+  const updateOneCalls: Array<{ name: string; query: Record<string, unknown>; update: Record<string, unknown> }> = [];
+  const insertOneCalls: Array<{ name: string; doc: Record<string, unknown> }> = [];
 
   const mockDb = {
     collection: (name: string) => {
       return {
-        findOne: async (query: any) => {
+        findOne: async (query: Record<string, unknown>) => {
           findOneCalls.push({ name, query });
           if (name === "emailmessages") return mockMessage;
           if (name === "emailsuppressions") return null;
           if (name === "tenants") return { settings: { accentColor: "#ff0000", logoUrl: "logo" } };
           return null;
         },
-        updateOne: async (query: any, update: any) => {
+        updateOne: async (query: Record<string, unknown>, update: Record<string, unknown>) => {
           updateOneCalls.push({ name, query, update });
           if (name === "emailmessages") {
-            if (update.$set && update.$set.state) {
-              mockMessage.state = update.$set.state;
+            const $set = update.$set as Record<string, unknown> | undefined;
+            if ($set && $set.state) {
+              mockMessage.state = $set.state as string;
             }
           }
           return { matchedCount: 1, modifiedCount: 1 };
         },
-        insertOne: async (doc: any) => {
+        insertOne: async (doc: Record<string, unknown>) => {
           insertOneCalls.push({ name, doc });
           return { insertedId: doc._id };
         },
@@ -70,11 +72,11 @@ test("happy path: queues email, sends it, transitions to SENT", async () => {
 
   const mockClient = {
     db: () => mockDb,
-  } as any;
+  } as unknown as MongoClient;
 
   setMockClient(mockClient);
 
-  mockPort.send = async (input) => {
+  mockPort.send = async (input: EmailDispatchInput): Promise<EmailDispatchResult> => {
     assert.equal(input.to, "test@example.com");
     assert.equal(input.idempotencyKey, "idem-1");
     return {
@@ -83,14 +85,14 @@ test("happy path: queues email, sends it, transitions to SENT", async () => {
     };
   };
 
-  const handler = createEmailSendJobHandler(mockPort as any);
+  const handler = createEmailSendJobHandler(mockPort);
   const result = await handler.handle({ messageId: messageId.toString() }, mockCtx);
 
   assert.deepEqual(result, { summary: { sent: true, providerMessageId: "prov-1" } });
   assert.equal(mockMessage.state, "SENT");
   
-  assert.ok(updateOneCalls.some(c => c.name === "emailmessages" && c.update.$set.state === "PROCESSING"));
-  assert.ok(updateOneCalls.some(c => c.name === "emailmessages" && c.update.$set.state === "SENT"));
+  assert.ok(updateOneCalls.some(c => c.name === "emailmessages" && (c.update.$set as Record<string, unknown>)?.state === "PROCESSING"));
+  assert.ok(updateOneCalls.some(c => c.name === "emailmessages" && (c.update.$set as Record<string, unknown>)?.state === "SENT"));
   assert.ok(insertOneCalls.some(c => c.name === "emailattempts" && c.doc.state === "PROCESSING"));
 
   setMockClient(null);
@@ -104,7 +106,7 @@ test("discards if CANCELLED", async () => {
   };
 
   const mockDb = {
-    collection: (name: string) => {
+    collection: () => {
       return {
         findOne: async () => mockMessage,
       };
@@ -113,7 +115,7 @@ test("discards if CANCELLED", async () => {
 
   const mockClient = {
     db: () => mockDb,
-  } as any;
+  } as unknown as MongoClient;
 
   setMockClient(mockClient);
 
@@ -123,7 +125,7 @@ test("discards if CANCELLED", async () => {
     return { providerMessageId: null, state: "SENT" };
   };
 
-  const handler = createEmailSendJobHandler(mockPort as any);
+  const handler = createEmailSendJobHandler(mockPort);
   const result = await handler.handle({ messageId: messageId.toString() }, mockCtx);
 
   assert.deepEqual(result, { summary: { discarded: true, reason: "state_CANCELLED" } });
@@ -151,19 +153,20 @@ test("throws RetryableJobError on TEMPORARY_FAILURE", async () => {
   const mockDb = {
     collection: (name: string) => {
       return {
-        findOne: async (query: any) => {
+        findOne: async () => {
           if (name === "emailmessages") return mockMessage;
           if (name === "emailsuppressions") return null;
           if (name === "tenants") return { settings: {} };
           return null;
         },
-        updateOne: async (query: any, update: any) => {
-          if (name === "emailmessages" && update.$set && update.$set.state) {
-            mockMessage.state = update.$set.state;
+        updateOne: async (_query: Record<string, unknown>, update: Record<string, unknown>) => {
+          const $set = update.$set as Record<string, unknown> | undefined;
+          if (name === "emailmessages" && $set && $set.state) {
+            mockMessage.state = $set.state as string;
           }
           return { matchedCount: 1, modifiedCount: 1 };
         },
-        insertOne: async (doc: any) => {
+        insertOne: async (doc: Record<string, unknown>) => {
           return { insertedId: doc._id };
         },
       };
@@ -172,7 +175,7 @@ test("throws RetryableJobError on TEMPORARY_FAILURE", async () => {
 
   const mockClient = {
     db: () => mockDb,
-  } as any;
+  } as unknown as MongoClient;
 
   setMockClient(mockClient);
 
@@ -185,7 +188,7 @@ test("throws RetryableJobError on TEMPORARY_FAILURE", async () => {
     };
   };
 
-  const handler = createEmailSendJobHandler(mockPort as any);
+  const handler = createEmailSendJobHandler(mockPort);
   await assert.rejects(
     handler.handle({ messageId: messageId.toString() }, mockCtx),
     RetryableJobError
@@ -212,25 +215,26 @@ test("throws PermanentJobError and suppresses on hard bounce", async () => {
     attemptCount: 0,
   };
 
-  const updateOneCalls: any[] = [];
+  const updateOneCalls: Array<{ name: string; query: Record<string, unknown>; update: Record<string, unknown> }> = [];
 
   const mockDb = {
     collection: (name: string) => {
       return {
-        findOne: async (query: any) => {
+        findOne: async () => {
           if (name === "emailmessages") return mockMessage;
           if (name === "emailsuppressions") return null;
           if (name === "tenants") return { settings: {} };
           return null;
         },
-        updateOne: async (query: any, update: any) => {
+        updateOne: async (query: Record<string, unknown>, update: Record<string, unknown>) => {
           updateOneCalls.push({ name, query, update });
-          if (name === "emailmessages" && update.$set && update.$set.state) {
-            mockMessage.state = update.$set.state;
+          const $set = update.$set as Record<string, unknown> | undefined;
+          if (name === "emailmessages" && $set && $set.state) {
+            mockMessage.state = $set.state as string;
           }
           return { matchedCount: 1, modifiedCount: 1 };
         },
-        insertOne: async (doc: any) => {
+        insertOne: async (doc: Record<string, unknown>) => {
           return { insertedId: doc._id };
         },
       };
@@ -239,7 +243,7 @@ test("throws PermanentJobError and suppresses on hard bounce", async () => {
 
   const mockClient = {
     db: () => mockDb,
-  } as any;
+  } as unknown as MongoClient;
 
   setMockClient(mockClient);
 
@@ -252,7 +256,7 @@ test("throws PermanentJobError and suppresses on hard bounce", async () => {
     };
   };
 
-  const handler = createEmailSendJobHandler(mockPort as any);
+  const handler = createEmailSendJobHandler(mockPort);
   await assert.rejects(
     handler.handle({ messageId: messageId.toString() }, mockCtx),
     PermanentJobError

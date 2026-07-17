@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
-import { JobHandlerDefinition, JobHandlerResult, JobHandlerContext } from "../contracts/jobDispatcher.js";
+import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getTemplate } from "../email-templates/templateRegistry.js";
 import type { EmailDispatchPort } from "../providers/emailDispatchPort.js";

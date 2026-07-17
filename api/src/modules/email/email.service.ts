@@ -66,7 +66,7 @@ export class EmailService {
       templateId: input.templateId,
       templateVersion: "1.0",
       language: input.language,
-      variables: input.variables as any,
+      variables: input.variables as Record<string, unknown>,
       subject: preview.subject,
       state: isSuppressed ? "SUPPRESSED" : "PENDING",
       idempotencyKey: input.idempotencyKey,
@@ -190,6 +190,7 @@ export class EmailService {
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async resendMessage(messageId: string, tenantId: string, actorId?: string) {
     const message = await EmailMessageModel.findOne({
       _id: new mongoose.Types.ObjectId(messageId),

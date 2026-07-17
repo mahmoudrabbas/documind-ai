@@ -26,7 +26,6 @@ import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import DocumentModel from "./db/models/document.model.js";
 import UsageLogModel from "./db/models/usageLog.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
-import { sendVerificationEmail } from "./modules/auth/auth.mailer.js";
 import {
   hashPassword,
   verifyPassword,

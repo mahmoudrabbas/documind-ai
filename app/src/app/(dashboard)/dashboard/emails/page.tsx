@@ -15,22 +15,22 @@ export default function CompanyEmailsPage() {
   const [previewData, setPreviewData] = useState<EmailPreviewData | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
-  useEffect(() => {
-    fetchEmails();
-  }, []);
-
   const fetchEmails = async () => {
     try {
       setIsLoading(true);
       const data = await emailService.listEmails({ limit: 50 });
       setEmails(data.data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || "Failed to load emails");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load emails");
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchEmails();
+  }, []);
 
   const getStatusBadgeVariant = (state: string) => {
     switch (state) {
@@ -54,8 +54,8 @@ export default function CompanyEmailsPage() {
     try {
       await emailService.resendEmail(messageId);
       await fetchEmails();
-    } catch (err: any) {
-      alert("Failed to resend email: " + err.message);
+    } catch (err: unknown) {
+      alert("Failed to resend email: " + (err instanceof Error ? err.message : "Unknown error"));
     }
   };
 
@@ -110,7 +110,7 @@ export default function CompanyEmailsPage() {
                             recipientEmail: email.recipientEmail,
                             templateId: email.templateId,
                             state: email.state,
-                            variables: (email as any).variables ?? null,
+                            variables: (email as EmailMessage & { variables?: Record<string, unknown> }).variables ?? null,
                           });
                           setIsPreviewOpen(true);
                         }}
