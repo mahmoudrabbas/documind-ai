@@ -21,6 +21,13 @@ const envSchema = z.object({
     .default("1")
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().positive().int()),
+    
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  SMTP_SECURE: z.boolean().default(false),
 }).superRefine((env, context) => {
   if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
     if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")

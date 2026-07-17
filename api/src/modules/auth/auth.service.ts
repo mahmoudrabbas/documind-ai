@@ -235,6 +235,7 @@ export async function forgotPassword(
       userName: user.name,
       companyName: tenant.name,
       resetUrl: buildResetPasswordUrl(resetToken.token, tenant.slug),
+      tenantId: tenantId.toString(),
     });
   } catch {
     // Keep the public response indistinguishable when delivery is unavailable.
@@ -393,6 +394,7 @@ export async function registerTenantAndAdmin(
       adminName: created.user.name,
       companyName: created.tenant.name,
       verificationUrl: buildVerificationUrl(verificationToken),
+      tenantId: created.tenant._id.toString(),
     });
 
     return {
@@ -552,6 +554,7 @@ export async function resendVerificationEmail(input: unknown) {
     adminName: user.name,
     companyName: tenant?.name ?? "your company",
     verificationUrl: buildVerificationUrl(token),
+    tenantId: user.tenantId.toString(),
   });
 
   return genericResponse;

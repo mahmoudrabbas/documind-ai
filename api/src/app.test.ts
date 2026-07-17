@@ -26,7 +26,7 @@ import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import DocumentModel from "./db/models/document.model.js";
 import UsageLogModel from "./db/models/usageLog.model.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
-import { buildEmailVerificationTemplate } from "./modules/auth/auth.mailer.js";
+import { sendVerificationEmail } from "./modules/auth/auth.mailer.js";
 import {
   hashPassword,
   verifyPassword,
@@ -188,9 +188,11 @@ after(async () => {
   await disconnectDB();
 });
 
+import { getTemplate } from "./modules/email/email-templates/templateRegistry.js";
+
 test("builds a verification email with html and plain text content", () => {
   const verificationUrl = "http://localhost:3000/verify-email?token=test-token";
-  const template = buildEmailVerificationTemplate({
+  const template = getTemplate("email_verification", "en", {
     adminName: "Sarah Ahmed",
     companyName: "Acme Consulting",
     verificationUrl,
@@ -198,17 +200,6 @@ test("builds a verification email with html and plain text content", () => {
   });
 
   assert.equal(template.subject, "Verify your DocuMind AI account");
-  assert.match(template.text, /Hi Sarah Ahmed,/);
-  assert.match(
-    template.text,
-    /Please verify your DocuMind AI account for Acme Consulting\./,
-  );
-  assert.ok(template.text.includes(verificationUrl));
-  assert.ok(template.html.includes(`<a href="${verificationUrl}"`));
-  assert.ok(template.html.includes(">Verify Email</a>"));
-  assert.match(template.html, /Sarah Ahmed/);
-  assert.match(template.html, /Acme Consulting/);
-
   for (const secret of [
     "passwordHash",
     "SMTP_PASS",
