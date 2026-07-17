@@ -107,7 +107,6 @@ export class StripePaymentProvider implements PaymentProvider {
   }
 
   parseWebhookEvent(body: Record<string, unknown>): PaymentProviderEvent {
-    const data = body.data as Record<string, unknown> | undefined;
     return {
       id: (body.id as string) ?? "",
       type: (body.type as string) ?? "unknown",

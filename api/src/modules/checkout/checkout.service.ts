@@ -6,7 +6,6 @@ import { AppError } from "../../common/errors/AppError.js";
 import {
   NOT_FOUND,
   BAD_REQUEST,
-  VALIDATION_ERROR,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { PaymentProvider } from "../billing/ports/payment-provider.port.js";

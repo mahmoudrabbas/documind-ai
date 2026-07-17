@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getSubscriptionStatus } from "@/services/billing.service";
 
-export default function CheckoutSuccessPage() {
+function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionId = searchParams.get("session_id");
@@ -68,56 +68,73 @@ export default function CheckoutSuccessPage() {
   }, [sessionId]);
 
   return (
+    <div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">
+      {status.phase === "pending" ? (
+        <>
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <h1 className="mt-6 text-title-lg font-bold text-on-surface">
+            Processing payment
+          </h1>
+          <p className="mt-2 text-on-surface-variant" aria-live="polite">
+            {status.message}
+          </p>
+        </>
+      ) : status.phase === "active" ? (
+        <>
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-tertiary-container text-2xl text-on-tertiary-container">
+            ✓
+          </div>
+          <h1 className="mt-6 text-title-lg font-bold text-on-surface">
+            {status.message}
+          </h1>
+          <p className="mt-2 text-on-surface-variant">
+            You can now use all the features of your plan.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="mt-6 min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary"
+          >
+            Go to dashboard
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error-container text-2xl text-on-error-container">
+            !
+          </div>
+          <h1 className="mt-6 text-title-lg font-bold text-on-surface">
+            Something went wrong
+          </h1>
+          <p className="mt-2 text-on-surface-variant">{status.message}</p>
+          <button
+            type="button"
+            onClick={() => router.push("/checkout")}
+            className="mt-6 min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary"
+          >
+            Back to checkout
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function CheckoutSuccessPage() {
+  return (
     <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">
-        {status.phase === "pending" ? (
-          <>
+      <Suspense
+        fallback={
+          <div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">
             <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             <h1 className="mt-6 text-title-lg font-bold text-on-surface">
-              Processing payment
+              Loading payment details…
             </h1>
-            <p className="mt-2 text-on-surface-variant" aria-live="polite">
-              {status.message}
-            </p>
-          </>
-        ) : status.phase === "active" ? (
-          <>
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-tertiary-container text-2xl text-on-tertiary-container">
-              ✓
-            </div>
-            <h1 className="mt-6 text-title-lg font-bold text-on-surface">
-              {status.message}
-            </h1>
-            <p className="mt-2 text-on-surface-variant">
-              You can now use all the features of your plan.
-            </p>
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard")}
-              className="mt-6 min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary"
-            >
-              Go to dashboard
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error-container text-2xl text-on-error-container">
-              !
-            </div>
-            <h1 className="mt-6 text-title-lg font-bold text-on-surface">
-              Something went wrong
-            </h1>
-            <p className="mt-2 text-on-surface-variant">{status.message}</p>
-            <button
-              type="button"
-              onClick={() => router.push("/checkout")}
-              className="mt-6 min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary"
-            >
-              Back to checkout
-            </button>
-          </>
-        )}
-      </div>
+          </div>
+        }
+      >
+        <CheckoutSuccessContent />
+      </Suspense>
     </div>
   );
 }
