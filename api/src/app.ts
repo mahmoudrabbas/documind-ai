@@ -74,6 +74,7 @@ const corsOptions: CorsOptions = {
     "Authorization",
     "X-Request-ID",
     "X-Correlation-ID",
+    "X-Confirm-Logout-All",
   ],
   exposedHeaders: ["X-Request-ID"],
   credentials: true,

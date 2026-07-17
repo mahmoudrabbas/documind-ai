@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface RateLimitAlertProps {
   retryAfterSeconds: number;
@@ -12,24 +12,35 @@ export function RateLimitAlert({
   onRetry,
 }: RateLimitAlertProps) {
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setSecondsLeft(initialSeconds);
-  }, [initialSeconds]);
+    if (initialSeconds <= 0) {
+      setSecondsLeft(0);
+      return;
+    }
 
-  useEffect(() => {
-    if (secondsLeft <= 0) return;
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
+    let remaining = initialSeconds;
+    setSecondsLeft(remaining);
+
+    timerRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(timerRef.current!);
+        timerRef.current = null;
+        setSecondsLeft(0);
+      } else {
+        setSecondsLeft(remaining);
+      }
     }, 1000);
-    return () => clearInterval(timer);
-  }, [secondsLeft]);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [initialSeconds]);
 
   const handleRetry = useCallback(() => {
     if (onRetry) onRetry();

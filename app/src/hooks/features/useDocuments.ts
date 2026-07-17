@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { DocumentView } from "@/types/api/documents.types";
+import type { DocumentView, DocumentVersionView } from "@/types/api/documents.types";
 import * as documentsService from "@/services/documents.service";
+
+export interface SearchFilters {
+  search?: string;
+  status?: string;
+  category?: string;
+  classification?: string;
+  isArchived?: boolean;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+}
 
 export function useDocuments() {
   const [documents, setDocuments] = useState<DocumentView[]>([]);
@@ -14,12 +24,19 @@ export function useDocuments() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{ existingDocumentId: string; existingTitle: string } | null>(null);
 
-  const fetchDocuments = useCallback(async (currentPage = 1) => {
+  const [filters, setFilters] = useState<SearchFilters>({ isArchived: false });
+
+  const [selectedDocument, setSelectedDocument] = useState<DocumentView | null>(null);
+  const [versions, setVersions] = useState<DocumentVersionView[]>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+
+  const fetchDocuments = useCallback(async (currentPage = 1, currentFilters?: SearchFilters) => {
     setError(null);
 
     try {
-      const response = await documentsService.listDocuments(currentPage);
+      const response = await documentsService.listDocuments(currentPage, 20, currentFilters ?? filters);
       const { documents: docs, pagination } = response.data;
 
       setDocuments(docs);
@@ -29,7 +46,7 @@ export function useDocuments() {
     } catch {
       setError("common.error");
     }
-  }, []);
+  }, [filters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +55,7 @@ export function useDocuments() {
       setIsLoading(true);
 
       try {
-        const response = await documentsService.listDocuments(1);
+        const response = await documentsService.listDocuments(1, 20, filters);
         if (cancelled) return;
 
         const { documents: docs, pagination } = response.data;
@@ -58,7 +75,7 @@ export function useDocuments() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters]);
 
   async function upload(
     file: File,
@@ -67,15 +84,20 @@ export function useDocuments() {
     setIsUploading(true);
     setUploadError(null);
     setUploadProgress(0);
+    setDuplicateWarning(null);
 
     try {
-      await documentsService.uploadDocument(file, metadata, (progress) => {
+      const result = await documentsService.uploadDocument(file, metadata, (progress) => {
         setUploadProgress(progress);
       });
 
+      if (result.data.duplicateWarning) {
+        setDuplicateWarning(result.data.duplicateWarning);
+      }
+
       setUploadProgress(null);
       setIsUploading(false);
-      fetchDocuments(1);
+      fetchDocuments(1, { ...filters, isArchived: false });
     } catch (error) {
       setUploadProgress(null);
       setIsUploading(false);
@@ -88,10 +110,78 @@ export function useDocuments() {
   async function remove(id: string) {
     try {
       await documentsService.deleteDocument(id);
+      setSelectedDocument(null);
       fetchDocuments(page);
     } catch {
       setError("common.error");
     }
+  }
+
+  async function permanentDelete(id: string) {
+    try {
+      await documentsService.permanentDeleteDocument(id);
+      setSelectedDocument(null);
+      fetchDocuments(page);
+    } catch {
+      setError("common.error");
+    }
+  }
+
+  async function archive(id: string) {
+    try {
+      await documentsService.archiveDocument(id);
+      setSelectedDocument(null);
+      fetchDocuments(page, filters);
+    } catch {
+      setError("common.error");
+    }
+  }
+
+  async function restore(id: string) {
+    try {
+      await documentsService.restoreDocument(id);
+      setSelectedDocument(null);
+      fetchDocuments(page, filters);
+    } catch {
+      setError("common.error");
+    }
+  }
+
+  async function replace(id: string, file: File, changeDescription?: string) {
+    try {
+      await documentsService.replaceDocument(id, file, changeDescription);
+      loadVersions(id);
+      fetchDocuments(page, filters);
+    } catch {
+      setError("common.error");
+    }
+  }
+
+  async function loadVersions(documentId: string) {
+    setIsLoadingVersions(true);
+    try {
+      const response = await documentsService.listDocumentVersions(documentId);
+      setVersions(response.data.versions);
+    } catch {
+      setVersions([]);
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  }
+
+  function openDrawer(doc: DocumentView) {
+    setSelectedDocument(doc);
+    loadVersions(doc.id);
+  }
+
+  function closeDrawer() {
+    setSelectedDocument(null);
+    setVersions([]);
+  }
+
+  function updateFilters(newFilters: SearchFilters) {
+    setFilters(newFilters);
+    setPage(1);
   }
 
   async function goToPage(newPage: number) {
@@ -101,7 +191,7 @@ export function useDocuments() {
     setError(null);
 
     try {
-      const response = await documentsService.listDocuments(newPage);
+      const response = await documentsService.listDocuments(newPage, 20, filters);
       const { documents: docs, pagination } = response.data;
 
       setDocuments(docs);
@@ -125,9 +215,22 @@ export function useDocuments() {
     uploadProgress,
     isUploading,
     uploadError,
+    duplicateWarning,
+    filters,
+    selectedDocument,
+    versions,
+    isLoadingVersions,
     upload,
     remove,
+    permanentDelete,
+    archive,
+    restore,
+    replace,
     goToPage,
     fetchDocuments,
+    openDrawer,
+    closeDrawer,
+    updateFilters,
+    loadVersions,
   };
 }
