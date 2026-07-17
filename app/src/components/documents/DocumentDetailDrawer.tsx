@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/Button";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { getFileSizeLabel } from "@/lib/validation";
 import * as documentsService from "@/services/documents.service";
-import type { DocumentView, DocumentVersionView } from "@/types/api/documents.types";
+import type { DocumentView, DocumentVersionView, DocumentExtractionStatusResponse } from "@/types/api/documents.types";
 
 const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
   public: "success",
@@ -79,6 +79,25 @@ export function DocumentDetailDrawer({
     }
   }, [doc.id]);
 
+  const [extractionStatus, setExtractionStatus] = useState<DocumentExtractionStatusResponse | null>(null);
+  const [isLoadingExtraction, setIsLoadingExtraction] = useState(false);
+
+  const fetchExtractionStatus = useCallback(async () => {
+    setIsLoadingExtraction(true);
+    try {
+      const res = await documentsService.getDocumentExtractionStatus(doc.id, doc.version);
+      setExtractionStatus(res);
+    } catch {
+      // ignore
+    } finally {
+      setIsLoadingExtraction(false);
+    }
+  }, [doc.id, doc.version]);
+
+  useEffect(() => {
+    fetchExtractionStatus();
+  }, [fetchExtractionStatus]);
+
   async function handleReplace() {
     if (!replaceFile) return;
     setIsReplacing(true);
@@ -135,6 +154,58 @@ export function DocumentDetailDrawer({
               {doc.scanResult.details && <p className="mt-1 text-xs text-on-surface-variant">{doc.scanResult.details}</p>}
             </div>
           )}
+
+          <div className="mb-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Extraction Status</p>
+              {isCompanyAdmin && (
+                <button 
+                  onClick={async () => {
+                    await documentsService.retriggerDocumentExtraction(doc.id, doc.version);
+                    fetchExtractionStatus();
+                  }}
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[14px]">refresh</span>
+                  Retrigger
+                </button>
+              )}
+            </div>
+            {isLoadingExtraction ? (
+              <Skeleton className="mt-2 h-10 w-full rounded-lg" />
+            ) : extractionStatus ? (
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge status={
+                    extractionStatus.status === "completed" ? "success" : 
+                    extractionStatus.status === "failed" ? "error" : "warning"
+                  }>
+                    {extractionStatus.status}
+                  </Badge>
+                  {extractionStatus.status === "completed" && (
+                    <span className="text-xs text-on-surface-variant font-medium">
+                      {extractionStatus.pagesCount} pages · {extractionStatus.charactersCount} chars ({extractionStatus.durationMs}ms)
+                    </span>
+                  )}
+                </div>
+                {extractionStatus.warnings.length > 0 && (
+                  <div className="mt-2 rounded bg-warning/10 p-2 text-xs text-warning">
+                    <p className="font-bold">Warnings:</p>
+                    <ul className="list-disc ps-4 space-y-1">
+                      {extractionStatus.warnings.map((w: string, idx: number) => <li key={idx}>{w}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {extractionStatus.status === "failed" && (
+                  <p className="text-xs text-error mt-1 font-medium">
+                    Error: {extractionStatus.failureReason} ({extractionStatus.failureCode})
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-on-surface-variant">No extraction artifact found.</p>
+            )}
+          </div>
 
           <div className="mb-6 space-y-3">
             <h4 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.metadata")}</h4>

@@ -1,0 +1,6 @@
+services:
+  worker:
+    volumes:
+      - ./api/uploads:/repo/api/uploads
+    environment:
+      - UPLOAD_DIR=/repo/api/uploads

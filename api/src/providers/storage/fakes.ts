@@ -80,14 +80,16 @@ export class AllowAllEntitlementChecker implements EntitlementChecker {
 export interface DispatchedEvent {
   documentId: string;
   tenantId: string;
+  actorId: string;
+  documentVersion: number;
   dispatchedAt: Date;
 }
 
 export class RecordingProcessingDispatcher implements ProcessingDispatcher {
   public events: DispatchedEvent[] = [];
 
-  async dispatchDocumentUploaded(documentId: string, tenantId: string): Promise<void> {
-    this.events.push({ documentId, tenantId, dispatchedAt: new Date() });
+  async dispatchDocumentUploaded(documentId: string, tenantId: string, actorId: string, documentVersion: number): Promise<void> {
+    this.events.push({ documentId, tenantId, actorId, documentVersion, dispatchedAt: new Date() });
   }
 
   clear(): void {

@@ -4,6 +4,7 @@ import type {
   SingleDocumentResponse,
   DeleteDocumentResponse,
   DocumentVersionsResponse,
+  DocumentExtractionStatusResponse,
 } from "@/types/api/documents.types";
 
 export async function listDocuments(
@@ -137,8 +138,31 @@ export async function permanentDeleteDocument(
   return api.delete<DeleteDocumentResponse>(`/documents/${id}/permanent`);
 }
 
+export interface RetriggerExtractionResponse {
+  message: string;
+  jobId: string;
+  idempotencyKey: string;
+}
+
 export async function listDocumentVersions(
   id: string,
 ): Promise<DocumentVersionsResponse> {
   return api.get<DocumentVersionsResponse>(`/documents/${id}/versions`);
 }
+
+export async function getDocumentExtractionStatus(
+  id: string,
+  version?: number,
+): Promise<DocumentExtractionStatusResponse> {
+  const query = version ? `?version=${version}` : "";
+  return api.get<DocumentExtractionStatusResponse>(`/documents/${id}/extraction${query}`);
+}
+
+export async function retriggerDocumentExtraction(
+  id: string,
+  version?: number,
+): Promise<RetriggerExtractionResponse> {
+  const body = version ? { version } : {};
+  return api.post<RetriggerExtractionResponse>(`/documents/${id}/extraction/retrigger`, body);
+}
+
