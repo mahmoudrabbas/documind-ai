@@ -11,6 +11,7 @@ const require = createRequire(resolve(apiRoot, "package.json"));
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
 const billingModuleDir = resolve(apiRoot, "src", "modules", "billing").replace(/\\/g, "/");
+const checkoutServiceTestFile = resolve(apiRoot, "src", "modules", "checkout", "__tests__", "checkout.service.test.ts").replace(/\\/g, "/");
 
 function findTests(directory) {
   return readdirSync(directory, { withFileTypes: true })
@@ -18,9 +19,9 @@ function findTests(directory) {
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) return findTests(path);
       if (entry.isFile() && entry.name.endsWith(".test.ts")) {
-        // Billing tests use vi.mock() which requires vitest, not node --test.
+        // Billing and checkout service tests use vi.mock() which requires vitest, not node --test.
         const normalized = path.replace(/\\/g, "/");
-        if (normalized.includes(billingModuleDir)) return [];
+        if (normalized.includes(billingModuleDir) || normalized === checkoutServiceTestFile) return [];
         return [path];
       }
       return [];
@@ -91,11 +92,11 @@ try {
     }
   }
 
-  // Run billing tests with vitest (they use vi.mock() which is incompatible with node --test).
+  // Run billing and checkout tests with vitest (they use vi.mock() which is incompatible with node --test).
   if (exitCode === 0) {
-    console.log("\n── Running billing tests with vitest ──\n");
+    console.log("\n── Running vitest tests (billing, checkout, ...) ──\n");
     exitCode = await new Promise((resolveRun) => {
-      const child = spawn("vitest", ["run"], {
+      const child = spawn("vitest", ["run", "-c", "vitest.config.ts"], {
         cwd: apiRoot,
         stdio: "inherit",
         env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },
