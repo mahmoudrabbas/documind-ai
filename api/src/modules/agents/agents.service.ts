@@ -1,19 +1,10 @@
-import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
-import {
-  BAD_REQUEST,
-  FORBIDDEN,
-  NOT_FOUND,
-  UNAUTHORIZED,
-} from "../../common/errors/errorCodes.js";
+import { BAD_REQUEST, NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { Supervisor } from "./supervisor.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { createFakeTools } from "./fakeTools.js";
 import { createDefaultGuardrails } from "./guardrails.js";
-import {
-  FakeModelAdapter,
-  FakeEmbeddingAdapter,
-} from "../../providers/llm/fakeAdapters.js";
+import { FakeModelAdapter } from "../../providers/llm/fakeAdapters.js";
 import {
   createRun,
   startRun,
@@ -38,17 +29,9 @@ import type {
   RunContext,
   SupervisorDecision,
 } from "./agents.types.js";
-import {
-  validateStartRun,
-  validateResumeApproval,
-  validateListRuns,
-  validateListApprovals,
-  assertValidObjectId,
-  assertRunStatusTransition,
-} from "./agents.validator.js";
+import { assertRunStatusTransition } from "./agents.validator.js";
 
 const model = new FakeModelAdapter();
-const embedding = new FakeEmbeddingAdapter();
 const supervisor = new Supervisor(model, createDefaultGuardrails());
 const toolRegistry = new ToolRegistry();
 for (const tool of createFakeTools()) {
@@ -178,7 +161,7 @@ async function executeSupervisedRun(
   let totalToolCalls = 0;
   let totalTokensUsed = 0;
   let estimatedCost = 0;
-  let approvalsCount = 0;
+  const approvalsCount = 0;
   let handoffsCount = 0;
   let output: Record<string, unknown> | undefined = undefined;
   let failed = false;
@@ -240,7 +223,7 @@ async function executeSupervisedRun(
         action: "handoff",
       });
       if (guardrailResult.action === "approval_required") {
-        const approval = await createApproval({
+        await createApproval({
           tenantId: context.tenantId,
           actorId: context.actorId,
           runId,

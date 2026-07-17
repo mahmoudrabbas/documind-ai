@@ -1,6 +1,4 @@
 import mongoose, { Schema } from "mongoose";
-import AgentRunModel from "./agentRun.model.js";
-import AgentStepModel from "./agentStep.model.js";
 
 export interface AgentToolCallDocument extends mongoose.Document {
   runId: mongoose.Types.ObjectId;

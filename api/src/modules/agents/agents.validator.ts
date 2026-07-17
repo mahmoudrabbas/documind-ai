@@ -1,7 +1,13 @@
-import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
-import { BAD_REQUEST, VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import { AgentRunStatusEnum, AgentApprovalStatusEnum, listRunsQuerySchema, listStepsQuerySchema, listToolCallsQuerySchema, listApprovalsQuerySchema, resumeApprovalSchema, startRunSchema } from "./agents.types.js";
+import { BAD_REQUEST } from "../../common/errors/errorCodes.js";
+import {
+  listRunsQuerySchema,
+  listStepsQuerySchema,
+  listToolCallsQuerySchema,
+  listApprovalsQuerySchema,
+  resumeApprovalSchema,
+  startRunSchema,
+} from "./agents.types.js";
 
 export function validateStartRun(input: unknown) {
   return startRunSchema.parse(input);
@@ -37,7 +43,13 @@ export function assertRunStatusTransition(current: string, next: string) {
   const allowed: Record<string, string[]> = {
     pending: ["running", "cancelled", "failed"],
     running: ["awaiting_approval", "completed", "failed", "cancelled"],
-    awaiting_approval: ["running", "completed", "failed", "cancelled", "expired"],
+    awaiting_approval: [
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+      "expired",
+    ],
     completed: [],
     failed: [],
     cancelled: [],
@@ -45,6 +57,10 @@ export function assertRunStatusTransition(current: string, next: string) {
   };
   const permitted = allowed[current] ?? [];
   if (!permitted.includes(next)) {
-    throw new AppError(409, "STATE_TRANSITION_INVALID", `Cannot transition run from ${current} to ${next}`);
+    throw new AppError(
+      409,
+      "STATE_TRANSITION_INVALID",
+      `Cannot transition run from ${current} to ${next}`,
+    );
   }
 }

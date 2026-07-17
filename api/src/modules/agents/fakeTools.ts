@@ -42,15 +42,26 @@ export function createFakeTools(): RegisteredTool[] {
         name: "request_approval",
         version: "1.0.0",
         description: "Requests human approval for a sensitive action.",
-        inputSchema: z.object({ reason: z.string(), details: z.record(z.string(), z.unknown()) }),
-        outputSchema: z.object({ approvalId: z.string(), status: z.literal("pending") }),
+        inputSchema: z.object({
+          reason: z.string(),
+          details: z.record(z.string(), z.unknown()),
+        }),
+        outputSchema: z.object({
+          approvalId: z.string(),
+          status: z.literal("pending"),
+        }),
         requiredPermission: "agents:approval:request",
         approvalRequired: true,
         timeoutMs: 2_000,
         maxRetries: 0,
       },
       handler: async (_context: RunContext, _input: unknown) => {
-        return { approvalId: `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, status: "pending" };
+        void _context;
+        void _input;
+        return {
+          approvalId: `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          status: "pending",
+        };
       },
     },
     {
@@ -58,7 +69,11 @@ export function createFakeTools(): RegisteredTool[] {
         name: "handoff",
         version: "1.0.0",
         description: "Hands off the workflow to another agent.",
-        inputSchema: z.object({ toAgent: z.string(), reason: z.string(), input: z.record(z.string(), z.unknown()) }),
+        inputSchema: z.object({
+          toAgent: z.string(),
+          reason: z.string(),
+          input: z.record(z.string(), z.unknown()),
+        }),
         outputSchema: z.object({ handoffId: z.string(), toAgent: z.string() }),
         requiredPermission: "agents:handoff:request",
         approvalRequired: true,
@@ -66,8 +81,18 @@ export function createFakeTools(): RegisteredTool[] {
         maxRetries: 0,
       },
       handler: async (_context: RunContext, input: unknown) => {
-        const parsed = z.object({ toAgent: z.string(), reason: z.string(), input: z.record(z.string(), z.unknown()) }).parse(input);
-        return { handoffId: `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, toAgent: parsed.toAgent };
+        void _context;
+        const parsed = z
+          .object({
+            toAgent: z.string(),
+            reason: z.string(),
+            input: z.record(z.string(), z.unknown()),
+          })
+          .parse(input);
+        return {
+          handoffId: `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          toAgent: parsed.toAgent,
+        };
       },
     },
     {

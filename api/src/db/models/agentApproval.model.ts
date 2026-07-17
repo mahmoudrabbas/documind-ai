@@ -1,5 +1,4 @@
 import mongoose, { Schema } from "mongoose";
-import AgentToolCallModel from "./agentToolCall.model.js";
 
 export interface AgentApprovalDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
