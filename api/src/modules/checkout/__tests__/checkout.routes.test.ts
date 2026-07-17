@@ -22,11 +22,11 @@ test("checkout routes require COMPANY_ADMIN authorization for POST sessions", as
 test("checkout routes exist for GET sessions and subscription status", async () => {
   const source = await readFile(routesSourceUrl, "utf8");
   assert.ok(
-    source.includes('"/checkout/sessions"'),
+    source.includes('"/sessions"'),
     "GET sessions route exists",
   );
   assert.ok(
-    source.includes('"/checkout/subscription"'),
+    source.includes('"/subscription"'),
     "GET subscription route exists",
   );
 });
