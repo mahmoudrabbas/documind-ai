@@ -221,6 +221,10 @@ const en: TranslationDictionary = {
   "auth.privateAnswersTitle": "Private answers",
   "auth.privateAnswersDesc": "Responses are grounded in approved internal documents.",
   "auth.registerNow": "Register now",
+  "auth.subscriptionPlan": "Plan: {{plan}}",
+  "auth.trialStarted": "Your {{days}}-day free trial starts now",
+  "auth.freePlanActive": "Free plan activated — no trial period",
+  "auth.afterRegisterNextSteps": "Start by logging in and uploading your documents.",
 
   /* ── auth/forgot-password ───────────────────────────────── */
   "auth.forgotPassword": "Forgot password?",

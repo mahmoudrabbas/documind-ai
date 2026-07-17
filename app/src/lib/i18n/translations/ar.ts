@@ -221,6 +221,10 @@ const ar: TranslationDictionary = {
   "auth.privateAnswersTitle": "إجابات خاصة",
   "auth.privateAnswersDesc": "الردود مبنية على مستندات داخلية معتمدة.",
   "auth.registerNow": "سجّل الآن",
+  "auth.subscriptionPlan": "الباقة: {{plan}}",
+  "auth.trialStarted": "تبدأ نسختك التجريبية المجانية لمدة {{days}} يوم الآن",
+  "auth.freePlanActive": "الباقة المجانية مفعلة — لا توجد فترة تجريبية",
+  "auth.afterRegisterNextSteps": "ابدأ بتسجيل الدخول ورفع مستنداتك.",
 
   /* ── auth/forgot-password ───────────────────────────────── */
   "auth.forgotPassword": "هل نسيت كلمة المرور؟",
