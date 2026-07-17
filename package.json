@@ -60,5 +60,8 @@
     "rag",
     "monorepo"
   ],
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.2.0"
+  }
 }

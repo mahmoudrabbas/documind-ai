@@ -16,7 +16,9 @@
     "test": "node ../scripts/run-api-tests.mjs",
     "test:local": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 env MONGODB_URI='mongodb://127.0.0.1:27017/docsai' REDIS_URL='redis://127.0.0.1:6379' node --import tsx --test",
     "test:compose": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 env MONGODB_URI='mongodb://mongodb:27017/docsai' REDIS_URL='redis://redis:6379' node --import tsx --test",
-    "seed:super-admin": "tsx src/scripts/seed-super-admin.ts"
+    "seed:super-admin": "tsx src/scripts/seed-super-admin.ts",
+    "seed:default-package": "tsx src/scripts/seed-default-package.ts",
+    "migrate:subscriptions": "tsx src/scripts/migrate-subscriptions.ts"
   },
   "keywords": [],
   "author": "",
@@ -53,6 +55,7 @@
     "pino-pretty": "^13.1.3",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1"
+    "typescript-eslint": "^8.62.1",
+    "vitest": "^4.1.10"
   }
 }
