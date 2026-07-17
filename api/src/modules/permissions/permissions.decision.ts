@@ -1,8 +1,9 @@
 import {
   getPermissionDefinition,
+  isDeprecatedPermissionIdentifier,
   type PermissionValue,
 } from "./permissions.catalog.js";
-import { hasScopeConstraints, matchesScopes } from "./permissions.scope.js";
+import { hasScopeConstraints, isValidResourceContext, matchesScopes } from "./permissions.scope.js";
 import type {
   PermissionDecision,
   PermissionEvaluationInput,
@@ -14,10 +15,14 @@ export function decidePermission(
   resolved: ResolvedPermissions,
 ): PermissionDecision {
   const definition = getPermissionDefinition(input.permission);
+  if (isDeprecatedPermissionIdentifier(input.permission)) return denied(input.permission, "DEPRECATED_PERMISSION", "Permission is deprecated", resolved);
   if (!definition) return denied(input.permission, "UNKNOWN_PERMISSION", "Permission is not in the canonical catalog", resolved);
   if (definition.deprecated) return denied(definition.id, "DEPRECATED_PERMISSION", "Permission is deprecated", resolved);
   if (input.resource && input.resource.tenantId !== input.tenantId) {
     return denied(definition.id, "TENANT_MISMATCH", "Resource context is outside the actor tenant", resolved);
+  }
+  if (input.resource && !isValidResourceContext(input.resource)) {
+    return denied(definition.id, "SCOPE_MISMATCH", "Resource context is invalid", resolved);
   }
 
   const grant = resolved.grants.get(definition.id);

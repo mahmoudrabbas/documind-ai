@@ -22,6 +22,7 @@ export interface RoleView {
   name: string;
   baseRole: "COMPANY_ADMIN" | "EMPLOYEE";
   version: number;
+  status: "active" | "archived";
   userCount: number;
   createdAt: string;
   updatedAt: string;

@@ -38,6 +38,20 @@ function runContract(label: string, createHarness: () => Harness) {
     assert.ok(!adminResult.permissions.has("audit:platform-read" as never));
   });
 
+  test(`${label}: SUPER_ADMIN ignores corrupt tenant custom-role assignments`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "SUPER_ADMIN", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [{ permission: Permission.ANALYTICS_READ }]);
+    const resolved = await h.evaluator.resolve(actor(userId, tenant, "SUPER_ADMIN"));
+    assert.equal(resolved.customRoleId, null);
+    assert.equal(resolved.customRoleState, "none");
+    assert.equal(resolved.roleVersion, null);
+    assert.equal((await h.evaluator.evaluate({ ...actor(userId, tenant, "SUPER_ADMIN"), permission: Permission.ROLES_DELETE })).source, "platform");
+  });
+
   test(`${label}: baseRole is assignability-only and never grants authority`, async () => {
     const h = createHarness();
     const tenant = new mongoose.Types.ObjectId().toString();
@@ -102,8 +116,24 @@ function runContract(label: string, createHarness: () => Harness) {
     await h.addUser(userId, tenant, "COMPANY_ADMIN", null, "disabled");
     const unknown = await h.evaluator.evaluate({ ...actor(userId, tenant, "COMPANY_ADMIN"), permission: "made-up:permission" });
     assert.equal(unknown.denialCode, "UNKNOWN_PERMISSION");
+    const deprecated = await h.evaluator.evaluate({ ...actor(userId, tenant, "COMPANY_ADMIN"), permission: "documents:view" });
+    assert.equal(deprecated.denialCode, "DEPRECATED_PERMISSION");
     const denied = await h.evaluator.evaluate({ ...actor(userId, tenant, "COMPANY_ADMIN"), permission: Permission.ROLES_READ });
     assert.equal(denied.allowed, false);
+  });
+
+  test(`${label}: malformed resource context fails closed`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "COMPANY_ADMIN");
+    const decision = await h.evaluator.evaluate({
+      ...actor(userId, tenant, "COMPANY_ADMIN"),
+      permission: Permission.DOCUMENTS_UPDATE,
+      resource: { tenantId: tenant, departmentId: "tampered" },
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.denialCode, "SCOPE_MISMATCH");
   });
 
   test(`${label}: role changes are visible without a stale cache`, async () => {

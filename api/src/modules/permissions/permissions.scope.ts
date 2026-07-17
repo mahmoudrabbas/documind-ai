@@ -1,4 +1,5 @@
 import { getPermissionDefinition } from "./permissions.catalog.js";
+import mongoose from "mongoose";
 import type {
   PermissionResourceContext,
   PermissionScopes,
@@ -69,5 +70,14 @@ export function matchesScopes(
       (!resource.documentCategory || !scopes.documentCategories.includes(resource.documentCategory.trim().toLowerCase()))) return false;
   if (scopes.documentClassifications.length > 0 &&
       (!resource.documentClassification || !scopes.documentClassifications.includes(resource.documentClassification.trim().toLowerCase()))) return false;
+  return true;
+}
+
+export function isValidResourceContext(resource: PermissionResourceContext): boolean {
+  if (!mongoose.isObjectIdOrHexString(resource.tenantId)) return false;
+  if (resource.ownerId !== undefined && !mongoose.isObjectIdOrHexString(resource.ownerId)) return false;
+  if (resource.departmentId !== undefined && !mongoose.isObjectIdOrHexString(resource.departmentId)) return false;
+  if (resource.documentCategory !== undefined && resource.documentCategory.trim().length === 0) return false;
+  if (resource.documentClassification !== undefined && resource.documentClassification.trim().length === 0) return false;
   return true;
 }

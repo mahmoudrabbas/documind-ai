@@ -16,6 +16,15 @@ export interface UpdateRoleInput {
 }
 
 export interface DeleteRoleInput { version: number }
+export interface CloneRoleInput { name: string; version: number }
+export interface ChangeRoleStatusInput { version: number }
+export interface AssignRoleInput { userId: string; roleVersion: number }
+export interface RemoveRoleAssignmentInput { userId: string; roleVersion: number }
+export interface MigrateRoleUsersInput {
+  destinationRoleId: string;
+  sourceVersion: number;
+  destinationVersion: number;
+}
 
 export interface RolePublicView {
   id: string;
@@ -38,3 +47,12 @@ export interface RolePublicView {
 export interface CreateRoleResult { role: RolePublicView }
 export interface UpdateRoleResult { role: RolePublicView }
 export interface ListRolesResult { roles: RolePublicView[] }
+export interface RoleUsageResult { roleId: string; assignedUserCount: number }
+export interface RoleAssignmentResult { userId: string; roleId: string | null; changed: boolean }
+export interface RoleMigrationResult {
+  sourceRoleId: string;
+  destinationRoleId: string;
+  affected: number;
+  skipped: number;
+  conflicted: number;
+}

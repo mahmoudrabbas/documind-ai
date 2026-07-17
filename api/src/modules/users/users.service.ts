@@ -8,10 +8,8 @@ import {
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
-  ROLE_NOT_ASSIGNABLE,
   SELF_ACTION_FORBIDDEN,
 } from "../../common/errors/errorCodes.js";
-import RoleModel from "../../db/models/role.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
@@ -47,7 +45,6 @@ import type {
 } from "./users.types.js";
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
-import { PERMISSION_CONTRACT_VERSION } from "../permissions/permissions.catalog.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 
 type CreatedUserRecord = {
@@ -137,53 +134,21 @@ export async function inviteUser(
   const inviter = await findUserByTenantAndId(tenantId, inviterId);
   const inviterName = inviter?.name ?? "Your administrator";
 
-  let resolvedRole: "COMPANY_ADMIN" | "EMPLOYEE";
-  let resolvedCustomRoleId: string | undefined;
-
-  if (payload.customRoleId) {
-    const customRole = await RoleModel.findOne({
-      _id: payload.customRoleId,
-      tenantId,
-      status: "active",
-      migrationState: "complete",
-      contractVersion: PERMISSION_CONTRACT_VERSION,
-    }).exec();
-
-    if (!customRole) {
-      throw new AppError(
-        400,
-        ROLE_NOT_ASSIGNABLE,
-        "Custom role is not assignable",
-      );
-    }
-
-    resolvedRole = payload.role ?? "EMPLOYEE";
-    if (customRole.baseRole !== resolvedRole) {
-      throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
-    }
-    resolvedCustomRoleId = customRole._id.toString();
-  } else {
-    resolvedRole = payload.role ?? "EMPLOYEE";
-  }
-
   const userPayload: import("../../modules/auth/auth.repository.js").UserCreateInput = {
     tenantId,
     name: payload.name.trim(),
     email: payload.email.toLowerCase().trim(),
     passwordHash: await hashPassword(randomUUID()),
-    role: resolvedRole,
+    role: payload.role,
     status: "pending_email_verification",
     emailVerified: false,
     emailVerifiedAt: null,
-    customRoleId: resolvedCustomRoleId,
   };
 
   let createdUser: UserDocument | null = null;
 
   try {
-    createdUser = resolvedCustomRoleId
-      ? await createUserWithRoleGuard(userPayload, resolvedCustomRoleId)
-      : await createUser(userPayload);
+    createdUser = await createUser(userPayload);
     const token = await createEmailVerificationTokenForUser(createdUser);
 
     await sendInvitationEmail({
@@ -243,39 +208,7 @@ export async function updateUser(
   const changes: Record<string, unknown> = {};
   const update: Record<string, unknown> = {};
 
-  if (typeof payload.customRoleId === "string") {
-    const customRole = await RoleModel.findOne({
-      _id: payload.customRoleId,
-      tenantId,
-      status: "active",
-      migrationState: "complete",
-      contractVersion: PERMISSION_CONTRACT_VERSION,
-    }).exec();
-
-    if (!customRole) {
-      throw new AppError(
-        400,
-        ROLE_NOT_ASSIGNABLE,
-        "Custom role is not assignable",
-      );
-    }
-
-    if (customRole.baseRole !== existingUser.role) {
-      throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
-    }
-
-    update.customRoleId = customRole._id.toString();
-    changes.customRoleId = {
-      before: existingUser.customRoleId?.toString() ?? null,
-      after: customRole._id.toString(),
-    };
-  } else if (payload.customRoleId === null) {
-    update.customRoleId = null;
-    changes.customRoleId = {
-      before: existingUser.customRoleId?.toString() ?? null,
-      after: null,
-    };
-  } else if (payload.role !== undefined) {
+  if (payload.role !== undefined) {
     update.role = payload.role;
     update.customRoleId = null;
     changes.role = {
@@ -415,18 +348,6 @@ async function updateUserSecurityStateTransaction(
       await lockTenantSecurityGuards(tenantId, session);
       const current = await UserModel.findOne({ _id: targetUserId, tenantId }).session(session).exec();
       if (!current) throw new AppError(404, NOT_FOUND, "User not found");
-      if (typeof update.customRoleId === "string") {
-        const role = await RoleModel.findOne({
-          _id: update.customRoleId,
-          tenantId,
-          status: "active",
-          migrationState: "complete",
-          contractVersion: PERMISSION_CONTRACT_VERSION,
-        }).session(session).exec();
-        if (!role || role.baseRole !== current.role) {
-          throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
-        }
-      }
       const removesActiveAdmin = current.role === "COMPANY_ADMIN" && current.status === "active" &&
         ((update.role ?? current.role) !== "COMPANY_ADMIN" || (update.status ?? current.status) !== "active");
       if (removesActiveAdmin && await UserModel.countDocuments({ tenantId, role: "COMPANY_ADMIN", status: "active" }).session(session) <= 1) {
@@ -469,34 +390,6 @@ async function lockTenantSecurityGuards(tenantId: string, session: mongoose.Clie
     { session },
   ).exec();
   if (result.matchedCount !== 1) throw new AppError(404, NOT_FOUND, "Tenant not found");
-}
-
-async function createUserWithRoleGuard(
-  userPayload: import("../auth/auth.repository.js").UserCreateInput,
-  customRoleId: string,
-): Promise<UserDocument> {
-  const session = await mongoose.startSession();
-  let created: UserDocument | undefined;
-  try {
-    await session.withTransaction(async () => {
-      await lockTenantSecurityGuards(userPayload.tenantId, session);
-      const role = await RoleModel.findOne({
-        _id: customRoleId,
-        tenantId: userPayload.tenantId,
-        status: "active",
-        migrationState: "complete",
-        contractVersion: PERMISSION_CONTRACT_VERSION,
-      }).session(session).exec();
-      if (!role || role.baseRole !== userPayload.role) {
-        throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
-      }
-      created = await new UserModel(userPayload).save({ session });
-    });
-    if (!created) throw new Error("User assignment transaction did not complete");
-    return created;
-  } finally {
-    await session.endSession();
-  }
 }
 
 function lastAdminError() {

@@ -112,6 +112,7 @@ export const PERMISSION_CATALOG: readonly PermissionDefinition[] = definitions.m
 }));
 
 export const PERMISSION_BY_ID = new Map(PERMISSION_CATALOG.map((definition) => [definition.id, definition]));
+const DEPRECATED_PERMISSION_IDENTIFIERS = new Set(["documents:view"]);
 export const ALL_PERMISSIONS = PERMISSION_CATALOG.filter((definition) => definition.active).map((definition) => definition.id);
 export const VALID_PERMISSIONS = new Set<PermissionValue>(ALL_PERMISSIONS);
 export const BASE_ROLE_DEFAULTS: Record<BaseRole, readonly PermissionValue[]> = {
@@ -156,6 +157,10 @@ export const PERMISSION_DESCRIPTIONS = Object.fromEntries(PERMISSION_CATALOG.map
 
 export function getPermissionDefinition(value: string): PermissionDefinition | undefined {
   return PERMISSION_BY_ID.get(value.trim().toLowerCase() as PermissionValue);
+}
+
+export function isDeprecatedPermissionIdentifier(value: string): boolean {
+  return DEPRECATED_PERMISSION_IDENTIFIERS.has(value.trim().toLowerCase());
 }
 
 export function normalizePermissionIdentifiers(values: readonly string[]): PermissionValue[] {

@@ -1,5 +1,44 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openrouter": {
+      "models": {
+        "poolside/laguna-m.1:free": {
+          "name": "Laguna M.1 (Free - Code)",
+          "context": "262K"
+        },
+        "cohere/north-mini-code:free": {
+          "name": "North Mini Code (Free - Agentic)",
+          "context": "256K"
+        },
+        "qwen/qwen3-coder:free": {
+          "name": "Qwen3 Coder (Free - Code)",
+          "context": "1M"
+        },
+        "nvidia/nemotron-3-ultra-550b-a55b:free": {
+          "name": "Nemotron 3 Ultra (Free - Reasoning)",
+          "context": "1M"
+        },
+        "meta-llama/llama-3.3-70b-instruct:free": {
+          "name": "Llama 3.3 70B (Free - Chat)",
+          "context": "131K"
+        },
+        "openai/gpt-oss-120b:free": {
+          "name": "GPT OSS 120B (Free - General)",
+          "context": "131K"
+        },
+        "google/gemma-4-31b-it:free": {
+          "name": "Gemma 4 31B (Free - Vision)",
+          "context": "262K"
+        },
+        "openrouter/free": {
+          "name": "OpenRouter Free (Auto-router)",
+          "context": "200K"
+        }
+      }
+    }
+  },
+  "model": "openrouter/poolside/laguna-m.1:free",
   "mcp": {
     "stitch": {
       "type": "remote",
