@@ -10,16 +10,20 @@ import {
   listDocumentsController,
   getDocumentController,
   updateDocumentMetadataController,
-  deleteDocumentController,
+  downloadDocumentController,
+  replaceDocumentController,
+  archiveDocumentController,
+  restoreDocumentController,
+  softDeleteDocumentController,
+  permanentDeleteDocumentController,
+  listDocumentVersionsController,
 } from "./documents.controller.js";
 
 const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: config.MAX_FILE_SIZE_BYTES,
-  },
+  limits: { fileSize: config.MAX_FILE_SIZE_BYTES },
   fileFilter: (_req, file, callback) => {
     if (allowedMimeTypes.includes(file.mimetype)) {
       callback(null, true);
@@ -35,45 +39,26 @@ const upload = multer({
 
 const router = Router();
 
-router.post(
-  "/",
-  authenticate,
-  tenantScoping,
-  requirePermission(Permission.DOCUMENTS_CREATE),
-  upload.single("file"),
-  uploadDocumentController,
-);
+router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), uploadDocumentController);
 
-router.get(
-  "/",
-  authenticate,
-  tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
-  listDocumentsController,
-);
+router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
 
-router.get(
-  "/:id",
-  authenticate,
-  tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
-  getDocumentController,
-);
+router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
 
-router.patch(
-  "/:id",
-  authenticate,
-  tenantScoping,
-  requirePermission(Permission.DOCUMENTS_UPDATE),
-  updateDocumentMetadataController,
-);
+router.get("/:id/download", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DOWNLOAD), downloadDocumentController);
 
-router.delete(
-  "/:id",
-  authenticate,
-  tenantScoping,
-  requirePermission(Permission.DOCUMENTS_DELETE),
-  deleteDocumentController,
-);
+router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
+
+router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), replaceDocumentController);
+
+router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), updateDocumentMetadataController);
+
+router.post("/:id/archive", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE), archiveDocumentController);
+
+router.post("/:id/restore", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE), restoreDocumentController);
+
+router.delete("/:id/permanent", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), permanentDeleteDocumentController);
+
+router.delete("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), softDeleteDocumentController);
 
 export default router;

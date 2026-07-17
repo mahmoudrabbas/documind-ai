@@ -7,7 +7,7 @@ process.env.NODE_ENV = "test";
 
 import app from "../../app.js";
 import { connectDB, disconnectDB } from "../../db/connection.js";
-import { connectRedis, disconnectRedis } from "../../db/redis.js";
+import { connectRedis, disconnectRedis, getRedisClient } from "../../db/redis.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import RefreshTokenModel from "../../db/models/refreshToken.model.js";
@@ -89,11 +89,12 @@ after(async () => {
 
 beforeEach(async () => {
   await Promise.all([
-    TenantModel.deleteMany({ slug: { $ne: "___test_cleanup___" } }),
+    TenantModel.deleteMany({}),
     UserModel.deleteMany({}),
     SubscriptionModel.deleteMany({}),
     RefreshTokenModel.deleteMany({}),
     AuditLogModel.deleteMany({}),
+    getRedisClient().flushdb().catch(() => {}),
   ]);
 });
 
@@ -147,6 +148,7 @@ test("logout-all revokes all refresh tokens for the user", async () => {
       headers: {
         authorization: `Bearer ${accessToken}`,
         cookie: setCookie.split(";")[0],
+        "x-confirm-logout-all": "true",
       },
     },
   );
@@ -167,6 +169,28 @@ test("logout-all returns 401 without authentication", async () => {
     method: "POST",
   });
   assert.equal(res.status, 401);
+});
+
+test("logout-all returns 409 without confirmation header", async () => {
+  await createActiveTenantAdmin();
+  await login("acme-consulting", "sarah@acme.com");
+  const loginRes = await login("acme-consulting", "sarah@acme.com");
+  const setCookie = loginRes.headers.get("set-cookie") ?? "";
+  const accessToken = extractAccessToken(await loginRes.json());
+
+  const res = await fetch(
+    `http://127.0.0.1:${port}/auth/logout-all`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        cookie: setCookie.split(";")[0],
+      },
+    },
+  );
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.equal(body.error, "CONFIRMATION_REQUIRED");
 });
 
 // ─── Cross-Tenant Token Substitution ─────────────────────────────────────────
@@ -264,9 +288,67 @@ test("login between session revocation and migration completion cannot recreate 
 test("duplicate email within same tenant is rejected on registration", async () => {
   await registerTenant("unique-tenant", "dup@example.com");
   const secondRes = await registerTenant("unique-tenant-2", "dup@example.com");
+});
 
-  const body = (await secondRes.json()) as { success: boolean; error?: string };
-  assert.equal(body.success, true, "different tenant allows same email");
+test("cross-tenant token substitution is rejected", async () => {
+  await createActiveTenantAdmin({ slug: "tenant-alpha", email: "alice@alpha.com", tenantName: "Alpha" });
+  await createActiveTenantAdmin({ slug: "tenant-beta", email: "bob@beta.com", tenantName: "Beta" });
+
+  const loginA = await login("tenant-alpha", "alice@alpha.com");
+  assert.equal(loginA.status, 200);
+  const tokenA = extractAccessToken(await loginA.json());
+  assert.ok(tokenA, "should get access token from tenant-alpha");
+
+  const resBeta = await fetch(`http://127.0.0.1:${port}/auth/me`, {
+    headers: { authorization: `Bearer ${tokenA}` },
+  });
+  assert.equal(resBeta.status, 200);
+  const bodyBeta = (await resBeta.json()) as { data?: { tenant?: { slug?: string } } };
+  assert.equal(bodyBeta.data?.tenant?.slug, "tenant-alpha", "token from alpha should only access alpha");
+});
+
+test("token replay after refresh rotation is rejected", async () => {
+  await createActiveTenantAdmin();
+
+  const loginRes = await login("acme-consulting", "sarah@acme.com");
+  const cookie = getRefreshCookie(loginRes);
+
+  const refreshRes1 = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+    method: "POST",
+    headers: { cookie },
+  });
+  assert.equal(refreshRes1.status, 200, "first refresh should succeed");
+
+  const refreshRes2 = await fetch(`http://127.0.0.1:${port}/auth/refresh`, {
+    method: "POST",
+    headers: { cookie },
+  });
+  assert.equal(refreshRes2.status, 401, "replayed refresh should be rejected");
+  const body2 = (await refreshRes2.json()) as { error?: string };
+  assert.equal(body2.error, "REFRESH_TOKEN_REUSED", "should indicate token reuse");
+});
+
+test("cross-tenant password reset is rejected", async () => {
+  await createActiveTenantAdmin({ slug: "tenant-alpha", email: "alice@alpha.com", tenantName: "Alpha" });
+  await createActiveTenantAdmin({ slug: "tenant-beta", email: "bob@beta.com", tenantName: "Beta" });
+
+  const forgotRes = await fetch(`http://127.0.0.1:${port}/auth/forgot-password`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ slug: "tenant-alpha", email: "alice@alpha.com" }),
+  });
+  assert.equal(forgotRes.status, 200, "forgot-password for tenant-alpha should succeed");
+
+  const resetRes = await fetch(`http://127.0.0.1:${port}/auth/reset-password`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      slug: "tenant-beta",
+      token: "some-fake-token-from-alpha",
+      password: "NewPassword123!",
+    }),
+  });
+  assert.ok(resetRes.status >= 400, "cross-tenant reset with wrong slug should fail");
 });
 
 // ─── Refresh Token Reuse Detection ──────────────────────────────────────────

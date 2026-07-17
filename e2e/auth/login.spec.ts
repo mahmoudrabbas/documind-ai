@@ -82,7 +82,7 @@ test.describe("Login page", () => {
 
     await page.goto(`${BASE_URL}/login`);
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 105; i++) {
       await page.fill("#companySlug", slug);
       await page.fill("#email", email);
       await page.fill("#password", "WrongPassword!");
@@ -91,7 +91,31 @@ test.describe("Login page", () => {
     }
 
     const rateAlert = page.locator('[role="alert"]:has-text("Too many requests")');
-    await expect(rateAlert).toBeVisible({ timeout: 15000 });
+    await expect(rateAlert).toBeVisible({ timeout: 30000 });
     await expect(rateAlert).toContainText("second");
+  });
+
+  test("rate limit countdown reaches zero and shows retry prompt", async ({
+    page,
+  }) => {
+    const slug = uniqueSlug("retry");
+    const email = uniqueEmail("retry");
+
+    await page.goto(`${BASE_URL}/login`);
+
+    for (let i = 0; i < 105; i++) {
+      await page.fill("#companySlug", slug);
+      await page.fill("#email", email);
+      await page.fill("#password", "WrongPassword!");
+      await page.click('button[type="submit"]');
+      await page.waitForTimeout(200);
+    }
+
+    const rateAlert = page.locator('[role="alert"]:has-text("Too many requests")');
+    await expect(rateAlert).toBeVisible({ timeout: 30000 });
+
+    const retryPrompt = page.locator('[role="alert"]:has-text("You can try again")');
+    await expect(retryPrompt).toBeVisible({ timeout: 120000 });
+    await expect(retryPrompt.getByRole("button", { name: /retry/i })).toBeVisible();
   });
 });

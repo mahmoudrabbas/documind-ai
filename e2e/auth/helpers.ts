@@ -1,7 +1,7 @@
 import { type Page } from "@playwright/test";
 
-export const BASE_URL = "http://localhost:3000";
-export const API_URL = "http://localhost:5000";
+export const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+export const API_URL = process.env.API_URL ?? "http://localhost:5000";
 
 export function uniqueSlug(prefix = "e2e-test") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -37,10 +37,12 @@ export async function registerViaApi(data: {
   }>;
 }
 
-export async function verifyEmailViaApi(token: string, slug: string) {
-  const res = await fetch(
-    `${API_URL}/auth/verify-email?token=${encodeURIComponent(token)}&slug=${encodeURIComponent(slug)}`,
-  );
+export async function verifyEmailViaApi(token: string) {
+  const res = await fetch(`${API_URL}/auth/verify-email`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
   return res.json() as Promise<{ success: boolean }>;
 }
 
@@ -55,7 +57,7 @@ export async function registerAndVerifyCompany(
     throw new Error(`Registration failed: ${JSON.stringify(regResult)}`);
   }
 
-  const tokenRes = await fetch(`${API_URL}/auth/verify-email-token`, {
+  const tokenRes = await fetch(`${API_URL}/auth/test/verify-email-token`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email, companySlug: slug }),
@@ -65,8 +67,13 @@ export async function registerAndVerifyCompany(
     data?: { token: string };
   };
 
-  if (tokenData.success && tokenData.data?.token) {
-    await verifyEmailViaApi(tokenData.data.token, slug);
+  if (!tokenData.success || !tokenData.data?.token) {
+    throw new Error(`Failed to get verification token: ${JSON.stringify(tokenData)}`);
+  }
+
+  const verifyResult = await verifyEmailViaApi(tokenData.data.token);
+  if (!verifyResult.success) {
+    throw new Error(`Email verification failed: ${JSON.stringify(verifyResult)}`);
   }
 
   return { slug, email, password: TEST_PASSWORD };
