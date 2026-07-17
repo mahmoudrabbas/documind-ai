@@ -8,9 +8,12 @@ import { AppError } from "../../common/errors/AppError.js";
 import {
   ALL_PERMISSIONS,
   PERMISSION_CATALOG,
+  PERMISSION_BY_ID,
   TENANT_PERMISSION_CATALOG_GROUPS,
+  BASE_ROLE_DEFAULTS,
   Permission,
   assertPersistableTenantPermissions,
+  type PermissionValue,
 } from "./permissions.catalog.js";
 import { validateCreateRoleInput } from "../roles/roles.validator.js";
 import { getPermissionCatalogController } from "./permissions.controller.js";
@@ -94,7 +97,7 @@ test("Role schema rejects malformed and incompatible scopes", async () => {
   await assert.rejects(role({ grants: [{ permission: Permission.BILLING_READ, scopes: { selfOnly: true } }] }).validate(), /not supported/);
 });
 
-test("permission catalog controller returns only the versioned tenant-safe DTO", async () => {
+test("permission catalog controller returns extended tenant-safe DTO with full metadata", async () => {
   let body: unknown;
   const response = {
     status: (status: number) => {
@@ -104,14 +107,92 @@ test("permission catalog controller returns only the versioned tenant-safe DTO",
     json: (value: unknown) => { body = value; return response; },
   } as unknown as Response;
   await getPermissionCatalogController({} as Request, response, (error) => { throw error; });
-  const data = (body as { data: { contractVersion: number; groups: Array<{ permissions: Array<Record<string, unknown>> }> } }).data;
+  const data = (body as { data: { contractVersion: number; groups: Array<{ group: string; permissions: Array<Record<string, unknown>> }>; baseRoleDefaults: Record<string, string[]> } }).data;
   assert.equal(data.contractVersion, 1);
+
+  const exactKeys = [
+    "id", "label", "description", "compatibleScopes",
+    "defaultBaseRoles", "active", "deprecated",
+    "platformOnly", "tenantGrantable", "delegableByTenantAdmin",
+    "contractVersion",
+  ].sort();
+
   for (const permission of data.groups.flatMap((group) => group.permissions)) {
-    assert.deepEqual(Object.keys(permission).sort(), ["description", "id", "label"]);
+    const keys = Object.keys(permission).sort();
+    assert.deepEqual(keys, exactKeys, `Permission ${permission.id} should have exactly the DTO key set`);
+
+    assert.equal(typeof permission.id, "string");
+    assert.equal(typeof permission.label, "string");
+    assert.equal(typeof permission.description, "string");
+    assert.ok(Array.isArray(permission.compatibleScopes));
+    assert.ok(Array.isArray(permission.defaultBaseRoles));
+    assert.equal(typeof permission.active, "boolean");
+    assert.equal(typeof permission.deprecated, "boolean");
+    assert.equal(typeof permission.platformOnly, "boolean");
+    assert.equal(typeof permission.tenantGrantable, "boolean");
+    assert.equal(typeof permission.delegableByTenantAdmin, "boolean");
+    assert.equal(typeof permission.contractVersion, "number");
+
+    // Compare directly against the authoritative catalog entry
+    const definition = PERMISSION_BY_ID.get(permission.id as PermissionValue);
+    assert.ok(definition, `Definition must exist for ${permission.id}`);
+    assert.deepEqual(permission.compatibleScopes, definition.compatibleScopes);
+    assert.deepEqual(permission.defaultBaseRoles, definition.defaultBaseRoles);
+    assert.equal(permission.active, definition.active);
+    assert.equal(permission.deprecated, definition.deprecated);
+    assert.equal(permission.platformOnly, definition.platformOnly);
+    assert.equal(permission.tenantGrantable, definition.tenantGrantable);
+    assert.equal(permission.delegableByTenantAdmin, definition.delegableByTenantAdmin);
+    assert.equal(permission.contractVersion, definition.contractVersion);
   }
+
+  // Verify baseRoleDefaults equals authoritative BASE_ROLE_DEFAULTS
+  assert.ok(data.baseRoleDefaults, "baseRoleDefaults must exist");
+  assert.deepEqual(
+    Object.keys(data.baseRoleDefaults).sort(),
+    [...TENANT_ROLE_BASES].sort(),
+    "baseRoleDefaults must contain only TENANT_ROLE_BASES",
+  );
+  for (const role of TENANT_ROLE_BASES) {
+    assert.deepEqual(
+      data.baseRoleDefaults[role],
+      [...BASE_ROLE_DEFAULTS[role]],
+      `baseRoleDefaults[${role}] must equal BASE_ROLE_DEFAULTS[${role}]`,
+    );
+  }
+
+  // No internal or persistence fields exposed
   const serialized = JSON.stringify(data);
-  assert.ok(!serialized.includes("defaultBaseRoles"));
-  assert.ok(!serialized.includes("platformOnly"));
-  assert.ok(!serialized.includes("documents:view"));
-  assert.ok(!serialized.includes("audit:platform-read"));
+  assert.ok(!serialized.includes("documents:view"), "deprecated documents:view must be excluded");
+  assert.ok(!serialized.includes("audit:platform-read"), "platform-only audit:platform-read must be excluded");
+  assert.ok(!serialized.includes("tenantId"), "tenantId must not be exposed");
+  assert.ok(!serialized.includes("actorId"), "actorId must not be exposed");
+  assert.ok(!serialized.includes("provenance"), "provenance must not be exposed");
+  assert.ok(!serialized.includes("createdAt"), "createdAt must not be exposed");
+  assert.ok(!serialized.includes("updatedAt"), "updatedAt must not be exposed");
+  assert.ok(!serialized.includes("_id"), "MongoDB _id must not be exposed");
+  assert.ok(!serialized.includes("__v"), "Mongoose __v must not be exposed");
+});
+
+test("baseRoleDefaults matches authoritative BASE_ROLE_DEFAULTS for each tenant base role", async () => {
+  let body: unknown;
+  const response = {
+    status: (status: number) => {
+  assert.equal(status, 200);
+  return response;
+  },
+    json: (value: unknown) => { body = value; return response; },
+  } as unknown as Response;
+  await getPermissionCatalogController({} as Request, response, (error) => { throw error; });
+  const data = (body as { data: { baseRoleDefaults: Record<string, string[]> } }).data;
+
+  for (const role of TENANT_ROLE_BASES) {
+    const returned = data.baseRoleDefaults[role];
+    const authoritative = [...BASE_ROLE_DEFAULTS[role]];
+    assert.deepEqual(
+      returned.sort(),
+      authoritative.sort(),
+      `baseRoleDefaults.${role} must match authoritative BASE_ROLE_DEFAULTS`,
+    );
+  }
 });
