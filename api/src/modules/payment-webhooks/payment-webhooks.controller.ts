@@ -13,7 +13,7 @@ export async function webhookHandlerController(
   const rawBodyBuffer = req.body instanceof Buffer ? req.body : Buffer.from(JSON.stringify(req.body));
   const rawBody = rawBodyBuffer.toString("utf8");
 
-  const provider = getPaymentProvider();
+  const provider = await getPaymentProvider();
 
   if (!provider.verifyWebhookSignature(rawBody, signature)) {
     logger.warn({ signature: signature.slice(0, 8) }, "Invalid webhook signature");

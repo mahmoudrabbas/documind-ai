@@ -44,7 +44,7 @@ export const createCheckoutController = endpoint(async (req, res) => {
   const auth = actor(req);
   const tenantId = tenant(req);
   const body = parse(createCheckoutSchema, req.body);
-  const provider = getPaymentProvider();
+  const provider = await getPaymentProvider();
 
   const successUrl = `${req.protocol}://${req.get("host")}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${req.protocol}://${req.get("host")}/checkout/cancel`;
