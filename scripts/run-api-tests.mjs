@@ -31,6 +31,8 @@ const testEnvironment = {
     "test-only-verification-secret-at-least-32-characters",
   PASSWORD_RESET_JWT_SECRET:
     "test-only-password-reset-secret-at-least-32-characters",
+  EMAIL_WEBHOOK_SECRET:
+    "test-only-webhook-secret-at-least-32-characters",
 };
 
 const path = [

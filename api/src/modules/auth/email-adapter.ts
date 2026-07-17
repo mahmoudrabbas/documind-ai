@@ -3,6 +3,11 @@ import { AppError } from "../../common/errors/AppError.js";
 import { EMAIL_SENDING_FAILED } from "../../common/errors/errorCodes.js";
 import { config } from "../../config/index.js";
 
+/**
+ * @deprecated Use EmailDispatchPort and EmailService instead.
+ * This adapter is maintained solely for backward compatibility with older
+ * synchronous email flows and will be removed in a future release.
+ */
 export interface SendEmailInput {
   to: string;
   subject: string;
@@ -10,6 +15,9 @@ export interface SendEmailInput {
   html: string;
 }
 
+/**
+ * @deprecated Use EmailDispatchPort and EmailService instead.
+ */
 export interface EmailAdapter {
   send(input: SendEmailInput): Promise<void>;
 }
