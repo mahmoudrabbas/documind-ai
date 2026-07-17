@@ -1,4 +1,17 @@
 import type { Role } from "@/constants/routes";
+import type { PermissionGrant } from "@/types/api/permissions.types";
+
+export type {
+  PermissionScopes,
+  PermissionGrant,
+  PermissionCatalogEntry,
+  PermissionCatalogGroup,
+  PermissionScopeType,
+  PermissionCatalogResponse,
+  PermissionSource,
+  CustomRoleState,
+  CurrentPermissionsResponse,
+} from "@/types/api/permissions.types";
 
 export interface UserView {
   id: string;
@@ -21,25 +34,19 @@ export interface RoleView {
   tenantId: string;
   name: string;
   baseRole: "COMPANY_ADMIN" | "EMPLOYEE";
-  version: number;
+  grants: PermissionGrant[];
+  contractVersion: number;
   status: "active" | "archived";
+  version: number;
   userCount: number;
   createdAt: string;
   updatedAt: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+  migrationState: "complete" | "quarantined";
+  migrationReason?: string;
 }
 
 export interface ListRolesResponse { success: true; data: { roles: RoleView[] } }
 export interface CreateRoleResponse { success: true; message: string; data: { role: RoleView } }
 export interface UpdateRoleResponse { success: true; message: string; data: { role: RoleView } }
-
-export interface PermissionCatalogResponse {
-  success: true;
-  data: {
-    contractVersion: number;
-    groups: Array<{
-      group: string;
-      label: string;
-      permissions: Array<{ id: string; label: string; description: string }>;
-    }>;
-  };
-}

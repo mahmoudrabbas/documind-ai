@@ -1,11 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
-import { isBaseRole } from "../../common/auth/baseRoles.js";
+import { isBaseRole, TENANT_ROLE_BASES } from "../../common/auth/baseRoles.js";
 import { getPermissionEvaluator } from "./permissions.evaluator.js";
 import {
   TENANT_PERMISSION_CATALOG_GROUPS,
   PERMISSION_BY_ID,
   PERMISSION_CONTRACT_VERSION,
+  BASE_ROLE_DEFAULTS,
 } from "./permissions.catalog.js";
 
 export async function getPermissionCatalogController(
@@ -20,13 +21,29 @@ export async function getPermissionCatalogController(
       permissions: g.permissions.map((permission) => {
         const definition = PERMISSION_BY_ID.get(permission);
         if (!definition) throw new Error("Permission catalog is internally inconsistent");
-        return { id: definition.id, label: definition.label, description: definition.description };
+        return {
+          id: definition.id,
+          label: definition.label,
+          description: definition.description,
+          compatibleScopes: definition.compatibleScopes,
+          defaultBaseRoles: definition.defaultBaseRoles,
+          active: definition.active,
+          deprecated: definition.deprecated,
+          platformOnly: definition.platformOnly,
+          tenantGrantable: definition.tenantGrantable,
+          delegableByTenantAdmin: definition.delegableByTenantAdmin,
+          contractVersion: definition.contractVersion,
+        };
       }),
     }));
 
+    const baseRoleDefaults = Object.fromEntries(
+      TENANT_ROLE_BASES.map((role) => [role, [...BASE_ROLE_DEFAULTS[role]]]),
+    );
+
     res.status(200).json({
       success: true,
-      data: { contractVersion: PERMISSION_CONTRACT_VERSION, groups },
+      data: { contractVersion: PERMISSION_CONTRACT_VERSION, groups, baseRoleDefaults },
     });
   } catch (error) {
     next(error);
@@ -64,6 +81,7 @@ export async function getMyPermissionsController(
         grants: Object.fromEntries(resolved.grants),
         baseRole: resolved.baseRole,
         customRoleId: resolved.customRoleId,
+        customRoleState: resolved.customRoleState,
         roleVersion: resolved.roleVersion,
       },
     });

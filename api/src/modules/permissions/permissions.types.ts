@@ -85,15 +85,30 @@ export interface PermissionEvaluator {
   evictAllForTenant(tenantId: string): void;
 }
 
+export interface PermissionCatalogEntry {
+  id: string;
+  label: string;
+  description: string;
+  compatibleScopes: readonly string[];
+  defaultBaseRoles: readonly string[];
+  active: boolean;
+  deprecated: boolean;
+  platformOnly: boolean;
+  tenantGrantable: boolean;
+  delegableByTenantAdmin: boolean;
+  contractVersion: number;
+}
+
 export interface PermissionCatalogGroup {
   group: string;
   label: string;
-  permissions: Array<{ id: string; label: string; description: string }>;
+  permissions: PermissionCatalogEntry[];
 }
 
 export interface PermissionCatalogResponse {
   contractVersion: number;
   groups: PermissionCatalogGroup[];
+  baseRoleDefaults: Record<string, string[]>;
 }
 
 export const DEFAULT_SCOPES: PermissionScopes = {

@@ -4,12 +4,126 @@ Phase 2 provides the database-backed permission evaluator and tenant custom-role
 
 The permission contract version is `PERMISSION_CONTRACT_VERSION` from `api/src/modules/permissions/permissions.catalog.ts`. There are exactly three base roles: `SUPER_ADMIN`, `COMPANY_ADMIN`, and `EMPLOYEE`. Custom roles are additive bundles constrained to `COMPANY_ADMIN` or `EMPLOYEE`; assignment never changes `User.role`.
 
+## Permission Catalog Contract (GET /permissions)
+
+The catalog returns the authoritative backend permission metadata for the tenant-usable permission set. The response is tenant-neutral and contains no internal fields.
+
+### Response Shape
+
+```json
+{
+  "success": true,
+  "data": {
+    "contractVersion": 1,
+    "groups": [
+      {
+        "group": "documents",
+        "label": "Documents",
+        "permissions": [
+          {
+            "id": "documents:read",
+            "label": "View Documents",
+            "description": "View tenant documents",
+            "compatibleScopes": ["selfOnly", "departmentIds", "documentCategories", "documentClassifications"],
+            "defaultBaseRoles": ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
+            "active": true,
+            "deprecated": false,
+            "platformOnly": false,
+            "tenantGrantable": true,
+            "delegableByTenantAdmin": true,
+            "contractVersion": 1
+          }
+        ]
+      }
+    ],
+    "baseRoleDefaults": {
+      "COMPANY_ADMIN": ["documents:read", "users:read", ...],
+      "EMPLOYEE": ["documents:read", "chat:read", ...]
+    }
+  }
+}
+```
+
+### Field Semantics
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Canonical permission identifier (e.g. `documents:read`) |
+| `label` | string | Human-readable display name |
+| `description` | string | Human-readable description |
+| `compatibleScopes` | string[] | Scope types this permission supports: `selfOnly`, `departmentIds`, `documentCategories`, `documentClassifications` |
+| `defaultBaseRoles` | string[] | Base roles that inherit this permission by default: `SUPER_ADMIN`, `COMPANY_ADMIN`, `EMPLOYEE` |
+| `active` | boolean | Whether the permission is currently active |
+| `deprecated` | boolean | Whether the permission is deprecated |
+| `platformOnly` | boolean | Whether the permission is reserved for platform-level actors |
+| `tenantGrantable` | boolean | Whether the permission can be granted in a tenant custom role |
+| `delegableByTenantAdmin` | boolean | Whether a tenant admin is permitted to delegate this permission. Defined per permission in `definition.delegableByTenantAdmin`; never derived. |
+| `contractVersion` | number | Permission contract version for staleness detection |
+
+### Entry Fields
+
+| Top-level field | Type | Description |
+|---|---|---|
+| `contractVersion` | number | Permission contract version |
+| `groups` | PermissionGroup[] | Groups containing tenant-selectable catalog entries |
+| `baseRoleDefaults` | object | Maps each tenant base role (`COMPANY_ADMIN`, `EMPLOYEE`) to its full inherited permission ID list. Built from the authoritative `BASE_ROLE_DEFAULTS` constant. Contains all inherited permissions, not only those visible in groups. |
+
+### Usage Rules
+
+- **Catalog metadata is authoritative.** The frontend must derive inherited permission IDs and tenant-selectability from the server-supplied `defaultBaseRoles` and `tenantGrantable` fields.
+- **`groups` are the selectable tenant catalog.** They include only active, non-deprecated, non-platform-only, tenant-grantable, and delegable-by-tenant-admin permissions. Filtering group entries by `defaultBaseRoles` produces an incomplete inherited set because non-delegable permissions are excluded.
+- **`baseRoleDefaults` is the complete inherited source.** Use `baseRoleDefaults["COMPANY_ADMIN"]` to obtain the full inherited permission set for a `COMPANY_ADMIN` actor, including non-delegable permissions.
+- **Do not hardcode permission-to-role mappings.** All role-permission relationships must be derived from the catalog response.
+- **Non-public entries are excluded from groups.** Only active, non-deprecated, non-platform-only, tenant-grantable, and delegable-by-tenant-admin permissions appear in `groups`.
+
+## Current Actor Permissions (GET /permissions/me)
+
+Returns the authenticated actor's database-backed effective authorization.
+
+### Response Shape
+
+```json
+{
+  "success": true,
+  "data": {
+    "permissions": ["documents:read", "users:read", "chat:read"],
+    "grants": {
+      "documents:read": { "source": "base-role", "scope": null },
+      "users:read": { "source": "custom-role", "scope": { "selfOnly": false, "departmentIds": [], "documentCategories": [], "documentClassifications": [] } }
+    },
+    "baseRole": "COMPANY_ADMIN",
+    "customRoleId": "abc123def456",
+    "customRoleState": "active",
+    "roleVersion": 3
+  }
+}
+```
+
+### Field Semantics
+
+| Field | Type | Description |
+|---|---|---|
+| `permissions` | string[] | Effective permission identifiers the actor holds |
+| `grants` | object | Map of permission ID to grant details: `source` (`"platform"`, `"base-role"`, or `"custom-role"`) and optional `scope` |
+| `baseRole` | string | Actor's base role (`"SUPER_ADMIN"`, `"COMPANY_ADMIN"`, or `"EMPLOYEE"`) |
+| `customRoleId` | string\|null | Assigned custom role ID, if any |
+| `customRoleState` | string | State of the custom role: `"none"`, `"active"`, `"missing"`, `"archived"`, `"invalid"` |
+| `roleVersion` | number\|null | Version of the resolved custom role |
+
+### Usage Rules
+
+- **`/permissions/me` represents only the current actor.** It must not be used as the source of inherited permissions for arbitrary roles.
+- **`/permissions/me` is actor-only.** It returns the effective permissions, grants, and role state scoped to the authenticated actor. The response is tenant-specific and actor-specific.
+- **Frontend action visibility is advisory.** The `can()` function in the frontend permission provider is a presentation and capability-discovery mechanism only.
+- **Backend authorization remains authoritative.** The backend performs all permission checks server-side.
+- **403 permission refresh must not automatically replay a mutation.** When a feature receives a 403, it should call `refreshPermissions()` and update action visibility without automatically retrying the mutation.
+
 ## Routes
 
 | Method | Route | Required permission | Request | Success data |
 | --- | --- | --- | --- | --- |
-| `GET` | `/permissions` | authenticated actor | none | `{contractVersion,groups[]}` containing active tenant-grantable permissions |
-| `GET` | `/permissions/me` | authenticated actor | none | current database-backed effective permissions, grants, base role, role ID/version |
+| `GET` | `/permissions` | authenticated actor | none | `{contractVersion,groups[],baseRoleDefaults{}}` where each group contains `{group,label,permissions[]}` and each permission includes `{id,label,description,compatibleScopes,defaultBaseRoles,active,deprecated,platformOnly,tenantGrantable,delegableByTenantAdmin,contractVersion}` and `baseRoleDefaults` maps each tenant base role to its full inherited permission ID list |
+| `GET` | `/permissions/me` | authenticated actor | none | `{permissions[],grants{},baseRole,customRoleId,customRoleState,roleVersion}` — current database-backed effective permissions |
 | `GET` | `/roles` | `roles:read` | none | `{roles: RolePublicView[]}` |
 | `GET` | `/roles/:id` | `roles:read` | ObjectId path | `{role}` |
 | `GET` | `/roles/:id/usage` | `roles:read` | ObjectId path | `{roleId,assignedUserCount}` |
