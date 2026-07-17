@@ -3,25 +3,17 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { listRoles } from "@/services/roles.service";
-import type { RoleView } from "@/types/api/users.types";
+import {
+  inviteUserWithRole,
+  retryInvitationRoleAssignment,
+  updateUserWithRole,
+} from "@/services/users.service";
+import type { RoleView, UserView } from "@/types/api/users.types";
 import {
   DashboardPage,
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
-
-type UserView = {
-  id: string;
-  tenantId: string;
-  name: string;
-  email: string;
-  role: "COMPANY_ADMIN" | "EMPLOYEE";
-  customRoleId?: string;
-  customRoleName?: string;
-  status: string;
-  emailVerified: boolean;
-  createdAt: string;
-};
 
 type Pagination = {
   page: number;
@@ -31,7 +23,7 @@ type Pagination = {
 };
 
 type UserUpdateState = {
-  role: "COMPANY_ADMIN" | "EMPLOYEE";
+  role: string;
   status: string;
   isSaving: boolean;
   error?: string | null;
@@ -60,6 +52,10 @@ export default function UsersPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [pendingAssignment, setPendingAssignment] = useState<{
+    userId: string;
+    role: RoleView;
+  } | null>(null);
 
   const [users, setUsers] = useState<UserView[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -97,7 +93,9 @@ export default function UsersPage() {
     return [
       ...ROLE_OPTIONS,
       { value: "---divider---", label: "─── Custom Roles ───", disabled: true },
-      ...customRoles.map((r) => ({ value: `custom:${r.id}`, label: r.name })),
+      ...customRoles
+        .filter((item) => item.status === "active")
+        .map((r) => ({ value: `custom:${r.id}`, label: r.name })),
     ];
   }
 
@@ -127,7 +125,7 @@ export default function UsersPage() {
       setRowUpdates(
         response.data.users.reduce<RowUpdates>((acc, user) => {
           acc[user.id] = {
-            role: user.role,
+            role: user.customRoleId ? `custom:${user.customRoleId}` : user.role,
             status: user.status,
             isSaving: false,
             error: null,
@@ -160,22 +158,19 @@ export default function UsersPage() {
     setIsSubmitting(true);
 
     try {
-      const body: Record<string, unknown> = { name, email };
-      if (role.startsWith("custom:")) {
-        body.customRoleId = role.slice("custom:".length);
+      const selectedRole = role.startsWith("custom:")
+        ? customRoles.find((item) => item.id === role.slice("custom:".length))
+        : role as "COMPANY_ADMIN" | "EMPLOYEE";
+      if (!selectedRole) throw new Error("The selected role is no longer available.");
+      const result = await inviteUserWithRole({ name, email, role: selectedRole });
+      if (result.status === "assignment-failed") {
+        setPendingAssignment({ userId: result.user.id, role: result.role });
+        setStatus("User invited successfully, but custom-role assignment failed.");
+        setError("Retry the role assignment after refreshing the role list.");
       } else {
-        body.role = role;
+        setPendingAssignment(null);
+        setStatus("Invitation sent successfully.");
       }
-
-      const response = await apiClient<{ success: boolean; message: string }>(
-        "/users",
-        {
-          method: "POST",
-          body,
-        },
-      );
-
-      setStatus(response.message ?? "Invitation sent successfully.");
       setName("");
       setEmail("");
       setRole("EMPLOYEE");
@@ -188,6 +183,25 @@ export default function UsersPage() {
       }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function retryPendingAssignment() {
+    if (!pendingAssignment) return;
+    setError(null);
+    try {
+      const rolesResponse = await listRoles();
+      setCustomRoles(rolesResponse.data.roles);
+      const currentRole = rolesResponse.data.roles.find((item) => item.id === pendingAssignment.role.id);
+      if (!currentRole || currentRole.status !== "active") {
+        throw new Error("The custom role is no longer assignable.");
+      }
+      await retryInvitationRoleAssignment(pendingAssignment.userId, currentRole);
+      setPendingAssignment(null);
+      setStatus("User was already invited; custom role assigned successfully.");
+      void loadUsers(page);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Custom-role assignment retry failed.");
     }
   }
 
@@ -209,32 +223,26 @@ export default function UsersPage() {
     setUpdateMessage(null);
 
     try {
-      const body: Record<string, unknown> = {};
-      if (update.role.startsWith("custom:")) {
-        body.customRoleId = update.role.slice("custom:".length);
-      } else {
-        body.role = update.role;
-      }
-      body.status = update.status;
-
-      const response = await apiClient<{
-        success: boolean;
-        data: { user: UserView };
-      }>(`/users/${userId}`, {
-        method: "PATCH",
-        body,
+      const selectedRole = update.role.startsWith("custom:")
+        ? customRoles.find((item) => item.id === update.role.slice("custom:".length))
+        : update.role as "COMPANY_ADMIN" | "EMPLOYEE";
+      if (!selectedRole) throw new Error("The selected role is no longer available.");
+      const updatedUser = await updateUserWithRole({
+        user,
+        selectedRole,
+        status: update.status as UserView["status"],
       });
 
       setUsers((current: UserView[]): UserView[] =>
         current.map((item) =>
-          item.id === userId ? { ...item, ...response.data.user } : item,
+          item.id === userId ? { ...item, ...updatedUser } : item,
         ),
       );
       setRowUpdates((prev: RowUpdates): RowUpdates => ({
         ...prev,
         [userId]: {
-          role: response.data.user.role,
-          status: response.data.user.status,
+          role: updatedUser.customRoleId ? `custom:${updatedUser.customRoleId}` : updatedUser.role,
+          status: updatedUser.status,
           isSaving: false,
           error: null,
         },
@@ -401,6 +409,15 @@ export default function UsersPage() {
             {error ? (
               <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
                 {error}
+                {pendingAssignment ? (
+                  <button
+                    type="button"
+                    className="ml-3 underline"
+                    onClick={() => void retryPendingAssignment()}
+                  >
+                    Retry role assignment
+                  </button>
+                ) : null}
               </div>
             ) : null}
 

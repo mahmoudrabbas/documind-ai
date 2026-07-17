@@ -33,7 +33,9 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
       grants.set(permission, { source: baseRole === "SUPER_ADMIN" ? "platform" : "base-role", scope: null });
     }
 
-    const customRoleId = user.customRoleId?.toString() ?? null;
+    // Platform administrators never consume tenant custom-role assignments, even if
+    // a corrupt legacy row still contains one.
+    const customRoleId = baseRole === "SUPER_ADMIN" ? null : user.customRoleId?.toString() ?? null;
     let roleVersion: number | null = null;
     let customRoleState: ResolvedPermissions["customRoleState"] = customRoleId ? "missing" : "none";
 
@@ -49,8 +51,7 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
             if (role.migrationState !== "complete") throw new Error("role migration is incomplete");
             const actors = [role.createdBy, role.updatedBy];
             if (actors.some((actorId) => !actorId || !mongoose.isValidObjectId(actorId))) throw new Error("invalid role provenance");
-            const actorIds = actors.filter((actorId): actorId is mongoose.Types.ObjectId =>
-              actorId instanceof mongoose.Types.ObjectId);
+            const actorIds = actors.map((actorId) => new mongoose.Types.ObjectId(actorId!.toString()));
             const actorCount = await UserModel.countDocuments({
               _id: { $in: actorIds },
               tenantId: actor.tenantId,

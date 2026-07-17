@@ -68,8 +68,9 @@ export class InMemoryPermissionEvaluator implements PermissionEvaluator {
     const grants = new Map<PermissionValue, { source: "platform" | "base-role" | "custom-role"; scope: PermissionScopes | null }>();
     for (const permission of defaults) grants.set(permission, { source: user.baseRole === "SUPER_ADMIN" ? "platform" : "base-role", scope: null });
 
-    const role = user.customRoleId ? this.roles.get(this.key(user.customRoleId, actor.tenantId)) : undefined;
-    let customRoleState: ResolvedPermissions["customRoleState"] = !user.customRoleId ? "none" : !role ? "missing" : role.status === "active" ? "active" : "archived";
+    const customRoleId = user.baseRole === "SUPER_ADMIN" ? null : user.customRoleId;
+    const role = customRoleId ? this.roles.get(this.key(customRoleId, actor.tenantId)) : undefined;
+    let customRoleState: ResolvedPermissions["customRoleState"] = !customRoleId ? "none" : !role ? "missing" : role.status === "active" ? "active" : "archived";
     if (role?.status === "active" && user.baseRole !== "SUPER_ADMIN") {
       try {
         if (role.baseRole !== user.baseRole || role.contractVersion !== PERMISSION_CONTRACT_VERSION || role.migrationState !== "complete" || !role.provenanceValid) throw new Error("invalid role contract");
@@ -82,7 +83,7 @@ export class InMemoryPermissionEvaluator implements PermissionEvaluator {
     }
     return {
       permissions: new Set(grants.keys()), grants, baseRole: user.baseRole,
-      customRoleId: user.customRoleId, roleVersion: role?.version ?? null, customRoleState,
+      customRoleId, roleVersion: role?.version ?? null, customRoleState,
     };
   }
 

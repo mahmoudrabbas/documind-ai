@@ -66,7 +66,7 @@ export function requirePermission(permission: PermissionValue, options?: Permiss
           requestId: req.requestId,
         }, "Permission denial audit could not be persisted");
       }
-      const externalCode = decision.denialCode === "SCOPE_MISMATCH"
+      const externalCode = decision.denialCode === "SCOPE_MISMATCH" || decision.denialCode === "TENANT_MISMATCH"
         ? SCOPE_MISMATCH
         : decision.denialCode === "RESOURCE_CONTEXT_REQUIRED"
           ? RESOURCE_CONTEXT_REQUIRED

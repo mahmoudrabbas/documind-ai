@@ -5,7 +5,7 @@
 ## Principal and Grant Semantics
 
 - `user.role` is the explicit persistent base role and is limited to `SUPER_ADMIN`, `COMPANY_ADMIN`, or `EMPLOYEE`.
-- `customRoleId` is an optional additive permission bundle. Assigning it never changes `user.role`.
+- `customRoleId` is an optional additive permission bundle. Assigning it never changes `user.role`. It can be changed only through the dedicated, versioned role-assignment endpoints; legacy user invitation/update payloads reject it.
 - `Role.baseRole` is only an assignment constraint. It grants nothing, and assignment is valid only when it exactly equals the user's persistent `user.role`.
 - Changing `Role.baseRole` while any user is assigned is rejected; Phase 1 does not migrate user base roles through role editing.
 - Base-role defaults are unrestricted inherited grants. A custom role cannot narrow or deny an inherited default.
@@ -50,6 +50,18 @@ Evaluation is deterministic in this order:
 
 The decision includes the effective source, applicable scope, stable denial code/reason, custom role ID, and role version. Disabled or missing users resolve no grants.
 
+The reusable service guard maps unknown or deprecated identifiers to `INVALID_PERMISSION`, absent authority to `PERMISSION_REQUIRED`, and invalid, incomplete, or cross-tenant resource context to `SCOPE_MISMATCH`. Route middleware uses the repository's equivalent canonical error envelope. Deterministic services must invoke the guard again; middleware success alone is not authority for a write.
+
+Resource context is not client authority. A service that evaluates a concrete user, department, or document must load that resource in the authenticated tenant and construct the context from the stored owner, department, category, and classification. ObjectId shape validation alone does not establish that a referenced department belongs to the tenant. The evaluator rejects a context with another tenant or malformed identifiers, and scoped dimensions fail closed when their required resource value is absent. The Issue 03 resource policies are responsible for loading concrete user/document records and are not implemented by the role API.
+
+## Delegation
+
+Delegation is checked against the actor's current database-backed effective grants on create, update, clone, assignment, and migration. The requested permission must be active, tenant-grantable, and marked delegable. A scoped actor grant may delegate only the same or a narrower scope: unrestricted requests cannot be derived from a constrained grant, every requested department/category/classification must be contained by the actor grant, and `selfOnly` cannot be removed. Crafted, hidden, deprecated, platform, cross-tenant, stale, archived, and scope-widening inputs fail closed. Route checks are repeated inside mutation services under the tenant role serialization lock.
+
+Tenant custom roles cannot contribute to `SUPER_ADMIN`. A Super Admin always resolves platform defaults from the authoritative base role and ignores any corrupt persisted `customRoleId`.
+
 ## Freshness
 
 Permission evaluation intentionally has no in-process TTL cache in v1. Every decision reads current user and role state, so role updates, archives, deletion, assignment/removal, base-role changes, and suspension are visible on the next evaluation across API instances. The compatibility `evict` methods are no-ops until a distributed, version-aware cache is introduced.
+
+`InMemoryPermissionEvaluator` is a deterministic test adapter, not a production authorization source. Shared contract tests run the same base-role, role-state, catalog, scope, tenant, stale-assignment, and corrupt-data cases against it and `PermissionEvaluatorImpl`. Production additionally validates MongoDB role provenance against same-tenant users.

@@ -150,7 +150,9 @@ test("actorless, malformed, and cross-tenant provenance roles are quarantined an
   const cross = await rawRoles.findOne({ _id: crossTenant._id });
   assert.equal(cross?.createdBy, null);
   assert.equal(cross?.updatedBy, null);
-  const listed = await listRoles(tenantId.toHexString());
+  const listingAdmin = user(tenantId, { role: "COMPANY_ADMIN" });
+  await rawUsers.insertOne(listingAdmin);
+  const listed = await listRoles(tenantId.toHexString(), listingAdmin._id.toHexString());
   assert.equal(listed.roles.length, 2);
   assert.ok(listed.roles.every((role) => role.migrationState === "quarantined" && Array.isArray(role.grants)));
   const repeated = await migrateRolesPhase1(roles, users, { apply: true });

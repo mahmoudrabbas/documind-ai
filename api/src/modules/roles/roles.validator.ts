@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { PRIVILEGE_ESCALATION, UNKNOWN_PERMISSION, VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import { GrantValidationError, normalizeRoleGrants } from "../permissions/permissions.grants.js";
-import type { CreateRoleInput, DeleteRoleInput, UpdateRoleInput } from "./roles.types.js";
+import type { AssignRoleInput, ChangeRoleStatusInput, CloneRoleInput, CreateRoleInput, DeleteRoleInput, MigrateRoleUsersInput, RemoveRoleAssignmentInput, UpdateRoleInput } from "./roles.types.js";
 
 const RESERVED_NAMES = new Set(["super admin", "company admin", "employee"]);
 const nameSchema = z.string().trim().min(2).max(50)
@@ -33,6 +33,17 @@ const updateRoleSchema = z.object({
   version: z.number().int().positive(),
 }).strict().refine((data) => Object.keys(data).some((key) => key !== "version"), "At least one mutable field must be provided");
 const deleteRoleSchema = z.object({ version: z.number().int().positive() }).strict();
+const cloneRoleSchema = z.object({ name: nameSchema, version: z.number().int().positive() }).strict();
+const changeRoleStatusSchema = z.object({ version: z.number().int().positive() }).strict();
+const assignmentSchema = z.object({
+  userId: z.string().refine((value) => mongoose.isObjectIdOrHexString(value), "userId must be a valid ObjectId"),
+  roleVersion: z.number().int().positive(),
+}).strict();
+const migrationSchema = z.object({
+  destinationRoleId: z.string().refine((value) => mongoose.isObjectIdOrHexString(value), "destinationRoleId must be a valid ObjectId"),
+  sourceVersion: z.number().int().positive(),
+  destinationVersion: z.number().int().positive(),
+}).strict();
 
 function validate<T extends Record<string, unknown>>(schema: z.ZodSchema<T>, input: unknown): T {
   const result = schema.safeParse(input);
@@ -68,3 +79,8 @@ export function validateUpdateRoleInput(input: unknown): UpdateRoleInput {
 export function validateDeleteRoleInput(input: unknown): DeleteRoleInput {
   return validate(deleteRoleSchema, input);
 }
+export function validateCloneRoleInput(input: unknown): CloneRoleInput { return validate(cloneRoleSchema, input); }
+export function validateChangeRoleStatusInput(input: unknown): ChangeRoleStatusInput { return validate(changeRoleStatusSchema, input); }
+export function validateAssignRoleInput(input: unknown): AssignRoleInput { return validate(assignmentSchema, input); }
+export function validateRemoveRoleAssignmentInput(input: unknown): RemoveRoleAssignmentInput { return validate(assignmentSchema, input); }
+export function validateMigrateRoleUsersInput(input: unknown): MigrateRoleUsersInput { return validate(migrationSchema, input); }

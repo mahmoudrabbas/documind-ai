@@ -32,3 +32,14 @@ export function deleteRole(roleId: string, version: number) {
     { method: "DELETE", body: { version } },
   );
 }
+
+export function assignRole(roleId: string, userId: string, roleVersion: number) {
+  return apiClient<{
+    success: true;
+    message: string;
+    data: { userId: string; roleId: string; changed: boolean };
+  }>(`/roles/${roleId}/assignments`, {
+    method: "POST",
+    body: { userId, roleVersion },
+  });
+}

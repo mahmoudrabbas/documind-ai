@@ -1,5 +1,4 @@
 import { z } from "zod";
-import mongoose from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import type {
@@ -21,34 +20,20 @@ const inviteUserSchema = z
       .trim()
       .toLowerCase()
       .email("email must be a valid address"),
-    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
-    customRoleId: z.string().refine((value) => mongoose.isObjectIdOrHexString(value), "customRoleId must be a valid ObjectId").optional(),
+    role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]),
   })
-  .strict()
-  .refine(
-    (data) => data.role !== undefined || data.customRoleId !== undefined,
-    {
-      message: "Either role or customRoleId must be provided",
-      path: ["role"],
-    },
-  )
-  ;
+  .strict();
 
 const updateUserSchema = z
   .object({
     role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]).optional(),
-    customRoleId: z.string().refine((value) => mongoose.isObjectIdOrHexString(value), "customRoleId must be a valid ObjectId").nullable().optional(),
     status: z
       .enum(["active", "pending", "pending_email_verification", "disabled"])
       .optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one of role, customRoleId, or status must be provided",
-  })
-  .refine((data) => !(data.role !== undefined && data.customRoleId !== undefined), {
-    message: "Base-role transitions and custom-role assignments must be separate operations",
-    path: ["customRoleId"],
+    message: "At least one of role or status must be provided",
   });
 
 const listUsersSchema = z

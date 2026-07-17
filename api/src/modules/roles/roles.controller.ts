@@ -1,116 +1,64 @@
 import type { NextFunction, Request, Response } from "express";
+import mongoose from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
+import { BAD_REQUEST, MALFORMED_OBJECT_ID } from "../../common/errors/errorCodes.js";
 import {
+  assignRole,
+  changeRoleStatus,
+  cloneRole,
   createRole,
-  listRoles,
-  updateRole,
   deleteRole,
+  getRole,
+  getRoleUsage,
+  listRoles,
+  migrateRoleUsers,
+  removeRoleAssignment,
+  updateRole,
+  type RoleOperationContext,
 } from "./roles.service.js";
 import { validateDeleteRoleInput } from "./roles.validator.js";
-import mongoose from "mongoose";
-import { MALFORMED_OBJECT_ID } from "../../common/errors/errorCodes.js";
 
-export async function createRoleController(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
-    const result = await createRole(req.body, req.tenantId, req.auth.userId);
-
-    res.status(201).json({
-      success: true,
-      message: "Role created successfully",
-      data: result,
-    });
-  } catch (error) {
-    next(error);
-  }
+function context(req: Request): RoleOperationContext {
+  if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+  return {
+    tenantId: req.tenantId,
+    actorId: req.auth.userId,
+    actorEmail: req.auth.email,
+    actorRole: req.auth.role,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
 }
 
-export async function listRolesController(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
-    const result = await listRoles(req.tenantId);
-
-    res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    next(error);
-  }
+function roleId(req: Request): string {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  if (!id) throw new AppError(400, BAD_REQUEST, "Missing role id parameter");
+  if (!mongoose.isObjectIdOrHexString(id)) throw new AppError(400, MALFORMED_OBJECT_ID, "Malformed identifier");
+  return id;
 }
 
-export async function updateRoleController(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
-    const roleId = Array.isArray(req.params.id)
-      ? req.params.id[0]
-      : req.params.id;
-    if (!roleId) {
-      throw new AppError(400, "BAD_REQUEST", "Missing role id parameter");
-    }
-
-    const result = await updateRole(req.body, req.tenantId, roleId, req.auth.userId);
-
-    res.status(200).json({
-      success: true,
-      message: "Role updated successfully",
-      data: result,
-    });
-  } catch (error) {
-    next(error);
-  }
+function handler(operation: (req: Request) => Promise<unknown>, status = 200, message?: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await operation(req);
+      res.status(status).json({ success: true, ...(message ? { message } : {}), data });
+    } catch (error) { next(error); }
+  };
 }
 
-export async function deleteRoleController(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
-    const roleId = Array.isArray(req.params.id)
-      ? req.params.id[0]
-      : req.params.id;
-    if (!roleId) {
-      throw new AppError(400, "BAD_REQUEST", "Missing role id parameter");
-    }
-    if (!mongoose.isObjectIdOrHexString(roleId)) {
-      throw new AppError(400, MALFORMED_OBJECT_ID, "Malformed identifier");
-    }
-
-    const { version } = validateDeleteRoleInput(req.body);
-    const result = await deleteRole(req.tenantId, roleId, version);
-
-    res.status(200).json({
-      success: true,
-      message: "Role deleted successfully",
-      data: result,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const listRolesController = handler((req) => listRoles(context(req)));
+export const getRoleController = handler((req) => getRole(context(req), roleId(req)));
+export const getRoleUsageController = handler((req) => getRoleUsage(context(req), roleId(req)));
+export const createRoleController = handler((req) => createRole(req.body, context(req)), 201, "Role created successfully");
+export const updateRoleController = handler((req) => updateRole(req.body, context(req), roleId(req)), 200, "Role updated successfully");
+export const cloneRoleController = handler((req) => cloneRole(req.body, context(req), roleId(req)), 201, "Role cloned successfully");
+export const archiveRoleController = handler((req) => changeRoleStatus(req.body, context(req), roleId(req), "archived"), 200, "Role archived successfully");
+export const reactivateRoleController = handler((req) => changeRoleStatus(req.body, context(req), roleId(req), "active"), 200, "Role reactivated successfully");
+export const assignRoleController = handler((req) => assignRole(req.body, context(req), roleId(req)), 200, "Role assigned successfully");
+export const removeRoleAssignmentController = handler((req) => removeRoleAssignment(req.body, context(req), roleId(req)), 200, "Role assignment removed successfully");
+export const migrateRoleUsersController = handler((req) => migrateRoleUsers(req.body, context(req), roleId(req)), 200, "Role users migrated successfully");
+export const deleteRoleController = handler((req) => {
+  const id = roleId(req);
+  const { version } = validateDeleteRoleInput(req.body);
+  return deleteRole(context(req), id, version);
+}, 200, "Role deleted successfully");
