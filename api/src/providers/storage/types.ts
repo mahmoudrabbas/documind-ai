@@ -23,5 +23,5 @@ export interface EntitlementChecker {
 }
 
 export interface ProcessingDispatcher {
-  dispatchDocumentUploaded(documentId: string, tenantId: string): Promise<void>;
+  dispatchDocumentUploaded(documentId: string, tenantId: string, actorId: string, documentVersion: number): Promise<void>;
 }

@@ -28,6 +28,8 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
   SMTP_SECURE: z.boolean().default(false),
+  
+  UPLOAD_DIR: z.string().default("../api/uploads"),
 }).superRefine((env, context) => {
   if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
     if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")

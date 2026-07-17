@@ -37,11 +37,20 @@ const upload = multer({
   },
 });
 
+import {
+  getDocumentExtractionStatusController,
+  retriggerDocumentExtractionController,
+} from "../extraction/extraction.controller.js";
+
 const router = Router();
 
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+
+router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
+
+router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), retriggerDocumentExtractionController);
 
 router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
 

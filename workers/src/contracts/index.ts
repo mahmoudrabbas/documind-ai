@@ -6,3 +6,4 @@ export * from "./metrics.js";
 export * from "./handlerRegistry.js";
 export * from "./inMemoryQueue.js";
 export * from "./bullmqQueue.js";
+export * from "./extractionContract.js";

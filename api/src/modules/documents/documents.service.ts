@@ -253,7 +253,7 @@ export function createDocumentServiceProviders(deps: {
       },
     });
 
-    await processingDispatcher.dispatchDocumentUploaded(created._id.toString(), tenantId);
+    await processingDispatcher.dispatchDocumentUploaded(created._id.toString(), tenantId, userId, 1);
 
     const duplicateWarning =
       existingDocs.length > 0
@@ -541,6 +541,8 @@ export function createDocumentServiceProviders(deps: {
         newFileName: safeName,
       },
     });
+
+    await processingDispatcher.dispatchDocumentUploaded(documentId, tenantId, userId, newVersion);
 
     const updated = await findDocumentByTenantAndId(tenantId, documentId);
     if (!updated) {
