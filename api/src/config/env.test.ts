@@ -27,6 +27,7 @@ test("controlled environments accept explicit safe service contracts", () => {
     JWT_REFRESH_SECRET: `${secret}-refresh`,
     EMAIL_VERIFICATION_JWT_SECRET: `${secret}-verification`,
     PASSWORD_RESET_JWT_SECRET: `${secret}-reset`,
+    EMAIL_WEBHOOK_SECRET: `${secret}-webhook`,
   });
   assert.equal(env.NODE_ENV, "test");
 });

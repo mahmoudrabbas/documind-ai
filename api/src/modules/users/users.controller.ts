@@ -149,16 +149,6 @@ export async function deleteUserController(
   }
 }
 
-function handleUserError(error: unknown, res: Response, next: NextFunction) {
-  if (error instanceof AppError) {
-    res.status(error.statusCode).json({
-      success: false,
-      message: error.message,
-      error: error.code,
-      details: error.details ?? null,
-    });
-    return;
-  }
-
+function handleUserError(error: unknown, _res: Response, next: NextFunction) {
   next(error);
 }

@@ -15,7 +15,7 @@ type UserView = {
   tenantId: string;
   name: string;
   email: string;
-  role: string;
+  role: "COMPANY_ADMIN" | "EMPLOYEE";
   customRoleId?: string;
   customRoleName?: string;
   status: string;
@@ -31,7 +31,7 @@ type Pagination = {
 };
 
 type UserUpdateState = {
-  role: string;
+  role: "COMPANY_ADMIN" | "EMPLOYEE";
   status: string;
   isSaving: boolean;
   error?: string | null;

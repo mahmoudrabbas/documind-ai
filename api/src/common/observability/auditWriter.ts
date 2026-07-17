@@ -6,11 +6,11 @@ import { createAuditLog } from "../../modules/audit/audit.repository.js";
 import mongoose from "mongoose";
 
 export interface AuditWriter {
-  write(event: AuditEventInput): Promise<void>;
+  write(event: AuditEventInput): Promise<boolean>;
 }
 
 export class MongoAuditWriter implements AuditWriter {
-  async write(event: AuditEventInput): Promise<void> {
+  async write(event: AuditEventInput): Promise<boolean> {
     try {
       const ctx = getCurrentTraceContext();
       const redactedChanges = event.changes ? redactObject(event.changes) : {};
@@ -45,9 +45,11 @@ export class MongoAuditWriter implements AuditWriter {
       // send to a queue, but we'll stick to DB for now as per the architecture.
       // We wrap the repository call so it never fails the business transaction.
       await createAuditLog(payload);
+      return true;
     } catch (error) {
       // Failure policy: log error + increment counter, never block the calling business action
       logger.error({ err: error, action: event.action }, "Failed to write audit log");
+      return false;
     }
   }
 }
@@ -55,8 +57,9 @@ export class MongoAuditWriter implements AuditWriter {
 export class InMemoryAuditWriter implements AuditWriter {
   public readonly events: AuditEventInput[] = [];
 
-  async write(event: AuditEventInput): Promise<void> {
+  async write(event: AuditEventInput): Promise<boolean> {
     this.events.push(event);
+    return true;
   }
 
   clear(): void {

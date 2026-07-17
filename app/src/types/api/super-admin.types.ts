@@ -131,7 +131,7 @@ export interface PlatformUser {
   _id: string;
   name: string;
   email: string;
-  role: string;
+  role: Role;
   status: string;
   emailVerified: boolean;
   tenantId: { _id: string; name: string; slug: string };
@@ -145,6 +145,7 @@ export interface PlatformJob {
   createdAt: string;
   updatedAt: string;
 }
+import type { Role } from "@/constants/routes";
 
 export const SUBSCRIPTION_STATUS_COLORS: Record<SubscriptionStatus, string> = {
   trialing: "bg-blue-100 text-blue-800",

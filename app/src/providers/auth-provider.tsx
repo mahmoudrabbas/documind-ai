@@ -21,13 +21,14 @@ import {
   getAccessToken,
   setAccessToken,
 } from "@/lib/auth-tokens";
+import type { Role } from "@/constants/routes";
 
 export type AuthUser = {
   id: string;
   tenantId: string;
   name: string;
   email: string;
-  role: string;
+  role: Role;
   status: string;
   emailVerified: boolean;
 };

@@ -18,7 +18,7 @@ export function createRole(input: { name: string; baseRole: "COMPANY_ADMIN" | "E
 
 export function updateRole(
   roleId: string,
-  input: { name?: string; baseRole?: "COMPANY_ADMIN" | "EMPLOYEE" },
+  input: { name?: string; baseRole?: "COMPANY_ADMIN" | "EMPLOYEE"; version: number },
 ) {
   return apiClient<UpdateRoleResponse>(`/roles/${roleId}`, {
     method: "PATCH",
@@ -26,9 +26,9 @@ export function updateRole(
   });
 }
 
-export function deleteRole(roleId: string) {
+export function deleteRole(roleId: string, version: number) {
   return apiClient<{ success: true; message: string; data: { success: boolean } }>(
     `/roles/${roleId}`,
-    { method: "DELETE" },
+    { method: "DELETE", body: { version } },
   );
 }

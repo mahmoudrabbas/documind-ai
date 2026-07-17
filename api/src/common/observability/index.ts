@@ -30,3 +30,10 @@ export function getMetricRecorder(): MetricRecorder {
   return metricRecorderInstance!;
 }
 
+export function setAuditWriter(writer: AuditWriter | null): void {
+  auditWriterInstance = writer;
+}
+
+export function setMetricRecorder(recorder: MetricRecorder | null): void {
+  metricRecorderInstance = recorder;
+}

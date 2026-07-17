@@ -51,7 +51,8 @@ export type AuditResourceType =
   | "PlatformSetting"
   | "Tenant"
   | "Session"
-  | "System";
+  | "System"
+  | "Permission";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 

@@ -1,9 +1,14 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { delimiter, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+import { clearTimeout, setTimeout } from "node:timers";
 
 const root = resolve(import.meta.dirname, "..");
 const apiRoot = resolve(root, "api");
+const require = createRequire(resolve(apiRoot, "package.json"));
+const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
 function findTests(directory) {
   return readdirSync(directory, { withFileTypes: true })
@@ -17,7 +22,6 @@ function findTests(directory) {
 
 const testEnvironment = {
   NODE_ENV: "test",
-  MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test",
   REDIS_URL: "redis://127.0.0.1:6379/1",
   APP_FRONTEND_URL: "https://app.test.invalid",
   UPLOAD_DIR: ".test-uploads",
@@ -27,6 +31,8 @@ const testEnvironment = {
     "test-only-verification-secret-at-least-32-characters",
   PASSWORD_RESET_JWT_SECRET:
     "test-only-password-reset-secret-at-least-32-characters",
+  EMAIL_WEBHOOK_SECRET:
+    "test-only-webhook-secret-at-least-32-characters",
 };
 
 const path = [
@@ -37,20 +43,46 @@ const path = [
   .filter(Boolean)
   .join(delimiter);
 
-for (const testFile of findTests(resolve(apiRoot, "src"))) {
-  const result = spawnSync(
-    process.execPath,
-    ["--import", "tsx", "--test", testFile],
-    {
+function runTestFile(testFile, mongodbUri) {
+  return new Promise((resolveRun) => {
+    const child = spawn(process.execPath, ["--import", "tsx", "--test", testFile], {
       cwd: apiRoot,
       stdio: "inherit",
-      env: { ...process.env, ...testEnvironment, PATH: path },
-    },
-  );
-
-  if (result.error) {
-    console.error(`Unable to start API test ${testFile}: ${result.error.message}`);
-    process.exit(1);
-  }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+      env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },
+    });
+    const timeout = setTimeout(() => {
+      console.error(`API test timed out: ${testFile}`);
+      child.kill("SIGTERM");
+      resolveRun(1);
+    }, Number(process.env.API_TEST_FILE_TIMEOUT_MS ?? 600_000));
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      console.error(`Unable to run API test ${testFile}: ${error.message}`);
+      resolveRun(1);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      resolveRun(code ?? 1);
+    });
+  });
 }
+
+const mongo = await MongoMemoryReplSet.create({
+  binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+  replSet: { count: 1 },
+  instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+});
+let exitCode = 0;
+try {
+  const mongodbUri = mongo.getUri(`documind-test-${randomUUID()}`);
+  for (const testFile of findTests(resolve(apiRoot, "src"))) {
+    const result = await runTestFile(testFile, mongodbUri);
+    if (result !== 0) {
+      exitCode = result;
+      break;
+    }
+  }
+} finally {
+  await mongo.stop();
+}
+process.exitCode = exitCode;

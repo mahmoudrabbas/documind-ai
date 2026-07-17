@@ -9,10 +9,18 @@ import {
   type JobEnvelope,
   type JobStatus,
   type QueueMetrics,
-} from "@documind/contracts";
+} from "workers/contracts";
 
 export const JOBS_QUEUE_NAME = "documind-jobs";
 
+/**
+ * API-side producer implementing the JobDispatcher port.
+ *
+ * The API never imports the worker's runtime — it depends only on the shared
+ * contract (`workers/contracts`) for envelope types/validation and emits the
+ * same envelope shape the worker consumes. This keeps the workspaces free of
+ * circular runtime dependencies.
+ */
 export class ApiJobDispatcher {
   private queue: Queue;
 
@@ -33,6 +41,10 @@ export class ApiJobDispatcher {
     });
   }
 
+  /**
+   * Validates the caller-supplied envelope, derives the dedup jobId, and
+   * enqueues. Duplicate idempotency keys are suppressed at the Redis layer.
+   */
   async enqueue(input: unknown): Promise<{
     ok: boolean;
     jobId?: string;
@@ -40,6 +52,7 @@ export class ApiJobDispatcher {
     deduplicated?: boolean;
     error?: string;
   }> {
+    // Normalize producer-boundary defaults before contract validation.
     const normalized = {
       schemaVersion: "1.0.0",
       createdAt: new Date().toISOString(),
@@ -89,6 +102,7 @@ export class ApiJobDispatcher {
     };
   }
 
+  /** Read-only status lookup (Super Admin context only, enforced by route). */
   async getJobStatus(jobId: string): Promise<JobStatus | null> {
     const job = await this.queue.getJob(jobId);
     if (!job) return null;
@@ -136,6 +150,7 @@ export class ApiJobDispatcher {
     };
   }
 
+  /** Replay a dead-lettered job (Super Admin only). */
   async replayJob(jobId: string): Promise<boolean> {
     const job = await this.queue.getJob(jobId);
     if (!job) return false;

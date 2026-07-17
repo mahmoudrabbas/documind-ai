@@ -119,8 +119,10 @@ export default function RolesPage() {
     setEditSubmitting(true);
     setSuccessMessage(null);
 
-    const payload: { name?: string; baseRole?: "COMPANY_ADMIN" | "EMPLOYEE" } =
-      {};
+    const currentRole = roles.find((role) => role.id === roleId);
+    if (!currentRole) return;
+    const payload: { name?: string; baseRole?: "COMPANY_ADMIN" | "EMPLOYEE"; version: number } =
+      { version: currentRole.version };
     if (editName.trim()) payload.name = editName.trim();
     if (editBaseRole) payload.baseRole = editBaseRole;
 
@@ -148,7 +150,9 @@ export default function RolesPage() {
     setSuccessMessage(null);
 
     try {
-      await deleteRole(roleId);
+      const currentRole = roles.find((role) => role.id === roleId);
+      if (!currentRole) return;
+      await deleteRole(roleId, currentRole.version);
       setSuccessMessage("Role deleted successfully");
       void loadRoles();
     } catch (err) {

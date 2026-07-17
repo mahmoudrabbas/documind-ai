@@ -13,7 +13,7 @@ export interface InviteUserResult {
 
 export interface UpdateUserInput {
   role?: "COMPANY_ADMIN" | "EMPLOYEE";
-  customRoleId?: string;
+  customRoleId?: string | null;
   status?: "active" | "pending" | "pending_email_verification" | "disabled";
 }
 

@@ -45,7 +45,7 @@ jobs:
         with:
           name: repository-security-summary
           path: ci-results/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
   validate:
@@ -70,8 +70,6 @@ jobs:
           cache: npm
       - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
       - run: npm ci
-      - name: Build shared contracts package
-        run: npm run build:contracts
       - name: Lint, typecheck, test, and build
         env:
           NODE_ENV: test

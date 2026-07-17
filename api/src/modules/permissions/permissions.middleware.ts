@@ -1,74 +1,99 @@
 import type { NextFunction, Request, Response } from "express";
+import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { PERMISSION_REQUIRED } from "../../common/errors/errorCodes.js";
+import { PERMISSION_REQUIRED, RESOURCE_CONTEXT_REQUIRED, SCOPE_MISMATCH } from "../../common/errors/errorCodes.js";
+import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
+import type { PermissionValue } from "./permissions.catalog.js";
 import { getPermissionEvaluator } from "./permissions.evaluator.js";
-import { createAuditLog } from "../audit/audit.repository.js";
+import type { AuditResourceType } from "../../common/observability/auditEvents.js";
+import type { PermissionAuthorizationContext, PermissionResourceContext } from "./permissions.types.js";
 
-export function requirePermission(
-  permission: string,
-  options?: { allowScoped?: boolean },
-) {
-  return async function permissionMiddleware(
-    req: Request,
-    _res: Response,
-    next: NextFunction,
-  ) {
+export interface PermissionMiddlewareOptions {
+  allowScoped?: boolean;
+  resourceType?: AuditResourceType;
+  resourceId?: (request: Request) => string | undefined;
+  resourceContext?: (request: Request) => PermissionResourceContext | undefined;
+}
+
+export function requirePermission(permission: PermissionValue, options?: PermissionMiddlewareOptions) {
+  return async function permissionMiddleware(req: Request, _res: Response, next: NextFunction) {
     try {
-      if (!req.auth || !req.tenantId) {
-        throw new AppError(
-          401,
-          "UNAUTHORIZED",
-          "Authentication required",
-        );
-      }
+      if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+      if (!isBaseRole(req.auth.role)) throw new AppError(403, PERMISSION_REQUIRED, "Invalid base role");
 
-      const evaluator = getPermissionEvaluator();
-      const resolved = await evaluator.resolve(
-        req.auth.userId,
-        req.tenantId,
-      );
-
-      if (resolved.permissions.has(permission)) {
-        req.permissionScope = "full";
-        next();
-        return;
-      }
-
-      if (
-        options?.allowScoped &&
-        resolved.permissions.has(`${permission}:own`)
-      ) {
-        req.permissionScope = "own";
-        next();
-        return;
-      }
-
-      void createAuditLog({
+      const decision = await getPermissionEvaluator().evaluate({
+        actorId: req.auth.userId,
         tenantId: req.tenantId,
-        userId: req.auth.userId,
-        resourceType: "permission",
-        resourceId: permission,
-        action: "denied",
+        baseRole: req.auth.role,
+        permission,
+        resource: options?.resourceContext?.(req),
+      });
+      if (decision.allowed) {
+        req.permissionDecision = decision;
+        req.permissionAuthorization = authorizationContext(req, decision, false);
+        next();
+        return;
+      }
+      if (options?.allowScoped && decision.denialCode === "RESOURCE_CONTEXT_REQUIRED" && decision.source && decision.scope) {
+        req.permissionDecision = decision;
+        req.permissionAuthorization = authorizationContext(req, decision, true);
+        next();
+        return;
+      }
+
+      const auditWritten = await getAuditWriter().write({
+        tenantId: req.tenantId,
+        resourceType: options?.resourceType ?? "Permission",
+        resourceId: options?.resourceId?.(req) ?? permission,
+        action: "PERMISSION_DENIED",
+        outcome: "DENIED",
         actorId: req.auth.userId,
         actorEmail: req.auth.email ?? "",
-        actorRole: resolved.baseRole,
-        changes: {
-          required: permission,
-          reason: "PERMISSION_REQUIRED",
-        },
-      }).catch((err) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[permissions] audit log failed", err);
-        }
+        actorRole: req.auth.role,
+        changes: { required: permission, reason: decision.denialCode },
+        metadata: { traceId: req.traceId, requestId: req.requestId },
       });
-
-      throw new AppError(
-        403,
-        PERMISSION_REQUIRED,
-        `Permission denied: requires "${permission}"`,
-      );
+      if (!auditWritten) {
+        getMetricRecorder().increment("permission_denial_audit_failure", {
+          permission,
+          reason: decision.denialCode ?? "unknown",
+        });
+        req.log?.error({
+          event: "permission_denial_audit_failure",
+          permission,
+          reason: decision.denialCode,
+          traceId: req.traceId,
+          requestId: req.requestId,
+        }, "Permission denial audit could not be persisted");
+      }
+      const externalCode = decision.denialCode === "SCOPE_MISMATCH"
+        ? SCOPE_MISMATCH
+        : decision.denialCode === "RESOURCE_CONTEXT_REQUIRED"
+          ? RESOURCE_CONTEXT_REQUIRED
+          : PERMISSION_REQUIRED;
+      throw new AppError(403, externalCode, "Permission denied");
     } catch (error) {
       next(error);
     }
+  };
+}
+
+function authorizationContext(
+  req: Request,
+  decision: NonNullable<Request["permissionDecision"]>,
+  resourceContextRequired: boolean,
+): PermissionAuthorizationContext {
+  if (!req.auth || !req.tenantId || !decision.source) {
+    throw new AppError(403, PERMISSION_REQUIRED, "Incomplete permission decision");
+  }
+  return {
+    permission: decision.permission,
+    actorId: req.auth.userId,
+    tenantId: req.tenantId,
+    source: decision.source,
+    scopes: decision.scope,
+    resourceContextRequired,
+    roleId: decision.roleId,
+    roleVersion: decision.roleVersion,
   };
 }

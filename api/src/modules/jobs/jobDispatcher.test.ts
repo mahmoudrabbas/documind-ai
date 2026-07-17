@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { JobEnvelope } from "@documind/contracts";
+import type { JobEnvelope } from "workers/contracts";
 import { ApiJobDispatcher } from "./jobDispatcher.js";
 
 /**
@@ -25,7 +25,9 @@ class FakeQueue {
   }
 }
 
-function makeEnvelope(overrides: Partial<JobEnvelope> = {}): Record<string, unknown> {
+function makeEnvelope(
+  overrides: Partial<JobEnvelope> = {},
+): Record<string, unknown> {
   return {
     jobType: "system.sample.noop",
     tenantId: "tenant-A",
@@ -58,8 +60,12 @@ test("enqueue stores tenant from the envelope (auth context in route)", async ()
 test("duplicate idempotency key is suppressed and returns same jobId", async () => {
   const fake = new FakeQueue();
   const dispatcher = new ApiJobDispatcher(fake as never);
-  const first = await dispatcher.enqueue(makeEnvelope({ idempotencyKey: "dup" }));
-  const second = await dispatcher.enqueue(makeEnvelope({ idempotencyKey: "dup" }));
+  const first = await dispatcher.enqueue(
+    makeEnvelope({ idempotencyKey: "dup" }),
+  );
+  const second = await dispatcher.enqueue(
+    makeEnvelope({ idempotencyKey: "dup" }),
+  );
   assert.equal(first.deduplicated, false);
   assert.equal(second.deduplicated, true);
   assert.equal(first.jobId, second.jobId);

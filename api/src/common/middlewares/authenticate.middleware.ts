@@ -4,6 +4,7 @@ import { UNAUTHORIZED } from "../errors/errorCodes.js";
 import { config } from "../../config/index.js";
 import { verifyJwt } from "../../modules/auth/jwtTokens.js";
 import type { AuthTokenClaims } from "../../modules/auth/auth.types.js";
+import { isBaseRole } from "../auth/baseRoles.js";
 
 /**
  * Extracts the bearer token from the Authorization header.
@@ -45,7 +46,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
       throw new AppError(401, UNAUTHORIZED, "Invalid or expired access token");
     }
 
-    if (claims.type !== "access" || !claims.sub || !claims.tenantId) {
+    if (claims.type !== "access" || !claims.sub || !claims.tenantId || !isBaseRole(claims.role)) {
       throw new AppError(401, UNAUTHORIZED, "Invalid access token claims");
     }
 

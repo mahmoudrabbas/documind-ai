@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import mongoose from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   EMAIL_ALREADY_EXISTS,
@@ -7,9 +8,12 @@ import {
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
-  VALIDATION_ERROR,
+  ROLE_NOT_ASSIGNABLE,
+  SELF_ACTION_FORBIDDEN,
 } from "../../common/errors/errorCodes.js";
 import RoleModel from "../../db/models/role.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
+import UserModel from "../../db/models/user.model.js";
 import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
 import {
   verifyEmailVerificationToken,
@@ -19,14 +23,12 @@ import { findUserDocumentById } from "../auth/auth.repository.js";
 import { sendInvitationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import {
-  countActiveCompanyAdminsByTenant,
   createUser,
   findTenantById,
   findUserByTenantAndId,
   findUserDocumentByTenantAndEmail,
   countUsersByTenant,
   findUsersByTenant,
-  updateUserByTenantAndId,
   deleteUserByTenantAndId,
 } from "./users.repository.js";
 import { getAuditWriter } from "../../common/observability/index.js";
@@ -45,6 +47,8 @@ import type {
 } from "./users.types.js";
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
+import { PERMISSION_CONTRACT_VERSION } from "../permissions/permissions.catalog.js";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
 
 type CreatedUserRecord = {
   _id: { toString(): string };
@@ -52,7 +56,7 @@ type CreatedUserRecord = {
   tenantId: unknown;
   name: string;
   email: string;
-  role: string;
+  role: BaseRole;
   status: string;
   emailVerified: boolean;
   createdAt?: Date;
@@ -110,6 +114,8 @@ export async function inviteUser(
   inviterId: string,
 ): Promise<InviteUserResult> {
   const payload = validateInviteUserInput(input);
+  assertObjectId(tenantId);
+  assertObjectId(inviterId);
 
   const existingUser = await findUserDocumentByTenantAndEmail(
     tenantId,
@@ -131,24 +137,30 @@ export async function inviteUser(
   const inviter = await findUserByTenantAndId(tenantId, inviterId);
   const inviterName = inviter?.name ?? "Your administrator";
 
-  let resolvedRole: string;
+  let resolvedRole: "COMPANY_ADMIN" | "EMPLOYEE";
   let resolvedCustomRoleId: string | undefined;
 
   if (payload.customRoleId) {
     const customRole = await RoleModel.findOne({
       _id: payload.customRoleId,
       tenantId,
+      status: "active",
+      migrationState: "complete",
+      contractVersion: PERMISSION_CONTRACT_VERSION,
     }).exec();
 
     if (!customRole) {
       throw new AppError(
         400,
-        VALIDATION_ERROR,
-        "Custom role not found in this tenant",
+        ROLE_NOT_ASSIGNABLE,
+        "Custom role is not assignable",
       );
     }
 
-    resolvedRole = customRole.baseRole;
+    resolvedRole = payload.role ?? "EMPLOYEE";
+    if (customRole.baseRole !== resolvedRole) {
+      throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
+    }
     resolvedCustomRoleId = customRole._id.toString();
   } else {
     resolvedRole = payload.role ?? "EMPLOYEE";
@@ -169,7 +181,9 @@ export async function inviteUser(
   let createdUser: UserDocument | null = null;
 
   try {
-    createdUser = await createUser(userPayload);
+    createdUser = resolvedCustomRoleId
+      ? await createUserWithRoleGuard(userPayload, resolvedCustomRoleId)
+      : await createUser(userPayload);
     const token = await createEmailVerificationTokenForUser(createdUser);
 
     await sendInvitationEmail({
@@ -182,6 +196,7 @@ export async function inviteUser(
       expiryDate:
         createdUser.emailVerificationExpiresAt ??
         new Date(Date.now() + 24 * 60 * 60 * 1000),
+      tenantId: tenantId.toString(),
     });
 
     return {
@@ -213,68 +228,52 @@ export async function updateUser(
   input: unknown,
   tenantId: string,
   targetUserId: string,
-  updater: { userId: string; email?: string; role?: string },
+  updater: { userId: string; email?: string; role?: BaseRole },
 ): Promise<UpdateUserResult> {
   const payload = validateUpdateUserInput(input);
+  assertObjectId(tenantId);
+  assertObjectId(targetUserId);
+  assertObjectId(updater.userId);
 
   const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
   if (!existingUser) {
     throw new AppError(404, NOT_FOUND, "User not found");
   }
 
-  if (
-    existingUser.role === "COMPANY_ADMIN" &&
-    (payload.role !== undefined || payload.customRoleId !== undefined)
-  ) {
-    const adminCount = await countActiveCompanyAdminsByTenant(tenantId);
-    if (adminCount <= 1) {
-      await getAuditWriter().write({
-        tenantId,
-        resourceType: "User",
-        resourceId: existingUser._id.toString(),
-        action: "LAST_ADMIN_PROTECTION_TRIGGERED",
-        actorId: updater.userId,
-        actorEmail: updater.email ?? "",
-        actorRole: updater.role ?? "UNKNOWN",
-        changes: {
-          reason: "Attempt to change role of last active Company Admin",
-          targetUserId,
-        },
-      });
-      throw new AppError(
-        409,
-        LAST_ADMIN_PROTECTION,
-        "Cannot change the role of the last active Company Admin. Promote another user first.",
-      );
-    }
-  }
-
   const changes: Record<string, unknown> = {};
   const update: Record<string, unknown> = {};
 
-  if (payload.customRoleId) {
+  if (typeof payload.customRoleId === "string") {
     const customRole = await RoleModel.findOne({
       _id: payload.customRoleId,
       tenantId,
+      status: "active",
+      migrationState: "complete",
+      contractVersion: PERMISSION_CONTRACT_VERSION,
     }).exec();
 
     if (!customRole) {
       throw new AppError(
         400,
-        VALIDATION_ERROR,
-        "Custom role not found in this tenant",
+        ROLE_NOT_ASSIGNABLE,
+        "Custom role is not assignable",
       );
     }
 
-    update.role = customRole.baseRole;
+    if (customRole.baseRole !== existingUser.role) {
+      throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
+    }
+
     update.customRoleId = customRole._id.toString();
-    changes.role = {
-      before: existingUser.role,
-      after: customRole.baseRole,
-    };
     changes.customRoleId = {
       before: existingUser.customRoleId?.toString() ?? null,
       after: customRole._id.toString(),
+    };
+  } else if (payload.customRoleId === null) {
+    update.customRoleId = null;
+    changes.customRoleId = {
+      before: existingUser.customRoleId?.toString() ?? null,
+      after: null,
     };
   } else if (payload.role !== undefined) {
     update.role = payload.role;
@@ -299,12 +298,15 @@ export async function updateUser(
     };
   }
 
+  const selfDestructive = updater.userId === targetUserId && existingUser.role === "COMPANY_ADMIN" &&
+    ((update.role !== undefined && update.role !== "COMPANY_ADMIN") ||
+      (update.status !== undefined && update.status !== "active"));
+  if (selfDestructive) {
+    throw new AppError(409, SELF_ACTION_FORBIDDEN, "Administrators cannot demote or disable their own account");
+  }
+
   try {
-    const updatedUser = await updateUserByTenantAndId(
-      tenantId,
-      targetUserId,
-      update,
-    );
+    const updatedUser = await updateUserSecurityStateTransaction(tenantId, targetUserId, update);
 
     if (!updatedUser) {
       throw new AppError(404, NOT_FOUND, "User not found");
@@ -321,7 +323,7 @@ export async function updateUser(
     await getAuditWriter().write({
       tenantId,
       resourceType: "User",
-      resourceId: updatedUser._id.toString(),
+      resourceId: (updatedUser as UserDocument)._id.toString(),
       action: "USER_UPDATED",
       actorId: updater.userId,
       actorEmail: updater.email ?? "",
@@ -334,6 +336,9 @@ export async function updateUser(
     };
   } catch (error) {
     if (error instanceof AppError) {
+      if (error.code === LAST_ADMIN_PROTECTION) {
+        await auditLastAdminProtection(tenantId, targetUserId, updater, "update");
+      }
       throw error;
     }
 
@@ -345,38 +350,32 @@ export async function updateUser(
 export async function deleteUser(
   tenantId: string,
   targetUserId: string,
-  deleter: { userId: string; email?: string; role?: string },
+  deleter: { userId: string; email?: string; role?: BaseRole },
 ) {
+  assertObjectId(tenantId);
+  assertObjectId(targetUserId);
+  assertObjectId(deleter.userId);
   const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
   if (!existingUser) {
     throw new AppError(404, NOT_FOUND, "User not found");
   }
 
-  if (existingUser.role === "COMPANY_ADMIN") {
-    const adminCount = await countActiveCompanyAdminsByTenant(tenantId);
-    if (adminCount <= 1) {
-      await getAuditWriter().write({
-        tenantId,
-        resourceType: "User",
-        resourceId: existingUser._id.toString(),
-        action: "LAST_ADMIN_PROTECTION_TRIGGERED",
-        actorId: deleter.userId,
-        actorEmail: deleter.email ?? "",
-        actorRole: deleter.role ?? "UNKNOWN",
-        changes: {
-          reason: "Attempt to delete last active Company Admin",
-          targetUserId,
-        },
-      });
-      throw new AppError(
-        409,
-        LAST_ADMIN_PROTECTION,
-        "Cannot delete the last active Company Admin. Promote another user first.",
-      );
-    }
+  if (deleter.userId === targetUserId) {
+    throw new AppError(409, SELF_ACTION_FORBIDDEN, "Administrators cannot delete their own account");
   }
 
-  await deleteUserByTenantAndId(tenantId, targetUserId);
+  if (existingUser.role === "COMPANY_ADMIN" && existingUser.status === "active") {
+    try {
+      await deleteWithLastAdminTransaction(tenantId, targetUserId);
+    } catch (error) {
+      if (error instanceof AppError && error.code === LAST_ADMIN_PROTECTION) {
+        await auditLastAdminProtection(tenantId, targetUserId, deleter, "delete");
+      }
+      throw error;
+    }
+  } else {
+    await deleteUserByTenantAndId(tenantId, targetUserId);
+  }
 
   await getAuditWriter().write({
     tenantId,
@@ -396,6 +395,131 @@ export async function deleteUser(
     success: true,
     message: "User deleted successfully.",
   };
+}
+
+function assertObjectId(value: string) {
+  if (!mongoose.isObjectIdOrHexString(value)) {
+    throw new AppError(400, "MALFORMED_OBJECT_ID", "Malformed identifier");
+  }
+}
+
+async function updateUserSecurityStateTransaction(
+  tenantId: string,
+  targetUserId: string,
+  update: Record<string, unknown>,
+) {
+  const session = await mongoose.startSession();
+  let updated: UserDocument | null = null;
+  try {
+    await session.withTransaction(async () => {
+      await lockTenantSecurityGuards(tenantId, session);
+      const current = await UserModel.findOne({ _id: targetUserId, tenantId }).session(session).exec();
+      if (!current) throw new AppError(404, NOT_FOUND, "User not found");
+      if (typeof update.customRoleId === "string") {
+        const role = await RoleModel.findOne({
+          _id: update.customRoleId,
+          tenantId,
+          status: "active",
+          migrationState: "complete",
+          contractVersion: PERMISSION_CONTRACT_VERSION,
+        }).session(session).exec();
+        if (!role || role.baseRole !== current.role) {
+          throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
+        }
+      }
+      const removesActiveAdmin = current.role === "COMPANY_ADMIN" && current.status === "active" &&
+        ((update.role ?? current.role) !== "COMPANY_ADMIN" || (update.status ?? current.status) !== "active");
+      if (removesActiveAdmin && await UserModel.countDocuments({ tenantId, role: "COMPANY_ADMIN", status: "active" }).session(session) <= 1) {
+        throw lastAdminError();
+      }
+      updated = await UserModel.findOneAndUpdate(
+        { _id: targetUserId, tenantId },
+        { $set: update },
+        { returnDocument: "after", runValidators: true, session },
+      ).exec();
+    });
+    return updated;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function deleteWithLastAdminTransaction(tenantId: string, targetUserId: string) {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await lockTenantSecurityGuards(tenantId, session);
+      const current = await UserModel.findOne({ _id: targetUserId, tenantId }).session(session).exec();
+      if (!current) throw new AppError(404, NOT_FOUND, "User not found");
+      if (current.role === "COMPANY_ADMIN" && current.status === "active" &&
+          await UserModel.countDocuments({ tenantId, role: "COMPANY_ADMIN", status: "active" }).session(session) <= 1) {
+        throw lastAdminError();
+      }
+      await UserModel.deleteOne({ _id: targetUserId, tenantId }).session(session).exec();
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function lockTenantSecurityGuards(tenantId: string, session: mongoose.ClientSession) {
+  const result = await TenantModel.updateOne(
+    { _id: tenantId },
+    { $inc: { adminGuardVersion: 1, roleGuardVersion: 1 } },
+    { session },
+  ).exec();
+  if (result.matchedCount !== 1) throw new AppError(404, NOT_FOUND, "Tenant not found");
+}
+
+async function createUserWithRoleGuard(
+  userPayload: import("../auth/auth.repository.js").UserCreateInput,
+  customRoleId: string,
+): Promise<UserDocument> {
+  const session = await mongoose.startSession();
+  let created: UserDocument | undefined;
+  try {
+    await session.withTransaction(async () => {
+      await lockTenantSecurityGuards(userPayload.tenantId, session);
+      const role = await RoleModel.findOne({
+        _id: customRoleId,
+        tenantId: userPayload.tenantId,
+        status: "active",
+        migrationState: "complete",
+        contractVersion: PERMISSION_CONTRACT_VERSION,
+      }).session(session).exec();
+      if (!role || role.baseRole !== userPayload.role) {
+        throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
+      }
+      created = await new UserModel(userPayload).save({ session });
+    });
+    if (!created) throw new Error("User assignment transaction did not complete");
+    return created;
+  } finally {
+    await session.endSession();
+  }
+}
+
+function lastAdminError() {
+  return new AppError(409, LAST_ADMIN_PROTECTION, "Cannot remove the last active Company Admin. Promote another user first.");
+}
+
+async function auditLastAdminProtection(
+  tenantId: string,
+  targetUserId: string,
+  actor: { userId: string; email?: string; role?: BaseRole },
+  operation: "update" | "delete",
+) {
+  await getAuditWriter().write({
+    tenantId,
+    resourceType: "User",
+    resourceId: targetUserId,
+    action: "LAST_ADMIN_PROTECTION_TRIGGERED",
+    outcome: "DENIED",
+    actorId: actor.userId,
+    actorEmail: actor.email ?? "",
+    actorRole: actor.role ?? "UNKNOWN",
+    changes: { reason: "LAST_ACTIVE_COMPANY_ADMIN", operation },
+  });
 }
 
 export async function listUsers(

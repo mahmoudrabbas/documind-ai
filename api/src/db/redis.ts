@@ -16,17 +16,14 @@ function createClient(): Redis {
       if (times > maxAttempts) {
         if (!isTestEnv()) {
           console.warn(
-            `[redis] Max reconnect attempts (${maxAttempts}) reached. Giving up.`
+            `[redis] Max reconnect attempts (${maxAttempts}) reached. Giving up.`,
           );
         }
         return null;
       }
 
       const baseDelay = isTestEnv() ? 10 : 500;
-      const delay = Math.min(
-        baseDelay * 2 ** (times - 1),
-        10_000
-      );
+      const delay = Math.min(baseDelay * 2 ** (times - 1), 10_000);
 
       if (!isTestEnv()) {
         console.warn(`[redis] Reconnecting in ${delay}ms (attempt ${times})`);
@@ -79,15 +76,22 @@ export async function connectRedis(): Promise<void> {
   try {
     const redis = getRedisClient();
 
+    const state = redis.status;
+    if (state === "ready") {
+      isConnected = true;
+      return;
+    }
+
     await redis.ping();
     isConnected = true;
   } catch (err) {
     if (!isTestEnv()) {
       console.warn(
         "[redis] Initial connection failed. App will run without Redis.",
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
     }
+    isConnected = false;
   }
 }
 

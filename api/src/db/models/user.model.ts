@@ -1,11 +1,12 @@
 import mongoose, { Schema } from "mongoose";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
 
 export interface UserDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   name: string;
   email: string;
   passwordHash: string;
-  role: string;
+  role: BaseRole;
   status: string;
   emailVerified: boolean;
   emailVerifiedAt: Date | null;
@@ -14,6 +15,9 @@ export interface UserDocument extends mongoose.Document {
   passwordResetTokenHash: string | null;
   passwordResetExpiresAt: Date | null;
   customRoleId: mongoose.Types.ObjectId | null;
+  permissionBaseline: "standard" | "legacy-none";
+  roleMigrationState: "complete" | "pending-session-revocation";
+  sessionGuardVersion: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -64,6 +68,7 @@ const userSchema = new Schema<UserDocument>(
     },
     role: {
       type: String,
+      enum: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
       required: true,
     },
     customRoleId: {
@@ -71,6 +76,17 @@ const userSchema = new Schema<UserDocument>(
       ref: "Role",
       default: null,
     },
+    permissionBaseline: {
+      type: String,
+      enum: ["standard", "legacy-none"],
+      default: "standard",
+    },
+    roleMigrationState: {
+      type: String,
+      enum: ["complete", "pending-session-revocation"],
+      default: "complete",
+    },
+    sessionGuardVersion: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
       enum: ["active", "pending", "pending_email_verification", "disabled"],
@@ -122,6 +138,11 @@ userSchema.index(
     unique: true,
     name: "uniq_user_tenant_email",
   }
+);
+
+userSchema.index(
+  { tenantId: 1, customRoleId: 1 },
+  { name: "idx_user_tenant_custom_role" },
 );
 
 userSchema.index(
