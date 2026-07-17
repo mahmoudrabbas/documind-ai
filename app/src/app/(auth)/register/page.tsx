@@ -22,6 +22,18 @@ type RegisterResponse = {
   message: string;
 };
 
+type PackageInfo = {
+  name: string;
+  trialDays: number;
+};
+
+const PACKAGE_INFO_MAP: Record<string, PackageInfo> = {
+  free: { name: "Free", trialDays: 0 },
+  starter: { name: "Starter", trialDays: 30 },
+  professional: { name: "Professional", trialDays: 30 },
+  enterprise: { name: "Enterprise", trialDays: 30 },
+};
+
 type FormFields =
   | "companyName"
   | "companySlug"
@@ -79,6 +91,11 @@ export default function RegisterPage() {
     () => searchParams.get("package")?.trim() ?? "",
     [searchParams],
   );
+
+  const packageInfo = useMemo<PackageInfo>(() => {
+    const code = selectedPackageCode.toLowerCase();
+    return PACKAGE_INFO_MAP[code] ?? { name: "Free", trialDays: 0 };
+  }, [selectedPackageCode]);
 
   const [companyName, setCompanyName] = useState("");
   const [companySlug, setCompanySlug] = useState("");
@@ -281,10 +298,37 @@ export default function RegisterPage() {
 
               {successMessage ? (
                 <div
-                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 w-full mb-4"
+                  className="w-full mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"
                   role="status"
                 >
-                  {successMessage}
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="material-symbols-outlined mt-0.5 text-2xl text-emerald-600"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      check_circle
+                    </span>
+                    <div className="flex-1 space-y-2">
+                      <p className="text-sm font-semibold text-emerald-800">
+                        {successMessage}
+                      </p>
+                      <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm text-emerald-700">
+                        <p className="font-medium">
+                          {packageInfo.name === "Free"
+                            ? t("auth.subscriptionPlan", { plan: packageInfo.name })
+                            : t("auth.subscriptionPlan", { plan: packageInfo.name })}
+                        </p>
+                        <p className="mt-1 text-emerald-600">
+                          {packageInfo.trialDays > 0
+                            ? t("auth.trialStarted", { days: String(packageInfo.trialDays) })
+                            : t("auth.freePlanActive")}
+                        </p>
+                      </div>
+                      <p className="text-xs text-emerald-600">
+                        {t("auth.afterRegisterNextSteps")}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </div>
