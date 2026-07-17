@@ -287,7 +287,7 @@ test("login between session revocation and migration completion cannot recreate 
 
 test("duplicate email within same tenant is rejected on registration", async () => {
   await registerTenant("unique-tenant", "dup@example.com");
-  const secondRes = await registerTenant("unique-tenant-2", "dup@example.com");
+  await registerTenant("unique-tenant-2", "dup@example.com");
 });
 
 test("cross-tenant token substitution is rejected", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/Button";
@@ -22,6 +22,21 @@ const SCAN_RESULT_MAP: Record<string, string> = {
   infected: "error",
   error: "warning",
 };
+
+function ConfirmDialog({ action, onConfirm, onCancel }: { action: string; onConfirm: () => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={onCancel}>
+      <div className="mx-4 w-full max-w-sm rounded-2xl border border-outline-variant/30 bg-surface p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <p className="text-title-md font-bold text-on-surface">{t(`documents.${action}Confirm`)}</p>
+        <div className="mt-4 flex gap-3">
+          <Button variant="danger" onClick={onConfirm}>{t("common.confirm")}</Button>
+          <Button variant="ghost" onClick={onCancel}>{t("common.cancel")}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface DocumentDetailDrawerProps {
   document: DocumentView;
@@ -72,20 +87,6 @@ export function DocumentDetailDrawer({
     setShowReplaceForm(false);
     setReplaceFile(null);
     setReplaceDesc("");
-  }
-
-  function ConfirmDialog({ action, onConfirm, onCancel }: { action: string; onConfirm: () => void; onCancel: () => void }) {
-    return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={onCancel}>
-        <div className="mx-4 w-full max-w-sm rounded-2xl border border-outline-variant/30 bg-surface p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-          <p className="text-title-md font-bold text-on-surface">{t(`documents.${action}Confirm`)}</p>
-          <div className="mt-4 flex gap-3">
-            <Button variant="danger" onClick={onConfirm}>{t("common.confirm")}</Button>
-            <Button variant="ghost" onClick={onCancel}>{t("common.cancel")}</Button>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (

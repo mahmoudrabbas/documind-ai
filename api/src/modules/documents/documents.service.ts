@@ -1,14 +1,11 @@
 import { createHash } from "node:crypto";
 import { AppError } from "../../common/errors/AppError.js";
 import {
-  NOT_FOUND,
   DOCUMENT_NOT_FOUND,
-  DOCUMENT_DUPLICATE,
   DOCUMENT_QUARANTINED,
   DOCUMENT_ALREADY_ARCHIVED,
   DOCUMENT_NOT_ARCHIVED,
   DOCUMENT_NOT_SOFT_DELETED,
-  DOCUMENT_VERSION_NOT_FOUND,
   FILE_ZERO_BYTES,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
@@ -68,6 +65,7 @@ function sanitizeFilename(name: string): string {
   return name
     .replace(/[/\\]/g, "_")
     .replace(/\.\./g, "_")
+    // eslint-disable-next-line no-control-regex
     .replace(/\x00/g, "")
     .replace(/^\.+$/, "_")
     .slice(0, 255);

@@ -16,7 +16,7 @@ import { hashPassword } from "../auth/passwordHashing.js";
 import * as fsp from "node:fs/promises";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
-import { createHash } from "node:crypto";
+
 
 const app: Express = (await import("../../app.js")).default;
 
@@ -109,10 +109,6 @@ function buildMultipartBody(fileName: string, fileContent: Buffer, metadata: Rec
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "utf-8");
 
   return { buffer: Buffer.concat([head, fileContent, tail]), boundary };
-}
-
-function computeChecksum(buffer: Buffer): string {
-  return createHash("sha256").update(buffer).digest("hex");
 }
 
 before(async () => {
@@ -499,7 +495,7 @@ void test("DELETE /documents/:id — returns 404 for non-existent", async () => 
 void test("GET /documents/:id/download — downloads document", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
-  const { tenant, user } = await createActiveTenantAdmin();
+  await createActiveTenantAdmin();
   const accessToken = await login(port);
 
   const pdfContent = Buffer.from("%PDF-1.4 download test", "utf-8");
@@ -716,7 +712,7 @@ void test("GET /documents/:id/versions — lists version history", async () => {
 void test("employee cannot archive (permission denied)", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
-  const { tenant, user } = await createActiveTenantAdmin();
+  const { tenant } = await createActiveTenantAdmin();
   const empUser = await createEmployee(tenant.id);
   const empToken = await login(port, "acme-consulting", "john@acme.com");
 
@@ -748,7 +744,7 @@ void test("employee cannot archive (permission denied)", async () => {
 void test("employee can download documents", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
-  const { tenant, user } = await createActiveTenantAdmin();
+  const { tenant } = await createActiveTenantAdmin();
   const empUser = await createEmployee(tenant.id);
 
   const storageKey = `${tenant.id}/download-test.pdf`;
