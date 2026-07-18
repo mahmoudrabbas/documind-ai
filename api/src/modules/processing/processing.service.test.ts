@@ -16,6 +16,7 @@ import {
   getOcrUsageSummary,
 } from "./processing.service.js";
 import { closeApiJobDispatcher } from "../jobs/jobDispatcher.js";
+import { disconnectRedis } from "../../db/redis.js";
 
 let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
@@ -35,6 +36,7 @@ before(async () => {
 
 after(async () => {
   await closeApiJobDispatcher();
+  await disconnectRedis();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
