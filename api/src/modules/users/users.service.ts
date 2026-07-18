@@ -47,7 +47,7 @@ import type {
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
-import { isPlatformTenantSlug } from "../../common/auth/platformTenant.js";
+import { isSystemPlatformTenant } from "../../common/auth/platformTenant.js";
 
 type CreatedUserRecord = {
   _id: { toString(): string };
@@ -107,8 +107,11 @@ function isDuplicateKeyError(error: unknown) {
   );
 }
 
-function assertCustomerTenantForUserManagement(tenant: { slug?: string }) {
-  if (isPlatformTenantSlug(tenant.slug)) {
+function assertCustomerTenantForUserManagement(tenant: {
+  slug?: string;
+  isSystemTenant?: boolean | null;
+}) {
+  if (isSystemPlatformTenant(tenant)) {
     throw new AppError(
       403,
       "PLATFORM_TENANT_FORBIDDEN",
@@ -554,7 +557,7 @@ export async function setPasswordFromInvite(
     }
 
     const tenant = await findTenantById(tokenPayload.tenantId);
-    if (!tenant || isPlatformTenantSlug(tenant.slug)) {
+    if (!tenant || isSystemPlatformTenant(tenant)) {
       throw invalidTokenError;
     }
 
@@ -668,7 +671,7 @@ export async function getInviteDetails(input: unknown) {
       throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
     }
     const tenant = await findTenantById(user.tenantId.toString());
-    if (!tenant || isPlatformTenantSlug(tenant.slug))
+    if (!tenant || isSystemPlatformTenant(tenant))
       throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
     return {
       companyName: tenant.name,

@@ -12,13 +12,12 @@ const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
 const billingModuleDir = resolve(apiRoot, "src", "modules", "billing").replace(/\\/g, "/");
 const checkoutServiceTestFile = resolve(apiRoot, "src", "modules", "checkout", "__tests__", "checkout.service.test.ts").replace(/\\/g, "/");
-const resendVerificationServiceTestFile = resolve(
+const authVitestTestsDir = resolve(
   apiRoot,
   "src",
   "modules",
   "auth",
   "__tests__",
-  "resend-verification.service.test.ts",
 ).replace(/\\/g, "/");
 const apiSrcRoot = resolve(apiRoot, "src");
 
@@ -26,7 +25,7 @@ function isVitestOnlyTest(path) {
   const normalized = path.replace(/\\/g, "/");
   return normalized.includes(billingModuleDir)
     || normalized === checkoutServiceTestFile
-    || normalized === resendVerificationServiceTestFile;
+    || normalized.startsWith(`${authVitestTestsDir}/`);
 }
 
 function findTests(directory) {

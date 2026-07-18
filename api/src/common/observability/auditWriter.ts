@@ -18,23 +18,28 @@ export class MongoAuditWriter implements AuditWriter {
     try {
       const ctx = getCurrentTraceContext();
       const redactedChanges = event.changes ? redactObject(event.changes) : {};
-      
-      let tenantIdVal: string | mongoose.Types.ObjectId = event.tenantId ?? ctx?.tenantId ?? "system";
+
+      let tenantIdVal: string | mongoose.Types.ObjectId =
+        event.tenantId ?? ctx?.tenantId ?? "system";
       if (tenantIdVal !== "system" && typeof tenantIdVal === "string") {
         tenantIdVal = new mongoose.Types.ObjectId(tenantIdVal);
       }
-      
-      let actorIdVal: string | mongoose.Types.ObjectId = event.actorId ?? ctx?.actorId ?? "system";
-      if (actorIdVal !== "system" && typeof actorIdVal === "string") {
-        actorIdVal = new mongoose.Types.ObjectId(actorIdVal);
-      }
 
-      const actorRole = normalizeAuditActorRole(event.actorRole);
+      const normalizedActorRole = normalizeAuditActorRole(event.actorRole);
       const actorKind = resolveAuditActorKind({
         actorId: event.actorId ?? ctx?.actorId,
         actorKind: event.actorKind,
-        actorRole,
+        actorRole: normalizedActorRole,
       });
+      const actorRole = actorKind === "USER" ? normalizedActorRole : null;
+
+      let actorIdVal: string | mongoose.Types.ObjectId | null =
+        actorKind === "UNAUTHENTICATED"
+          ? null
+          : event.actorId ?? ctx?.actorId ?? null;
+      if (actorIdVal !== null && actorIdVal !== "system" && typeof actorIdVal === "string") {
+        actorIdVal = new mongoose.Types.ObjectId(actorIdVal);
+      }
 
       const payload = {
         tenantId: tenantIdVal,
@@ -43,7 +48,7 @@ export class MongoAuditWriter implements AuditWriter {
         resourceId: event.resourceId,
         action: event.action,
         actorId: actorIdVal,
-        actorEmail: event.actorEmail ?? "system@documind.ai",
+        actorEmail: event.actorEmail ?? null,
         actorRole,
         actorKind,
         changes: redactedChanges,

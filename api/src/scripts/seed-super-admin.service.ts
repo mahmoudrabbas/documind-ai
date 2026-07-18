@@ -56,17 +56,33 @@ export async function seedSuperAdmin(rawInput: SuperAdminSeedInput) {
     },
     { upsert: true, returnDocument: "after", runValidators: true },
   );
-  const conflictingUser = await UserModel.findOne({
+  const platformUserByEmail = await UserModel.findOne({
+    tenantId: tenant._id,
     email: input.email,
-    role: { $ne: "SUPER_ADMIN" },
   });
-  if (conflictingUser)
+  if (platformUserByEmail && platformUserByEmail.role !== "SUPER_ADMIN")
     throw new Error(
-      "SEED_SUPER_ADMIN_EMAIL is already used by a non-Super Admin account",
+      "SEED_SUPER_ADMIN_PLATFORM_CONFLICT: email is already used by a non-Super Admin account inside the platform tenant",
     );
   const passwordHash = await hashPassword(input.password);
+  const existingSuperAdmin = await UserModel.findOne({
+    tenantId: tenant._id,
+    role: "SUPER_ADMIN",
+  });
+  if (
+    existingSuperAdmin &&
+    existingSuperAdmin.email !== input.email
+  ) {
+    throw new Error(
+      "SEED_SUPER_ADMIN_ALREADY_CONFIGURED: a different platform Super Admin already exists",
+    );
+  }
   const user = await UserModel.findOneAndUpdate(
-    { role: "SUPER_ADMIN" },
+    {
+      tenantId: tenant._id,
+      email: input.email,
+      role: "SUPER_ADMIN",
+    },
     {
       $set: {
         tenantId: tenant._id,

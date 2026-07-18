@@ -176,6 +176,13 @@ function assertNoSensitiveFields(value: unknown) {
   inspect(value);
 }
 
+function assertNoAuditSessionFields(value: unknown) {
+  assert.doesNotMatch(
+    JSON.stringify(value) ?? "",
+    /"(?:accessToken|refreshToken|token|cookie|cookies|authorization)"\s*:/i,
+  );
+}
+
 before(async () => {
   await connectDB();
   await connectRedis();
@@ -1963,8 +1970,8 @@ test("refresh with an invalid token returns SESSION_EXPIRED", async () => {
   }
 });
 
-test("logout revokes the current refresh token and clears its cookie", async () => {
-  await createActiveTenantAdmin();
+test("refresh-cookie-only logout records the resolved user and treats replay as unauthenticated", async () => {
+  const { tenant } = await createActiveTenantAdmin();
   const server = await createServer();
 
   try {
@@ -1993,6 +2000,66 @@ test("logout revokes the current refresh token and clears its cookie", async () 
     assert.match(setCookie, /documind_refresh_token=/);
     assert.match(setCookie, /Max-Age=0|Expires=Thu, 01 Jan 1970/i);
     assert.ok(revokedRecord?.revokedAt instanceof Date);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const auditRecord = await AuditLogModel.findOne({
+      action: "AUTH_LOGOUT",
+      resourceId: tokenRecord._id.toString(),
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    assert.ok(auditRecord);
+    assert.equal(auditRecord?.actorKind, "USER");
+    assert.equal(auditRecord?.actorEmail, "sarah@acme.com");
+    assert.equal(auditRecord?.actorRole, "COMPANY_ADMIN");
+    assert.equal(auditRecord?.actorId?.toString(), tokenRecord.userId.toString());
+    assert.equal(auditRecord?.tenantId.toString(), tenant.id);
+    assertNoSensitiveFields(auditRecord?.metadata);
+    assertNoSensitiveFields(auditRecord?.changes);
+    assertNoAuditSessionFields(auditRecord?.metadata);
+    assertNoAuditSessionFields(auditRecord?.changes);
+    assert.equal(
+      JSON.stringify(auditRecord?.metadata ?? {}).includes(loginCookie.rawToken),
+      false,
+    );
+
+    const replayResponse = await fetch(`http://127.0.0.1:${port}/auth/logout`, {
+      method: "POST",
+      headers: { cookie: loginCookie.cookie },
+    });
+    assert.equal(replayResponse.status, 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const replayAudit = await AuditLogModel.findOne({
+      action: "AUTH_LOGOUT",
+      actorKind: "UNAUTHENTICATED",
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    assert.ok(replayAudit);
+    assert.equal(replayAudit.actorId, null);
+    assert.equal(replayAudit.userId, null);
+    assert.equal(replayAudit.actorRole, null);
+    assert.equal(replayAudit.actorEmail, null);
+    assertNoSensitiveFields(replayAudit.metadata);
+    assertNoSensitiveFields(replayAudit.changes);
+    assertNoAuditSessionFields(replayAudit.metadata);
+    assertNoAuditSessionFields(replayAudit.changes);
+    assert.equal(
+      JSON.stringify(replayAudit.metadata ?? {}).includes(loginCookie.rawToken),
+      false,
+    );
+    assert.equal(
+      await AuditLogModel.countDocuments({
+        action: "AUTH_LOGOUT",
+        actorEmail: {
+          $in: ["", "unknown@documind.ai", "system@documind.ai"],
+        },
+      }),
+      0,
+    );
   } finally {
     await closeServer(server);
   }
@@ -2016,6 +2083,69 @@ test("logout without a cookie remains idempotent", async () => {
     assert.equal(body.success, true);
     assert.equal(body.message, "Logged out successfully");
     assert.match(setCookie, /documind_refresh_token=/);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const auditRecord = await AuditLogModel.findOne({
+      action: "AUTH_LOGOUT",
+      resourceId: "missing-refresh-token",
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    assert.ok(auditRecord);
+    assert.equal(auditRecord?.actorKind, "UNAUTHENTICATED");
+    assert.equal(auditRecord?.actorId, null);
+    assert.equal(auditRecord?.userId, null);
+    assert.equal(auditRecord?.actorRole, null);
+    assert.equal(auditRecord?.actorEmail, null);
+    assertNoSensitiveFields(auditRecord?.metadata);
+    assertNoSensitiveFields(auditRecord?.changes);
+    assertNoAuditSessionFields(auditRecord?.metadata);
+    assertNoAuditSessionFields(auditRecord?.changes);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("logout with an invalid refresh cookie stores a null unauthenticated actor", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const response = await fetch(`http://127.0.0.1:${port}/auth/logout`, {
+      method: "POST",
+      headers: { cookie: "documind_refresh_token=invalid-token" },
+    });
+
+    assert.equal(response.status, 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const auditRecord = await AuditLogModel.findOne({
+      action: "AUTH_LOGOUT",
+      resourceId: "invalid-refresh-token",
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    assert.ok(auditRecord);
+    assert.equal(auditRecord.actorKind, "UNAUTHENTICATED");
+    assert.equal(auditRecord.actorId, null);
+    assert.equal(auditRecord.userId, null);
+    assert.equal(auditRecord.actorRole, null);
+    assert.equal(auditRecord.actorEmail, null);
+    assertNoSensitiveFields(auditRecord.metadata);
+    assertNoSensitiveFields(auditRecord.changes);
+    assertNoAuditSessionFields(auditRecord.metadata);
+    assertNoAuditSessionFields(auditRecord.changes);
+    assert.equal(
+      await AuditLogModel.countDocuments({
+        action: "AUTH_LOGOUT",
+        actorEmail: {
+          $in: ["", "unknown@documind.ai", "system@documind.ai"],
+        },
+      }),
+      0,
+    );
   } finally {
     await closeServer(server);
   }
@@ -3059,6 +3189,11 @@ test("question usage recording permits absent request IDs and deduplicates retri
 });
 
 test("Super Admin seed is idempotent, hashes credentials, and hides its system tenant", async () => {
+  await createActiveTenantAdmin({
+    slug: "customer-same-email",
+    email: "seed@example.com",
+    companyName: "Customer Same Email",
+  });
   const input = {
     platformName: "DocuMind AI",
     platformSlug: "documind.ai",
@@ -3070,6 +3205,7 @@ test("Super Admin seed is idempotent, hashes credentials, and hides its system t
   await seedSuperAdmin(input);
   assert.equal(await TenantModel.countDocuments({ slug: "documind.ai" }), 1);
   assert.equal(await UserModel.countDocuments({ role: "SUPER_ADMIN" }), 1);
+  assert.equal(await UserModel.countDocuments({ email: "seed@example.com" }), 2);
   const user = await UserModel.findOne({ role: "SUPER_ADMIN" }).select(
     "+passwordHash",
   );
@@ -3079,6 +3215,25 @@ test("Super Admin seed is idempotent, hashes credentials, and hides its system t
 
   const tenant = await TenantModel.findOne({ slug: "documind.ai" });
   assert.ok(tenant);
+  assert.equal(tenant.isSystemTenant, true);
+  const customerUser = await UserModel.findOne({
+    email: "seed@example.com",
+    role: "COMPANY_ADMIN",
+  })
+    .select("+passwordHash")
+    .lean()
+    .exec();
+  const customerTenant = await TenantModel.findOne({
+    slug: "customer-same-email",
+  })
+    .lean()
+    .exec();
+  assert.ok(customerUser);
+  assert.equal(
+    customerUser?.tenantId.toString(),
+    customerTenant?._id.toString(),
+  );
+  assert.equal(await verifyPassword(customerUser?.passwordHash ?? "", TEST_PASSWORD), true);
   const token = signJwt(
     {
       sub: user.id,
@@ -3100,7 +3255,15 @@ test("Super Admin seed is idempotent, hashes credentials, and hides its system t
     const list = await fetch(`http://127.0.0.1:${port}/platform/tenants`, {
       headers,
     });
-    assert.equal((await list.json()).data.tenants.length, 0);
+    const listBody = (await list.json()) as {
+      data: { tenants: TenantDTO[] };
+    };
+    assert.equal(listBody.data.tenants.length, 1);
+    assert.equal(listBody.data.tenants[0]?.slug, "customer-same-email");
+    assert.equal(
+      listBody.data.tenants.some((listedTenant) => listedTenant.id === tenant.id),
+      false,
+    );
     assert.equal(
       (
         await fetch(`http://127.0.0.1:${port}/platform/tenants/${tenant.id}`, {
@@ -3122,4 +3285,35 @@ test("Super Admin seed is idempotent, hashes credentials, and hides its system t
   } finally {
     await closeServer(server);
   }
+});
+
+test("Super Admin seed fails safely when the platform tenant already has the same email under a non-Super-Admin role", async () => {
+  const tenant = await TenantModel.create({
+    name: "DocuMind Platform",
+    slug: "documind.ai",
+    status: "active",
+    plan: "free",
+    isSystemTenant: true,
+  });
+  await UserModel.create({
+    tenantId: tenant.id,
+    name: "Platform Employee",
+    email: "seed-conflict@example.com",
+    passwordHash: await hashPassword(TEST_PASSWORD),
+    role: "EMPLOYEE",
+    status: "active",
+    emailVerified: true,
+    emailVerifiedAt: new Date(),
+  });
+
+  await assert.rejects(
+    seedSuperAdmin({
+      platformName: "DocuMind AI",
+      platformSlug: "documind.ai",
+      name: "Seed Admin",
+      email: "seed-conflict@example.com",
+      password: "SeedPassword123!",
+    }),
+    /SEED_SUPER_ADMIN_PLATFORM_CONFLICT/,
+  );
 });
