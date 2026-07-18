@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
+import { readFile } from "node:fs/promises";
+import * as path from "node:path";
 import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
+import { config } from "../config/index.js";
 
 const OcrLanguageSchema = z.enum(["ar", "en", "ar+en"]);
 
@@ -30,6 +33,12 @@ interface OcrPageOutput {
   requestId?: string;
 }
 
+interface OcrProviderStub {
+  name: string;
+  version: string;
+  recognizeBatch(pages: Array<{ pageNumber: number; imageBuffer: Buffer; mimeType: string; language: string }>): Promise<{ pages: OcrPageOutput[]; totalCostUsd: number; providerVersion: string }>;
+}
+
 function getProviderInstance(providerName: string): OcrProviderStub {
   switch (providerName) {
     case "tesseract":
@@ -39,12 +48,6 @@ function getProviderInstance(providerName: string): OcrProviderStub {
     default:
       return createFakeStub();
   }
-}
-
-interface OcrProviderStub {
-  name: string;
-  version: string;
-  recognizeBatch(pages: Array<{ pageNumber: number; imageBuffer: Buffer; mimeType: string; language: string }>): Promise<{ pages: OcrPageOutput[]; totalCostUsd: number; providerVersion: string }>;
 }
 
 function createFakeStub(): OcrProviderStub {
@@ -80,10 +83,18 @@ function createTesseractStub(): OcrProviderStub {
       const langMap: Record<string, string> = { ar: "ara", en: "eng", "ar+en": "ara+eng" };
       const results: OcrPageOutput[] = [];
 
+      const timeoutMs = parseInt(process.env.OCR_TIMEOUT || "30000", 10);
+
       for (const page of pages) {
         const start = Date.now();
         try {
-          const result = await Tesseract.recognize(page.imageBuffer, langMap[page.language] || "eng", { logger: () => {} });
+          const result = await Promise.race([
+            Tesseract.recognize(page.imageBuffer, langMap[page.language] || "eng", { logger: () => {} }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Tesseract timed out after ${timeoutMs}ms`)), timeoutMs),
+            ),
+          ]);
+
           results.push({
             pageNumber: page.pageNumber,
             text: result.data.text,
@@ -133,8 +144,15 @@ function createPaddleStub(): OcrProviderStub {
         formData.append("languages", page.language === "ar+en" ? "ar" : page.language);
       }
 
+      const timeoutMs = parseInt(process.env.OCR_TIMEOUT || "30000", 10);
+
       try {
-        const response = await fetch(`${serviceUrl}/ocr`, { method: "POST", body: formData });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        const response = await fetch(`${serviceUrl}/ocr`, { method: "POST", body: formData, signal: controller.signal });
+        clearTimeout(timeoutId);
+
         if (!response.ok) throw new Error(`PaddleOCR returned ${response.status}`);
         const data = (await response.json()) as { requestId?: string; pages: OcrPageOutput[] };
         return { pages: data.pages, totalCostUsd: 0, providerVersion: "2.x" };
@@ -158,6 +176,28 @@ function createPaddleStub(): OcrProviderStub {
       }
     },
   };
+}
+
+async function renderPdfPageToImage(pdfBuffer: Buffer, pageNumber: number, scale?: number): Promise<Buffer> {
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer) });
+  const pdfDoc = await loadingTask.promise;
+  const page = await pdfDoc.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: scale || 2.0 });
+
+  const canvasModule = await import("@napi-rs/canvas");
+  const canvas = canvasModule.createCanvas(viewport.width, viewport.height);
+  const ctx = canvas.getContext("2d");
+
+  await page.render({ canvas: null, canvasContext: ctx as unknown as CanvasRenderingContext2D, viewport }).promise;
+
+  const pngData = canvas.toBuffer("image/png");
+  return Buffer.from(pngData);
+}
+
+async function renderImagePageToBuffer(fileBuffer: Buffer, _mimeType: string): Promise<Buffer> {
+  return fileBuffer;
 }
 
 export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrPayload> {
@@ -191,9 +231,38 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
         return { summary: { discarded: true, reason: "document_not_found" } };
       }
 
-      const pageNumbers = payload.pageNumbers || [1];
+      const storageKey = version.storageKey as string;
+      if (!storageKey) {
+        throw new PermanentJobError("Document version has no storage key; cannot read file for OCR.");
+      }
+
+      const filePath = path.join(config.UPLOAD_DIR, storageKey);
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = await readFile(filePath);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        const nodeErr = err as NodeJS.ErrnoException;
+        if (nodeErr.code === "ENOENT") {
+          throw new PermanentJobError(`Source file not found on disk: ${filePath}`);
+        }
+        throw new RetryableJobError(`Failed to read file from disk: ${error.message}`);
+      }
+
+      const fileMimeType = (version.mimeType as string) || "application/pdf";
+      const totalPages = (version.fileSize as number) > 0 ? await detectPageCount(fileBuffer, fileMimeType) : 1;
+      const pageNumbers = payload.pageNumbers || Array.from({ length: totalPages }, (_, i) => i + 1);
+
+      const maxPages = parseInt(process.env.OCR_MAX_PAGES || "500", 10);
+      if (pageNumbers.length > maxPages) {
+        throw new PermanentJobError(`Page count ${pageNumbers.length} exceeds maximum ${maxPages}`);
+      }
+
       const providerName = payload.ocrProvider || process.env.OCR_PROVIDER || "fake";
       const provider = getProviderInstance(providerName);
+
+      const maxRetries = parseInt(process.env.OCR_MAX_RETRIES || "3", 10);
+      const retryDelayMs = parseInt(process.env.OCR_RETRY_DELAY_MS || "1000", 10);
 
       ctx.progress(`Starting OCR processing with ${provider.name} for ${pageNumbers.length} page(s)...`);
 
@@ -204,19 +273,43 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
 
       for (const pageNum of pageNumbers) {
         try {
-          const _pageStart = Date.now();
+          const pageStart = Date.now();
 
-          const fakeImageBuffer = new TextEncoder().encode(`page-${pageNum}-placeholder`);
-          const ocrResult = await provider.recognizeBatch([{
-            pageNumber: pageNum,
-            imageBuffer: Buffer.from(fakeImageBuffer),
-            mimeType: "image/png",
-            language: payload.language,
-          }]);
+          const imageBuffer = await renderPageToImage(fileBuffer, fileMimeType, pageNum);
+
+          let lastError: Error | null = null;
+          let ocrResult: { pages: OcrPageOutput[]; totalCostUsd: number; providerVersion: string } | null = null;
+
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              ocrResult = await provider.recognizeBatch([{
+                pageNumber: pageNum,
+                imageBuffer,
+                mimeType: "image/png",
+                language: payload.language,
+              }]);
+              lastError = null;
+              break;
+            } catch (retryErr: unknown) {
+              lastError = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
+              ctx.progress(`OCR attempt ${attempt}/${maxRetries} failed for page ${pageNum}: ${lastError.message}`);
+              if (attempt < maxRetries) {
+                await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+              }
+            }
+          }
+
+          if (!ocrResult) {
+            throw lastError || new Error("OCR failed after all retries");
+          }
 
           const pageOcr = ocrResult.pages[0];
 
           if (pageOcr.confidence === 0 && pageOcr.warnings.some((w) => w.includes("failed"))) {
+            const isTimeout = pageOcr.warnings.some((w) => w.includes("timed out"));
+            if (isTimeout) {
+              throw new RetryableJobError(`OCR failed for page ${pageNum}: ${pageOcr.warnings.join(", ")}`);
+            }
             throw new PermanentJobError(`OCR failed for page ${pageNum}: ${pageOcr.warnings.join(", ")}`);
           }
 
@@ -266,7 +359,7 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
           totalPagesProcessed++;
           pageResults.push({ pageNumber: pageNum, status: "completed", confidence: pageOcr.confidence });
 
-          ctx.progress(`OCR completed for page ${pageNum} (confidence: ${Math.round(pageOcr.confidence * 100)}%)`);
+          ctx.progress(`OCR completed for page ${pageNum} (confidence: ${Math.round(pageOcr.confidence * 100)}%, duration: ${Date.now() - pageStart}ms)`);
         } catch (err: unknown) {
           const error = err instanceof Error ? err : new Error(String(err));
           totalPagesFailed++;
@@ -312,6 +405,30 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
   };
 }
 
+async function detectPageCount(fileBuffer: Buffer, mimeType: string): Promise<number> {
+  if (mimeType === "application/pdf") {
+    try {
+      const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(fileBuffer) });
+      const pdfDoc = await loadingTask.promise;
+      return pdfDoc.numPages;
+    } catch {
+      return 1;
+    }
+  }
+  return 1;
+}
+
+async function renderPageToImage(fileBuffer: Buffer, mimeType: string, pageNumber: number): Promise<Buffer> {
+  if (mimeType === "application/pdf") {
+    return renderPdfPageToImage(fileBuffer, pageNumber);
+  }
+  if (mimeType.startsWith("image/")) {
+    return renderImagePageToBuffer(fileBuffer, mimeType);
+  }
+  throw new Error(`Cannot render pages for MIME type '${mimeType}' to images for OCR`);
+}
+
 async function runQualityAssessment(
   db: ReturnType<NonNullable<ReturnType<typeof getMongoClient>>["db"]>,
   tenantId: ObjectId,
@@ -326,11 +443,11 @@ async function runQualityAssessment(
 
   if (ocrPages.length === 0) return;
 
-  const issues: Array<{ type: string; severity: string; message: string; pageNumber: number }> = [];
-  let totalConfidence = 0;
-
   const lowConfThreshold = parseFloat(process.env.OCR_CONFIDENCE_THRESHOLD || "0.7");
   const criticalThreshold = parseFloat(process.env.OCR_CRITICAL_CONFIDENCE_THRESHOLD || "0.4");
+
+  const issues: Array<{ type: string; severity: string; message: string; pageNumber: number }> = [];
+  let totalConfidence = 0;
 
   for (const page of ocrPages) {
     const text = (page.text as string) || "";
@@ -383,7 +500,13 @@ async function runQualityAssessment(
     const num = String(p.pageNumber as number);
     const conf = (p.confidence as number) || 0;
     pageConfidences[num] = conf;
-    pageStatuses[num] = conf < criticalThreshold ? "REVIEW_REQUIRED" : conf < lowConfThreshold ? "READY_WITH_WARNINGS" : "READY";
+    if (conf < criticalThreshold) {
+      pageStatuses[num] = "REVIEW_REQUIRED";
+    } else if (conf < lowConfThreshold) {
+      pageStatuses[num] = "READY_WITH_WARNINGS";
+    } else {
+      pageStatuses[num] = "READY_FOR_INDEXING";
+    }
   }
 
   const totalDurationMs = ocrPages.reduce((sum: number, p: Record<string, unknown>) => sum + ((p.durationMs as number) || 0), 0);
