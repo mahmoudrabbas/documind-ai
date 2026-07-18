@@ -158,6 +158,10 @@ export class ApiJobDispatcher {
     await job.retry();
     return true;
   }
+
+  async close(): Promise<void> {
+    await this.queue.close();
+  }
 }
 
 let singleton: ApiJobDispatcher | null = null;
@@ -165,6 +169,13 @@ let singleton: ApiJobDispatcher | null = null;
 export function getApiJobDispatcher(): ApiJobDispatcher {
   if (!singleton) singleton = new ApiJobDispatcher();
   return singleton;
+}
+
+export async function closeApiJobDispatcher(): Promise<void> {
+  if (singleton) {
+    await singleton.close();
+    singleton = null;
+  }
 }
 
 export { jobEnvelopeSchema };

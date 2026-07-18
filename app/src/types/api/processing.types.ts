@@ -20,7 +20,7 @@ export interface QualityIssue {
   pageNumber: number;
 }
 
-export type QualityStatus = "READY" | "READY_WITH_WARNINGS" | "REVIEW_REQUIRED" | "FAILED" | "READY_FOR_INDEXING" | "REJECTED";
+export type QualityStatus = "READY" | "READY_WITH_WARNINGS" | "REVIEW_REQUIRED" | "FAILED";
 
 export type ReviewDecision = "approved" | "rejected" | "retry";
 
@@ -73,26 +73,34 @@ export interface DocumentQualityView {
   updatedAt: string;
 }
 
-export interface TriggerOcrInput {
-  documentId: string;
-  version?: number;
-  language?: OcrLanguage;
-  pageNumbers?: number[];
+export interface OcrTriggerResponse {
+  message: string;
+  jobId: string;
+  idempotencyKey: string;
 }
 
-export interface ReviewQualityInput {
-  decision: ReviewDecision;
-  notes?: string;
-  pageNumbers?: number[];
+export interface OcrPageResultsResponse {
+  success: boolean;
+  data: {
+    pages: OcrPageResultView[];
+  };
 }
 
-export interface RetryOcrInput {
-  pageNumbers?: number[];
+export interface DocumentQualityResponse {
+  success: boolean;
+  data: DocumentQualityView | null;
 }
 
-export interface OcrUsageSummaryView {
-  tenantId: string;
-  pagesUsed: number;
-  periodStart: string;
-  periodEnd: string;
+export interface OcrUsageSummaryResponse {
+  success: boolean;
+  data: {
+    pagesUsed: number;
+    periodStart: string;
+    periodEnd: string;
+  };
+}
+
+export interface ReviewQualityResponse {
+  success: boolean;
+  data: DocumentQualityView;
 }

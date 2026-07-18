@@ -9,19 +9,23 @@ import { forgotPassword, resetPassword } from "./auth.service.js";
 import { createPasswordResetToken } from "./passwordResetToken.js";
 import { verifyPassword } from "./passwordHashing.js";
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryServer | null = null;
 
 before(async () => {
-  mongoServer = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
-  });
-  await mongoose.connect(mongoServer.getUri(), { dbName: "password-reset-isolation" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "password-reset-isolation" });
+  } else {
+    mongoServer = await MongoMemoryServer.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
+    });
+    await mongoose.connect(mongoServer.getUri(), { dbName: "password-reset-isolation" });
+  }
 });
 
 after(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  if (mongoServer) await mongoServer.stop();
 });
 
 afterEach(async () => {
