@@ -9,7 +9,7 @@ services:
       - path: ./api/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - MONGODB_URI=mongodb://mongodb:27017/docsai?retryWrites=false
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET_FILE=/run/secrets/api_jwt_secret
       - JWT_REFRESH_SECRET_FILE=/run/secrets/api_refresh_secret
@@ -86,7 +86,7 @@ services:
       - path: ./workers/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - MONGODB_URI=mongodb://mongodb:27017/docsai?retryWrites=false
       - REDIS_URL=redis://redis:6379
       - MONGODB_URI_FILE=/run/secrets/worker_mongodb_uri
       - REDIS_URL_FILE=/run/secrets/worker_redis_url
@@ -110,6 +110,7 @@ services:
   mongodb:
     image: mongo:8
     container_name: docsai-mongodb
+    command: ["mongod", "--replSet", "rs0"]
     ports:
       - "27017:27017"
     environment:
@@ -117,11 +118,23 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: |
+        mongosh --quiet --eval "
+          try {
+            rs.status();
+          } catch(e) {
+            if (e.code === 94) {
+              rs.initiate({_id:'rs0', members:[{_id:0, host:'mongodb:27017'}]});
+            }
+          }
+          const status = rs.status();
+          const myState = status.members.find(m => m.self).stateStr;
+          quit(myState === 'PRIMARY' ? 0 : 1);
+        "
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
 
 volumes:
   mongo_data:

@@ -84,27 +84,54 @@ export function createRefreshTokenRecord(input: {
   return tenantScopedCreate(RefreshTokenModel, input);
 }
 
+/**
+ * Retry configuration for transactions that fail due to
+ * transient replica-set-not-ready errors (code 20 / IllegalOperation).
+ * Once the replica set is fully initialized, transactions will work
+ * on the first attempt.
+ */
+const TRANSACTION_MAX_RETRIES = 3;
+const TRANSACTION_RETRY_BASE_DELAY_MS = 500;
+
+function isReplicaSetNotReadyError(err: unknown): boolean {
+  const mongoErr = err as { code?: number; codeName?: string } | undefined;
+  return (mongoErr?.code === 20 || mongoErr?.codeName === "IllegalOperation") ?? false;
+}
+
 export async function createRefreshTokenRecordForEligibleUser(input: Parameters<typeof createRefreshTokenRecord>[0]) {
-  const session = await mongoose.startSession();
-  let created: InstanceType<typeof RefreshTokenModel> | null = null;
-  let eligible = false;
-  try {
-    await session.withTransaction(async () => {
-      eligible = false;
-      created = null;
-      const user = await UserModel.findOneAndUpdate(
-        { _id: input.userId, tenantId: input.tenantId, roleMigrationState: COMPLETED_ROLE_MIGRATION_STATE },
-        { $inc: { sessionGuardVersion: 1 } },
-        { session, returnDocument: "after" },
-      ).exec();
-      if (!user) return;
-      eligible = true;
-      created = await new RefreshTokenModel(input).save({ session });
-    });
-    return { eligible, record: created };
-  } finally {
-    await session.endSession();
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < TRANSACTION_MAX_RETRIES; attempt++) {
+    const session = await mongoose.startSession();
+    let created: InstanceType<typeof RefreshTokenModel> | null = null;
+    let eligible = false;
+    try {
+      await session.withTransaction(async () => {
+        eligible = false;
+        created = null;
+        const user = await UserModel.findOneAndUpdate(
+          { _id: input.userId, tenantId: input.tenantId, roleMigrationState: COMPLETED_ROLE_MIGRATION_STATE },
+          { $inc: { sessionGuardVersion: 1 } },
+          { session, returnDocument: "after" },
+        ).exec();
+        if (!user) return;
+        eligible = true;
+        created = await new RefreshTokenModel(input).save({ session });
+      });
+      return { eligible, record: created };
+    } catch (err) {
+      lastError = err;
+      if (isReplicaSetNotReadyError(err) && attempt < TRANSACTION_MAX_RETRIES - 1) {
+        const delay = Math.min(TRANSACTION_RETRY_BASE_DELAY_MS * 2 ** attempt, 5000);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    } finally {
+      await session.endSession();
+    }
   }
+  throw lastError;
 }
 
 export async function rotateRefreshTokenForEligibleUser(

@@ -33,7 +33,7 @@ export class MongoAuditWriter implements AuditWriter {
         action: event.action,
         actorId: actorIdVal,
         actorEmail: event.actorEmail ?? "system@documind.ai",
-        actorRole: event.actorRole ?? "SYSTEM",
+        actorRole: event.actorRole || "SYSTEM",
         changes: redactedChanges,
         traceId: ctx?.traceId,
         requestId: ctx?.requestId,

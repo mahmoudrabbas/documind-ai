@@ -93,19 +93,38 @@ export class BullMQQueue implements JobDispatcher {
     // BullMQ rejects duplicate `jobId`s within the queue (dedup at source).
     const existing = await this.queue.getJob(jobId);
     if (existing) {
-      publishJobEvent({
-        traceId: envelope.traceId,
-        jobType: envelope.jobType,
-        tenantId: envelope.tenantId,
-        actorId: envelope.actorId,
-        event: "enqueue",
-        data: { deduplicated: true, jobId },
-      });
-      return {
-        jobId,
-        idempotencyKey: envelope.idempotencyKey,
-        deduplicated: true,
-      };
+      const state = await existing.getState();
+
+      // If the existing job is in a terminal state (completed or failed), remove
+      // it so a fresh job can be enqueued. This allows retries after the previous
+      // run finished — the idempotency key alone must not block new attempts.
+      if (state === "completed" || state === "failed") {
+        try {
+          await existing.remove();
+          logger.info(
+            { jobId, state, jobType: input.jobType },
+            "removed terminal-state job to allow re-enqueue",
+          );
+        } catch {
+          // Best-effort removal; if it fails, fall through to dedup behavior.
+        }
+        // Fall through to the normal enqueue path below.
+      } else {
+        // Job is waiting/active/delayed — genuine duplicate, suppress.
+        publishJobEvent({
+          traceId: envelope.traceId,
+          jobType: envelope.jobType,
+          tenantId: envelope.tenantId,
+          actorId: envelope.actorId,
+          event: "enqueue",
+          data: { deduplicated: true, jobId },
+        });
+        return {
+          jobId,
+          idempotencyKey: envelope.idempotencyKey,
+          deduplicated: true,
+        };
+      }
     }
 
     const job = await this.queue.add(input.jobType, envelope, {

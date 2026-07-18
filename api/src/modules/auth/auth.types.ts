@@ -65,6 +65,15 @@ export interface UserPublicView {
   customRoleName?: string;
   status: string;
   emailVerified: boolean;
+  employeeProfile?: {
+    employeeId?: string;
+    department?: string;
+    jobTitle?: string;
+    phone?: string;
+    hireDate?: string;
+    managerId?: string;
+    preferredLanguage?: string;
+  };
   createdAt: string;
 }
 

@@ -69,6 +69,7 @@ export const SIDEBAR_LINKS: Record<Role, readonly NavLink[]> = {
     { label: "Overview", href: "/dashboard", icon: "dashboard" },
     { label: "Documents", href: "/dashboard/documents", icon: "description" },
     { label: "Users", href: "/dashboard/users", icon: "group" },
+    { label: "Import", href: "/dashboard/users/import", icon: "file_upload" },
     { label: "Roles", href: "/dashboard/roles", icon: "manage_accounts" },
     {
       label: "Knowledge Gaps",

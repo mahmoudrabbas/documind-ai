@@ -92,7 +92,11 @@ import {
 } from "./refreshTokenHashing.js";
 
 function safeAuditLog(input: AuditEventInput) {
-  createAuditLog({ ...input, userId: input.actorId } as unknown as Record<string, unknown>).catch((err) => {
+  createAuditLog({
+    ...input,
+    userId: input.actorId,
+    actorRole: input.actorRole || "SYSTEM",
+  } as unknown as Record<string, unknown>).catch((err) => {
     console.error("[audit-log-failed]", err);
   });
 }
