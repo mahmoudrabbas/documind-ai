@@ -97,7 +97,7 @@ export interface AuditEventInput {
   // Explicit overrides if not using the current async context
   tenantId?: string;
   actorId?: string;
-  actorEmail?: string;
+  actorEmail?: string | null;
   actorRole?: BaseRole | null;
   actorKind?: AuditActorKind;
 }

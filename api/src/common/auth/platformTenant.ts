@@ -5,18 +5,18 @@ export const LEGACY_PLATFORM_TENANT_SLUGS = [
   "documind-ai",
 ] as const;
 
-function normalizeSlugCandidate(value: string) {
+export function normalizeTenantSlugCandidate(value: string) {
   return value.toLowerCase().trim();
 }
 
 export function isPlatformTenantSlug(value: string | undefined | null) {
   if (!value) return false;
-  return normalizeSlugCandidate(value) === PLATFORM_TENANT_SLUG;
+  return normalizeTenantSlugCandidate(value) === PLATFORM_TENANT_SLUG;
 }
 
 export function isLegacyPlatformTenantSlug(value: string | undefined | null) {
   if (!value) return false;
-  const normalized = normalizeSlugCandidate(value);
+  const normalized = normalizeTenantSlugCandidate(value);
   return LEGACY_PLATFORM_TENANT_SLUGS.includes(
     normalized as (typeof LEGACY_PLATFORM_TENANT_SLUGS)[number],
   );
@@ -24,4 +24,16 @@ export function isLegacyPlatformTenantSlug(value: string | undefined | null) {
 
 export function isReservedPlatformSlug(value: string | undefined | null) {
   return isPlatformTenantSlug(value) || isLegacyPlatformTenantSlug(value);
+}
+
+export function isBlockedCustomerTenantSlug(value: string | undefined | null) {
+  if (!value) return false;
+  return isReservedPlatformSlug(normalizeTenantSlugCandidate(value));
+}
+
+export function isSystemPlatformTenant(input: {
+  slug?: string | null;
+  isSystemTenant?: boolean | null;
+}) {
+  return Boolean(input.isSystemTenant) || isBlockedCustomerTenantSlug(input.slug);
 }

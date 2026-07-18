@@ -39,13 +39,13 @@ test("authenticated EMPLOYEE audit records validate", async () => {
   );
 });
 
-test("system audit records validate with null actorRole", async () => {
+test("system audit records validate with null actor identity", async () => {
   await assert.doesNotReject(
     buildAuditLog({
       tenantId: "system",
       userId: "system",
       actorId: "system",
-      actorEmail: "system@documind.ai",
+      actorEmail: null,
       actorRole: null,
       actorKind: "SYSTEM",
       action: "SYSTEM_STARTUP",
@@ -55,18 +55,59 @@ test("system audit records validate with null actorRole", async () => {
   );
 });
 
-test("unauthenticated login audit records validate with null actorRole", async () => {
+test("unauthenticated audit records validate with null actor identity", async () => {
   await assert.doesNotReject(
     buildAuditLog({
       tenantId: new mongoose.Types.ObjectId(),
-      userId: "system",
-      actorId: "system",
-      actorEmail: "missing-user@example.com",
+      userId: null,
+      actorId: null,
+      actorEmail: null,
       actorRole: null,
       actorKind: "UNAUTHENTICATED",
       action: "AUTH_LOGIN_FAILURE",
       outcome: "DENIED",
     }).validate(),
+  );
+});
+
+test("USER audit records require actorEmail", async () => {
+  await assert.rejects(
+    buildAuditLog({ actorEmail: null }).validate(),
+    (error: unknown) =>
+      error instanceof mongoose.Error.ValidationError &&
+      Boolean(error.errors.actorEmail),
+  );
+});
+
+test("USER audit records reject invalid actorEmail values", async () => {
+  await assert.rejects(
+    buildAuditLog({ actorEmail: "not-an-email" }).validate(),
+    (error: unknown) =>
+      error instanceof mongoose.Error.ValidationError &&
+      Boolean(error.errors.actorEmail),
+  );
+});
+
+test("USER audit records normalize actorEmail", async () => {
+  const audit = buildAuditLog({ actorEmail: "  Actor@Example.COM  " });
+
+  await audit.validate();
+
+  assert.equal(audit.actorEmail, "actor@example.com");
+});
+
+test("unauthenticated audit records reject empty actorEmail placeholders", async () => {
+  await assert.rejects(
+    buildAuditLog({
+      actorKind: "UNAUTHENTICATED",
+      actorId: null,
+      userId: null,
+      actorRole: null,
+      actorEmail: "",
+    }).validate(),
+    (error: unknown) =>
+      error instanceof mongoose.Error.ValidationError &&
+      Boolean(error.errors.actorEmail),
   );
 });
 

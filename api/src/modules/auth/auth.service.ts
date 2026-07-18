@@ -64,6 +64,7 @@ import {
   revokeAllRefreshTokensForTenantUser,
   revokeRefreshToken,
   rotateRefreshTokenForEligibleUser,
+  restoreUserVerificationTokenIfCurrent,
   updateUserVerificationToken,
   updateUserPasswordResetToken,
   findUserByTenantAndIdWithPasswordResetToken,
@@ -92,8 +93,10 @@ import {
 } from "./refreshTokenHashing.js";
 import {
   PLATFORM_TENANT_SLUG,
-  isPlatformTenantSlug,
+  isBlockedCustomerTenantSlug,
   isReservedPlatformSlug,
+  isSystemPlatformTenant,
+  normalizeTenantSlugCandidate,
 } from "../../common/auth/platformTenant.js";
 import {
   normalizeAuditActorRole,
@@ -129,7 +132,6 @@ function isResendVerificationEligible(
 
 function safeAuditLog(input: AuditEventInput) {
   try {
-    const actorId = input.actorId || "system";
     const actorRole = normalizeAuditActorRole(input.actorRole);
     const actorKind = resolveAuditActorKind({
       actorId: input.actorId,
@@ -137,15 +139,16 @@ function safeAuditLog(input: AuditEventInput) {
       actorRole,
     });
 
-    let userId: string | mongoose.Types.ObjectId;
-    if (actorId === "system") {
-      userId = "system";
+    let userId: string | mongoose.Types.ObjectId | null;
+    if (input.actorId === undefined || input.actorId === null || input.actorId === "") {
+      userId = actorKind === "SYSTEM" ? "system" : null;
     } else {
-      userId = new mongoose.Types.ObjectId(actorId);
+      userId = new mongoose.Types.ObjectId(input.actorId);
     }
 
     createAuditLog({
       ...input,
+      tenantId: input.tenantId ?? "system",
       actorKind,
       actorId: userId,
       actorRole,
@@ -203,7 +206,7 @@ function normalizedRawSlugCandidate(
   companySlug: string | undefined,
   companyName: string,
 ) {
-  return (companySlug ?? companyName).toLowerCase().trim();
+  return normalizeTenantSlugCandidate(companySlug ?? companyName);
 }
 
 function isDuplicateKeyError(error: unknown) {
@@ -273,12 +276,12 @@ export async function forgotPassword(
   const genericMessage =
     "If an account matches the provided company and email, password reset instructions will be sent.";
 
-  if (isPlatformTenantSlug(payload.slug)) {
+  if (isBlockedCustomerTenantSlug(payload.slug)) {
     return { success: true, message: genericMessage };
   }
 
   const tenant = await findTenantBySlug(payload.slug);
-  if (!tenant) {
+  if (!tenant || isSystemPlatformTenant(tenant)) {
     return { success: true, message: genericMessage };
   }
   const tenantId = tenant._id.toString();
@@ -331,12 +334,16 @@ export async function resetPassword(
 
   try {
     const tokenPayload = verifyPasswordResetToken(payload.token);
-    if (isPlatformTenantSlug(payload.slug)) {
+    if (isBlockedCustomerTenantSlug(payload.slug)) {
       throw invalidTokenError;
     }
 
     const tenant = await findTenantBySlug(payload.slug);
-    if (!tenant || tokenPayload.tenantId !== tenant._id.toString()) {
+    if (
+      !tenant ||
+      isSystemPlatformTenant(tenant) ||
+      tokenPayload.tenantId !== tenant._id.toString()
+    ) {
       throw invalidTokenError;
     }
     const tenantId = tenant._id.toString();
@@ -406,7 +413,7 @@ export async function registerTenantAndAdmin(
   );
 
   if (
-    isPlatformTenantSlug(
+    isBlockedCustomerTenantSlug(
       normalizedRawSlugCandidate(payload.companySlug, payload.companyName),
     ) ||
     isReservedPlatformSlug(normalizedSlug)
@@ -463,22 +470,26 @@ export async function registerTenantAndAdmin(
       throw new AppError(500, REGISTRATION_FAILED, "Registration failed");
     }
 
-    const verificationToken = await createEmailVerificationTokenForUser(
-      created.user,
-    );
-
-    await sendVerificationEmail({
-      to: created.user.email,
-      adminName: created.user.name,
-      companyName: created.tenant.name,
-      verificationUrl: buildVerificationUrl(verificationToken),
-      tenantId: created.tenant._id.toString(),
-    });
-
     await provisionSubscription(
       created.tenant._id.toString(),
       payload.packageCode,
     );
+
+    const verificationToken = await createEmailVerificationTokenForUser(
+      created.user,
+    );
+
+    try {
+      await sendVerificationEmail({
+        to: created.user.email,
+        adminName: created.user.name,
+        companyName: created.tenant.name,
+        verificationUrl: buildVerificationUrl(verificationToken),
+        tenantId: created.tenant._id.toString(),
+      });
+    } catch (error) {
+      console.error("[auth-register-email-delivery]", error);
+    }
 
     return {
       tenant: serializeTenant(created.tenant),
@@ -628,12 +639,12 @@ export async function resendVerificationEmail(input: unknown) {
   const normalizedCompanySlug = payload.companySlug.trim().toLowerCase();
   const normalizedEmail = payload.email.trim().toLowerCase();
 
-  if (isPlatformTenantSlug(normalizedCompanySlug)) {
+  if (isBlockedCustomerTenantSlug(normalizedCompanySlug)) {
     return GENERIC_RESEND_VERIFICATION_RESPONSE;
   }
 
   const tenant = await findTenantBySlug(normalizedCompanySlug);
-  if (!tenant || tenant.isSystemTenant) {
+  if (!tenant || isSystemPlatformTenant(tenant)) {
     return GENERIC_RESEND_VERIFICATION_RESPONSE;
   }
 
@@ -646,19 +657,22 @@ export async function resendVerificationEmail(input: unknown) {
 
   const previousTokenHash = user.emailVerificationTokenHash;
   const previousExpiresAt = user.emailVerificationExpiresAt;
-  const token = await createEmailVerificationTokenForUser(user);
+  const token = await issueEmailVerificationTokenForUser(user);
 
   try {
     await sendVerificationEmail({
       to: user.email,
       adminName: user.name,
       companyName: tenant.name,
-      verificationUrl: buildVerificationUrl(token),
+      verificationUrl: buildVerificationUrl(token.token),
       tenantId,
     });
   } catch (error) {
-    await updateUserVerificationToken(
+    await restoreUserVerificationTokenIfCurrent(
+      tenantId,
       user._id.toString(),
+      token.tokenHash,
+      token.expiresAt,
       previousTokenHash,
       previousExpiresAt,
     );
@@ -754,13 +768,13 @@ export async function login(
   context: RefreshTokenContext = {},
 ): Promise<LoginResult> {
   const payload = validateLoginInput(input);
-  if (isPlatformTenantSlug(payload.companySlug)) {
+  if (isBlockedCustomerTenantSlug(payload.companySlug)) {
     throw invalidCredentialsError();
   }
 
   const tenant = await findTenantBySlug(payload.companySlug);
 
-  if (!tenant) {
+  if (!tenant || isSystemPlatformTenant(tenant)) {
     throw invalidCredentialsError();
   }
 
@@ -1158,7 +1172,18 @@ export async function refreshAccessToken(
 }
 
 export async function logout(token: string, context: RefreshTokenContext = {}) {
-  if (!token) return;
+  if (!token) {
+    safeAuditLog({
+      resourceType: "Session",
+      resourceId: "missing-refresh-token",
+      action: "AUTH_LOGOUT",
+      actorKind: "UNAUTHENTICATED",
+      actorRole: null,
+      actorEmail: null,
+      changes: { ip: context.ip },
+    });
+    return;
+  }
 
   try {
     const claims = verifyJwt<AuthTokenClaims>(token, config.JWT_REFRESH_SECRET);
@@ -1169,6 +1194,16 @@ export async function logout(token: string, context: RefreshTokenContext = {}) {
       !claims.sub ||
       !claims.tenantId
     ) {
+      safeAuditLog({
+        resourceType: "Session",
+        resourceId: "invalid-refresh-token",
+        action: "AUTH_LOGOUT",
+        outcome: "SUCCESS",
+        actorKind: "UNAUTHENTICATED",
+        actorRole: null,
+        actorEmail: null,
+        changes: { ip: context.ip },
+      });
       return;
     }
 
@@ -1183,7 +1218,7 @@ export async function logout(token: string, context: RefreshTokenContext = {}) {
       record.userId.toString() === claims.sub &&
       record.tenantId.toString() === claims.tenantId
     ) {
-      await revokeRefreshToken(
+      const revocation = await revokeRefreshToken(
         record.tenantId.toString(),
         record.userId.toString(),
         record.id,
@@ -1191,22 +1226,50 @@ export async function logout(token: string, context: RefreshTokenContext = {}) {
         context.ip,
       );
 
-      safeAuditLog({
-        tenantId: claims.tenantId,
-        resourceType: "Session",
-        resourceId: record.id.toString(),
-        action: "AUTH_LOGOUT",
-        outcome: "SUCCESS",
-        actorId: claims.sub,
-        actorEmail: "unknown@documind.ai",
-        actorKind: "USER",
-        actorRole: null,
-        changes: { ip: context.ip },
-        metadata: { userId: claims.sub },
-      });
+      if (revocation.modifiedCount === 1) {
+        const actor = await findUserByTenantAndId(
+          claims.tenantId,
+          claims.sub,
+        ).catch(() => null);
+
+        safeAuditLog({
+          tenantId: claims.tenantId,
+          resourceType: "Session",
+          resourceId: record.id.toString(),
+          action: "AUTH_LOGOUT",
+          outcome: "SUCCESS",
+          actorId: actor?.id ?? actor?._id.toString(),
+          actorEmail: actor ? actor.email.trim().toLowerCase() : null,
+          actorKind: actor ? "USER" : "UNAUTHENTICATED",
+          actorRole: actor?.role ?? null,
+          changes: { ip: context.ip },
+          metadata: { userId: claims.sub },
+        });
+        return;
+      }
     }
+    safeAuditLog({
+      tenantId: claims.tenantId,
+      resourceType: "Session",
+      resourceId: claims.jti,
+      action: "AUTH_LOGOUT",
+      outcome: "SUCCESS",
+      actorKind: "UNAUTHENTICATED",
+      actorRole: null,
+      actorEmail: null,
+      changes: { ip: context.ip },
+    });
   } catch {
-    // Logout is intentionally idempotent, including for invalid cookies.
+    safeAuditLog({
+      resourceType: "Session",
+      resourceId: "invalid-refresh-token",
+      action: "AUTH_LOGOUT",
+      outcome: "SUCCESS",
+      actorKind: "UNAUTHENTICATED",
+      actorRole: null,
+      actorEmail: null,
+      changes: { ip: context.ip },
+    });
   }
 }
 
@@ -1220,15 +1283,20 @@ export async function logoutAll(
     new Date(),
   );
 
+  const actor = await findUserByTenantAndId(
+    identity.tenantId,
+    identity.userId,
+  ).catch(() => null);
+
   safeAuditLog({
     tenantId: identity.tenantId,
     resourceType: "Session",
     resourceId: identity.userId,
     action: "AUTH_LOGOUT_ALL",
-    actorId: identity.userId,
-    actorEmail: identity.email ?? "",
-    actorKind: "USER",
-    actorRole: identity.role ?? null,
+    actorId: actor?.id ?? actor?._id.toString(),
+    actorEmail: actor ? actor.email.trim().toLowerCase() : null,
+    actorKind: actor ? "USER" : "UNAUTHENTICATED",
+    actorRole: actor?.role ?? null,
     changes: { revokedCount: revokedCount.modifiedCount, ip: context.ip },
     metadata: { userId: identity.userId },
   });
@@ -1250,6 +1318,21 @@ export async function createEmailVerificationTokenForUser(
     expiresIn?: string;
   } = {},
 ) {
+  const verificationToken = await issueEmailVerificationTokenForUser(
+    user,
+    options,
+  );
+
+  return verificationToken.token;
+}
+
+async function issueEmailVerificationTokenForUser(
+  user: Pick<CreatedUserRecord, "_id" | "tenantId" | "email">,
+  options: {
+    purpose?: "email_verification" | "user_invitation";
+    expiresIn?: string;
+  } = {},
+) {
   const verificationToken = createEmailVerificationToken({
     userId: user._id.toString(),
     tenantId: user.tenantId?.toString() ?? "",
@@ -1259,12 +1342,13 @@ export async function createEmailVerificationTokenForUser(
   });
 
   await updateUserVerificationToken(
+    user.tenantId?.toString() ?? "",
     user._id.toString(),
     verificationToken.tokenHash,
     verificationToken.expiresAt,
   );
 
-  return verificationToken.token;
+  return verificationToken;
 }
 
 /**
