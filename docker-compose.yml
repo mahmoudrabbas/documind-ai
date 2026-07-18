@@ -45,6 +45,7 @@ services:
       start_period: 30s
     volumes:
       - ./api:/repo/api
+      - api_node_modules:/repo/api/node_modules
 
   app:
     build:
@@ -82,12 +83,15 @@ services:
       start_period: 20s
     volumes:
       - ./workers:/repo/workers
+      - worker_node_modules:/repo/workers/node_modules
+      - uploads_data:/repo/api/uploads
     env_file:
       - path: ./workers/.env
         required: false
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/docsai?replicaSet=rs0
       - REDIS_URL=redis://redis:6379
+      - UPLOAD_DIR=/repo/api/uploads
       - MONGODB_URI_FILE=/run/secrets/worker_mongodb_uri
       - REDIS_URL_FILE=/run/secrets/worker_redis_url
       - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
@@ -95,6 +99,22 @@ services:
       - worker_mongodb_uri
       - worker_redis_url
       - api_smtp_pass
+
+  paddle-ocr:
+    build:
+      context: ./services/paddle-ocr
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   redis:
     image: redis:7
@@ -134,6 +154,9 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  uploads_data:
+  api_node_modules:
+  worker_node_modules:
 
 secrets:
   api_jwt_secret:

@@ -26,7 +26,7 @@ const app: Express = (await import("../../app.js")).default;
 
 const TEST_PASSWORD = "StrongPass123!";
 
-let mongoServer: MongoMemoryReplSet;
+let mongoServer: MongoMemoryReplSet | null = null;
 
 async function createTenantAndAdmin() {
   const tenant = await TenantModel.create({
@@ -79,16 +79,20 @@ async function login(
 }
 
 before(async () => {
-  mongoServer = await MongoMemoryReplSet.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    replSet: { count: 1 },
-    instanceOpts: [
-      {
-        launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000),
-      },
-    ],
-  });
-  await mongoose.connect(mongoServer.getUri(), { dbName: "agents-test" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "agents-test" });
+  } else {
+    mongoServer = await MongoMemoryReplSet.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      replSet: { count: 1 },
+      instanceOpts: [
+        {
+          launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000),
+        },
+      ],
+    });
+    await mongoose.connect(mongoServer.getUri(), { dbName: "agents-test" });
+  }
 });
 
 beforeEach(async () => {
@@ -103,9 +107,7 @@ beforeEach(async () => {
 after(async () => {
   await disconnectRedis();
   await mongoose.disconnect();
-  if (mongoServer) {
-    await mongoServer.stop();
-  }
+  if (mongoServer) await mongoServer.stop();
 });
 
 void test("ToolRegistry rejects unregistered tool", async () => {

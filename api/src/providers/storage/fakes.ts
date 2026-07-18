@@ -75,6 +75,14 @@ export class AllowAllEntitlementChecker implements EntitlementChecker {
   async checkUploadAllowed(_tenantId: string, _fileSize: number): Promise<void> {
     // no-op: always allows
   }
+
+  async checkOcrPageQuota(_tenantId: string, _pageCount: number): Promise<void> {
+    // no-op: always allows
+  }
+
+  async recordOcrUsage(_tenantId: string, _pageCount: number): Promise<void> {
+    // no-op
+  }
 }
 
 export interface DispatchedEvent {

@@ -41,6 +41,13 @@ export type AuditAction =
   | "DOCUMENT_REPLACED"
   | "DOCUMENT_ARCHIVED"
   | "DOCUMENT_RESTORED"
+  // OCR & Quality
+  | "OCR_TRIGGERED"
+  | "OCR_COMPLETED"
+  | "OCR_FAILED"
+  | "QUALITY_ASSESSED"
+  | "QUALITY_REVIEWED"
+  | "OCR_PAGES_RETRIED"
   // Platform
   | "PACKAGE_CREATED"
   | "PACKAGE_UPDATED"
@@ -66,6 +73,8 @@ export type AuditResourceType =
   | "User"
   | "Role"
   | "Document"
+  | "DocumentQuality"
+  | "OcrPageResult"
   | "Package"
   | "Subscription"
   | "PlatformSetting"

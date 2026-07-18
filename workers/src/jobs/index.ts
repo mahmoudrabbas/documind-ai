@@ -3,6 +3,7 @@ import type { JobHandlerRegistry } from "../contracts/jobDispatcher.js";
 import { sampleJobHandler } from "./sampleJob.js";
 import { createEmailSendJobHandler } from "./emailSendJob.js";
 import { createDocumentExtractionJobHandler } from "./documentExtractionJob.js";
+import { createDocumentOcrJobHandler } from "./documentOcrJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
 import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
 
@@ -21,6 +22,7 @@ export function buildHandlerRegistry(): JobHandlerRegistry {
   const emailProvider = providerType === "fake" ? new FakeEmailProvider() : new SmtpEmailProvider();
   registry.register(createEmailSendJobHandler(emailProvider));
   registry.register(createDocumentExtractionJobHandler());
+  registry.register(createDocumentOcrJobHandler());
   
   return registry;
 }

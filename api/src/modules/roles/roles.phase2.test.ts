@@ -28,16 +28,20 @@ import {
   type RoleOperationContext,
 } from "./roles.service.js";
 
-let mongo: MongoMemoryReplSet;
+let mongo: MongoMemoryReplSet | null = null;
 let audit: InMemoryAuditWriter;
 
 before(async () => {
-  mongo = await MongoMemoryReplSet.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    replSet: { count: 1 },
-    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
-  });
-  await mongoose.connect(mongo.getUri(), { dbName: "roles-phase2" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "roles-phase2" });
+  } else {
+    mongo = await MongoMemoryReplSet.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      replSet: { count: 1 },
+      instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+    });
+    await mongoose.connect(mongo.getUri(), { dbName: "roles-phase2" });
+  }
 });
 
 beforeEach(async () => {
@@ -51,7 +55,7 @@ after(async () => {
   setAuditWriter(null);
   setMetricRecorder(null);
   await mongoose.disconnect();
-  await mongo?.stop();
+  if (mongo) await mongo.stop();
 });
 
 async function fixture(slug = new mongoose.Types.ObjectId().toString()) {
