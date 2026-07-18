@@ -204,7 +204,7 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
 
       for (const pageNum of pageNumbers) {
         try {
-          const pageStart = Date.now();
+          const _pageStart = Date.now();
 
           const fakeImageBuffer = new TextEncoder().encode(`page-${pageNum}-placeholder`);
           const ocrResult = await provider.recognizeBatch([{
