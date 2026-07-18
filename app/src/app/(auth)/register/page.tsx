@@ -138,7 +138,7 @@ export default function RegisterPage() {
       case "EMAIL_NOT_VERIFIED":
         return t("auth.errorEmailNotVerified");
       case "INVALID_CREDENTIALS":
-        return t("auth.errorINVALID_CREDENTIALS");
+        return t("auth.errorInvalidCredentials");
       case "ACCOUNT_NOT_ACTIVE":
         return t("auth.errorAccountNotActive");
       case "TENANT_NOT_ACTIVE":
@@ -178,6 +178,7 @@ export default function RegisterPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (rateLimitRetryAfter !== null) return;
     if (submissionPending.current) return;
     setFormError("");
     setRateLimitRetryAfter(null);
@@ -249,6 +250,16 @@ export default function RegisterPage() {
 
         {/* Brand Header */}
         <div className="mb-12">
+          <Link
+            href="/"
+            aria-label={t("auth.backToHome")}
+            className="mb-lg inline-flex items-center gap-xs text-label-md font-semibold text-primary transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+          >
+            <span className="material-symbols-outlined text-lg" aria-hidden="true">
+              arrow_back
+            </span>
+            {t("auth.backToHome")}
+          </Link>
           <div className="mb-sm flex items-center gap-base">
             <span
               className="material-symbols-outlined text-3xl text-primary"
@@ -348,7 +359,7 @@ export default function RegisterPage() {
                 onChange={(e) => handleCompanyNameChange(e.target.value)}
                 autoComplete="organization"
                 placeholder={t("auth.companyNamePlaceholder")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 aria-invalid={Boolean(errors.companyName)}
                 aria-describedby={errors.companyName ? "companyName-error" : undefined}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -374,7 +385,7 @@ export default function RegisterPage() {
                 value={companySlug}
                 onChange={(e) => handleCompanySlugChange(e.target.value)}
                 placeholder={t("auth.companySlugPlaceholder")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 aria-invalid={Boolean(errors.companySlug)}
                 aria-describedby={
                   errors.companySlug ? "companySlug-error" : "companySlug-help"
@@ -410,7 +421,7 @@ export default function RegisterPage() {
                 }}
                 autoComplete="name"
                 placeholder={t("auth.adminNamePlaceholder")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 aria-invalid={Boolean(errors.adminName)}
                 aria-describedby={errors.adminName ? "adminName-error" : undefined}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -438,7 +449,7 @@ export default function RegisterPage() {
                 }}
                 autoComplete="email"
                 placeholder={t("auth.emailPlaceholder")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 aria-invalid={Boolean(errors.email)}
                 aria-describedby={errors.email ? "email-error" : undefined}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -467,7 +478,7 @@ export default function RegisterPage() {
                   }}
                   autoComplete="new-password"
                   placeholder={t("auth.passwordPlaceholder")}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   aria-invalid={Boolean(errors.password)}
                   aria-describedby={errors.password ? "password-error" : undefined}
                   className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -475,7 +486,7 @@ export default function RegisterPage() {
                 <PasswordVisibilityToggle
                   visible={showPassword}
                   onToggle={() => setShowPassword((prev) => !prev)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                 />
               </div>
               {errors.password && (
@@ -502,7 +513,7 @@ export default function RegisterPage() {
                   }}
                   autoComplete="new-password"
                   placeholder={t("auth.confirmPasswordPlaceholder")}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   aria-invalid={Boolean(errors.confirmPassword)}
                   aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
                   className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -510,7 +521,7 @@ export default function RegisterPage() {
                 <PasswordVisibilityToggle
                   visible={showConfirmPassword}
                   onToggle={() => setShowConfirmPassword((prev) => !prev)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                 />
               </div>
               {errors.confirmPassword && (
@@ -522,7 +533,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || rateLimitRetryAfter !== null}
               aria-busy={isSubmitting || undefined}
               className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
             >

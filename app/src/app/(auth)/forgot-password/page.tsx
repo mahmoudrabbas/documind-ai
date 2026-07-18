@@ -62,6 +62,7 @@ export default function ForgotPasswordPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (rateLimitRetryAfter !== null) return;
     if (submissionPending.current) return;
     setError("");
     setRateLimitRetryAfter(null);
@@ -204,7 +205,7 @@ export default function ForgotPasswordPage() {
                     }}
                     autoComplete="organization"
                     placeholder={t("auth.companySlugPlaceholder")}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || rateLimitRetryAfter !== null}
                     aria-invalid={Boolean(fieldErrors.companySlug)}
                     aria-describedby={
                       fieldErrors.companySlug ? "companySlug-error" : "companySlug-help"
@@ -240,7 +241,7 @@ export default function ForgotPasswordPage() {
                     }}
                     autoComplete="email"
                     placeholder={t("auth.emailPlaceholder")}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || rateLimitRetryAfter !== null}
                     aria-invalid={Boolean(fieldErrors.email)}
                     aria-describedby={fieldErrors.email ? "email-error" : undefined}
                     className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -254,7 +255,7 @@ export default function ForgotPasswordPage() {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   aria-busy={isSubmitting || undefined}
                   className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2"
                 >

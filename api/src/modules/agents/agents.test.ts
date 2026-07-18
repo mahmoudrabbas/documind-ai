@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import { disconnectRedis } from "../../db/redis.js";
 import AgentRunModel from "../../db/models/agentRun.model.js";
@@ -25,7 +26,7 @@ const app: Express = (await import("../../app.js")).default;
 
 const TEST_PASSWORD = "StrongPass123!";
 
-let mongoServer: MongoMemoryReplSet;
+let mongoServer: MongoMemoryReplSet | null = null;
 
 async function createTenantAndAdmin() {
   const tenant = await TenantModel.create({
@@ -78,16 +79,20 @@ async function login(
 }
 
 before(async () => {
-  mongoServer = await MongoMemoryReplSet.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    replSet: { count: 1 },
-    instanceOpts: [
-      {
-        launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000),
-      },
-    ],
-  });
-  await mongoose.connect(mongoServer.getUri(), { dbName: "agents-test" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "agents-test" });
+  } else {
+    mongoServer = await MongoMemoryReplSet.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      replSet: { count: 1 },
+      instanceOpts: [
+        {
+          launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000),
+        },
+      ],
+    });
+    await mongoose.connect(mongoServer.getUri(), { dbName: "agents-test" });
+  }
 });
 
 beforeEach(async () => {
@@ -102,9 +107,7 @@ beforeEach(async () => {
 after(async () => {
   await disconnectRedis();
   await mongoose.disconnect();
-  if (mongoServer) {
-    await mongoServer.stop();
-  }
+  if (mongoServer) await mongoServer.stop();
 });
 
 void test("ToolRegistry rejects unregistered tool", async () => {
@@ -443,62 +446,63 @@ void test("Approval reject sets run to failed", async () => {
 
 void test("Super Admin can list all tenant agent runs", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  await createTenantAndAdmin();
-  const token = await login(port);
+  try {
+    const port = (server.address() as { port: number }).port;
+    await createTenantAndAdmin();
+    const token = await login(port);
 
-  await fetch(`http://127.0.0.1:${port}/agents/runs`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ workflowName: "w", agentName: "a", input: {} }),
-  });
-
-  const superAdmin = await UserModel.create({
-    tenantId: (await TenantModel.findOne({ slug: "test-corp" }))!.id,
-    name: "Super Admin",
-    email: "super@test.com",
-    passwordHash: await hashPassword(TEST_PASSWORD),
-    role: "SUPER_ADMIN",
-    status: "active",
-    emailVerified: true,
-    emailVerifiedAt: new Date(),
-  });
-  await UserModel.updateOne(
-    { _id: superAdmin.id },
-    {
-      $set: {
-        tenantId: (await TenantModel.findOne({ slug: "test-corp" }))!.id,
+    await fetch(`http://127.0.0.1:${port}/agents/runs`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       },
-    },
-  );
+      body: JSON.stringify({ workflowName: "w", agentName: "a", input: {} }),
+    });
 
-  const saLogin = await fetch(`http://127.0.0.1:${port}/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      companySlug: "test-corp",
+    const platformTenant = await TenantModel.create({
+      name: "DocuMind Platform",
+      slug: PLATFORM_TENANT_SLUG,
+      status: "active",
+      plan: "free",
+      isSystemTenant: true,
+    });
+    await UserModel.create({
+      tenantId: platformTenant.id,
+      name: "Super Admin",
       email: "super@test.com",
-      password: TEST_PASSWORD,
-    }),
-  });
-  const saToken = (await saLogin.json()).data.tokens.accessToken;
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "SUPER_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
 
-  const adminList = await fetch(
-    `http://127.0.0.1:${port}/super-admin/agents/runs`,
-    {
-      headers: { Authorization: `Bearer ${saToken}` },
-    },
-  );
-  assert.equal(adminList.status, 200);
-  const adminBody = (await adminList.json()) as {
-    data: { runs: Array<{ id: string }> };
-  };
-  assert.ok(adminBody.data.runs.length >= 1);
+    const saLogin = await fetch(`http://127.0.0.1:${port}/auth/super-admin/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "super@test.com",
+        password: TEST_PASSWORD,
+      }),
+    });
+    assert.equal(saLogin.status, 200);
+    const saToken = (await saLogin.json()).data.tokens.accessToken;
 
-  await closeServer(server);
+    const adminList = await fetch(
+      `http://127.0.0.1:${port}/super-admin/agents/runs`,
+      {
+        headers: { Authorization: `Bearer ${saToken}` },
+      },
+    );
+    assert.equal(adminList.status, 200);
+    const adminBody = (await adminList.json()) as {
+      data: { runs: Array<{ id: string }> };
+    };
+    assert.ok(adminBody.data.runs.length >= 1);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("Trace redaction does not leak secrets in run output", async () => {

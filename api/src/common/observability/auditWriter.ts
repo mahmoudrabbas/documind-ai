@@ -1,4 +1,8 @@
-import type { AuditEventInput } from "./auditEvents.js";
+import {
+  type AuditEventInput,
+  normalizeAuditActorRole,
+  resolveAuditActorKind,
+} from "./auditEvents.js";
 import { getCurrentTraceContext } from "../utils/requestContext.js";
 import { redactObject } from "./redactionRules.js";
 import { logger } from "../logger/logger.js";
@@ -25,6 +29,13 @@ export class MongoAuditWriter implements AuditWriter {
         actorIdVal = new mongoose.Types.ObjectId(actorIdVal);
       }
 
+      const actorRole = normalizeAuditActorRole(event.actorRole);
+      const actorKind = resolveAuditActorKind({
+        actorId: event.actorId ?? ctx?.actorId,
+        actorKind: event.actorKind,
+        actorRole,
+      });
+
       const payload = {
         tenantId: tenantIdVal,
         userId: actorIdVal,
@@ -33,7 +44,8 @@ export class MongoAuditWriter implements AuditWriter {
         action: event.action,
         actorId: actorIdVal,
         actorEmail: event.actorEmail ?? "system@documind.ai",
-        actorRole: event.actorRole || "SYSTEM",
+        actorRole,
+        actorKind,
         changes: redactedChanges,
         traceId: ctx?.traceId,
         requestId: ctx?.requestId,

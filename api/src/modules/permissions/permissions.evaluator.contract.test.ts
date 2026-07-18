@@ -225,13 +225,17 @@ runContract("InMemoryPermissionEvaluator", () => ({
   deleteRole: async (...args) => { fake.removeRole(...args); },
 }));
 
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryServer | null = null;
 before(async () => {
-  mongo = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
-  });
-  await mongoose.connect(mongo.getUri(), { dbName: "permission-contract" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "permission-contract" });
+  } else {
+    mongo = await MongoMemoryServer.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
+    });
+    await mongoose.connect(mongo.getUri(), { dbName: "permission-contract" });
+  }
 });
 beforeEach(async () => {
   fake.clear();

@@ -17,6 +17,10 @@ import type { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import type { AuthIdentity } from "../auth/auth.types.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
+import {
+  LEGACY_PLATFORM_TENANT_SLUGS,
+  PLATFORM_TENANT_SLUG,
+} from "../../common/auth/platformTenant.js";
 function serializeTenant(
   tenant: TenantDocument,
   stats: TenantPublicView["stats"] = { users: 0, documents: 0, questions: 0 },
@@ -43,7 +47,7 @@ export async function listTenants(
   // Build filter object
   const filter: Record<string, unknown> = {
     isSystemTenant: { $ne: true },
-    slug: { $nin: ["documind-ai", "__documind_platform__"] },
+    slug: { $nin: [PLATFORM_TENANT_SLUG, ...LEGACY_PLATFORM_TENANT_SLUGS] },
   };
 
   if (status) {

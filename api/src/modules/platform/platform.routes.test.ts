@@ -12,7 +12,7 @@ test("every platform control-center route is protected by Super Admin authorizat
   const source = await readFile(sourceUrl, "utf8");
   assert.match(
     source,
-    /router\.use\(authenticate, authorize\("SUPER_ADMIN"\)\)/,
+    /router\.use\(authenticate, authorize\("SUPER_ADMIN"\), requirePlatformTenant\)/,
   );
   for (const route of [
     "/overview",

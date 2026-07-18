@@ -28,16 +28,20 @@ import {
   type RoleOperationContext,
 } from "./roles.service.js";
 
-let mongo: MongoMemoryReplSet;
+let mongo: MongoMemoryReplSet | null = null;
 let audit: InMemoryAuditWriter;
 
 before(async () => {
-  mongo = await MongoMemoryReplSet.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    replSet: { count: 1 },
-    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
-  });
-  await mongoose.connect(mongo.getUri(), { dbName: "roles-phase2" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "roles-phase2" });
+  } else {
+    mongo = await MongoMemoryReplSet.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      replSet: { count: 1 },
+      instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+    });
+    await mongoose.connect(mongo.getUri(), { dbName: "roles-phase2" });
+  }
 });
 
 beforeEach(async () => {
@@ -51,7 +55,7 @@ after(async () => {
   setAuditWriter(null);
   setMetricRecorder(null);
   await mongoose.disconnect();
-  await mongo?.stop();
+  if (mongo) await mongo.stop();
 });
 
 async function fixture(slug = new mongoose.Types.ObjectId().toString()) {
@@ -108,7 +112,7 @@ test("direct services enforce authorization, delegation, archive state, and tena
   const first = await fixture("first-tenant");
   const second = await fixture("second-tenant");
   await assert.rejects(
-    createRole({ name: "Bypass", baseRole: "EMPLOYEE", grants: [] }, { tenantId: first.tenant.id, actorId: first.employee.id }),
+    createRole({ name: "Bypass", baseRole: "EMPLOYEE", grants: [] }, { tenantId: first.tenant.id, actorId: first.employee.id, actorRole: first.employee.role }),
     (error: unknown) => (error as { code?: string }).code === "PERMISSION_REQUIRED",
   );
   await assert.rejects(
@@ -141,7 +145,11 @@ test("delegation rejects scope widening and direct-service crafted grants", asyn
     grants: [{ permission: Permission.DOCUMENTS_UPDATE, scopes: { departmentIds: [departmentId] } }],
   }, context);
   await assignRole({ userId: employee.id, roleVersion: scoped.role.version }, context, scoped.role.id);
-  const employeeActor = { tenantId: tenant.id, actorId: employee.id };
+  const employeeActor = {
+    tenantId: tenant.id,
+    actorId: employee.id,
+    actorRole: employee.role,
+  };
 
   await assertDelegableGrants(employeeActor, [{
     permission: Permission.DOCUMENTS_UPDATE,

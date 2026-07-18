@@ -2,6 +2,8 @@ import mongoose, { Schema } from "mongoose";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 
 export interface UserDocument extends mongoose.Document {
+  _id: mongoose.Types.ObjectId;
+  id: string;
   tenantId: mongoose.Types.ObjectId;
   name: string;
   email: string;

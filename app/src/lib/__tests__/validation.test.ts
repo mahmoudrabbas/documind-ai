@@ -56,6 +56,12 @@ describe("validation helpers", () => {
       expect(validateCompanySlug("a".repeat(81))).toBe("auth.companySlugInvalid");
     });
 
+    it("returns a reserved error key for platform tenant slugs", () => {
+      expect(validateCompanySlug("documind.ai")).toBe("auth.companySlugReserved");
+      expect(validateCompanySlug("documind-ai")).toBe("auth.companySlugReserved");
+      expect(validateCompanySlug("__documind_platform__")).toBe("auth.companySlugReserved");
+    });
+
     it("returns error key for invalid characters or structure", () => {
       expect(validateCompanySlug("Acme-Consulting")).toBe("auth.companySlugInvalid"); // uppercase
       expect(validateCompanySlug("acme_consulting")).toBe("auth.companySlugInvalid"); // underscore

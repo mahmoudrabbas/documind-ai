@@ -8,17 +8,21 @@ import { InMemoryAuditWriter } from "../../common/observability/auditWriter.js";
 import { setAuditWriter } from "../../common/observability/index.js";
 import { deleteUser, updateUser } from "./users.service.js";
 
-let replSet: MongoMemoryReplSet;
+let replSet: MongoMemoryReplSet | null = null;
 let tenantId: string;
 let admins: Array<{ id: string; email: string }>;
 
 before(async () => {
-  replSet = await MongoMemoryReplSet.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    replSet: { count: 1 },
-    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
-  });
-  await mongoose.connect(replSet.getUri(), { dbName: "last-admin" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "last-admin" });
+  } else {
+    replSet = await MongoMemoryReplSet.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      replSet: { count: 1 },
+      instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+    });
+    await mongoose.connect(replSet.getUri(), { dbName: "last-admin" });
+  }
 });
 
 beforeEach(async () => {
@@ -36,7 +40,7 @@ beforeEach(async () => {
 after(async () => {
   setAuditWriter(null);
   await mongoose.disconnect();
-  await replSet.stop();
+  if (replSet) await replSet.stop();
 });
 
 const actor = (id = admins[1]!.id) => ({ userId: id, email: "operator@example.test", role: "COMPANY_ADMIN" as const });

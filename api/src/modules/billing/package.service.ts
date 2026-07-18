@@ -5,6 +5,7 @@ import PackageModel, {
 import { AppError } from "../../common/errors/AppError.js";
 import { NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
 import type { PackageSnapshot, PackageEntitlement } from "./billing.types.js";
 
 // ── Domain input types ──────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ export interface CreatePackageInput {
 export interface BillingActor {
   userId: string;
   email?: string;
-  role?: string;
+  role?: BaseRole;
 }
 
 export interface CreateVersionResult {
@@ -55,6 +56,7 @@ function writeAudit(
     actorId: actor?.userId,
     actorEmail: actor?.email,
     actorRole: actor?.role,
+    actorKind: actor ? "USER" : "SYSTEM",
   }).catch((err: unknown) => {
     console.error("Audit write failed (non-blocking):", err);
   });
@@ -196,7 +198,7 @@ export async function archivePackage(
   const pkg = await PackageModel.findByIdAndUpdate(
     id,
     { $set: { active: false } },
-    { new: true, runValidators: true },
+    { returnDocument: "after", runValidators: true },
   )
     .lean()
     .exec();

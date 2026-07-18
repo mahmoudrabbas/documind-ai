@@ -15,6 +15,7 @@ export interface VerifyEmailInput {
 
 export interface ResendVerificationEmailInput {
   email: string;
+  companySlug: string;
 }
 
 export interface ForgotPasswordInput {

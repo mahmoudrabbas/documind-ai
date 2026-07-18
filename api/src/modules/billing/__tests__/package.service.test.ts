@@ -398,7 +398,7 @@ describe("PackageService", () => {
       expect(mockPackageModel.findByIdAndUpdate).toHaveBeenCalledWith(
         PKG_ID,
         { $set: { active: false } },
-        { new: true, runValidators: true },
+        { returnDocument: "after", runValidators: true },
       );
     });
 

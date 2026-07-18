@@ -1,3 +1,5 @@
+import type { BaseRole } from "../auth/baseRoles.js";
+
 export type AuditAction =
   // Auth
   | "AUTH_LOGIN_SUCCESS"
@@ -10,6 +12,7 @@ export type AuditAction =
   | "AUTH_EMAIL_VERIFIED"
   // Users
   | "USER_INVITED"
+  | "USER_INVITATION_RESENT"
   | "USER_UPDATED"
   | "USER_DELETED"
   | "USER_ROLE_CHANGED"
@@ -33,8 +36,18 @@ export type AuditAction =
   | "DOCUMENT_UPDATED"
   | "DOCUMENT_METADATA_UPDATED"
   | "DOCUMENT_DELETED"
+  | "DOCUMENT_SOFT_DELETED"
+  | "DOCUMENT_PERMANENTLY_DELETED"
+  | "DOCUMENT_REPLACED"
   | "DOCUMENT_ARCHIVED"
   | "DOCUMENT_RESTORED"
+  // OCR & Quality
+  | "OCR_TRIGGERED"
+  | "OCR_COMPLETED"
+  | "OCR_FAILED"
+  | "QUALITY_ASSESSED"
+  | "QUALITY_REVIEWED"
+  | "OCR_PAGES_RETRIED"
   // Platform
   | "PACKAGE_CREATED"
   | "PACKAGE_UPDATED"
@@ -60,6 +73,8 @@ export type AuditResourceType =
   | "User"
   | "Role"
   | "Document"
+  | "DocumentQuality"
+  | "OcrPageResult"
   | "Package"
   | "Subscription"
   | "PlatformSetting"
@@ -69,6 +84,7 @@ export type AuditResourceType =
   | "Permission";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
+export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";
 
 export interface AuditEventInput {
   action: AuditAction;
@@ -82,5 +98,48 @@ export interface AuditEventInput {
   tenantId?: string;
   actorId?: string;
   actorEmail?: string;
-  actorRole?: string;
+  actorRole?: BaseRole | null;
+  actorKind?: AuditActorKind;
+}
+
+export function normalizeAuditActorRole(
+  actorRole: unknown,
+): BaseRole | null {
+  if (actorRole === undefined || actorRole === null || actorRole === "") {
+    return null;
+  }
+
+  if (actorRole === "SUPER_ADMIN") {
+    return actorRole;
+  }
+
+  if (actorRole === "COMPANY_ADMIN") {
+    return actorRole;
+  }
+
+  if (actorRole === "EMPLOYEE") {
+    return actorRole;
+  }
+
+  return null;
+}
+
+export function resolveAuditActorKind(input: {
+  actorId?: string;
+  actorKind?: AuditActorKind;
+  actorRole?: BaseRole | null;
+}): AuditActorKind {
+  if (input.actorKind) {
+    return input.actorKind;
+  }
+
+  if (input.actorId && input.actorId !== "system") {
+    return "USER";
+  }
+
+  if (normalizeAuditActorRole(input.actorRole)) {
+    return "USER";
+  }
+
+  return "SYSTEM";
 }

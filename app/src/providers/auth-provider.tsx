@@ -144,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiClient("/auth/logout-all", {
         method: "POST",
         credentials: "include",
+        headers: { "X-Confirm-Logout-All": "true" },
       });
     } finally {
       clearAccessToken();

@@ -97,7 +97,7 @@ export default function LoginPage() {
       case "EMAIL_NOT_VERIFIED":
         return t("auth.errorEmailNotVerified");
       case "INVALID_CREDENTIALS":
-        return t("auth.errorINVALID_CREDENTIALS");
+        return t("auth.errorInvalidCredentials");
       case "ACCOUNT_NOT_ACTIVE":
         return t("auth.errorAccountNotActive");
       case "TENANT_NOT_ACTIVE":
@@ -126,6 +126,7 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (rateLimitRetryAfter !== null) return;
     if (submissionPending.current) return;
     setFormError("");
     setRateLimitRetryAfter(null);
@@ -175,6 +176,10 @@ export default function LoginPage() {
     setRateLimitRetryAfter(null);
   }, []);
 
+  const resendVerificationHref = `/resend-verification?companySlug=${encodeURIComponent(
+    companySlug.trim().toLowerCase(),
+  )}&email=${encodeURIComponent(email.trim().toLowerCase())}`;
+
   return (
     <main
       key={locale}
@@ -190,6 +195,16 @@ export default function LoginPage() {
 
         {/* Brand Header */}
         <div className="mb-12">
+          <Link
+            href="/"
+            aria-label={t("auth.backToHome")}
+            className="mb-lg inline-flex items-center gap-xs text-label-md font-semibold text-primary transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+          >
+            <span className="material-symbols-outlined text-lg" aria-hidden="true">
+              arrow_back
+            </span>
+            {t("auth.backToHome")}
+          </Link>
           <div className="mb-sm flex items-center gap-base">
             <span
               className="material-symbols-outlined text-3xl text-primary"
@@ -256,7 +271,7 @@ export default function LoginPage() {
                 }}
                 autoComplete="organization"
                 placeholder={t("auth.companySlugPlaceholder")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 aria-invalid={Boolean(errors.companySlug)}
                 aria-describedby={errors.companySlug ? "companySlug-error" : undefined}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -286,7 +301,7 @@ export default function LoginPage() {
                 }}
                 autoComplete="email"
                 placeholder={t("auth.emailPlaceholder")}
-                disabled={isSubmitting}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 aria-invalid={Boolean(errors.email)}
                 aria-describedby={errors.email ? "email-error" : undefined}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -315,7 +330,7 @@ export default function LoginPage() {
                   }}
                   autoComplete="current-password"
                   placeholder={t("auth.passwordPlaceholder")}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   aria-invalid={Boolean(errors.password)}
                   aria-describedby={errors.password ? "password-error" : undefined}
                   className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -323,7 +338,7 @@ export default function LoginPage() {
                 <PasswordVisibilityToggle
                   visible={showPassword}
                   onToggle={() => setShowPassword((prev) => !prev)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                 />
               </div>
               {errors.password && (
@@ -349,9 +364,18 @@ export default function LoginPage() {
               </Link>
             </div>
 
+            <div className="text-center">
+              <Link
+                href={resendVerificationHref}
+                className="text-label-md font-semibold text-primary hover:underline"
+              >
+                {t("auth.resendVerificationLink")}
+              </Link>
+            </div>
+
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || rateLimitRetryAfter !== null}
               aria-busy={isSubmitting || undefined}
               className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2"
             >

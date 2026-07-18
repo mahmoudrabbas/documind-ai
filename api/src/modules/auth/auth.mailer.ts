@@ -15,7 +15,7 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
   if (process.env.NODE_ENV === "test") return;
 
   if (!config.SEND_EMAILS && config.NODE_ENV === "development") {
-    console.log(`[email-verification] ${input.verificationUrl}`);
+    console.info("[email-verification] delivery disabled in development");
     return;
   }
 
@@ -36,7 +36,7 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to send verification email";
     if (config.NODE_ENV !== "production") {
-      console.warn(`[email-verification] ${message}. Verification URL: ${input.verificationUrl}`);
+      console.warn(`[email-verification] ${message}`);
       return;
     }
     throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send verification email", { details: message });

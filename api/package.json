@@ -20,6 +20,8 @@
     "migrate:roles:phase1:apply": "tsx src/scripts/migrate-roles-phase1.ts --apply",
     "migrate:users:employee": "tsx src/scripts/migrate-users-employee.ts --dry-run",
     "migrate:users:employee:apply": "tsx src/scripts/migrate-users-employee.ts --apply",
+    "migrate:platform-tenant": "tsx src/scripts/migrate-platform-tenant-invariants.ts --dry-run",
+    "migrate:platform-tenant:apply": "tsx src/scripts/migrate-platform-tenant-invariants.ts --apply",
     "pretypecheck": "npm run build --workspace workers",
     "prebuild": "npm run build --workspace workers",
     "pretest": "npm run build --workspace workers"
@@ -42,6 +44,7 @@
     "pino": "^10.3.1",
     "prom-client": "^15.1.3",
     "rate-limit-redis": "^5.0.0",
+    "tesseract.js": "^5.1.1",
     "workers": "*",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"

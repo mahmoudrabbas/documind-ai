@@ -25,4 +25,4 @@ curl -i \
 6. Set `ENABLE_SUPER_ADMIN_BOOTSTRAP=false`, remove the key where operationally possible, and restart/redeploy immediately.
 7. Open `https://<frontend-domain>/super-admin/login`, sign in, and confirm the redirect to `/super-admin/tenants`.
 
-When disabled, the bootstrap endpoint returns 404. The reserved `__documind_platform__` tenant exists only because the current user, JWT, refresh-session, and `/auth/me` contracts require a tenant identifier. It is excluded from platform tenant management and cannot be registered publicly.
+When disabled, the bootstrap endpoint returns 404. The reserved `documind.ai` tenant exists because the current user, JWT, refresh-session, and `/auth/me` contracts require a trusted platform tenant identifier. It is excluded from platform tenant management and cannot be registered publicly.

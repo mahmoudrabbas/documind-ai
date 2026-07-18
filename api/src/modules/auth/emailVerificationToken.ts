@@ -2,12 +2,16 @@ import crypto from "node:crypto";
 import { config } from "../../config/index.js";
 
 const EMAIL_VERIFICATION_PURPOSE = "email_verification";
+export const USER_INVITATION_PURPOSE = "user_invitation";
+type EmailVerificationPurpose =
+  | typeof EMAIL_VERIFICATION_PURPOSE
+  | typeof USER_INVITATION_PURPOSE;
 
 export interface EmailVerificationTokenPayload {
   sub: string;
   tenantId: string;
   email: string;
-  purpose: typeof EMAIL_VERIFICATION_PURPOSE;
+  purpose: EmailVerificationPurpose;
   jti: string;
   exp: number;
 }
@@ -16,7 +20,7 @@ interface SignEmailVerificationTokenInput {
   userId: string;
   tenantId: string;
   email: string;
-  purpose?: string;
+  purpose?: EmailVerificationPurpose;
   expiresIn?: string;
 }
 

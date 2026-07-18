@@ -28,6 +28,7 @@ import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.ro
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
+import processingRoutes from "./modules/processing/processing.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -75,6 +76,7 @@ const corsOptions: CorsOptions = {
     "Authorization",
     "X-Request-ID",
     "X-Correlation-ID",
+    "X-Confirm-Logout-All",
   ],
   exposedHeaders: ["X-Request-ID"],
   credentials: true,
@@ -123,6 +125,7 @@ app.use("/super-admin", paymentWebhookAdminRoutes);
 app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
+app.use("/documents", processingRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

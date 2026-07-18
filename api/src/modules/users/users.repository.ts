@@ -1,4 +1,4 @@
-import type { UserDocument } from "../../db/models/user.model.js";
+import type { Types } from "mongoose";
 import UserModel from "../../db/models/user.model.js";
 import {
   tenantScopedDeleteOne,
@@ -10,6 +10,7 @@ import {
   findTenantById,
   findUserDocumentByTenantAndEmail,
   findUserByTenantAndId,
+  type UserSingleRecord,
 } from "../auth/auth.repository.js";
 
 export {
@@ -27,16 +28,16 @@ export function findUsersByTenant(
   tenantId: string,
   page: number,
   pageSize: number,
-) {
+): Promise<UserSingleRecord[]> {
   return tenantScopedFind(UserModel, tenantId, {})
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
-    .populate<{ customRoleId: { _id: string; name: string } | null }>(
+    .populate<{ customRoleId: { _id: Types.ObjectId; name: string } | null }>(
       "customRoleId",
       "name",
     )
-    .lean<UserDocument[]>()
+    .lean<UserSingleRecord[]>()
     .exec();
 }
 

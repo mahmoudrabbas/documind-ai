@@ -31,24 +31,23 @@ const TenantScopedModel =
   (mongoose.models.TenantScopedTest as Model<TenantScopedDoc>) ||
   mongoose.model<TenantScopedDoc>("TenantScopedTest", tenantScopedSchema);
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryServer | null = null;
 
 before(async () => {
-  // Pin the MongoDB binary version to a supported release for CI/container environments.
-  // This avoids mongodb-memory-server trying the latest version selection that may not
-  // be available for the current platform or distro.
-  mongoServer = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
-  });
-  await mongoose.connect(mongoServer.getUri(), {
-    dbName: "tenant-scoped-test",
-  });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "tenant-scoped-test" });
+  } else {
+    mongoServer = await MongoMemoryServer.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
+    });
+    await mongoose.connect(mongoServer.getUri(), { dbName: "tenant-scoped-test" });
+  }
 });
 
 after(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  if (mongoServer) await mongoServer.stop();
 });
 
 afterEach(async () => {

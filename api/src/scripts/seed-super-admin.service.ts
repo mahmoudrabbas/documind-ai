@@ -1,5 +1,6 @@
 import TenantModel from "../db/models/tenant.model.js";
 import UserModel from "../db/models/user.model.js";
+import { PLATFORM_TENANT_SLUG } from "../common/auth/platformTenant.js";
 import { hashPassword } from "../modules/auth/passwordHashing.js";
 
 export interface SuperAdminSeedInput {
@@ -13,11 +14,7 @@ export interface SuperAdminSeedInput {
 export function normalizeSeedInput(
   input: SuperAdminSeedInput,
 ): SuperAdminSeedInput {
-  const platformSlug = input.platformSlug
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+  const platformSlug = input.platformSlug.toLowerCase().trim();
   const normalized = {
     platformName: input.platformName.trim(),
     platformSlug,
@@ -36,6 +33,11 @@ export function normalizeSeedInput(
     throw new Error(
       "SEED_SUPER_ADMIN_PASSWORD must contain at least 12 characters",
     );
+  if (platformSlug !== PLATFORM_TENANT_SLUG) {
+    throw new Error(
+      `SEED_SUPER_ADMIN_PLATFORM_SLUG must be ${PLATFORM_TENANT_SLUG}`,
+    );
+  }
   return normalized;
 }
 
@@ -52,7 +54,7 @@ export async function seedSuperAdmin(rawInput: SuperAdminSeedInput) {
       },
       $setOnInsert: { slug: input.platformSlug },
     },
-    { upsert: true, new: true, runValidators: true },
+    { upsert: true, returnDocument: "after", runValidators: true },
   );
   const conflictingUser = await UserModel.findOne({
     email: input.email,
@@ -77,7 +79,7 @@ export async function seedSuperAdmin(rawInput: SuperAdminSeedInput) {
       },
       $setOnInsert: { role: "SUPER_ADMIN" },
     },
-    { upsert: true, new: true, runValidators: true },
+    { upsert: true, returnDocument: "after", runValidators: true },
   );
   return { tenantId: tenant.id, userId: user.id, email: user.email };
 }

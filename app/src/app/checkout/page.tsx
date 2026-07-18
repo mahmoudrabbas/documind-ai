@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { createCheckoutSession, getSubscriptionStatus } from "@/services/billing.service";
 import type { PublicPackage } from "@/types/api/billing.types";
@@ -33,7 +32,6 @@ function usePublicPackages() {
 }
 
 export default function CheckoutPage() {
-  const router = useRouter();
   const { packages, loading, error } = usePublicPackages();
   const [selectedPkg, setSelectedPkg] = useState<string>("");
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
