@@ -10,6 +10,19 @@ import type {
   ForgotPasswordInput,
   ResetPasswordInput,
 } from "./auth.types.js";
+import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
+
+const customerSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const customerOrPlatformSlug = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(2, "slug is required")
+  .max(80)
+  .refine(
+    (value) => value === PLATFORM_TENANT_SLUG || customerSlugPattern.test(value),
+    "slug contains invalid characters",
+  );
 
 const registerSchema = z
   .object({
@@ -44,6 +57,7 @@ const verifyEmailSchema = z
 const resendVerificationEmailSchema = z
   .object({
     email: z.string().trim().toLowerCase().email("email must be a valid address"),
+    companySlug: z.string().trim().toLowerCase().min(1, "companySlug is required").max(80),
   })
   .strict();
 
@@ -59,14 +73,14 @@ const superAdminLoginSchema = z.object({ email: z.string().trim().toLowerCase().
 const forgotPasswordSchema = z
   .object({
     email: z.string().trim().toLowerCase().email("email must be a valid address"),
-    slug: z.string().trim().toLowerCase().min(2, "slug is required").max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug contains invalid characters"),
+    slug: customerOrPlatformSlug,
   })
   .strict();
 
 const resetPasswordSchema = z
   .object({
     token: z.string().trim().min(1, "token is required"),
-    slug: z.string().trim().toLowerCase().min(2, "slug is required").max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug contains invalid characters"),
+    slug: customerOrPlatformSlug,
     password: z
       .string()
       .min(8, "password must be at least 8 characters")

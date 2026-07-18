@@ -1,13 +1,23 @@
 import type { NextFunction, Request, Response } from "express";
+import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   inviteUser,
   listUsers,
   updateUser,
   deleteUser,
+  resendInvitation,
   setPasswordFromInvite,
   getInviteDetails,
 } from "./users.service.js";
+
+function requireAuthRole(req: Request) {
+  if (!req.auth || !isBaseRole(req.auth.role)) {
+    throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+  }
+
+  return req.auth.role;
+}
 
 export async function inviteUserController(
   req: Request,
@@ -64,6 +74,39 @@ export async function setPasswordFromInviteController(
   }
 }
 
+export async function resendInvitationController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth || !req.tenantId) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+
+    const targetUserId = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
+    if (!targetUserId) {
+      throw new AppError(400, "BAD_REQUEST", "Missing user id parameter");
+    }
+
+    const result = await resendInvitation(
+      req.tenantId,
+      targetUserId,
+      req.auth.userId,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Invitation email resent successfully.",
+      data: result,
+    });
+  } catch (error) {
+    handleUserError(error, res, next);
+  }
+}
+
 export async function listUsersController(
   req: Request,
   res: Response,
@@ -105,7 +148,7 @@ export async function updateUserController(
     const result = await updateUser(req.body, req.tenantId, targetUserId, {
       userId: req.auth.userId,
       email: req.auth.email,
-      role: req.auth.role,
+      role: requireAuthRole(req),
     });
 
     res.status(200).json({
@@ -137,7 +180,7 @@ export async function deleteUserController(
     const result = await deleteUser(req.tenantId, targetUserId, {
       userId: req.auth.userId,
       email: req.auth.email,
-      role: req.auth.role,
+      role: requireAuthRole(req),
     });
 
     res.status(200).json({

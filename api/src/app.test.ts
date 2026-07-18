@@ -25,7 +25,11 @@ import AuditLogModel from "./db/models/auditLog.model.js";
 import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import DocumentModel from "./db/models/document.model.js";
 import UsageLogModel from "./db/models/usageLog.model.js";
+import { PLATFORM_TENANT_SLUG } from "./common/auth/platformTenant.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
+import { USER_INVITATION_PURPOSE } from "./modules/auth/emailVerificationToken.js";
+import { createPasswordResetToken } from "./modules/auth/passwordResetToken.js";
+import { updateUserPasswordResetToken } from "./modules/auth/auth.repository.js";
 import {
   hashPassword,
   verifyPassword,
@@ -60,6 +64,11 @@ function closeServer(server: ReturnType<typeof app.listen>) {
 }
 
 const TEST_PASSWORD = "StrongPass123!";
+const GENERIC_PUBLIC_RESEND_RESPONSE = {
+  success: true,
+  message:
+    "If the account exists and requires verification, we'll send an email. Already verified? You can sign in.",
+};
 
 async function createActiveTenantAdmin(
   options: {
@@ -495,7 +504,9 @@ test("invalid invite password preserves the token and successful acceptance cons
     emailVerified: false,
     emailVerifiedAt: null,
   });
-  const token = await createEmailVerificationTokenForUser(user);
+  const token = await createEmailVerificationTokenForUser(user, {
+    purpose: USER_INVITATION_PURPOSE,
+  });
   const server = await createServer();
   try {
     const port = (server.address() as AddressInfo).port;
@@ -958,7 +969,7 @@ test("rejects expired email verification tokens", async () => {
   }
 });
 
-test("rejects email verification tokens with the wrong purpose", async () => {
+test("rejects password reset tokens as verification or invitation tokens", async () => {
   const server = await createServer();
 
   try {
@@ -979,9 +990,17 @@ test("rejects email verification tokens with the wrong purpose", async () => {
     const user = await UserModel.findOne({ email: "sarah@acme.com" }).exec();
     assert.ok(user);
 
-    const token = await createEmailVerificationTokenForUser(user, {
-      purpose: "password_reset",
+    const resetToken = createPasswordResetToken({
+      userId: user.id,
+      tenantId: user.tenantId.toString(),
     });
+    await updateUserPasswordResetToken(
+      user.tenantId.toString(),
+      user.id,
+      resetToken.tokenHash,
+      resetToken.expiresAt,
+    );
+
     const response = await fetch(
       `http://127.0.0.1:${address.port}/auth/verify-email`,
       {
@@ -989,7 +1008,7 @@ test("rejects email verification tokens with the wrong purpose", async () => {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token: resetToken.token }),
       },
     );
     const body = (await response.json()) as {
@@ -1003,6 +1022,26 @@ test("rejects email verification tokens with the wrong purpose", async () => {
     assert.equal(body.message, "Invalid or expired verification token");
     assert.equal(body.error, "INVALID_OR_EXPIRED_VERIFICATION_TOKEN");
     assertNoSensitiveFields(body);
+
+    const inviteResponse = await fetch(
+      `http://127.0.0.1:${address.port}/users/validate-invite`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ token: resetToken.token }),
+      },
+    );
+    const inviteBody = (await inviteResponse.json()) as {
+      success: false;
+      error: { code: string };
+    };
+
+    assert.equal(inviteResponse.status, 400);
+    assert.equal(inviteBody.success, false);
+    assert.equal(inviteBody.error.code, "INVITE_INVALID");
+    assertNoSensitiveFields(inviteBody);
   } finally {
     await closeServer(server);
   }
@@ -1033,7 +1072,10 @@ test("resend verification email returns a generic response", async () => {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ email: "sarah@acme.com" }),
+        body: JSON.stringify({
+          companySlug: "acme-consulting",
+          email: "sarah@acme.com",
+        }),
       },
     );
     const unknownResponse = await fetch(
@@ -1043,7 +1085,10 @@ test("resend verification email returns a generic response", async () => {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ email: "missing@example.com" }),
+        body: JSON.stringify({
+          companySlug: "acme-consulting",
+          email: "missing@example.com",
+        }),
       },
     );
     const knownBody = await knownResponse.json();
@@ -1054,11 +1099,224 @@ test("resend verification email returns a generic response", async () => {
     assert.deepEqual(knownBody, {
       success: true,
       message:
-        "If the email exists and is not verified, a verification email has been sent",
+        "If the account exists and requires verification, we'll send an email. Already verified? You can sign in.",
     });
     assert.deepEqual(unknownBody, knownBody);
     assertNoSensitiveFields(knownBody);
     assertNoSensitiveFields(unknownBody);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("resend verification only rotates tokens for eligible tenant-scoped unverified accounts", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const tenantA = await TenantModel.create({
+      name: "Tenant A",
+      slug: "tenant-a",
+      status: "pending_verification",
+      plan: "free",
+    });
+    const tenantB = await TenantModel.create({
+      name: "Tenant B",
+      slug: "tenant-b",
+      status: "pending_verification",
+      plan: "free",
+    });
+    const unverifiedA = await UserModel.create({
+      tenantId: tenantA._id,
+      name: "Unverified A",
+      email: "shared@example.com",
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "pending_email_verification",
+      emailVerified: false,
+      emailVerifiedAt: null,
+    });
+    const unverifiedB = await UserModel.create({
+      tenantId: tenantB._id,
+      name: "Unverified B",
+      email: "shared@example.com",
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "pending_email_verification",
+      emailVerified: false,
+      emailVerifiedAt: null,
+    });
+    const verified = await UserModel.create({
+      tenantId: tenantA._id,
+      name: "Verified",
+      email: "verified@example.com",
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    const disabled = await UserModel.create({
+      tenantId: tenantA._id,
+      name: "Disabled",
+      email: "disabled@example.com",
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "disabled",
+      emailVerified: false,
+      emailVerifiedAt: null,
+    });
+
+    const initialTokenA = await createEmailVerificationTokenForUser(unverifiedA);
+    await createEmailVerificationTokenForUser(unverifiedB);
+    const beforeEligible = await UserModel.findById(unverifiedA._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    const beforeOtherTenant = await UserModel.findById(unverifiedB._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    const beforeVerified = await UserModel.findById(verified._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    const beforeDisabled = await UserModel.findById(disabled._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    assert.ok(beforeEligible?.emailVerificationTokenHash);
+    assert.ok(beforeOtherTenant?.emailVerificationTokenHash);
+    assert.ok(initialTokenA);
+
+    const cases = [
+      {
+        body: { companySlug: "tenant-a", email: "shared@example.com" },
+      },
+      {
+        body: { companySlug: "tenant-a", email: "verified@example.com" },
+      },
+      {
+        body: { companySlug: "tenant-a", email: "disabled@example.com" },
+      },
+      {
+        body: { companySlug: "tenant-a", email: "missing@example.com" },
+      },
+      {
+        body: { companySlug: "missing-tenant", email: "shared@example.com" },
+      },
+    ];
+
+    const responses = await Promise.all(
+      cases.map(({ body }) =>
+        fetch(
+          `http://127.0.0.1:${address.port}/auth/resend-verification-email`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        ),
+      ),
+    );
+
+    const bodies = await Promise.all(responses.map((response) => response.json()));
+    for (const response of responses) {
+      assert.equal(response.status, 200);
+    }
+    for (const body of bodies) {
+      assert.deepEqual(body, GENERIC_PUBLIC_RESEND_RESPONSE);
+    }
+
+    const afterEligible = await UserModel.findById(unverifiedA._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    const afterOtherTenant = await UserModel.findById(unverifiedB._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    const afterVerified = await UserModel.findById(verified._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+    const afterDisabled = await UserModel.findById(disabled._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+
+    assert.notEqual(
+      afterEligible?.emailVerificationTokenHash,
+      beforeEligible?.emailVerificationTokenHash,
+    );
+    assert.equal(
+      afterOtherTenant?.emailVerificationTokenHash,
+      beforeOtherTenant?.emailVerificationTokenHash,
+    );
+    assert.equal(
+      afterVerified?.emailVerificationTokenHash ?? null,
+      beforeVerified?.emailVerificationTokenHash ?? null,
+    );
+    assert.equal(
+      afterDisabled?.emailVerificationTokenHash ?? null,
+      beforeDisabled?.emailVerificationTokenHash ?? null,
+    );
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("resend verification returns generic response for reserved platform slugs without generating a token", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const platformTenant = await TenantModel.create({
+      name: "DocuMind Platform",
+      slug: PLATFORM_TENANT_SLUG,
+      status: "active",
+      plan: "free",
+      isSystemTenant: true,
+    });
+    const platformUser = await UserModel.create({
+      tenantId: platformTenant._id,
+      name: "Platform Admin",
+      email: "platform@example.com",
+      passwordHash: "hash",
+      role: "SUPER_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    const before = await UserModel.findById(platformUser._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/auth/resend-verification-email`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          companySlug: PLATFORM_TENANT_SLUG,
+          email: "platform@example.com",
+        }),
+      },
+    );
+
+    const body = await response.json();
+    const after = await UserModel.findById(platformUser._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .lean()
+      .exec();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body, GENERIC_PUBLIC_RESEND_RESPONSE);
+    assert.equal(
+      after?.emailVerificationTokenHash ?? null,
+      before?.emailVerificationTokenHash ?? null,
+    );
   } finally {
     await closeServer(server);
   }
@@ -2119,10 +2377,25 @@ test("GET /auth/me returns 401 for an expired access token", async () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function createSuperAdminUser() {
-  // Create a super admin with a platform-level tenantId (required by User schema)
-  // SUPER_ADMIN users operate at platform level and have access to all tenants
+  const tenant = await TenantModel.findOneAndUpdate(
+    { slug: PLATFORM_TENANT_SLUG },
+    {
+      $setOnInsert: {
+        name: "DocuMind Platform",
+        slug: PLATFORM_TENANT_SLUG,
+        status: "active",
+        plan: "free",
+        isSystemTenant: true,
+      },
+    },
+    { upsert: true, returnDocument: "after", runValidators: true },
+  );
+  if (!tenant) {
+    throw new Error("Platform tenant could not be created for Super Admin test");
+  }
+
   const user = await UserModel.create({
-    tenantId: new mongoose.Types.ObjectId(),
+    tenantId: tenant._id,
     name: "Platform Admin",
     email: "admin@platform.com",
     passwordHash: await hashPassword(TEST_PASSWORD),
@@ -2788,14 +3061,14 @@ test("question usage recording permits absent request IDs and deduplicates retri
 test("Super Admin seed is idempotent, hashes credentials, and hides its system tenant", async () => {
   const input = {
     platformName: "DocuMind AI",
-    platformSlug: "documind-ai",
+    platformSlug: "documind.ai",
     name: "Seed Admin",
     email: "seed@example.com",
     password: "SeedPassword123!",
   };
   await seedSuperAdmin(input);
   await seedSuperAdmin(input);
-  assert.equal(await TenantModel.countDocuments({ slug: "documind-ai" }), 1);
+  assert.equal(await TenantModel.countDocuments({ slug: "documind.ai" }), 1);
   assert.equal(await UserModel.countDocuments({ role: "SUPER_ADMIN" }), 1);
   const user = await UserModel.findOne({ role: "SUPER_ADMIN" }).select(
     "+passwordHash",
@@ -2804,7 +3077,7 @@ test("Super Admin seed is idempotent, hashes credentials, and hides its system t
   assert.notEqual(user.passwordHash, input.password);
   assert.equal(await verifyPassword(user.passwordHash, input.password), true);
 
-  const tenant = await TenantModel.findOne({ slug: "documind-ai" });
+  const tenant = await TenantModel.findOne({ slug: "documind.ai" });
   assert.ok(tenant);
   const token = signJwt(
     {

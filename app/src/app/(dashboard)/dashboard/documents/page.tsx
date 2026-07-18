@@ -30,13 +30,6 @@ const STATUS_BADGE_MAP: Record<string, string> = {
   failed: "error",
 };
 
-const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
-  public: "success",
-  internal: "info",
-  confidential: "warning",
-  restricted: "error",
-};
-
 export default function DocumentsPage() {
   const { t, dir } = useI18n();
   const auth = useAuth();

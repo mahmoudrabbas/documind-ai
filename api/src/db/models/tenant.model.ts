@@ -1,6 +1,8 @@
 import mongoose, { Schema } from "mongoose";
 
 export interface TenantDocument extends mongoose.Document {
+  _id: mongoose.Types.ObjectId;
+  id: string;
   name: string;
   slug: string;
   status: string;

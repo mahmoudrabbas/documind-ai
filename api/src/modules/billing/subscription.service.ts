@@ -64,6 +64,7 @@ function writeAudit(
     actorId: actor?.userId,
     actorEmail: actor?.email,
     actorRole: actor?.role,
+    actorKind: actor ? "USER" : "SYSTEM",
   }).catch((err: unknown) => {
     console.error("Audit write failed (non-blocking):", err);
   });

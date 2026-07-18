@@ -1,3 +1,5 @@
+import type { BaseRole } from "../auth/baseRoles.js";
+
 export type AuditAction =
   // Auth
   | "AUTH_LOGIN_SUCCESS"
@@ -10,6 +12,7 @@ export type AuditAction =
   | "AUTH_EMAIL_VERIFIED"
   // Users
   | "USER_INVITED"
+  | "USER_INVITATION_RESENT"
   | "USER_UPDATED"
   | "USER_DELETED"
   | "USER_ROLE_CHANGED"
@@ -72,6 +75,7 @@ export type AuditResourceType =
   | "Permission";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
+export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";
 
 export interface AuditEventInput {
   action: AuditAction;
@@ -85,5 +89,48 @@ export interface AuditEventInput {
   tenantId?: string;
   actorId?: string;
   actorEmail?: string;
-  actorRole?: string;
+  actorRole?: BaseRole | null;
+  actorKind?: AuditActorKind;
+}
+
+export function normalizeAuditActorRole(
+  actorRole: unknown,
+): BaseRole | null {
+  if (actorRole === undefined || actorRole === null || actorRole === "") {
+    return null;
+  }
+
+  if (actorRole === "SUPER_ADMIN") {
+    return actorRole;
+  }
+
+  if (actorRole === "COMPANY_ADMIN") {
+    return actorRole;
+  }
+
+  if (actorRole === "EMPLOYEE") {
+    return actorRole;
+  }
+
+  return null;
+}
+
+export function resolveAuditActorKind(input: {
+  actorId?: string;
+  actorKind?: AuditActorKind;
+  actorRole?: BaseRole | null;
+}): AuditActorKind {
+  if (input.actorKind) {
+    return input.actorKind;
+  }
+
+  if (input.actorId && input.actorId !== "system") {
+    return "USER";
+  }
+
+  if (normalizeAuditActorRole(input.actorRole)) {
+    return "USER";
+  }
+
+  return "SYSTEM";
 }

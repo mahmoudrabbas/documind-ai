@@ -1,12 +1,10 @@
 import type { Request, Response } from "express";
 import { emailService } from "./email.service.js";
 import { getEmailsQuerySchema } from "./email.validator.js";
-import { getCurrentTraceContext } from "../../common/utils/requestContext.js";
 import { AppError } from "../../common/errors/AppError.js";
 
 export const listEmails = async (req: Request, res: Response) => {
-  const ctx = getCurrentTraceContext();
-  const tenantId = ctx?.tenantId;
+  const tenantId = req.tenantId;
   if (!tenantId) throw new AppError(400, "BAD_REQUEST", "Tenant required");
 
   const query = getEmailsQuerySchema.parse(req.query);
@@ -20,8 +18,7 @@ export const listEmails = async (req: Request, res: Response) => {
 };
 
 export const getEmailStatus = async (req: Request, res: Response) => {
-  const ctx = getCurrentTraceContext();
-  const tenantId = ctx?.tenantId;
+  const tenantId = req.tenantId;
   if (!tenantId) throw new AppError(400, "BAD_REQUEST", "Tenant required");
 
   const messageId = req.params.messageId as string;
@@ -30,9 +27,8 @@ export const getEmailStatus = async (req: Request, res: Response) => {
 };
 
 export const resendEmail = async (req: Request, res: Response) => {
-  const ctx = getCurrentTraceContext();
-  const tenantId = ctx?.tenantId;
-  const actorId = ctx?.actorId;
+  const tenantId = req.tenantId;
+  const actorId = req.auth?.userId;
   if (!tenantId) throw new AppError(400, "BAD_REQUEST", "Tenant required");
 
   const messageId = req.params.messageId as string;
@@ -41,8 +37,7 @@ export const resendEmail = async (req: Request, res: Response) => {
 };
 
 export const cancelEmail = async (req: Request, res: Response) => {
-  const ctx = getCurrentTraceContext();
-  const tenantId = ctx?.tenantId;
+  const tenantId = req.tenantId;
   if (!tenantId) throw new AppError(400, "BAD_REQUEST", "Tenant required");
 
   const messageId = req.params.messageId as string;

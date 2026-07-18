@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { AuthHeroPanel } from "@/components/ui";
+import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
 
 type ResetPasswordResponse = {
   success: boolean;
@@ -67,8 +68,14 @@ export default function ResetPasswordPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState("");
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(
+    null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const handleRetryRequest = useCallback(() => {
+    setRateLimitRetryAfter(null);
+  }, []);
 
   if (!token || !slug) {
     return (
@@ -112,8 +119,10 @@ export default function ResetPasswordPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (rateLimitRetryAfter !== null) return;
     if (submissionPending.current) return;
     setFormError("");
+    setRateLimitRetryAfter(null);
     if (!validate()) return;
 
     submissionPending.current = true;
@@ -127,7 +136,9 @@ export default function ResetPasswordPage() {
       });
       setIsSuccess(true);
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof ApiError && err.status === 429) {
+        setRateLimitRetryAfter(err.retryAfterSeconds ?? 900);
+      } else if (err instanceof ApiError) {
         setFormError(err.message);
       } else {
         setFormError(t("common.error"));
@@ -206,7 +217,14 @@ export default function ResetPasswordPage() {
                 noValidate
               >
                 <div aria-live="polite" className="w-full">
-                  {formError ? (
+                  {rateLimitRetryAfter !== null ? (
+                    <div className="mb-4">
+                      <RateLimitAlert
+                        retryAfterSeconds={rateLimitRetryAfter}
+                        onRetry={handleRetryRequest}
+                      />
+                    </div>
+                  ) : formError ? (
                     <div
                       className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
                       role="alert"
@@ -235,7 +253,7 @@ export default function ResetPasswordPage() {
                       }}
                       autoComplete="new-password"
                       placeholder={t("auth.passwordPlaceholder")}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || rateLimitRetryAfter !== null}
                       aria-invalid={Boolean(errors.password)}
                       aria-describedby={errors.password ? "password-error" : undefined}
                       className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -243,7 +261,7 @@ export default function ResetPasswordPage() {
                     <PasswordVisibilityToggle
                       visible={showPassword}
                       onToggle={() => setShowPassword((prev) => !prev)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || rateLimitRetryAfter !== null}
                     />
                   </div>
                   {errors.password ? (
@@ -272,7 +290,7 @@ export default function ResetPasswordPage() {
                       }}
                       autoComplete="new-password"
                       placeholder={t("auth.confirmPasswordPlaceholder")}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || rateLimitRetryAfter !== null}
                       aria-invalid={Boolean(errors.confirmPassword)}
                       aria-describedby={errors.confirmPassword ? "confirm-error" : undefined}
                       className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -280,7 +298,7 @@ export default function ResetPasswordPage() {
                     <PasswordVisibilityToggle
                       visible={showConfirmPassword}
                       onToggle={() => setShowConfirmPassword((prev) => !prev)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || rateLimitRetryAfter !== null}
                     />
                   </div>
                   {errors.confirmPassword ? (
@@ -292,7 +310,7 @@ export default function ResetPasswordPage() {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   aria-busy={isSubmitting || undefined}
                   className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2"
                 >

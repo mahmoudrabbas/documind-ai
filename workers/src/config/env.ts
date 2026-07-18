@@ -2,50 +2,118 @@ import { z } from "zod";
 import { getSecretValue } from "../secretEnv.js";
 
 /**
+ * Parses boolean environment variables safely.
+ *
+ * Environment variables always arrive as strings, so:
+ * SMTP_SECURE=false
+ *
+ * arrives in Node.js as the string "false", not the boolean false.
+ */
+const booleanFromEnv = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalizedValue = value.trim().toLowerCase();
+
+    if (normalizedValue === "true") {
+      return true;
+    }
+
+    if (normalizedValue === "false") {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean());
+
+/**
  * Zod schema for Workers service environment variables.
  * Validates and parses all required and optional env vars at startup.
  */
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
+const envSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "production", "test"])
+      .default("development"),
 
-  MONGODB_URI: z.string().url().default("mongodb://mongodb:27017/docsai"),
+    MONGODB_URI: z
+      .string()
+      .url()
+      .default("mongodb://mongodb:27017/docsai"),
 
-  REDIS_URL: z.string().default("redis://redis:6379"),
+    REDIS_URL: z
+      .string()
+      .default("redis://redis:6379"),
 
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    LOG_LEVEL: z
+      .enum(["debug", "info", "warn", "error"])
+      .default("info"),
 
-  WORKER_CONCURRENCY: z
-    .string()
-    .default("1")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().positive().int()),
-    
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().default(587),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional(),
-  SMTP_SECURE: z.boolean().default(false),
-  
-  UPLOAD_DIR: z.string().default("../api/uploads"),
-}).superRefine((env, context) => {
-  if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
-    if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")
-      context.addIssue({ code: "custom", path: ["MONGODB_URI"], message: "must be explicitly configured" });
-    if (env.REDIS_URL === "redis://redis:6379")
-      context.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be explicitly configured" });
-  }
-});
+    WORKER_CONCURRENCY: z
+      .string()
+      .default("1")
+      .transform((value) => Number.parseInt(value, 10))
+      .pipe(z.number().positive().int()),
+
+    SMTP_HOST: z.string().optional(),
+
+    SMTP_PORT: z.coerce
+      .number()
+      .positive()
+      .int()
+      .default(587),
+
+    SMTP_USER: z.string().optional(),
+
+    SMTP_PASS: z.string().optional(),
+
+    SMTP_FROM: z.string().optional(),
+
+    SMTP_SECURE: booleanFromEnv,
+
+    UPLOAD_DIR: z
+      .string()
+      .default("../api/uploads"),
+  })
+  .superRefine((env, context) => {
+    if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
+      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai") {
+        context.addIssue({
+          code: "custom",
+          path: ["MONGODB_URI"],
+          message: "must be explicitly configured",
+        });
+      }
+
+      if (env.REDIS_URL === "redis://redis:6379") {
+        context.addIssue({
+          code: "custom",
+          path: ["REDIS_URL"],
+          message: "must be explicitly configured",
+        });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 
 export class EnvironmentValidationError extends Error {
   readonly keys: string[];
+
   constructor(keys: string[]) {
     const uniqueKeys = [...new Set(keys)].sort();
-    super(`Invalid environment configuration: ${uniqueKeys.join(", ")}`);
+
+    super(
+      `Invalid environment configuration: ${uniqueKeys.join(", ")}`,
+    );
+
     this.name = "EnvironmentValidationError";
     this.keys = uniqueKeys;
   }
@@ -53,19 +121,49 @@ export class EnvironmentValidationError extends Error {
 
 /**
  * Parses and validates environment variables.
+ *
+ * Supports Docker secret file variables such as:
+ * - MONGODB_URI_FILE
+ * - REDIS_URL_FILE
+ * - SMTP_PASS_FILE
+ *
  * Throws a key-name-only error so startup fails without leaking values.
  */
-export function parseEnv(env: Record<string, string | undefined>): Env {
+export function parseEnv(
+  env: Record<string, string | undefined>,
+): Env {
   const normalizedEnv = {
     ...env,
-    MONGODB_URI: getSecretValue("MONGODB_URI", env.MONGODB_URI, env),
-    REDIS_URL: getSecretValue("REDIS_URL", env.REDIS_URL, env),
+
+    MONGODB_URI: getSecretValue(
+      "MONGODB_URI",
+      env.MONGODB_URI,
+      env,
+    ),
+
+    REDIS_URL: getSecretValue(
+      "REDIS_URL",
+      env.REDIS_URL,
+      env,
+    ),
+
+    SMTP_PASS: getSecretValue(
+      "SMTP_PASS",
+      env.SMTP_PASS,
+      env,
+    ),
   };
 
   const result = envSchema.safeParse(normalizedEnv);
 
-  if (!result.success)
-    throw new EnvironmentValidationError(result.error.issues.map((issue) => issue.path.join(".") || "environment"));
+  if (!result.success) {
+    throw new EnvironmentValidationError(
+      result.error.issues.map(
+        (issue) =>
+          issue.path.join(".") || "environment",
+      ),
+    );
+  }
 
   return result.data;
 }

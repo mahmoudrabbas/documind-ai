@@ -25,17 +25,22 @@ function role(values: Record<string, unknown> = {}) {
   return new RoleModel({ tenantId, name: "Finance Reader", normalizedName: "finance reader", baseRole: "EMPLOYEE", grants: [], createdBy: actorId, updatedBy: actorId, ...values });
 }
 
-test("base-role contract contains exactly the three approved roles at runtime and schema level", () => {
+test("base-role contract contains exactly the three approved roles at runtime and schema level", async () => {
   assert.deepEqual(BASE_ROLES, ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"]);
   assert.deepEqual(TENANT_ROLE_BASES, ["COMPANY_ADMIN", "EMPLOYEE"]);
   assert.deepEqual((UserModel.schema.path("role") as mongoose.SchemaType & { enumValues: string[] }).enumValues, [...BASE_ROLES]);
   assert.deepEqual((RoleModel.schema.path("baseRole") as mongoose.SchemaType & { enumValues: string[] }).enumValues, [...TENANT_ROLE_BASES]);
   for (const unsupported of ["USER", "ADMIN", "MANAGER", "COMPANY_OWNER", "PLATFORM_ADMIN", "SUPERADMIN", "arbitrary"]) {
     assert.equal(isBaseRole(unsupported), false);
-    assert.ok(new UserModel({
-      tenantId, name: "Invalid Role", email: `${unsupported.toLowerCase()}@example.test`,
-      passwordHash: "test", role: unsupported,
-    }).validateSync()?.errors.role);
+    await assert.rejects(
+      new UserModel({
+        tenantId, name: "Invalid Role", email: `${unsupported.toLowerCase()}@example.test`,
+        passwordHash: "test", role: unsupported,
+      }).validate(),
+      (error: unknown) =>
+        error instanceof mongoose.Error.ValidationError &&
+        Boolean(error.errors.role),
+    );
   }
 });
 

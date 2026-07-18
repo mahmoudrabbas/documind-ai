@@ -12,16 +12,19 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import DocumentVersionModel from "../../db/models/documentVersion.model.js";
+import RoleModel from "../../db/models/role.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import * as fsp from "node:fs/promises";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
+import { Permission } from "../permissions/permissions.catalog.js";
+import { config } from "../../config/index.js";
 
 
 const app: Express = (await import("../../app.js")).default;
 
 const TEST_PASSWORD = "StrongPass123!";
-const UPLOAD_TEST_DIR = path.join(process.cwd(), ".test-uploads");
+const UPLOAD_TEST_DIR = path.resolve(process.cwd(), config.UPLOAD_DIR);
 
 let mongoServer: MongoMemoryReplSet;
 
@@ -127,6 +130,7 @@ beforeEach(async () => {
   await UserModel.deleteMany({});
   await DocumentModel.deleteMany({});
   await DocumentVersionModel.deleteMany({});
+  await RoleModel.deleteMany({});
 
   const uploads = await fsp.readdir(UPLOAD_TEST_DIR).catch(() => []);
   for (const dir of uploads) {
@@ -494,32 +498,43 @@ void test("DELETE /documents/:id — returns 404 for non-existent", async () => 
 
 void test("GET /documents/:id/download — downloads document", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  await createActiveTenantAdmin();
-  const accessToken = await login(port);
+  try {
+    const port = (server.address() as { port: number }).port;
+    await createActiveTenantAdmin();
+    const accessToken = await login(port);
 
-  const pdfContent = Buffer.from("%PDF-1.4 download test", "utf-8");
+    const pdfContent = Buffer.from("%PDF-1.4 download test", "utf-8");
+    const { buffer, boundary } = buildMultipartBody("dl.pdf", pdfContent, {
+      title: "DL",
+    });
 
-  const storageRes = await fetch(`http://127.0.0.1:${port}/documents`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": `multipart/form-data; boundary=${buildMultipartBody("dl.pdf", pdfContent, { title: "DL" }).boundary}`,
-    },
-    body: buildMultipartBody("dl.pdf", pdfContent, { title: "DL" }).buffer,
-  });
-  const storageBody = (await storageRes.json()) as Record<string, unknown>;
-  const docData = (storageBody.data as Record<string, unknown>).document as Record<string, unknown>;
+    const storageRes = await fetch(`http://127.0.0.1:${port}/documents`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body: buffer,
+    });
+    const storageBody = (await storageRes.json()) as Record<string, unknown>;
+    const docData = (storageBody.data as Record<string, unknown>).document as Record<
+      string,
+      unknown
+    >;
 
-  const response = await fetch(`http://127.0.0.1:${port}/documents/${docData.id}/download`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+    const response = await fetch(
+      `http://127.0.0.1:${port}/documents/${docData.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
 
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Content-Type"), "application/pdf");
-  assert.ok(response.headers.get("Content-Disposition")?.includes("dl.pdf"));
-
-  await closeServer(server);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Content-Type"), "application/pdf");
+    assert.ok(response.headers.get("Content-Disposition")?.includes("dl.pdf"));
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("GET /documents/:id/download — returns 404 for cross-tenant", async () => {
@@ -741,42 +756,188 @@ void test("employee cannot archive (permission denied)", async () => {
   await closeServer(server);
 });
 
-void test("employee can download documents", async () => {
+void test("employee can download documents with documents.download and matching document access", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  const { tenant } = await createActiveTenantAdmin();
-  const empUser = await createEmployee(tenant.id);
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: adminUser } = await createActiveTenantAdmin();
+    const empUser = await createEmployee(tenant.id);
+    const role = await RoleModel.create({
+      tenantId: tenant._id,
+      name: "Scoped Downloader",
+      normalizedName: "scoped downloader",
+      baseRole: "EMPLOYEE",
+      grants: [{
+        permission: Permission.DOCUMENTS_DOWNLOAD,
+        scopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: ["internal"],
+        },
+      }],
+      createdBy: adminUser._id,
+      updatedBy: adminUser._id,
+    });
+    await UserModel.updateOne(
+      { _id: empUser._id },
+      { $set: { customRoleId: role._id } },
+    );
 
-  const storageKey = `${tenant.id}/download-test.pdf`;
-  const fullPath = path.join(UPLOAD_TEST_DIR, storageKey);
-  await fsp.mkdir(path.dirname(fullPath), { recursive: true });
-  await fsp.writeFile(fullPath, Buffer.from("employee download test content"));
+    const storageKey = `${tenant.id}/download-test.pdf`;
+    const fullPath = path.join(UPLOAD_TEST_DIR, storageKey);
+    const fileContent = Buffer.from("employee download test content");
+    await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+    await fsp.writeFile(fullPath, fileContent);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "download-test.pdf",
-    originalFileName: "download-test.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey,
-    checksum: "dl-cs",
-    status: "uploaded",
-    metadata: { title: "Download Test", description: "", tags: [] },
-    classification: "internal",
-    quarantineStatus: "none",
-    version: 1,
-    versionLabel: "v1",
-    isArchived: false,
-    uploadedBy: empUser.id,
-  });
+    const doc = await DocumentModel.create({
+      tenantId: tenant.id,
+      fileName: "download-test.pdf",
+      originalFileName: "download-test.pdf",
+      fileSize: fileContent.length,
+      mimeType: "application/pdf",
+      storageKey,
+      checksum: "dl-cs",
+      status: "uploaded",
+      metadata: { title: "Download Test", description: "", tags: [] },
+      classification: "internal",
+      category: "policy",
+      quarantineStatus: "none",
+      version: 1,
+      versionLabel: "v1",
+      isArchived: false,
+      uploadedBy: empUser.id,
+    });
 
-  const empToken = await login(port, "acme-consulting", "john@acme.com");
-  const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/download`, {
-    headers: { Authorization: `Bearer ${empToken}` },
-  });
+    const empToken = await login(port, "acme-consulting", "john@acme.com");
+    const response = await fetch(
+      `http://127.0.0.1:${port}/documents/${doc.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${empToken}` },
+      },
+    );
 
-  assert.equal(response.status, 200);
-  await closeServer(server);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), fileContent.toString("utf-8"));
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("employee without documents.download receives a stable authorization denial", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant } = await createActiveTenantAdmin();
+    const empUser = await createEmployee(tenant.id);
+
+    const storageKey = `${tenant.id}/ordinary-employee.pdf`;
+    const fullPath = path.join(UPLOAD_TEST_DIR, storageKey);
+    const fileContent = Buffer.from("ordinary employee content");
+    await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+    await fsp.writeFile(fullPath, fileContent);
+
+    const doc = await DocumentModel.create({
+      tenantId: tenant.id,
+      fileName: "ordinary-employee.pdf",
+      originalFileName: "ordinary-employee.pdf",
+      fileSize: fileContent.length,
+      mimeType: "application/pdf",
+      storageKey,
+      checksum: "ordinary-employee",
+      status: "uploaded",
+      metadata: { title: "Ordinary Employee", description: "", tags: [] },
+      classification: "internal",
+      quarantineStatus: "none",
+      version: 1,
+      versionLabel: "v1",
+      isArchived: false,
+      uploadedBy: empUser.id,
+    });
+
+    const empToken = await login(port, "acme-consulting", "john@acme.com");
+    const response = await fetch(
+      `http://127.0.0.1:${port}/documents/${doc.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${empToken}` },
+      },
+    );
+
+    assert.equal(response.status, 403);
+    const body = (await response.json()) as Record<string, unknown>;
+    assert.equal(
+      (body.error as { code?: string } | undefined)?.code,
+      "PERMISSION_REQUIRED",
+    );
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("employee with documents.download but without document-level access is denied", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: adminUser } = await createActiveTenantAdmin();
+    const empUser = await createEmployee(tenant.id);
+    const role = await RoleModel.create({
+      tenantId: tenant._id,
+      name: "Restricted Downloader",
+      normalizedName: "restricted downloader",
+      baseRole: "EMPLOYEE",
+      grants: [{
+        permission: Permission.DOCUMENTS_DOWNLOAD,
+        scopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: ["confidential"],
+        },
+      }],
+      createdBy: adminUser._id,
+      updatedBy: adminUser._id,
+    });
+    await UserModel.updateOne(
+      { _id: empUser._id },
+      { $set: { customRoleId: role._id } },
+    );
+
+    const storageKey = `${tenant.id}/no-access.pdf`;
+    const fullPath = path.join(UPLOAD_TEST_DIR, storageKey);
+    const fileContent = Buffer.from("no access content");
+    await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+    await fsp.writeFile(fullPath, fileContent);
+
+    const doc = await DocumentModel.create({
+      tenantId: tenant.id,
+      fileName: "no-access.pdf",
+      originalFileName: "no-access.pdf",
+      fileSize: fileContent.length,
+      mimeType: "application/pdf",
+      storageKey,
+      checksum: "no-access",
+      status: "uploaded",
+      metadata: { title: "No Access", description: "", tags: [] },
+      classification: "internal",
+      quarantineStatus: "none",
+      version: 1,
+      versionLabel: "v1",
+      isArchived: false,
+      uploadedBy: adminUser.id,
+    });
+
+    const empToken = await login(port, "acme-consulting", "john@acme.com");
+    const response = await fetch(
+      `http://127.0.0.1:${port}/documents/${doc.id}/download`,
+      {
+        headers: { Authorization: `Bearer ${empToken}` },
+      },
+    );
+
+    assert.equal(response.status, 404);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("cross-tenant isolation — tenant A cannot see tenant B's documents", async () => {

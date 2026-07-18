@@ -1,4 +1,6 @@
 import mongoose, { Schema } from "mongoose";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
+import type { AuditActorKind } from "../../common/observability/auditEvents.js";
 
 export interface AuditLogDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId | "system";
@@ -8,7 +10,8 @@ export interface AuditLogDocument extends mongoose.Document {
   action: string;
   actorId: mongoose.Types.ObjectId | "system";
   actorEmail: string;
-  actorRole: string;
+  actorRole: BaseRole | null;
+  actorKind: AuditActorKind;
   changes: Record<string, unknown>;
   traceId?: string;
   requestId?: string;
@@ -51,7 +54,14 @@ const auditLogSchema = new Schema<AuditLogDocument>(
     },
     actorRole: {
       type: String,
+      enum: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
+      default: null,
+    },
+    actorKind: {
+      type: String,
+      enum: ["USER", "SYSTEM", "UNAUTHENTICATED"],
       required: true,
+      default: "USER",
     },
     changes: {
       type: Schema.Types.Mixed,

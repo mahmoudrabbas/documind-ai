@@ -13,6 +13,8 @@ describe("invite password page source", () => {
     expect(source).toMatch(/setState\(\{\s+status: "form"/);
     expect(source).toContain("Passwords do not match.");
     expect(source).toContain("disabled={!formValid");
+    expect(source).toContain("INVITE_REISSUE_REQUIRED");
+    expect(source).toContain("rateLimitRetryAfter !== null");
     expect(source).not.toContain('router.push("/login")');
   });
 

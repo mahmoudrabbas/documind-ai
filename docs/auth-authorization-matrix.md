@@ -1,0 +1,30 @@
+# Authentication and Authorization Matrix
+
+Reserved platform tenant slug: `documind.ai`.
+
+| Route/action | Auth | Role/permission | Scope | Tenant/resource rule | Error behavior | Frontend caller |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST /auth/register` | Public | None | Customer | Creates customer tenant only; rejects `documind.ai`; initial user is `COMPANY_ADMIN`; `tenantId` is never accepted from body | `409 TENANT_ALREADY_EXISTS`, `400 VALIDATION_ERROR` | `/register` |
+| `POST /auth/login` | Public | None | Customer | Resolves `companySlug` first, rejects `documind.ai`, then resolves `tenantId + email`; rejects `SUPER_ADMIN` customer login by platform slug separation | `401 INVALID_CREDENTIALS`, `403 EMAIL_NOT_VERIFIED`, `403 ACCOUNT_NOT_ACTIVE`, `403 TENANT_NOT_ACTIVE` | `/login` |
+| `POST /auth/super-admin/login` | Public dedicated flow | `SUPER_ADMIN` | Platform | Resolves `documind.ai` internally, then resolves `tenantId + email`; rejects non-Super Admins and Super Admins outside the reserved tenant | `401 INVALID_CREDENTIALS` | Super Admin login page/service |
+| `POST /auth/verify-email` | Public token | Email verification purpose | Customer | Signed token must match user, tenant, email, stored hash, expiration, pending state, and `email_verification` purpose | `400 INVALID_OR_EXPIRED_VERIFICATION_TOKEN` | `/verify-email` |
+| `POST /auth/resend-verification-email` | Public | None | Customer | Requires `companySlug + email`; rejects `documind.ai` via generic success; supersedes stored verification token | `200` generic, `429 RATE_LIMITED` | `/resend-verification`, `/login` link |
+| `POST /auth/forgot-password` | Public | None | Customer | Requires `slug + email`; rejects `documind.ai` via generic success; token stored on tenant-scoped user | `200` generic, `429 RATE_LIMITED` | `/forgot-password` |
+| `POST /auth/reset-password` | Public token | Password reset purpose | Customer | Token tenant must match slug; stored hash/expiry must match; password update and refresh revocation are tenant-user scoped | `400 PASSWORD_RESET_FAILED`, `429 RATE_LIMITED` | `/reset-password` |
+| `POST /users/validate-invite` | Public token | User invitation purpose | Customer | Token must match pending tenant user, email, stored hash, expiry, and `user_invitation`; platform tenant rejected | `400 INVITE_INVALID`, `409 INVITE_REISSUE_REQUIRED`, `410 INVITE_EXPIRED`, `429 RATE_LIMITED` | `/set-password-from-invite` |
+| `POST /users/set-password-from-invite` | Public token | User invitation purpose | Customer | Single conditional user update checks tenant, user, email, token hash, expiry, pending status, unverified state; platform tenant rejected | `400 INVALID_OR_EXPIRED_VERIFICATION_TOKEN`, `409 INVITE_REISSUE_REQUIRED`, `429 RATE_LIMITED` | `/set-password-from-invite` |
+| `POST /users/:id/resend-invitation` | Bearer | `COMPANY_ADMIN` | Customer | Auth tenant only; target must be pending/unverified in same tenant; platform tenant rejected; fresh `user_invitation` token supersedes old one | `401 UNAUTHORIZED`, `403 FORBIDDEN`, `403 PLATFORM_TENANT_FORBIDDEN`, `404 NOT_FOUND`, `429 RATE_LIMITED` | Company Admin users UI/API |
+| `POST /auth/refresh` | Refresh cookie | Session token | Customer/platform | Refresh record must match tenant, user, hash, JTI, family, active state, and session guard | `401 SESSION_EXPIRED`, `401 REFRESH_TOKEN_REUSED` | API client |
+| `POST /auth/logout` | Refresh cookie/access context where available | Session token | Customer/platform | Revokes current refresh record/family only | Idempotent success or safe auth failure | AuthProvider |
+| `POST /auth/logout-all` | Bearer + confirmation | Authenticated user | Customer/platform | Revokes active refresh records for exact `tenantId + userId`; requires `X-Confirm-Logout-All: true` | `401 UNAUTHORIZED`, `409 CONFIRMATION_REQUIRED` | Session security UI |
+| `GET /auth/me` | Bearer | Authenticated user | Customer/platform | Tenant/user resolved from signed access token; no client tenant field trusted | `401 UNAUTHORIZED`, `404 NOT_FOUND` | AuthProvider |
+| `/platform/*`, `/super-admin/*`, `/platform/jobs/*` admin actions | Bearer | `SUPER_ADMIN` + platform tenant guard | Platform | Requires role and active tenant slug `documind.ai`; customer `role: SUPER_ADMIN` without platform tenant is denied | `401 UNAUTHORIZED`, `403 FORBIDDEN` | Super Admin pages/services |
+| `/documents/*` | Bearer | Canonical permission evaluator | Customer | Uses authenticated tenant context and resource tenant checks | `401 UNAUTHORIZED`, `403 PERMISSION_REQUIRED`/`SCOPE_MISMATCH`, `404` where appropriate | Dashboard documents |
+| `/roles/*`, `/permissions/*` | Bearer | Canonical permission evaluator | Customer | Tenant custom roles are limited to `COMPANY_ADMIN`/`EMPLOYEE`; cannot grant platform `SUPER_ADMIN` | `401 UNAUTHORIZED`, `403 PERMISSION_REQUIRED`, `409 ROLE_NOT_ASSIGNABLE` | Dashboard roles/permissions |
+| `/users/*` management | Bearer | `COMPANY_ADMIN` route role plus service tenant checks | Customer | Target IDs are resolved inside authenticated tenant; last-admin protection applies; platform tenant rejected | `401 UNAUTHORIZED`, `403 FORBIDDEN`, `404 NOT_FOUND`, `409 LAST_ADMIN_PROTECTION` | Users service/UI |
+| `/audit/*` | Bearer | `SUPER_ADMIN` or `COMPANY_ADMIN` | Platform/customer | Super Admin can query platform-wide; Company Admin uses authenticated tenant | `401 UNAUTHORIZED`, `403 FORBIDDEN` | Audit service/UI |
+| `/emails/*` admin actions | Bearer | `COMPANY_ADMIN` | Customer | Tenant/actor come from auth/tenant middleware, not async trace defaults | `401 UNAUTHORIZED`, `403 FORBIDDEN` | Email settings UI |
+
+## Migration And Rollback
+
+Run `npm run migrate:platform-tenant --workspace api` first. The script reports legacy platform tenants, Super Admins outside `documind.ai`, non-Super Admins inside `documind.ai`, and unsafe unique global email indexes. The apply mode can safely rename a single unambiguous legacy platform tenant and mark the canonical tenant active/system; unsafe user associations require manual review and rollback from database backup.

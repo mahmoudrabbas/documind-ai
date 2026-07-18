@@ -5,8 +5,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import { config } from "../../config/index.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import { validateBootstrapInput } from "./bootstrap.validator.js";
+import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 
-export const PLATFORM_TENANT_SLUG = "__documind_platform__";
 function secretMatches(value: string) {
   const supplied = createHash("sha256").update(value).digest();
   const expected = createHash("sha256").update(config.SUPER_ADMIN_BOOTSTRAP_KEY).digest();
@@ -23,7 +23,7 @@ export async function bootstrapSuperAdmin(body: unknown, key: string | undefined
   const tenant = await TenantModel.findOneAndUpdate(
     { slug: PLATFORM_TENANT_SLUG },
     { $setOnInsert: { name: "DocuMind Platform", slug: PLATFORM_TENANT_SLUG, status: "active", plan: "free" } },
-    { upsert: true, new: true, runValidators: true },
+    { upsert: true, returnDocument: "after", runValidators: true },
   );
   try {
     const user = await UserModel.create({ tenantId: tenant._id, name: input.name, email: input.email, passwordHash: await hashPassword(input.password), role: "SUPER_ADMIN", status: "active", emailVerified: true, emailVerifiedAt: new Date() });

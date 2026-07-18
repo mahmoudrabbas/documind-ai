@@ -2,6 +2,11 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d).+$/;
 const companyNamePattern = /^[\p{L}\p{N}\s'&.()-]+$/u;
 const companySlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const reservedCompanySlugs = new Set([
+  "__documind_platform__",
+  "documind-ai",
+  "documind.ai",
+]);
 
 export function validateCompanyName(name: string): string | null {
   const trimmed = name.trim();
@@ -19,8 +24,12 @@ export function validateCompanyName(name: string): string | null {
 
 export function validateCompanySlug(slug: string): string | null {
   const trimmed = slug.trim();
+  const normalized = trimmed.toLowerCase();
   if (!trimmed) {
     return "auth.companySlugRequired";
+  }
+  if (reservedCompanySlugs.has(normalized)) {
+    return "auth.companySlugReserved";
   }
   if (trimmed.length > 80) {
     return "auth.companySlugInvalid";

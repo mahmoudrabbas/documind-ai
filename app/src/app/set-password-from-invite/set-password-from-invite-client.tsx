@@ -129,6 +129,7 @@ export default function SetPasswordFromInviteClient() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (rateLimitRetryAfter !== null) return;
     if (pending.current || !validateFields()) return;
     setRateLimitRetryAfter(null);
     setFormError("");
@@ -184,6 +185,7 @@ export default function SetPasswordFromInviteClient() {
           "INVITE_EXPIRED",
           "INVITE_ALREADY_ACCEPTED",
           "INVITE_REVOKED",
+          "INVITE_REISSUE_REQUIRED",
         ].includes(error.code ?? "")
       ) {
         setState({
@@ -275,11 +277,13 @@ export default function SetPasswordFromInviteClient() {
                   }}
                   aria-invalid={Boolean(errors.password)}
                   aria-describedby="password-help password-error"
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   className="h-12 w-full rounded-xl border border-slate-300 px-4 pe-16 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
+                  disabled={isSubmitting || rateLimitRetryAfter !== null}
                   className="absolute inset-y-0 end-2 px-2 text-xs font-semibold text-blue-700"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
@@ -329,6 +333,7 @@ export default function SetPasswordFromInviteClient() {
                 }}
                 aria-invalid={Boolean(errors.confirmPassword)}
                 aria-describedby="confirm-error"
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
                 className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"
               />
             </label>
@@ -342,7 +347,7 @@ export default function SetPasswordFromInviteClient() {
               </p>
             ) : null}
             <button
-              disabled={!formValid || isSubmitting}
+              disabled={!formValid || isSubmitting || rateLimitRetryAfter !== null}
               className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               {isSubmitting ? "Setting password..." : "Set password"}

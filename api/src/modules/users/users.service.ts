@@ -16,6 +16,7 @@ import { createEmailVerificationTokenForUser } from "../auth/auth.service.js";
 import {
   verifyEmailVerificationToken,
   hashVerificationJti,
+  USER_INVITATION_PURPOSE,
 } from "../auth/emailVerificationToken.js";
 import { findUserDocumentById } from "../auth/auth.repository.js";
 import { sendInvitationEmail } from "../auth/auth.mailer.js";
@@ -46,6 +47,7 @@ import type {
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
+import { isPlatformTenantSlug } from "../../common/auth/platformTenant.js";
 
 type CreatedUserRecord = {
   _id: { toString(): string };
@@ -105,6 +107,16 @@ function isDuplicateKeyError(error: unknown) {
   );
 }
 
+function assertCustomerTenantForUserManagement(tenant: { slug?: string }) {
+  if (isPlatformTenantSlug(tenant.slug)) {
+    throw new AppError(
+      403,
+      "PLATFORM_TENANT_FORBIDDEN",
+      "Customer user management is not available for the platform tenant",
+    );
+  }
+}
+
 export async function inviteUser(
   input: unknown,
   tenantId: string,
@@ -130,6 +142,7 @@ export async function inviteUser(
   if (!tenant) {
     throw new AppError(404, NOT_FOUND, "Tenant not found");
   }
+  assertCustomerTenantForUserManagement(tenant);
 
   const inviter = await findUserByTenantAndId(tenantId, inviterId);
   const inviterName = inviter?.name ?? "Your administrator";
@@ -149,7 +162,9 @@ export async function inviteUser(
 
   try {
     createdUser = await createUser(userPayload);
-    const token = await createEmailVerificationTokenForUser(createdUser);
+    const token = await createEmailVerificationTokenForUser(createdUser, {
+      purpose: USER_INVITATION_PURPOSE,
+    });
 
     await sendInvitationEmail({
       to: createdUser.email,
@@ -193,7 +208,7 @@ export async function updateUser(
   input: unknown,
   tenantId: string,
   targetUserId: string,
-  updater: { userId: string; email?: string; role?: BaseRole },
+  updater: { userId: string; email?: string; role: BaseRole },
 ): Promise<UpdateUserResult> {
   const payload = validateUpdateUserInput(input);
   assertObjectId(tenantId);
@@ -204,6 +219,11 @@ export async function updateUser(
   if (!existingUser) {
     throw new AppError(404, NOT_FOUND, "User not found");
   }
+  const tenant = await findTenantById(tenantId);
+  if (!tenant) {
+    throw new AppError(404, NOT_FOUND, "Tenant not found");
+  }
+  assertCustomerTenantForUserManagement(tenant);
 
   const changes: Record<string, unknown> = {};
   const update: Record<string, unknown> = {};
@@ -260,7 +280,8 @@ export async function updateUser(
       action: "USER_UPDATED",
       actorId: updater.userId,
       actorEmail: updater.email ?? "",
-      actorRole: updater.role ?? "UNKNOWN",
+      actorRole: updater.role,
+      actorKind: "USER",
       changes,
     });
 
@@ -283,7 +304,7 @@ export async function updateUser(
 export async function deleteUser(
   tenantId: string,
   targetUserId: string,
-  deleter: { userId: string; email?: string; role?: BaseRole },
+  deleter: { userId: string; email?: string; role: BaseRole },
 ) {
   assertObjectId(tenantId);
   assertObjectId(targetUserId);
@@ -292,6 +313,11 @@ export async function deleteUser(
   if (!existingUser) {
     throw new AppError(404, NOT_FOUND, "User not found");
   }
+  const tenant = await findTenantById(tenantId);
+  if (!tenant) {
+    throw new AppError(404, NOT_FOUND, "Tenant not found");
+  }
+  assertCustomerTenantForUserManagement(tenant);
 
   if (deleter.userId === targetUserId) {
     throw new AppError(409, SELF_ACTION_FORBIDDEN, "Administrators cannot delete their own account");
@@ -317,7 +343,8 @@ export async function deleteUser(
     action: "USER_DELETED",
     actorId: deleter.userId,
     actorEmail: deleter.email ?? "",
-    actorRole: deleter.role ?? "UNKNOWN",
+    actorRole: deleter.role,
+    actorKind: "USER",
     changes: {
       before: serializeUser(existingUser),
       after: null,
@@ -327,6 +354,67 @@ export async function deleteUser(
   return {
     success: true,
     message: "User deleted successfully.",
+  };
+}
+
+export async function resendInvitation(
+  tenantId: string,
+  targetUserId: string,
+  actorId: string,
+) {
+  assertObjectId(tenantId);
+  assertObjectId(targetUserId);
+  assertObjectId(actorId);
+
+  const [tenant, inviter, user] = await Promise.all([
+    findTenantById(tenantId),
+    findUserByTenantAndId(tenantId, actorId),
+    UserModel.findOne({
+      _id: targetUserId,
+      tenantId,
+      status: "pending_email_verification",
+      emailVerified: false,
+    })
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt")
+      .exec(),
+  ]);
+
+  if (!tenant || !user) {
+    throw new AppError(404, NOT_FOUND, "Invitation not found");
+  }
+  assertCustomerTenantForUserManagement(tenant);
+
+  const token = await createEmailVerificationTokenForUser(user, {
+    purpose: USER_INVITATION_PURPOSE,
+  });
+
+  await sendInvitationEmail({
+    to: user.email,
+    inviterName: inviter?.name ?? "Your administrator",
+    inviterEmail: inviter?.email,
+    companyName: tenant.name,
+    role: user.role,
+    invitationUrl: buildVerificationUrl(token),
+    expiryDate:
+      user.emailVerificationExpiresAt ??
+      new Date(Date.now() + 24 * 60 * 60 * 1000),
+    tenantId,
+  });
+
+  await getAuditWriter().write({
+    tenantId,
+    resourceType: "User",
+    resourceId: user._id.toString(),
+    action: "USER_INVITATION_RESENT",
+    actorId,
+    actorEmail: inviter?.email ?? "",
+    actorRole: inviter?.role,
+    actorKind: inviter ? "USER" : "SYSTEM",
+    changes: { invitationReissued: true },
+  });
+
+  return {
+    user: serializeUser(user),
   };
 }
 
@@ -399,7 +487,7 @@ function lastAdminError() {
 async function auditLastAdminProtection(
   tenantId: string,
   targetUserId: string,
-  actor: { userId: string; email?: string; role?: BaseRole },
+  actor: { userId: string; email?: string; role: BaseRole },
   operation: "update" | "delete",
 ) {
   await getAuditWriter().write({
@@ -410,7 +498,8 @@ async function auditLastAdminProtection(
     outcome: "DENIED",
     actorId: actor.userId,
     actorEmail: actor.email ?? "",
-    actorRole: actor.role ?? "UNKNOWN",
+    actorRole: actor.role,
+    actorKind: "USER",
     changes: { reason: "LAST_ACTIVE_COMPANY_ADMIN", operation },
   });
 }
@@ -452,46 +541,54 @@ export async function setPasswordFromInvite(
   try {
     const tokenPayload = verifyEmailVerificationToken(payload.token);
 
-    if (tokenPayload.purpose !== "email_verification") {
+    if (tokenPayload.purpose === "email_verification") {
+      throw new AppError(
+        409,
+        "INVITE_REISSUE_REQUIRED",
+        "This invitation link must be reissued by your company administrator.",
+      );
+    }
+
+    if (tokenPayload.purpose !== USER_INVITATION_PURPOSE) {
       throw invalidTokenError;
     }
 
-    const user = await findUserDocumentById(tokenPayload.sub);
-
-    if (
-      !user ||
-      user.tenantId.toString() !== tokenPayload.tenantId ||
-      user.email !== tokenPayload.email
-    ) {
+    const tenant = await findTenantById(tokenPayload.tenantId);
+    if (!tenant || isPlatformTenantSlug(tenant.slug)) {
       throw invalidTokenError;
     }
 
-    if (
-      user.emailVerified ||
-      user.status !== "pending_email_verification" ||
-      !user.emailVerificationTokenHash ||
-      !user.emailVerificationExpiresAt ||
-      user.emailVerificationExpiresAt.getTime() <= Date.now()
-    ) {
+    const tokenHash = hashVerificationJti(tokenPayload.jti);
+    const user = await UserModel.findOneAndUpdate(
+      {
+        _id: tokenPayload.sub,
+        tenantId: tokenPayload.tenantId,
+        email: tokenPayload.email,
+        status: "pending_email_verification",
+        emailVerified: false,
+        emailVerificationTokenHash: tokenHash,
+        emailVerificationExpiresAt: {
+          $gt: new Date(),
+        },
+      },
+      {
+        $set: {
+          passwordHash: await hashPassword(payload.password),
+          emailVerified: true,
+          emailVerifiedAt: new Date(),
+          status: "active",
+          emailVerificationTokenHash: null,
+          emailVerificationExpiresAt: null,
+        },
+      },
+      {
+        returnDocument: "after",
+      },
+    ).exec();
+
+    if (!user) {
       throw invalidTokenError;
     }
-
-    if (
-      user.emailVerificationTokenHash !== hashVerificationJti(tokenPayload.jti)
-    ) {
-      throw invalidTokenError;
-    }
-
-    const newPasswordHash = await hashPassword(payload.password);
-
-    user.passwordHash = newPasswordHash;
-    user.emailVerified = true;
-    user.emailVerifiedAt = new Date();
-    user.status = "active";
-    user.emailVerificationTokenHash = null;
-    user.emailVerificationExpiresAt = null;
-
-    await user.save();
 
     await getAuditWriter().write({
       tenantId: user.tenantId.toString(),
@@ -500,7 +597,8 @@ export async function setPasswordFromInvite(
       action: "PASSWORD_SET_FROM_INVITE",
       actorId: user._id.toString(),
       actorEmail: user.email,
-      actorRole: user.role ?? "UNKNOWN",
+      actorRole: user.role,
+      actorKind: "USER",
       changes: {
         status: {
           before: "pending_email_verification",
@@ -532,6 +630,16 @@ export async function getInviteDetails(input: unknown) {
     throw new AppError(400, "INVITE_INVALID", "Invite token is required");
   try {
     const tokenPayload = verifyEmailVerificationToken(token);
+    if (tokenPayload.purpose === "email_verification") {
+      throw new AppError(
+        409,
+        "INVITE_REISSUE_REQUIRED",
+        "This invitation link must be reissued by your company administrator.",
+      );
+    }
+    if (tokenPayload.purpose !== USER_INVITATION_PURPOSE) {
+      throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
+    }
     const user = await findUserDocumentById(tokenPayload.sub);
     if (
       !user ||
@@ -560,7 +668,7 @@ export async function getInviteDetails(input: unknown) {
       throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
     }
     const tenant = await findTenantById(user.tenantId.toString());
-    if (!tenant)
+    if (!tenant || isPlatformTenantSlug(tenant.slug))
       throw new AppError(400, "INVITE_INVALID", "Invalid invitation");
     return {
       companyName: tenant.name,
