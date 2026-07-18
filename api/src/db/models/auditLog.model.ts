@@ -4,12 +4,12 @@ import type { AuditActorKind } from "../../common/observability/auditEvents.js";
 
 export interface AuditLogDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId | "system";
-  userId: mongoose.Types.ObjectId | "system";
+  userId: mongoose.Types.ObjectId | "system" | null;
   resourceType: string;
   resourceId: string;
   action: string;
-  actorId: mongoose.Types.ObjectId | "system";
-  actorEmail: string;
+  actorId: mongoose.Types.ObjectId | "system" | null;
+  actorEmail: string | null | undefined;
   actorRole: BaseRole | null;
   actorKind: AuditActorKind;
   changes: Record<string, unknown>;
@@ -30,7 +30,7 @@ const auditLogSchema = new Schema<AuditLogDocument>(
     },
     userId: {
       type: Schema.Types.Mixed,
-      required: true,
+      default: null,
     },
     resourceType: {
       type: String,
@@ -46,11 +46,34 @@ const auditLogSchema = new Schema<AuditLogDocument>(
     },
     actorId: {
       type: Schema.Types.Mixed,
-      required: true,
+      default: null,
     },
     actorEmail: {
       type: String,
-      required: true,
+      trim: true,
+      lowercase: true,
+      maxlength: 254,
+      default: null,
+      required(this: AuditLogDocument) {
+        return this.actorKind === "USER";
+      },
+      validate: {
+        validator(value: unknown) {
+          if (value === "") {
+            return false;
+          }
+
+          if (value === null || value === undefined) {
+            return true;
+          }
+
+          return (
+            typeof value === "string" &&
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+          );
+        },
+        message: "actorEmail must be null or a valid email",
+      },
     },
     actorRole: {
       type: String,

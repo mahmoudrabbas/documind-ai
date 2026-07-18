@@ -146,18 +146,26 @@ function assertAuditHasNoCredentials(record: unknown, secret: string) {
   const serialized = JSON.stringify(record);
   assert.equal(serialized.includes(secret), false);
   assert.equal(serialized.includes("documind_refresh_token"), false);
+  assert.doesNotMatch(
+    serialized,
+    /accessToken|refreshToken|authorization|cookie/i,
+  );
 }
 
 // ─── Logout-All ──────────────────────────────────────────────────────────────
 
 test("logout-all revokes all refresh tokens for the user", async () => {
-  await createActiveTenantAdmin();
+  const { tenant, user } = await createActiveTenantAdmin();
 
   await login("acme-consulting", "sarah@acme.com");
   await login("acme-consulting", "sarah@acme.com");
   const loginRes = await login("acme-consulting", "sarah@acme.com");
   const setCookie = loginRes.headers.get("set-cookie") ?? "";
+  const refreshCookie = setCookie.split(";")[0] ?? "";
+  const refreshToken = refreshCookie.slice(refreshCookie.indexOf("=") + 1);
   const accessToken = extractAccessToken(await loginRes.json());
+  assert.notEqual(refreshToken, "");
+  assert.notEqual(accessToken, "");
 
   const tokensBefore = await RefreshTokenModel.countDocuments({
     userId: (await UserModel.findOne({ email: "sarah@acme.com" }))!._id,
@@ -171,7 +179,7 @@ test("logout-all revokes all refresh tokens for the user", async () => {
       method: "POST",
       headers: {
         authorization: `Bearer ${accessToken}`,
-        cookie: setCookie.split(";")[0],
+        cookie: refreshCookie,
         "x-confirm-logout-all": "true",
       },
     },
@@ -186,6 +194,34 @@ test("logout-all revokes all refresh tokens for the user", async () => {
     revokedAt: null,
   });
   assert.equal(tokensAfter, 0, "all tokens should be revoked");
+
+  await waitForAuditPersistence();
+  const audit = await AuditLogModel.findOne({
+    action: "AUTH_LOGOUT_ALL",
+    resourceId: user.id,
+  })
+    .sort({ createdAt: -1 })
+    .lean()
+    .exec();
+  assert.ok(audit);
+  assert.equal(audit.actorKind, "USER");
+  assert.equal(audit.actorId?.toString(), user.id);
+  assert.equal(audit.tenantId.toString(), tenant.id);
+  assert.equal(audit.actorRole, "COMPANY_ADMIN");
+  assert.equal(audit.actorEmail, "sarah@acme.com");
+  assert.notEqual(audit.actorEmail, "");
+  assert.notEqual(audit.actorEmail, "unknown@documind.ai");
+  assertAuditHasNoCredentials(audit.metadata, accessToken);
+  assertAuditHasNoCredentials(audit.metadata, refreshToken);
+  assert.equal(
+    await AuditLogModel.countDocuments({
+      action: { $in: ["AUTH_LOGOUT", "AUTH_LOGOUT_ALL"] },
+      actorEmail: {
+        $in: ["", "unknown", "unknown@documind.ai", "system@documind.ai"],
+      },
+    }),
+    0,
+  );
 });
 
 test("logout-all returns 401 without authentication", async () => {
@@ -269,6 +305,55 @@ test("customer login rejects reserved platform tenant slug", async () => {
   assert.equal(res.status, 401);
   const body = await res.json();
   assert.equal(body.error, "INVALID_CREDENTIALS");
+});
+
+test("customer login rejects legacy and noncanonical system tenants", async () => {
+  const legacyTenant = await TenantModel.create({
+    name: "Legacy Platform",
+    slug: "documind-ai",
+    status: "active",
+    plan: "free",
+    isSystemTenant: true,
+  });
+  const internalSystemTenant = await TenantModel.create({
+    name: "Internal Platform",
+    slug: "internal-platform",
+    status: "active",
+    plan: "free",
+    isSystemTenant: true,
+  });
+  await UserModel.create([
+    {
+      tenantId: legacyTenant.id,
+      name: "Legacy Admin",
+      email: "legacy-admin@example.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "COMPANY_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    },
+    {
+      tenantId: internalSystemTenant.id,
+      name: "Internal Admin",
+      email: "internal-admin@example.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "COMPANY_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    },
+  ]);
+
+  for (const [slug, email] of [
+    ["documind-ai", "legacy-admin@example.com"],
+    ["internal-platform", "internal-admin@example.com"],
+  ]) {
+    const res = await login(slug, email);
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.error, "INVALID_CREDENTIALS");
+  }
 });
 
 test("Super Admin login resolves documind.ai and stays isolated from same-email customer account", async () => {
@@ -748,6 +833,131 @@ test("forgot-password returns generic message for non-existent slug", async () =
   const body = await res.json();
   assert.equal(res.status, 200);
   assert.equal(body.success, true);
+});
+
+test("forgot-password and resend-verification remain generic for legacy and system tenants", async () => {
+  const legacyTenant = await TenantModel.create({
+    name: "Legacy Platform",
+    slug: "documind-ai",
+    status: "active",
+    plan: "free",
+    isSystemTenant: true,
+  });
+  const internalSystemTenant = await TenantModel.create({
+    name: "Internal Platform",
+    slug: "internal-platform",
+    status: "active",
+    plan: "free",
+    isSystemTenant: true,
+  });
+  const [legacyUser, internalUser] = await UserModel.create([
+    {
+      tenantId: legacyTenant._id,
+      name: "Legacy Admin",
+      email: "legacy-admin@example.com",
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "pending_email_verification",
+      emailVerified: false,
+      emailVerifiedAt: null,
+    },
+    {
+      tenantId: internalSystemTenant._id,
+      name: "Internal Admin",
+      email: "internal-admin@example.com",
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "pending_email_verification",
+      emailVerified: false,
+      emailVerifiedAt: null,
+    },
+  ]);
+
+  const beforeUsers = await Promise.all([
+    UserModel.findById(legacyUser._id)
+      .select("+emailVerificationTokenHash +passwordResetTokenHash")
+      .lean()
+      .exec(),
+    UserModel.findById(internalUser._id)
+      .select("+emailVerificationTokenHash +passwordResetTokenHash")
+      .lean()
+      .exec(),
+  ]);
+
+  const responses = await Promise.all([
+    fetch(`http://127.0.0.1:${port}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug: "documind-ai",
+        email: "legacy-admin@example.com",
+      }),
+    }),
+    fetch(`http://127.0.0.1:${port}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug: "internal-platform",
+        email: "internal-admin@example.com",
+      }),
+    }),
+    fetch(`http://127.0.0.1:${port}/auth/resend-verification-email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        companySlug: "documind-ai",
+        email: "legacy-admin@example.com",
+      }),
+    }),
+    fetch(`http://127.0.0.1:${port}/auth/resend-verification-email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        companySlug: "internal-platform",
+        email: "internal-admin@example.com",
+      }),
+    }),
+  ]);
+
+  const bodies = await Promise.all(responses.map((response) => response.json()));
+  for (const response of responses) {
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(bodies[0], {
+    success: true,
+    message:
+      "If an account matches the provided company and email, password reset instructions will be sent.",
+  });
+  assert.deepEqual(bodies[1], bodies[0]);
+  assert.deepEqual(bodies[2], GENERIC_PUBLIC_RESEND_RESPONSE);
+  assert.deepEqual(bodies[3], GENERIC_PUBLIC_RESEND_RESPONSE);
+
+  const afterUsers = await Promise.all([
+    UserModel.findById(legacyUser._id)
+      .select("+emailVerificationTokenHash +passwordResetTokenHash")
+      .lean()
+      .exec(),
+    UserModel.findById(internalUser._id)
+      .select("+emailVerificationTokenHash +passwordResetTokenHash")
+      .lean()
+      .exec(),
+  ]);
+  assert.equal(
+    afterUsers[0]?.emailVerificationTokenHash ?? null,
+    beforeUsers[0]?.emailVerificationTokenHash ?? null,
+  );
+  assert.equal(
+    afterUsers[1]?.emailVerificationTokenHash ?? null,
+    beforeUsers[1]?.emailVerificationTokenHash ?? null,
+  );
+  assert.equal(
+    afterUsers[0]?.passwordResetTokenHash ?? null,
+    beforeUsers[0]?.passwordResetTokenHash ?? null,
+  );
+  assert.equal(
+    afterUsers[1]?.passwordResetTokenHash ?? null,
+    beforeUsers[1]?.passwordResetTokenHash ?? null,
+  );
 });
 
 // ─── Email Verification Edge Cases ──────────────────────────────────────────

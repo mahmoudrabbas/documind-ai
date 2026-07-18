@@ -749,6 +749,7 @@ export async function createUser(
  */
 
 export async function updateUserVerificationToken(
+  tenantId: string,
   userId: string,
   tokenHash: string | null,
   expiresAt: Date | null,
@@ -756,6 +757,7 @@ export async function updateUserVerificationToken(
   await UserModel.updateOne(
     {
       _id: userId,
+      tenantId,
     },
     {
       $set: {
@@ -764,6 +766,32 @@ export async function updateUserVerificationToken(
       },
     },
   ).exec();
+}
+
+export async function restoreUserVerificationTokenIfCurrent(
+  tenantId: string,
+  userId: string,
+  currentTokenHash: string,
+  currentExpiresAt: Date,
+  previousTokenHash: string | null,
+  previousExpiresAt: Date | null,
+) {
+  const result = await UserModel.updateOne(
+    {
+      _id: userId,
+      tenantId,
+      emailVerificationTokenHash: currentTokenHash,
+      emailVerificationExpiresAt: currentExpiresAt,
+    },
+    {
+      $set: {
+        emailVerificationTokenHash: previousTokenHash,
+        emailVerificationExpiresAt: previousExpiresAt,
+      },
+    },
+  ).exec();
+
+  return result.modifiedCount === 1;
 }
 
 /**

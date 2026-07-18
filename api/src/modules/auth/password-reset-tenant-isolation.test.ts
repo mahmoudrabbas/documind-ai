@@ -118,3 +118,40 @@ test("an unknown slug receives the same generic forgot-password success", async 
     message: "If an account matches the provided company and email, password reset instructions will be sent.",
   });
 });
+
+test("reset rejects system-platform tenants even with a tenant-bound token", async () => {
+  const tenant = await TenantModel.create({
+    name: "Internal Platform",
+    slug: "internal-platform",
+    status: "active",
+    plan: "free",
+    isSystemTenant: true,
+  });
+  const user = await UserModel.create({
+    tenantId: tenant._id,
+    name: "Platform User",
+    email: "platform@example.com",
+    passwordHash: "platform-password",
+    role: "SUPER_ADMIN",
+    status: "active",
+    emailVerified: true,
+    emailVerifiedAt: new Date(),
+  });
+  const token = await installResetToken(tenant._id.toString(), user._id.toString());
+
+  await assert.rejects(
+    resetPassword({
+      token: token.token,
+      slug: "internal-platform",
+      password: "newPassword1",
+      confirmPassword: "newPassword1",
+    }),
+    /Invalid or expired password reset token/,
+  );
+
+  const storedUser = await UserModel.findById(user.id)
+    .select("+passwordHash +passwordResetTokenHash")
+    .exec();
+  assert.equal(storedUser?.passwordHash, "platform-password");
+  assert.equal(storedUser?.passwordResetTokenHash, token.tokenHash);
+});
