@@ -20,6 +20,13 @@ export interface SecurityScanner {
 
 export interface EntitlementChecker {
   checkUploadAllowed(tenantId: string, fileSize: number): Promise<void>;
+  checkOcrPageQuota(tenantId: string, pageCount: number): Promise<void>;
+  recordOcrUsage(tenantId: string, pageCount: number): Promise<void>;
+}
+
+export interface OcrUsageRecorder {
+  record(tenantId: string, documentId: string, documentVersion: number, pagesProcessed: number, provider: string, providerModel: string, language: string, durationMs: number, costUsd: number): Promise<void>;
+  getUsageCount(tenantId: string, startDate: Date, endDate: Date): Promise<number>;
 }
 
 export interface ProcessingDispatcher {

@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { getFileSizeLabel } from "@/lib/validation";
 import * as documentsService from "@/services/documents.service";
 import type { DocumentView, DocumentVersionView, DocumentExtractionStatusResponse } from "@/types/api/documents.types";
+import { DocumentQualityPanel } from "./DocumentQualityPanel";
 
 const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
   public: "success",
@@ -205,6 +206,14 @@ export function DocumentDetailDrawer({
             ) : (
               <p className="mt-2 text-xs text-on-surface-variant">No extraction artifact found.</p>
             )}
+          </div>
+
+          <div className="mb-6">
+            <DocumentQualityPanel
+              documentId={doc.id}
+              documentVersion={doc.version}
+              isCompanyAdmin={isCompanyAdmin}
+            />
           </div>
 
           <div className="mb-6 space-y-3">

@@ -33,6 +33,8 @@ export const Permission = {
   IMPORTS_CREATE: "imports:create",
   IMPORTS_READ: "imports:read",
   AUDIT_READ: "audit:read",
+  DOCUMENTS_OCR_PROCESS: "documents:ocr-process",
+  DOCUMENTS_QUALITY_REVIEW: "documents:quality-review",
 } as const;
 
 export type PermissionValue = (typeof Permission)[keyof typeof Permission];
@@ -46,7 +48,8 @@ export type PermissionGroup =
   | "company-settings"
   | "billing"
   | "imports"
-  | "audit";
+  | "audit"
+  | "processing";
 export type PermissionScopeType =
   | "departmentIds"
   | "documentCategories"
@@ -107,6 +110,8 @@ const definitions: Array<Omit<PermissionDefinition, "contractVersion" | "active"
   { id: Permission.IMPORTS_CREATE, group: "imports", label: "Create Imports", description: "Create tenant imports", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds"] },
   { id: Permission.IMPORTS_READ, group: "imports", label: "View Imports", description: "View tenant imports", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds"] },
   { id: Permission.AUDIT_READ, group: "audit", label: "View Audit Logs", description: "View tenant audit logs", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: false, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
+  { id: Permission.DOCUMENTS_OCR_PROCESS, group: "documents", label: "Process OCR", description: "Trigger OCR processing on documents", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
+  { id: Permission.DOCUMENTS_QUALITY_REVIEW, group: "documents", label: "Review Document Quality", description: "Review and approve/reject low-confidence OCR results", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
 ];
 
 export const PERMISSION_CATALOG: readonly PermissionDefinition[] = definitions.map((definition) => ({
@@ -146,6 +151,7 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   billing: "Billing",
   imports: "Imports",
   audit: "Audit",
+  processing: "Processing",
 };
 
 export const TENANT_PERMISSION_CATALOG_GROUPS = Array.from(
