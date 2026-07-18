@@ -34,6 +34,7 @@ const en: TranslationDictionary = {
   "auth.companySlugPlaceholder": "acme-consulting",
   "auth.companySlugHelp": "Use your company workspace slug.",
   "auth.companySlugRequired": "Company slug is required.",
+  "auth.companySlugReserved": "This company slug is reserved for DocuMind platform administration.",
   "auth.email": "Email address",
   "auth.emailPlaceholder": "admin@company.com",
   "auth.emailRequired": "Email is required.",
@@ -49,6 +50,18 @@ const en: TranslationDictionary = {
   "auth.errorInvalidCredentials": "Invalid company, email, or password.",
   "auth.errorAccountNotActive": "Account is not active.",
   "auth.errorTenantNotActive": "Tenant is not active.",
+  "auth.backToHome": "Back to Home",
+  "auth.rateLimitTitle": "Too many requests",
+  "auth.rateLimitCountdown": "Please wait {{seconds}} seconds before trying again.",
+  "auth.rateLimitLongWait": "Please wait {{duration}} before trying again.",
+  "auth.rateLimitReady": "You can try again now",
+  "auth.durationMinute": "minute",
+  "auth.durationMinutes": "minutes",
+  "auth.durationHour": "hour",
+  "auth.durationHours": "hours",
+  "auth.durationDay": "day",
+  "auth.durationDays": "days",
+  "auth.resendVerificationLink": "Resend verification email",
 
   /* ── nav ───────────────────────────────────────────────── */
   "nav.home": "Home",
@@ -234,6 +247,15 @@ const en: TranslationDictionary = {
   "auth.forgotPasswordSubmit": "Send reset link",
   "auth.forgotPasswordSending": "Sending…",
   "auth.forgotPasswordSuccess": "Check your email",
+
+  /* ── auth/resend-verification ──────────────────────────── */
+  "auth.resendVerificationTitle": "Resend verification email",
+  "auth.resendVerificationDescription": "Request a fresh verification link for your company workspace.",
+  "auth.resendVerificationInstructions": "Enter your company slug and email address. If the account exists and requires verification, we'll send an email. Already verified? You can sign in.",
+  "auth.resendVerificationSubmit": "Send verification link",
+  "auth.resendVerificationSending": "Sending…",
+  "auth.resendVerificationSuccess": "If the account exists and requires verification, we'll send an email. Already verified? You can sign in.",
+  "auth.resendVerificationError": "Could not request a new verification link. Please try again.",
 
   /* ── auth/reset-password ────────────────────────────────── */
   "auth.resetPassword": "Set new password",

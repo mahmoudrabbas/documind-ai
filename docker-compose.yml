@@ -9,7 +9,7 @@ services:
       - path: ./api/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - MONGODB_URI=mongodb://mongodb:27017/docsai?replicaSet=rs0
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET_FILE=/run/secrets/api_jwt_secret
       - JWT_REFRESH_SECRET_FILE=/run/secrets/api_refresh_secret
@@ -89,14 +89,16 @@ services:
       - path: ./workers/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - MONGODB_URI=mongodb://mongodb:27017/docsai?replicaSet=rs0
       - REDIS_URL=redis://redis:6379
       - UPLOAD_DIR=/repo/api/uploads
       - MONGODB_URI_FILE=/run/secrets/worker_mongodb_uri
       - REDIS_URL_FILE=/run/secrets/worker_redis_url
+      - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
     secrets:
       - worker_mongodb_uri
       - worker_redis_url
+      - api_smtp_pass
 
   paddle-ocr:
     build:
@@ -130,14 +132,20 @@ services:
   mongodb:
     image: mongo:8
     container_name: docsai-mongodb
+
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+
     ports:
       - "27017:27017"
+
     environment:
       MONGO_INITDB_DATABASE: docsai
+
     volumes:
       - mongo_data:/data/db
+
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
       retries: 5

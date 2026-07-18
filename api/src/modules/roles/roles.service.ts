@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
+import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   DUPLICATE_ROLE_NAME,
   MALFORMED_OBJECT_ID,
   NOT_FOUND,
+  PERMISSION_REQUIRED,
   ROLE_IN_USE,
   ROLE_NOT_ASSIGNABLE,
   ROLE_VERSION_CONFLICT,
@@ -38,7 +41,7 @@ import type {
 } from "./roles.types.js";
 
 type RoleRecord = Pick<RoleDocument, "tenantId" | "name" | "baseRole" | "grants" | "contractVersion" | "status" | "version" | "createdBy" | "updatedBy" | "migrationState" | "migrationReason" | "createdAt" | "updatedAt"> & { _id: { toString(): string } };
-export interface RoleOperationContext { tenantId: string; actorId: string; actorEmail?: string; actorRole?: string; traceId?: string; requestId?: string }
+export interface RoleOperationContext { tenantId: string; actorId: string; actorEmail?: string; actorRole?: BaseRole; traceId?: string; requestId?: string }
 
 function serializeRole(doc: RoleRecord, userCount = 0): RolePublicView {
   return {
@@ -366,9 +369,27 @@ async function auditRejectedGrant(context: RoleOperationContext, roleId: string 
   }
 }
 
+async function resolveAuditActorRole(
+  context: RoleOperationContext,
+): Promise<BaseRole | null> {
+  if (context.actorRole) {
+    return context.actorRole;
+  }
+
+  const actor = await UserModel.findOne({
+    _id: context.actorId,
+    tenantId: context.tenantId,
+  })
+    .select("role")
+    .lean()
+    .exec();
+
+  return actor?.role ?? null;
+}
+
 async function audit(context: RoleOperationContext, action: import("../../common/observability/auditEvents.js").AuditAction, resourceId: string, changes: Record<string, unknown>, outcome: "SUCCESS" | "DENIED" = "SUCCESS") {
   const written = await getAuditWriter().write({
-    tenantId: context.tenantId, actorId: context.actorId, actorRole: context.actorRole ?? "UNKNOWN",
+    tenantId: context.tenantId, actorId: context.actorId, actorRole: await resolveAuditActorRole(context),
     resourceType: "Role", resourceId, action, outcome, changes,
     metadata: { traceId: context.traceId, requestId: context.requestId },
   });
@@ -386,9 +407,26 @@ async function audit(context: RoleOperationContext, action: import("../../common
 }
 
 function normalizeContext(value: RoleOperationContext | string, actorId?: string): RoleOperationContext {
-  return typeof value === "string" ? { tenantId: value, actorId: actorId ?? "" } : value;
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  if (!actorId) {
+    throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
+  }
+
+  return {
+    tenantId: value,
+    actorId,
+  };
 }
-function validateContext(context: RoleOperationContext) { assertObjectId(context.tenantId); assertObjectId(context.actorId); }
+function validateContext(context: RoleOperationContext) {
+  assertObjectId(context.tenantId);
+  assertObjectId(context.actorId);
+  if (context.actorRole !== undefined && !isBaseRole(context.actorRole)) {
+    throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
+  }
+}
 function duplicateNameError() { return new AppError(409, DUPLICATE_ROLE_NAME, "A role with this name already exists in your tenant"); }
 function roleVersionError() { return new AppError(409, ROLE_VERSION_CONFLICT, "Role was modified by another request"); }
 function legacyRoleVersionError() { return new AppError(409, STALE_ROLE_VERSION, "Role was modified by another request"); }

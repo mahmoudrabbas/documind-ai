@@ -34,7 +34,7 @@ export async function upsertArtifact(
         createdAt: new Date(),
       },
     },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: "after" },
   );
   return result;
 }

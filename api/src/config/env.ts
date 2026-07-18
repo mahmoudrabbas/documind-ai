@@ -35,6 +35,46 @@ const envSchema = z
     RATE_LIMIT_MESSAGE: z
       .string()
       .default("Too many requests, please try again later."),
+    RESEND_VERIFICATION_COOLDOWN_MS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(60 * 1000),
+    RESEND_VERIFICATION_COOLDOWN_MAX_REQUESTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(1),
+    RESEND_VERIFICATION_PER_ACCOUNT_HOURLY_MAX_REQUESTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(3),
+    RESEND_VERIFICATION_PER_ACCOUNT_DAILY_MAX_REQUESTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(5),
+    RESEND_VERIFICATION_PER_IP_HOURLY_MAX_REQUESTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(20),
+    RESEND_VERIFICATION_PER_IP_DAILY_MAX_REQUESTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(100),
+    RESEND_VERIFICATION_PER_TENANT_DAILY_MAX_REQUESTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(200),
+    RESEND_VERIFICATION_IP_DISTINCT_EMAILS_24H_MONITOR_THRESHOLD: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(20),
 
     APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
 

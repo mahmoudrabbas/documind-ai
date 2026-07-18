@@ -1,10 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   BASE_URL,
-  API_URL,
   registerAndVerifyCompany,
-  uniqueSlug,
-  uniqueEmail,
 } from "./helpers";
 
 test.describe("Forgot / Reset Password", () => {

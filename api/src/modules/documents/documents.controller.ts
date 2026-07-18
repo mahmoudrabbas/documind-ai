@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
+import { isBaseRole } from "../../common/auth/baseRoles.js";
 import {
   storageProvider,
 } from "../../providers/storage/index.js";
@@ -30,6 +31,14 @@ function handleDocumentError(error: unknown, res: Response, next: NextFunction) 
   next(error);
 }
 
+function requireAuthRole(req: Request) {
+  if (!req.auth || !isBaseRole(req.auth.role)) {
+    throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+  }
+
+  return req.auth.role;
+}
+
 export async function uploadDocumentController(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth || !req.tenantId) {
@@ -42,7 +51,9 @@ export async function uploadDocumentController(req: Request, res: Response, next
     const result = await service.uploadDocument(
       { fieldname: file.fieldname, originalname: file.originalname, encoding: file.encoding,
         mimetype: file.mimetype, buffer: file.buffer, size: file.size },
-      req.body, req.tenantId, req.auth.userId,
+      req.body,
+      req.tenantId,
+      { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) },
     );
     res.status(201).json({ success: true, message: "Document uploaded successfully", data: result });
   } catch (error) { handleDocumentError(error, res, next); }
@@ -71,7 +82,12 @@ export async function updateDocumentMetadataController(req: Request, res: Respon
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    const result = await service.updateDocumentMetadata(documentId, req.body, req.tenantId, req.auth.userId);
+    const result = await service.updateDocumentMetadata(
+      documentId,
+      req.body,
+      req.tenantId,
+      { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) },
+    );
     res.status(200).json({ success: true, data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -81,7 +97,12 @@ export async function downloadDocumentController(req: Request, res: Response, ne
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    const { stream, contentType, fileName, fileSize } = await service.downloadDocument(documentId, req.tenantId, req.auth.userId);
+    const { stream, contentType, fileName, fileSize } =
+      await service.downloadDocument(documentId, req.tenantId, {
+        userId: req.auth.userId,
+        email: req.auth.email,
+        role: requireAuthRole(req),
+      });
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Length", fileSize);
@@ -106,7 +127,7 @@ export async function replaceDocumentController(req: Request, res: Response, nex
         mimetype: file.mimetype, buffer: file.buffer, size: file.size },
       req.body,
       req.tenantId,
-      req.auth.userId,
+      { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) },
     );
     res.status(200).json({ success: true, message: "Document replaced successfully", data: result });
   } catch (error) { handleDocumentError(error, res, next); }
@@ -117,7 +138,11 @@ export async function archiveDocumentController(req: Request, res: Response, nex
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    const result = await service.archiveDocument(documentId, req.tenantId, req.auth.userId);
+    const result = await service.archiveDocument(documentId, req.tenantId, {
+      userId: req.auth.userId,
+      email: req.auth.email,
+      role: requireAuthRole(req),
+    });
     res.status(200).json({ success: true, message: "Document archived successfully", data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -127,7 +152,11 @@ export async function restoreDocumentController(req: Request, res: Response, nex
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    const result = await service.restoreDocument(documentId, req.tenantId, req.auth.userId);
+    const result = await service.restoreDocument(documentId, req.tenantId, {
+      userId: req.auth.userId,
+      email: req.auth.email,
+      role: requireAuthRole(req),
+    });
     res.status(200).json({ success: true, message: "Document restored successfully", data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -137,7 +166,11 @@ export async function softDeleteDocumentController(req: Request, res: Response, 
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    await service.softDeleteDocument(documentId, req.tenantId, req.auth.userId);
+    await service.softDeleteDocument(documentId, req.tenantId, {
+      userId: req.auth.userId,
+      email: req.auth.email,
+      role: requireAuthRole(req),
+    });
     res.status(200).json({ success: true, message: "Document moved to trash" });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -147,7 +180,11 @@ export async function permanentDeleteDocumentController(req: Request, res: Respo
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    await service.permanentDeleteDocument(documentId, req.tenantId, req.auth.userId);
+    await service.permanentDeleteDocument(documentId, req.tenantId, {
+      userId: req.auth.userId,
+      email: req.auth.email,
+      role: requireAuthRole(req),
+    });
     res.status(200).json({ success: true, message: "Document permanently deleted" });
   } catch (error) { handleDocumentError(error, res, next); }
 }

@@ -1,4 +1,11 @@
-const GUEST_ROUTES = new Set(["/login", "/register"]);
+const GUEST_ROUTES = new Set([
+  "/forgot-password",
+  "/login",
+  "/register",
+  "/resend-verification",
+  "/reset-password",
+  "/token-state",
+]);
 
 export function getSafeReturnTo(value: string | null): string | null {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return null;

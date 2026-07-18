@@ -15,10 +15,14 @@ import { getAuditWriter } from "../../common/observability/index.js";
 import * as PackageService from "../billing/package.service.js";
 import * as SubscriptionService from "../billing/subscription.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
+import {
+  LEGACY_PLATFORM_TENANT_SLUGS,
+  PLATFORM_TENANT_SLUG,
+} from "../../common/auth/platformTenant.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
-  slug: { $nin: ["documind-ai", "__documind_platform__"] },
+  slug: { $nin: [PLATFORM_TENANT_SLUG, ...LEGACY_PLATFORM_TENANT_SLUGS] },
 };
 
 export async function getOverview() {
@@ -397,7 +401,7 @@ export async function updateSetting(
   const setting = await PlatformSettingModel.findOneAndUpdate(
     { key },
     { $set: { value, updatedBy: new Types.ObjectId(actor.userId) } },
-    { upsert: true, new: true, runValidators: true },
+    { upsert: true, returnDocument: "after", runValidators: true },
   )
     .lean()
     .exec();

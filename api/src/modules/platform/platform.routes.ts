@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { requirePlatformTenant } from "../../common/middlewares/platformTenant.middleware.js";
 import {
   aiConfigurationController,
   auditController,
@@ -21,7 +22,7 @@ import {
 } from "./platform.controller.js";
 
 const router = Router();
-router.use(authenticate, authorize("SUPER_ADMIN"));
+router.use(authenticate, authorize("SUPER_ADMIN"), requirePlatformTenant);
 router.get("/overview", overviewController);
 router.get("/packages", packagesController);
 router.post("/packages", createPackageController);

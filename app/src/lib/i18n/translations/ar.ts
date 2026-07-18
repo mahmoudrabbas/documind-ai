@@ -33,6 +33,7 @@ const ar: TranslationDictionary = {
   "auth.companySlugPlaceholder": "acme-consulting",
   "auth.companySlugHelp": "استخدم معرّف مساحة عمل شركتك.",
   "auth.companySlugRequired": "معرّف الشركة مطلوب.",
+  "auth.companySlugReserved": "هذا المعرّف محجوز لإدارة منصة DocuMind.",
   "auth.email": "البريد الإلكتروني",
   "auth.emailPlaceholder": "admin@company.com",
   "auth.emailRequired": "البريد الإلكتروني مطلوب.",
@@ -49,6 +50,18 @@ const ar: TranslationDictionary = {
     "الشركة أو البريد الإلكتروني أو كلمة المرور غير صحيحة.",
   "auth.errorAccountNotActive": "الحساب غير مفعّل.",
   "auth.errorTenantNotActive": "المستأجر غير مفعّل.",
+  "auth.backToHome": "العودة إلى الرئيسية",
+  "auth.rateLimitTitle": "طلبات كثيرة جداً",
+  "auth.rateLimitCountdown": "يرجى الانتظار {{seconds}} ثانية قبل المحاولة مرة أخرى.",
+  "auth.rateLimitLongWait": "يرجى الانتظار {{duration}} قبل المحاولة مرة أخرى.",
+  "auth.rateLimitReady": "يمكنك المحاولة الآن",
+  "auth.durationMinute": "دقيقة",
+  "auth.durationMinutes": "دقائق",
+  "auth.durationHour": "ساعة",
+  "auth.durationHours": "ساعات",
+  "auth.durationDay": "يوم",
+  "auth.durationDays": "أيام",
+  "auth.resendVerificationLink": "إعادة إرسال بريد التحقق",
 
   /* ── nav ───────────────────────────────────────────────── */
   "nav.home": "الرئيسية",
@@ -234,6 +247,15 @@ const ar: TranslationDictionary = {
   "auth.forgotPasswordSubmit": "إرسال رابط إعادة التعيين",
   "auth.forgotPasswordSending": "جارٍ الإرسال…",
   "auth.forgotPasswordSuccess": "تحقق من بريدك الإلكتروني",
+
+  /* ── auth/resend-verification ──────────────────────────── */
+  "auth.resendVerificationTitle": "إعادة إرسال بريد التحقق",
+  "auth.resendVerificationDescription": "اطلب رابط تحقق جديداً لمساحة عمل شركتك.",
+  "auth.resendVerificationInstructions": "أدخل معرّف شركتك وبريدك الإلكتروني. إذا كان الحساب موجودًا وما زال يحتاج إلى التحقق، فسنرسل رسالة تحقق. إذا كان حسابك مفعّلًا بالفعل، يمكنك تسجيل الدخول.",
+  "auth.resendVerificationSubmit": "إرسال رابط التحقق",
+  "auth.resendVerificationSending": "جارٍ الإرسال…",
+  "auth.resendVerificationSuccess": "إذا كان الحساب موجودًا وما زال يحتاج إلى التحقق، فسنرسل رسالة تحقق. إذا كان حسابك مفعّلًا بالفعل، يمكنك تسجيل الدخول.",
+  "auth.resendVerificationError": "تعذّر طلب رابط تحقق جديد. يرجى المحاولة مرة أخرى.",
 
   /* ── auth/reset-password ────────────────────────────────── */
   "auth.resetPassword": "تعيين كلمة مرور جديدة",

@@ -1,32 +1,135 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  clipGrantScopesToActorScope,
+  combineSelectableWithActorGrants,
+  constrainCompatibleScopes,
+  deriveDeleteFlowState,
+  deriveInheritedPermissionIds,
+  deriveRoleActionVisibility,
+  deriveRoleListViewState,
+  deriveVersionConflictState,
+  filterCatalogGroupsForActor,
+  flattenCatalogEntries,
+  normalizeScopesForPermission,
+  prepareCreateRoleSubmission,
+  prepareRoleGrantsForSubmission,
+  prepareUpdateRoleSubmission,
+  scopeContains,
+  validateCreateRoleInput,
+  validateRoleGrantScopes,
+  type ActorGrantMap,
+} from "@/lib/permission-utils";
+import type {
+  PermissionCatalogEntry,
+  PermissionCatalogGroup,
+  PermissionScopes,
+} from "@/types/api/permissions.types";
+import type { RoleView } from "@/types/api/users.types";
 
 const { apiClient } = vi.hoisted(() => ({ apiClient: vi.fn() }));
-vi.mock("@/lib/api-client", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@/lib/api-client")>();
 
-  return {
-    ...actual,
-    apiClient,
-  };
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-client")>();
+  return { ...actual, apiClient };
 });
 
 import {
-  listRoles,
-  getRole,
-  createRole,
-  updateRole,
-  deleteRole,
-  cloneRole,
   archiveRole,
-  reactivateRole,
   assignRole,
-  removeRoleAssignment,
-  migrateRoleUsers,
+  cloneRole,
+  createRole,
+  deleteRole,
   getPermissionCatalog,
+  getRole,
   getRoleUsage,
+  listRoles,
+  migrateRoleUsers,
+  reactivateRole,
+  removeRoleAssignment,
+  updateRole,
 } from "@/services/roles.service";
-import type { RoleView } from "@/types/api/users.types";
+
+const unrestrictedScope = (): PermissionScopes => ({
+  selfOnly: false,
+  departmentIds: [],
+  documentCategories: [],
+  documentClassifications: [],
+});
+
+const documentRead: PermissionCatalogEntry = {
+  id: "documents:read",
+  label: "View Documents",
+  description: "View tenant documents",
+  compatibleScopes: [
+    "selfOnly",
+    "departmentIds",
+    "documentCategories",
+    "documentClassifications",
+  ],
+  defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
+  active: true,
+  deprecated: false,
+  platformOnly: false,
+  tenantGrantable: true,
+  delegableByTenantAdmin: true,
+  contractVersion: 1,
+};
+
+const analyticsRead: PermissionCatalogEntry = {
+  ...documentRead,
+  id: "analytics:read",
+  label: "View Analytics",
+  compatibleScopes: ["departmentIds"],
+  defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"],
+};
+
+const deprecatedPermission: PermissionCatalogEntry = {
+  ...documentRead,
+  id: "documents:legacy",
+  deprecated: true,
+  active: false,
+};
+
+const nonDelegablePermission: PermissionCatalogEntry = {
+  ...documentRead,
+  id: "users:delete",
+  delegableByTenantAdmin: false,
+  tenantGrantable: false,
+};
+
+const catalogGroups: PermissionCatalogGroup[] = [
+  {
+    group: "documents",
+    label: "Documents",
+    permissions: [documentRead, deprecatedPermission],
+  },
+  {
+    group: "analytics",
+    label: "Analytics",
+    permissions: [analyticsRead],
+  },
+  {
+    group: "users",
+    label: "Users",
+    permissions: [nonDelegablePermission],
+  },
+];
+
+const actorGrants: ActorGrantMap = {
+  "documents:read": {
+    source: "custom-role",
+    scope: {
+      selfOnly: false,
+      departmentIds: ["dept-a", "dept-b"],
+      documentCategories: ["invoices", "contracts"],
+      documentClassifications: ["internal", "confidential"],
+    },
+  },
+  "analytics:read": {
+    source: "base-role",
+    scope: null,
+  },
+};
 
 const role: RoleView = {
   id: "role-1",
@@ -48,437 +151,881 @@ const role: RoleView = {
 const archivedRole: RoleView = {
   ...role,
   id: "role-2",
-  name: "Legacy",
+  name: "Archived Analyst",
   status: "archived",
   userCount: 0,
-  version: 1,
-};
-
-const roleWithGrants: RoleView = {
-  ...role,
-  id: "role-3",
-  name: "Document Manager",
-  grants: [
-    { permission: "documents:create" },
-    { permission: "documents:read", scopes: { selfOnly: true, departmentIds: [], documentCategories: [], documentClassifications: [] } },
-  ],
-};
-
-const catalogResponse = {
-  success: true as const,
-  data: {
-    contractVersion: 1,
-    groups: [
-      {
-        group: "documents",
-        label: "Documents",
-        permissions: [
-          { id: "documents:read", label: "View Documents", description: "View tenant documents", compatibleScopes: ["selfOnly", "departmentIds", "documentCategories", "documentClassifications"], defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], active: true, deprecated: false, platformOnly: false, tenantGrantable: true, contractVersion: 1 },
-          { id: "documents:create", label: "Upload Documents", description: "Upload tenant documents", compatibleScopes: ["departmentIds", "documentCategories", "documentClassifications"], defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], active: true, deprecated: false, platformOnly: false, tenantGrantable: true, contractVersion: 1 },
-        ],
-      },
-      {
-        group: "users",
-        label: "Users",
-        permissions: [
-          { id: "users:read", label: "View Users", description: "List and view tenant users", compatibleScopes: ["departmentIds", "selfOnly"], defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], active: true, deprecated: false, platformOnly: false, tenantGrantable: true, contractVersion: 1 },
-        ],
-      },
-    ],
-  },
+  version: 5,
 };
 
 beforeEach(() => {
   apiClient.mockReset();
 });
 
-describe("role list rendering", () => {
-  it("fetches and returns roles", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { roles: [role, archivedRole] } });
-    const response = await listRoles();
-    expect(response.data.roles).toHaveLength(2);
-    expect(response.data.roles[0].name).toBe("Analyst");
-    expect(response.data.roles[1].status).toBe("archived");
+describe("production permission action visibility", () => {
+  it("requires roles:read for view/list/details/usage visibility", () => {
+    expect(
+      deriveRoleActionVisibility(new Set(["roles:read"]), "active").canView,
+    ).toBe(true);
+    expect(deriveRoleActionVisibility(new Set(), "active").canView).toBe(false);
   });
 
-  it("returns a single role by id", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { role } });
-    const response = await getRole("role-1");
-    expect(response.data.role.id).toBe("role-1");
-    expect(response.data.role.name).toBe("Analyst");
+  it("uses roles:create for create-adjacent clone visibility", () => {
+    expect(
+      deriveRoleActionVisibility(new Set(["roles:create"]), "active").canClone,
+    ).toBe(true);
+    expect(
+      deriveRoleActionVisibility(new Set(["roles:update"]), "active").canClone,
+    ).toBe(false);
+  });
+
+  it("uses roles:update for edit and archive on active roles", () => {
+    const visible = deriveRoleActionVisibility(
+      new Set(["roles:update"]),
+      "active",
+    );
+    expect(visible.canEdit).toBe(true);
+    expect(visible.canArchive).toBe(true);
+    expect(visible.canReactivate).toBe(false);
+  });
+
+  it("uses roles:update for reactivate on archived roles", () => {
+    const visible = deriveRoleActionVisibility(
+      new Set(["roles:update"]),
+      "archived",
+    );
+    expect(visible.canEdit).toBe(false);
+    expect(visible.canArchive).toBe(false);
+    expect(visible.canReactivate).toBe(true);
+  });
+
+  it("uses roles:delete and archived status for delete", () => {
+    expect(
+      deriveRoleActionVisibility(new Set(["roles:delete"]), "archived")
+        .canDelete,
+    ).toBe(true);
+    expect(
+      deriveRoleActionVisibility(new Set(["roles:delete"]), "active").canDelete,
+    ).toBe(false);
+  });
+
+  it("uses users:assign-role for assignment, removal, and migration", () => {
+    const active = deriveRoleActionVisibility(
+      new Set(["users:assign-role"]),
+      "active",
+    );
+    const archived = deriveRoleActionVisibility(
+      new Set(["users:assign-role"]),
+      "archived",
+    );
+    expect(active.canAssign).toBe(true);
+    expect(active.canMigrate).toBe(true);
+    expect(archived.canAssign).toBe(false);
+    expect(archived.canMigrate).toBe(true);
   });
 });
 
-describe("loading, empty, and error states", () => {
-  it("returns an empty list when no roles exist", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { roles: [] } });
-    const response = await listRoles();
-    expect(response.data.roles).toHaveLength(0);
+describe("production list view-state derivation", () => {
+  const base = {
+    permissionsReady: true,
+    canRead: true,
+    loading: false,
+    error: null,
+    rolesCount: 1,
+    filteredCount: 1,
+  };
+
+  it("returns permissionLoading before permission readiness", () => {
+    expect(
+      deriveRoleListViewState({ ...base, permissionsReady: false }).viewState,
+    ).toBe("permissionLoading");
   });
 
-  it("throws ApiError on server error", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 500, code: "INTERNAL_SERVER_ERROR", message: "Server error" }));
-    await expect(listRoles()).rejects.toThrow(ApiError);
+  it("returns permissionDenied without roles:read", () => {
+    expect(deriveRoleListViewState({ ...base, canRead: false }).viewState).toBe(
+      "permissionDenied",
+    );
   });
 
-  it("throws ApiError with NOT_FOUND on missing role", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 404, code: "NOT_FOUND", message: "Role not found" }));
-    await expect(getRole("nonexistent")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  it("returns loading", () => {
+    expect(deriveRoleListViewState({ ...base, loading: true }).viewState).toBe(
+      "loading",
+    );
+  });
+
+  it("returns recoverable error with retry", () => {
+    const result = deriveRoleListViewState({
+      ...base,
+      error: "Network error",
+    });
+    expect(result.viewState).toBe("error");
+    expect(result.canRetry).toBe(true);
+  });
+
+  it("returns empty when no roles exist", () => {
+    expect(
+      deriveRoleListViewState({
+        ...base,
+        rolesCount: 0,
+        filteredCount: 0,
+      }).viewState,
+    ).toBe("empty");
+  });
+
+  it("returns filteredEmpty and exposes clear filters", () => {
+    const result = deriveRoleListViewState({ ...base, filteredCount: 0 });
+    expect(result.viewState).toBe("filteredEmpty");
+    expect(result.showClearFilters).toBe(true);
+  });
+
+  it("returns ready", () => {
+    expect(deriveRoleListViewState(base).viewState).toBe("ready");
   });
 });
 
-describe("create/edit payload construction", () => {
-  it("sends correct payload for creating a role with grants", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role created", data: { role } });
-    await createRole({
-      name: "Analyst",
-      baseRole: "EMPLOYEE",
+describe("production role-name validation", () => {
+  it("rejects empty and whitespace-only names", () => {
+    expect(validateCreateRoleInput("").valid).toBe(false);
+    expect(validateCreateRoleInput("   ").valid).toBe(false);
+  });
+
+  it("rejects names over 50 characters", () => {
+    expect(validateCreateRoleInput("x".repeat(51)).valid).toBe(false);
+  });
+
+  it("trims and accepts a valid name", () => {
+    expect(validateCreateRoleInput("  Finance Analyst  ")).toEqual({
+      valid: true,
+      normalizedName: "Finance Analyst",
+    });
+  });
+});
+
+describe("catalog-derived inherited and selectable permissions", () => {
+  it("derives inherited permissions only from baseRoleDefaults", () => {
+    const defaults = {
+      COMPANY_ADMIN: ["documents:read", "analytics:read"],
+      EMPLOYEE: ["documents:read"],
+    };
+    expect(deriveInheritedPermissionIds(defaults, "COMPANY_ADMIN")).toEqual([
+      "documents:read",
+      "analytics:read",
+    ]);
+    expect(deriveInheritedPermissionIds(defaults, "EMPLOYEE")).toEqual([
+      "documents:read",
+    ]);
+  });
+
+  it("flattens catalog groups", () => {
+    expect(flattenCatalogEntries(catalogGroups)).toHaveLength(4);
+  });
+
+  it("preserves actor source and scope metadata", () => {
+    const result = combineSelectableWithActorGrants(
+      flattenCatalogEntries(catalogGroups),
+      actorGrants,
+    );
+    expect(result.map(({ entry }) => entry.id)).toEqual([
+      "documents:read",
+      "analytics:read",
+    ]);
+    expect(result[0]).toMatchObject({
+      source: "custom-role",
+      scope: actorGrants["documents:read"].scope,
+    });
+    expect(result[1]).toMatchObject({ source: "base-role", scope: null });
+  });
+
+  it("filters catalog groups to actor-held tenant-selectable permissions", () => {
+    const filtered = filterCatalogGroupsForActor(catalogGroups, actorGrants);
+    expect(filtered.map((group) => group.group)).toEqual([
+      "documents",
+      "analytics",
+    ]);
+    expect(
+      filtered.flatMap((group) => group.permissions.map((entry) => entry.id)),
+    ).toEqual(["documents:read", "analytics:read"]);
+  });
+});
+
+describe("authoritative scope containment", () => {
+  it("treats null actor scope as unrestricted", () => {
+    expect(
+      scopeContains(null, {
+        selfOnly: true,
+        departmentIds: ["any"],
+        documentCategories: ["any"],
+        documentClassifications: ["any"],
+      }).valid,
+    ).toBe(true);
+  });
+
+  it("treats an empty actor scope object as unrestricted", () => {
+    expect(
+      scopeContains(unrestrictedScope(), {
+        selfOnly: false,
+        departmentIds: ["dept-x"],
+        documentCategories: ["category-x"],
+        documentClassifications: ["classification-x"],
+      }).valid,
+    ).toBe(true);
+  });
+
+  it("accepts a non-empty department subset", () => {
+    const actor = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a", "dept-b"],
+    };
+    const requested = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a"],
+    };
+    expect(scopeContains(actor, requested).valid).toBe(true);
+  });
+
+  it("rejects empty or widened department access", () => {
+    const actor = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a"],
+    };
+    expect(scopeContains(actor, unrestrictedScope()).valid).toBe(false);
+    expect(
+      scopeContains(actor, {
+        ...unrestrictedScope(),
+        departmentIds: ["dept-a", "dept-b"],
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("accepts category subset and rejects category widening", () => {
+    const actor = {
+      ...unrestrictedScope(),
+      documentCategories: ["invoices", "contracts"],
+    };
+    expect(
+      scopeContains(actor, {
+        ...unrestrictedScope(),
+        documentCategories: ["invoices"],
+      }).valid,
+    ).toBe(true);
+    expect(
+      scopeContains(actor, {
+        ...unrestrictedScope(),
+        documentCategories: ["invoices", "hr"],
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("accepts classification subset and rejects widening", () => {
+    const actor = {
+      ...unrestrictedScope(),
+      documentClassifications: ["internal", "confidential"],
+    };
+    expect(
+      scopeContains(actor, {
+        ...unrestrictedScope(),
+        documentClassifications: ["internal"],
+      }).valid,
+    ).toBe(true);
+    expect(
+      scopeContains(actor, {
+        ...unrestrictedScope(),
+        documentClassifications: ["public"],
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("requires selfOnly while allowing additional compatible narrowing", () => {
+    const actor = { ...unrestrictedScope(), selfOnly: true };
+    expect(scopeContains(actor, unrestrictedScope()).valid).toBe(false);
+    expect(
+      scopeContains(actor, {
+        selfOnly: true,
+        departmentIds: ["dept-a"],
+        documentCategories: ["invoices"],
+        documentClassifications: ["internal"],
+      }).valid,
+    ).toBe(true);
+  });
+
+  it("applies configured dimensions conjunctively", () => {
+    const actor = {
+      selfOnly: false,
+      departmentIds: ["dept-a"],
+      documentCategories: ["invoices"],
+      documentClassifications: ["internal"],
+    };
+    expect(
+      scopeContains(actor, {
+        selfOnly: false,
+        departmentIds: ["dept-a"],
+        documentCategories: ["invoices"],
+        documentClassifications: ["public"],
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("keeps all catalog-compatible controls visible regardless of actor arrays", () => {
+    expect(
+      constrainCompatibleScopes(
+        {
+          selfOnly: true,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: [],
+        },
+        documentRead.compatibleScopes,
+      ),
+    ).toEqual(documentRead.compatibleScopes);
+  });
+
+  it("does not silently clip invalid scopes", () => {
+    const actor = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a"],
+    };
+    const widened = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a", "dept-b"],
+    };
+    expect(() => clipGrantScopesToActorScope(widened, actor)).toThrow();
+  });
+
+  it("returns a valid scope unchanged from the compatibility helper", () => {
+    const actor = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a", "dept-b"],
+    };
+    const narrowed = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a"],
+    };
+    expect(clipGrantScopesToActorScope(narrowed, actor)).toEqual(narrowed);
+  });
+});
+
+describe("compatible-scope normalization", () => {
+  it("removes every unsupported dimension, including selfOnly", () => {
+    expect(
+      normalizeScopesForPermission(
+        {
+          selfOnly: true,
+          departmentIds: ["dept-a"],
+          documentCategories: ["invoices"],
+          documentClassifications: ["internal"],
+        },
+        ["departmentIds"],
+      ),
+    ).toEqual({
+      selfOnly: false,
+      departmentIds: ["dept-a"],
+      documentCategories: [],
+      documentClassifications: [],
+    });
+  });
+
+  it("preserves supported values unchanged", () => {
+    const scope = {
+      selfOnly: true,
+      departmentIds: ["dept-a"],
+      documentCategories: ["invoices"],
+      documentClassifications: ["internal"],
+    };
+    expect(
+      normalizeScopesForPermission(scope, documentRead.compatibleScopes),
+    ).toEqual(scope);
+  });
+
+  it("validates a normalized scope against actor scope", () => {
+    expect(
+      validateRoleGrantScopes(
+        {
+          ...unrestrictedScope(),
+          departmentIds: ["dept-a"],
+        },
+        {
+          ...unrestrictedScope(),
+          departmentIds: ["dept-a", "dept-b"],
+        },
+      ),
+    ).toEqual({ valid: true });
+  });
+});
+
+describe("production grant submission preparation", () => {
+  const inheritedIds = ["analytics:read"];
+
+  it("excludes inherited permissions", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [
+        { permission: "analytics:read" },
+        {
+          permission: "documents:read",
+          scopes: {
+            ...unrestrictedScope(),
+            departmentIds: ["dept-a"],
+            documentCategories: ["invoices"],
+            documentClassifications: ["internal"],
+          },
+        },
+      ],
+      inheritedPermissionIds: inheritedIds,
+      catalogEntries: flattenCatalogEntries(catalogGroups),
+      actorGrants,
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.grants.map((grant) => grant.permission)).toEqual([
+        "documents:read",
+      ]);
+    }
+  });
+
+  it("rejects a permission the actor no longer holds", () => {
+    const result = prepareRoleGrantsForSubmission({
       grants: [{ permission: "documents:read" }],
+      inheritedPermissionIds: [],
+      catalogEntries: [documentRead],
+      actorGrants: {},
     });
-    expect(apiClient).toHaveBeenCalledWith("/roles", {
-      method: "POST",
-      body: { name: "Analyst", baseRole: "EMPLOYEE", grants: [{ permission: "documents:read" }] },
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects department widening instead of clipping", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [
+        {
+          permission: "documents:read",
+          scopes: {
+            ...unrestrictedScope(),
+            departmentIds: ["dept-a", "outside"],
+            documentCategories: ["invoices"],
+            documentClassifications: ["internal"],
+          },
+        },
+      ],
+      inheritedPermissionIds: [],
+      catalogEntries: [documentRead],
+      actorGrants,
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects category widening", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [
+        {
+          permission: "documents:read",
+          scopes: {
+            ...unrestrictedScope(),
+            departmentIds: ["dept-a"],
+            documentCategories: ["invoices", "outside"],
+            documentClassifications: ["internal"],
+          },
+        },
+      ],
+      inheritedPermissionIds: [],
+      catalogEntries: [documentRead],
+      actorGrants,
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects classification widening", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [
+        {
+          permission: "documents:read",
+          scopes: {
+            ...unrestrictedScope(),
+            departmentIds: ["dept-a"],
+            documentCategories: ["invoices"],
+            documentClassifications: ["outside"],
+          },
+        },
+      ],
+      inheritedPermissionIds: [],
+      catalogEntries: [documentRead],
+      actorGrants,
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it("removes unsupported dimensions and preserves valid supported values", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [
+        {
+          permission: "analytics:read",
+          scopes: {
+            selfOnly: true,
+            departmentIds: ["dept-z"],
+            documentCategories: ["ignored"],
+            documentClassifications: ["ignored"],
+          },
+        },
+      ],
+      inheritedPermissionIds: [],
+      catalogEntries: [analyticsRead],
+      actorGrants,
+    });
+    expect(result).toEqual({
+      valid: true,
+      grants: [
+        {
+          permission: "analytics:read",
+          scopes: {
+            selfOnly: false,
+            departmentIds: ["dept-z"],
+            documentCategories: [],
+            documentClassifications: [],
+          },
+        },
+      ],
+    });
+  });
+});
+
+describe("create and update request preparation used by the page", () => {
+  const defaults = {
+    COMPANY_ADMIN: ["analytics:read"],
+    EMPLOYEE: [],
+  };
+
+  it("blocks invalid create scope before a payload exists", () => {
+    const result = prepareCreateRoleSubmission({
+      name: "Scoped role",
+      baseRole: "EMPLOYEE",
+      grants: [
+        {
+          permission: "documents:read",
+          scopes: {
+            ...unrestrictedScope(),
+            departmentIds: ["outside"],
+            documentCategories: ["invoices"],
+            documentClassifications: ["internal"],
+          },
+        },
+      ],
+      baseRoleDefaults: defaults,
+      catalogEntries: [documentRead],
+      actorGrants,
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it("builds a valid create payload with normalized values unchanged", () => {
+    const requested = {
+      ...unrestrictedScope(),
+      departmentIds: ["dept-a"],
+      documentCategories: ["invoices"],
+      documentClassifications: ["internal"],
+    };
+    const result = prepareCreateRoleSubmission({
+      name: "  Scoped role  ",
+      baseRole: "EMPLOYEE",
+      grants: [{ permission: "documents:read", scopes: requested }],
+      baseRoleDefaults: defaults,
+      catalogEntries: [documentRead],
+      actorGrants,
+    });
+    expect(result).toEqual({
+      valid: true,
+      payload: {
+        name: "Scoped role",
+        baseRole: "EMPLOYEE",
+        grants: [{ permission: "documents:read", scopes: requested }],
+      },
     });
   });
 
-  it("sends correct payload for creating a role without grants", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role created", data: { role } });
+  it("blocks update while the version is stale", () => {
+    expect(
+      prepareUpdateRoleSubmission({
+        name: "Updated",
+        baseRole: "EMPLOYEE",
+        grants: [],
+        version: 3,
+        baseRoleDefaults: defaults,
+        catalogEntries: [documentRead],
+        actorGrants,
+        isStale: true,
+      }).valid,
+    ).toBe(false);
+  });
+
+  it("builds update payload with the current version", () => {
+    expect(
+      prepareUpdateRoleSubmission({
+        name: "Updated",
+        baseRole: "EMPLOYEE",
+        grants: [],
+        version: 7,
+        baseRoleDefaults: defaults,
+        catalogEntries: [documentRead],
+        actorGrants,
+        isStale: false,
+      }),
+    ).toEqual({
+      valid: true,
+      payload: {
+        name: "Updated",
+        baseRole: "EMPLOYEE",
+        grants: [],
+        version: 7,
+      },
+    });
+  });
+});
+
+describe("delete flow and version conflict state", () => {
+  it("requires archive before delete", () => {
+    expect(deriveDeleteFlowState(0, "active")).toMatchObject({
+      state: "requiresArchive",
+      canDelete: false,
+    });
+  });
+
+  it("requires an authoritative usage check", () => {
+    expect(deriveDeleteFlowState(null, "archived")).toMatchObject({
+      state: "usageUnknown",
+      requiresUsageCheck: true,
+      canDelete: false,
+    });
+  });
+
+  it("requires migration while assigned users remain", () => {
+    expect(deriveDeleteFlowState(2, "archived")).toMatchObject({
+      state: "requiresMigration",
+      requiresMigration: true,
+      canDelete: false,
+    });
+  });
+
+  it("allows delete only after authoritative zero usage", () => {
+    expect(deriveDeleteFlowState(0, "archived")).toMatchObject({
+      state: "ready",
+      canDelete: true,
+    });
+  });
+
+  it("marks both supported conflict codes stale and blocks submit", () => {
+    for (const code of ["ROLE_VERSION_CONFLICT", "STALE_ROLE_VERSION"]) {
+      expect(deriveVersionConflictState(code)).toMatchObject({
+        isConflict: true,
+        isStale: true,
+        canSubmit: false,
+      });
+    }
+  });
+
+  it("does not mark unrelated errors stale", () => {
+    expect(deriveVersionConflictState("VALIDATION_ERROR")).toMatchObject({
+      isConflict: false,
+      isStale: false,
+      canSubmit: true,
+    });
+  });
+});
+
+describe("roles service route contracts", () => {
+  it("lists and reads roles through roles:read routes", async () => {
+    apiClient
+      .mockResolvedValueOnce({ success: true, data: { roles: [role] } })
+      .mockResolvedValueOnce({ success: true, data: { role } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { roleId: role.id, assignedUserCount: 2 },
+      });
+
+    await listRoles();
+    await getRole(role.id);
+    await getRoleUsage(role.id);
+
+    expect(apiClient).toHaveBeenNthCalledWith(1, "/roles", {
+      signal: undefined,
+    });
+    expect(apiClient).toHaveBeenNthCalledWith(2, `/roles/${role.id}`, {
+      method: "GET",
+    });
+    expect(apiClient).toHaveBeenNthCalledWith(3, `/roles/${role.id}/usage`);
+  });
+
+  it("creates and clones through create routes", async () => {
+    apiClient.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: { role },
+    });
     await createRole({ name: "Analyst", baseRole: "EMPLOYEE" });
-    expect(apiClient).toHaveBeenCalledWith("/roles", {
+    await cloneRole(role.id, "Analyst copy", role.version);
+    expect(apiClient).toHaveBeenNthCalledWith(1, "/roles", {
       method: "POST",
       body: { name: "Analyst", baseRole: "EMPLOYEE" },
     });
+    expect(apiClient).toHaveBeenNthCalledWith(2, `/roles/${role.id}/clone`, {
+      method: "POST",
+      body: { name: "Analyst copy", version: role.version },
+    });
   });
 
-  it("sends correct payload for updating name only", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role updated", data: { role: { ...role, name: "Senior Analyst" } } });
-    await updateRole("role-1", { name: "Senior Analyst", version: 3 });
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1", {
+  it("updates, archives, and reactivates through update routes", async () => {
+    apiClient.mockResolvedValue({
+      success: true,
+      message: "ok",
+      data: { role },
+    });
+    await updateRole(role.id, { name: "Updated", version: role.version });
+    await archiveRole(role.id, role.version);
+    await reactivateRole(archivedRole.id, archivedRole.version);
+    expect(apiClient).toHaveBeenNthCalledWith(1, `/roles/${role.id}`, {
       method: "PATCH",
-      body: { name: "Senior Analyst", version: 3 },
+      body: { name: "Updated", version: role.version },
     });
-  });
-
-  it("sends correct payload for updating grants and name", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role updated", data: { role: { ...role, grants: [{ permission: "documents:read" }] } } });
-    await updateRole("role-1", {
-      name: "Advanced Analyst",
-      grants: [{ permission: "documents:read" }],
-      version: 3,
-    });
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1", {
-      method: "PATCH",
-      body: { name: "Advanced Analyst", grants: [{ permission: "documents:read" }], version: 3 },
-    });
-  });
-});
-
-describe("permission grouping and search", () => {
-  it("fetches the permission catalog with groups", async () => {
-    apiClient.mockResolvedValue(catalogResponse);
-    const response = await getPermissionCatalog();
-    expect(response.data.contractVersion).toBe(1);
-    expect(response.data.groups).toHaveLength(2);
-    expect(response.data.groups[0].permissions).toHaveLength(2);
-  });
-
-  it("catalog groups have the correct extended structure", async () => {
-    apiClient.mockResolvedValue(catalogResponse);
-    const response = await getPermissionCatalog();
-    const docGroup = response.data.groups.find((g) => g.group === "documents");
-    expect(docGroup).toBeDefined();
-    const permission = docGroup!.permissions[0];
-    expect(permission).toHaveProperty("id");
-    expect(permission).toHaveProperty("label");
-    expect(permission).toHaveProperty("description");
-    expect(permission).toHaveProperty("compatibleScopes");
-    expect(permission).toHaveProperty("defaultBaseRoles");
-    expect(permission).toHaveProperty("active");
-    expect(permission).toHaveProperty("deprecated");
-    expect(permission).toHaveProperty("platformOnly");
-    expect(permission).toHaveProperty("tenantGrantable");
-    expect(permission).toHaveProperty("contractVersion");
-  });
-});
-
-describe("inherited versus explicit permission display", () => {
-  it("returns role with grants field", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { role: roleWithGrants } });
-    const response = await getRole("role-3");
-    expect(response.data.role.grants).toHaveLength(2);
-  });
-
-  it("permission grants have canonical structure", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { role: roleWithGrants } });
-    const response = await getRole("role-3");
-    const grant = response.data.role.grants[0];
-    expect(grant).toHaveProperty("permission");
-    expect(grant.permission).toBe("documents:create");
-  });
-
-  it("grants may include scopes", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { role: roleWithGrants } });
-    const response = await getRole("role-3");
-    const scopedGrant = response.data.role.grants.find((g) => g.permission === "documents:read");
-    expect(scopedGrant?.scopes?.selfOnly).toBe(true);
-  });
-});
-
-describe("supported scope handling", () => {
-  it("handles scope fields in grant payload", async () => {
-    const scopes: {
-      selfOnly: boolean;
-      departmentIds: string[];
-      documentCategories: string[];
-      documentClassifications: string[];
-    } = {
-      selfOnly: false,
-      departmentIds: ["dept-1"],
-      documentCategories: [],
-      documentClassifications: [],
-    };
-    expect(scopes).toHaveProperty("selfOnly");
-    expect(scopes).toHaveProperty("departmentIds");
-    expect(scopes).toHaveProperty("documentCategories");
-    expect(scopes).toHaveProperty("documentClassifications");
-  });
-
-  it("serializes scopes in create role", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role created", data: { role } });
-    await createRole({
-      name: "Scoped Role",
-      baseRole: "EMPLOYEE",
-      grants: [{ permission: "documents:read", scopes: { selfOnly: true, departmentIds: [], documentCategories: [], documentClassifications: [] } }],
-    });
-    const body = apiClient.mock.calls[0][1].body;
-    expect(body.grants[0].scopes.selfOnly).toBe(true);
-  });
-});
-
-describe("lifecycle confirmation", () => {
-  it("clones a role", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role cloned", data: { role: { ...role, id: "role-clone", name: "Analyst (copy)" } } });
-    const response = await cloneRole("role-1", "Analyst (copy)", 3);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1/clone", {
+    expect(apiClient).toHaveBeenNthCalledWith(2, `/roles/${role.id}/archive`, {
       method: "POST",
-      body: { name: "Analyst (copy)", version: 3 },
+      body: { version: role.version },
     });
-    expect(response.data.role.name).toBe("Analyst (copy)");
+    expect(apiClient).toHaveBeenNthCalledWith(
+      3,
+      `/roles/${archivedRole.id}/reactivate`,
+      { method: "POST", body: { version: archivedRole.version } },
+    );
   });
 
-  it("archives a role", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role archived", data: { role: { ...role, status: "archived" } } });
-    const response = await archiveRole("role-1", 3);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1/archive", {
-      method: "POST",
-      body: { version: 3 },
-    });
-    expect(response.data.role.status).toBe("archived");
+  it("assigns, removes, and migrates through users:assign-role routes", async () => {
+    apiClient
+      .mockResolvedValueOnce({
+        success: true,
+        message: "assigned",
+        data: { userId: "user-1", roleId: role.id, changed: true },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        message: "removed",
+        data: { userId: "user-1", roleId: null, changed: true },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        message: "migrated",
+        data: {
+          sourceRoleId: archivedRole.id,
+          destinationRoleId: role.id,
+          affected: 2,
+          skipped: 0,
+          conflicted: 0,
+        },
+      });
+
+    await assignRole(role.id, "user-1", role.version);
+    await removeRoleAssignment(role.id, "user-1", role.version);
+    await migrateRoleUsers(
+      archivedRole.id,
+      role.id,
+      archivedRole.version,
+      role.version,
+    );
+
+    expect(apiClient).toHaveBeenNthCalledWith(
+      1,
+      `/roles/${role.id}/assignments`,
+      {
+        method: "POST",
+        body: { userId: "user-1", roleVersion: role.version },
+      },
+    );
+    expect(apiClient).toHaveBeenNthCalledWith(
+      2,
+      `/roles/${role.id}/assignments`,
+      {
+        method: "DELETE",
+        body: { userId: "user-1", roleVersion: role.version },
+      },
+    );
+    expect(apiClient).toHaveBeenNthCalledWith(
+      3,
+      `/roles/${archivedRole.id}/user-migrations`,
+      {
+        method: "POST",
+        body: {
+          destinationRoleId: role.id,
+          sourceVersion: archivedRole.version,
+          destinationVersion: role.version,
+        },
+      },
+    );
   });
 
-  it("reactivates a role", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role reactivated", data: { role: { ...archivedRole, status: "active" } } });
-    const response = await reactivateRole("role-2", 1);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-2/reactivate", {
-      method: "POST",
-      body: { version: 1 },
+  it("deletes through the versioned delete route", async () => {
+    apiClient.mockResolvedValue({
+      success: true,
+      message: "deleted",
+      data: { success: true },
     });
-    expect(response.data.role.status).toBe("active");
-  });
-
-  it("deletes a role", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role deleted", data: { success: true } });
-    await deleteRole("role-2", 1);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-2", {
+    await deleteRole(archivedRole.id, archivedRole.version);
+    expect(apiClient).toHaveBeenCalledWith(`/roles/${archivedRole.id}`, {
       method: "DELETE",
-      body: { version: 1 },
+      body: { version: archivedRole.version },
     });
   });
-});
 
-describe("version conflict behavior", () => {
-  it("throws ROLE_VERSION_CONFLICT on stale clone", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "ROLE_VERSION_CONFLICT", message: "Role was modified by another request" }));
-    await expect(cloneRole("role-1", "Analyst (copy)", 2)).rejects.toMatchObject({ code: "ROLE_VERSION_CONFLICT" });
-  });
-
-  it("throws STALE_ROLE_VERSION on legacy update", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "STALE_ROLE_VERSION", message: "Role was modified by another request" }));
-    await expect(updateRole("role-1", { name: "Old", version: 1 })).rejects.toMatchObject({ code: "STALE_ROLE_VERSION" });
-  });
-
-  it("throws ROLE_VERSION_CONFLICT on assignment with stale version", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "ROLE_VERSION_CONFLICT", message: "Role was modified" }));
-    await expect(assignRole("role-1", "user-1", 2)).rejects.toMatchObject({ code: "ROLE_VERSION_CONFLICT" });
-  });
-});
-
-describe("assignment and removal workflow", () => {
-  it("assigns a custom role to a user with correct version", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Role assigned", data: { userId: "user-1", roleId: "role-1", changed: true } });
-    const response = await assignRole("role-1", "user-1", 3);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1/assignments", {
-      method: "POST",
-      body: { userId: "user-1", roleVersion: 3 },
+  it("loads the authoritative permission catalog", async () => {
+    apiClient.mockResolvedValue({
+      success: true,
+      data: {
+        contractVersion: 1,
+        groups: catalogGroups,
+        baseRoleDefaults: { COMPANY_ADMIN: [], EMPLOYEE: [] },
+      },
     });
-    expect(response.data.changed).toBe(true);
-  });
-
-  it("removes a role assignment", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Assignment removed", data: { userId: "user-1", roleId: null, changed: true } });
-    const response = await removeRoleAssignment("role-1", "user-1", 3);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1/assignments", {
-      method: "DELETE",
-      body: { userId: "user-1", roleVersion: 3 },
-    });
-    expect(response.data.changed).toBe(true);
-  });
-
-  it("returns changed: false for idempotent assignment", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Already assigned", data: { userId: "user-1", roleId: "role-1", changed: false } });
-    const response = await assignRole("role-1", "user-1", 3);
-    expect(response.data.changed).toBe(false);
-  });
-
-  it("returns changed: false for idempotent removal", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "No assignment found", data: { userId: "user-1", roleId: null, changed: false } });
-    const response = await removeRoleAssignment("role-1", "user-1", 3);
-    expect(response.data.changed).toBe(false);
+    const response = await getPermissionCatalog();
+    expect(response.data.groups).toEqual(catalogGroups);
   });
 });
 
-describe("assignment-only retry", () => {
-  it("retries only assignment without re-invitation", async () => {
-    const { assignRole } = await import("@/services/roles.service");
-    apiClient.mockResolvedValue({ success: true, message: "Assigned on retry", data: { userId: "user-1", roleId: "role-1", changed: true } });
-    await assignRole("role-1", "user-1", 4);
-    expect(apiClient).toHaveBeenCalledTimes(1);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1/assignments", {
-      method: "POST",
-      body: { userId: "user-1", roleVersion: 4 },
-    });
-  });
-});
-
-describe("base-role mismatch and archived-role denial", () => {
-  it("rejects assigning to mismatched base role", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "ROLE_NOT_ASSIGNABLE", message: "Custom role is not assignable to this base role" }));
-    await expect(assignRole("role-1", "user-1", 3)).rejects.toMatchObject({ code: "ROLE_NOT_ASSIGNABLE" });
-  });
-
-  it("rejects assigning an archived role", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "ROLE_NOT_ASSIGNABLE", message: "Role is not assignable" }));
-    await expect(assignRole("role-2", "user-1", 1)).rejects.toMatchObject({ code: "ROLE_NOT_ASSIGNABLE" });
-  });
-});
-
-describe("ROLE_IN_USE migration flow", () => {
-  it("migrates users between roles", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Users migrated", data: { sourceRoleId: "role-1", destinationRoleId: "role-3", affected: 2, skipped: 0, conflicted: 0 } });
-    const response = await migrateRoleUsers("role-1", "role-3", 3, 1);
-    expect(apiClient).toHaveBeenCalledWith("/roles/role-1/user-migrations", {
-      method: "POST",
-      body: { destinationRoleId: "role-3", sourceVersion: 3, destinationVersion: 1 },
-    });
-    expect(response.data.affected).toBe(2);
-    expect(response.data.skipped).toBe(0);
-  });
-
-  it("rejects migration to same role", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "ROLE_NOT_ASSIGNABLE", message: "Source and destination roles must differ" }));
-    await expect(migrateRoleUsers("role-1", "role-1", 3, 3)).rejects.toMatchObject({ code: "ROLE_NOT_ASSIGNABLE" });
-  });
-
-  it("handles migration with skipped users due to base-role mismatch", async () => {
-    apiClient.mockResolvedValue({ success: true, message: "Users migrated", data: { sourceRoleId: "role-1", destinationRoleId: "role-3", affected: 2, skipped: 1, conflicted: 0 } });
-    const response = await migrateRoleUsers("role-1", "role-3", 3, 1);
-    expect(response.data.affected).toBe(2);
-    expect(response.data.skipped).toBe(1);
-  });
-});
-
-describe("SUPER_ADMIN target denial", () => {
-  it("rejects assignment targeting SUPER_ADMIN", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 409, code: "ROLE_NOT_ASSIGNABLE", message: "Super Admin assignments cannot be changed through tenant roles" }));
-    await expect(assignRole("role-1", "super-admin-id", 3)).rejects.toMatchObject({ code: "ROLE_NOT_ASSIGNABLE" });
-  });
-});
-
-describe("permission-aware action visibility", () => {
-  it("throws PERMISSION_REQUIRED on insufficient permissions", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 403, code: "PERMISSION_REQUIRED", message: "Missing required permission" }));
-    await expect(createRole({ name: "Unauthorized", baseRole: "EMPLOYEE" })).rejects.toMatchObject({ code: "PERMISSION_REQUIRED" });
-  });
-
-  it("throws PRIVILEGE_ESCALATION when granting unavailable permissions", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 403, code: "PRIVILEGE_ESCALATION", message: "Cannot grant permissions you do not hold" }));
-    await expect(createRole({ name: "Escalation", baseRole: "EMPLOYEE", grants: [{ permission: "users:delete" }] })).rejects.toMatchObject({ code: "PRIVILEGE_ESCALATION" });
-  });
-});
-
-describe("no customRoleId in legacy user endpoints", () => {
-  it("assignRole does not pass customRoleId to /users endpoints", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { userId: "user-1", roleId: "role-1", changed: true } });
-    const result = await assignRole("role-1", "user-1", 3);
-    for (const [path, options] of apiClient.mock.calls) {
-      if (String(path).startsWith("/users")) {
-        expect(options.body).not.toHaveProperty("customRoleId");
-      }
-    }
-    expect(result.data.changed).toBe(true);
-  });
-});
-
-describe("role usage", () => {
-  it("fetches role usage count", async () => {
-    apiClient.mockResolvedValue({ success: true, data: { roleId: "role-1", assignedUserCount: 2 } });
-    const response = await getRoleUsage("role-1");
-    expect(response.data.assignedUserCount).toBe(2);
-  });
-});
-
-describe("error codes coverage", () => {
-  const errorCodes = [
-    "PERMISSION_REQUIRED",
-    "SCOPE_MISMATCH",
-    "INVALID_PERMISSION",
-    "UNKNOWN_PERMISSION",
-    "ROLE_NOT_ASSIGNABLE",
-    "STALE_ROLE_VERSION",
-    "ROLE_VERSION_CONFLICT",
-    "ROLE_IN_USE",
-    "DUPLICATE_ROLE_NAME",
-    "MALFORMED_OBJECT_ID",
-    "NOT_FOUND",
-    "PRIVILEGE_ESCALATION",
-    "VALIDATION_ERROR",
-  ];
-
-  for (const code of errorCodes) {
-    it(`coverage: error code ${code}`, async () => {
-      const { ApiError } = await import("@/lib/api-client");
-      apiClient.mockRejectedValue(new ApiError({ status: 409, code, message: `Error: ${code}` }));
-      await expect(deleteRole("role-1", 1)).rejects.toMatchObject({ code });
-      apiClient.mockReset();
-      apiClient.mockResolvedValue({ success: true, message: "ok", data: { success: true } });
-      await deleteRole("role-1", 1);
-    });
+describe("production source regression checks", () => {
+  async function readPageSource() {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    return fs.readFileSync(path.resolve(__dirname, "page.tsx"), "utf8");
   }
 
-  it("coverage: NOT_FOUND on delete", async () => {
-    const { ApiError } = await import("@/lib/api-client");
-    apiClient.mockRejectedValue(new ApiError({ status: 404, code: "NOT_FOUND", message: "Role not found" }));
-    await expect(deleteRole("nonexistent", 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  it("contains no invented role permission identifiers", async () => {
+    const source = await readPageSource();
+    for (const invented of [
+      "roles:manage",
+      "roles:assign",
+      "roles:clone",
+      "roles:archive",
+      "roles:reactivate",
+      "roles:migrate",
+    ]) {
+      expect(source).not.toContain(`"${invented}"`);
+      expect(source).not.toContain(`'${invented}'`);
+    }
+  });
+
+  it("uses the production view-state and submission helpers", async () => {
+    const source = await readPageSource();
+    for (const helper of [
+      "deriveRoleActionVisibility",
+      "deriveRoleListViewState",
+      "prepareCreateRoleSubmission",
+      "prepareUpdateRoleSubmission",
+      "deriveDeleteFlowState",
+      "deriveVersionConflictState",
+      "normalizeScopesForPermission",
+    ]) {
+      expect(source).toContain(helper);
+    }
+  });
+
+  it("does not use the deprecated clipping helper in production", async () => {
+    expect(await readPageSource()).not.toContain("clipGrantScopesToActorScope");
+  });
+
+  it("checks authoritative usage before delete and exposes migration", async () => {
+    const source = await readPageSource();
+    expect(source).toContain("getRoleUsage");
+    expect(source).toContain("migrateRoleUsers");
+    expect(source).toContain("deriveDeleteFlowState");
   });
 });

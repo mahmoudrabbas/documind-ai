@@ -5,6 +5,15 @@ import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
 import type { Types } from "mongoose";
+import {
+  LEGACY_PLATFORM_TENANT_SLUGS,
+  PLATFORM_TENANT_SLUG,
+} from "../../common/auth/platformTenant.js";
+
+const nonPlatformTenantFilter = {
+  isSystemTenant: { $ne: true },
+  slug: { $nin: [PLATFORM_TENANT_SLUG, ...LEGACY_PLATFORM_TENANT_SLUGS] },
+};
 
 export async function countTenantsByFilter(filter: Record<string, unknown>) {
   return TenantModel.countDocuments(filter).exec();
@@ -28,16 +37,16 @@ export async function updateTenantById(
   updateData: Record<string, unknown>,
 ): Promise<TenantDocument | null> {
   return TenantModel.findOneAndUpdate(
-    { _id: id, isSystemTenant: { $ne: true }, slug: { $nin: ["documind-ai", "__documind_platform__"] } },
+    { _id: id, ...nonPlatformTenantFilter },
     { $set: updateData },
-    { new: true, runValidators: true },
+    { returnDocument: "after", runValidators: true },
   )
     .lean<TenantDocument>()
     .exec();
 }
 
 export function findTenantById(id: string) {
-  return TenantModel.findOne({ _id: id, isSystemTenant: { $ne: true }, slug: { $nin: ["documind-ai", "__documind_platform__"] } })
+  return TenantModel.findOne({ _id: id, ...nonPlatformTenantFilter })
     .lean<TenantDocument>()
     .exec();
 }

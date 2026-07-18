@@ -4,7 +4,7 @@ import { normalizeSeedInput } from "./seed-super-admin.service.js";
 
 const valid = {
   platformName: " DocuMind AI ",
-  platformSlug: " DocuMind AI ",
+  platformSlug: " documind.ai ",
   name: " Platform Admin ",
   email: " ADMIN@EXAMPLE.COM ",
   password: "long-secret-password",
@@ -13,11 +13,18 @@ const valid = {
 test("normalizes Super Admin seed identity values", () => {
   assert.deepEqual(normalizeSeedInput(valid), {
     platformName: "DocuMind AI",
-    platformSlug: "documind-ai",
+    platformSlug: "documind.ai",
     name: "Platform Admin",
     email: "admin@example.com",
     password: "long-secret-password",
   });
+});
+
+test("rejects non-canonical Super Admin platform slug", () => {
+  assert.throws(
+    () => normalizeSeedInput({ ...valid, platformSlug: "documind-ai" }),
+    /must be documind\.ai/,
+  );
 });
 
 test("fails clearly when a required seed value is missing", () => {

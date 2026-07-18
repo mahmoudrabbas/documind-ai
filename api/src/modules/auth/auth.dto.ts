@@ -12,4 +12,5 @@ export interface VerifyEmailRequestDto {
 
 export interface ResendVerificationEmailRequestDto {
   email: string;
+  companySlug: string;
 }

@@ -144,7 +144,7 @@ export async function startRun(tenantId: string, runId: string): Promise<RunReco
   const run = await AgentRunModel.findOneAndUpdate(
     { _id: runId, tenantId: new mongoose.Types.ObjectId(tenantId), status: "pending" },
     { $set: { status: "running", startedAt: new Date() } },
-    { new: true }
+    { returnDocument: "after" }
   ).exec();
   return run ? serializeRun(run) : null;
 }
@@ -154,7 +154,7 @@ export async function completeRun(tenantId: string, runId: string, patch: Partia
   if (set.estimatedCost !== undefined && typeof set.estimatedCost === "number") {
     set.estimatedCost = new mongoose.Types.Decimal128(String(set.estimatedCost));
   }
-  const run = await AgentRunModel.findOneAndUpdate({ _id: runId, tenantId: new mongoose.Types.ObjectId(tenantId) }, { $set: set }, { new: true }).exec();
+  const run = await AgentRunModel.findOneAndUpdate({ _id: runId, tenantId: new mongoose.Types.ObjectId(tenantId) }, { $set: set }, { returnDocument: "after" }).exec();
   return run ? serializeRun(run) : null;
 }
 
@@ -212,7 +212,7 @@ export async function completeStep(tenantId: string, stepId: string, patch: Part
   if (set.estimatedCost !== undefined && typeof set.estimatedCost === "number") {
     set.estimatedCost = new mongoose.Types.Decimal128(String(set.estimatedCost));
   }
-  const step = await AgentStepModel.findOneAndUpdate({ _id: stepId, tenantId: new mongoose.Types.ObjectId(tenantId) }, { $set: set }, { new: true }).exec();
+  const step = await AgentStepModel.findOneAndUpdate({ _id: stepId, tenantId: new mongoose.Types.ObjectId(tenantId) }, { $set: set }, { returnDocument: "after" }).exec();
   return step ? serializeStep(step) : null;
 }
 
@@ -257,7 +257,7 @@ export async function completeToolCall(tenantId: string, toolCallId: string, pat
   if (set.approvalId && typeof set.approvalId === "string") {
     set.approvalId = new mongoose.Types.ObjectId(set.approvalId);
   }
-  const tc = await AgentToolCallModel.findOneAndUpdate({ _id: toolCallId, tenantId: new mongoose.Types.ObjectId(tenantId) }, { $set: set }, { new: true }).exec();
+  const tc = await AgentToolCallModel.findOneAndUpdate({ _id: toolCallId, tenantId: new mongoose.Types.ObjectId(tenantId) }, { $set: set }, { returnDocument: "after" }).exec();
   return tc ? serializeToolCall(tc) : null;
 }
 
@@ -306,7 +306,7 @@ export async function resolveApproval(tenantId: string, approvalId: string, stat
   const approval = await AgentApprovalModel.findOneAndUpdate(
     { _id: approvalId, tenantId: new mongoose.Types.ObjectId(tenantId), status: "pending" },
     { $set: { status, approverId: approverId ? new mongoose.Types.ObjectId(approverId) : null, decisionNote: note, resolvedAt: new Date() } },
-    { new: true }
+    { returnDocument: "after" }
   ).exec();
   return approval ? serializeApproval(approval) : null;
 }

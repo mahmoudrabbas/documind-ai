@@ -12,6 +12,22 @@ const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
 const billingModuleDir = resolve(apiRoot, "src", "modules", "billing").replace(/\\/g, "/");
 const checkoutServiceTestFile = resolve(apiRoot, "src", "modules", "checkout", "__tests__", "checkout.service.test.ts").replace(/\\/g, "/");
+const resendVerificationServiceTestFile = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "auth",
+  "__tests__",
+  "resend-verification.service.test.ts",
+).replace(/\\/g, "/");
+const apiSrcRoot = resolve(apiRoot, "src");
+
+function isVitestOnlyTest(path) {
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.includes(billingModuleDir)
+    || normalized === checkoutServiceTestFile
+    || normalized === resendVerificationServiceTestFile;
+}
 
 function findTests(directory) {
   return readdirSync(directory, { withFileTypes: true })
@@ -19,14 +35,34 @@ function findTests(directory) {
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) return findTests(path);
       if (entry.isFile() && entry.name.endsWith(".test.ts")) {
-        // Billing and checkout service tests use vi.mock() which requires vitest, not node --test.
-        const normalized = path.replace(/\\/g, "/");
-        if (normalized.includes(billingModuleDir) || normalized === checkoutServiceTestFile) return [];
+        // Vitest-only files use vi.mock(), which requires vitest rather than node --test.
+        if (isVitestOnlyTest(path)) return [];
         return [path];
       }
       return [];
     })
     .sort();
+}
+
+function normalizeRequestedTestFiles(args) {
+  if (args.length === 0) {
+    return [];
+  }
+
+  return args.map((inputPath) => {
+    const resolvedPath = resolve(apiRoot, inputPath);
+    const normalizedPath = resolvedPath.replace(/\\/g, "/");
+
+    if (!normalizedPath.startsWith(`${apiSrcRoot.replace(/\\/g, "/")}/`)) {
+      throw new Error(`Requested test path is outside api/src: ${inputPath}`);
+    }
+
+    if (!normalizedPath.endsWith(".test.ts")) {
+      throw new Error(`Requested path is not a TypeScript test file: ${inputPath}`);
+    }
+
+    return normalizedPath;
+  });
 }
 
 const testEnvironment = {
@@ -76,6 +112,12 @@ function runTestFile(testFile, mongodbUri) {
   });
 }
 
+const requestedTests = normalizeRequestedTestFiles(process.argv.slice(2));
+const selectedTests = requestedTests.length > 0
+  ? requestedTests.filter((testFile) => !isVitestOnlyTest(testFile))
+  : findTests(resolve(apiRoot, "src"));
+const requestedVitestTests = requestedTests.filter(isVitestOnlyTest);
+
 const mongo = await MongoMemoryReplSet.create({
   binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
   replSet: { count: 1 },
@@ -84,7 +126,7 @@ const mongo = await MongoMemoryReplSet.create({
 let exitCode = 0;
 try {
   const mongodbUri = mongo.getUri(`documind-test-${randomUUID()}`);
-  for (const testFile of findTests(resolve(apiRoot, "src"))) {
+  for (const testFile of selectedTests) {
     const result = await runTestFile(testFile, mongodbUri);
     if (result !== 0) {
       exitCode = result;
@@ -92,11 +134,14 @@ try {
     }
   }
 
-  // Run billing and checkout tests with vitest (they use vi.mock() which is incompatible with node --test).
-  if (exitCode === 0) {
+  // Run Vitest-only tests separately because vi.mock() is incompatible with node --test.
+  if (exitCode === 0 && (requestedTests.length === 0 || requestedVitestTests.length > 0)) {
     console.log("\n── Running vitest tests (billing, checkout, ...) ──\n");
     exitCode = await new Promise((resolveRun) => {
-      const child = spawn("vitest", ["run", "-c", "vitest.config.ts"], {
+      const vitestArgs = requestedVitestTests.length > 0
+        ? ["run", "-c", "vitest.config.ts", ...requestedVitestTests]
+        : ["run", "-c", "vitest.config.ts"];
+      const child = spawn("vitest", vitestArgs, {
         cwd: apiRoot,
         stdio: "inherit",
         env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },

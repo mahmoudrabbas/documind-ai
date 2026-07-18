@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { requirePlatformTenant } from "../../common/middlewares/platformTenant.middleware.js";
 import {
   enqueueJobController,
   getJobMetricsController,
@@ -25,6 +26,7 @@ router.get(
   "/platform/jobs/metrics",
   authenticate,
   authorize("SUPER_ADMIN"),
+  requirePlatformTenant,
   getJobMetricsController,
 );
 
@@ -32,6 +34,7 @@ router.get(
   "/platform/jobs/:jobId",
   authenticate,
   authorize("SUPER_ADMIN"),
+  requirePlatformTenant,
   getJobStatusController,
 );
 
@@ -39,6 +42,7 @@ router.post(
   "/platform/jobs/:jobId/replay",
   authenticate,
   authorize("SUPER_ADMIN"),
+  requirePlatformTenant,
   replayJobController,
 );
 

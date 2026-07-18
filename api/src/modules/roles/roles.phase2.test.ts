@@ -112,7 +112,7 @@ test("direct services enforce authorization, delegation, archive state, and tena
   const first = await fixture("first-tenant");
   const second = await fixture("second-tenant");
   await assert.rejects(
-    createRole({ name: "Bypass", baseRole: "EMPLOYEE", grants: [] }, { tenantId: first.tenant.id, actorId: first.employee.id }),
+    createRole({ name: "Bypass", baseRole: "EMPLOYEE", grants: [] }, { tenantId: first.tenant.id, actorId: first.employee.id, actorRole: first.employee.role }),
     (error: unknown) => (error as { code?: string }).code === "PERMISSION_REQUIRED",
   );
   await assert.rejects(
@@ -145,7 +145,11 @@ test("delegation rejects scope widening and direct-service crafted grants", asyn
     grants: [{ permission: Permission.DOCUMENTS_UPDATE, scopes: { departmentIds: [departmentId] } }],
   }, context);
   await assignRole({ userId: employee.id, roleVersion: scoped.role.version }, context, scoped.role.id);
-  const employeeActor = { tenantId: tenant.id, actorId: employee.id };
+  const employeeActor = {
+    tenantId: tenant.id,
+    actorId: employee.id,
+    actorRole: employee.role,
+  };
 
   await assertDelegableGrants(employeeActor, [{
     permission: Permission.DOCUMENTS_UPDATE,

@@ -54,7 +54,18 @@ router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePer
 
 router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
 
-router.get("/:id/download", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DOWNLOAD), downloadDocumentController);
+router.get(
+  "/:id/download",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_DOWNLOAD, {
+    allowScoped: true,
+    resourceType: "Document",
+    resourceId: (request) =>
+      Array.isArray(request.params.id) ? request.params.id[0] : request.params.id,
+  }),
+  downloadDocumentController,
+);
 
 router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
 

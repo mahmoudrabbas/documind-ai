@@ -4,6 +4,7 @@ import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware
 import { authorize } from "../../common/middlewares/authorize.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
+import { createRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
 import {
   inviteUserController,
   listUsersController,
@@ -11,9 +12,15 @@ import {
   deleteUserController,
   setPasswordFromInviteController,
   getInviteDetailsController,
+  resendInvitationController,
 } from "./users.controller.js";
 
 const router = Router();
+const invitationRateLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many invitation attempts. Please try again later.",
+});
 
 router.get(
   "/",
@@ -39,6 +46,15 @@ router.post(
   inviteUserController,
 );
 
+router.post(
+  "/:id/resend-invitation",
+  authenticate,
+  tenantScoping,
+  authorize("COMPANY_ADMIN"),
+  invitationRateLimiter,
+  resendInvitationController,
+);
+
 router.delete(
   "/:id",
   authenticate,
@@ -47,7 +63,15 @@ router.delete(
   deleteUserController,
 );
 
-router.post("/set-password-from-invite", setPasswordFromInviteController);
-router.post("/validate-invite", getInviteDetailsController);
+router.post(
+  "/set-password-from-invite",
+  invitationRateLimiter,
+  setPasswordFromInviteController,
+);
+router.post(
+  "/validate-invite",
+  invitationRateLimiter,
+  getInviteDetailsController,
+);
 
 export default router;

@@ -9,6 +9,8 @@ import {
   FILE_ZERO_BYTES,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import type {
   StorageProvider,
   SecurityScanner,
@@ -46,6 +48,8 @@ import type {
 } from "./documents.types.js";
 import type { DocumentDocument, DocumentClassification, DocumentQuarantineStatus } from "../../db/models/document.model.js";
 import type { DocumentVersionDocument } from "../../db/models/documentVersion.model.js";
+import type { BaseRole } from "../../common/auth/baseRoles.js";
+import type { PermissionDenialCode, PermissionResourceContext } from "../permissions/permissions.types.js";
 
 type MulterFile = {
   fieldname: string;
@@ -56,6 +60,40 @@ type MulterFile = {
   size: number;
   filename?: string;
 };
+
+type DocumentActor = {
+  userId: string;
+  email?: string;
+  role: BaseRole;
+};
+
+function toDocumentPermissionResource(
+  tenantId: string,
+  document: DocumentDocument,
+): PermissionResourceContext {
+  return {
+    tenantId,
+    ownerId:
+      ((document as unknown as { owner?: { toString(): string } | null }).owner?.toString() ??
+        document.uploadedBy?.toString()) ||
+      undefined,
+    departmentId:
+      (document as unknown as { department?: string | null }).department ?? undefined,
+    documentCategory:
+      (document as unknown as { category?: string | null }).category ?? undefined,
+    documentClassification:
+      (document as unknown as { classification?: string | null }).classification ??
+      undefined,
+  };
+}
+
+function isDocumentAccessHiddenDenial(denialCode: PermissionDenialCode | null) {
+  return (
+    denialCode === "SCOPE_MISMATCH" ||
+    denialCode === "RESOURCE_CONTEXT_REQUIRED" ||
+    denialCode === "TENANT_MISMATCH"
+  );
+}
 
 function computeChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -145,7 +183,7 @@ export function createDocumentServiceProviders(deps: {
     file: MulterFile,
     metadataInput: unknown,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<UploadDocumentResult> {
     if (!file) {
       throw new AppError(400, "BAD_REQUEST", "File is required");
@@ -214,7 +252,7 @@ export function createDocumentServiceProviders(deps: {
           result: scanResult.result,
           details: scanResult.details,
         },
-        uploadedBy: userId as unknown as DocumentDocument["uploadedBy"],
+        uploadedBy: actor.userId as unknown as DocumentDocument["uploadedBy"],
       } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">);
     } catch (error) {
       await storageProvider.deleteFile(storageKey);
@@ -241,9 +279,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: created._id.toString(),
       action: "DOCUMENT_UPLOADED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: {
         fileName: safeName,
         fileSize: file.size,
@@ -253,7 +292,12 @@ export function createDocumentServiceProviders(deps: {
       },
     });
 
-    await processingDispatcher.dispatchDocumentUploaded(created._id.toString(), tenantId, userId, 1);
+    await processingDispatcher.dispatchDocumentUploaded(
+      created._id.toString(),
+      tenantId,
+      actor.userId,
+      1,
+    );
 
     const duplicateWarning =
       existingDocs.length > 0
@@ -344,7 +388,7 @@ export function createDocumentServiceProviders(deps: {
     documentId: string,
     input: unknown,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<UpdateDocumentMetadataResult> {
     const payload = validateUpdateDocumentMetadataInput(input);
 
@@ -379,9 +423,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_METADATA_UPDATED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: {
         before: {
           title: existing.metadata?.title ?? null,
@@ -406,7 +451,7 @@ export function createDocumentServiceProviders(deps: {
   async function downloadDocument(
     documentId: string,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<{ stream: import("node:stream").Readable; contentType: string; fileName: string; fileSize: number }> {
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -418,6 +463,21 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
     }
 
+    const accessDecision = await getPermissionEvaluator().evaluate({
+      actorId: actor.userId,
+      tenantId,
+      baseRole: actor.role,
+      permission: Permission.DOCUMENTS_DOWNLOAD,
+      resource: toDocumentPermissionResource(tenantId, document),
+    });
+
+    if (!accessDecision.allowed) {
+      if (isDocumentAccessHiddenDenial(accessDecision.denialCode)) {
+        throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
+      }
+      throw new AppError(403, "PERMISSION_REQUIRED", "Permission denied");
+    }
+
     const stream = storageProvider.getFileStream(document.storageKey);
     const contentType = storageProvider.getContentType(document.fileName);
 
@@ -426,9 +486,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_DOWNLOADED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: { fileName: document.fileName },
     });
 
@@ -445,7 +506,7 @@ export function createDocumentServiceProviders(deps: {
     file: MulterFile,
     metadataInput: unknown,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<ReplaceDocumentResult> {
     if (!file) {
       throw new AppError(400, "BAD_REQUEST", "File is required for replacement");
@@ -531,9 +592,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_REPLACED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: {
         fromVersion: (existing as unknown as { version: number }).version,
         toVersion: newVersion,
@@ -542,7 +604,12 @@ export function createDocumentServiceProviders(deps: {
       },
     });
 
-    await processingDispatcher.dispatchDocumentUploaded(documentId, tenantId, userId, newVersion);
+    await processingDispatcher.dispatchDocumentUploaded(
+      documentId,
+      tenantId,
+      actor.userId,
+      newVersion,
+    );
 
     const updated = await findDocumentByTenantAndId(tenantId, documentId);
     if (!updated) {
@@ -555,7 +622,7 @@ export function createDocumentServiceProviders(deps: {
   async function archiveDocument(
     documentId: string,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -570,7 +637,7 @@ export function createDocumentServiceProviders(deps: {
     await updateDocumentByTenantAndId(tenantId, documentId, {
       isArchived: true,
       archivedAt: new Date(),
-      archivedBy: userId as unknown as DocumentDocument["archivedBy"],
+      archivedBy: actor.userId as unknown as DocumentDocument["archivedBy"],
     } as unknown as Partial<DocumentDocument>);
 
     await getAuditWriter().write({
@@ -578,9 +645,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_ARCHIVED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: { fileName: document.fileName },
     });
 
@@ -593,7 +661,7 @@ export function createDocumentServiceProviders(deps: {
   async function restoreDocument(
     documentId: string,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -616,9 +684,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_RESTORED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: { fileName: document.fileName },
     });
 
@@ -631,7 +700,7 @@ export function createDocumentServiceProviders(deps: {
   async function softDeleteDocument(
     documentId: string,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<void> {
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -645,7 +714,7 @@ export function createDocumentServiceProviders(deps: {
 
     await updateDocumentByTenantAndId(tenantId, documentId, {
       deletedAt: new Date(),
-      deletedBy: userId as unknown as DocumentDocument["deletedBy"],
+      deletedBy: actor.userId as unknown as DocumentDocument["deletedBy"],
     } as unknown as Partial<DocumentDocument>);
 
     await getAuditWriter().write({
@@ -653,9 +722,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_SOFT_DELETED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: { fileName: document.fileName },
     });
   }
@@ -663,7 +733,7 @@ export function createDocumentServiceProviders(deps: {
   async function permanentDeleteDocument(
     documentId: string,
     tenantId: string,
-    userId: string,
+    actor: DocumentActor,
   ): Promise<void> {
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -694,9 +764,10 @@ export function createDocumentServiceProviders(deps: {
       resourceType: "Document",
       resourceId: documentId,
       action: "DOCUMENT_PERMANENTLY_DELETED",
-      actorId: userId,
-      actorEmail: "",
-      actorRole: "",
+      actorId: actor.userId,
+      actorEmail: actor.email ?? "",
+      actorRole: actor.role,
+      actorKind: "USER",
       changes: { fileName: document.fileName, versionsRemoved: versions.length },
     });
   }

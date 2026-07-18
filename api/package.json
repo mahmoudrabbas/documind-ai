@@ -20,6 +20,8 @@
     "migrate:roles:phase1:apply": "tsx src/scripts/migrate-roles-phase1.ts --apply",
     "migrate:users:employee": "tsx src/scripts/migrate-users-employee.ts --dry-run",
     "migrate:users:employee:apply": "tsx src/scripts/migrate-users-employee.ts --apply",
+    "migrate:platform-tenant": "tsx src/scripts/migrate-platform-tenant-invariants.ts --dry-run",
+    "migrate:platform-tenant:apply": "tsx src/scripts/migrate-platform-tenant-invariants.ts --apply",
     "pretypecheck": "npm run build --workspace workers",
     "prebuild": "npm run build --workspace workers",
     "pretest": "npm run build --workspace workers"

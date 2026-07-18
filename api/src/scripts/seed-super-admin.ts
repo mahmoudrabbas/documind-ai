@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { PLATFORM_TENANT_SLUG } from "../common/auth/platformTenant.js";
 import { connectDB, disconnectDB } from "../db/connection.js";
 import { seedSuperAdmin } from "./seed-super-admin.service.js";
 
@@ -11,7 +12,7 @@ async function main() {
   await connectDB();
   const result = await seedSuperAdmin({
     platformName: process.env.SEED_PLATFORM_TENANT_NAME ?? "",
-    platformSlug: process.env.SEED_PLATFORM_TENANT_SLUG ?? "",
+    platformSlug: process.env.SEED_PLATFORM_TENANT_SLUG ?? PLATFORM_TENANT_SLUG,
     name: process.env.SEED_SUPER_ADMIN_NAME ?? "",
     email: process.env.SEED_SUPER_ADMIN_EMAIL ?? "",
     password: process.env.SEED_SUPER_ADMIN_PASSWORD ?? "",
