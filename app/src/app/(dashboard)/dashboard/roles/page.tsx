@@ -140,7 +140,7 @@ export default function RolesPage() {
   );
   const actorGrants: ActorGrantMap = useMemo(
     () => (permissionsReady ? permissionContext.grants : {}),
-    [permissionContext.grants, permissionsReady],
+    [permissionContext, permissionsReady],
   );
   const pageVisibility = useMemo(
     () => deriveRoleActionVisibility(effectivePermissions, "active"),
