@@ -16,21 +16,25 @@ import {
   getOcrUsageSummary,
 } from "./processing.service.js";
 
-let mongoServer: MongoMemoryServer;
+let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
 const ACTOR_ID = "6650f0f0f0f0f0f0f0f0f0f1";
 
 before(async () => {
-  mongoServer = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    instance: { launchTimeout: 60_000 },
-  });
-  await mongoose.connect(mongoServer.getUri(), { dbName: "test" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "test" });
+  } else {
+    mongoServer = await MongoMemoryServer.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      instance: { launchTimeout: 60_000 },
+    });
+    await mongoose.connect(mongoServer.getUri(), { dbName: "test" });
+  }
 });
 
 after(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  if (mongoServer) await mongoServer.stop();
 });
 
 afterEach(async () => {

@@ -11,7 +11,7 @@ import {
 } from "./migrate-roles-phase1.service.js";
 import { migrateLegacyUsersToEmployee } from "./migrate-users-employee.service.js";
 
-let mongoServer: MongoMemoryReplSet;
+let mongoServer: MongoMemoryReplSet | null = null;
 
 function collections() {
   if (!mongoose.connection.db) throw new Error("Test database is unavailable");
@@ -44,12 +44,16 @@ function user(tenantId: mongoose.Types.ObjectId, values: Record<string, unknown>
 }
 
 before(async () => {
-  mongoServer = await MongoMemoryReplSet.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    replSet: { count: 1 },
-    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
-  });
-  await mongoose.connect(mongoServer.getUri(), { dbName: "role-phase1-migration" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "role-phase1-migration" });
+  } else {
+    mongoServer = await MongoMemoryReplSet.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      replSet: { count: 1 },
+      instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+    });
+    await mongoose.connect(mongoServer.getUri(), { dbName: "role-phase1-migration" });
+  }
 });
 
 beforeEach(async () => {
@@ -59,7 +63,7 @@ beforeEach(async () => {
 
 after(async () => {
   await mongoose.disconnect();
-  await mongoServer?.stop();
+  if (mongoServer) await mongoServer.stop();
 });
 
 test("role migration is dry-run by default and apply is conditional and idempotent", async () => {

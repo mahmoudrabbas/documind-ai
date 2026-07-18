@@ -6,16 +6,20 @@ import RoleModel from "../../db/models/role.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 
-let mongo: MongoMemoryServer;
+let mongo: MongoMemoryServer | null = null;
 let tenantId: mongoose.Types.ObjectId;
 let actorId: mongoose.Types.ObjectId;
 
 before(async () => {
-  mongo = await MongoMemoryServer.create({
-    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-    instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
-  });
-  await mongoose.connect(mongo.getUri(), { dbName: "role-persistence" });
+  if (process.env.MONGODB_URI) {
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "role-persistence" });
+  } else {
+    mongo = await MongoMemoryServer.create({
+      binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+      instance: { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
+    });
+    await mongoose.connect(mongo.getUri(), { dbName: "role-persistence" });
+  }
   await RoleModel.init();
 });
 
@@ -31,7 +35,7 @@ beforeEach(async () => {
 
 after(async () => {
   await mongoose.disconnect();
-  await mongo.stop();
+  if (mongo) await mongo.stop();
 });
 
 function validRole(values: Record<string, unknown> = {}) {
