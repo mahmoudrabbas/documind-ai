@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test, { after, before, beforeEach } from "node:test";
 import mongoose from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
-import { InMemoryAuditWriter } from "../../common/observability/auditWriter.js";
+import { InMemoryAuditWriter, MongoAuditWriter } from "../../common/observability/auditWriter.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
 import type { AuditAction } from "../../common/observability/auditEvents.js";
 import { InMemoryMetricRecorder } from "../../common/observability/metricRecorder.js";
 import { setAuditWriter, setMetricRecorder } from "../../common/observability/index.js";
 import { logger } from "../../common/logger/logger.js";
+import AuditLogModel from "../../db/models/auditLog.model.js";
 import RoleModel from "../../db/models/role.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
@@ -46,7 +47,12 @@ before(async () => {
 
 beforeEach(async () => {
   setRoleTransactionAttemptHookForTests(null);
-  await Promise.all([TenantModel.deleteMany({}), UserModel.deleteMany({}), RoleModel.deleteMany({})]);
+  await Promise.all([
+    TenantModel.deleteMany({}),
+    UserModel.deleteMany({}),
+    RoleModel.deleteMany({}),
+    AuditLogModel.deleteMany({}),
+  ]);
   audit = new InMemoryAuditWriter();
   setAuditWriter(audit);
 });
@@ -62,9 +68,189 @@ async function fixture(slug = new mongoose.Types.ObjectId().toString()) {
   const tenant = await TenantModel.create({ name: "Phase Two", slug, status: "active", plan: "free" });
   const admin = await UserModel.create({ tenantId: tenant._id, name: "Admin", email: `admin-${slug}@test.local`, passwordHash: "test", role: "COMPANY_ADMIN", status: "active", emailVerified: true });
   const employee = await UserModel.create({ tenantId: tenant._id, name: "Employee", email: `employee-${slug}@test.local`, passwordHash: "test", role: "EMPLOYEE", status: "active", emailVerified: true });
-  const context: RoleOperationContext = { tenantId: tenant.id, actorId: admin.id, actorRole: admin.role, actorEmail: admin.email, traceId: "trace-role-test" };
+  const context: RoleOperationContext = {
+    tenantId: tenant.id,
+    actorId: admin.id,
+    actorRole: admin.role,
+    actorEmail: admin.email,
+    traceId: "trace-role-test",
+    requestId: "request-role-test",
+  };
   return { tenant, admin, employee, context };
 }
+
+test("role security events persist complete authoritative user actors", async () => {
+  const first = await fixture("audit-persistence-first");
+  const second = await fixture("audit-persistence-second");
+  setAuditWriter(new MongoAuditWriter());
+
+  const source = await createRole({
+    name: "Persisted Source",
+    baseRole: "EMPLOYEE",
+    grants: [{ permission: Permission.ANALYTICS_READ }],
+  }, { ...first.context, actorEmail: "untrusted-context@example.test" });
+  const updated = await updateRole({
+    version: source.role.version,
+    grants: [{ permission: Permission.IMPORTS_READ }],
+  }, first.context, source.role.id);
+  const archived = await changeRoleStatus(
+    { version: updated.role.version },
+    first.context,
+    source.role.id,
+    "archived",
+  );
+  const reactivated = await changeRoleStatus(
+    { version: archived.role.version },
+    first.context,
+    source.role.id,
+    "active",
+  );
+  const clone = await cloneRole(
+    { name: "Persisted Clone", version: reactivated.role.version },
+    first.context,
+    source.role.id,
+  );
+  await deleteRole(first.context, clone.role.id, clone.role.version);
+
+  const destination = await createRole({
+    name: "Persisted Destination",
+    baseRole: "EMPLOYEE",
+    grants: [],
+  }, first.context);
+  await assignRole(
+    { userId: first.employee.id, roleVersion: reactivated.role.version },
+    first.context,
+    source.role.id,
+  );
+  await removeRoleAssignment(
+    { userId: first.employee.id, roleVersion: reactivated.role.version },
+    first.context,
+    source.role.id,
+  );
+  await assignRole(
+    { userId: first.employee.id, roleVersion: reactivated.role.version },
+    first.context,
+    source.role.id,
+  );
+  await migrateRoleUsers({
+    destinationRoleId: destination.role.id,
+    sourceVersion: reactivated.role.version,
+    destinationVersion: destination.role.version,
+  }, first.context, source.role.id);
+
+  await assert.rejects(
+    createRole({
+      name: "Blocked Escalation",
+      baseRole: "EMPLOYEE",
+      grants: [{ permission: Permission.BILLING_MANAGE }],
+    }, first.context),
+    (error: unknown) => (error as { code?: string }).code === "PRIVILEGE_ESCALATION",
+  );
+  await assert.rejects(
+    getRole(second.context, source.role.id),
+    (error: unknown) => (error as { code?: string }).code === "NOT_FOUND",
+  );
+
+  const records = await AuditLogModel.find({}).sort({ createdAt: 1 }).lean().exec();
+  const requiredActions: AuditAction[] = [
+    "ROLE_CREATED",
+    "ROLE_UPDATED",
+    "ROLE_ARCHIVED",
+    "ROLE_REACTIVATED",
+    "ROLE_CLONED",
+    "ROLE_DELETED",
+    "ROLE_ASSIGNED",
+    "ROLE_ASSIGNMENT_REMOVED",
+    "ROLE_USERS_MIGRATED",
+    "ROLE_ESCALATION_BLOCKED",
+    "ROLE_ACCESS_DENIED",
+  ];
+  for (const action of requiredActions) {
+    assert.ok(records.some((record) => record.action === action), `missing ${action}`);
+  }
+  const expectedTargets: Partial<Record<AuditAction, string>> = {
+    ROLE_CREATED: source.role.id,
+    ROLE_UPDATED: source.role.id,
+    ROLE_ARCHIVED: source.role.id,
+    ROLE_REACTIVATED: source.role.id,
+    ROLE_CLONED: clone.role.id,
+    ROLE_DELETED: clone.role.id,
+    ROLE_ASSIGNED: source.role.id,
+    ROLE_ASSIGNMENT_REMOVED: source.role.id,
+    ROLE_USERS_MIGRATED: source.role.id,
+    ROLE_ESCALATION_BLOCKED: "new",
+    ROLE_ACCESS_DENIED: source.role.id,
+  };
+  for (const [action, resourceId] of Object.entries(expectedTargets)) {
+    assert.ok(
+      records.some(
+        (record) => record.action === action && record.resourceId === resourceId,
+      ),
+      `missing ${action} target ${resourceId}`,
+    );
+  }
+
+  const firstTenantRecords = records.filter(
+    (record) => record.tenantId.toString() === first.tenant.id,
+  );
+  assert.ok(firstTenantRecords.length > 0);
+  for (const record of firstTenantRecords) {
+    assert.equal(record.actorKind, "USER");
+    assert.equal(record.actorId?.toString(), first.admin.id);
+    assert.equal(record.actorEmail, first.admin.email);
+    assert.equal(record.actorRole, "COMPANY_ADMIN");
+    assert.deepEqual(record.metadata, {
+      traceId: "trace-role-test",
+      requestId: "request-role-test",
+    });
+  }
+
+  const updateAudit = records.find(
+    (record) => record.action === "ROLE_UPDATED" && record.resourceId === source.role.id,
+  );
+  assert.deepEqual(updateAudit?.changes.permissionsBefore, [Permission.ANALYTICS_READ]);
+  assert.deepEqual(updateAudit?.changes.permissionsAfter, [Permission.IMPORTS_READ]);
+  const assignmentAudit = records.find((record) => record.action === "ROLE_ASSIGNED");
+  assert.equal(assignmentAudit?.changes.targetUserId, first.employee.id);
+  assert.equal(assignmentAudit?.resourceId, source.role.id);
+  const migrationAudit = records.find((record) => record.action === "ROLE_USERS_MIGRATED");
+  assert.equal(migrationAudit?.changes.destinationRoleId, destination.role.id);
+  const crossTenantAudit = records.find((record) => record.action === "ROLE_ACCESS_DENIED");
+  assert.equal(crossTenantAudit?.tenantId.toString(), second.tenant.id);
+  assert.equal(crossTenantAudit?.actorId?.toString(), second.admin.id);
+  assert.equal(crossTenantAudit?.actorEmail, second.admin.email);
+  assert.equal(crossTenantAudit?.resourceId, source.role.id);
+
+  const serialized = JSON.stringify(records);
+  for (const forbidden of [
+    "untrusted-context@example.test",
+    "authorization",
+    "cookie",
+    "password",
+    "refreshToken",
+    "accessToken",
+    "secret",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test("unresolvable role actor identity fails before mutation or audit persistence", async () => {
+  const { context } = await fixture();
+  setAuditWriter(new MongoAuditWriter());
+
+  await assert.rejects(
+    createRole({
+      name: "Never Persisted",
+      baseRole: "EMPLOYEE",
+      grants: [],
+    }, { ...context, actorId: new mongoose.Types.ObjectId().toString() }),
+    (error: unknown) => (error as { code?: string }).code === "PERMISSION_REQUIRED",
+  );
+
+  assert.equal(await RoleModel.countDocuments({}), 0);
+  assert.equal(await AuditLogModel.countDocuments({}), 0);
+});
 
 test("role detail, clone, lifecycle, usage, update, and delete are versioned and audited", async () => {
   const { context } = await fixture();
