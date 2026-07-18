@@ -15,6 +15,7 @@ import {
   retryOcrPages,
   getOcrUsageSummary,
 } from "./processing.service.js";
+import { closeApiJobDispatcher } from "../jobs/jobDispatcher.js";
 
 let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
@@ -33,6 +34,7 @@ before(async () => {
 });
 
 after(async () => {
+  await closeApiJobDispatcher();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
