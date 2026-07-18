@@ -45,6 +45,7 @@ services:
       start_period: 30s
     volumes:
       - ./api:/repo/api
+      - api_node_modules:/repo/api/node_modules
 
   app:
     build:
@@ -82,6 +83,7 @@ services:
       start_period: 20s
     volumes:
       - ./workers:/repo/workers
+      - worker_node_modules:/repo/workers/node_modules
       - uploads_data:/repo/api/uploads
     env_file:
       - path: ./workers/.env
@@ -145,6 +147,8 @@ volumes:
   mongo_data:
   redis_data:
   uploads_data:
+  api_node_modules:
+  worker_node_modules:
 
 secrets:
   api_jwt_secret:
