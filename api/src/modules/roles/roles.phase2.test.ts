@@ -8,6 +8,7 @@ import type { AuditAction } from "../../common/observability/auditEvents.js";
 import { InMemoryMetricRecorder } from "../../common/observability/metricRecorder.js";
 import { setAuditWriter, setMetricRecorder } from "../../common/observability/index.js";
 import { logger } from "../../common/logger/logger.js";
+import { AppError } from "../../common/errors/AppError.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
 import RoleModel from "../../db/models/role.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
@@ -633,4 +634,47 @@ test("migration rejects destination role with noncanonical grants inside the tra
   );
   assert.equal(await UserModel.countDocuments({ customRoleId: source.role.id }), 1);
   assert.equal(await UserModel.countDocuments({ customRoleId: destId }), 0);
+});
+
+test("update validates the complete persisted grant set before changing other fields", async () => {
+  const { context, tenant, admin } = await fixture();
+  const roleId = new mongoose.Types.ObjectId();
+  await RoleModel.collection.insertOne({
+    _id: roleId,
+    tenantId: tenant._id,
+    name: "Invalid Existing Grants",
+    normalizedName: "invalid existing grants",
+    baseRole: "EMPLOYEE",
+    grants: [
+      { permission: Permission.ANALYTICS_READ },
+      { permission: Permission.ANALYTICS_EXPORT },
+    ],
+    contractVersion: 1,
+    status: "active",
+    version: 1,
+    migrationState: "complete",
+    createdBy: admin._id,
+    updatedBy: admin._id,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  await assert.rejects(
+    updateRole(
+      { name: "Never Renamed", version: 1 },
+      context,
+      roleId.toString(),
+    ),
+    (error: unknown) =>
+      error instanceof AppError && error.code === "ROLE_NOT_ASSIGNABLE",
+  );
+
+  const persisted = await RoleModel.collection.findOne({ _id: roleId });
+  assert.equal(persisted?.name, "Invalid Existing Grants");
+  assert.equal(persisted?.version, 1);
+  assert.ok(audit.events.some((event) =>
+    event.action === "ROLE_ACCESS_DENIED" &&
+    event.resourceId === roleId.toString() &&
+    event.outcome === "DENIED" &&
+    event.changes?.reason === "ROLE_NOT_ASSIGNABLE"));
 });

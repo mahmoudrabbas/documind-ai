@@ -94,17 +94,52 @@ function normalizeGrantScopes(value: unknown): PermissionScopes | undefined {
   if (value.selfOnly !== undefined && typeof value.selfOnly !== "boolean") {
     throw new GrantValidationError("INVALID_GRANT", "selfOnly must be boolean");
   }
-  for (const field of ["departmentIds", "documentCategories", "documentClassifications"] as const) {
-    const values = value[field];
-    if (values !== undefined && (!Array.isArray(values) || values.some((item) => typeof item !== "string"))) {
-      throw new GrantValidationError("INVALID_GRANT", `${field} must be a string array`);
-    }
-  }
-  const scopes = normalizeScopes(value as Partial<PermissionScopes>);
+  const departmentIds = optionalStringArray(value.departmentIds, "departmentIds");
+  const documentCategories = optionalStringArray(
+    value.documentCategories,
+    "documentCategories",
+  );
+  const documentClassifications = optionalStringArray(
+    value.documentClassifications,
+    "documentClassifications",
+  );
+  const scopes = normalizeScopes({
+    selfOnly: value.selfOnly === true,
+    departmentIds,
+    documentCategories,
+    documentClassifications,
+  });
   if (scopes.departmentIds.some((id) => !mongoose.isValidObjectId(id))) {
     throw new GrantValidationError("INVALID_GRANT", "departmentIds contain an invalid identifier");
   }
-  return hasScopeConstraints(scopes) ? scopes : undefined;
+  if (!hasScopeConstraints(scopes)) {
+    throw new GrantValidationError(
+      "INVALID_GRANT",
+      "empty grant scopes are ambiguous; omit scopes for unrestricted access",
+    );
+  }
+  return scopes;
+}
+
+function optionalStringArray(
+  value: unknown,
+  field: string,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!isStringArray(value)) {
+    throw new GrantValidationError(
+      "INVALID_GRANT",
+      `${field} must be a string array`,
+    );
+  }
+  return value;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((item: unknown) => typeof item === "string")
+  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

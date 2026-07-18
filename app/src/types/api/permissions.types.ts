@@ -16,6 +16,7 @@ export interface PermissionCatalogEntry {
   description: string;
   compatibleScopes: PermissionScopeType[];
   defaultBaseRoles: Array<"SUPER_ADMIN" | "COMPANY_ADMIN" | "EMPLOYEE">;
+  allowedCustomRoleBases: Array<"COMPANY_ADMIN" | "EMPLOYEE">;
   active: boolean;
   deprecated: boolean;
   platformOnly: boolean;

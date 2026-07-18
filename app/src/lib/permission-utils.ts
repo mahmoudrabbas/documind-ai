@@ -25,7 +25,8 @@ export function isTenantSelectable(entry: PermissionCatalogEntry): boolean {
     !entry.deprecated &&
     !entry.platformOnly &&
     entry.tenantGrantable &&
-    entry.delegableByTenantAdmin
+    entry.delegableByTenantAdmin &&
+    entry.allowedCustomRoleBases.length > 0
   );
 }
 

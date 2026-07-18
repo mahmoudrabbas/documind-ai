@@ -136,10 +136,20 @@ export async function updateRole(
   try {
     await withTenantRoleTransaction(context.tenantId, async (session) => {
       await authorizePermission(context, Permission.ROLES_UPDATE);
-      if (payload.grants) await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, payload.grants!));
       const role = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
       if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
       if (payload.version !== role.version) throw versionError(versionPolicy);
+      await auditRoleAccessFailure(
+        context,
+        roleId,
+        () => assertRoleIntegrity(role, session, false),
+      );
+      const resultingGrants = payload.grants ?? role.grants;
+      await auditEscalationFailure(
+        context,
+        roleId,
+        () => assertDelegableGrants(context, resultingGrants),
+      );
       const beforePermissions = role.grants.map((grant) => grant.permission);
       const beforeStatus = role.status;
       const userCount = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: roleId }).session(session);
@@ -183,7 +193,11 @@ export async function cloneRole(input: unknown, inputContext: RoleOperationConte
       const source = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
       if (!source) throw new AppError(404, NOT_FOUND, "Role not found");
       if (source.version !== payload.version) throw roleVersionError();
-      await assertRoleIntegrity(source, session, true);
+      await auditRoleAccessFailure(
+        context,
+        roleId,
+        () => assertRoleIntegrity(source, session, true),
+      );
       await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, source.grants));
       if (await RoleModel.exists({ tenantId: context.tenantId, normalizedName }).session(session)) throw duplicateNameError();
       const [created] = await RoleModel.create([{
@@ -286,8 +300,12 @@ export async function migrateRoleUsers(input: unknown, inputContext: RoleOperati
     ]);
     if (!source || !destination) throw new AppError(404, NOT_FOUND, "Role not found");
     if (source.version !== payload.sourceVersion || destination.version !== payload.destinationVersion) throw roleVersionError();
-    await assertRoleIntegrity(destination, session, true);
-    if (source.baseRole !== destination.baseRole) throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Destination role is not assignable");
+    await auditRoleAccessFailure(context, destination.id, async () => {
+      await assertRoleIntegrity(destination, session, true);
+      if (source.baseRole !== destination.baseRole) {
+        throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Destination role is not assignable");
+      }
+    });
     await auditEscalationFailure(context, destination.id, () => assertDelegableGrants(context, destination.grants));
     const assigned = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: sourceRoleId }).session(session);
     const eligible = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: sourceRoleId, role: source.baseRole }).session(session);
@@ -318,11 +336,13 @@ async function assignRoleInSession(
   ]);
   if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
   if (role.version !== expectedVersion) throw roleVersionError();
-  await assertRoleIntegrity(role, session, true);
+  await auditRoleAccessFailure(context, roleId, async () => {
+    await assertRoleIntegrity(role, session, true);
+    if (target?.role === "SUPER_ADMIN" || (target && role.baseRole !== target.role)) {
+      throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
+    }
+  });
   if (!target) throw new AppError(404, NOT_FOUND, "User not found");
-  if (target.role === "SUPER_ADMIN" || role.baseRole !== target.role) {
-    throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
-  }
   await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, role.grants));
   if (target.customRoleId?.toString() === roleId) return false;
   target.customRoleId = role._id;
@@ -373,6 +393,27 @@ async function auditEscalationFailure(context: ResolvedRoleOperationContext, rol
 async function auditRejectedGrant(context: ResolvedRoleOperationContext, roleId: string | undefined, error: unknown): Promise<void> {
   if (error instanceof AppError && ["PRIVILEGE_ESCALATION", "UNKNOWN_PERMISSION", "INVALID_PERMISSION"].includes(error.code)) {
     await audit(context, "ROLE_ESCALATION_BLOCKED", roleId ?? "new", { reason: error.code }, "DENIED");
+  }
+}
+
+async function auditRoleAccessFailure(
+  context: ResolvedRoleOperationContext,
+  roleId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    if (error instanceof AppError && error.code === ROLE_NOT_ASSIGNABLE) {
+      await audit(
+        context,
+        "ROLE_ACCESS_DENIED",
+        roleId,
+        { reason: ROLE_NOT_ASSIGNABLE },
+        "DENIED",
+      );
+    }
+    throw error;
   }
 }
 

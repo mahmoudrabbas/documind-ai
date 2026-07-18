@@ -67,6 +67,7 @@ const documentRead: PermissionCatalogEntry = {
     "documentClassifications",
   ],
   defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
+  allowedCustomRoleBases: ["COMPANY_ADMIN", "EMPLOYEE"],
   active: true,
   deprecated: false,
   platformOnly: false,
@@ -81,6 +82,7 @@ const analyticsRead: PermissionCatalogEntry = {
   label: "View Analytics",
   compatibleScopes: ["departmentIds"],
   defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"],
+  allowedCustomRoleBases: ["COMPANY_ADMIN", "EMPLOYEE"],
 };
 
 const deprecatedPermission: PermissionCatalogEntry = {

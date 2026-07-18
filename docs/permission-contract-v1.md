@@ -7,16 +7,17 @@
 - `user.role` is the explicit persistent base role and is limited to `SUPER_ADMIN`, `COMPANY_ADMIN`, or `EMPLOYEE`.
 - `customRoleId` is an optional additive permission bundle. Assigning it never changes `user.role`. It can be changed only through the dedicated, versioned role-assignment endpoints; legacy user invitation/update payloads reject it.
 - `Role.baseRole` is only an assignment constraint. It grants nothing, and assignment is valid only when it exactly equals the user's persistent `user.role`.
+- Tenant custom roles may use only the `COMPANY_ADMIN` or `EMPLOYEE` bases declared by each catalog entry's `allowedCustomRoleBases`. They cannot use, grant, or emulate `SUPER_ADMIN`.
 - Changing `Role.baseRole` while any user is assigned is rejected; Phase 1 does not migrate user base roles through role editing.
 - Base-role defaults are unrestricted inherited grants. A custom role cannot narrow or deny an inherited default.
-- An active, fully migrated custom role adds only its explicit permissions. Missing migration state, archived, missing, cross-tenant, unknown, deprecated, and non-tenant-grantable grants never authorize access.
+- An active, fully migrated custom role adds only its explicit permissions. Missing migration state, archived, missing, cross-tenant, stale-contract, incompatible-base, unknown, deprecated, and non-tenant-grantable role state denies the complete protected decision; evaluation does not fall back to inherited defaults while an invalid assignment remains attached.
 - Roles persist canonical `grants[]` entries containing one permission and that permission's optional scopes. The legacy role-wide `permissions` and `scopes` fields are never authorization sources.
 - Tenant administrators may grant only permissions marked `delegableByTenantAdmin`; effective Company Admin access does not imply delegability.
 - An unrestricted inherited grant takes precedence over a scoped custom grant for the same permission.
 
 ## Scope Semantics
 
-Scopes apply only to explicit custom grants. Absent `scopes` means unrestricted. Empty dimensions are unconstrained and a scope object with no constraints is normalized away. Values are trimmed, deduplicated, sorted, and categories/classifications are case-normalized.
+Scopes apply only to explicit custom grants. Absent `scopes` is the explicit unrestricted representation. If a `scopes` object is supplied, it must contain at least one effective constraint; an empty object or dimensions that normalize to empty are rejected as ambiguous rather than becoming unrestricted. Empty dimensions inside a non-empty scope are unconstrained. Values are trimmed, deduplicated, sorted, and categories/classifications are case-normalized.
 
 Configured dimensions are conjunctive: self, department, category, and classification must all match. Values inside one array are alternatives. `selfOnly` matches when `resource.ownerId` equals the actor ID. A constrained grant without resource context returns `RESOURCE_CONTEXT_REQUIRED`; a supplied nonmatching context returns `SCOPE_MISMATCH`.
 
@@ -26,9 +27,9 @@ Duplicate scoped grants for one permission are rejected because combining them c
 
 ## Persisted Data Defense
 
-Every custom role is revalidated during evaluation. Its contract version, base-role eligibility, active/complete migration state, grant normalization, catalog status, tenant grantability, delegability, and scope compatibility must all be valid. Any failure ignores the complete custom-role contribution, emits a safe structured diagnostic, and returns `INVALID_ROLE` internally without affecting inherited `User.role` defaults.
+Every custom role is revalidated during evaluation. Its contract version, base-role eligibility, active/complete migration state, grant normalization, catalog status, tenant grantability, delegability, and scope compatibility must all be valid. Any failure clears the complete effective grant set, emits a safe structured diagnostic where applicable, and returns the stable assigned-role denial (`ROLE_NOT_FOUND`, `ROLE_ARCHIVED`, or `INVALID_ROLE`). This fail-closed assignment policy prevents a damaged role from silently restoring broader inherited defaults.
 
-The production catalog contains only documented product permissions. Deprecated and malformed migration identifiers exist only as raw migration/test fixtures. Tenant `GET /permissions` returns only the versioned `{id,label,description}` role-editor DTO for tenant-grantable permissions and does not expose default-calculation or security-policy metadata.
+The production catalog contains only documented product permissions. Deprecated and malformed migration identifiers exist only as raw migration/test fixtures. Catalog initialization rejects duplicate identifiers and inconsistent lifecycle, BaseRole, custom-role-base, delegability, scope, or version metadata. Tenant `GET /permissions` derives its versioned role-editor DTO and BaseRole defaults from that canonical catalog; the frontend does not maintain an independent authorization catalog.
 
 Legacy `USER` records are converted to the approved `EMPLOYEE` role with `permissionBaseline: "legacy-none"`, no custom role, and a completed session-revocation checkpoint. This compatibility baseline deliberately resolves no inherited or custom grants, preserving the complete pre-migration effective set until an administrator performs a separately authorized access assignment.
 
@@ -43,8 +44,8 @@ Evaluation is deterministic in this order:
 1. Unknown permission.
 2. Deprecated permission.
 3. Cross-tenant resource context.
-4. Missing or archived assigned role when no inherited grant exists.
-5. Permission not granted.
+4. Missing, archived, or invalid assigned role, regardless of inherited defaults.
+5. Permission not granted when no invalid assignment exists.
 6. Required resource context absent.
 7. Scope mismatch.
 
@@ -58,10 +59,16 @@ Resource context is not client authority. A service that evaluates a concrete us
 
 Delegation is checked against the actor's current database-backed effective grants on create, update, clone, assignment, and migration. The requested permission must be active, tenant-grantable, and marked delegable. A scoped actor grant may delegate only the same or a narrower scope: unrestricted requests cannot be derived from a constrained grant, every requested department/category/classification must be contained by the actor grant, and `selfOnly` cannot be removed. Crafted, hidden, deprecated, platform, cross-tenant, stale, archived, and scope-widening inputs fail closed. Route checks are repeated inside mutation services under the tenant role serialization lock.
 
-Tenant custom roles cannot contribute to `SUPER_ADMIN`. A Super Admin always resolves platform defaults from the authoritative base role and ignores any corrupt persisted `customRoleId`.
+Tenant custom roles cannot contribute to `SUPER_ADMIN`. A Super Admin resolves platform defaults only when the authoritative user belongs to the active canonical `documind.ai` system tenant, and ignores any corrupt persisted `customRoleId`. A `SUPER_ADMIN` record in a customer, legacy, inactive, or non-system tenant resolves no permissions.
 
 ## Freshness
 
 Permission evaluation intentionally has no in-process TTL cache in v1. Every decision reads current user and role state, so role updates, archives, deletion, assignment/removal, base-role changes, and suspension are visible on the next evaluation across API instances. The compatibility `evict` methods are no-ops until a distributed, version-aware cache is introduced.
 
 `InMemoryPermissionEvaluator` is a deterministic test adapter, not a production authorization source. Shared contract tests run the same base-role, role-state, catalog, scope, tenant, stale-assignment, and corrupt-data cases against it and `PermissionEvaluatorImpl`. Production additionally validates MongoDB role provenance against same-tenant users.
+
+## Version Boundary
+
+Contract v1 is additive-only: effective permissions are safe BaseRole defaults plus valid active custom-role grants. It has no explicit deny, negative permission, or override-deny semantics. Adding any deny or inherited-permission narrowing behavior requires a new permission contract version and an explicit persisted-data migration; it cannot be introduced as a v1 normalization change.
+
+Issue 03 owns concrete resource authorization, including loading department, user, and document records and proving ownership or provenance. Contract v1 validates scope shape, tenant context, and conjunctive matching only; it does not treat client-supplied resource identifiers as proof of resource ownership.

@@ -81,8 +81,16 @@ export class InMemoryPermissionEvaluator implements PermissionEvaluator {
         customRoleState = "invalid";
       }
     }
+    const roleIsValid =
+      customRoleState === "none" || customRoleState === "active";
+    const effectiveGrants = roleIsValid
+      ? grants
+      : new Map<PermissionValue, {
+          source: "platform" | "base-role" | "custom-role";
+          scope: PermissionScopes | null;
+        }>();
     return {
-      permissions: new Set(grants.keys()), grants, baseRole: user.baseRole,
+      permissions: new Set(effectiveGrants.keys()), grants: effectiveGrants, baseRole: user.baseRole,
       customRoleId, roleVersion: role?.version ?? null, customRoleState,
     };
   }
