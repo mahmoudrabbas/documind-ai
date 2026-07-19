@@ -2,6 +2,8 @@ import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authorize } from "../../common/middlewares/authorize.middleware.js";
 import { requirePlatformTenant } from "../../common/middlewares/platformTenant.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import {
   aiConfigurationController,
   auditController,
@@ -23,7 +25,7 @@ import {
 
 const router = Router();
 router.use(authenticate, authorize("SUPER_ADMIN"), requirePlatformTenant);
-router.get("/overview", overviewController);
+router.get("/overview", requirePermission(Permission.AUDIT_READ), overviewController);
 router.get("/packages", packagesController);
 router.post("/packages", createPackageController);
 router.get("/packages/:id", packageController);
@@ -34,7 +36,7 @@ router.get("/users", platformUsersController);
 router.get("/usage", usageController);
 router.get("/jobs", jobsController);
 router.get("/system-health", healthController);
-router.get("/audit", auditController);
+router.get("/audit", requirePermission(Permission.AUDIT_READ), auditController);
 router.get("/ai-configuration", aiConfigurationController);
 router.patch("/ai-configuration", updateAiConfigurationController);
 router.get("/settings", settingsController);

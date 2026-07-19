@@ -8,6 +8,9 @@ export const SENSITIVE_FIELD_NAMES = [
   "refreshToken",
   "emailVerificationToken",
   "emailVerificationTokenHash",
+  "invitationToken",
+  "verificationToken",
+  "passwordResetToken",
   "tokenHash",
   "jtiHash",
   "secret",
@@ -38,6 +41,9 @@ export const SENSITIVE_FIELD_NAMES = [
   "redisUrl",
   "databaseUrl",
   "smtpPassword",
+  "cookies",
+  "authorizationHeader",
+  "rawBody",
 ];
 
 export const SENSITIVE_FIELDS = [
@@ -67,7 +73,7 @@ export function redactObject(
   const result: Record<string, unknown> = {};
   
   for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_FIELD_NAMES.includes(key) || rules.includes(key)) {
+    if (isSensitiveKey(key, rules)) {
       result[key] = replacement;
     } else if (isObject(value)) {
       result[key] = redactObject(value, rules, replacement);
@@ -79,4 +85,12 @@ export function redactObject(
   }
   
   return result;
+}
+
+function isSensitiveKey(key: string, rules: readonly string[]): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return SENSITIVE_FIELD_NAMES.some(
+    (field) =>
+      field.replace(/[^a-z0-9]/gi, "").toLowerCase() === normalized,
+  ) || rules.includes(key);
 }

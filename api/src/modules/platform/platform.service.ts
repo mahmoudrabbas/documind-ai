@@ -3,7 +3,6 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
-import AuditLogModel from "../../db/models/auditLog.model.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import PlatformSettingModel from "../../db/models/platformSetting.model.js";
@@ -19,13 +18,20 @@ import {
   LEGACY_PLATFORM_TENANT_SLUGS,
   PLATFORM_TENANT_SLUG,
 } from "../../common/auth/platformTenant.js";
+import {
+  listPlatformAuditLogs,
+  type AuditOperationContext,
+} from "../audit/audit.service.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
   slug: { $nin: [PLATFORM_TENANT_SLUG, ...LEGACY_PLATFORM_TENANT_SLUGS] },
 };
 
-export async function getOverview() {
+export async function getOverview(context: AuditOperationContext) {
+  const recentAudit = (
+    await listPlatformAuditLogs({ page: 1, pageSize: 8 }, context)
+  ).logs;
   const [
     companies,
     activeCompanies,
@@ -45,11 +51,6 @@ export async function getOverview() {
       { $group: { _id: null, total: { $sum: "$fileSize" } } },
     ]),
   ]);
-  const recentAudit = await AuditLogModel.find()
-    .sort({ createdAt: -1 })
-    .limit(8)
-    .lean()
-    .exec();
   return {
     metrics: {
       companies,
@@ -359,32 +360,8 @@ export async function listAudit(input: {
   pageSize: number;
   search?: string;
   status?: string;
-}) {
-  const filter: Record<string, unknown> = {};
-  if (input.status) filter.action = input.status;
-  if (input.search)
-    filter.$or = [
-      { actorEmail: { $regex: input.search, $options: "i" } },
-      { action: { $regex: input.search, $options: "i" } },
-      { resourceType: { $regex: input.search, $options: "i" } },
-    ];
-  const [logs, totalRecords] = await Promise.all([
-    AuditLogModel.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((input.page - 1) * input.pageSize)
-      .limit(input.pageSize)
-      .lean()
-      .exec(),
-    AuditLogModel.countDocuments(filter),
-  ]);
-  return {
-    logs,
-    pagination: {
-      ...input,
-      totalRecords,
-      totalPages: Math.ceil(totalRecords / input.pageSize),
-    },
-  };
+}, context: AuditOperationContext) {
+  return listPlatformAuditLogs(input, context);
 }
 
 export async function getSetting(key: string) {

@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
+import type { AuditOperationContext } from "../audit/audit.service.js";
 import {
   createPackage,
   getOverview,
@@ -43,8 +45,27 @@ const actor = (req: Request) => {
     throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   return req.auth;
 };
+const auditContext = (req: Request): AuditOperationContext => {
+  if (!req.auth || !req.tenantId) {
+    throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+  }
+  const resolved = requireAuthenticatedAuditActor({
+    tenantId: req.tenantId,
+    actorId: req.auth.userId,
+    actorEmail: req.auth.email,
+    actorRole: req.auth.role,
+  });
+  return {
+    tenantId: resolved.tenantId,
+    actorId: resolved.actorId,
+    actorEmail: resolved.actorEmail,
+    actorRole: resolved.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
+};
 
-export const overviewController = endpoint(() => getOverview());
+export const overviewController = endpoint((req) => getOverview(auditContext(req)));
 export const packagesController = endpoint(() => listPackages());
 export const packageController = endpoint((req) =>
   getPackage(parse(idSchema, req.params).id),
@@ -102,7 +123,7 @@ export const jobsController = endpoint((req) =>
 );
 export const healthController = endpoint(() => getSystemHealth());
 export const auditController = endpoint((req) =>
-  listAudit(parse(listSchema, req.query)),
+  listAudit(parse(listSchema, req.query), auditContext(req)),
 );
 export const aiConfigurationController = endpoint(() =>
   getSetting("ai_configuration"),

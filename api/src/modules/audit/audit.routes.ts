@@ -1,16 +1,32 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
-import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import { getLogs, getLogById, exportLogs } from "./audit.controller.js";
+import {
+  validateAuditLogIdInput,
+  validateAuditLogsInput,
+  validateExportAuditLogsInput,
+} from "./audit.validator.js";
 
 const router = Router();
+const validate = (
+  source: "query" | "params",
+  validator: (input: unknown) => unknown,
+): import("express").RequestHandler =>
+  (req, _res, next) => {
+    try {
+      validator(req[source]);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 
-// Only SUPER_ADMIN and COMPANY_ADMIN can access audit logs
-router.use(authenticate);
-router.use(authorize("SUPER_ADMIN", "COMPANY_ADMIN"));
-
-router.get("/logs", getLogs);
-router.get("/export", exportLogs);
-router.get("/logs/:id", getLogById);
+router.use(authenticate, tenantScoping);
+router.get("/logs", requirePermission(Permission.AUDIT_READ), validate("query", validateAuditLogsInput), getLogs);
+router.get("/export", requirePermission(Permission.AUDIT_READ), validate("query", validateExportAuditLogsInput), exportLogs);
+router.get("/logs/:id", requirePermission(Permission.AUDIT_READ), validate("params", validateAuditLogIdInput), getLogById);
 
 export default router;
