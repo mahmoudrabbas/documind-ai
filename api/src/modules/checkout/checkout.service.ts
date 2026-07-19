@@ -227,7 +227,7 @@ export async function getSubscriptionStatus(
     throw new AppError(404, NOT_FOUND, "Subscription not found");
   }
   const sub = await SubscriptionModel.findOne({ tenantId })
-    .populate("packageId", "name code version monthlyPrice annualPrice currency")
+    .populate("packageId", "name code version monthlyPrice annualPrice currency entitlements")
     .lean()
     .exec();
   if (!sub) {

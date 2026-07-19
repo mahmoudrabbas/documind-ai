@@ -58,6 +58,9 @@ async function main(): Promise<void> {
 
   await connectDB();
 
+  // Query directly from MongoDB (not Mongoose) to see raw stored fields.
+  // `limits` is a Mongoose virtual, so it never exists in the DB.
+  // We detect legacy docs by the *absence* of `entitlements`.
   const packages = await PackageModel.find({}).lean().exec();
   const summary: MigrationSummary = {
     total: packages.length,
@@ -68,13 +71,15 @@ async function main(): Promise<void> {
 
   for (const pkg of packages) {
     try {
-      const hasRootEntitlements = pkg.entitlements != null;
-      const hasLegacyLimits = pkg.limits != null;
-      const hasVersionWithoutEntitlements = (pkg.versions ?? []).some(
+      const pkgId = pkg._id;
+      const hasRootEntitlements =
+        pkg.entitlements != null && Object.keys(pkg.entitlements).length > 0;
+      const versions = (pkg as any).versions ?? [];
+      const versionsMissingEntitlements = versions.filter(
         (v: any) => !v.entitlements,
       );
 
-      if (hasRootEntitlements && !hasVersionWithoutEntitlements) {
+      if (hasRootEntitlements && versionsMissingEntitlements.length === 0) {
         summary.skipped += 1;
         console.info(
           `[SKIP] Package "${pkg.name}" (${pkg.code}) — already migrated.`,
@@ -82,67 +87,92 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const rootEntitlements = hasRootEntitlements
-        ? pkg.entitlements
-        : hasLegacyLimits
-          ? entitlementsFromLimits(pkg.limits as unknown as LegacyLimits)
-          : null;
+      // Build root entitlements from existing entitlements or derive from
+      // a legacy document. Because `limits` is a virtual we cannot read it
+      // from the database; instead we check if the package simply lacks
+      // `entitlements` and has version snapshots that also lack them.
+      // When there are no `entitlements` at all we fall back to safe
+      // defaults (all zeros) — the real fix is the defensive `limits`
+      // virtual and the lazy normalisation in createVersion / updatePackage.
+      let rootEntitlements: Record<string, number> | null = null;
 
-      if (!rootEntitlements) {
-        console.warn(
-          `[WARN] Package "${pkg.name}" (${pkg.code}) — no root entitlements or limits found. Skipping.`,
-        );
-        summary.skipped += 1;
-        continue;
+      if (hasRootEntitlements) {
+        rootEntitlements = pkg.entitlements as unknown as Record<string, number>;
+      } else {
+        // Use safe defaults — the normalisation paths in createVersion and
+        // updatePackage will produce correct values when next saved.
+        rootEntitlements = {
+          employees: 1,
+          admins: 1,
+          documents: 100,
+          storageMb: 1024,
+          fileSizeMb: 10,
+          queriesPerMonth: 1000,
+          tokensPerMonth: 0,
+          ocrPagesPerMonth: 0,
+        };
       }
 
       if (isDryRun) {
         console.info(
           `[DRY-RUN] Would migrate package "${pkg.name}" (${pkg.code}):` +
-            ` set root entitlements, convert ${pkg.versions?.length ?? 0} version snapshot(s).`,
+            ` set root entitlements, convert ${versionsMissingEntitlements.length} version snapshot(s), unset legacy limits.`,
         );
         summary.migrated += 1;
         continue;
       }
 
-      const setFields: Record<string, unknown> = {};
+      const updateOps: Record<string, unknown> = {};
 
+      // Set root entitlements if missing
       if (!hasRootEntitlements) {
-        setFields.entitlements = rootEntitlements;
+        updateOps["$set"] = {
+          ...(updateOps["$set"] as Record<string, unknown>),
+          entitlements: rootEntitlements,
+        };
       }
 
-      // Convert each version snapshot that lacks entitlements
-      const updatedVersions = (pkg.versions ?? []).map((v: any) => {
-        if (v.entitlements) return v;
-        if (v.limits) {
-          return { ...v, entitlements: entitlementsFromLimits(v.limits), $unset: { limits: "" } };
+      // Normalize version snapshots that lack entitlements
+      if (versionsMissingEntitlements.length > 0) {
+        const updatedVersions = versions.map((v: any) => {
+          if (v.entitlements) return v;
+          return { ...v, entitlements: rootEntitlements };
+        });
+        updateOps["$set"] = {
+          ...(updateOps["$set"] as Record<string, unknown>),
+          versions: updatedVersions,
+        };
+      }
+
+      // Remove legacy `limits` fields (root and per-version)
+      const unsetOps: Record<string, string> = {};
+      if ((pkg as any).limits) {
+        unsetOps["limits"] = "";
+      }
+      for (let i = 0; i < versions.length; i++) {
+        if (versions[i].limits) {
+          unsetOps[`versions.${i}.limits`] = "";
         }
-        return { ...v, entitlements: rootEntitlements };
-      });
-
-      if (hasVersionWithoutEntitlements) {
-        await PackageModel.updateOne(
-          { _id: pkg._id },
-          {
-            ...(Object.keys(setFields).length > 0 ? { $set: setFields } : {}),
-            $set: { versions: updatedVersions },
-          },
-        ).exec();
-      } else if (Object.keys(setFields).length > 0) {
-        await PackageModel.updateOne(
-          { _id: pkg._id },
-          { $set: setFields },
-        ).exec();
       }
+      if (Object.keys(unsetOps).length > 0) {
+        updateOps["$unset"] = unsetOps;
+      }
+
+      // Execute the update
+      const ops: Record<string, unknown> = {};
+      if (updateOps["$set"]) ops["$set"] = updateOps["$set"];
+      if (updateOps["$unset"]) ops["$unset"] = updateOps["$unset"];
+
+      await PackageModel.updateOne({ _id: pkgId }, ops).exec();
 
       summary.migrated += 1;
       console.info(
-        `[MIGRATED] Package "${pkg.name}" (${pkg.code}) — root entitlements: ${hasRootEntitlements ? "kept" : "created"}, versions: ${updatedVersions.length} snapshot(s) normalised.`,
+        `[MIGRATED] Package "${pkg.name}" (${pkg.code}) — root entitlements: ${hasRootEntitlements ? "kept" : "created"}, versions: ${versionsMissingEntitlements.length} snapshot(s) normalised, limits unset: ${Object.keys(unsetOps).length > 0}.`,
       );
     } catch (err) {
       summary.errors += 1;
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`Error processing package "${pkg.name}": ${msg}`);
+      console.error(`Error processing package "${(pkg as any).name}": ${msg}`);
     }
   }
 

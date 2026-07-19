@@ -146,11 +146,14 @@ const packageSchema = new Schema<PackageDocument>(
 );
 
 packageSchema.virtual("limits").get(function (this: PackageDocument) {
+  const e = this.entitlements;
+  if (!e || Object.keys(e).length === 0)
+    return { users: 0, documents: 0, questionsPerMonth: 0, storageMb: 0 };
   return {
-    users: this.entitlements.employees,
-    documents: this.entitlements.documents,
-    questionsPerMonth: this.entitlements.queriesPerMonth,
-    storageMb: this.entitlements.storageMb,
+    users: e.employees,
+    documents: e.documents,
+    questionsPerMonth: e.queriesPerMonth,
+    storageMb: e.storageMb,
   };
 });
 

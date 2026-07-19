@@ -3,6 +3,7 @@ import type { PublicPackageDTO } from "./public.types.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mapper at the boundary, accept any shape
 function mapToPublicDTO(pkg: any): PublicPackageDTO {
+  const e = pkg.entitlements;
   return {
     id: String(pkg._id),
     name: pkg.name,
@@ -13,10 +14,10 @@ function mapToPublicDTO(pkg: any): PublicPackageDTO {
     currency: pkg.currency,
     trialDays: pkg.trialDays,
     entitlements: {
-      employees: pkg.entitlements.employees,
-      documents: pkg.entitlements.documents,
-      storageMb: pkg.entitlements.storageMb,
-      queriesPerMonth: pkg.entitlements.queriesPerMonth,
+      employees: e?.employees ?? 0,
+      documents: e?.documents ?? 0,
+      storageMb: e?.storageMb ?? 0,
+      queriesPerMonth: e?.queriesPerMonth ?? 0,
     },
     supportedModels: pkg.supportedModels,
     analyticsLevel: pkg.analyticsLevel,

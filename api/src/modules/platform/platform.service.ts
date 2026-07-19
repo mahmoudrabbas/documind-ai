@@ -236,7 +236,7 @@ export async function listSubscriptions(
   );
   return SubscriptionModel.populate(subs, [
     { path: "tenantId", select: "name slug status" },
-    { path: "packageId", select: "name code version monthlyPrice currency" },
+    { path: "packageId", select: "name code version monthlyPrice currency entitlements" },
   ]);
 }
 

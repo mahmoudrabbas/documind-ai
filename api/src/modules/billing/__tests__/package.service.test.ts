@@ -468,5 +468,155 @@ describe("PackageService", () => {
       expect(snapshot).not.toHaveProperty("toJSON");
       expect(snapshot).not.toHaveProperty("versions");
     });
+
+    it("returns safe defaults when entitlements is undefined", () => {
+      const noEnt = doc({ entitlements: undefined });
+
+      const snapshot = mapToSnapshot(noEnt);
+
+      expect(snapshot.entitlements).toEqual({
+        employees: 1,
+        admins: 0,
+        documents: 0,
+        storageMb: 0,
+        fileSizeMb: 10,
+        queriesPerMonth: 0,
+        tokensPerMonth: 0,
+        ocrPagesPerMonth: 0,
+      });
+    });
+  });
+
+  // ── Legacy normalisation in createVersion ──────────────────────────────────
+
+  describe("createVersion — legacy snapshot normalisation", () => {
+    it("backfills entitlements on legacy version snapshots that lack them", async () => {
+      const legacyVersions = [
+        {
+          version: 1,
+          monthlyPrice: 29,
+          limits: { users: 5, documents: 100, questionsPerMonth: 500, storageMb: 512 },
+          annualPrice: 290,
+          trialDays: 14,
+          visibility: "public",
+          supportedModels: ["basic"],
+          analyticsLevel: "basic" as const,
+          retentionDays: 90,
+          supportLevel: "community" as const,
+          createdAt: new Date("2024-01-01"),
+        },
+      ];
+      const pkg = doc({ version: 1, versions: legacyVersions });
+      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
+
+      const result = await createVersion(PKG_ID);
+
+      expect(result.versionBumped).toBe(true);
+      expect(pkg.versions).toHaveLength(2);
+      // The first snapshot should now have entitlements derived from limits
+      expect(pkg.versions[0].entitlements).toBeDefined();
+      expect(pkg.versions[0].entitlements!.employees).toBe(5);
+      expect(pkg.versions[0].entitlements!.documents).toBe(100);
+      expect(pkg.versions[0].entitlements!.queriesPerMonth).toBe(500);
+      expect(pkg.versions[0].entitlements!.admins).toBe(1);
+      expect(pkg.versions[0].entitlements!.fileSizeMb).toBe(10);
+      expect(pkg.versions[0].entitlements!.tokensPerMonth).toBe(0);
+      expect(pkg.versions[0].entitlements!.ocrPagesPerMonth).toBe(0);
+    });
+
+    it("backfills entitlements from root entitlements when no legacy limits exist", async () => {
+      const legacyVersions = [
+        {
+          version: 1,
+          monthlyPrice: 29,
+          annualPrice: 290,
+          trialDays: 14,
+          visibility: "public",
+          supportedModels: ["basic"],
+          analyticsLevel: "basic" as const,
+          retentionDays: 90,
+          supportLevel: "community" as const,
+          createdAt: new Date("2024-01-01"),
+          // no entitlements, no limits
+        },
+      ];
+      const pkg = doc({ version: 1, versions: legacyVersions });
+      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
+
+      await createVersion(PKG_ID);
+
+      // Should fall back to root entitlements
+      expect(pkg.versions[0].entitlements).toBeDefined();
+      expect(pkg.versions[0].entitlements!.employees).toBe(10); // from root entitlements
+      expect(pkg.versions[0].entitlements!.documents).toBe(500);
+    });
+
+    it("does not modify already-correct version snapshots", async () => {
+      const correctVersions = [
+        {
+          version: 1,
+          monthlyPrice: 29,
+          entitlements: {
+            employees: 10, admins: 2, documents: 500, storageMb: 1024,
+            fileSizeMb: 25, queriesPerMonth: 5000, tokensPerMonth: 100_000, ocrPagesPerMonth: 100,
+          },
+          annualPrice: 290,
+          trialDays: 14,
+          visibility: "public",
+          supportedModels: ["basic"],
+          analyticsLevel: "basic" as const,
+          retentionDays: 90,
+          supportLevel: "community" as const,
+          createdAt: new Date("2024-01-01"),
+        },
+      ];
+      const pkg = doc({ version: 1, versions: correctVersions });
+      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
+
+      await createVersion(PKG_ID);
+
+      // First snapshot should remain unchanged
+      expect(pkg.versions[0].entitlements!.employees).toBe(10);
+      expect(pkg.versions[0].entitlements!.admins).toBe(2);
+    });
+
+    it("normalises multiple legacy snapshots in one pass", async () => {
+      const legacyVersions = [
+        {
+          version: 1,
+          monthlyPrice: 19,
+          limits: { users: 1, documents: 10, questionsPerMonth: 100, storageMb: 50 },
+          annualPrice: 190,
+          trialDays: 7,
+          visibility: "public",
+          supportedModels: ["basic"],
+          analyticsLevel: "basic" as const,
+          retentionDays: 30,
+          supportLevel: "community" as const,
+          createdAt: new Date("2024-01-01"),
+        },
+        {
+          version: 2,
+          monthlyPrice: 29,
+          limits: { users: 5, documents: 100, questionsPerMonth: 500, storageMb: 512 },
+          annualPrice: 290,
+          trialDays: 14,
+          visibility: "public",
+          supportedModels: ["basic"],
+          analyticsLevel: "basic" as const,
+          retentionDays: 90,
+          supportLevel: "community" as const,
+          createdAt: new Date("2024-06-01"),
+        },
+      ];
+      const pkg = doc({ version: 2, versions: legacyVersions });
+      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
+
+      await createVersion(PKG_ID);
+
+      expect(pkg.versions).toHaveLength(3);
+      expect(pkg.versions[0].entitlements!.employees).toBe(1);
+      expect(pkg.versions[1].entitlements!.employees).toBe(5);
+    });
   });
 });
