@@ -44,12 +44,12 @@ export function listPaymentEvents(
   const qs = search.toString();
   return apiClient<
     Success<{ events: PaymentEvent[]; pagination: Pagination }>
-  >(`/admin/payment-events${qs ? `?${qs}` : ""}`, { signal });
+  >(`/super-admin/payment-events${qs ? `?${qs}` : ""}`, { signal });
 }
 
 export function reprocessPaymentEvent(eventId: string) {
   return apiClient<Success<{ reprocessed: boolean }>>(
-    `/admin/payment-events/${encodeURIComponent(eventId)}/reprocess`,
+    `/super-admin/payment-events/${encodeURIComponent(eventId)}/reprocess`,
     { method: "POST" },
   );
 }

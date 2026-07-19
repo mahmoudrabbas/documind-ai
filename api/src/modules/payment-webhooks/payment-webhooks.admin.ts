@@ -27,7 +27,7 @@ function operationContext(req: Request) {
 const router = Router();
 router.use(authenticate, requirePlatformTenant);
 
-router.get("/admin/payment-events", requirePermission(Permission.BILLING_READ), async (req, res, next) => {
+router.get("/payment-events", requirePermission(Permission.BILLING_READ), async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 20));
@@ -44,7 +44,7 @@ router.get("/admin/payment-events", requirePermission(Permission.BILLING_READ), 
   }
 });
 
-router.post("/admin/payment-events/:eventId/reprocess", requirePermission(Permission.BILLING_MANAGE), async (req, res, next) => {
+router.post("/payment-events/:eventId/reprocess", requirePermission(Permission.BILLING_MANAGE), async (req, res, next) => {
   try {
     const eventId = Array.isArray(req.params.eventId)
       ? req.params.eventId[0]
