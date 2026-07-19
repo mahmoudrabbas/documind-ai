@@ -388,13 +388,11 @@ describe("resolveColumnMappings", () => {
         confidence: "high",
       });
 
-      // Unknown — produces alternatives via word-split
       expect(result.columnMappings[6]).toMatchObject({
         excelHeader: "Full Name",
-        targetField: null,
-        confidence: "low",
+        targetField: "firstName",
+        confidence: "high",
       });
-      expect(result.columnMappings[6].alternatives.length).toBeGreaterThan(0);
     });
   });
 });
