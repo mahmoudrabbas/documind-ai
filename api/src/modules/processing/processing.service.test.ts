@@ -1,4 +1,4 @@
-import test, { after, afterEach, before } from "node:test";
+import test, { after, afterEach, before, beforeEach } from "node:test";
 import assert from "node:assert";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -7,6 +7,8 @@ import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import OcrPageResultModel from "../../db/models/ocrPageResult.model.js";
 import DocumentQualityModel from "../../db/models/documentQuality.model.js";
 import OcrUsageRecordModel from "../../db/models/ocrUsageRecord.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
+import UserModel from "../../db/models/user.model.js";
 import {
   getOcrPageResults,
   getDocumentQuality,
@@ -21,6 +23,12 @@ import { disconnectRedis } from "../../db/redis.js";
 let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
 const ACTOR_ID = "6650f0f0f0f0f0f0f0f0f0f1";
+const TEST_CONTEXT = {
+  tenantId: TENANT_ID,
+  actorId: ACTOR_ID,
+  actorEmail: "processing-admin@example.com",
+  actorRole: "COMPANY_ADMIN" as const,
+};
 
 before(async () => {
   if (process.env.MONGODB_URI) {
@@ -47,6 +55,39 @@ afterEach(async () => {
   await OcrUsageRecordModel.deleteMany({});
   await DocumentModel.deleteMany({});
   await DocumentVersionModel.deleteMany({});
+  await UserModel.deleteMany({});
+  await TenantModel.deleteMany({});
+});
+
+beforeEach(async () => {
+  await TenantModel.updateOne(
+    { _id: new mongoose.Types.ObjectId(TENANT_ID) },
+    {
+      $set: {
+        name: "Processing Tenant",
+        slug: "processing-tenant",
+        status: "active",
+        plan: "free",
+      },
+    },
+    { upsert: true },
+  );
+  await UserModel.updateOne(
+    { _id: new mongoose.Types.ObjectId(ACTOR_ID) },
+    {
+      $set: {
+        tenantId: new mongoose.Types.ObjectId(TENANT_ID),
+        name: "Processing Admin",
+        email: TEST_CONTEXT.actorEmail,
+        passwordHash: "test-password-hash",
+        role: TEST_CONTEXT.actorRole,
+        status: "active",
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+      },
+    },
+    { upsert: true },
+  );
 });
 
 async function createTestDocument(version = 1) {
@@ -116,7 +157,7 @@ test("processing.service", async (t) => {
       { pageNumber: 2, text: "Page two content", confidence: 0.88 },
     ]);
 
-    const results = await getOcrPageResults(TENANT_ID, docId, 1);
+    const results = await getOcrPageResults(TENANT_ID, docId, 1, TEST_CONTEXT);
     assert.equal(results.length, 2);
     assert.equal(results[0].pageNumber, 1);
     assert.equal(results[0].text, "Page one content");
@@ -126,13 +167,23 @@ test("processing.service", async (t) => {
 
   await t.test("getOcrPageResults returns empty array when no pages exist", async () => {
     const doc = await createTestDocument();
-    const results = await getOcrPageResults(TENANT_ID, doc._id.toString(), 1);
+    const results = await getOcrPageResults(
+      TENANT_ID,
+      doc._id.toString(),
+      1,
+      TEST_CONTEXT,
+    );
     assert.equal(results.length, 0);
   });
 
   await t.test("getDocumentQuality returns null when no quality record exists", async () => {
     const doc = await createTestDocument();
-    const result = await getDocumentQuality(TENANT_ID, doc._id.toString(), 1);
+    const result = await getDocumentQuality(
+      TENANT_ID,
+      doc._id.toString(),
+      1,
+      TEST_CONTEXT,
+    );
     assert.equal(result, null);
   });
 
@@ -144,7 +195,12 @@ test("processing.service", async (t) => {
       { pageNumber: 2, text: "Another page with good text", confidence: 0.92 },
     ]);
 
-    const quality = await assessDocumentQuality(TENANT_ID, docId, 1);
+    const quality = await assessDocumentQuality(
+      TENANT_ID,
+      docId,
+      1,
+      TEST_CONTEXT,
+    );
     assert.ok(quality);
     assert.equal(quality.documentId, docId);
     assert.equal(quality.documentVersion, 1);
@@ -160,7 +216,12 @@ test("processing.service", async (t) => {
       { pageNumber: 1, text: "Very garbled text", confidence: 0.25 },
     ]);
 
-    const quality = await assessDocumentQuality(TENANT_ID, docId, 1);
+    const quality = await assessDocumentQuality(
+      TENANT_ID,
+      docId,
+      1,
+      TEST_CONTEXT,
+    );
     assert.equal(quality.qualityStatus, "REVIEW_REQUIRED");
     assert.equal(quality.requiresReview, true);
   });
@@ -171,12 +232,12 @@ test("processing.service", async (t) => {
     await seedOcrPages(docId, [
       { pageNumber: 1, text: "Page content", confidence: 0.3 },
     ]);
-    await assessDocumentQuality(TENANT_ID, docId, 1);
+    await assessDocumentQuality(TENANT_ID, docId, 1, TEST_CONTEXT);
 
     const reviewed = await reviewDocumentQuality(TENANT_ID, docId, 1, {
       decision: "approved",
       notes: "Looks good after manual check",
-    }, ACTOR_ID);
+    }, TEST_CONTEXT);
 
     assert.equal(reviewed.reviewDecision, "approved");
     assert.equal(reviewed.reviewedBy, ACTOR_ID);
@@ -191,12 +252,12 @@ test("processing.service", async (t) => {
     await seedOcrPages(docId, [
       { pageNumber: 1, text: "Bad quality", confidence: 0.2 },
     ]);
-    await assessDocumentQuality(TENANT_ID, docId, 1);
+    await assessDocumentQuality(TENANT_ID, docId, 1, TEST_CONTEXT);
 
     const reviewed = await reviewDocumentQuality(TENANT_ID, docId, 1, {
       decision: "rejected",
       notes: "Unreadable document",
-    }, ACTOR_ID);
+    }, TEST_CONTEXT);
 
     assert.equal(reviewed.reviewDecision, "rejected");
     assert.equal(reviewed.qualityStatus, "REJECTED");
@@ -210,14 +271,14 @@ test("processing.service", async (t) => {
       { pageNumber: 1, text: "Bad", confidence: 0.2 },
       { pageNumber: 2, text: "Bad", confidence: 0.3 },
     ]);
-    await assessDocumentQuality(TENANT_ID, docId, 1);
+    await assessDocumentQuality(TENANT_ID, docId, 1, TEST_CONTEXT);
 
     await reviewDocumentQuality(TENANT_ID, docId, 1, {
       decision: "retry",
       pageNumbers: [1],
-    }, ACTOR_ID);
+    }, TEST_CONTEXT);
 
-    const pages = await getOcrPageResults(TENANT_ID, docId, 1);
+    const pages = await getOcrPageResults(TENANT_ID, docId, 1, TEST_CONTEXT);
     const page1 = pages.find((p) => p.pageNumber === 1);
     assert.equal(page1?.status, "retry");
   });
@@ -225,7 +286,7 @@ test("processing.service", async (t) => {
   await t.test("reviewDocumentQuality throws when no quality record exists", async () => {
     const doc = await createTestDocument();
     await assert.rejects(
-      () => reviewDocumentQuality(TENANT_ID, doc._id.toString(), 1, { decision: "approved" }, ACTOR_ID),
+      () => reviewDocumentQuality(TENANT_ID, doc._id.toString(), 1, { decision: "approved" }, TEST_CONTEXT),
       (err: Error & { code?: string }) => {
         assert.equal(err.code, "REVIEW_NOT_FOUND");
         return true;
@@ -241,7 +302,7 @@ test("processing.service", async (t) => {
       { pageNumber: 2, text: "Good content", confidence: 0.9, status: "completed" },
     ]);
 
-    const result = await retryOcrPages(TENANT_ID, docId, 1, {}, ACTOR_ID);
+    const result = await retryOcrPages(TENANT_ID, docId, 1, {}, TEST_CONTEXT);
     assert.ok(result.jobId);
     assert.ok(result.idempotencyKey);
     assert.ok(result.idempotencyKey.startsWith("ocr-retry-"));
@@ -255,7 +316,7 @@ test("processing.service", async (t) => {
     ]);
 
     await assert.rejects(
-      () => retryOcrPages(TENANT_ID, docId, 1, {}, ACTOR_ID),
+      () => retryOcrPages(TENANT_ID, docId, 1, {}, TEST_CONTEXT),
       (err: Error & { code?: string }) => {
         assert.equal(err.code, "NO_PAGES_TO_RETRY");
         return true;
@@ -284,14 +345,14 @@ test("processing.service", async (t) => {
       });
     }
 
-    const summary = await getOcrUsageSummary(TENANT_ID);
+    const summary = await getOcrUsageSummary(TENANT_ID, TEST_CONTEXT);
     assert.equal(summary.pagesUsed, 5);
     assert.ok(summary.periodStart);
     assert.ok(summary.periodEnd);
   });
 
   await t.test("getOcrUsageSummary returns zero when no usage", async () => {
-    const summary = await getOcrUsageSummary(TENANT_ID);
+    const summary = await getOcrUsageSummary(TENANT_ID, TEST_CONTEXT);
     assert.equal(summary.pagesUsed, 0);
   });
 });

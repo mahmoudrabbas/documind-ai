@@ -44,6 +44,7 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
   assessDocumentQualityController,
 );
 
@@ -51,6 +52,7 @@ router.post(
   "/:id/quality/review",
   authenticate,
   tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
   requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
   reviewDocumentQualityController,
 );

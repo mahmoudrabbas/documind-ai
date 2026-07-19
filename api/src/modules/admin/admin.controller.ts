@@ -6,6 +6,25 @@ import {
   validateUpdateTenantInput,
 } from "./admin.validator.js";
 import { getTenant, listTenants, updateTenant } from "./admin.service.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
+import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
+
+function operationContext(req: Request): OperationAuthorizationContext {
+  const resolved = requireAuthenticatedAuditActor({
+    tenantId: req.tenantId,
+    actorId: req.auth?.userId,
+    actorEmail: req.auth?.email,
+    actorRole: req.auth?.role,
+  });
+  return {
+    tenantId: resolved.tenantId,
+    actorId: resolved.actorId,
+    actorEmail: resolved.actorEmail,
+    actorRole: resolved.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
+}
 
 function handleAdminError(error: unknown, res: Response, next: NextFunction) {
   if (error instanceof AppError) {
@@ -27,7 +46,10 @@ export async function getTenantController(
   next: NextFunction,
 ) {
   try {
-    const result = await getTenant(validateTenantId(req.params));
+    const result = await getTenant(
+      validateTenantId(req.params),
+      operationContext(req),
+    );
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     handleAdminError(error, res, next);
@@ -45,7 +67,7 @@ export async function listTenantsController(
     }
 
     const input = validateListTenantsInput(req.query);
-    const result = await listTenants(input);
+    const result = await listTenants(input, operationContext(req));
 
     res.status(200).json({
       success: true,
@@ -67,7 +89,7 @@ export async function updateTenantController(
     }
 
     const input = validateUpdateTenantInput(req.params, req.body);
-    const result = await updateTenant(input, req.auth);
+    const result = await updateTenant(input, operationContext(req));
 
     res.status(200).json({
       success: true,

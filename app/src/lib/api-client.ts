@@ -188,6 +188,41 @@ interface RefreshResponse {
 
 let refreshRequest: Promise<string> | null = null;
 let explicitLogout = false;
+type SessionListener = () => void;
+type PermissionDeniedListener = (error: ApiError) => void;
+const sessionInvalidatedListeners = new Set<SessionListener>();
+const permissionDeniedListeners = new Set<PermissionDeniedListener>();
+
+export function subscribeSessionInvalidated(listener: SessionListener) {
+  sessionInvalidatedListeners.add(listener);
+  return () => {
+    sessionInvalidatedListeners.delete(listener);
+  };
+}
+
+export function subscribePermissionDenied(listener: PermissionDeniedListener) {
+  permissionDeniedListeners.add(listener);
+  return () => {
+    permissionDeniedListeners.delete(listener);
+  };
+}
+
+function notifySessionInvalidated(): void {
+  sessionInvalidatedListeners.forEach((listener) => listener());
+}
+
+function notifyPermissionDenied(error: ApiError): void {
+  permissionDeniedListeners.forEach((listener) => listener(error));
+}
+
+export function isPermissionError(error: ApiError): boolean {
+  return (
+    error.status === 403 &&
+    (error.code === "PERMISSION_REQUIRED" ||
+      error.code === "RESOURCE_CONTEXT_REQUIRED" ||
+      error.code === "SCOPE_MISMATCH")
+  );
+}
 
 export function beginExplicitLogout() {
   explicitLogout = true;
@@ -268,6 +303,7 @@ export async function refreshAccessToken(): Promise<string> {
 
 function logout(redirectOnAuthFailure: boolean): void {
   clearAccessToken();
+  notifySessionInvalidated();
 
   if (
     redirectOnAuthFailure &&
@@ -344,7 +380,16 @@ async function executeRequest<T>(
 
   const payload = await parseResponse(response);
   if (!response.ok) {
-    throw toApiError(response, payload);
+    const error = toApiError(response, payload);
+    if (error.status === 401 && auth && !publicEndpoint) {
+      logout(redirectOnAuthFailure);
+    } else if (
+      isPermissionError(error) &&
+      getEndpointPath(endpoint) !== "/permissions/me"
+    ) {
+      notifyPermissionDenied(error);
+    }
+    throw error;
   }
 
   return payload as T;
@@ -428,22 +473,42 @@ export function uploadFile<T = unknown>(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(response as T);
       } else {
+        const responseRecord =
+          response && typeof response === "object"
+            ? (response as Record<string, unknown>)
+            : null;
+        const responseError = responseRecord?.error;
+        const nestedError =
+          responseError && typeof responseError === "object"
+            ? (responseError as Record<string, unknown>)
+            : null;
         const apiError = new ApiError({
           status: xhr.status,
           code:
-            response && typeof response === "object" && "error" in response
-              ? String((response as Record<string, unknown>).error)
-              : undefined,
+            typeof responseError === "string"
+              ? responseError
+              : typeof nestedError?.code === "string"
+                ? nestedError.code
+                : undefined,
           message:
-            response && typeof response === "object" && "message" in response
-              ? String((response as Record<string, unknown>).message)
+            typeof nestedError?.message === "string"
+              ? nestedError.message
+              : typeof responseRecord?.message === "string"
+                ? responseRecord.message
               : `Upload failed with status ${xhr.status}`,
-          details:
-            response && typeof response === "object" && "details" in response
-              ? (response as Record<string, unknown>).details
-              : undefined,
+          details: nestedError?.details ?? responseRecord?.details,
+          retryAfterSeconds: (() => {
+            const value = xhr.getResponseHeader("retry-after");
+            const seconds = value ? Number.parseInt(value, 10) : Number.NaN;
+            return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+          })(),
         });
 
+        if (apiError.status === 401) {
+          logout(true);
+        } else if (isPermissionError(apiError)) {
+          notifyPermissionDenied(apiError);
+        }
         reject(apiError);
       }
     });

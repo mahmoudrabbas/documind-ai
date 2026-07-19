@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
-import { authorize } from "../../common/middlewares/authorize.middleware.js";
 import { requirePlatformTenant } from "../../common/middlewares/platformTenant.middleware.js";
+import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import {
   enqueueJobController,
   getJobMetricsController,
@@ -16,7 +18,13 @@ const router = Router();
  * Any authenticated role may enqueue against the JobDispatcher port; product
  * modules build their own typed jobs here.
  */
-router.post("/enqueue", authenticate, enqueueJobController);
+router.post(
+  "/enqueue",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  enqueueJobController,
+);
 
 /**
  * Super Admin-only queue diagnostics. Inspection, metrics, and replay are
@@ -25,24 +33,24 @@ router.post("/enqueue", authenticate, enqueueJobController);
 router.get(
   "/platform/jobs/metrics",
   authenticate,
-  authorize("SUPER_ADMIN"),
   requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
   getJobMetricsController,
 );
 
 router.get(
   "/platform/jobs/:jobId",
   authenticate,
-  authorize("SUPER_ADMIN"),
   requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
   getJobStatusController,
 );
 
 router.post(
   "/platform/jobs/:jobId/replay",
   authenticate,
-  authorize("SUPER_ADMIN"),
   requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_UPDATE),
   replayJobController,
 );
 

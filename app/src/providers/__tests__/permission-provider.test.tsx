@@ -17,6 +17,7 @@ const baseEntry: PermissionCatalogEntry = {
   description: "View tenant documents",
   compatibleScopes: ["selfOnly", "departmentIds", "documentCategories", "documentClassifications"],
   defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
+  allowedCustomRoleBases: ["COMPANY_ADMIN", "EMPLOYEE"],
   active: true,
   deprecated: false,
   platformOnly: false,

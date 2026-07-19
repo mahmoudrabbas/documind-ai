@@ -33,12 +33,26 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   return children;
 }
 
-export function RoleGuard({ role, children }: { role: string; children: ReactNode }) {
+export function RoleGuard({
+  role,
+  children,
+}: {
+  role: string | readonly string[];
+  children: ReactNode;
+}) {
   const auth = useAuth();
   const router = useRouter();
+  const allowedRoles: readonly string[] =
+    typeof role === "string" ? [role] : role;
+  const isAllowed =
+    auth.status === "authenticated" && allowedRoles.includes(auth.user.role);
   useEffect(() => {
-    if (auth.status === "authenticated" && auth.user.role !== role) router.replace("/dashboard");
+    const roles: readonly string[] =
+      typeof role === "string" ? [role] : role;
+    if (auth.status === "authenticated" && !roles.includes(auth.user.role)) {
+      router.replace(getRoleHome(auth.user.role));
+    }
   }, [auth, role, router]);
-  if (auth.status !== "authenticated" || auth.user.role !== role) return <LoadingShell />;
+  if (!isAllowed) return <LoadingShell />;
   return children;
 }

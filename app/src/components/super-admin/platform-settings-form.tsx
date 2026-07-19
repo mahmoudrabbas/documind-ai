@@ -7,6 +7,8 @@ import {
   getPlatformSetting,
   updatePlatformSetting,
 } from "@/services/super-admin.service";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 
 const defaults = {
   "ai-configuration": {
@@ -34,11 +36,14 @@ export function PlatformSettingsForm({
 }: {
   kind: keyof typeof defaults;
 }) {
+  const permissions = usePermissions();
+  const canUpdate = permissions.can(Permission.COMPANY_SETTINGS_UPDATE);
   const state = usePlatformData(loaders[kind]);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canUpdate) return;
     setPending(true);
     setNotice("");
     const form = new FormData(event.currentTarget);
@@ -104,6 +109,7 @@ export function PlatformSettingsForm({
                 {notice}
               </p>
             ) : null}
+            {canUpdate ? (
             <div className="flex justify-end">
               <button
                 disabled={pending}
@@ -112,6 +118,7 @@ export function PlatformSettingsForm({
                 {pending ? "Saving…" : "Save settings"}
               </button>
             </div>
+            ) : null}
           </form>
         </DashboardPanel>
       ) : null}

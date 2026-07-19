@@ -3,7 +3,6 @@ import type { AuditEventInput, AuditAction, AuditResourceType, AuditOutcome } fr
 export type { AuditEventInput, AuditAction, AuditResourceType, AuditOutcome };
 
 export interface AuditQueryFilter {
-  tenantId?: string;
   action?: string;
   actorId?: string;
   actorEmail?: string;
@@ -11,5 +10,14 @@ export interface AuditQueryFilter {
   resourceId?: string;
   dateFrom?: string;
   dateTo?: string;
-  outcome?: string;
+  outcome?: AuditOutcome;
+}
+
+export interface AuditOperationContext {
+  tenantId: string;
+  actorId: string;
+  actorEmail: string;
+  actorRole: import("../../common/auth/baseRoles.js").BaseRole;
+  traceId?: string;
+  requestId?: string;
 }

@@ -15,6 +15,7 @@ import {
   beginExplicitLogout,
   finishExplicitLogout,
   refreshAccessToken,
+  subscribeSessionInvalidated,
 } from "@/lib/api-client";
 import {
   clearAccessToken,
@@ -108,6 +109,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, []);
+
+  useEffect(
+    () =>
+      subscribeSessionInvalidated(() => {
+        setState({
+          status: "unauthenticated",
+          user: null,
+          tenant: null,
+          accessToken: null,
+        });
+      }),
+    [],
+  );
 
   const establishSession = useCallback(
     (accessToken: string, session: Session) => {

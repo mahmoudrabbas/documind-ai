@@ -17,11 +17,15 @@ import {
   reprocessPaymentEvent,
   triggerReconciliation,
 } from "@/services/billing.service";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 
 const loadEvents = (signal?: AbortSignal) =>
   listPaymentEvents({ page: 1, pageSize: 50 }, signal);
 
 export default function PaymentDiagnosticsPage() {
+  const permissions = usePermissions();
+  const canManage = permissions.can(Permission.BILLING_MANAGE);
   const state = usePlatformData(loadEvents);
   const [notice, setNotice] = useState("");
   const [reconResult, setReconResult] = useState<{
@@ -31,6 +35,7 @@ export default function PaymentDiagnosticsPage() {
 
   const handleReprocess = useCallback(
     async (eventId: string) => {
+      if (!canManage) return;
       setNotice("");
       try {
         await reprocessPaymentEvent(eventId);
@@ -40,10 +45,11 @@ export default function PaymentDiagnosticsPage() {
         setNotice("Failed to reprocess event.");
       }
     },
-    [state],
+    [canManage, state],
   );
 
   const handleReconcile = useCallback(async () => {
+    if (!canManage) return;
     setNotice("");
     try {
       const result = await triggerReconciliation();
@@ -54,7 +60,7 @@ export default function PaymentDiagnosticsPage() {
     } catch {
       setNotice("Reconciliation failed.");
     }
-  }, []);
+  }, [canManage]);
 
   return (
     <DashboardPage>
@@ -63,6 +69,7 @@ export default function PaymentDiagnosticsPage() {
         description="Monitor webhook events, reprocess failures, and reconcile subscription state."
       />
 
+      {canManage ? (
       <DashboardPanel className="mb-5">
         <div className="flex flex-wrap gap-3">
           <button
@@ -79,6 +86,7 @@ export default function PaymentDiagnosticsPage() {
           </p>
         ) : null}
       </DashboardPanel>
+      ) : null}
 
       {reconResult ? (
         <DashboardPanel className="mb-5">
@@ -145,7 +153,7 @@ export default function PaymentDiagnosticsPage() {
                   : "—"}
               </td>
               <td className="cell">
-                {event.status === "failed" ? (
+                {canManage && event.status === "failed" ? (
                   <button
                     type="button"
                     onClick={() => void handleReprocess(event.eventId)}

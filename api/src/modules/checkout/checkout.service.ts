@@ -9,14 +9,19 @@ import {
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { PaymentProvider } from "../billing/ports/payment-provider.port.js";
-import type { AuthIdentity } from "../auth/auth.types.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizeTenantOperation,
+  type OperationAuthorizationContext,
+  type ResolvedOperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 
 function writeAudit(
   action: string,
   resourceId: string,
   changes: Record<string, unknown>,
   tenantId: string,
-  actor?: AuthIdentity,
+  actor: ResolvedOperationAuthorizationContext,
 ): void {
   const writer = getAuditWriter();
   writer
@@ -26,9 +31,10 @@ function writeAudit(
       resourceId,
       changes,
       tenantId,
-      actorId: actor?.userId,
-      actorEmail: actor?.email,
-      actorRole: actor?.role,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      actorKind: actor.actorKind,
     })
     .catch((err: unknown) => {
       console.error("Audit write failed (non-blocking):", err);
@@ -58,8 +64,15 @@ export async function createCheckoutSession(
   provider: PaymentProvider,
   successUrl: string,
   cancelUrl: string,
-  actor?: AuthIdentity,
+  inputContext: OperationAuthorizationContext,
 ) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.BILLING_MANAGE,
+  );
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Subscription not found");
+  }
   const pkg = await PackageModel.findById(packageId).lean().exec();
   if (!pkg) {
     throw new AppError(404, NOT_FOUND, "Package not found");
@@ -75,11 +88,10 @@ export async function createCheckoutSession(
 
   let providerCustomerId = sub?.providerCustomerId ?? "";
   if (!providerCustomerId) {
-    const actorIdentity = actor;
     providerCustomerId = await provider.createCustomer({
       tenantId,
-      email: actorIdentity?.email ?? "unknown@documind.ai",
-      name: actorIdentity?.email ?? "Unknown",
+      email: actor.actorEmail,
+      name: actor.actorEmail,
     });
   }
 
@@ -146,7 +158,15 @@ export async function createCheckoutSession(
 export async function getCheckoutStatus(
   checkoutId: string,
   tenantId: string,
+  inputContext: OperationAuthorizationContext,
 ) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.BILLING_READ,
+  );
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Checkout session not found");
+  }
   const session = await CheckoutSessionModel.findOne({
     _id: checkoutId,
     tenantId,
@@ -160,10 +180,18 @@ export async function getCheckoutStatus(
 }
 
 export async function listCheckoutSessions(
-  filter: { tenantId?: string; status?: string; page: number; pageSize: number },
+  filter: { tenantId: string; status?: string; page: number; pageSize: number },
+  inputContext: OperationAuthorizationContext,
 ) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.BILLING_READ,
+  );
+  if (filter.tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Checkout sessions not found");
+  }
   const query: Record<string, unknown> = {};
-  if (filter.tenantId) query.tenantId = new Types.ObjectId(filter.tenantId);
+  query.tenantId = new Types.ObjectId(actor.tenantId);
   if (filter.status) query.status = filter.status;
 
   const [sessions, totalRecords] = await Promise.all([
@@ -187,7 +215,17 @@ export async function listCheckoutSessions(
   };
 }
 
-export async function getSubscriptionStatus(tenantId: string) {
+export async function getSubscriptionStatus(
+  tenantId: string,
+  inputContext: OperationAuthorizationContext,
+) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.BILLING_READ,
+  );
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Subscription not found");
+  }
   const sub = await SubscriptionModel.findOne({ tenantId })
     .populate("packageId", "name code version monthlyPrice annualPrice currency")
     .lean()

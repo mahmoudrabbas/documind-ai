@@ -16,6 +16,7 @@ const baseEntry: PermissionCatalogEntry = {
   description: "View tenant documents",
   compatibleScopes: ["selfOnly", "departmentIds", "documentCategories", "documentClassifications"],
   defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
+  allowedCustomRoleBases: ["COMPANY_ADMIN", "EMPLOYEE"],
   active: true,
   deprecated: false,
   platformOnly: false,
@@ -42,6 +43,7 @@ const platformOnly: PermissionCatalogEntry = {
   ...baseEntry,
   id: "audit:platform-read",
   defaultBaseRoles: ["SUPER_ADMIN"],
+  allowedCustomRoleBases: [],
   platformOnly: true,
   tenantGrantable: false,
   delegableByTenantAdmin: false,
@@ -52,6 +54,7 @@ const deprecatedEntry: PermissionCatalogEntry = {
   id: "documents:view",
   deprecated: true,
   active: false,
+  allowedCustomRoleBases: [],
   tenantGrantable: false,
   delegableByTenantAdmin: false,
 };
@@ -60,6 +63,7 @@ const nonDelegableEntry: PermissionCatalogEntry = {
   ...baseEntry,
   id: "users:delete",
   defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"],
+  allowedCustomRoleBases: [],
   tenantGrantable: false,
   delegableByTenantAdmin: false,
 };
@@ -122,6 +126,13 @@ describe("isTenantSelectable", () => {
     expect(isTenantSelectable(nonDelegableEntry)).toBe(false);
   });
 
+  it("returns false when the catalog allows no custom-role base", () => {
+    expect(isTenantSelectable({
+      ...companyAdminOnly,
+      allowedCustomRoleBases: [],
+    })).toBe(false);
+  });
+
   it("returns false when delegableByTenantAdmin is false even if other criteria pass", () => {
     const noDelegable: PermissionCatalogEntry = {
       ...baseEntry,
@@ -131,14 +142,15 @@ describe("isTenantSelectable", () => {
     expect(isTenantSelectable(noDelegable)).toBe(false);
   });
 
-  it("requires all five conditions: active, not deprecated, not platformOnly, tenantGrantable, delegableByTenantAdmin", () => {
+  it("requires lifecycle, grantability, delegability, and an allowed custom-role base", () => {
     const result = isTenantSelectable(companyAdminOnly);
     expect(result).toEqual(
       companyAdminOnly.active &&
         !companyAdminOnly.deprecated &&
         !companyAdminOnly.platformOnly &&
         companyAdminOnly.tenantGrantable &&
-        companyAdminOnly.delegableByTenantAdmin,
+        companyAdminOnly.delegableByTenantAdmin &&
+        companyAdminOnly.allowedCustomRoleBases.length > 0,
     );
   });
 

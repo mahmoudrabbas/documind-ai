@@ -1,4 +1,10 @@
-import type { BaseRole } from "../../common/auth/baseRoles.js";
+import {
+  BASE_ROLES,
+  TENANT_ROLE_BASES,
+  isBaseRole,
+  type BaseRole,
+  type TenantRoleBase,
+} from "../../common/auth/baseRoles.js";
 
 export const PERMISSION_CONTRACT_VERSION = 1 as const;
 
@@ -62,6 +68,7 @@ export interface PermissionDefinition {
   label: string;
   description: string;
   defaultBaseRoles: readonly BaseRole[];
+  allowedCustomRoleBases: readonly TenantRoleBase[];
   delegableByTenantAdmin: boolean;
   platformOnly: boolean;
   deprecated: boolean;
@@ -80,7 +87,12 @@ const ALL_SCOPES: readonly PermissionScopeType[] = [
 const SELF_SCOPE: readonly PermissionScopeType[] = ["selfOnly"];
 const NO_SCOPES: readonly PermissionScopeType[] = [];
 
-const definitions: Array<Omit<PermissionDefinition, "contractVersion" | "active" | "tenantGrantable">> = [
+type PermissionDefinitionSource = Omit<
+  PermissionDefinition,
+  "contractVersion" | "active" | "tenantGrantable" | "allowedCustomRoleBases"
+>;
+
+const definitions: readonly PermissionDefinitionSource[] = [
   { id: Permission.USERS_READ, group: "users", label: "View Users", description: "List and view tenant users", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds", "selfOnly"] },
   { id: Permission.USERS_CREATE, group: "users", label: "Invite Users", description: "Invite tenant users", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
   { id: Permission.USERS_UPDATE, group: "users", label: "Edit Users", description: "Edit tenant users", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds", "selfOnly"] },
@@ -114,14 +126,11 @@ const definitions: Array<Omit<PermissionDefinition, "contractVersion" | "active"
   { id: Permission.DOCUMENTS_QUALITY_REVIEW, group: "documents", label: "Review Document Quality", description: "Review and approve/reject low-confidence OCR results", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
 ];
 
-export const PERMISSION_CATALOG: readonly PermissionDefinition[] = definitions.map((definition) => ({
-  ...definition,
-  active: !definition.deprecated,
-  tenantGrantable: !definition.platformOnly && !definition.deprecated && definition.delegableByTenantAdmin,
-  contractVersion: PERMISSION_CONTRACT_VERSION,
-}));
+export const PERMISSION_CATALOG: readonly PermissionDefinition[] =
+  buildPermissionCatalog(definitions);
 
-export const PERMISSION_BY_ID = new Map(PERMISSION_CATALOG.map((definition) => [definition.id, definition]));
+export const PERMISSION_BY_ID: ReadonlyMap<string, PermissionDefinition> =
+  new Map(PERMISSION_CATALOG.map((definition) => [definition.id, definition]));
 const DEPRECATED_PERMISSION_IDENTIFIERS = new Set(["documents:view"]);
 export const ALL_PERMISSIONS = PERMISSION_CATALOG.filter((definition) => definition.active).map((definition) => definition.id);
 export const VALID_PERMISSIONS = new Set<PermissionValue>(ALL_PERMISSIONS);
@@ -167,29 +176,137 @@ export const PERMISSION_LABELS = Object.fromEntries(PERMISSION_CATALOG.map((item
 export const PERMISSION_DESCRIPTIONS = Object.fromEntries(PERMISSION_CATALOG.map((item) => [item.id, item.description])) as Record<PermissionValue, string>;
 
 export function getPermissionDefinition(value: string): PermissionDefinition | undefined {
-  return PERMISSION_BY_ID.get(value.trim().toLowerCase() as PermissionValue);
+  return PERMISSION_BY_ID.get(value.trim().toLowerCase());
 }
 
 export function isDeprecatedPermissionIdentifier(value: string): boolean {
   return DEPRECATED_PERMISSION_IDENTIFIERS.has(value.trim().toLowerCase());
 }
 
-export function normalizePermissionIdentifiers(values: readonly string[]): PermissionValue[] {
-  return [...new Set(values.map((value) => value.trim().toLowerCase()))].sort() as PermissionValue[];
+export function normalizePermissionIdentifiers(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim().toLowerCase()))].sort();
 }
 
 export function assertPersistableTenantPermissions(values: readonly string[]): PermissionValue[] {
   const normalized = normalizePermissionIdentifiers(values);
+  const accepted: PermissionValue[] = [];
   for (const value of normalized) {
     const definition = getPermissionDefinition(value);
     if (!definition || definition.deprecated) throw new Error(`UNKNOWN_PERMISSION:${value}`);
     if (definition.platformOnly || !definition.tenantGrantable || !definition.delegableByTenantAdmin) {
       throw new Error(`NON_DELEGABLE_PERMISSION:${value}`);
     }
+    accepted.push(definition.id);
   }
-  return normalized;
+  return accepted;
 }
 
 export function isSuperAdminOnlyPermission(permission: string): boolean {
   return getPermissionDefinition(permission)?.platformOnly ?? false;
+}
+
+function buildPermissionCatalog(
+  sources: readonly PermissionDefinitionSource[],
+): readonly PermissionDefinition[] {
+  const catalog = sources.map((definition): PermissionDefinition => {
+    const active = !definition.deprecated;
+    const tenantGrantable =
+      active &&
+      !definition.platformOnly &&
+      definition.delegableByTenantAdmin;
+    return {
+      ...definition,
+      active,
+      tenantGrantable,
+      allowedCustomRoleBases: tenantGrantable ? [...TENANT_ROLE_BASES] : [],
+      contractVersion: PERMISSION_CONTRACT_VERSION,
+    };
+  });
+  validatePermissionCatalog(catalog);
+  return catalog;
+}
+
+export function validatePermissionCatalog(
+  catalog: readonly PermissionDefinition[],
+): void {
+  const identifiers = new Set<string>();
+  const knownScopes = new Set<PermissionScopeType>([
+    "departmentIds",
+    "documentCategories",
+    "documentClassifications",
+    "selfOnly",
+  ]);
+
+  for (const definition of catalog) {
+    if (identifiers.has(definition.id)) {
+      throw new Error(`DUPLICATE_PERMISSION:${definition.id}`);
+    }
+    identifiers.add(definition.id);
+
+    if (
+      definition.id !== definition.id.trim().toLowerCase() ||
+      !/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(definition.id)
+    ) {
+      throw new Error(`INVALID_PERMISSION_IDENTIFIER:${definition.id}`);
+    }
+    if (!definition.label.trim() || !definition.description.trim()) {
+      throw new Error(`INCOMPLETE_PERMISSION_METADATA:${definition.id}`);
+    }
+    if (definition.contractVersion !== PERMISSION_CONTRACT_VERSION) {
+      throw new Error(`INVALID_PERMISSION_VERSION:${definition.id}`);
+    }
+    if (definition.active === definition.deprecated) {
+      throw new Error(`INVALID_PERMISSION_LIFECYCLE:${definition.id}`);
+    }
+
+    const defaultRoles = new Set(definition.defaultBaseRoles);
+    if (
+      defaultRoles.size !== definition.defaultBaseRoles.length ||
+      definition.defaultBaseRoles.some((role) => !isBaseRole(role))
+    ) {
+      throw new Error(`INVALID_PERMISSION_BASE_ROLES:${definition.id}`);
+    }
+    if (
+      definition.platformOnly &&
+      definition.defaultBaseRoles.some((role) => role !== "SUPER_ADMIN")
+    ) {
+      throw new Error(`PLATFORM_PERMISSION_TENANT_DEFAULT:${definition.id}`);
+    }
+
+    const expectedTenantGrantable =
+      definition.active &&
+      !definition.platformOnly &&
+      definition.delegableByTenantAdmin;
+    if (definition.tenantGrantable !== expectedTenantGrantable) {
+      throw new Error(`INVALID_TENANT_GRANTABILITY:${definition.id}`);
+    }
+    const expectedBases = expectedTenantGrantable ? TENANT_ROLE_BASES : [];
+    if (
+      definition.allowedCustomRoleBases.length !== expectedBases.length ||
+      expectedBases.some(
+        (role) => !definition.allowedCustomRoleBases.includes(role),
+      )
+    ) {
+      throw new Error(`INVALID_CUSTOM_ROLE_BASES:${definition.id}`);
+    }
+
+    const scopes = new Set(definition.compatibleScopes);
+    if (
+      scopes.size !== definition.compatibleScopes.length ||
+      definition.compatibleScopes.some((scope) => !knownScopes.has(scope))
+    ) {
+      throw new Error(`INVALID_PERMISSION_SCOPES:${definition.id}`);
+    }
+  }
+
+  const declaredPermissions = new Set<string>(Object.values(Permission));
+  if (
+    declaredPermissions.size !== identifiers.size ||
+    [...declaredPermissions].some((permission) => !identifiers.has(permission))
+  ) {
+    throw new Error("PERMISSION_CATALOG_DECLARATION_MISMATCH");
+  }
+  if (BASE_ROLES.length !== 3) {
+    throw new Error("BASE_ROLE_CONTRACT_MISMATCH");
+  }
 }

@@ -11,8 +11,10 @@ import {
   getRunDetails,
   searchRuns,
   expireStaleApprovals,
+  searchApprovals,
 } from "./agents.service.js";
-import { listApprovals } from "./agents.repository.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
+import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import {
   validateStartRun,
   validateResumeApproval,
@@ -20,6 +22,23 @@ import {
   validateListApprovals,
   assertValidObjectId,
 } from "./agents.validator.js";
+
+function operationContext(req: Request): OperationAuthorizationContext {
+  const actor = requireAuthenticatedAuditActor({
+    tenantId: req.tenantId,
+    actorId: req.auth?.userId,
+    actorEmail: req.auth?.email,
+    actorRole: req.auth?.role,
+  });
+  return {
+    tenantId: actor.tenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
+}
 
 function handleAgentError(error: unknown, res: Response, next: NextFunction) {
   if (error instanceof AppError) {
@@ -79,7 +98,7 @@ export async function startRunController(
       maxToolCalls: payload.maxToolCalls,
       maxTokens: payload.maxTokens,
       budgetMs: payload.budgetMs,
-    });
+    }, operationContext(req));
     res.status(201).json({ success: true, data: result });
   } catch (error) {
     handleAgentError(error, res, next);
@@ -98,7 +117,7 @@ export async function getRunController(
       ? req.params.runId[0]
       : req.params.runId;
     assertValidObjectId(runId, "runId");
-    const result = await getRunDetails(req.tenantId, runId);
+    const result = await getRunDetails(req.tenantId, runId, operationContext(req));
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     handleAgentError(error, res, next);
@@ -123,6 +142,7 @@ export async function listRunsController(
         agentName: filter.agentName,
         traceId: filter.traceId,
       },
+      operationContext(req),
       false,
     );
     res.status(200).json({ success: true, data: result });
@@ -149,6 +169,7 @@ export async function listRunsAdminController(
         agentName: filter.agentName,
         traceId: filter.traceId,
       },
+      operationContext(req),
       true,
     );
     res.status(200).json({ success: true, data: result });
@@ -176,11 +197,11 @@ export async function resumeApprovalController(
     const payload = validateResumeApproval(req.body);
     const result = await resumeAgentRun(
       req.tenantId,
-      req.auth.userId,
       runId,
       approvalId,
       payload.decision,
       payload.decisionNote,
+      operationContext(req),
     );
     res.status(200).json({ success: true, data: result });
   } catch (error) {
@@ -197,10 +218,10 @@ export async function listApprovalsController(
     if (!req.auth || !req.tenantId)
       throw new AppError(401, UNAUTHORIZED, "Authentication required");
     const filter = validateListApprovals(req.query as Record<string, unknown>);
-    const result = await listApprovals(req.tenantId, {
+    const result = await searchApprovals(req.tenantId, {
       page: filter.page,
       pageSize: filter.pageSize,
-    });
+    }, operationContext(req));
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     handleAgentError(error, res, next);
@@ -208,13 +229,35 @@ export async function listApprovalsController(
 }
 
 export async function expireApprovalsController(
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ) {
   try {
-    const count = await expireStaleApprovals();
+    const count = await expireStaleApprovals(operationContext(req));
     res.status(200).json({ success: true, data: { expired: count } });
+  } catch (error) {
+    handleAgentError(error, res, next);
+  }
+}
+
+export async function getRunAdminController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const runId = Array.isArray(req.params.runId)
+      ? req.params.runId[0]
+      : req.params.runId;
+    assertValidObjectId(runId, "runId");
+    const result = await getRunDetails(
+      req.tenantId ?? "",
+      runId,
+      operationContext(req),
+      true,
+    );
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     handleAgentError(error, res, next);
   }

@@ -61,9 +61,9 @@ export default function TenantAuditPage() {
                   <span className="ml-2 text-xs text-red-500">[{log.outcome}]</span>
                 )}
               </td>
-              <td className={cell}>{log.actorEmail}</td>
+              <td className={cell}>{log.actorEmail ?? "Unauthenticated"}</td>
               <td className={cell}>
-                <StatusPill value={log.actorRole} />
+                <StatusPill value={log.actorRole ?? "N/A"} />
               </td>
               <td className={cell}>
                 {log.resourceType}

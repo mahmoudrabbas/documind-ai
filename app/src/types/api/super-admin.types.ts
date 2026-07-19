@@ -113,8 +113,9 @@ export interface PlatformSubscription {
 export interface PlatformAuditLog {
   _id: string;
   action: string;
-  actorEmail: string;
-  actorRole: string;
+  actorEmail: string | null;
+  actorRole: string | null;
+  outcome: "SUCCESS" | "FAILURE" | "DENIED";
   resourceType: string;
   resourceId: string;
   changes: Record<string, unknown>;

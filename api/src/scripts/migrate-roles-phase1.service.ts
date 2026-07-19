@@ -1,7 +1,10 @@
 import mongoose, { type ClientSession } from "mongoose";
 import { PERMISSION_CONTRACT_VERSION } from "../modules/permissions/permissions.catalog.js";
 import { normalizeRoleGrants } from "../modules/permissions/permissions.grants.js";
-import { normalizeScopes } from "../modules/permissions/permissions.scope.js";
+import {
+  hasScopeConstraints,
+  normalizeScopes,
+} from "../modules/permissions/permissions.scope.js";
 import type { PermissionGrant, PermissionScopes } from "../modules/permissions/permissions.types.js";
 
 type RawDocument = Record<string, unknown> & { _id?: unknown };
@@ -143,7 +146,10 @@ function convertGrants(role: RawDocument): {
   let removed = 0;
   for (const permission of permissions) {
     try {
-      grants.push(...normalizeRoleGrants([{ permission, scopes }]));
+      grants.push(...normalizeRoleGrants([{
+        permission,
+        ...(hasScopeConstraints(scopes) ? { scopes } : {}),
+      }]));
     } catch {
       // Dropping an incompatible scoped permission is safer than broadening it to an unscoped grant.
       removed += 1;

@@ -25,10 +25,16 @@ const OCR_STATUS_MAP: Record<string, string> = {
 interface DocumentQualityPanelProps {
   documentId: string;
   documentVersion: number;
-  isCompanyAdmin: boolean;
+  canProcessOcr: boolean;
+  canReviewQuality: boolean;
 }
 
-export function DocumentQualityPanel({ documentId, documentVersion, isCompanyAdmin }: DocumentQualityPanelProps) {
+export function DocumentQualityPanel({
+  documentId,
+  documentVersion,
+  canProcessOcr,
+  canReviewQuality,
+}: DocumentQualityPanelProps) {
   const {
     ocrPages,
     quality,
@@ -54,21 +60,24 @@ export function DocumentQualityPanel({ documentId, documentVersion, isCompanyAdm
   }, [documentId, documentVersion, refreshOcrPages, refreshQuality]);
 
   const handleTriggerOcr = useCallback(async () => {
+    if (!canProcessOcr) return;
     await triggerOcr(documentId, { version: documentVersion });
-  }, [documentId, documentVersion, triggerOcr]);
+  }, [canProcessOcr, documentId, documentVersion, triggerOcr]);
 
   const handleRetryOcr = useCallback(async () => {
+    if (!canProcessOcr) return;
     await retryOcr(documentId, { version: documentVersion });
-  }, [documentId, documentVersion, retryOcr]);
+  }, [canProcessOcr, documentId, documentVersion, retryOcr]);
 
   const handleReview = useCallback(async (decision: "approved" | "rejected" | "retry") => {
+    if (!canReviewQuality) return;
     await reviewQuality(documentId, decision, {
       version: documentVersion,
       notes: reviewNotes || undefined,
     });
     setShowReviewForm(false);
     setReviewNotes("");
-  }, [documentId, documentVersion, reviewNotes, reviewQuality]);
+  }, [canReviewQuality, documentId, documentVersion, reviewNotes, reviewQuality]);
 
   const isLoading = isLoadingOcrPages || isLoadingQuality;
 
@@ -91,7 +100,7 @@ export function DocumentQualityPanel({ documentId, documentVersion, isCompanyAdm
         <h3 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
           Document Quality & OCR
         </h3>
-        {isCompanyAdmin && (
+        {canProcessOcr && (
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -161,7 +170,7 @@ export function DocumentQualityPanel({ documentId, documentVersion, isCompanyAdm
             </div>
           )}
 
-          {isCompanyAdmin && quality.requiresReview && !showReviewForm && (
+          {canReviewQuality && quality.requiresReview && !showReviewForm && (
             <Button
               size="sm"
               variant="secondary"
@@ -224,7 +233,7 @@ export function DocumentQualityPanel({ documentId, documentVersion, isCompanyAdm
       {!hasQuality && !hasOcrPages && (
         <div className="mt-3 text-center">
           <p className="text-sm text-on-surface-variant">No OCR processing or quality assessment yet.</p>
-          {isCompanyAdmin && (
+          {canProcessOcr && (
             <p className="mt-2 text-xs text-on-surface-variant">
               Click &quot;Run OCR&quot; to process this document and assess its quality.
             </p>

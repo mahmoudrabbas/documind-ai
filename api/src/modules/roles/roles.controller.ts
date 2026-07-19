@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
-import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { BAD_REQUEST, MALFORMED_OBJECT_ID } from "../../common/errors/errorCodes.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import {
   assignRole,
   changeRoleStatus,
@@ -21,12 +21,17 @@ import { validateDeleteRoleInput } from "./roles.validator.js";
 
 function context(req: Request): RoleOperationContext {
   if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-  if (!isBaseRole(req.auth.role)) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-  return {
+  const actor = requireAuthenticatedAuditActor({
     tenantId: req.tenantId,
     actorId: req.auth.userId,
     actorEmail: req.auth.email,
     actorRole: req.auth.role,
+  });
+  return {
+    tenantId: actor.tenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
     traceId: req.traceId,
     requestId: req.requestId,
   };

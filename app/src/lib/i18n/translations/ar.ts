@@ -23,6 +23,19 @@ const ar: TranslationDictionary = {
   "common.noResults": "لا توجد نتائج",
   "common.welcome": "أهلاً، {{name}}!",
 
+  /* ── permissions ───────────────────────────────────────── */
+  "permissions.loadingTitle": "جارٍ التحقق من الصلاحيات",
+  "permissions.loadingMessage": "جارٍ تحميل صلاحياتك الحالية.",
+  "permissions.deniedTitle": "الوصول مرفوض",
+  "permissions.deniedMessage": "ليست لديك صلاحية لعرض هذه المنطقة.",
+  "permissions.failedTitle": "تعذّر التحقق من الصلاحيات",
+  "permissions.failedMessage":
+    "تعذّر تحميل الصلاحيات، لذلك سيظل الوصول مقيّداً.",
+  "permissions.conflict":
+    "تم تغيير هذا العنصر منذ فتحه. حدّث البيانات قبل المحاولة مرة أخرى.",
+  "permissions.rateLimited":
+    "طلبات كثيرة جداً. حاول مرة أخرى بعد {{seconds}} ثانية.",
+
   /* ── auth ──────────────────────────────────────────────── */
   "auth.signIn": "تسجيل الدخول",
   "auth.signOut": "تسجيل الخروج",

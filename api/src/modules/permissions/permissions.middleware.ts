@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { PERMISSION_REQUIRED, RESOURCE_CONTEXT_REQUIRED, SCOPE_MISMATCH } from "../../common/errors/errorCodes.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
 import type { PermissionValue } from "./permissions.catalog.js";
 import { getPermissionEvaluator } from "./permissions.evaluator.js";
@@ -20,13 +21,20 @@ export function requirePermission(permission: PermissionValue, options?: Permiss
     try {
       if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
       if (!isBaseRole(req.auth.role)) throw new AppError(403, PERMISSION_REQUIRED, "Invalid base role");
+      const auditActor = requireAuthenticatedAuditActor({
+        tenantId: req.tenantId,
+        actorId: req.auth.userId,
+        actorEmail: req.auth.email,
+        actorRole: req.auth.role,
+      });
+      const resourceContext = options?.resourceContext?.(req);
 
       const decision = await getPermissionEvaluator().evaluate({
-        actorId: req.auth.userId,
-        tenantId: req.tenantId,
-        baseRole: req.auth.role,
+        actorId: auditActor.actorId,
+        tenantId: auditActor.tenantId,
+        baseRole: auditActor.actorRole,
         permission,
-        resource: options?.resourceContext?.(req),
+        resource: resourceContext,
       });
       if (decision.allowed) {
         req.permissionDecision = decision;
@@ -42,16 +50,30 @@ export function requirePermission(permission: PermissionValue, options?: Permiss
       }
 
       const auditWritten = await getAuditWriter().write({
-        tenantId: req.tenantId,
+        tenantId: auditActor.tenantId,
         resourceType: options?.resourceType ?? "Permission",
         resourceId: options?.resourceId?.(req) ?? permission,
         action: "PERMISSION_DENIED",
         outcome: "DENIED",
-        actorId: req.auth.userId,
-        actorEmail: req.auth.email ?? "",
-        actorRole: req.auth.role,
+        actorId: auditActor.actorId,
+        actorEmail: auditActor.actorEmail,
+        actorRole: auditActor.actorRole,
+        actorKind: auditActor.actorKind,
         changes: { required: permission, reason: decision.denialCode },
-        metadata: { traceId: req.traceId, requestId: req.requestId },
+        metadata: {
+          traceId: req.traceId,
+          requestId: req.requestId,
+          ...(decision.scope ? { authorizationScope: decision.scope } : {}),
+          ...(resourceContext ? {
+            resourceContext: {
+              tenantId: resourceContext.tenantId,
+              ownerId: resourceContext.ownerId,
+              departmentId: resourceContext.departmentId,
+              documentCategory: resourceContext.documentCategory,
+              documentClassification: resourceContext.documentClassification,
+            },
+          } : {}),
+        },
       });
       if (!auditWritten) {
         getMetricRecorder().increment("permission_denial_audit_failure", {

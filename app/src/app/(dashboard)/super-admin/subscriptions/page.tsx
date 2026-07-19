@@ -19,6 +19,8 @@ import {
   updateSubscription,
 } from "@/services/super-admin.service";
 import { listTenants } from "@/services/platform.service";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 
 const loadData = async (signal?: AbortSignal) => {
   const [subscriptions, packages, tenants] = await Promise.all([
@@ -38,6 +40,8 @@ const loadData = async (signal?: AbortSignal) => {
   };
 };
 export default function SubscriptionsPage() {
+  const permissions = usePermissions();
+  const canManage = permissions.can(Permission.BILLING_MANAGE);
   const state = usePlatformData(loadData);
   const [tenantId, setTenantId] = useState("");
   const [packageId, setPackageId] = useState("");
@@ -45,7 +49,7 @@ export default function SubscriptionsPage() {
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState("");
   async function save() {
-    if (!tenantId || !packageId) return;
+    if (!canManage || !tenantId || !packageId) return;
     setPending(true);
     setNotice("");
     try {
@@ -66,6 +70,7 @@ export default function SubscriptionsPage() {
         title="Subscriptions"
         description="Assign versioned packages and manage company subscription status."
       />
+      {canManage ? (
       <DashboardPanel className="mb-5">
         <div className="grid min-w-0 gap-3 md:grid-cols-4 md:items-end">
           <label className="text-sm font-bold">
@@ -126,6 +131,7 @@ export default function SubscriptionsPage() {
           </p>
         ) : null}
       </DashboardPanel>
+      ) : null}
       <PlatformState
         loading={state.loading}
         error={state.error}

@@ -74,7 +74,7 @@ export default function SuperAdminOverviewPage() {
                         {item.actorEmail} · {item.resourceType}
                       </p>
                     </div>
-                    <StatusPill value={item.actorRole} />
+                    <StatusPill value={item.actorRole ?? "N/A"} />
                   </div>
                 ))
               ) : (

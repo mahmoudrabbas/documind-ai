@@ -6,6 +6,8 @@ import {
   apiClient,
   beginExplicitLogout,
   refreshAccessToken,
+  subscribePermissionDenied,
+  subscribeSessionInvalidated,
 } from "../api-client";
 import {
   clearAccessToken,
@@ -123,6 +125,21 @@ describe("apiClient authentication", () => {
         .mocked(fetch)
         .mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
     ).toHaveLength(1);
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it("notifies auth state after a final 401", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeSessionInvalidated(listener);
+    setAccessToken("expired-token");
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Expired" }))
+      .mockResolvedValueOnce(jsonResponse(401, { message: "Refresh expired" }));
+
+    await expect(apiClient("/documents")).rejects.toBeInstanceOf(ApiError);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 
   it("clears the token and redirects when refresh fails", async () => {
@@ -201,6 +218,70 @@ describe("apiClient authentication", () => {
 });
 
 describe("apiClient request and response handling", () => {
+  it("signals a permission denial once without replaying the mutation", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribePermissionDenied(listener);
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse(403, {
+        error: {
+          code: "PERMISSION_REQUIRED",
+          message: "Permission denied",
+        },
+      }),
+    );
+
+    await expect(
+      apiClient("/roles/role-1", {
+        method: "PATCH",
+        body: { name: "Changed" },
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "PERMISSION_REQUIRED" });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("preserves 404 hidden-resource semantics without permission refresh", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribePermissionDenied(listener);
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(404, { message: "Not found" }));
+
+    await expect(apiClient("/documents/hidden")).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it("preserves conflict and rate-limit metadata without automatic retry", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(409, { error: "VERSION_CONFLICT", message: "Stale" }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Slow down" }), {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "retry-after": "30",
+          },
+        }),
+      );
+
+    await expect(apiClient("/roles/role-1")).rejects.toMatchObject({
+      status: 409,
+      code: "VERSION_CONFLICT",
+    });
+    await expect(apiClient("/emails/message-1/resend")).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 30,
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("serializes a plain object while preserving caller headers", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { id: 1 }));
 

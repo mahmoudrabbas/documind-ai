@@ -8,7 +8,6 @@ export interface EmailPreviewData {
   recipientEmail: string;
   templateId: string;
   state: string;
-  variables: Record<string, unknown> | null;
 }
 
 interface EmailPreviewDialogProps {
@@ -56,16 +55,6 @@ export function EmailPreviewDialog({ isOpen, onClose, data }: EmailPreviewDialog
             <span className="font-semibold text-on-surface">Status:</span>{" "}
             {data.state}
           </p>
-          <h4 className="mb-2 text-sm font-semibold text-on-surface">
-            Template Variables:
-          </h4>
-          {data.variables ? (
-            <pre className="whitespace-pre-wrap rounded-lg bg-surface-container p-4 text-xs text-on-surface-variant">
-              {JSON.stringify(data.variables, null, 2)}
-            </pre>
-          ) : (
-            <p className="text-sm text-on-surface-variant">No variables available</p>
-          )}
         </div>
       </div>
     </dialog>
