@@ -2,6 +2,7 @@ import { InMemoryJobHandlerRegistry } from "../contracts/handlerRegistry.js";
 import type { JobHandlerRegistry } from "../contracts/jobDispatcher.js";
 import { sampleJobHandler } from "./sampleJob.js";
 import { createEmailSendJobHandler } from "./emailSendJob.js";
+import { employeeImportJobHandler } from "./employeeImportJob.js";
 import { createDocumentExtractionJobHandler } from "./documentExtractionJob.js";
 import { createDocumentOcrJobHandler } from "./documentOcrJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
@@ -17,6 +18,7 @@ import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
 export function buildHandlerRegistry(): JobHandlerRegistry {
   const registry = new InMemoryJobHandlerRegistry();
   registry.register(sampleJobHandler);
+  registry.register(employeeImportJobHandler);
   
   const providerType = process.env.EMAIL_PROVIDER || "smtp";
   const emailProvider = providerType === "fake" ? new FakeEmailProvider() : new SmtpEmailProvider();

@@ -23,6 +23,15 @@ export interface UserView {
   customRoleName?: string;
   status: "active" | "pending" | "pending_email_verification" | "disabled";
   emailVerified: boolean;
+  employeeProfile?: {
+    employeeId?: string;
+    department?: string;
+    jobTitle?: string;
+    phone?: string;
+    hireDate?: string;
+    managerId?: string;
+    preferredLanguage?: string;
+  };
   createdAt: string;
 }
 

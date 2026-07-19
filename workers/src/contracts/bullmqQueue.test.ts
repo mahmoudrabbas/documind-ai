@@ -92,8 +92,9 @@ test(
       return;
     }
     const adapter = await makeAdapter();
+    // NOT calling adapter.start() — a worker would complete the no-op before the
+    // second enqueue, and completed jobs are silently removed, breaking dedup.
     try {
-      adapter.start(new AbortController().signal);
       const idem = `bull-dup-${Math.random().toString(36).slice(2)}`;
       const first = await adapter.enqueue({
         jobType: "system.sample.noop",
@@ -103,6 +104,13 @@ test(
         idempotencyKey: idem,
         payload: {},
       });
+      assert.equal(first.deduplicated, false);
+      // Wait for BullMQ to persist the first job before checking dedup.
+      for (let i = 0; i < 10; i++) {
+        const found = await adapter.getJobStatus(first.jobId);
+        if (found) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
       const second = await adapter.enqueue({
         jobType: "system.sample.noop",
         tenantId: "t1",
@@ -111,7 +119,6 @@ test(
         idempotencyKey: idem,
         payload: {},
       });
-      assert.equal(first.deduplicated, false);
       assert.equal(second.deduplicated, true);
       assert.equal(first.jobId, second.jobId);
     } finally {
