@@ -247,9 +247,30 @@ If worker logs show `"config_missing"`, `SMTP_HOST`/`SMTP_USER` are not set in `
 docker compose restart worker
 ```
 
+### Forgot-password returns 200 but no email sent
+
+This is **by design** for security — the endpoint always returns the same generic response. The email is only enqueued when:
+
+1. The **tenant slug** matches an existing company
+2. The **email** matches an active user belonging to that tenant
+3. The user's `status` is **`active`** (not `pending_email_verification`)
+
+Verify the user's status in MongoDB:
+
+```bash
+docker compose exec mongodb mongosh documind --quiet \
+  --eval 'db.users.find({email:"user@example.com"}).toArray().map(u => ({email:u.email, status:u.status}))'
+```
+
+If the status is `pending_email_verification`, the user must click the verification link first.
+
 ### 429 rate limit on resend
 
 After requesting a verification email, you must wait **60 seconds** before requesting another. This is controlled by `RESEND_VERIFICATION_COOLDOWN_MS` in `api/.env`.
+
+### Docker Compose ignores `.env` on Windows (long syntax)
+
+Docker Compose's `env_file:` long syntax silently fails to load `.env` on Windows. If email config looks correct but logs show `"delivery disabled"`, sensitive env vars should be passed via `environment:` block in `docker-compose.yml` instead (as done for `SEND_EMAILS`).
 
 ---
 
