@@ -19,13 +19,39 @@ const authVitestTestsDir = resolve(
   "auth",
   "__tests__",
 ).replace(/\\/g, "/");
+const importsVitestTestsDir = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "imports",
+  "__tests__",
+).replace(/\\/g, "/");
+const importsServicesVitestTestsDir = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "imports",
+  "services",
+  "__tests__",
+).replace(/\\/g, "/");
+const importsPortsVitestTestsDir = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "imports",
+  "ports",
+  "__tests__",
+).replace(/\\/g, "/");
 const apiSrcRoot = resolve(apiRoot, "src");
 
 function isVitestOnlyTest(path) {
   const normalized = path.replace(/\\/g, "/");
   return normalized.includes(billingModuleDir)
     || normalized === checkoutServiceTestFile
-    || normalized.startsWith(`${authVitestTestsDir}/`);
+    || normalized.startsWith(`${authVitestTestsDir}/`)
+    || normalized.startsWith(`${importsVitestTestsDir}/`)
+    || normalized.startsWith(`${importsServicesVitestTestsDir}/`)
+    || normalized.startsWith(`${importsPortsVitestTestsDir}/`);
 }
 
 function findTests(directory) {
