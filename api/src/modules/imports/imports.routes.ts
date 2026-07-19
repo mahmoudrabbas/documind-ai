@@ -4,6 +4,7 @@ import { authenticate } from "../../common/middlewares/authenticate.middleware.j
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
+import { config } from "../../config/index.js";
 import {
   downloadTemplate,
   uploadAndPreview,
@@ -16,21 +17,15 @@ import {
   exportResults,
 } from "./imports.controller.js";
 
-const IMPORT_ALLOWED_MIME_TYPES = [
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-  "application/vnd.ms-excel", // .xls
-  "text/csv", // .csv
-];
-
-const IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB default
+const allowedMimeTypes = config.IMPORT_ALLOWED_MIME_TYPES.split(",");
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: IMPORT_MAX_FILE_SIZE,
+    fileSize: config.IMPORT_MAX_FILE_SIZE_BYTES,
   },
   fileFilter: (_req, file, callback) => {
-    if (IMPORT_ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+    if (allowedMimeTypes.includes(file.mimetype)) {
       callback(null, true);
     } else {
       callback(
