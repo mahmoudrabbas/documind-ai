@@ -155,6 +155,27 @@ export async function updatePackage(
   const existing = await PackageModel.findById(id).exec();
   if (!existing) throw new AppError(404, "NOT_FOUND", "Package not found");
 
+  // Normalise legacy version snapshots that pre-date the entitlements migration.
+  // Without this, Mongoose validation fails when any historical versions[].entitlements
+  // is missing — even if the root-level entitlements are being set correctly.
+  for (const v of existing.versions) {
+    if (!v.entitlements) {
+      const legacy = (v as unknown as { limits?: { users: number; documents: number; questionsPerMonth: number; storageMb: number } }).limits;
+      v.entitlements = legacy
+        ? {
+            employees: legacy.users,
+            admins: 1,
+            documents: legacy.documents,
+            storageMb: legacy.storageMb,
+            fileSizeMb: 10,
+            queriesPerMonth: legacy.questionsPerMonth,
+            tokensPerMonth: 0,
+            ocrPagesPerMonth: 0,
+          }
+        : (existing.entitlements as any);
+    }
+  }
+
   // Apply field changes before version bump
   Object.assign(existing, input);
   await existing.save();

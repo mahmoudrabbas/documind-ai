@@ -211,7 +211,6 @@ export async function listSubscriptions(
   }
   return SubscriptionModel.find(query)
     .sort({ createdAt: -1 })
-    .lean()
     .exec();
 }
 
