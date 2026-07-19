@@ -179,6 +179,7 @@ function queryChain<T>(result: T) {
     sort: vi.fn().mockReturnThis(),
     skip: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    lean: vi.fn().mockReturnThis(),
     then: thenable.then.bind(thenable),
     catch: thenable.catch.bind(thenable),
     finally: thenable.finally.bind(thenable),
@@ -187,6 +188,7 @@ function queryChain<T>(result: T) {
   q.sort.mockReturnValue(q);
   q.skip.mockReturnValue(q);
   q.limit.mockReturnValue(q);
+  q.lean.mockReturnValue(q);
   return q as typeof q & PromiseLike<T>;
 }
 
@@ -589,7 +591,10 @@ describe("ImportBatchService", () => {
   describe("getBatch", () => {
     it("returns batch by ID", async () => {
       const batchDoc = importBatchFactory();
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      // getBatch calls findById().lean() — mock the chain
+      mockBatchModel.findById.mockReturnValue({
+        lean: vi.fn().mockResolvedValue(batchDoc),
+      });
 
       const result = await ImportBatchService.getBatch(BATCH_ID);
 
@@ -599,7 +604,9 @@ describe("ImportBatchService", () => {
     });
 
     it("returns null for non-existent batch", async () => {
-      mockBatchModel.findById.mockResolvedValue(null);
+      mockBatchModel.findById.mockReturnValue({
+        lean: vi.fn().mockResolvedValue(null),
+      });
 
       const result = await ImportBatchService.getBatch("nonexistent-id");
       expect(result).toBeNull();

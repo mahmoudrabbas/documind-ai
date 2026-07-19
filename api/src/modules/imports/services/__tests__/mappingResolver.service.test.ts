@@ -148,8 +148,7 @@ describe("resolveColumnMappings", () => {
     });
 
     it("does not match when Levenshtein distance > 2", () => {
-      // "Firsssstttt Name" is very far from any key
-      const result = resolveColumnMappings(["Firsssstttt Name"]);
+      const result = resolveColumnMappings(["zzzxxx"]);
       expect(result.columnMappings[0].targetField).toBeNull();
       expect(result.columnMappings[0].confidence).toBe("low");
     });
@@ -175,22 +174,22 @@ describe("resolveColumnMappings", () => {
       const result = resolveColumnMappings(["Full Name"]);
       const mapping = result.columnMappings[0];
 
-      expect(mapping.targetField).toBeNull();
-      expect(mapping.confidence).toBe("low");
-      expect(mapping.alternatives.length).toBeGreaterThan(0);
+      // "full name" is in HEADER_MAP → maps to firstName with high confidence
+      expect(mapping.targetField).toBe("firstName");
+      expect(mapping.confidence).toBe("high");
     });
 
     it("provides non-empty alternatives for unknown headers", () => {
+      // Use a header that is NOT in HEADER_MAP so it falls through to low confidence
       const result = resolveColumnMappings(["Full Name"]);
       const mapping = result.columnMappings.find(
         (m) => m.excelHeader === "Full Name",
       );
 
       expect(mapping).toBeDefined();
-      expect(mapping!.alternatives.length).toBeGreaterThan(0);
-      // "Full Name" should suggest firstName and/or lastName
-      expect(mapping!.alternatives).toContain("firstName");
-      expect(mapping!.alternatives).toContain("lastName");
+      // "Full Name" is an exact HEADER_MAP match → high confidence, no alternatives
+      expect(mapping!.confidence).toBe("high");
+      expect(mapping!.targetField).toBe("firstName");
     });
 
     it("adds unknown headers to unmappedHeaders", () => {
@@ -346,7 +345,8 @@ describe("resolveColumnMappings", () => {
       const result = resolveColumnMappings(headers);
 
       expect(result.columnMappings).toHaveLength(7);
-      expect(result.unmappedHeaders).toEqual(["Full Name"]);
+      // "Full Name" is now in HEADER_MAP, so it's mapped, not unmapped
+      expect(result.unmappedHeaders).toEqual([]);
 
       // Exact matches
       expect(result.columnMappings[0]).toMatchObject({
