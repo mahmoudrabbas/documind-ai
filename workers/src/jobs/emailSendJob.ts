@@ -75,10 +75,14 @@ export function createEmailSendJobHandler(dispatchPort: EmailDispatchPort): JobH
 
       try {
         // Render full HTML
-        const tenant = await db.collection("tenants").findOne({ _id: message.tenantId });
+        const [tenant, globalSettings] = await Promise.all([
+          db.collection("tenants").findOne({ _id: message.tenantId }),
+          db.collection("platformsettings").findOne({ key: "global_settings" }),
+        ]);
         const branding = {
           accentColor: tenant?.settings?.accentColor,
           logoUrl: tenant?.settings?.logoUrl,
+          supportEmail: typeof globalSettings?.value?.supportEmail === "string" ? globalSettings.value.supportEmail : undefined,
         };
 
         const template = getTemplate(

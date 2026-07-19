@@ -10,6 +10,7 @@ import {
   INVALID_CREDENTIALS,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
   REFRESH_TOKEN_REUSED,
+  REGISTRATION_DISABLED,
   REGISTRATION_FAILED,
   SESSION_EXPIRED,
   TENANT_NOT_ACTIVE,
@@ -40,6 +41,7 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { provisionSubscription } from "../billing/registration.service.js";
 import { transitionSubscription } from "../billing/subscription.service.js";
+import { getGlobalSettings } from "../platform/global-settings.js";
 import {
   createEmailVerificationToken,
   hashVerificationJti,
@@ -404,6 +406,15 @@ export async function resetPassword(
 export async function registerTenantAndAdmin(
   input: unknown,
 ): Promise<RegisterResult> {
+  const settings = await getGlobalSettings();
+  if (!settings.allowRegistrations) {
+    throw new AppError(
+      403,
+      REGISTRATION_DISABLED,
+      "New registrations are currently disabled. Please contact your administrator.",
+    );
+  }
+
   const payload = validateRegisterInput(input);
 
   const normalizedEmail = payload.email.toLowerCase().trim();

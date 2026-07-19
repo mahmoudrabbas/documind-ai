@@ -7,6 +7,7 @@ import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import PlatformSettingModel from "../../db/models/platformSetting.model.js";
 import { AppError } from "../../common/errors/AppError.js";
+import { invalidateGlobalSettingsCache } from "./global-settings.js";
 import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
 import { getAuditWriter } from "../../common/observability/index.js";
@@ -470,6 +471,11 @@ export async function updateSetting(
     actorRole: actor.actorRole,
     actorKind: actor.actorKind,
   });
+
+  if (key === "global_settings") {
+    invalidateGlobalSettingsCache();
+  }
+
   return sanitizeSettingValue(setting?.value ?? value);
 }
 

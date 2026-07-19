@@ -9,6 +9,7 @@ import { getTemplate, type TemplateIdType } from "./email-templates/templateRegi
 import TenantModel from "../../db/models/tenant.model.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { Permission } from "../permissions/permissions.catalog.js";
+import { getGlobalSettings } from "../platform/global-settings.js";
 import {
   authorizeTenantOperation,
   type OperationAuthorizationContext,
@@ -54,11 +55,15 @@ export class EmailService {
       return { messageId: existing._id.toString(), state: existing.state, idempotencyKey: existing.idempotencyKey };
     }
 
-    // Load tenant for branding
-    const tenant = await TenantModel.findById(tenantId).lean() as { settings?: { accentColor?: string; logoUrl?: string } } | null;
+    // Load tenant for branding and global settings for support email
+    const [tenant, globalSettings] = await Promise.all([
+      TenantModel.findById(tenantId).lean() as Promise<{ settings?: { accentColor?: string; logoUrl?: string } } | null>,
+      getGlobalSettings(),
+    ]);
     const branding = {
       accentColor: tenant?.settings?.accentColor,
       logoUrl: tenant?.settings?.logoUrl,
+      supportEmail: globalSettings.supportEmail || undefined,
     };
 
     // Render subject for the DB record (the worker renders the full HTML later)

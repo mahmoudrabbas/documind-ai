@@ -11,6 +11,7 @@ import {
   mapToSnapshot,
   type BillingActor,
 } from "./package.service.js";
+import { getGlobalSettings } from "../platform/global-settings.js";
 import type { SubscriptionDocument } from "../../db/models/subscription.model.js";
 import type { SubscriptionStatus } from "./billing.types.js";
 
@@ -94,12 +95,29 @@ export async function provisionSubscription(
 
   const snapshot = mapToSnapshot(pkg);
 
+  // Resolve trial days with precedence:
+  // 1. Package's explicit trialDays (if > 0)
+  // 2. Global defaultTrialDays (if package trialDays is 0)
+  // 3. Hardcoded 0 (no trial)
+  let resolvedTrialDays = snapshot.trialDays;
+  if (resolvedTrialDays === 0) {
+    const globalSettings = await getGlobalSettings();
+    if (globalSettings.defaultTrialDays > 0) {
+      resolvedTrialDays = globalSettings.defaultTrialDays;
+      logger.info(
+        { packageCode: code, resolvedTrialDays },
+        "Package has no trial — applied global defaultTrialDays",
+      );
+    }
+  }
+
   const subscription = await createSubscription(
     tenantId,
     snapshot.packageId,
     snapshot.version,
     "TRIALING" as SubscriptionStatus,
     actor,
+    resolvedTrialDays,
   );
 
   return subscription;

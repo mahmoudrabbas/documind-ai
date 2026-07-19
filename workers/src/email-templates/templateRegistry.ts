@@ -42,6 +42,7 @@ export const TemplateVariablesSchema = z.union([
 export interface Branding {
   accentColor?: string;
   logoUrl?: string;
+  supportEmail?: string;
 }
 
 export interface RenderedTemplate {
@@ -68,6 +69,12 @@ function renderHeader(companyName: string, branding?: Branding) {
     return `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(companyName)}" height="40" style="margin:0 0 20px;" />`;
   }
   return `<h1 style="margin:0 0 20px;font-size:24px;line-height:32px;font-weight:700;color:#111827;">${escapeHtml(companyName)}</h1>`;
+}
+
+function renderFooter(branding?: Branding): string {
+  if (!branding?.supportEmail) return "";
+  const email = escapeHtml(branding.supportEmail);
+  return `<p style="margin:24px 0 0;font-size:12px;line-height:18px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:16px;">Need help? Contact us at <a href="mailto:${email}" style="color:#6366f1;text-decoration:underline;">${email}</a></p>`;
 }
 
 function renderBodyWrapper(content: string, lang: "en" | "ar") {
@@ -133,6 +140,7 @@ export function getTemplate(
 
     const subject = "Verify your DocuMind AI account";
     const text = `Hi ${vars.adminName},\n\nPlease verify your DocuMind AI account for ${vars.companyName}.\n\nVerify your email:\n${vars.verificationUrl}\n\nThis link will expire in ${vars.expiryLabel}.\n\nIf you did not create this account, you can safely ignore this email.`;
+    const footer = renderFooter(branding);
     const htmlContent = `${header}
       <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">Hi ${escapeHtml(vars.adminName)},</p>
       <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">Please verify your DocuMind AI account for ${escapeHtml(vars.companyName)}.</p>
@@ -148,7 +156,7 @@ export function getTemplate(
         <a href="${escapeHtml(vars.verificationUrl)}" style="color:${color};text-decoration:underline;">${escapeHtml(vars.verificationUrl)}</a>
       </p>
       <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">This link will expire in ${escapeHtml(vars.expiryLabel)}.</p>
-      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">If you did not create this account, you can safely ignore this email.</p>`;
+      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">If you did not create this account, you can safely ignore this email.</p>${footer}`;
     return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
   }
 
@@ -181,6 +189,7 @@ export function getTemplate(
 
     const subject = `Reset your ${vars.companyName} DocuMind AI password`;
     const text = `Hi ${vars.userName},\n\nWe received a request to reset the password for your ${vars.companyName} DocuMind AI account.\n\nReset your password:\n${vars.resetUrl}\n\nThis link will expire in ${vars.expiryLabel}.\n\nIf you did not request a password reset, you can safely ignore this email.\n\nFor security reasons, your password will remain the same until you click the link above and set a new one.`;
+    const footer = renderFooter(branding);
     const htmlContent = `${header}
       <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">Hi ${escapeHtml(vars.userName)},</p>
       <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">We received a request to reset the password for your ${escapeHtml(vars.companyName)} DocuMind AI account.</p>
@@ -196,8 +205,8 @@ export function getTemplate(
         <a href="${escapeHtml(vars.resetUrl)}" style="color:${color};text-decoration:underline;">${escapeHtml(vars.resetUrl)}</a>
       </p>
       <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">This link will expire in ${escapeHtml(vars.expiryLabel)}.</p>
-      <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#6b7280;">If you did not request a password reset, you can safely ignore this email.</p>
-      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">For security reasons, your password will remain the same until you click the link above and set a new one.</p>`;
+      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">If you did not request a password reset, you can safely ignore this email.</p>
+      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">For security reasons, your password will remain the same until you click the link above and set a new one.</p>${footer}`;
     return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
   }
 
@@ -240,6 +249,7 @@ export function getTemplate(
       : `You have been invited to join ${vars.companyName} on DocuMind AI`;
 
     const text = `You have been invited to join ${vars.companyName}\n\n${inviterName}${inviterEmailText} invited you to join ${vars.companyName} as ${roleFormatted} on DocuMind AI.\n\nAccept invitation:\n${vars.invitationUrl}\n\nThis invitation expires on ${vars.expiryDate}. If you were not expecting it, you can ignore this email.`;
+    const footer = renderFooter(branding);
     const htmlContent = `${header}
       <h1 style="margin:0 0 18px;font-size:24px;line-height:32px;">You have been invited to join ${escapeHtml(vars.companyName)}</h1>
       <p style="margin:0 0 22px;font-size:16px;line-height:24px;color:#374151;">${escapeHtml(inviterName)}${escapeHtml(inviterEmailText)} invited you to join ${escapeHtml(vars.companyName)} as <strong>${escapeHtml(roleFormatted)}</strong>.</p>
@@ -254,7 +264,7 @@ export function getTemplate(
       <p style="margin:0 0 22px;font-size:14px;line-height:20px;word-break:break-all;">
         <a href="${escapeHtml(vars.invitationUrl)}" style="color:${color};">${escapeHtml(vars.invitationUrl)}</a>
       </p>
-      <p style="margin:0;font-size:14px;line-height:20px;color:#64748b;">This invitation expires on ${escapeHtml(vars.expiryDate)}. If you were not expecting it, you can ignore this email.</p>`;
+      <p style="margin:0;font-size:14px;line-height:20px;color:#64748b;">This invitation expires on ${escapeHtml(vars.expiryDate)}. If you were not expecting it, you can ignore this email.</p>${footer}`;
     return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
   }
 

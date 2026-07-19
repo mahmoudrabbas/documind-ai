@@ -28,6 +28,7 @@ import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.ro
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
+import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -99,6 +100,19 @@ app.get("/healthz", (_req, res) => {
 app.use(cors(corsOptions));
 
 app.use(express.json());
+
+// ── Maintenance mode guard ───────────────────────────────────────────────
+// Blocks non-admin traffic when maintenanceMode is enabled in Global Settings.
+// Exempts: health probes, webhooks, and Super Admin users.
+const MAINTENANCE_EXEMPT_PREFIXES = ["/healthz", "/readyz", "/webhooks/", "/auth/"];
+app.use((req, res, next) => {
+  const path = req.path;
+  if (MAINTENANCE_EXEMPT_PREFIXES.some((p) => path.startsWith(p))) {
+    next();
+    return;
+  }
+  maintenanceModeGuard(req, res, next);
+});
 
 const rawBodyBuffer = express.raw({ type: "application/json", limit: "100kb" });
 

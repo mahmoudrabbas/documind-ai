@@ -74,7 +74,8 @@ function writeAudit(
 
 /**
  * Create a new subscription for a tenant. Defaults to TRIALING if no status
- * is provided.
+ * is provided. When `trialDays` is provided and the subscription is in
+ * TRIALING status, `trialEnd` is computed from `trialStart + trialDays`.
  */
 export async function createSubscription(
   tenantId: string,
@@ -82,9 +83,15 @@ export async function createSubscription(
   packageVersion: number,
   status?: SubscriptionStatus,
   actor?: BillingActor,
+  trialDays?: number,
 ): Promise<SubscriptionDocument> {
   const targetStatus: SubscriptionStatus = status ?? "TRIALING";
   const now = new Date();
+
+  let trialEnd: Date | null = null;
+  if (targetStatus === "TRIALING" && typeof trialDays === "number" && trialDays > 0) {
+    trialEnd = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+  }
 
   const sub = await SubscriptionModel.create({
     tenantId: new Types.ObjectId(tenantId),
@@ -93,6 +100,7 @@ export async function createSubscription(
     status: targetStatus,
     startedAt: now,
     trialStart: targetStatus === "TRIALING" ? now : null,
+    trialEnd,
   });
 
   writeAudit(

@@ -9,7 +9,7 @@ export function PermissionStatus({
   kind,
   onRetry,
 }: {
-  kind: "loading" | "denied" | "failed";
+  kind: "loading" | "denied" | "failed" | "maintenance";
   onRetry?: () => void;
 }) {
   const { t } = useI18n();
@@ -26,6 +26,10 @@ export function PermissionStatus({
       title: t("permissions.failedTitle"),
       message: t("permissions.failedMessage"),
     },
+    maintenance: {
+      title: t("permissions.maintenanceTitle"),
+      message: t("permissions.maintenanceMessage"),
+    },
   }[kind];
 
   return (
@@ -38,7 +42,7 @@ export function PermissionStatus({
         className="material-symbols-outlined text-[32px] text-primary"
         aria-hidden="true"
       >
-        {kind === "loading" ? "progress_activity" : "lock"}
+        {kind === "loading" ? "progress_activity" : kind === "maintenance" ? "build" : "lock"}
       </span>
       <h1 className="mt-3 text-title-lg font-bold text-on-surface">
         {copy.title}
@@ -73,6 +77,14 @@ export function PermissionBoundary({
     return (
       <PermissionStatus
         kind="failed"
+        onRetry={() => void context.refreshPermissions()}
+      />
+    );
+  }
+  if (context.status === "maintenance") {
+    return (
+      <PermissionStatus
+        kind="maintenance"
         onRetry={() => void context.refreshPermissions()}
       />
     );
