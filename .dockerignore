@@ -14,3 +14,11 @@ secrets
 uploads
 api/uploads
 *.log
+*.md
+.vscode
+.idea
+coverage
+.e2e
+playwright-report
+test-results
+docker-compose*.yml

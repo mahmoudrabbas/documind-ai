@@ -30,8 +30,8 @@ services:
       - stripe_secret_key
       - stripe_webhook_secret
     depends_on:
-      mongodb:
-        condition: service_healthy
+      mongos-init-replicaset:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -72,8 +72,8 @@ services:
       context: .
       dockerfile: workers/Dockerfile
     depends_on:
-      mongodb:
-        condition: service_healthy
+      mongos-init-replicaset:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -96,14 +96,19 @@ services:
       - MONGODB_URI_FILE=/run/secrets/worker_mongodb_uri
       - REDIS_URL_FILE=/run/secrets/worker_redis_url
       - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_SECURE=false
+      - SMTP_USER=mahmoudrabass11@gmail.com
+      - SMTP_FROM=mahmoudrabass11@gmail.com
     secrets:
       - worker_mongodb_uri
       - worker_redis_url
       - api_smtp_pass
 
-  paddle-ocr:
+  ocr:
     build:
-      context: ./services/paddle-ocr
+      context: ./services/ocr
     ports:
       - "8501:8501"
     healthcheck:
@@ -111,11 +116,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 10s
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 512M
 
   redis:
     image: redis:7
@@ -133,24 +138,29 @@ services:
   mongodb:
     image: mongo:8
     container_name: docsai-mongodb
-
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-
     ports:
       - "27017:27017"
-
     environment:
       MONGO_INITDB_DATABASE: docsai
-
     volumes:
       - mongo_data:/data/db
-
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
       start_period: 15s
+
+  mongos-init-replicaset:
+    image: mongo:8
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/bash", "/scripts/init-replicaset.sh"]
+    volumes:
+      - ./scripts/mongo-init-replicaset.sh:/scripts/init-replicaset.sh:ro
 
 volumes:
   mongo_data:

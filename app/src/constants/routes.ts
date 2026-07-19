@@ -77,6 +77,13 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
     context: "tenant",
     requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
   },
+  {
+    label: "Chat",
+    href: "/dashboard/chat",
+    icon: "chat",
+    context: "tenant",
+    requiredPermissions: [Permission.CHAT_READ],
+  },
 ];
 
 export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [

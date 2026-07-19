@@ -44,7 +44,8 @@ function getProviderInstance(providerName: string): OcrProviderStub {
     case "tesseract":
       return createTesseractStub();
     case "paddle":
-      return createPaddleStub();
+    case "ocr":
+      return createOcrServiceStub();
     default:
       return createFakeStub();
   }
@@ -130,11 +131,11 @@ function createTesseractStub(): OcrProviderStub {
   };
 }
 
-function createPaddleStub(): OcrProviderStub {
-  const serviceUrl = process.env.PADDLE_OCR_SERVICE_URL || "http://localhost:8501";
+function createOcrServiceStub(): OcrProviderStub {
+  const serviceUrl = process.env.OCR_SERVICE_URL || process.env.PADDLE_OCR_SERVICE_URL || "http://localhost:8501";
   return {
-    name: "paddle",
-    version: "2.x",
+    name: "ocr",
+    version: "1.0",
     async recognizeBatch(pages) {
       const formData = new FormData();
       for (const page of pages) {
@@ -153,9 +154,9 @@ function createPaddleStub(): OcrProviderStub {
         const response = await fetch(`${serviceUrl}/ocr`, { method: "POST", body: formData, signal: controller.signal });
         clearTimeout(timeoutId);
 
-        if (!response.ok) throw new Error(`PaddleOCR returned ${response.status}`);
+        if (!response.ok) throw new Error(`OCR service returned ${response.status}`);
         const data = (await response.json()) as { requestId?: string; pages: OcrPageOutput[] };
-        return { pages: data.pages, totalCostUsd: 0, providerVersion: "2.x" };
+        return { pages: data.pages, totalCostUsd: 0, providerVersion: "1.0" };
       } catch (err: unknown) {
         const error = err instanceof Error ? err : new Error(String(err));
         return {
@@ -165,13 +166,13 @@ function createPaddleStub(): OcrProviderStub {
             confidence: 0,
             words: [],
             language: p.language,
-            provider: "paddle",
-            providerModel: "paddle-v2.x",
+            provider: "ocr",
+            providerModel: "ocr-v1.0",
             durationMs: 0,
-            warnings: [`PaddleOCR error: ${error.message}`],
+            warnings: [`OCR service error: ${error.message}`],
           })),
           totalCostUsd: 0,
-          providerVersion: "2.x",
+          providerVersion: "1.0",
         };
       }
     },
