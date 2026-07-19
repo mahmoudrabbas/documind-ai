@@ -2,6 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 
+let nextId = 1;
+function uniqueId(prefix: string) {
+  return `${prefix}-${nextId++}`;
+}
+
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -136,7 +141,7 @@ export function ChatClient() {
     if (!question || isTyping) return;
 
     const userMsg: Message = {
-      id: `u-${Date.now()}`,
+      id: uniqueId("u"),
       role: "user",
       content: question,
     };
@@ -150,7 +155,7 @@ export function ChatClient() {
 
     setTimeout(() => {
       const aiMsg: Message = {
-        id: `a-${Date.now()}`,
+        id: uniqueId("a"),
         role: "assistant",
         content:
           "This is a mock response. The AI chat feature will be connected to the document knowledge base once the RAG pipeline is implemented.",
@@ -172,7 +177,7 @@ export function ChatClient() {
           <h2 className="text-title-sm font-bold text-on-surface">Conversations</h2>
           <button
             onClick={() => {
-              const id = `new-${Date.now()}`;
+              const id = uniqueId("new");
               setActiveConversation(id);
               setMessages((prev) => ({ ...prev, [id]: [] }));
             }}
