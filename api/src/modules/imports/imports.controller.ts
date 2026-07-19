@@ -30,15 +30,6 @@ function extractBatchId(params: Record<string, string | string[]>): string {
   return id;
 }
 
-interface BatchSummaryDTO {
-  totalRows: number;
-  validRows: number;
-  warningRows: number;
-  invalidRows: number;
-  createdCount: number;
-  failedCount: number;
-}
-
 function toBatchDTO(batch: Record<string, unknown>): Record<string, unknown> {
   const raw = batch;
   const s = (raw.summary ?? {}) as Record<string, number>;
@@ -580,7 +571,7 @@ export async function retryFailedRows(
       filter.rowNumber = { $in: rowNumbers };
     }
 
-    const updateResult = await EmployeeImportRowModel.updateMany(
+    const _updateResult = await EmployeeImportRowModel.updateMany(
       filter,
       { $set: { state: "PENDING", errorMessage: null, processedAt: null } },
     );
@@ -599,7 +590,7 @@ export async function retryFailedRows(
 
     // ── 4. Enqueue a new import.employee.batch job ──────────────────────────
     const retryIdempotencyKey = `${batch.idempotencyKey}-retry-${Date.now()}`;
-    const jobResult = await getApiJobDispatcher().enqueue({
+    const _jobResult = await getApiJobDispatcher().enqueue({
       jobType: "import.employee.batch",
       idempotencyKey: retryIdempotencyKey,
       tenantId: req.tenantId,

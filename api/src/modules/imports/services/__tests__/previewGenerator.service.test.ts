@@ -6,11 +6,7 @@ import type {
   ResolvedMapping,
 } from "../validationEngine.service.js";
 import { generatePreview } from "../previewGenerator.service.js";
-import type {
-  PreviewRow,
-  ImportPreview,
-  QuotaImpact,
-} from "../previewGenerator.service.js";
+
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -70,17 +66,6 @@ function buildBatchResult(
     summary: { valid, warning, invalid },
   };
 }
-
-/** Standard full-name + email mapping used by most tests. */
-const FULL_MAPPING = buildMapping({
-  "First Name": "firstName",
-  "Last Name": "lastName",
-  "Email": "email",
-  "Language": "language",
-  "Manager Email": "managerEmail",
-  "Phone": "phone",
-  "Hire Date": "hireDate",
-});
 
 /** Minimal mapping with only required fields. */
 const MIN_MAPPING = buildMapping({

@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import type { FieldDefinition } from "../../ports/spreadsheetMappingAgent.port.js";
-import { EMPLOYEE_IMPORT_FIELDS } from "../../ports/spreadsheetMappingAgent.port.js";
 import { resolveColumnMappings } from "../mappingResolver.service.js";
 
 describe("resolveColumnMappings", () => {

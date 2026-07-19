@@ -511,7 +511,6 @@ describe("validateRow", () => {
 
 describe("validateBatch", () => {
   it("validates a mixed batch with VALID, WARNING, and INVALID rows", async () => {
-    const mapping = MIN_MAPPING;
     const context = buildContext({
       existingEmails: new Set(["bob@co.com"]), // row 2 already exists
       tenantUserLimit: 100,

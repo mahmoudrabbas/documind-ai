@@ -12,7 +12,6 @@ import {
   importBatchesCreated,
   importBatchesConfirmed,
   importBatchesCompleted,
-  importRowsProcessed,
 } from "./importMetrics.js";
 
 // ─── Local Types ───────────────────────────────────────────────────────────────
