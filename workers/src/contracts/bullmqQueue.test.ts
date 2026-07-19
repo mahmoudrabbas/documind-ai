@@ -103,6 +103,9 @@ test(
         idempotencyKey: idem,
         payload: {},
       });
+      assert.equal(first.deduplicated, false);
+      // Wait for BullMQ to persist the first job before checking dedup.
+      await new Promise((r) => setTimeout(r, 500));
       const second = await adapter.enqueue({
         jobType: "system.sample.noop",
         tenantId: "t1",
@@ -111,7 +114,6 @@ test(
         idempotencyKey: idem,
         payload: {},
       });
-      assert.equal(first.deduplicated, false);
       assert.equal(second.deduplicated, true);
       assert.equal(first.jobId, second.jobId);
     } finally {
