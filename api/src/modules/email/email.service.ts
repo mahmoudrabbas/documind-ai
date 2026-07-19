@@ -7,6 +7,12 @@ import EmailAttemptModel from "../../db/models/emailAttempt.model.js";
 import { getApiJobDispatcher } from "../jobs/jobDispatcher.js";
 import { getTemplate, type TemplateIdType } from "./email-templates/templateRegistry.js";
 import TenantModel from "../../db/models/tenant.model.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizeTenantOperation,
+  type OperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 
 function hashString(val: string) {
   return crypto.createHash("sha256").update(val).digest("hex");
@@ -112,11 +118,22 @@ export class EmailService {
     await message.save();
   }
 
-  async getMessageStatus(messageId: string, tenantId: string) {
+  async getMessageStatus(
+    messageId: string,
+    tenantId: string,
+    inputContext: OperationAuthorizationContext,
+  ) {
+    const actor = await authorizeTenantOperation(
+      inputContext,
+      Permission.COMPANY_SETTINGS_READ,
+    );
+    this.assertTenant(tenantId, actor.tenantId);
     const message = await EmailMessageModel.findOne({
       _id: new mongoose.Types.ObjectId(messageId),
       tenantId: new mongoose.Types.ObjectId(tenantId),
-    }).lean();
+    })
+      .select("-variables -recipientHash -idempotencyKey")
+      .lean();
 
     if (!message) {
       throw new AppError(404, "NOT_FOUND", "Email message not found");
@@ -150,7 +167,13 @@ export class EmailService {
     tenantId: string,
     filters: { state?: string; recipientEmail?: string; templateId?: string },
     pagination: { page: number; limit: number },
+    inputContext: OperationAuthorizationContext,
   ) {
+    const actor = await authorizeTenantOperation(
+      inputContext,
+      Permission.COMPANY_SETTINGS_READ,
+    );
+    this.assertTenant(tenantId, actor.tenantId);
     const query: Record<string, unknown> = {
       tenantId: new mongoose.Types.ObjectId(tenantId),
     };
@@ -165,6 +188,7 @@ export class EmailService {
 
     const [messages, total] = await Promise.all([
       EmailMessageModel.find(query)
+        .select("-variables -recipientHash -idempotencyKey")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(pagination.limit)
@@ -190,8 +214,16 @@ export class EmailService {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async resendMessage(messageId: string, tenantId: string, actorId?: string) {
+  async resendMessage(
+    messageId: string,
+    tenantId: string,
+    inputContext: OperationAuthorizationContext,
+  ) {
+    const actor = await authorizeTenantOperation(
+      inputContext,
+      Permission.COMPANY_SETTINGS_UPDATE,
+    );
+    this.assertTenant(tenantId, actor.tenantId);
     const message = await EmailMessageModel.findOne({
       _id: new mongoose.Types.ObjectId(messageId),
       tenantId: new mongoose.Types.ObjectId(tenantId),
@@ -212,14 +244,36 @@ export class EmailService {
     message.errorCategory = null;
     message.errorMessage = null;
     message.attemptCount = 0; // Reset attempts for a full fresh retry
+    message.createdBy = new mongoose.Types.ObjectId(actor.actorId);
     await message.save();
 
     await this.dispatchToQueue(message);
+    await getAuditWriter().write({
+      tenantId: actor.tenantId,
+      action: "EMAIL_RESENT",
+      resourceType: "EmailMessage",
+      resourceId: messageId,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      actorKind: actor.actorKind,
+      changes: { templateId: message.templateId },
+      metadata: { traceId: actor.traceId, requestId: actor.requestId },
+    });
     
     return { success: true, state: "QUEUED" };
   }
 
-  async cancelMessage(messageId: string, tenantId: string) {
+  async cancelMessage(
+    messageId: string,
+    tenantId: string,
+    inputContext: OperationAuthorizationContext,
+  ) {
+    const actor = await authorizeTenantOperation(
+      inputContext,
+      Permission.COMPANY_SETTINGS_UPDATE,
+    );
+    this.assertTenant(tenantId, actor.tenantId);
     const message = await EmailMessageModel.findOne({
       _id: new mongoose.Types.ObjectId(messageId),
       tenantId: new mongoose.Types.ObjectId(tenantId),
@@ -231,11 +285,30 @@ export class EmailService {
       throw new AppError(400, "INVALID_INPUT", "Only pending or queued messages can be cancelled");
     }
 
+    const previousState = message.state;
     message.state = "CANCELLED";
     await message.save();
+    await getAuditWriter().write({
+      tenantId: actor.tenantId,
+      action: "EMAIL_CANCELLED",
+      resourceType: "EmailMessage",
+      resourceId: messageId,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      actorKind: actor.actorKind,
+      changes: { previousState },
+      metadata: { traceId: actor.traceId, requestId: actor.requestId },
+    });
 
     // The worker job will still pull it from the queue, but it will see the state is CANCELLED and short-circuit
     return { success: true };
+  }
+
+  private assertTenant(requestedTenantId: string, actorTenantId: string): void {
+    if (requestedTenantId !== actorTenantId) {
+      throw new AppError(404, "NOT_FOUND", "Email message not found");
+    }
   }
 }
 

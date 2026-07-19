@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
-import { authorize } from "../../common/middlewares/authorize.middleware.js";
 import { requirePlatformTenant } from "../../common/middlewares/platformTenant.middleware.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
 import {
   getTenantController,
   listTenantsController,
@@ -18,16 +19,16 @@ const router = Router();
 router.get(
   "/tenants",
   authenticate,
-  authorize("SUPER_ADMIN"),
   requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
   listTenantsController,
 );
 
 router.get(
   "/tenants/:id",
   authenticate,
-  authorize("SUPER_ADMIN"),
   requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
   getTenantController,
 );
 
@@ -39,8 +40,9 @@ router.get(
 router.patch(
   "/tenants/:id",
   authenticate,
-  authorize("SUPER_ADMIN"),
   requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_UPDATE),
+  requirePermission(Permission.BILLING_MANAGE),
   updateTenantController,
 );
 

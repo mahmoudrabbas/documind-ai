@@ -1,7 +1,31 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import { BAD_REQUEST } from "../../common/errors/errorCodes.js";
-import { getApiJobDispatcher } from "./jobDispatcher.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
+import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
+import {
+  enqueueCustomerJob,
+  getPlatformJobMetrics,
+  getPlatformJobStatus,
+  replayPlatformJob,
+} from "./jobs.service.js";
+
+function operationContext(req: Request): OperationAuthorizationContext {
+  const actor = requireAuthenticatedAuditActor({
+    tenantId: req.tenantId,
+    actorId: req.auth?.userId,
+    actorEmail: req.auth?.email,
+    actorRole: req.auth?.role,
+  });
+  return {
+    tenantId: actor.tenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
+}
 
 function handleJobError(error: unknown, res: Response, next: NextFunction) {
   if (error instanceof AppError) {
@@ -20,12 +44,12 @@ function handleJobError(error: unknown, res: Response, next: NextFunction) {
  * Queue depth/active/delayed/retry/failed metrics. Super Admin only.
  */
 export async function getJobMetricsController(
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ) {
   try {
-    const metrics = await getApiJobDispatcher().getMetrics();
+    const metrics = await getPlatformJobMetrics(operationContext(req));
     res.status(200).json({ success: true, data: metrics });
   } catch (error) {
     handleJobError(error, res, next);
@@ -46,7 +70,7 @@ export async function getJobStatusController(
     if (!jobId) {
       throw new AppError(400, BAD_REQUEST, "jobId is required");
     }
-    const status = await getApiJobDispatcher().getJobStatus(jobId);
+    const status = await getPlatformJobStatus(jobId, operationContext(req));
     if (!status) {
       res.status(404).json({ success: false, message: "job not found" });
       return;
@@ -68,7 +92,7 @@ export async function replayJobController(
 ) {
   try {
     const jobId = String(req.params.jobId);
-    const ok = await getApiJobDispatcher().replayJob(jobId);
+    const ok = await replayPlatformJob(jobId, operationContext(req));
     if (!ok) {
       res.status(409).json({
         success: false,
@@ -97,21 +121,10 @@ export async function enqueueJobController(
       throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     }
 
-    const body = req.body as Record<string, unknown>;
-    const envelope = {
-      jobType: body.jobType,
-      tenantId: req.auth.tenantId,
-      actorId: req.auth.userId,
-      traceId: body.traceId,
-      idempotencyKey: body.idempotencyKey,
-      payload: body.payload,
-      createdAt: new Date().toISOString(),
-      priority: body.priority,
-      scheduledFor: body.scheduledFor,
-      displayName: body.displayName,
-    };
-
-    const result = await getApiJobDispatcher().enqueue(envelope);
+    const result = await enqueueCustomerJob(
+      req.body as Record<string, unknown>,
+      operationContext(req),
+    );
     if (!result.ok) {
       throw new AppError(
         422,

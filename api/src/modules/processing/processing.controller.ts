@@ -13,6 +13,25 @@ import {
   getOcrUsageSummary,
 } from "./processing.service.js";
 import { validateTriggerOcrInput, validateReviewQualityInput, validateRetryOcrInput } from "./processing.validator.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
+import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
+
+function operationContext(req: Request): OperationAuthorizationContext {
+  const actor = requireAuthenticatedAuditActor({
+    tenantId: req.tenantId,
+    actorId: req.auth?.userId,
+    actorEmail: req.auth?.email,
+    actorRole: req.auth?.role,
+  });
+  return {
+    tenantId: actor.tenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
+}
 
 export async function triggerOcrController(
   req: Request,
@@ -42,7 +61,11 @@ export async function triggerOcrController(
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found or access denied");
     }
 
-    const result = await triggerOcrProcessing(tenantId, { ...input, documentId }, auth.userId);
+    const result = await triggerOcrProcessing(
+      tenantId,
+      { ...input, documentId },
+      operationContext(req),
+    );
 
     res.status(202).json({
       message: "OCR processing job queued successfully",
@@ -90,7 +113,12 @@ export async function getOcrPageResultsController(
       version = parsed;
     }
 
-    const pages = await getOcrPageResults(tenantId, documentId, version);
+    const pages = await getOcrPageResults(
+      tenantId,
+      documentId,
+      version,
+      operationContext(req),
+    );
 
     res.json({
       success: true,
@@ -138,7 +166,12 @@ export async function getDocumentQualityController(
       version = parsed;
     }
 
-    const quality = await getDocumentQuality(tenantId, documentId, version);
+    const quality = await getDocumentQuality(
+      tenantId,
+      documentId,
+      version,
+      operationContext(req),
+    );
 
     if (!quality) {
       res.json({
@@ -194,7 +227,12 @@ export async function assessDocumentQualityController(
       version = parsed;
     }
 
-    const quality = await assessDocumentQuality(tenantId, documentId, version);
+    const quality = await assessDocumentQuality(
+      tenantId,
+      documentId,
+      version,
+      operationContext(req),
+    );
 
     res.json({
       success: true,
@@ -244,7 +282,13 @@ export async function reviewDocumentQualityController(
       version = parsed;
     }
 
-    const quality = await reviewDocumentQuality(tenantId, documentId, version, input, auth.userId);
+    const quality = await reviewDocumentQuality(
+      tenantId,
+      documentId,
+      version,
+      input,
+      operationContext(req),
+    );
 
     res.json({
       success: true,
@@ -294,7 +338,13 @@ export async function retryOcrController(
       version = parsed;
     }
 
-    const result = await retryOcrPages(tenantId, documentId, version, input, auth.userId);
+    const result = await retryOcrPages(
+      tenantId,
+      documentId,
+      version,
+      input,
+      operationContext(req),
+    );
 
     res.status(202).json({
       message: "OCR retry job queued successfully",
@@ -318,7 +368,7 @@ export async function getOcrUsageSummaryController(
       throw new AppError(401, "UNAUTHORIZED", "Authentication context missing");
     }
 
-    const summary = await getOcrUsageSummary(tenantId);
+    const summary = await getOcrUsageSummary(tenantId, operationContext(req));
 
     res.json({
       success: true,

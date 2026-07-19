@@ -15,8 +15,12 @@ import type {
 import type { TenantDocument } from "../../db/models/tenant.model.js";
 import type { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
-import type { AuthIdentity } from "../auth/auth.types.js";
-import AuditLogModel from "../../db/models/auditLog.model.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizePlatformOperation,
+  type OperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 import {
   LEGACY_PLATFORM_TENANT_SLUGS,
   PLATFORM_TENANT_SLUG,
@@ -41,7 +45,9 @@ function serializeTenant(
 
 export async function listTenants(
   input: ListTenantsInput,
+  context: OperationAuthorizationContext,
 ): Promise<ListTenantsResult> {
+  await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
   const { page, pageSize, status, plan, search } = input;
 
   // Build filter object
@@ -96,7 +102,11 @@ export async function listTenants(
   };
 }
 
-export async function getTenant(id: string): Promise<TenantPublicView> {
+export async function getTenant(
+  id: string,
+  context: OperationAuthorizationContext,
+): Promise<TenantPublicView> {
+  await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
   const tenant = await findTenantById(id);
   if (!tenant) throw new AppError(404, "NOT_FOUND", "Tenant not found");
   const counts = await aggregateTenantStats([tenant._id]);
@@ -109,8 +119,13 @@ export async function getTenant(id: string): Promise<TenantPublicView> {
 
 export async function updateTenant(
   input: UpdateTenantInput,
-  actor?: AuthIdentity,
+  context: OperationAuthorizationContext,
 ): Promise<UpdateTenantResult> {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.COMPANY_SETTINGS_UPDATE,
+  );
+  await authorizePlatformOperation(context, Permission.BILLING_MANAGE);
   const { id, ...updateData } = input;
 
   const updatedTenant = await updateTenantById(id, updateData);
@@ -119,19 +134,18 @@ export async function updateTenant(
     throw new AppError(404, "NOT_FOUND", "Tenant not found");
   }
 
-  if (actor) {
-    await AuditLogModel.create({
-      tenantId: updatedTenant._id,
-      userId: actor.userId,
-      resourceType: "tenant",
-      resourceId: id,
-      action: "TENANT_UPDATED",
-      actorId: actor.userId,
-      actorEmail: actor.email,
-      actorRole: actor.role,
-      changes: updateData,
-    });
-  }
+  await getAuditWriter().write({
+    tenantId: updatedTenant._id.toString(),
+    resourceType: "Tenant",
+    resourceId: id,
+    action: "TENANT_UPDATED",
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
+    changes: updateData,
+    metadata: { traceId: actor.traceId, requestId: actor.requestId },
+  });
 
   const counts = await aggregateTenantStats([updatedTenant._id]);
   return serializeTenant(updatedTenant, {

@@ -1,5 +1,7 @@
 import { Types } from "mongoose";
-import PaymentEventModel from "../../db/models/paymentEvent.model.js";
+import PaymentEventModel, {
+  type PaymentEventDocument,
+} from "../../db/models/paymentEvent.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
 import { logger } from "../../common/logger/logger.js";
@@ -7,6 +9,13 @@ import { getAuditWriter } from "../../common/observability/index.js";
 import { transitionSubscription } from "../billing/subscription.service.js";
 import type { PaymentProviderEvent } from "../billing/ports/payment-provider.port.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
+import { AppError } from "../../common/errors/AppError.js";
+import { NOT_FOUND } from "../../common/errors/errorCodes.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizePlatformOperation,
+  type OperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 
 function writeAudit(
   action: string,
@@ -67,25 +76,28 @@ export async function handlePaymentEvent(
   event: PaymentProviderEvent,
   rawBody: string,
   signature: string,
+  existingEvent?: PaymentEventDocument,
 ): Promise<void> {
-  const existing = await PaymentEventModel.findOne({
-    eventId: event.id,
-  }).exec();
-  if (existing) {
+  const duplicate = existingEvent
+    ? null
+    : await PaymentEventModel.findOne({ eventId: event.id }).exec();
+  if (duplicate) {
     logger.info({ eventId: event.id }, "Duplicate webhook event — skipping");
     return;
   }
 
-  const eventRecord = await PaymentEventModel.create({
-    eventId: event.id,
-    eventType: event.type,
-    provider: event.provider,
-    status: "received",
-    signature,
-    rawBody,
-    payload: event.raw,
-    processingErrors: [],
-  });
+  const eventRecord =
+    existingEvent ??
+    (await PaymentEventModel.create({
+      eventId: event.id,
+      eventType: event.type,
+      provider: event.provider,
+      status: "received",
+      signature,
+      rawBody,
+      payload: event.raw,
+      processingErrors: [],
+    }));
 
   try {
     eventRecord.status = "verified";
@@ -183,13 +195,15 @@ export async function listPaymentEvents(filter: {
   pageSize: number;
   status?: string;
   eventType?: string;
-}) {
+}, context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(context, Permission.BILLING_READ);
   const query: Record<string, unknown> = {};
   if (filter.status) query.status = filter.status;
   if (filter.eventType) query.eventType = filter.eventType;
 
   const [events, totalRecords] = await Promise.all([
     PaymentEventModel.find(query)
+      .select("-signature -rawBody -payload")
       .sort({ createdAt: -1 })
       .skip((filter.page - 1) * filter.pageSize)
       .limit(filter.pageSize)
@@ -209,10 +223,17 @@ export async function listPaymentEvents(filter: {
   };
 }
 
-export async function reprocessEvent(eventId: string): Promise<void> {
+export async function reprocessEvent(
+  eventId: string,
+  context: OperationAuthorizationContext,
+): Promise<void> {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_MANAGE,
+  );
   const event = await PaymentEventModel.findOne({ eventId }).exec();
   if (!event) {
-    throw new Error(`Payment event ${eventId} not found`);
+    throw new AppError(404, NOT_FOUND, "Payment event not found");
   }
 
   event.status = "received";
@@ -222,7 +243,19 @@ export async function reprocessEvent(eventId: string): Promise<void> {
 
   const provider = await getProviderForReprocess();
   const parsed = provider.parseWebhookEvent(event.payload as Record<string, unknown>);
-  await handlePaymentEvent(parsed, event.rawBody, event.signature);
+  await handlePaymentEvent(parsed, event.rawBody, event.signature, event);
+  await getAuditWriter().write({
+    tenantId: actor.tenantId,
+    action: "PAYMENT_EVENT_REPROCESSED",
+    resourceType: "PaymentEvent",
+    resourceId: eventId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
+    changes: { eventType: event.eventType },
+    metadata: { traceId: actor.traceId, requestId: actor.requestId },
+  });
 }
 
 async function getProviderForReprocess() {

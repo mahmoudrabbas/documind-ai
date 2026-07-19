@@ -30,6 +30,12 @@ import type {
   SupervisorDecision,
 } from "./agents.types.js";
 import { assertRunStatusTransition } from "./agents.validator.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizePlatformOperation,
+  authorizeTenantOperation,
+  type OperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 
 const model = new FakeModelAdapter();
 const supervisor = new Supervisor(model, createDefaultGuardrails());
@@ -384,7 +390,14 @@ export async function startAgentRun(input: {
   maxToolCalls?: number;
   maxTokens?: number;
   budgetMs?: number;
-}) {
+}, inputContext: OperationAuthorizationContext) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.CHAT_CREATE,
+  );
+  if (input.tenantId !== actor.tenantId || input.actorId !== actor.actorId) {
+    throw new AppError(404, NOT_FOUND, "Agent run not found");
+  }
   const run = await createRun({
     tenantId: input.tenantId,
     actorId: input.actorId,
@@ -433,12 +446,21 @@ export async function startAgentRun(input: {
 
 export async function resumeAgentRun(
   tenantId: string,
-  actorId: string,
   runId: string,
   approvalId: string,
   decision: "approve" | "reject",
-  note?: string,
+  note: string | undefined,
+  inputContext: OperationAuthorizationContext,
 ) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.CHAT_CREATE,
+  );
+  await authorizeTenantOperation(inputContext, Permission.CHAT_READ);
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Approval not found");
+  }
+  const actorId = actor.actorId;
   const approval = await getApproval(tenantId, approvalId);
   if (!approval) throw new AppError(404, NOT_FOUND, "Approval not found");
   if (approval.runId !== runId)
@@ -501,13 +523,36 @@ export async function resumeAgentRun(
   return getRun(tenantId, runId);
 }
 
-export async function getRunDetails(tenantId: string, runId: string) {
-  const run = await getRun(tenantId, runId);
+export async function getRunDetails(
+  tenantId: string,
+  runId: string,
+  inputContext: OperationAuthorizationContext,
+  isPlatform = false,
+) {
+  let resolvedTenantId = tenantId;
+  if (isPlatform) {
+    await authorizePlatformOperation(inputContext, Permission.CHAT_READ);
+    const platformRun = await AgentRunModel.findById(runId)
+      .select("tenantId")
+      .lean()
+      .exec();
+    if (!platformRun) throw new AppError(404, NOT_FOUND, "Run not found");
+    resolvedTenantId = platformRun.tenantId.toString();
+  } else {
+    const actor = await authorizeTenantOperation(
+      inputContext,
+      Permission.CHAT_READ,
+    );
+    if (tenantId !== actor.tenantId) {
+      throw new AppError(404, NOT_FOUND, "Run not found");
+    }
+  }
+  const run = await getRun(resolvedTenantId, runId);
   if (!run) throw new AppError(404, NOT_FOUND, "Run not found");
   const [stepsRes, toolCallsRes, approvalsRes] = await Promise.all([
-    getSteps(tenantId, runId, { page: 1, pageSize: 50 }),
-    getToolCalls(tenantId, runId, { page: 1, pageSize: 100 }),
-    listApprovals(tenantId, { page: 1, pageSize: 50 }),
+    getSteps(resolvedTenantId, runId, { page: 1, pageSize: 50 }),
+    getToolCalls(resolvedTenantId, runId, { page: 1, pageSize: 100 }),
+    listApprovals(resolvedTenantId, { page: 1, pageSize: 50 }),
   ]);
   const runApprovals = approvalsRes.approvals.filter((a) => a.runId === runId);
   return {
@@ -527,11 +572,20 @@ export async function searchRuns(
     agentName?: string;
     traceId?: string;
   },
+  inputContext: OperationAuthorizationContext,
   isSuperAdmin = false,
 ) {
   if (!isSuperAdmin) {
+    const actor = await authorizeTenantOperation(
+      inputContext,
+      Permission.CHAT_READ,
+    );
+    if (tenantId !== actor.tenantId) {
+      throw new AppError(404, NOT_FOUND, "Agent runs not found");
+    }
     return listRuns(tenantId, filter as Parameters<typeof listRuns>[1]);
   }
+  await authorizePlatformOperation(inputContext, Permission.CHAT_READ);
   const query: Record<string, unknown> = {};
   if (filter.status) query.status = filter.status;
   if (filter.agentName) query.agentName = filter.agentName;
@@ -575,6 +629,27 @@ export async function searchRuns(
   };
 }
 
-export async function expireStaleApprovals() {
-  return expirePendingApprovals();
+export async function searchApprovals(
+  tenantId: string,
+  filter: { page: number; pageSize: number },
+  inputContext: OperationAuthorizationContext,
+) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.CHAT_READ,
+  );
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Approvals not found");
+  }
+  return listApprovals(tenantId, filter);
+}
+
+export async function expireStaleApprovals(
+  inputContext: OperationAuthorizationContext,
+) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.CHAT_DELETE,
+  );
+  return expirePendingApprovals(actor.tenantId);
 }

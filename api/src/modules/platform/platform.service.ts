@@ -9,7 +9,6 @@ import PlatformSettingModel from "../../db/models/platformSetting.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
-import type { AuthIdentity } from "../auth/auth.types.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import * as PackageService from "../billing/package.service.js";
 import * as SubscriptionService from "../billing/subscription.service.js";
@@ -22,6 +21,11 @@ import {
   listPlatformAuditLogs,
   type AuditOperationContext,
 } from "../audit/audit.service.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizePlatformOperation,
+  type OperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
@@ -69,14 +73,19 @@ export async function getOverview(context: AuditOperationContext) {
 /**
  * Delegated to {@link PackageService.listPackages}.
  */
-export async function listPackages() {
+export async function listPackages(context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(context, Permission.BILLING_READ);
   return PackageService.listPackages();
 }
 
 /**
  * Delegated to {@link PackageService.getPackage}.
  */
-export async function getPackage(id: string) {
+export async function getPackage(
+  id: string,
+  context: OperationAuthorizationContext,
+) {
+  await authorizePlatformOperation(context, Permission.BILLING_READ);
   return PackageService.getPackage(id);
 }
 
@@ -111,12 +120,17 @@ export async function createPackage(
     retentionDays?: number;
     supportLevel?: "community" | "standard" | "priority" | "dedicated";
   },
-  actor: AuthIdentity,
+  context: OperationAuthorizationContext,
 ) {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_MANAGE,
+  );
   return PackageService.createPackage(input, {
-    userId: actor.userId,
-    email: actor.email,
-    role: actor.role,
+    userId: actor.actorId,
+    email: actor.actorEmail,
+    role: actor.actorRole,
+    tenantId: actor.tenantId,
   });
 }
 
@@ -132,8 +146,12 @@ export async function createPackage(
 export async function updatePackage(
   id: string,
   input: Record<string, unknown>,
-  actor: AuthIdentity,
+  context: OperationAuthorizationContext,
 ) {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_MANAGE,
+  );
   const existing = await PackageModel.findById(id).exec();
   if (!existing) throw new AppError(404, "NOT_FOUND", "Package not found");
 
@@ -143,9 +161,10 @@ export async function updatePackage(
 
   // Delegate version bump + snapshot to billing domain
   await PackageService.createVersion(id, {
-    userId: actor.userId,
-    email: actor.email,
-    role: actor.role,
+    userId: actor.actorId,
+    email: actor.actorEmail,
+    role: actor.actorRole,
+    tenantId: actor.tenantId,
   });
 
   // Re-read for full backward-compat document shape (includes _id, __v, virtuals)
@@ -160,15 +179,24 @@ export async function updatePackage(
 export async function createSubscription(
   tenantId: string,
   packageId: string,
-  actor: AuthIdentity,
+  context: OperationAuthorizationContext,
 ) {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_MANAGE,
+  );
   const pkg = await PackageService.getPackage(packageId);
   return SubscriptionService.createSubscription(
     tenantId,
     packageId,
     pkg.version,
     "TRIALING",
-    { userId: actor.userId, email: actor.email, role: actor.role },
+    {
+      userId: actor.actorId,
+      email: actor.actorEmail,
+      role: actor.actorRole,
+      tenantId: actor.tenantId,
+    },
   );
 }
 
@@ -176,7 +204,11 @@ export async function createSubscription(
  * List subscriptions — delegates to {@link SubscriptionService.listSubscriptions}
  * then populates tenant and package references for backward compat.
  */
-export async function listSubscriptions(filter?: { status?: string }) {
+export async function listSubscriptions(
+  context: OperationAuthorizationContext,
+  filter?: { status?: string },
+) {
+  await authorizePlatformOperation(context, Permission.BILLING_READ);
   const status = filter?.status?.toUpperCase() as SubscriptionStatus | undefined;
   const subs = await SubscriptionService.listSubscriptions(
     status ? { status } : undefined,
@@ -197,8 +229,12 @@ export async function listSubscriptions(filter?: { status?: string }) {
 export async function updateSubscription(
   tenantId: string,
   input: { packageId: string; status: string; renewsAt?: string | null },
-  actor: AuthIdentity,
+  context: OperationAuthorizationContext,
 ) {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_MANAGE,
+  );
   // Validate tenant and package existence first
   const [tenant, pkg] = await Promise.all([
     TenantModel.findOne({ _id: tenantId, ...tenantFilter })
@@ -220,7 +256,12 @@ export async function updateSubscription(
       periodEnd: input.renewsAt ? new Date(input.renewsAt) : undefined,
       triggeredBy: "admin",
     },
-    { userId: actor.userId, email: actor.email, role: actor.role },
+    {
+      userId: actor.actorId,
+      email: actor.actorEmail,
+      role: actor.actorRole,
+      tenantId: actor.tenantId,
+    },
   );
 }
 
@@ -229,7 +270,8 @@ export async function listPlatformUsers(input: {
   pageSize: number;
   search?: string;
   status?: string;
-}) {
+}, context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(context, Permission.USERS_READ);
   const filter: Record<string, unknown> = { role: { $ne: "SUPER_ADMIN" } };
   if (input.status) filter.status = input.status;
   if (input.search)
@@ -258,7 +300,8 @@ export async function listPlatformUsers(input: {
   };
 }
 
-export async function getUsage() {
+export async function getUsage(context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(context, Permission.ANALYTICS_READ);
   const [byTenant, byDay, documents] = await Promise.all([
     UsageLogModel.aggregate([
       { $match: { eventType: "QUESTION_ASKED" } },
@@ -315,7 +358,8 @@ export async function listJobs(input: {
   page: number;
   pageSize: number;
   status?: string;
-}) {
+}, context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(context, Permission.DOCUMENTS_READ);
   const filter: Record<string, unknown> = {};
   if (input.status) filter.status = input.status;
   const [jobs, totalRecords] = await Promise.all([
@@ -339,7 +383,11 @@ export async function listJobs(input: {
   };
 }
 
-export function getSystemHealth() {
+export async function getSystemHealth(context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(
+    context,
+    Permission.COMPANY_SETTINGS_READ,
+  );
   return {
     status: isMongoConnected() && isRedisConnected() ? "healthy" : "degraded",
     services: [
@@ -364,8 +412,12 @@ export async function listAudit(input: {
   return listPlatformAuditLogs(input, context);
 }
 
-export async function getSetting(key: string) {
-  return (
+export async function getSetting(
+  key: string,
+  context: OperationAuthorizationContext,
+) {
+  await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
+  return sanitizeSettingValue(
     (await PlatformSettingModel.findOne({ key }).lean().exec())?.value ?? {}
   );
 }
@@ -373,11 +425,15 @@ export async function getSetting(key: string) {
 export async function updateSetting(
   key: string,
   value: Record<string, unknown>,
-  actor: AuthIdentity,
+  context: OperationAuthorizationContext,
 ) {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.COMPANY_SETTINGS_UPDATE,
+  );
   const setting = await PlatformSettingModel.findOneAndUpdate(
     { key },
-    { $set: { value, updatedBy: new Types.ObjectId(actor.userId) } },
+    { $set: { value, updatedBy: new Types.ObjectId(actor.actorId) } },
     { upsert: true, returnDocument: "after", runValidators: true },
   )
     .lean()
@@ -386,11 +442,30 @@ export async function updateSetting(
     action: "PLATFORM_SETTING_UPDATED",
     resourceType: "PlatformSetting",
     resourceId: key,
-    changes: value,
-    tenantId: "system",
-    actorId: actor.userId,
-    actorEmail: actor.email,
-    actorRole: actor.role,
+    changes: { changedFields: Object.keys(value).sort() },
+    tenantId: actor.tenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
   });
-  return setting?.value ?? value;
+  return sanitizeSettingValue(setting?.value ?? value);
+}
+
+function sanitizeSettingValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeSettingValue);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+      key,
+      /(secret|password|token|api[-_]?key|private[-_]?key|credential)/i.test(key)
+        ? "[REDACTED]"
+        : sanitizeSettingValue(nested),
+    ]),
+  );
 }
