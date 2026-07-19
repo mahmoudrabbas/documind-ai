@@ -210,19 +210,23 @@ describe("production permission action visibility", () => {
     ).toBe(false);
   });
 
-  it("uses users:assign-role for assignment, removal, and migration", () => {
+  it("requires users:update and users:assign-role for assignment, removal, and migration", () => {
     const active = deriveRoleActionVisibility(
-      new Set(["users:assign-role"]),
+      new Set(["users:update", "users:assign-role"]),
       "active",
     );
     const archived = deriveRoleActionVisibility(
-      new Set(["users:assign-role"]),
+      new Set(["users:update", "users:assign-role"]),
       "archived",
     );
     expect(active.canAssign).toBe(true);
     expect(active.canMigrate).toBe(true);
     expect(archived.canAssign).toBe(false);
     expect(archived.canMigrate).toBe(true);
+    expect(
+      deriveRoleActionVisibility(new Set(["users:assign-role"]), "active")
+        .canAssign,
+    ).toBe(false);
   });
 });
 

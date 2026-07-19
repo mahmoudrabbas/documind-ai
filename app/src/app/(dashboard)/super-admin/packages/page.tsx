@@ -13,6 +13,8 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { listPackages } from "@/services/super-admin.service";
+import { PermissionAction } from "@/components/auth/permission-boundary";
+import { Permission } from "@/types/api/permissions.types";
 
 export default function PackagesPage() {
   const state = usePlatformData(listPackages);
@@ -22,12 +24,14 @@ export default function PackagesPage() {
         title="Packages"
         description="Create versioned SaaS packages and manage platform limits."
         actions={
+          <PermissionAction permissions={[Permission.BILLING_MANAGE]}>
           <Link
             href="/super-admin/packages/new"
             className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 font-bold text-on-primary sm:w-auto"
           >
             <span className="material-symbols-outlined">add</span>New package
           </Link>
+          </PermissionAction>
         }
       />
       <PlatformState

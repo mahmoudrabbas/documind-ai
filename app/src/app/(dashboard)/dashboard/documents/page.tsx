@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { useI18n } from "@/providers/i18n-provider";
-import { useAuth } from "@/providers/auth-provider";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 import { useDocuments } from "@/hooks/features/useDocuments";
 import { FileDropzone } from "@/components/ui/FileDropzone";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -32,8 +33,10 @@ const STATUS_BADGE_MAP: Record<string, string> = {
 
 export default function DocumentsPage() {
   const { t, dir } = useI18n();
-  const auth = useAuth();
-  const isCompanyAdmin = auth.status === "authenticated" && (auth.user.role === "COMPANY_ADMIN" || auth.user.role === "SUPER_ADMIN");
+  const permissions = usePermissions();
+  const canCreate = permissions.can(Permission.DOCUMENTS_CREATE);
+  const canDelete = permissions.can(Permission.DOCUMENTS_DELETE);
+  const canArchive = permissions.can(Permission.DOCUMENTS_ARCHIVE);
   const {
     documents,
     isLoading,
@@ -107,6 +110,7 @@ export default function DocumentsPage() {
   }
 
   async function handleUpload() {
+    if (!canCreate) return;
     const file = selectedFiles[0];
     if (!file) {
       setFileError(t("documents.fileRequired"));
@@ -153,7 +157,7 @@ export default function DocumentsPage() {
         }
       />
 
-      {isCompanyAdmin ? (
+      {canCreate ? (
         <div className="mb-6 grid auto-rows-auto items-start gap-3 sm:gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:gap-5">
           <DashboardPanel>
             <div className="mb-4 flex items-start justify-between gap-3">
@@ -286,7 +290,7 @@ export default function DocumentsPage() {
               <Button size="sm" variant="outline" onClick={handleSearch}>
                 <span className="material-symbols-outlined text-[18px]">search</span>
               </Button>
-              {isCompanyAdmin && (
+              {canArchive && (
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-outline-variant px-3 py-2 text-sm text-on-surface-variant hover:bg-surface-container-high">
                   <input
                     type="checkbox"
@@ -383,7 +387,7 @@ export default function DocumentsPage() {
                     </td>
                     <td className="px-lg py-4 whitespace-nowrap text-body-sm text-on-surface-variant">{new Date(doc.createdAt).toLocaleDateString()}</td>
                     <td className="px-lg py-4 text-end">
-                      {isCompanyAdmin ? (
+                      {canDelete ? (
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="ghost"

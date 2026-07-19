@@ -13,6 +13,10 @@ import {
 import { useAuth } from "@/providers/auth-provider";
 import { getMyPermissions } from "@/services/permissions.service";
 import {
+  ApiError,
+  subscribePermissionDenied,
+} from "@/lib/api-client";
+import {
   canPermission,
   createIdentityKey,
   computeNextPermissionAction,
@@ -23,6 +27,7 @@ import type {
   PermissionScopes,
   PermissionSource,
   CustomRoleState,
+  PermissionValue,
 } from "@/types/api/permissions.types";
 import type { Role } from "@/constants/routes";
 
@@ -31,17 +36,18 @@ type PermissionState =
   | { status: "idle" }
   | {
       status: "ready";
-      permissions: Set<string>;
+      permissions: Set<PermissionValue>;
       grants: Record<string, { source: PermissionSource; scope: PermissionScopes | null }>;
       baseRole: Role;
       customRoleId: string | null;
       customRoleState: CustomRoleState;
       roleVersion: number | null;
     }
+  | { status: "denied"; error: ApiError }
   | { status: "error"; error: Error };
 
 type PermissionContextValue = PermissionState & {
-  can: (permission: string) => boolean;
+  can: (permission: PermissionValue) => boolean;
   refreshPermissions: () => Promise<void>;
 };
 
@@ -53,6 +59,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(true);
   const lastIdentityRef = useRef<string | null>(null);
   const reqGenRef = useRef(0);
+  const denialRefreshInFlightRef = useRef(false);
 
   const authStatus = auth.status;
   const authIdentityKey = auth.status === "authenticated"
@@ -63,12 +70,13 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     if (!canRefreshPermissions(authStatus)) return;
 
     const gen = ++reqGenRef.current;
+    setState({ status: "loading" });
     try {
       const response = await getMyPermissions();
       if (shouldApplyResponse(reqGenRef.current, gen, mountedRef.current)) {
         setState({
           status: "ready",
-          permissions: new Set(response.data.permissions),
+          permissions: new Set(response.data.permissions as PermissionValue[]),
           grants: response.data.grants,
           baseRole: response.data.baseRole as Role,
           customRoleId: response.data.customRoleId,
@@ -78,10 +86,17 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       if (shouldApplyResponse(reqGenRef.current, gen, mountedRef.current)) {
-        setState({
-          status: "error",
-          error: error instanceof Error ? error : new Error("Failed to load permissions"),
-        });
+        setState(
+          error instanceof ApiError && error.status === 403
+            ? { status: "denied", error }
+            : {
+                status: "error",
+                error:
+                  error instanceof Error
+                    ? error
+                    : new Error("Failed to load permissions"),
+              },
+        );
       }
     }
   }, [authStatus]);
@@ -119,8 +134,25 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     return () => { mountedRef.current = false; };
   }, [authStatus, authIdentityKey, refreshPermissions]);
 
+  useEffect(
+    () =>
+      subscribePermissionDenied(() => {
+        if (
+          authStatus !== "authenticated" ||
+          denialRefreshInFlightRef.current
+        ) {
+          return;
+        }
+        denialRefreshInFlightRef.current = true;
+        void refreshPermissions().finally(() => {
+          denialRefreshInFlightRef.current = false;
+        });
+      }),
+    [authStatus, refreshPermissions],
+  );
+
   const can = useCallback(
-    (permission: string): boolean => {
+    (permission: PermissionValue): boolean => {
       if (state.status !== "ready") return false;
       return canPermission(permission, state.permissions);
     },

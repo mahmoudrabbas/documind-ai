@@ -11,11 +11,14 @@ describe("authenticated navigation source", () => {
     expect(source).toContain('router.replace("/login")');
     expect(source).toContain("Logging out…");
   });
-  it("keeps role-specific navigation", async () => {
+  it("filters shell-specific navigation through effective permissions", async () => {
     const source = await readFile(sourceUrl, "utf8");
-    expect(source).toContain('auth.user.role === "SUPER_ADMIN"');
-    expect(source).toContain('auth.user.role === "COMPANY_ADMIN"');
-    expect(source).toContain('"Tenant Management", "/platform/tenants"');
-    expect(source).toContain('"Team", "/dashboard/users"');
+    expect(source).toContain("getAppContext(auth.user.role)");
+    expect(source).toContain("PLATFORM_SIDEBAR_LINKS");
+    expect(source).toContain("TENANT_SIDEBAR_LINKS");
+    expect(source).toContain("filterNavigationLinks(");
+    expect(source).toContain("permissions.status,");
+    expect(source).toContain("permissions.can");
+    expect(source).not.toContain("SIDEBAR_LINKS[auth.user.role]");
   });
 });

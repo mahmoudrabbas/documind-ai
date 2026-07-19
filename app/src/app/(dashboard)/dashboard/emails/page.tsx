@@ -6,11 +6,20 @@ import { emailService, type EmailMessage } from "@/services/email.service";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmailPreviewDialog, type EmailPreviewData } from "@/components/email/email-preview-dialog";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
+import { ApiError } from "@/lib/api-client";
 
 export default function CompanyEmailsPage() {
+  const permissions = usePermissions();
+  const canUpdateEmail = permissions.can(Permission.COMPANY_SETTINGS_UPDATE);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [resendCooldowns, setResendCooldowns] = useState<
+    Record<string, boolean>
+  >({});
   
   const [previewData, setPreviewData] = useState<EmailPreviewData | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -51,11 +60,34 @@ export default function CompanyEmailsPage() {
   };
 
   const handleResend = async (messageId: string) => {
+    if (
+      !canUpdateEmail ||
+      resendCooldowns[messageId] === true
+    ) {
+      return;
+    }
+    setActionError(null);
     try {
       await emailService.resendEmail(messageId);
       await fetchEmails();
     } catch (err: unknown) {
-      alert("Failed to resend email: " + (err instanceof Error ? err.message : "Unknown error"));
+      if (err instanceof ApiError && err.status === 429) {
+        const seconds = err.retryAfterSeconds ?? 60;
+        setResendCooldowns((current) => ({
+          ...current,
+          [messageId]: true,
+        }));
+        window.setTimeout(() => {
+          setResendCooldowns((current) => {
+            const next = { ...current };
+            delete next[messageId];
+            return next;
+          });
+        }, seconds * 1000);
+      }
+      setActionError(
+        err instanceof Error ? err.message : "Failed to resend email.",
+      );
     }
   };
 
@@ -70,6 +102,11 @@ export default function CompanyEmailsPage() {
           </Button>
         }
       />
+      {actionError ? (
+        <p className="mb-4 rounded-lg bg-error-container p-3 text-sm text-on-error-container" role="alert">
+          {actionError}
+        </p>
+      ) : null}
       <DashboardPanel padding="none">
         {error ? (
           <div className="p-8 text-center text-error">{error}</div>
@@ -110,15 +147,24 @@ export default function CompanyEmailsPage() {
                             recipientEmail: email.recipientEmail,
                             templateId: email.templateId,
                             state: email.state,
-                            variables: (email as EmailMessage & { variables?: Record<string, unknown> }).variables ?? null,
                           });
                           setIsPreviewOpen(true);
                         }}
                       >
                         Details
                       </Button>
-                      {(email.state === "PERMANENT_FAILURE" || email.state === "CANCELLED" || email.state === "TEMPORARY_FAILURE") && (
-                        <Button variant="outline" size="sm" onClick={() => handleResend(email._id)}>
+                      {canUpdateEmail && (email.state === "PERMANENT_FAILURE" || email.state === "CANCELLED" || email.state === "TEMPORARY_FAILURE") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={resendCooldowns[email._id] === true}
+                          title={
+                            resendCooldowns[email._id] === true
+                              ? "Rate limited. Try again after the cooldown."
+                              : undefined
+                          }
+                          onClick={() => handleResend(email._id)}
+                        >
                           Resend
                         </Button>
                       )}

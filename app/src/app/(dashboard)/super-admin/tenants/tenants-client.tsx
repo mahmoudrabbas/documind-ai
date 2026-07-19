@@ -21,6 +21,8 @@ import {
   SUBSCRIPTION_STATUS_COLORS,
 } from "@/types/api/super-admin.types";
 import { listSubscriptions } from "@/services/super-admin.service";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 
 const label = (value: string) =>
   value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -42,6 +44,11 @@ function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
 }
 
 export function TenantsClient() {
+  const permissions = usePermissions();
+  const canReadBilling = permissions.can(Permission.BILLING_READ);
+  const canManageTenant =
+    permissions.can(Permission.COMPANY_SETTINGS_UPDATE) &&
+    permissions.can(Permission.BILLING_MANAGE);
   const router = useRouter();
   const searchParams = useSearchParams();
   const query = useMemo(
@@ -99,7 +106,9 @@ export function TenantsClient() {
       try {
         const [tenantsRes, subsRes] = await Promise.all([
           listTenants(query, signal),
-          listSubscriptions(signal),
+          canReadBilling
+            ? listSubscriptions(signal)
+            : Promise.resolve({ success: true as const, data: [] }),
         ]);
         setTenants(tenantsRes.data.tenants);
         setPagination(tenantsRes.data.pagination);
@@ -115,7 +124,7 @@ export function TenantsClient() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [query],
+    [canReadBilling, query],
   );
 
   useEffect(() => {
@@ -157,7 +166,7 @@ export function TenantsClient() {
   async function save(update: {
     status?: "active" | "trial" | "suspended";
   }) {
-    if (!editing || pending) return;
+    if (!canManageTenant || !editing || pending) return;
     setPending(true);
     setNotice("");
     try {
@@ -387,6 +396,7 @@ export function TenantsClient() {
                         >
                           Open
                         </a>
+                        {canManageTenant ? (
                         <button
                           onClick={() => {
                             setNotice("");
@@ -397,6 +407,7 @@ export function TenantsClient() {
                         >
                           Manage
                         </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -453,7 +464,7 @@ export function TenantsClient() {
           </div>
         </nav>
       ) : null}
-      {editing ? (
+      {editing && canManageTenant ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
           onMouseDown={(e) => {

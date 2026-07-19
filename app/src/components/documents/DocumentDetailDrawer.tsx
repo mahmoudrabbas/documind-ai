@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useI18n } from "@/providers/i18n-provider";
-import { useAuth } from "@/providers/auth-provider";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -63,8 +64,15 @@ export function DocumentDetailDrawer({
   isLoadingVersions,
 }: DocumentDetailDrawerProps) {
   const { t } = useI18n();
-  const auth = useAuth();
-  const isCompanyAdmin = auth.status === "authenticated" && (auth.user.role === "COMPANY_ADMIN" || auth.user.role === "SUPER_ADMIN");
+  const permissions = usePermissions();
+  const canDownload = permissions.can(Permission.DOCUMENTS_DOWNLOAD);
+  const canUpdate = permissions.can(Permission.DOCUMENTS_UPDATE);
+  const canDelete = permissions.can(Permission.DOCUMENTS_DELETE);
+  const canArchive = permissions.can(Permission.DOCUMENTS_ARCHIVE);
+  const canProcessOcr = permissions.can(Permission.DOCUMENTS_OCR_PROCESS);
+  const canReviewQuality = permissions.can(
+    Permission.DOCUMENTS_QUALITY_REVIEW,
+  );
 
   const [showReplaceForm, setShowReplaceForm] = useState(false);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
@@ -73,12 +81,13 @@ export function DocumentDetailDrawer({
   const [confirmAction, setConfirmAction] = useState<"archive" | "restore" | "softDelete" | "permanentDelete" | null>(null);
 
   const handleDownload = useCallback(async () => {
+    if (!canDownload) return;
     try {
       await documentsService.downloadDocument(doc.id);
     } catch {
       // error handled by parent
     }
-  }, [doc.id]);
+  }, [canDownload, doc.id]);
 
   const [extractionStatus, setExtractionStatus] = useState<DocumentExtractionStatusResponse | null>(null);
   const [isLoadingExtraction, setIsLoadingExtraction] = useState(false);
@@ -100,7 +109,7 @@ export function DocumentDetailDrawer({
   }, [fetchExtractionStatus]);
 
   async function handleReplace() {
-    if (!replaceFile) return;
+    if (!canUpdate || !replaceFile) return;
     setIsReplacing(true);
     await onReplace(doc.id, replaceFile, replaceDesc || undefined);
     setIsReplacing(false);
@@ -159,7 +168,7 @@ export function DocumentDetailDrawer({
           <div className="mb-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
             <div className="flex items-center justify-between">
               <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Extraction Status</p>
-              {isCompanyAdmin && (
+              {canProcessOcr && (
                 <button 
                   onClick={async () => {
                     await documentsService.retriggerDocumentExtraction(doc.id, doc.version);
@@ -212,7 +221,8 @@ export function DocumentDetailDrawer({
             <DocumentQualityPanel
               documentId={doc.id}
               documentVersion={doc.version}
-              isCompanyAdmin={isCompanyAdmin}
+              canProcessOcr={canProcessOcr}
+              canReviewQuality={canReviewQuality}
             />
           </div>
 
@@ -296,7 +306,7 @@ export function DocumentDetailDrawer({
         </div>
 
         <div className="border-t border-outline-variant/30 px-6 py-4">
-          {showReplaceForm ? (
+          {showReplaceForm && canUpdate ? (
             <div className="space-y-3">
               <input type="file" accept=".pdf,.docx,.doc,.txt,.md" onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)} className="w-full text-sm" />
               <input type="text" value={replaceDesc} onChange={(e) => setReplaceDesc(e.target.value)} placeholder={t("documents.changeDescription")} className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm" />
@@ -307,35 +317,37 @@ export function DocumentDetailDrawer({
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
+              {canDownload ? (
               <Button size="sm" onClick={handleDownload}>
                 <span className="material-symbols-outlined me-1 text-[18px]">download</span>
                 {t("documents.download")}
               </Button>
-              {isCompanyAdmin && !doc.isArchived && !doc.deletedAt && (
+              ) : null}
+              {canUpdate && !doc.isArchived && !doc.deletedAt && (
                 <Button size="sm" variant="secondary" onClick={() => setShowReplaceForm(true)}>
                   <span className="material-symbols-outlined me-1 text-[18px]">swap_horiz</span>
                   {t("documents.replace")}
                 </Button>
               )}
-              {isCompanyAdmin && !doc.isArchived && !doc.deletedAt && (
+              {canArchive && !doc.isArchived && !doc.deletedAt && (
                 <Button size="sm" variant="secondary" onClick={() => setConfirmAction("archive")}>
                   <span className="material-symbols-outlined me-1 text-[18px]">archive</span>
                   {t("documents.archive")}
                 </Button>
               )}
-              {isCompanyAdmin && doc.isArchived && (
+              {canArchive && doc.isArchived && (
                 <Button size="sm" variant="secondary" onClick={() => setConfirmAction("restore")}>
                   <span className="material-symbols-outlined me-1 text-[18px]">unarchive</span>
                   {t("documents.restore")}
                 </Button>
               )}
-              {isCompanyAdmin && !doc.deletedAt && (
+              {canDelete && !doc.deletedAt && (
                 <Button size="sm" variant="danger" onClick={() => setConfirmAction("softDelete")}>
                   <span className="material-symbols-outlined me-1 text-[18px]">delete</span>
                   {t("documents.moveToTrash")}
                 </Button>
               )}
-              {isCompanyAdmin && doc.deletedAt && (
+              {canDelete && doc.deletedAt && (
                 <Button size="sm" variant="danger" onClick={() => setConfirmAction("permanentDelete")}>
                   <span className="material-symbols-outlined me-1 text-[18px]">delete_forever</span>
                   {t("documents.permanentDelete")}

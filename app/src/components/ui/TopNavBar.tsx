@@ -4,12 +4,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
+import { usePermissions } from "@/providers/permission-provider";
 import {
-  ASK_AI_HREF,
+  getAppContext,
+  filterNavigationLinks,
   isKnownRole,
-  SETTINGS_HREF_BY_ROLE,
-  TOPBAR_LINKS,
+  PLATFORM_TOPBAR_LINKS,
+  TENANT_TOPBAR_LINKS,
 } from "@/constants/routes";
+import { Permission } from "@/types/api/permissions.types";
 
 export function TopNavBar({
   onNavigationOpen,
@@ -17,6 +20,7 @@ export function TopNavBar({
   onNavigationOpen: () => void;
 }) {
   const auth = useAuth();
+  const permissions = usePermissions();
   const { user } = auth;
   const pathname = usePathname();
   const router = useRouter();
@@ -54,8 +58,27 @@ export function TopNavBar({
   }
 
   const role = user?.role && isKnownRole(user.role) ? user.role : null;
-  const topLinks = role ? TOPBAR_LINKS[role] : [];
-  const settingsHref = role ? SETTINGS_HREF_BY_ROLE[role] : undefined;
+  const appContext = role ? getAppContext(role) : null;
+  const candidateLinks =
+    appContext === "platform"
+      ? PLATFORM_TOPBAR_LINKS
+      : appContext === "tenant"
+        ? TENANT_TOPBAR_LINKS
+        : [];
+  const topLinks = filterNavigationLinks(
+    candidateLinks,
+    permissions.status,
+    permissions.can,
+  );
+  const settingsHref =
+    permissions.status === "ready" &&
+    permissions.can(Permission.COMPANY_SETTINGS_READ)
+      ? appContext === "platform"
+        ? "/super-admin/settings"
+        : appContext === "tenant"
+          ? "/dashboard/settings"
+          : undefined
+      : undefined;
 
   return (
     <header className="sticky top-0 z-30 flex min-h-16 w-full min-w-0 items-center justify-between gap-2 border-b border-outline-variant bg-surface-bright/80 px-4 shadow-sm backdrop-blur-md sm:px-5 lg:px-6">
@@ -127,13 +150,6 @@ export function TopNavBar({
             </Link>
           )}
         </div>
-
-        <Link
-          href={ASK_AI_HREF}
-          className="hidden min-h-10 shrink-0 rounded-lg bg-primary px-4 py-2 text-label-md text-on-primary transition-opacity hover:opacity-80 sm:block"
-        >
-          Ask AI
-        </Link>
 
         {/* User Profile */}
         <div

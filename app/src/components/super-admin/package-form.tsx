@@ -14,6 +14,8 @@ import {
   SUPPORT_LEVELS,
 } from "@/types/api/super-admin.types";
 import { createPackage, updatePackage } from "@/services/super-admin.service";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 
 const MODEL_SUGGESTIONS = [
   "gpt-4o",
@@ -29,6 +31,8 @@ const MODEL_SUGGESTIONS = [
 ];
 
 export function PackageForm({ existing }: { existing?: PlatformPackage }) {
+  const permissions = usePermissions();
+  const canManage = permissions.can(Permission.BILLING_MANAGE);
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +42,7 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage) return;
     setPending(true);
     setError("");
     const data = new FormData(event.currentTarget);
@@ -102,6 +107,8 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
   const input =
     "mt-1 min-h-11 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30";
   const labelClass = "text-sm font-bold";
+
+  if (!canManage) return null;
 
   return (
     <DashboardPanel>
