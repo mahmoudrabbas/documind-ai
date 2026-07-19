@@ -30,6 +30,7 @@ export interface BillingActor {
   userId: string;
   email?: string;
   role?: BaseRole;
+  tenantId?: string;
 }
 
 export interface CreateVersionResult {
@@ -52,7 +53,7 @@ function writeAudit(
     resourceType: resourceType as never,
     resourceId,
     changes,
-    tenantId: "system",
+    tenantId: actor?.tenantId,
     actorId: actor?.userId,
     actorEmail: actor?.email,
     actorRole: actor?.role,

@@ -26,6 +26,13 @@ vi.mock("../../../common/observability/index.js", () => ({
   getAuditWriter: () => ({ write: vi.fn().mockResolvedValue(undefined) }),
 }));
 
+vi.mock("../../permissions/permissions.operation.js", () => ({
+  authorizeTenantOperation: vi.fn(async (actor: Record<string, unknown>) => ({
+    ...actor,
+    actorKind: "USER",
+  })),
+}));
+
 import PackageModel from "../../../db/models/package.model.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../../db/models/checkoutSession.model.js";
@@ -36,10 +43,10 @@ const TENANT_ID = "507f1f77bcf86cd799439011";
 const PACKAGE_ID = "507f1f77bcf86cd799439012";
 
 const TEST_ACTOR = {
-  userId: "507f1f77bcf86cd799439013",
-  email: "admin@co.com",
-  role: "COMPANY_ADMIN" as const,
   tenantId: TENANT_ID,
+  actorId: "507f1f77bcf86cd799439013",
+  actorEmail: "admin@co.com",
+  actorRole: "COMPANY_ADMIN" as const,
 };
 
 function mockQueryChain<T>(result: T) {
@@ -120,6 +127,7 @@ describe("CheckoutService", () => {
           fakeProvider,
           "https://example.com/success",
           "https://example.com/cancel",
+          TEST_ACTOR,
         ),
       ).rejects.toMatchObject({ statusCode: 404 });
     });
@@ -137,6 +145,7 @@ describe("CheckoutService", () => {
           fakeProvider,
           "https://example.com/success",
           "https://example.com/cancel",
+          TEST_ACTOR,
         ),
       ).rejects.toMatchObject({ statusCode: 400 });
     });
@@ -154,7 +163,7 @@ describe("CheckoutService", () => {
         mockQueryChain(mockSession),
       );
 
-      const result = await getCheckoutStatus("cs_1", TENANT_ID);
+      const result = await getCheckoutStatus("cs_1", TENANT_ID, TEST_ACTOR);
       expect(result._id).toBe("cs_1");
       expect(result.status).toBe("pending");
     });
@@ -165,7 +174,7 @@ describe("CheckoutService", () => {
       );
 
       await expect(
-        getCheckoutStatus("cs_nonexistent", TENANT_ID),
+        getCheckoutStatus("cs_nonexistent", TENANT_ID, TEST_ACTOR),
       ).rejects.toMatchObject({ statusCode: 404 });
     });
   });

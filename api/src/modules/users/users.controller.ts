@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
-import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import {
   inviteUser,
   listUsers,
@@ -9,14 +9,29 @@ import {
   resendInvitation,
   setPasswordFromInvite,
   getInviteDetails,
+  type UserOperationContext,
 } from "./users.service.js";
 
-function requireAuthRole(req: Request) {
-  if (!req.auth || !isBaseRole(req.auth.role)) {
+function context(req: Request): UserOperationContext {
+  if (!req.auth || !req.tenantId) {
     throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   }
 
-  return req.auth.role;
+  const actor = requireAuthenticatedAuditActor({
+    tenantId: req.tenantId,
+    actorId: req.auth.userId,
+    actorEmail: req.auth.email,
+    actorRole: req.auth.role,
+  });
+
+  return {
+    tenantId: actor.tenantId,
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
 }
 
 export async function inviteUserController(
@@ -25,11 +40,7 @@ export async function inviteUserController(
   next: NextFunction,
 ) {
   try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
-    const result = await inviteUser(req.body, req.tenantId, req.auth.userId);
+    const result = await inviteUser(req.body, context(req));
 
     res.status(201).json({
       success: true,
@@ -80,10 +91,6 @@ export async function resendInvitationController(
   next: NextFunction,
 ) {
   try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
     const targetUserId = Array.isArray(req.params.id)
       ? req.params.id[0]
       : req.params.id;
@@ -92,9 +99,8 @@ export async function resendInvitationController(
     }
 
     const result = await resendInvitation(
-      req.tenantId,
+      context(req),
       targetUserId,
-      req.auth.userId,
     );
 
     res.status(200).json({
@@ -113,11 +119,7 @@ export async function listUsersController(
   next: NextFunction,
 ) {
   try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
-    const result = await listUsers(req.query, req.tenantId);
+    const result = await listUsers(req.query, context(req));
 
     res.status(200).json({
       success: true,
@@ -134,10 +136,6 @@ export async function updateUserController(
   next: NextFunction,
 ) {
   try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
     const targetUserId = Array.isArray(req.params.id)
       ? req.params.id[0]
       : req.params.id;
@@ -145,11 +143,7 @@ export async function updateUserController(
       throw new AppError(400, "BAD_REQUEST", "Missing user id parameter");
     }
 
-    const result = await updateUser(req.body, req.tenantId, targetUserId, {
-      userId: req.auth.userId,
-      email: req.auth.email,
-      role: requireAuthRole(req),
-    });
+    const result = await updateUser(req.body, context(req), targetUserId);
 
     res.status(200).json({
       success: true,
@@ -166,10 +160,6 @@ export async function deleteUserController(
   next: NextFunction,
 ) {
   try {
-    if (!req.auth || !req.tenantId) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    }
-
     const targetUserId = Array.isArray(req.params.id)
       ? req.params.id[0]
       : req.params.id;
@@ -177,11 +167,7 @@ export async function deleteUserController(
       throw new AppError(400, "BAD_REQUEST", "Missing user id parameter");
     }
 
-    const result = await deleteUser(req.tenantId, targetUserId, {
-      userId: req.auth.userId,
-      email: req.auth.email,
-      role: requireAuthRole(req),
-    });
+    const result = await deleteUser(context(req), targetUserId);
 
     res.status(200).json({
       success: true,

@@ -1,6 +1,12 @@
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import PaymentEventModel from "../../db/models/paymentEvent.model.js";
 import { logger } from "../../common/logger/logger.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import {
+  authorizePlatformOperation,
+  type OperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
 
 export interface ReconciliationResult {
   totalSubscriptions: number;
@@ -13,7 +19,13 @@ export interface ReconciliationResult {
   }>;
 }
 
-export async function reconcileSubscriptions(): Promise<ReconciliationResult> {
+export async function reconcileSubscriptions(
+  context: OperationAuthorizationContext,
+): Promise<ReconciliationResult> {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_READ,
+  );
   const subscriptions = await SubscriptionModel.find({}).lean().exec();
   const mismatched: ReconciliationResult["mismatched"] = [];
 
@@ -63,6 +75,21 @@ export async function reconcileSubscriptions(): Promise<ReconciliationResult> {
     { total: subscriptions.length, mismatched: mismatched.length },
     "Subscription reconciliation complete",
   );
+  await getAuditWriter().write({
+    tenantId: actor.tenantId,
+    action: "SUBSCRIPTION_RECONCILED",
+    resourceType: "System",
+    resourceId: "subscriptions",
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
+    changes: {
+      totalSubscriptions: subscriptions.length,
+      mismatchCount: mismatched.length,
+    },
+    metadata: { traceId: actor.traceId, requestId: actor.requestId },
+  });
 
   return {
     totalSubscriptions: subscriptions.length,

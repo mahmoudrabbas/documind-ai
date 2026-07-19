@@ -13,10 +13,12 @@ import {
   BASE_ROLE_DEFAULTS,
   Permission,
   assertPersistableTenantPermissions,
+  validatePermissionCatalog,
   type PermissionValue,
 } from "./permissions.catalog.js";
 import { validateCreateRoleInput } from "../roles/roles.validator.js";
 import { getPermissionCatalogController } from "./permissions.controller.js";
+import { normalizeRoleGrants } from "./permissions.grants.js";
 import type { Request, Response } from "express";
 
 const actorId = new mongoose.Types.ObjectId();
@@ -61,8 +63,23 @@ test("catalog identifiers are normalized, unique, versioned, and cover all ten g
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(ids.every((id) => id === id.trim().toLowerCase()));
   assert.deepEqual([...new Set(PERMISSION_CATALOG.map((item) => item.group))].sort(), ["analytics", "audit", "billing", "chat", "company-settings", "documents", "imports", "knowledge-gaps", "roles", "users"]);
-  assert.ok(PERMISSION_CATALOG.every((item) => item.label && item.description && item.contractVersion === 1));
+  assert.ok(PERMISSION_CATALOG.every((item) =>
+    item.label &&
+    item.description &&
+    item.contractVersion === 1 &&
+    (item.tenantGrantable
+      ? item.allowedCustomRoleBases.length === TENANT_ROLE_BASES.length
+      : item.allowedCustomRoleBases.length === 0)));
   assert.ok(!ALL_PERMISSIONS.includes("documents:view" as never));
+});
+
+test("catalog validation rejects duplicate identifiers deterministically", () => {
+  const first = PERMISSION_CATALOG.at(0);
+  assert.ok(first);
+  assert.throws(
+    () => validatePermissionCatalog([...PERMISSION_CATALOG, first]),
+    new RegExp(`DUPLICATE_PERMISSION:${first.id}`),
+  );
 });
 
 test("permission persistence normalizes and deduplicates but rejects unknown, deprecated, and platform identifiers", () => {
@@ -100,6 +117,34 @@ test("Role schema normalizes scopes and permissions and exposes Phase 1 indexes"
 test("Role schema rejects malformed and incompatible scopes", async () => {
   await assert.rejects(role({ grants: [{ permission: Permission.DOCUMENTS_UPDATE, scopes: { departmentIds: ["not-an-id"] } }] }).validate());
   await assert.rejects(role({ grants: [{ permission: Permission.BILLING_READ, scopes: { selfOnly: true } }] }).validate(), /not supported/);
+  const unsupportedScopeGrant = [{
+    permission: Permission.DOCUMENTS_UPDATE,
+    scopes: { regionIds: [new mongoose.Types.ObjectId().toString()] },
+  }];
+  assert.throws(
+    () => normalizeRoleGrants(unsupportedScopeGrant),
+    /unsupported fields/,
+  );
+  await assert.rejects(
+    role({
+      grants: unsupportedScopeGrant,
+    }).validate(),
+    /empty grant scopes are ambiguous/,
+  );
+  await assert.rejects(
+    role({
+      grants: [{
+        permission: Permission.DOCUMENTS_UPDATE,
+        scopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: [],
+        },
+      }],
+    }).validate(),
+    /empty grant scopes are ambiguous/,
+  );
 });
 
 test("permission catalog controller returns extended tenant-safe DTO with full metadata", async () => {
@@ -117,7 +162,7 @@ test("permission catalog controller returns extended tenant-safe DTO with full m
 
   const exactKeys = [
     "id", "label", "description", "compatibleScopes",
-    "defaultBaseRoles", "active", "deprecated",
+    "defaultBaseRoles", "allowedCustomRoleBases", "active", "deprecated",
     "platformOnly", "tenantGrantable", "delegableByTenantAdmin",
     "contractVersion",
   ].sort();
@@ -131,6 +176,7 @@ test("permission catalog controller returns extended tenant-safe DTO with full m
     assert.equal(typeof permission.description, "string");
     assert.ok(Array.isArray(permission.compatibleScopes));
     assert.ok(Array.isArray(permission.defaultBaseRoles));
+    assert.ok(Array.isArray(permission.allowedCustomRoleBases));
     assert.equal(typeof permission.active, "boolean");
     assert.equal(typeof permission.deprecated, "boolean");
     assert.equal(typeof permission.platformOnly, "boolean");
@@ -143,6 +189,7 @@ test("permission catalog controller returns extended tenant-safe DTO with full m
     assert.ok(definition, `Definition must exist for ${permission.id}`);
     assert.deepEqual(permission.compatibleScopes, definition.compatibleScopes);
     assert.deepEqual(permission.defaultBaseRoles, definition.defaultBaseRoles);
+    assert.deepEqual(permission.allowedCustomRoleBases, definition.allowedCustomRoleBases);
     assert.equal(permission.active, definition.active);
     assert.equal(permission.deprecated, definition.deprecated);
     assert.equal(permission.platformOnly, definition.platformOnly);

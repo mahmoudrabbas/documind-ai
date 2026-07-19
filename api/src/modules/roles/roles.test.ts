@@ -688,7 +688,12 @@ void test("role deletion and base-role changes serialize with assignment", async
     });
     const assignment = assignRole(
       { userId: employee.id, roleVersion: 1 },
-      { tenantId: tenant.id, actorId: admin.id, actorRole: "COMPANY_ADMIN" },
+      {
+        tenantId: tenant.id,
+        actorId: admin.id,
+        actorEmail: admin.email,
+        actorRole: "COMPANY_ADMIN",
+      },
       role.id,
     );
     const lifecycle = operation === "delete"

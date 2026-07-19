@@ -17,11 +17,15 @@ test("reconciliation service checks for status/paymentState mismatches", async (
   );
 });
 
-test("reconciliation route requires SUPER_ADMIN", async () => {
+test("reconciliation route requires platform billing authorization", async () => {
   const source = await readFile(routesSourceUrl, "utf8");
   assert.ok(
-    source.includes('authorize("SUPER_ADMIN")'),
-    "Requires SUPER_ADMIN authorization",
+    source.includes("requirePlatformTenant"),
+    "Requires the canonical platform tenant",
+  );
+  assert.ok(
+    source.includes("requirePermission(Permission.BILLING_READ)"),
+    "Requires billing read permission",
   );
   assert.ok(
     source.includes("/reconciliation/subscriptions"),

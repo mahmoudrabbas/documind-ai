@@ -91,6 +91,7 @@ export interface PermissionCatalogEntry {
   description: string;
   compatibleScopes: readonly string[];
   defaultBaseRoles: readonly string[];
+  allowedCustomRoleBases: readonly string[];
   active: boolean;
   deprecated: boolean;
   platformOnly: boolean;

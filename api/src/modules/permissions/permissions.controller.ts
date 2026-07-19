@@ -27,6 +27,7 @@ export async function getPermissionCatalogController(
           description: definition.description,
           compatibleScopes: definition.compatibleScopes,
           defaultBaseRoles: definition.defaultBaseRoles,
+          allowedCustomRoleBases: definition.allowedCustomRoleBases,
           active: definition.active,
           deprecated: definition.deprecated,
           platformOnly: definition.platformOnly,

@@ -6,6 +6,7 @@ import type {
   PermissionSource,
   PermissionScopes,
 } from "@/types/api/permissions.types";
+import { Permission } from "@/types/api/permissions.types";
 
 export type ActorGrantMap = Record<
   string,
@@ -25,7 +26,8 @@ export function isTenantSelectable(entry: PermissionCatalogEntry): boolean {
     !entry.deprecated &&
     !entry.platformOnly &&
     entry.tenantGrantable &&
-    entry.delegableByTenantAdmin
+    entry.delegableByTenantAdmin &&
+    entry.allowedCustomRoleBases.length > 0
   );
 }
 
@@ -53,7 +55,7 @@ export function flattenCatalogEntries(
 
 export function canPermission(
   permission: string,
-  effectivePermissions: Set<string>,
+  effectivePermissions: ReadonlySet<string>,
 ): boolean {
   return effectivePermissions.has(permission);
 }
@@ -267,11 +269,13 @@ export function deriveRoleActionVisibility(
   effectivePermissions: Set<string>,
   roleStatus: "active" | "archived",
 ): RoleActionVisibility {
-  const canRead = effectivePermissions.has("roles:read");
-  const canCreate = effectivePermissions.has("roles:create");
-  const canUpdate = effectivePermissions.has("roles:update");
-  const canDelete = effectivePermissions.has("roles:delete");
-  const canAssign = effectivePermissions.has("users:assign-role");
+  const canRead = effectivePermissions.has(Permission.ROLES_READ);
+  const canCreate = effectivePermissions.has(Permission.ROLES_CREATE);
+  const canUpdate = effectivePermissions.has(Permission.ROLES_UPDATE);
+  const canDelete = effectivePermissions.has(Permission.ROLES_DELETE);
+  const canAssign =
+    effectivePermissions.has(Permission.USERS_UPDATE) &&
+    effectivePermissions.has(Permission.USERS_ASSIGN_ROLE);
 
   return {
     canView: canRead,

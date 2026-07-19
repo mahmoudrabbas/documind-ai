@@ -1,7 +1,9 @@
-import { isBaseRole, type BaseRole } from "../../common/auth/baseRoles.js";
+import { isBaseRole } from "../../common/auth/baseRoles.js";
 import mongoose from "mongoose";
 import RoleModel from "../../db/models/role.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
 import { ALL_PERMISSIONS, BASE_ROLE_DEFAULTS, PERMISSION_CONTRACT_VERSION, type PermissionValue } from "./permissions.catalog.js";
 import { decidePermission, emptyResolved } from "./permissions.decision.js";
@@ -23,9 +25,20 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
       return emptyResolved(actor.baseRole);
     }
 
-    const baseRole = user.role as BaseRole;
+    const baseRole = user.role;
     if (user.roleMigrationState === "pending-session-revocation" || user.permissionBaseline === "legacy-none") {
       return emptyResolved(baseRole);
+    }
+    if (baseRole === "SUPER_ADMIN") {
+      const platformTenant = await TenantModel.exists({
+        _id: actor.tenantId,
+        slug: PLATFORM_TENANT_SLUG,
+        isSystemTenant: true,
+        status: "active",
+      });
+      if (!platformTenant) {
+        return emptyResolved(baseRole);
+      }
     }
     const basePermissions = baseRole === "SUPER_ADMIN" ? ALL_PERMISSIONS : BASE_ROLE_DEFAULTS[baseRole];
     const grants = new Map<PermissionValue, { source: "platform" | "base-role" | "custom-role"; scope: import("./permissions.types.js").PermissionScopes | null }>();
@@ -81,9 +94,18 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
       customRoleState = "invalid";
     }
 
+    const roleIsValid =
+      customRoleState === "none" || customRoleState === "active";
+    const effectiveGrants = roleIsValid
+      ? grants
+      : new Map<PermissionValue, {
+          source: "platform" | "base-role" | "custom-role";
+          scope: import("./permissions.types.js").PermissionScopes | null;
+        }>();
+
     return {
-      permissions: new Set(grants.keys()),
-      grants,
+      permissions: new Set(effectiveGrants.keys()),
+      grants: effectiveGrants,
       baseRole,
       customRoleId,
       roleVersion,

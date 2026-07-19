@@ -33,6 +33,7 @@ import type {
   PermissionScopes,
   PermissionScopeType,
 } from "@/types/api/permissions.types";
+import { Permission } from "@/types/api/permissions.types";
 import type { RoleView, UserView } from "@/types/api/users.types";
 import {
   deriveDeleteFlowState,
@@ -147,7 +148,7 @@ export default function RolesPage() {
     [effectivePermissions],
   );
   const canReadRoles = pageVisibility.canView;
-  const canCreateRole = effectivePermissions.has("roles:create");
+  const canCreateRole = effectivePermissions.has(Permission.ROLES_CREATE);
 
   const [roles, setRoles] = useState<RoleView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -362,6 +363,7 @@ export default function RolesPage() {
       setCreateGrants([]);
       setShowCreateForm(false);
       await loadRoles();
+      await permissionContext.refreshPermissions();
     } catch (createFailure) {
       setCreateError(
         createFailure instanceof ApiError
@@ -486,6 +488,7 @@ export default function RolesPage() {
       setEditing(false);
       setEditStale(false);
       setSuccessMessage(`Role "${latest.name}" updated successfully.`);
+      await permissionContext.refreshPermissions();
     } catch (editFailure) {
       if (isVersionConflict(editFailure)) {
         const conflict = deriveVersionConflictState(editFailure.code);
@@ -635,6 +638,7 @@ export default function RolesPage() {
 
       setLifecycle(null);
       await loadRoles();
+      await permissionContext.refreshPermissions();
     } catch (lifecycleFailure) {
       if (isVersionConflict(lifecycleFailure)) {
         const conflict = deriveVersionConflictState(lifecycleFailure.code);
@@ -696,6 +700,7 @@ export default function RolesPage() {
       );
       const latestUsage = await loadAuthoritativeUsage(lifecycle.role.id);
       await loadRoles();
+      await permissionContext.refreshPermissions();
       setSuccessMessage(
         latestUsage === 0
           ? "Migration completed. Authoritative usage is now zero; deletion is available."
@@ -818,6 +823,7 @@ export default function RolesPage() {
             : "The user already had this role.",
       );
       await Promise.all([refreshAssignmentRole(), loadRoles()]);
+      await permissionContext.refreshPermissions();
     } catch (assignmentFailure) {
       if (isVersionConflict(assignmentFailure)) {
         const conflict = deriveVersionConflictState(assignmentFailure.code);

@@ -8,6 +8,7 @@ import {
   REGISTRATION_FAILED,
   USER_UPDATE_FAILED,
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
+  PERMISSION_REQUIRED,
   SELF_ACTION_FORBIDDEN,
 } from "../../common/errors/errorCodes.js";
 import TenantModel from "../../db/models/tenant.model.js";
@@ -19,6 +20,7 @@ import {
   USER_INVITATION_PURPOSE,
 } from "../auth/emailVerificationToken.js";
 import { findUserDocumentById } from "../auth/auth.repository.js";
+import { revokeActiveRefreshSessionsForTenantUser } from "../auth/sessionRevocation.repository.js";
 import { sendInvitationEmail } from "../auth/auth.mailer.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import {
@@ -28,10 +30,22 @@ import {
   findUserDocumentByTenantAndEmail,
   countUsersByTenant,
   findUsersByTenant,
-  deleteUserByTenantAndId,
 } from "./users.repository.js";
+import {
+  requireAuthenticatedAuditActor,
+  type AuthenticatedAuditActor,
+} from "../../common/observability/auditActor.js";
+import type {
+  AuditAction,
+  AuditOutcome,
+} from "../../common/observability/auditEvents.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import { authorizePermission } from "../permissions/permissions.authorization.js";
 import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
+import {
+  Permission,
+  type PermissionValue,
+} from "../permissions/permissions.catalog.js";
 import {
   validateInviteUserInput,
   validateListUsersInput,
@@ -44,10 +58,24 @@ import type {
   UpdateUserResult,
   SetPasswordFromInviteResult,
 } from "./users.types.js";
+import type { UserPublicView } from "../auth/auth.types.js";
 import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { isSystemPlatformTenant } from "../../common/auth/platformTenant.js";
+
+export interface UserOperationContext {
+  tenantId: string;
+  actorId: string;
+  actorEmail: string;
+  actorRole: BaseRole;
+  traceId?: string;
+  requestId?: string;
+}
+
+type ResolvedUserOperationContext =
+  AuthenticatedAuditActor &
+  Pick<UserOperationContext, "traceId" | "requestId">;
 
 type CreatedUserRecord = {
   _id: { toString(): string };
@@ -65,8 +93,8 @@ type CreatedUserRecord = {
     | null;
 };
 
-function serializeUser(user: CreatedUserRecord) {
-  const result: Record<string, unknown> = {
+function serializeUser(user: CreatedUserRecord): UserPublicView {
+  const result: UserPublicView = {
     id: user.id ?? user._id.toString(),
     tenantId: user.tenantId?.toString() ?? "",
     name: user.name,
@@ -87,7 +115,7 @@ function serializeUser(user: CreatedUserRecord) {
     }
   }
 
-  return result as unknown as import("../../modules/auth/auth.types.js").UserPublicView;
+  return result;
 }
 
 function buildVerificationUrl(token: string) {
@@ -122,12 +150,15 @@ function assertCustomerTenantForUserManagement(tenant: {
 
 export async function inviteUser(
   input: unknown,
-  tenantId: string,
-  inviterId: string,
+  inputContext: UserOperationContext,
 ): Promise<InviteUserResult> {
+  const context = await resolveUserOperationContext(inputContext);
+  await authorizeUserOperation(context, Permission.USERS_CREATE);
   const payload = validateInviteUserInput(input);
-  assertObjectId(tenantId);
-  assertObjectId(inviterId);
+  if (payload.role === "COMPANY_ADMIN") {
+    await authorizeUserOperation(context, Permission.USERS_ASSIGN_ROLE);
+  }
+  const tenantId = context.tenantId;
 
   const existingUser = await findUserDocumentByTenantAndEmail(
     tenantId,
@@ -147,7 +178,7 @@ export async function inviteUser(
   }
   assertCustomerTenantForUserManagement(tenant);
 
-  const inviter = await findUserByTenantAndId(tenantId, inviterId);
+  const inviter = await findUserByTenantAndId(tenantId, context.actorId);
   const inviterName = inviter?.name ?? "Your administrator";
 
   const userPayload: import("../../modules/auth/auth.repository.js").UserCreateInput = {
@@ -182,9 +213,16 @@ export async function inviteUser(
       tenantId: tenantId.toString(),
     });
 
-    return {
+    const result = {
       user: serializeUser(createdUser),
     };
+    await auditUserOperation(
+      context,
+      "USER_INVITED",
+      createdUser._id.toString(),
+      { role: createdUser.role, status: createdUser.status },
+    );
+    return result;
   } catch (error) {
     if (createdUser) {
       await createdUser.deleteOne();
@@ -209,17 +247,27 @@ export async function inviteUser(
 
 export async function updateUser(
   input: unknown,
-  tenantId: string,
+  inputContext: UserOperationContext,
   targetUserId: string,
-  updater: { userId: string; email?: string; role: BaseRole },
 ): Promise<UpdateUserResult> {
+  const context = await resolveUserOperationContext(inputContext);
+  await authorizeUserOperation(context, Permission.USERS_UPDATE);
   const payload = validateUpdateUserInput(input);
-  assertObjectId(tenantId);
+  if (payload.role !== undefined) {
+    await authorizeUserOperation(context, Permission.USERS_ASSIGN_ROLE);
+  }
+  const tenantId = context.tenantId;
   assertObjectId(targetUserId);
-  assertObjectId(updater.userId);
 
   const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
   if (!existingUser) {
+    await auditUserOperation(
+      context,
+      "USER_UPDATED",
+      targetUserId,
+      { reason: "USER_NOT_FOUND_OR_TENANT_MISMATCH" },
+      "DENIED",
+    );
     throw new AppError(404, NOT_FOUND, "User not found");
   }
   const tenant = await findTenantById(tenantId);
@@ -232,21 +280,26 @@ export async function updateUser(
   const update: Record<string, unknown> = {};
 
   if (payload.role !== undefined) {
-    update.role = payload.role;
-    update.customRoleId = null;
-    changes.role = {
-      before: existingUser.role,
-      after: payload.role,
-    };
-    if (existingUser.customRoleId) {
-      changes.customRoleId = {
-        before: existingUser.customRoleId.toString(),
-        after: null,
+    if (payload.role !== existingUser.role || existingUser.customRoleId) {
+      update.role = payload.role;
+      update.customRoleId = null;
+      changes.role = {
+        before: existingUser.role,
+        after: payload.role,
       };
+      if (existingUser.customRoleId) {
+        changes.customRoleId = {
+          before: existingUser.customRoleId.toString(),
+          after: null,
+        };
+      }
     }
   }
 
-  if (payload.status !== undefined) {
+  if (
+    payload.status !== undefined &&
+    payload.status !== existingUser.status
+  ) {
     update.status = payload.status;
     changes.status = {
       before: existingUser.status,
@@ -254,11 +307,15 @@ export async function updateUser(
     };
   }
 
-  const selfDestructive = updater.userId === targetUserId && existingUser.role === "COMPANY_ADMIN" &&
+  const selfDestructive = context.actorId === targetUserId && existingUser.role === "COMPANY_ADMIN" &&
     ((update.role !== undefined && update.role !== "COMPANY_ADMIN") ||
       (update.status !== undefined && update.status !== "active"));
   if (selfDestructive) {
     throw new AppError(409, SELF_ACTION_FORBIDDEN, "Administrators cannot demote or disable their own account");
+  }
+
+  if (Object.keys(update).length === 0) {
+    return { user: serializeUser(existingUser) };
   }
 
   try {
@@ -276,17 +333,18 @@ export async function updateUser(
       evaluator.evict(targetUserId, tenantId);
     }
 
-    await getAuditWriter().write({
-      tenantId,
-      resourceType: "User",
-      resourceId: (updatedUser as UserDocument)._id.toString(),
-      action: "USER_UPDATED",
-      actorId: updater.userId,
-      actorEmail: updater.email ?? "",
-      actorRole: updater.role,
-      actorKind: "USER",
+    const action =
+      changes.role && changes.status
+        ? "USER_UPDATED"
+        : changes.role
+          ? "USER_ROLE_CHANGED"
+          : "USER_STATUS_CHANGED";
+    await auditUserOperation(
+      context,
+      action,
+      (updatedUser as UserDocument)._id.toString(),
       changes,
-    });
+    );
 
     return {
       user: serializeUser(updatedUser),
@@ -294,7 +352,7 @@ export async function updateUser(
   } catch (error) {
     if (error instanceof AppError) {
       if (error.code === LAST_ADMIN_PROTECTION) {
-        await auditLastAdminProtection(tenantId, targetUserId, updater, "update");
+        await auditLastAdminProtection(context, targetUserId, "update");
       }
       throw error;
     }
@@ -305,15 +363,22 @@ export async function updateUser(
 }
 
 export async function deleteUser(
-  tenantId: string,
+  inputContext: UserOperationContext,
   targetUserId: string,
-  deleter: { userId: string; email?: string; role: BaseRole },
 ) {
-  assertObjectId(tenantId);
+  const context = await resolveUserOperationContext(inputContext);
+  await authorizeUserOperation(context, Permission.USERS_DELETE);
+  const tenantId = context.tenantId;
   assertObjectId(targetUserId);
-  assertObjectId(deleter.userId);
   const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
   if (!existingUser) {
+    await auditUserOperation(
+      context,
+      "USER_DELETED",
+      targetUserId,
+      { reason: "USER_NOT_FOUND_OR_TENANT_MISMATCH" },
+      "DENIED",
+    );
     throw new AppError(404, NOT_FOUND, "User not found");
   }
   const tenant = await findTenantById(tenantId);
@@ -322,7 +387,7 @@ export async function deleteUser(
   }
   assertCustomerTenantForUserManagement(tenant);
 
-  if (deleter.userId === targetUserId) {
+  if (context.actorId === targetUserId) {
     throw new AppError(409, SELF_ACTION_FORBIDDEN, "Administrators cannot delete their own account");
   }
 
@@ -331,28 +396,24 @@ export async function deleteUser(
       await deleteWithLastAdminTransaction(tenantId, targetUserId);
     } catch (error) {
       if (error instanceof AppError && error.code === LAST_ADMIN_PROTECTION) {
-        await auditLastAdminProtection(tenantId, targetUserId, deleter, "delete");
+        await auditLastAdminProtection(context, targetUserId, "delete");
       }
       throw error;
     }
   } else {
-    await deleteUserByTenantAndId(tenantId, targetUserId);
+    await deleteUserWithSessionRevocation(tenantId, targetUserId);
   }
 
-  await getAuditWriter().write({
-    tenantId,
-    resourceType: "User",
-    resourceId: existingUser._id.toString(),
-    action: "USER_DELETED",
-    actorId: deleter.userId,
-    actorEmail: deleter.email ?? "",
-    actorRole: deleter.role,
-    actorKind: "USER",
-    changes: {
-      before: serializeUser(existingUser),
-      after: null,
+  await auditUserOperation(
+    context,
+    "USER_DELETED",
+    existingUser._id.toString(),
+    {
+      deleted: true,
+      previousRole: existingUser.role,
+      previousStatus: existingUser.status,
     },
-  });
+  );
 
   return {
     success: true,
@@ -361,17 +422,17 @@ export async function deleteUser(
 }
 
 export async function resendInvitation(
-  tenantId: string,
+  inputContext: UserOperationContext,
   targetUserId: string,
-  actorId: string,
 ) {
-  assertObjectId(tenantId);
+  const context = await resolveUserOperationContext(inputContext);
+  await authorizeUserOperation(context, Permission.USERS_CREATE);
+  const tenantId = context.tenantId;
   assertObjectId(targetUserId);
-  assertObjectId(actorId);
 
   const [tenant, inviter, user] = await Promise.all([
     findTenantById(tenantId),
-    findUserByTenantAndId(tenantId, actorId),
+    findUserByTenantAndId(tenantId, context.actorId),
     UserModel.findOne({
       _id: targetUserId,
       tenantId,
@@ -404,21 +465,89 @@ export async function resendInvitation(
     tenantId,
   });
 
-  await getAuditWriter().write({
-    tenantId,
-    resourceType: "User",
-    resourceId: user._id.toString(),
-    action: "USER_INVITATION_RESENT",
-    actorId,
-    actorEmail: inviter?.email ?? "",
-    actorRole: inviter?.role,
-    actorKind: inviter ? "USER" : "SYSTEM",
-    changes: { invitationReissued: true },
-  });
+  await auditUserOperation(
+    context,
+    "USER_INVITATION_RESENT",
+    user._id.toString(),
+    { invitationReissued: true },
+  );
 
   return {
     user: serializeUser(user),
   };
+}
+
+async function resolveUserOperationContext(
+  context: UserOperationContext,
+): Promise<ResolvedUserOperationContext> {
+  assertObjectId(context.tenantId);
+  assertObjectId(context.actorId);
+  const actor = await UserModel.findOne({
+    _id: context.actorId,
+    tenantId: context.tenantId,
+  })
+    .select("email role")
+    .lean()
+    .exec();
+  if (!actor) {
+    throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
+  }
+
+  return {
+    ...requireAuthenticatedAuditActor({
+      tenantId: context.tenantId,
+      actorId: context.actorId,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+    }),
+    traceId: context.traceId,
+    requestId: context.requestId,
+  };
+}
+
+async function authorizeUserOperation(
+  context: ResolvedUserOperationContext,
+  ...permissions: readonly PermissionValue[]
+): Promise<void> {
+  for (const permission of permissions) {
+    try {
+      await authorizePermission(context, permission);
+    } catch (error) {
+      await auditUserOperation(
+        context,
+        "PERMISSION_DENIED",
+        permission,
+        { required: permission, reason: PERMISSION_REQUIRED },
+        "DENIED",
+      );
+      throw error;
+    }
+  }
+}
+
+async function auditUserOperation(
+  context: ResolvedUserOperationContext,
+  action: AuditAction,
+  resourceId: string,
+  changes: Record<string, unknown>,
+  outcome: AuditOutcome = "SUCCESS",
+): Promise<void> {
+  await getAuditWriter().write({
+    tenantId: context.tenantId,
+    resourceType: "User",
+    resourceId,
+    action,
+    outcome,
+    actorId: context.actorId,
+    actorEmail: context.actorEmail,
+    actorRole: context.actorRole,
+    actorKind: context.actorKind,
+    changes,
+    metadata: {
+      traceId: context.traceId,
+      requestId: context.requestId,
+    },
+  });
 }
 
 function assertObjectId(value: string) {
@@ -449,6 +578,12 @@ async function updateUserSecurityStateTransaction(
         { $set: update },
         { returnDocument: "after", runValidators: true, session },
       ).exec();
+      await revokeActiveRefreshSessionsForTenantUser(
+        targetUserId,
+        tenantId,
+        new Date(),
+        session,
+      );
     });
     return updated;
   } finally {
@@ -468,6 +603,40 @@ async function deleteWithLastAdminTransaction(tenantId: string, targetUserId: st
         throw lastAdminError();
       }
       await UserModel.deleteOne({ _id: targetUserId, tenantId }).session(session).exec();
+      await revokeActiveRefreshSessionsForTenantUser(
+        targetUserId,
+        tenantId,
+        new Date(),
+        session,
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function deleteUserWithSessionRevocation(
+  tenantId: string,
+  targetUserId: string,
+) {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const deleted = await UserModel.deleteOne({
+        _id: targetUserId,
+        tenantId,
+      })
+        .session(session)
+        .exec();
+      if (deleted.deletedCount !== 1) {
+        throw new AppError(404, NOT_FOUND, "User not found");
+      }
+      await revokeActiveRefreshSessionsForTenantUser(
+        targetUserId,
+        tenantId,
+        new Date(),
+        session,
+      );
     });
   } finally {
     await session.endSession();
@@ -488,30 +657,32 @@ function lastAdminError() {
 }
 
 async function auditLastAdminProtection(
-  tenantId: string,
+  context: ResolvedUserOperationContext,
   targetUserId: string,
-  actor: { userId: string; email?: string; role: BaseRole },
   operation: "update" | "delete",
 ) {
-  await getAuditWriter().write({
-    tenantId,
-    resourceType: "User",
-    resourceId: targetUserId,
-    action: "LAST_ADMIN_PROTECTION_TRIGGERED",
-    outcome: "DENIED",
-    actorId: actor.userId,
-    actorEmail: actor.email ?? "",
-    actorRole: actor.role,
-    actorKind: "USER",
-    changes: { reason: "LAST_ACTIVE_COMPANY_ADMIN", operation },
-  });
+  await auditUserOperation(
+    context,
+    "LAST_ADMIN_PROTECTION_TRIGGERED",
+    targetUserId,
+    { reason: "LAST_ACTIVE_COMPANY_ADMIN", operation },
+    "DENIED",
+  );
 }
 
 export async function listUsers(
   input: unknown,
-  tenantId: string,
+  inputContext: UserOperationContext,
 ): Promise<ListUsersResult> {
+  const context = await resolveUserOperationContext(inputContext);
+  await authorizeUserOperation(context, Permission.USERS_READ);
+  const tenantId = context.tenantId;
   const payload = validateListUsersInput(input);
+  const tenant = await findTenantById(tenantId);
+  if (!tenant) {
+    throw new AppError(404, NOT_FOUND, "Tenant not found");
+  }
+  assertCustomerTenantForUserManagement(tenant);
 
   const [totalRecords, users] = await Promise.all([
     countUsersByTenant(tenantId),

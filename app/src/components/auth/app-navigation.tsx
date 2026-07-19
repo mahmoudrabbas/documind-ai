@@ -4,7 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
-import { ASK_AI_HREF, isKnownRole, SIDEBAR_LINKS } from "@/constants/routes";
+import { usePermissions } from "@/providers/permission-provider";
+import {
+  getAppContext,
+  filterNavigationLinks,
+  isKnownRole,
+  PLATFORM_SIDEBAR_LINKS,
+  TENANT_SIDEBAR_LINKS,
+} from "@/constants/routes";
 
 type AppNavigationProps = {
   open: boolean;
@@ -13,6 +20,7 @@ type AppNavigationProps = {
 
 export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const auth = useAuth();
+  const permissions = usePermissions();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -46,20 +54,20 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
     }
   }
 
-  // Falls back to an empty nav for an unrecognized role rather than
-  // guessing — surfaces the gap instead of silently rendering nothing
-  // useful or the wrong links.
-  const links = isKnownRole(auth.user.role)
-    ? SIDEBAR_LINKS[auth.user.role]
-    : [];
-
-  // Keep explicit role-check strings in source for tests that analyze
-  // the component source text:
-  // auth.user.role === "SUPER_ADMIN"
-  // auth.user.role === "COMPANY_ADMIN"
-  // Example link entries expected by source tests:
-  // "Tenant Management", "/platform/tenants"
-  // "Team", "/dashboard/users"
+  const appContext = isKnownRole(auth.user.role)
+    ? getAppContext(auth.user.role)
+    : null;
+  const candidateLinks =
+    appContext === "platform"
+      ? PLATFORM_SIDEBAR_LINKS
+      : appContext === "tenant"
+        ? TENANT_SIDEBAR_LINKS
+        : [];
+  const links = filterNavigationLinks(
+    candidateLinks,
+    permissions.status,
+    permissions.can,
+  );
 
   return (
     <>
@@ -107,7 +115,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
           </button>
         </div>
         <nav className="mt-md flex-1 space-y-1 px-md">
-          {links.map(({ label, href, icon, comingSoon }) => {
+          {links.map(({ label, href, icon }) => {
             const isActive =
               pathname === href ||
               (href !== "/super-admin" && pathname.startsWith(`${href}/`));
@@ -125,28 +133,11 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
               >
                 <span className="material-symbols-outlined">{icon}</span>
                 <span className="text-body-md">{label}</span>
-                {comingSoon && (
-                  <span className="ms-auto rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] uppercase tracking-wider text-on-surface-variant">
-                    Soon
-                  </span>
-                )}
               </Link>
             );
           })}
         </nav>
         <div className="mt-auto border-t border-outline-variant p-md">
-          <Link
-            href={ASK_AI_HREF}
-            className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-tertiary py-3 text-label-md font-medium text-on-tertiary transition-all hover:opacity-90 active:scale-[0.99]"
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              auto_awesome
-            </span>
-            Ask DocuMind
-          </Link>
           <div className="space-y-1">
             <Link
               href="#"

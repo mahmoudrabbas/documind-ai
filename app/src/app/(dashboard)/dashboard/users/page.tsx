@@ -6,9 +6,13 @@ import { listRoles } from "@/services/roles.service";
 import {
   inviteUserWithRole,
   retryInvitationRoleAssignment,
+  updateUser,
   updateUserWithRole,
 } from "@/services/users.service";
 import type { RoleView, UserView } from "@/types/api/users.types";
+import { useAuth } from "@/providers/auth-provider";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 import {
   DashboardPage,
   DashboardPageHeader,
@@ -46,6 +50,18 @@ const ROLE_OPTIONS = [
 const DEFAULT_PAGE_SIZE = 10;
 
 export default function UsersPage() {
+  const auth = useAuth();
+  const permissionContext = usePermissions();
+  const canCreateUsers = permissionContext.can(Permission.USERS_CREATE);
+  const canUpdateUsers = permissionContext.can(Permission.USERS_UPDATE);
+  const canDeleteUsers = permissionContext.can(Permission.USERS_DELETE);
+  const canAssignBaseRole = permissionContext.can(
+    Permission.USERS_ASSIGN_ROLE,
+  );
+  const canAssignCustomRole =
+    canAssignBaseRole &&
+    canUpdateUsers &&
+    permissionContext.can(Permission.ROLES_READ);
   const [name, setName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [role, setRole] = useState<string>("EMPLOYEE");
@@ -74,13 +90,17 @@ export default function UsersPage() {
   const [customRoles, setCustomRoles] = useState<RoleView[]>([]);
 
   const loadRoles = useCallback(async () => {
+    if (!canAssignCustomRole) {
+      setCustomRoles([]);
+      return;
+    }
     try {
       const response = await listRoles();
       setCustomRoles(response.data.roles);
     } catch {
       // Roles are optional for the users page
     }
-  }, []);
+  }, [canAssignCustomRole]);
 
   useEffect(() => {
     (async () => {
@@ -89,9 +109,12 @@ export default function UsersPage() {
   }, [loadRoles]);
 
   function getRoleDropdownOptions() {
-    if (customRoles.length === 0) return ROLE_OPTIONS;
+    const baseOptions = canAssignBaseRole
+      ? ROLE_OPTIONS
+      : ROLE_OPTIONS.filter((option) => option.value === "EMPLOYEE");
+    if (customRoles.length === 0) return baseOptions;
     return [
-      ...ROLE_OPTIONS,
+      ...baseOptions,
       { value: "---divider---", label: "─── Custom Roles ───", disabled: true },
       ...customRoles
         .filter((item) => item.status === "active")
@@ -153,6 +176,7 @@ export default function UsersPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canCreateUsers) return;
     setStatus(null);
     setError(null);
     setIsSubmitting(true);
@@ -187,7 +211,7 @@ export default function UsersPage() {
   }
 
   async function retryPendingAssignment() {
-    if (!pendingAssignment) return;
+    if (!pendingAssignment || !canAssignCustomRole) return;
     setError(null);
     try {
       const rolesResponse = await listRoles();
@@ -206,11 +230,17 @@ export default function UsersPage() {
   }
 
   async function handleUserUpdate(userId: string) {
+    if (!canUpdateUsers) return;
     const update = rowUpdates[userId];
     if (!update) return;
 
     const user = users.find((item) => item.id === userId);
     if (!user) return;
+    const currentRole = user.customRoleId
+      ? `custom:${user.customRoleId}`
+      : user.role;
+    const roleChanged = update.role !== currentRole;
+    if (roleChanged && !canAssignBaseRole) return;
 
     if (update.role === user.role && update.status === user.status) {
       return;
@@ -223,15 +253,27 @@ export default function UsersPage() {
     setUpdateMessage(null);
 
     try {
-      const selectedRole = update.role.startsWith("custom:")
-        ? customRoles.find((item) => item.id === update.role.slice("custom:".length))
-        : update.role as "COMPANY_ADMIN" | "EMPLOYEE";
-      if (!selectedRole) throw new Error("The selected role is no longer available.");
-      const updatedUser = await updateUserWithRole({
-        user,
-        selectedRole,
-        status: update.status as UserView["status"],
-      });
+      const updatedUser = roleChanged
+        ? await (async () => {
+            const selectedRole = update.role.startsWith("custom:")
+              ? customRoles.find(
+                  (item) => item.id === update.role.slice("custom:".length),
+                )
+              : (update.role as "COMPANY_ADMIN" | "EMPLOYEE");
+            if (!selectedRole) {
+              throw new Error("The selected role is no longer available.");
+            }
+            return updateUserWithRole({
+              user,
+              selectedRole,
+              status: update.status as UserView["status"],
+            });
+          })()
+        : (
+            await updateUser(user.id, {
+              status: update.status as UserView["status"],
+            })
+          ).data.user;
 
       setUsers((current: UserView[]): UserView[] =>
         current.map((item) =>
@@ -248,6 +290,9 @@ export default function UsersPage() {
         },
       }));
       setUpdateMessage("User updated successfully.");
+      if (auth.status === "authenticated" && auth.user.id === userId) {
+        await permissionContext.refreshPermissions();
+      }
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Failed to update user.";
@@ -264,6 +309,7 @@ export default function UsersPage() {
   }
 
   async function handleUserDelete(userId: string) {
+    if (!canDeleteUsers) return;
     setDeletingUserIds((prev: DeletingUserIds): DeletingUserIds => ({
       ...prev,
       [userId]: true,
@@ -332,6 +378,7 @@ export default function UsersPage() {
         }
       />
 
+      {canCreateUsers ? (
       <div className="mb-6 grid auto-rows-auto items-start gap-3 sm:gap-4 xl:grid-cols-[1.05fr_0.95fr] xl:gap-5">
         <DashboardPanel>
           <div className="mb-4 flex items-start justify-between gap-3">
@@ -409,7 +456,7 @@ export default function UsersPage() {
             {error ? (
               <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
                 {error}
-                {pendingAssignment ? (
+                {pendingAssignment && canAssignCustomRole ? (
                   <button
                     type="button"
                     className="ml-3 underline"
@@ -469,6 +516,7 @@ export default function UsersPage() {
           </div>
         </DashboardPanel>
       </div>
+      ) : null}
 
       <DashboardPanel>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -540,8 +588,11 @@ export default function UsersPage() {
                       status: user.status,
                       isSaving: false,
                     };
+                    const currentRoleValue = user.customRoleId
+                      ? `custom:${user.customRoleId}`
+                      : user.role;
                     const isChanged =
-                      update.role !== user.role ||
+                      update.role !== currentRoleValue ||
                       update.status !== user.status;
                     const isDeleting = deletingUserIds[user.id] === true;
 
@@ -562,6 +613,9 @@ export default function UsersPage() {
                           {user.email}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
+                          {canUpdateUsers &&
+                          canAssignBaseRole &&
+                          (!user.customRoleId || canAssignCustomRole) ? (
                           <select
                             className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             value={update.role}
@@ -585,6 +639,9 @@ export default function UsersPage() {
                               ),
                             )}
                           </select>
+                          ) : (
+                            <span>{getRoleLabel(user)}</span>
+                          )}
                           {user.customRoleName ? (
                             <p className="mt-1 text-[11px] font-medium text-outline">
                               {getRoleLabel(user)}
@@ -592,6 +649,7 @@ export default function UsersPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
+                          {canUpdateUsers ? (
                           <select
                             className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             value={update.status}
@@ -609,6 +667,9 @@ export default function UsersPage() {
                               </option>
                             ))}
                           </select>
+                          ) : (
+                            <span>{user.status.replaceAll("_", " ")}</span>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
                           {user.emailVerified ? (
@@ -629,6 +690,7 @@ export default function UsersPage() {
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
                           <div className="flex flex-col gap-2 sm:flex-row">
+                            {canUpdateUsers ? (
                             <button
                               type="button"
                               className="inline-flex items-center justify-center rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-on-secondary shadow-sm transition-colors hover:bg-secondary-container hover:text-on-secondary-container disabled:cursor-not-allowed disabled:opacity-50"
@@ -639,6 +701,8 @@ export default function UsersPage() {
                             >
                               {update.isSaving ? "Saving..." : "Update"}
                             </button>
+                            ) : null}
+                            {canDeleteUsers ? (
                             <button
                               type="button"
                               className="inline-flex items-center justify-center rounded-md border border-error/30 bg-surface px-3 py-1.5 text-xs font-bold text-error shadow-sm transition-colors hover:bg-error-container hover:text-on-error-container disabled:cursor-not-allowed disabled:opacity-50"
@@ -647,6 +711,7 @@ export default function UsersPage() {
                             >
                               {isDeleting ? "Deleting..." : "Delete"}
                             </button>
+                            ) : null}
                           </div>
                           {update.error ? (
                             <p className="mt-2 text-[11px] text-error">

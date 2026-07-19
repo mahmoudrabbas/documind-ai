@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import { createCheckoutSession, getSubscriptionStatus } from "@/services/billing.service";
 import type { PublicPackage } from "@/types/api/billing.types";
+import { useAuth } from "@/providers/auth-provider";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 
 function usePublicPackages() {
   const [packages, setPackages] = useState<PublicPackage[]>([]);
@@ -14,6 +17,7 @@ function usePublicPackages() {
     const controller = new AbortController();
     apiClient<{ success: true; data: PublicPackage[] }>("/public/packages", {
       signal: controller.signal,
+      auth: false,
     })
       .then((res) => {
         setPackages(res.data);
@@ -32,6 +36,14 @@ function usePublicPackages() {
 }
 
 export default function CheckoutPage() {
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const canReadBilling =
+    auth.status === "authenticated" &&
+    permissions.can(Permission.BILLING_READ);
+  const canManageBilling =
+    auth.status === "authenticated" &&
+    permissions.can(Permission.BILLING_MANAGE);
   const { packages, loading, error } = usePublicPackages();
   const [selectedPkg, setSelectedPkg] = useState<string>("");
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
@@ -40,13 +52,17 @@ export default function CheckoutPage() {
   const [currentSub, setCurrentSub] = useState<{ status: string; packageId?: { _id: string; name: string } } | null>(null);
 
   useEffect(() => {
+    if (!canReadBilling) {
+      setCurrentSub(null);
+      return;
+    }
     getSubscriptionStatus()
       .then((res) => setCurrentSub(res.data))
       .catch(() => {});
-  }, []);
+  }, [canReadBilling]);
 
   const handleCheckout = useCallback(async () => {
-    if (!selectedPkg) return;
+    if (!selectedPkg || !canManageBilling) return;
     setSubmitting(true);
     setSubmitError("");
     try {
@@ -59,7 +75,7 @@ export default function CheckoutPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [selectedPkg, billingInterval]);
+  }, [billingInterval, canManageBilling, selectedPkg]);
 
   if (loading) {
     return (
@@ -116,6 +132,7 @@ export default function CheckoutPage() {
           <button
             key={pkg._id}
             type="button"
+            disabled={auth.status === "authenticated" && !canManageBilling}
             onClick={() => setSelectedPkg(pkg._id)}
             className={`rounded-2xl border-2 p-6 text-start transition-all ${
               selectedPkg === pkg._id
@@ -173,6 +190,14 @@ export default function CheckoutPage() {
         </p>
       ) : null}
 
+      {auth.status === "unauthenticated" ? (
+        <a
+          href="/login?returnTo=%2Fcheckout"
+          className="mt-6 inline-flex min-h-12 items-center rounded-xl bg-primary px-8 font-bold text-on-primary"
+        >
+          Sign in to continue
+        </a>
+      ) : canManageBilling ? (
       <div className="mt-6">
         <button
           type="button"
@@ -183,6 +208,7 @@ export default function CheckoutPage() {
           {submitting ? "Redirecting to payment…" : "Proceed to checkout"}
         </button>
       </div>
+      ) : null}
     </div>
   );
 }

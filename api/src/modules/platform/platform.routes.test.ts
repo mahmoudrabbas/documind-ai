@@ -8,12 +8,14 @@ const serviceSourceUrl = new URL("./platform.service.ts", import.meta.url);
 const billingTypesUrl = new URL("../billing/billing.types.ts", import.meta.url);
 const billingPackageServiceUrl = new URL("../billing/package.service.ts", import.meta.url);
 
-test("every platform control-center route is protected by Super Admin authorization", async () => {
+test("every platform control-center route enforces platform tenant and permissions", async () => {
   const source = await readFile(sourceUrl, "utf8");
   assert.match(
     source,
-    /router\.use\(authenticate, authorize\("SUPER_ADMIN"\), requirePlatformTenant\)/,
+    /router\.use\(authenticate, requirePlatformTenant\)/,
   );
+  assert.ok(source.includes("requirePermission(Permission.BILLING_MANAGE)"));
+  assert.ok(source.includes("requirePermission(Permission.COMPANY_SETTINGS_UPDATE)"));
   for (const route of [
     "/overview",
     "/packages",

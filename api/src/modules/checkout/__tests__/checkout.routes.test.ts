@@ -7,11 +7,15 @@ const controllerSourceUrl = new URL("../checkout.controller.ts", import.meta.url
 const serviceSourceUrl = new URL("../checkout.service.ts", import.meta.url);
 const validatorSourceUrl = new URL("../checkout.validator.ts", import.meta.url);
 
-test("checkout routes require COMPANY_ADMIN authorization for POST sessions", async () => {
+test("checkout routes require canonical billing permissions", async () => {
   const source = await readFile(routesSourceUrl, "utf8");
   assert.ok(
-    source.includes('authorize("COMPANY_ADMIN")'),
-    "POST /checkout/sessions should require COMPANY_ADMIN",
+    source.includes("requirePermission(Permission.BILLING_MANAGE)"),
+    "POST /checkout/sessions should require billing management",
+  );
+  assert.ok(
+    source.includes("requirePermission(Permission.BILLING_READ)"),
+    "checkout reads should require billing read",
   );
   assert.ok(
     source.includes("authenticate"),

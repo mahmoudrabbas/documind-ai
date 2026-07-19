@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
-import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   DUPLICATE_ROLE_NAME,
@@ -13,11 +12,16 @@ import {
   STALE_ROLE_VERSION,
 } from "../../common/errors/errorCodes.js";
 import { logger } from "../../common/logger/logger.js";
+import {
+  requireAuthenticatedAuditActor,
+  type AuthenticatedAuditActor,
+} from "../../common/observability/auditActor.js";
 import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
 import RoleModel, { normalizeRoleName, type RoleDocument } from "../../db/models/role.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { tenantScopedFind } from "../../db/repositories/tenantScopedRepository.js";
+import { revokeActiveRefreshSessionsForTenantUser } from "../auth/sessionRevocation.repository.js";
 import { PERMISSION_CONTRACT_VERSION, Permission } from "../permissions/permissions.catalog.js";
 import { assertDelegableGrants, authorizePermission } from "../permissions/permissions.authorization.js";
 import { normalizeRoleGrants } from "../permissions/permissions.grants.js";
@@ -41,7 +45,9 @@ import type {
 } from "./roles.types.js";
 
 type RoleRecord = Pick<RoleDocument, "tenantId" | "name" | "baseRole" | "grants" | "contractVersion" | "status" | "version" | "createdBy" | "updatedBy" | "migrationState" | "migrationReason" | "createdAt" | "updatedAt"> & { _id: { toString(): string } };
-export interface RoleOperationContext { tenantId: string; actorId: string; actorEmail?: string; actorRole?: BaseRole; traceId?: string; requestId?: string }
+export interface RoleOperationContext { tenantId: string; actorId: string; actorEmail: string; actorRole: BaseRole; traceId?: string; requestId?: string }
+type LegacyRoleOperationContext = Pick<RoleOperationContext, "tenantId" | "actorId">;
+type ResolvedRoleOperationContext = AuthenticatedAuditActor & Pick<RoleOperationContext, "traceId" | "requestId">;
 
 function serializeRole(doc: RoleRecord, userCount = 0): RolePublicView {
   return {
@@ -55,8 +61,7 @@ function serializeRole(doc: RoleRecord, userCount = 0): RolePublicView {
 }
 
 export async function createRole(input: unknown, contextOrTenant: RoleOperationContext | string, actorId?: string): Promise<CreateRoleResult> {
-  const context = normalizeContext(contextOrTenant, actorId);
-  validateContext(context);
+  const context = await resolveRoleOperationContext(normalizeContext(contextOrTenant, actorId));
   await authorizePermission(context, Permission.ROLES_CREATE);
   let payload: ReturnType<typeof validateCreateRoleInput>;
   try { payload = validateCreateRoleInput(input); } catch (error) {
@@ -83,8 +88,7 @@ export async function createRole(input: unknown, contextOrTenant: RoleOperationC
 }
 
 export async function listRoles(contextOrTenant: RoleOperationContext | string, actorId?: string): Promise<ListRolesResult> {
-  const context = normalizeContext(contextOrTenant, actorId);
-  validateContext(context);
+  const context = await resolveRoleOperationContext(normalizeContext(contextOrTenant, actorId));
   await authorizePermission(context, Permission.ROLES_READ);
   const roles = await tenantScopedFind(RoleModel, context.tenantId, {}).sort({ name: 1 }).lean().exec();
   const counts = await UserModel.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
@@ -95,8 +99,9 @@ export async function listRoles(contextOrTenant: RoleOperationContext | string, 
   return { roles: roles.map((role) => serializeRole(role as unknown as RoleRecord, byRole.get(role._id.toString()) ?? 0)) };
 }
 
-export async function getRole(context: RoleOperationContext, roleId: string): Promise<{ role: RolePublicView }> {
-  validateContext(context); assertObjectId(roleId);
+export async function getRole(inputContext: RoleOperationContext, roleId: string): Promise<{ role: RolePublicView }> {
+  const context = await resolveRoleOperationContext(inputContext);
+  assertObjectId(roleId);
   await authorizePermission(context, Permission.ROLES_READ);
   const role = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).lean().exec();
   if (!role) {
@@ -119,8 +124,8 @@ export async function updateRole(
   actorId?: string,
   versionPolicy: "legacy" | "phase2" = "legacy",
 ): Promise<UpdateRoleResult> {
-  const context = normalizeContext(contextOrTenant, actorId);
-  validateContext(context); assertObjectId(roleId);
+  const context = await resolveRoleOperationContext(normalizeContext(contextOrTenant, actorId));
+  assertObjectId(roleId);
   await authorizePermission(context, Permission.ROLES_UPDATE);
   let payload: ReturnType<typeof validateUpdateRoleInput>;
   try { payload = validateUpdateRoleInput(input); } catch (error) {
@@ -133,10 +138,20 @@ export async function updateRole(
   try {
     await withTenantRoleTransaction(context.tenantId, async (session) => {
       await authorizePermission(context, Permission.ROLES_UPDATE);
-      if (payload.grants) await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, payload.grants!));
       const role = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
       if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
       if (payload.version !== role.version) throw versionError(versionPolicy);
+      await auditRoleAccessFailure(
+        context,
+        roleId,
+        () => assertRoleIntegrity(role, session, false),
+      );
+      const resultingGrants = payload.grants ?? role.grants;
+      await auditEscalationFailure(
+        context,
+        roleId,
+        () => assertDelegableGrants(context, resultingGrants),
+      );
       const beforePermissions = role.grants.map((grant) => grant.permission);
       const beforeStatus = role.status;
       const userCount = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: roleId }).session(session);
@@ -167,8 +182,9 @@ export async function updateRole(
   return result;
 }
 
-export async function cloneRole(input: unknown, context: RoleOperationContext, roleId: string): Promise<CreateRoleResult> {
-  validateContext(context); assertObjectId(roleId);
+export async function cloneRole(input: unknown, inputContext: RoleOperationContext, roleId: string): Promise<CreateRoleResult> {
+  const context = await resolveRoleOperationContext(inputContext);
+  assertObjectId(roleId);
   await authorizePermission(context, Permission.ROLES_CREATE);
   const payload = validateCloneRoleInput(input);
   const normalizedName = normalizeRoleName(payload.name);
@@ -179,7 +195,11 @@ export async function cloneRole(input: unknown, context: RoleOperationContext, r
       const source = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
       if (!source) throw new AppError(404, NOT_FOUND, "Role not found");
       if (source.version !== payload.version) throw roleVersionError();
-      await assertRoleIntegrity(source, session, true);
+      await auditRoleAccessFailure(
+        context,
+        roleId,
+        () => assertRoleIntegrity(source, session, true),
+      );
       await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, source.grants));
       if (await RoleModel.exists({ tenantId: context.tenantId, normalizedName }).session(session)) throw duplicateNameError();
       const [created] = await RoleModel.create([{
@@ -208,8 +228,8 @@ export async function changeRoleStatus(input: unknown, context: RoleOperationCon
 }
 
 export async function deleteRole(contextOrTenant: RoleOperationContext | string, roleId: string, expectedVersion: number, actorId?: string): Promise<{ success: boolean }> {
-  const context = normalizeContext(contextOrTenant, actorId);
-  validateContext(context); assertObjectId(roleId);
+  const context = await resolveRoleOperationContext(normalizeContext(contextOrTenant, actorId));
+  assertObjectId(roleId);
   await authorizePermission(context, Permission.ROLES_DELETE);
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) throw legacyRoleVersionError();
   await withTenantRoleTransaction(context.tenantId, async (session) => {
@@ -225,14 +245,25 @@ export async function deleteRole(contextOrTenant: RoleOperationContext | string,
   return { success: true };
 }
 
-export async function assignRole(input: unknown, context: RoleOperationContext, roleId: string): Promise<RoleAssignmentResult> {
-  validateContext(context); assertObjectId(roleId);
+export async function assignRole(input: unknown, inputContext: RoleOperationContext, roleId: string): Promise<RoleAssignmentResult> {
+  const context = await resolveRoleOperationContext(inputContext);
+  assertObjectId(roleId);
+  await authorizePermission(context, Permission.USERS_UPDATE);
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateAssignRoleInput(input);
   let changed = false;
   await withTenantRoleTransaction(context.tenantId, async (session) => {
+    await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     changed = await assignRoleInSession(context, payload.userId, roleId, payload.roleVersion, session);
+    if (changed) {
+      await revokeActiveRefreshSessionsForTenantUser(
+        payload.userId,
+        context.tenantId,
+        new Date(),
+        session,
+      );
+    }
   });
   if (changed) {
     await audit(context, "ROLE_ASSIGNED", roleId, { targetUserId: payload.userId, changed: true });
@@ -240,12 +271,15 @@ export async function assignRole(input: unknown, context: RoleOperationContext, 
   return { userId: payload.userId, roleId, changed };
 }
 
-export async function removeRoleAssignment(input: unknown, context: RoleOperationContext, roleId: string): Promise<RoleAssignmentResult> {
-  validateContext(context); assertObjectId(roleId);
+export async function removeRoleAssignment(input: unknown, inputContext: RoleOperationContext, roleId: string): Promise<RoleAssignmentResult> {
+  const context = await resolveRoleOperationContext(inputContext);
+  assertObjectId(roleId);
+  await authorizePermission(context, Permission.USERS_UPDATE);
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateRemoveRoleAssignmentInput(input);
   let changed = false;
   await withTenantRoleTransaction(context.tenantId, async (session) => {
+    await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     const role = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
     if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
@@ -256,6 +290,12 @@ export async function removeRoleAssignment(input: unknown, context: RoleOperatio
     if (target.customRoleId?.toString() !== roleId) return;
     target.customRoleId = null;
     await target.save({ session });
+    await revokeActiveRefreshSessionsForTenantUser(
+      payload.userId,
+      context.tenantId,
+      new Date(),
+      session,
+    );
     changed = true;
   });
   if (changed) {
@@ -264,14 +304,17 @@ export async function removeRoleAssignment(input: unknown, context: RoleOperatio
   return { userId: payload.userId, roleId: null, changed };
 }
 
-export async function migrateRoleUsers(input: unknown, context: RoleOperationContext, sourceRoleId: string): Promise<RoleMigrationResult> {
-  validateContext(context); assertObjectId(sourceRoleId);
+export async function migrateRoleUsers(input: unknown, inputContext: RoleOperationContext, sourceRoleId: string): Promise<RoleMigrationResult> {
+  const context = await resolveRoleOperationContext(inputContext);
+  assertObjectId(sourceRoleId);
+  await authorizePermission(context, Permission.USERS_UPDATE);
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateMigrateRoleUsersInput(input);
   if (sourceRoleId === payload.destinationRoleId) throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Source and destination roles must differ");
   let affected = 0;
   let skipped = 0;
   await withTenantRoleTransaction(context.tenantId, async (session) => {
+    await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     const [source, destination] = await Promise.all([
       RoleModel.findOne({ _id: sourceRoleId, tenantId: context.tenantId }).session(session).exec(),
@@ -279,18 +322,39 @@ export async function migrateRoleUsers(input: unknown, context: RoleOperationCon
     ]);
     if (!source || !destination) throw new AppError(404, NOT_FOUND, "Role not found");
     if (source.version !== payload.sourceVersion || destination.version !== payload.destinationVersion) throw roleVersionError();
-    await assertRoleIntegrity(destination, session, true);
-    if (source.baseRole !== destination.baseRole) throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Destination role is not assignable");
+    await auditRoleAccessFailure(context, destination.id, async () => {
+      await assertRoleIntegrity(destination, session, true);
+      if (source.baseRole !== destination.baseRole) {
+        throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Destination role is not assignable");
+      }
+    });
     await auditEscalationFailure(context, destination.id, () => assertDelegableGrants(context, destination.grants));
     const assigned = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: sourceRoleId }).session(session);
     const eligible = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: sourceRoleId, role: source.baseRole }).session(session);
     skipped = assigned - eligible;
+    const affectedUsers = await UserModel.find({
+      tenantId: context.tenantId,
+      customRoleId: sourceRoleId,
+      role: source.baseRole,
+    })
+      .select("_id")
+      .session(session)
+      .lean()
+      .exec();
     const result = await UserModel.updateMany(
       { tenantId: context.tenantId, customRoleId: sourceRoleId, role: source.baseRole },
       { $set: { customRoleId: destination._id } },
       { session, runValidators: true },
     );
     affected = result.modifiedCount;
+    for (const user of affectedUsers) {
+      await revokeActiveRefreshSessionsForTenantUser(
+        user._id.toString(),
+        context.tenantId,
+        new Date(),
+        session,
+      );
+    }
   });
   const result = { sourceRoleId, destinationRoleId: payload.destinationRoleId, affected, skipped, conflicted: 0 };
   await audit(context, "ROLE_USERS_MIGRATED", sourceRoleId, result);
@@ -298,7 +362,7 @@ export async function migrateRoleUsers(input: unknown, context: RoleOperationCon
 }
 
 async function assignRoleInSession(
-  context: RoleOperationContext,
+  context: ResolvedRoleOperationContext,
   targetUserId: string,
   roleId: string,
   expectedVersion: number,
@@ -311,11 +375,13 @@ async function assignRoleInSession(
   ]);
   if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
   if (role.version !== expectedVersion) throw roleVersionError();
-  await assertRoleIntegrity(role, session, true);
+  await auditRoleAccessFailure(context, roleId, async () => {
+    await assertRoleIntegrity(role, session, true);
+    if (target?.role === "SUPER_ADMIN" || (target && role.baseRole !== target.role)) {
+      throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
+    }
+  });
   if (!target) throw new AppError(404, NOT_FOUND, "User not found");
-  if (target.role === "SUPER_ADMIN" || role.baseRole !== target.role) {
-    throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Custom role is not assignable to this base role");
-  }
   await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, role.grants));
   if (target.customRoleId?.toString() === roleId) return false;
   target.customRoleId = role._id;
@@ -356,40 +422,47 @@ async function assertRoleIntegrity(
   }
 }
 
-async function auditEscalationFailure(context: RoleOperationContext, roleId: string | undefined, operation: () => Promise<void>): Promise<void> {
+async function auditEscalationFailure(context: ResolvedRoleOperationContext, roleId: string | undefined, operation: () => Promise<void>): Promise<void> {
   try { await operation(); } catch (error) {
     await audit(context, "ROLE_ESCALATION_BLOCKED", roleId ?? "new", { reason: error instanceof AppError ? error.code : "INVALID_GRANT" }, "DENIED");
     throw error;
   }
 }
 
-async function auditRejectedGrant(context: RoleOperationContext, roleId: string | undefined, error: unknown): Promise<void> {
+async function auditRejectedGrant(context: ResolvedRoleOperationContext, roleId: string | undefined, error: unknown): Promise<void> {
   if (error instanceof AppError && ["PRIVILEGE_ESCALATION", "UNKNOWN_PERMISSION", "INVALID_PERMISSION"].includes(error.code)) {
     await audit(context, "ROLE_ESCALATION_BLOCKED", roleId ?? "new", { reason: error.code }, "DENIED");
   }
 }
 
-async function resolveAuditActorRole(
-  context: RoleOperationContext,
-): Promise<BaseRole | null> {
-  if (context.actorRole) {
-    return context.actorRole;
+async function auditRoleAccessFailure(
+  context: ResolvedRoleOperationContext,
+  roleId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    if (error instanceof AppError && error.code === ROLE_NOT_ASSIGNABLE) {
+      await audit(
+        context,
+        "ROLE_ACCESS_DENIED",
+        roleId,
+        { reason: ROLE_NOT_ASSIGNABLE },
+        "DENIED",
+      );
+    }
+    throw error;
   }
-
-  const actor = await UserModel.findOne({
-    _id: context.actorId,
-    tenantId: context.tenantId,
-  })
-    .select("role")
-    .lean()
-    .exec();
-
-  return actor?.role ?? null;
 }
 
-async function audit(context: RoleOperationContext, action: import("../../common/observability/auditEvents.js").AuditAction, resourceId: string, changes: Record<string, unknown>, outcome: "SUCCESS" | "DENIED" = "SUCCESS") {
+async function audit(context: ResolvedRoleOperationContext, action: import("../../common/observability/auditEvents.js").AuditAction, resourceId: string, changes: Record<string, unknown>, outcome: "SUCCESS" | "DENIED" = "SUCCESS") {
   const written = await getAuditWriter().write({
-    tenantId: context.tenantId, actorId: context.actorId, actorRole: await resolveAuditActorRole(context),
+    tenantId: context.tenantId,
+    actorId: context.actorId,
+    actorEmail: context.actorEmail,
+    actorRole: context.actorRole,
+    actorKind: context.actorKind,
     resourceType: "Role", resourceId, action, outcome, changes,
     metadata: { traceId: context.traceId, requestId: context.requestId },
   });
@@ -406,7 +479,10 @@ async function audit(context: RoleOperationContext, action: import("../../common
   }
 }
 
-function normalizeContext(value: RoleOperationContext | string, actorId?: string): RoleOperationContext {
+function normalizeContext(
+  value: RoleOperationContext | string,
+  actorId?: string,
+): RoleOperationContext | LegacyRoleOperationContext {
   if (typeof value !== "string") {
     return value;
   }
@@ -420,12 +496,32 @@ function normalizeContext(value: RoleOperationContext | string, actorId?: string
     actorId,
   };
 }
-function validateContext(context: RoleOperationContext) {
+async function resolveRoleOperationContext(
+  context: RoleOperationContext | LegacyRoleOperationContext,
+): Promise<ResolvedRoleOperationContext> {
   assertObjectId(context.tenantId);
   assertObjectId(context.actorId);
-  if (context.actorRole !== undefined && !isBaseRole(context.actorRole)) {
+  const actor = await UserModel.findOne({
+    _id: context.actorId,
+    tenantId: context.tenantId,
+  })
+    .select("email role")
+    .lean()
+    .exec();
+  if (!actor) {
     throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
   }
+
+  return {
+    ...requireAuthenticatedAuditActor({
+      tenantId: context.tenantId,
+      actorId: context.actorId,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+    }),
+    traceId: "traceId" in context ? context.traceId : undefined,
+    requestId: "requestId" in context ? context.requestId : undefined,
+  };
 }
 function duplicateNameError() { return new AppError(409, DUPLICATE_ROLE_NAME, "A role with this name already exists in your tenant"); }
 function roleVersionError() { return new AppError(409, ROLE_VERSION_CONFLICT, "Role was modified by another request"); }

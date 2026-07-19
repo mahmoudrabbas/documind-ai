@@ -4,7 +4,9 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import type { BaseRole, TenantRoleBase } from "../../common/auth/baseRoles.js";
 import RoleModel from "../../db/models/role.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 import { Permission } from "./permissions.catalog.js";
 import { InMemoryPermissionEvaluator } from "./permissions.evaluator.fake.js";
 import { PermissionEvaluatorImpl } from "./permissions.evaluator.js";
@@ -79,10 +81,28 @@ function runContract(label: string, createHarness: () => Harness) {
     let decision = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.ANALYTICS_READ });
     assert.equal(decision.allowed, false);
     assert.equal(decision.denialCode, "ROLE_NOT_FOUND");
+    assert.equal(
+      (await h.evaluator.evaluate({
+        ...actor(userId, tenant, "EMPLOYEE"),
+        permission: Permission.DOCUMENTS_READ,
+      })).denialCode,
+      "ROLE_NOT_FOUND",
+    );
+    assert.equal(
+      (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).permissions.size,
+      0,
+    );
     await h.addUser(userId, tenant, "EMPLOYEE", archivedRoleId);
     await h.addRole(archivedRoleId, tenant, "EMPLOYEE", [{ permission: Permission.ANALYTICS_READ }], { status: "archived" });
     decision = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.ANALYTICS_READ });
     assert.equal(decision.denialCode, "ROLE_ARCHIVED");
+    assert.equal(
+      (await h.evaluator.evaluate({
+        ...actor(userId, tenant, "EMPLOYEE"),
+        permission: Permission.DOCUMENTS_READ,
+      })).denialCode,
+      "ROLE_ARCHIVED",
+    );
   });
 
   test(`${label}: scopes are conjunctive and self-only is deterministic`, async () => {
@@ -184,6 +204,32 @@ function runContract(label: string, createHarness: () => Harness) {
     assert.equal((await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_UPDATE })).denialCode, "RESOURCE_CONTEXT_REQUIRED");
   });
 
+  test(`${label}: inherited unrestricted grants dominate restricted duplicates`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    const departmentId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: {
+        selfOnly: false,
+        departmentIds: [departmentId],
+        documentCategories: [],
+        documentClassifications: [],
+      },
+    }]);
+
+    const decision = await h.evaluator.evaluate({
+      ...actor(userId, tenant, "EMPLOYEE"),
+      permission: Permission.DOCUMENTS_READ,
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.source, "base-role");
+    assert.equal(decision.scope, null);
+  });
+
   for (const [caseName, grants, options] of [
     ["unknown permission", [{ permission: "unknown:value" }], {}],
     ["deprecated permission fixture", [{ permission: "documents:view" }], {}],
@@ -207,6 +253,10 @@ function runContract(label: string, createHarness: () => Harness) {
       const decision = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.ANALYTICS_READ });
       assert.equal(decision.allowed, false);
       assert.equal(decision.denialCode, "INVALID_ROLE");
+      assert.equal(
+        (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).permissions.size,
+        0,
+      );
     });
   }
 }
@@ -239,13 +289,34 @@ before(async () => {
 });
 beforeEach(async () => {
   fake.clear();
-  if (mongoose.connection.readyState === 1) await Promise.all([UserModel.deleteMany({}), RoleModel.deleteMany({})]);
+  if (mongoose.connection.readyState === 1) {
+    await Promise.all([
+      UserModel.deleteMany({}),
+      RoleModel.deleteMany({}),
+      TenantModel.deleteMany({}),
+    ]);
+  }
 });
 after(async () => { await mongoose.disconnect(); await mongo?.stop(); });
 
 runContract("PermissionEvaluatorImpl", () => ({
   evaluator: new PermissionEvaluatorImpl(),
   addUser: async (id, tenantId, role, customRoleId = null, status = "active") => {
+    if (role === "SUPER_ADMIN") {
+      await TenantModel.findOneAndUpdate(
+        { _id: tenantId },
+        {
+          $set: {
+            name: "Documind Platform",
+            slug: PLATFORM_TENANT_SLUG,
+            status: "active",
+            plan: "free",
+            isSystemTenant: true,
+          },
+        },
+        { upsert: true, runValidators: true },
+      ).exec();
+    }
     await UserModel.findOneAndUpdate(
       { _id: id, tenantId },
       { $set: { role, customRoleId, status }, $setOnInsert: { name: `User ${id.slice(-6)}`, email: `${id}@example.test`, passwordHash: "test", emailVerified: true } },
@@ -271,3 +342,35 @@ runContract("PermissionEvaluatorImpl", () => ({
     await RoleModel.collection.deleteOne({ _id: new mongoose.Types.ObjectId(id), tenantId: new mongoose.Types.ObjectId(tenantId) });
   },
 }));
+
+test("PermissionEvaluatorImpl: SUPER_ADMIN fails closed outside the canonical platform tenant", async () => {
+  const tenant = await TenantModel.create({
+    name: "Customer Tenant",
+    slug: "customer-super-admin",
+    status: "active",
+    plan: "free",
+    isSystemTenant: false,
+  });
+  const user = await UserModel.create({
+    tenantId: tenant._id,
+    name: "Invalid Super Admin",
+    email: "invalid-super-admin@example.test",
+    passwordHash: "test",
+    role: "SUPER_ADMIN",
+    status: "active",
+    emailVerified: true,
+  });
+  const evaluator = new PermissionEvaluatorImpl();
+
+  const resolved = await evaluator.resolve(
+    actor(user.id, tenant.id, "SUPER_ADMIN"),
+  );
+  assert.equal(resolved.permissions.size, 0);
+  assert.equal(
+    (await evaluator.evaluate({
+      ...actor(user.id, tenant.id, "SUPER_ADMIN"),
+      permission: Permission.ROLES_READ,
+    })).denialCode,
+    "PERMISSION_REQUIRED",
+  );
+});

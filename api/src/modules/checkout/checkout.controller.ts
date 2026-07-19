@@ -14,6 +14,8 @@ import {
   parse,
 } from "./checkout.validator.js";
 import { getPaymentProvider } from "./payment-provider-loader.js";
+import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
+import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -40,8 +42,25 @@ const tenant = (req: Request) => {
   return req.tenantId;
 };
 
-export const createCheckoutController = endpoint(async (req, res) => {
+const operationContext = (req: Request): OperationAuthorizationContext => {
   const auth = actor(req);
+  const resolved = requireAuthenticatedAuditActor({
+    tenantId: tenant(req),
+    actorId: auth.userId,
+    actorEmail: auth.email,
+    actorRole: auth.role,
+  });
+  return {
+    tenantId: resolved.tenantId,
+    actorId: resolved.actorId,
+    actorEmail: resolved.actorEmail,
+    actorRole: resolved.actorRole,
+    traceId: req.traceId,
+    requestId: req.requestId,
+  };
+};
+
+export const createCheckoutController = endpoint(async (req, res) => {
   const tenantId = tenant(req);
   const body = parse(createCheckoutSchema, req.body);
   const provider = await getPaymentProvider();
@@ -56,7 +75,7 @@ export const createCheckoutController = endpoint(async (req, res) => {
     provider,
     successUrl,
     cancelUrl,
-    auth,
+    operationContext(req),
   );
 
   res.status(201).json({ success: true, data: result });
@@ -65,16 +84,16 @@ export const createCheckoutController = endpoint(async (req, res) => {
 export const checkoutStatusController = endpoint((req) => {
   const tenantId = tenant(req);
   const params = parse(checkoutIdSchema, req.params);
-  return getCheckoutStatus(params.checkoutId, tenantId);
+  return getCheckoutStatus(params.checkoutId, tenantId, operationContext(req));
 });
 
 export const listCheckoutSessionsController = endpoint((req) => {
   const tenantId = tenant(req);
   const query = parse(listCheckoutSchema, req.query);
-  return listCheckoutSessions({ ...query, tenantId });
+  return listCheckoutSessions({ ...query, tenantId }, operationContext(req));
 });
 
 export const subscriptionStatusController = endpoint((req) => {
   const tenantId = tenant(req);
-  return getSubscriptionStatus(tenantId);
+  return getSubscriptionStatus(tenantId, operationContext(req));
 });

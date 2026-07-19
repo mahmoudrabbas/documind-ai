@@ -24,6 +24,19 @@ const en: TranslationDictionary = {
   "common.noResults": "No results found",
   "common.welcome": "Welcome, {{name}}!",
 
+  /* ── permissions ───────────────────────────────────────── */
+  "permissions.loadingTitle": "Checking access",
+  "permissions.loadingMessage": "Your current permissions are being loaded.",
+  "permissions.deniedTitle": "Access denied",
+  "permissions.deniedMessage": "You do not have permission to view this area.",
+  "permissions.failedTitle": "Unable to verify access",
+  "permissions.failedMessage":
+    "Permissions could not be loaded. Access remains restricted.",
+  "permissions.conflict":
+    "This item changed since you opened it. Refresh before trying again.",
+  "permissions.rateLimited":
+    "Too many requests. Try again in {{seconds}} seconds.",
+
   /* ── auth ──────────────────────────────────────────────── */
   "auth.signIn": "Sign in",
   "auth.signOut": "Sign out",

@@ -23,15 +23,42 @@ import type {
   OcrPageResultView,
   DocumentQualityView,
 } from "./processing.types.js";
+import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
+import {
+  authorizeTenantOperation,
+  type OperationAuthorizationContext,
+  type ResolvedOperationAuthorizationContext,
+} from "../permissions/permissions.operation.js";
+
+async function authorizeProcessingOperation(
+  tenantId: string,
+  context: OperationAuthorizationContext,
+  permission: PermissionValue,
+): Promise<ResolvedOperationAuthorizationContext> {
+  const actor = await authorizeTenantOperation(context, permission);
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(
+      404,
+      DOCUMENT_NOT_FOUND,
+      "Document not found or access denied",
+    );
+  }
+  return actor;
+}
 
 export async function triggerOcrProcessing(
   tenantId: string,
   input: TriggerOcrInput,
-  actorId: string,
+  inputContext: OperationAuthorizationContext,
 ): Promise<{ jobId: string; idempotencyKey: string }> {
+  const actor = await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_OCR_PROCESS,
+  );
   const tenId = new Types.ObjectId(tenantId);
   const docId = new Types.ObjectId(input.documentId);
-  const actId = new Types.ObjectId(actorId);
+  const actId = new Types.ObjectId(actor.actorId);
 
   const doc = await DocumentModel.findOne({ _id: docId, tenantId: tenId });
   if (!doc) {
@@ -83,6 +110,7 @@ export async function triggerOcrProcessing(
   }
 
   await getAuditWriter().write({
+    tenantId: actor.tenantId,
     action: "OCR_TRIGGERED",
     resourceType: "Document",
     resourceId: docId.toString(),
@@ -93,6 +121,10 @@ export async function triggerOcrProcessing(
       pageCount,
       traceId,
     },
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
   });
 
   return {
@@ -129,7 +161,13 @@ export async function getOcrPageResults(
   tenantId: string,
   documentId: string,
   documentVersion: number,
+  inputContext: OperationAuthorizationContext,
 ): Promise<OcrPageResultView[]> {
+  await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_READ,
+  );
   const pages = await findOcrPageResults(tenantId, documentId, documentVersion);
   return pages.map((page) => ({
     id: page._id?.toString() || "",
@@ -157,7 +195,13 @@ export async function getDocumentQuality(
   tenantId: string,
   documentId: string,
   documentVersion: number,
+  inputContext: OperationAuthorizationContext,
 ): Promise<DocumentQualityView | null> {
+  await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_READ,
+  );
   const quality = await findDocumentQuality(tenantId, documentId, documentVersion);
   if (!quality) {
     return null;
@@ -194,7 +238,18 @@ export async function assessDocumentQuality(
   tenantId: string,
   documentId: string,
   documentVersion: number,
+  inputContext: OperationAuthorizationContext,
 ): Promise<DocumentQualityView> {
+  await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_QUALITY_REVIEW,
+  );
+  await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_READ,
+  );
   const ocrPages = await findOcrPageResults(tenantId, documentId, documentVersion);
 
   const extractionPages = ocrPages.map((p) => ({
@@ -241,7 +296,12 @@ export async function assessDocumentQuality(
     durationMs: totalDurationMs,
   });
 
-  return getDocumentQuality(tenantId, documentId, documentVersion) as Promise<DocumentQualityView>;
+  return getDocumentQuality(
+    tenantId,
+    documentId,
+    documentVersion,
+    inputContext,
+  ) as Promise<DocumentQualityView>;
 }
 
 export async function reviewDocumentQuality(
@@ -249,15 +309,25 @@ export async function reviewDocumentQuality(
   documentId: string,
   documentVersion: number,
   input: ReviewQualityInput,
-  reviewerId: string,
+  inputContext: OperationAuthorizationContext,
 ): Promise<DocumentQualityView> {
+  const actor = await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_QUALITY_REVIEW,
+  );
+  await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_READ,
+  );
   const quality = await findDocumentQuality(tenantId, documentId, documentVersion);
   if (!quality) {
     throw new AppError(404, REVIEW_NOT_FOUND, "No quality assessment found for this document version");
   }
 
   await upsertDocumentQuality(tenantId, documentId, documentVersion, {
-    reviewedBy: new Types.ObjectId(reviewerId),
+    reviewedBy: new Types.ObjectId(actor.actorId),
     reviewedAt: new Date(),
     reviewDecision: input.decision,
     reviewNotes: input.notes || null,
@@ -275,6 +345,7 @@ export async function reviewDocumentQuality(
   }
 
   await getAuditWriter().write({
+    tenantId: actor.tenantId,
     action: "QUALITY_REVIEWED",
     resourceType: "DocumentQuality",
     resourceId: quality._id?.toString() || documentId,
@@ -282,13 +353,21 @@ export async function reviewDocumentQuality(
       documentId,
       documentVersion,
       decision: input.decision,
-      reviewerId,
-      notes: input.notes || null,
+      reviewerId: actor.actorId,
       pageNumbers: input.pageNumbers || null,
     },
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
   });
 
-  return getDocumentQuality(tenantId, documentId, documentVersion) as Promise<DocumentQualityView>;
+  return getDocumentQuality(
+    tenantId,
+    documentId,
+    documentVersion,
+    inputContext,
+  ) as Promise<DocumentQualityView>;
 }
 
 export async function retryOcrPages(
@@ -296,8 +375,13 @@ export async function retryOcrPages(
   documentId: string,
   documentVersion: number,
   input: RetryOcrInput,
-  actorId: string,
+  inputContext: OperationAuthorizationContext,
 ): Promise<{ jobId: string; idempotencyKey: string }> {
+  const actor = await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.DOCUMENTS_OCR_PROCESS,
+  );
   const tenId = new Types.ObjectId(tenantId);
   const docId = new Types.ObjectId(documentId);
 
@@ -320,7 +404,7 @@ export async function retryOcrPages(
   const enqueueResult = await dispatcher.enqueue({
     jobType: "document.ocr",
     tenantId: tenId.toString(),
-    actorId: new Types.ObjectId(actorId).toString(),
+    actorId: actor.actorId,
     traceId,
     idempotencyKey,
     payload: {
@@ -337,6 +421,7 @@ export async function retryOcrPages(
   }
 
   await getAuditWriter().write({
+    tenantId: actor.tenantId,
     action: "OCR_PAGES_RETRIED",
     resourceType: "Document",
     resourceId: docId.toString(),
@@ -346,6 +431,10 @@ export async function retryOcrPages(
       pageNumbers: retryPages,
       retryCount: retryPages.length,
     },
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
   });
 
   return {
@@ -356,7 +445,13 @@ export async function retryOcrPages(
 
 export async function getOcrUsageSummary(
   tenantId: string,
+  inputContext: OperationAuthorizationContext,
 ): Promise<{ pagesUsed: number; periodStart: string; periodEnd: string }> {
+  await authorizeProcessingOperation(
+    tenantId,
+    inputContext,
+    Permission.BILLING_READ,
+  );
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);

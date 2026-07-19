@@ -11,9 +11,13 @@ export interface AuditQueryFilter {
   resourceId?: string;
   dateFrom?: string;
   dateTo?: string;
-  outcome?: string;
-  tenantId?: string;
+  outcome?: AuditOutcome;
 }
+
+export type AuditExportFilter = Omit<
+  AuditQueryFilter,
+  "page" | "pageSize"
+> & { dateFrom: string };
 
 export interface AuditLog {
   _id: string;
@@ -21,9 +25,9 @@ export interface AuditLog {
   action: AuditAction;
   resourceType: string;
   resourceId: string;
-  actorId: string;
-  actorEmail: string;
-  actorRole: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorRole: string | null;
   outcome: AuditOutcome;
   changes: Record<string, unknown>;
   metadata?: Record<string, unknown>;
@@ -53,7 +57,7 @@ export const getAuditLogs = async (filter: AuditQueryFilter = {}, signal?: Abort
   return apiClient<AuditLogsResponse>(`/audit/logs?${searchParams.toString()}`, { signal });
 };
 
-export const exportAuditLogs = async (filter: AuditQueryFilter = {}) => {
+export const exportAuditLogs = async (filter: AuditExportFilter) => {
   const searchParams = new URLSearchParams();
   Object.entries(filter).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
