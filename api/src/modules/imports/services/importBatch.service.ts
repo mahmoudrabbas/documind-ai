@@ -454,7 +454,7 @@ export class ImportBatchService {
   static async getBatch(
     batchId: string,
   ): Promise<IEmployeeImportBatch | null> {
-    const batch = await EmployeeImportBatchModel.findById(batchId);
+    const batch = await EmployeeImportBatchModel.findById(batchId).lean();
     return batch as unknown as IEmployeeImportBatch | null;
   }
 
@@ -492,7 +492,8 @@ export class ImportBatchService {
       EmployeeImportBatchModel.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(pageSize),
+        .limit(pageSize)
+        .lean(),
       EmployeeImportBatchModel.countDocuments(filter),
     ]);
 

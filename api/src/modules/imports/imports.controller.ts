@@ -42,12 +42,21 @@ interface BatchSummaryDTO {
 function toBatchDTO(batch: Record<string, unknown>): Record<string, unknown> {
   const raw = batch;
   const s = (raw.summary ?? {}) as Record<string, number>;
+  const mapping = raw.mapping as Record<string, unknown> | undefined;
   return {
-    ...raw,
     id: String(raw._id ?? raw.id ?? ""),
     status: String(raw.state ?? ""),
-    columnMapping: (raw.mapping as any)?.columnMapping ?? raw.mapping,
-    fileName: String(raw.originalFileName ?? ""),
+    originalFileName: String(raw.originalFileName ?? raw.fileName ?? ""),
+    fileChecksum: String(raw.fileChecksum ?? ""),
+    fileSizeBytes: (raw.fileSizeBytes as number) ?? 0,
+    totalRows: (raw.totalRows as number) ?? 0,
+    state: String(raw.state ?? ""),
+    idempotencyKey: String(raw.idempotencyKey ?? ""),
+    columnMapping: (mapping?.columnMapping as Record<string, string>) ?? {},
+    unmappedColumns: (mapping?.unmappedColumns as string[]) ?? [],
+    confidence: String(mapping?.confidence ?? ""),
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
     summary: {
       totalRows: raw.totalRows ?? 0,
       validRows: s.valid ?? 0,
