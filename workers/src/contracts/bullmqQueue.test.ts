@@ -92,8 +92,9 @@ test(
       return;
     }
     const adapter = await makeAdapter();
+    // NOT calling adapter.start() — a worker would complete the no-op before the
+    // second enqueue, and completed jobs are silently removed, breaking dedup.
     try {
-      adapter.start(new AbortController().signal);
       const idem = `bull-dup-${Math.random().toString(36).slice(2)}`;
       const first = await adapter.enqueue({
         jobType: "system.sample.noop",
