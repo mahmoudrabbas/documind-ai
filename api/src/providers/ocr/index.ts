@@ -3,13 +3,13 @@ import { getOcrConfig } from "../../config/ocr.config.js";
 import { logger } from "../../common/logger/logger.js";
 import { FakeOcrProvider } from "./fake.provider.js";
 import { TesseractOcrProvider } from "./tesseract.provider.js";
-import { PaddleOcrProvider } from "./paddle.provider.js";
+import { OcrServiceProvider } from "./ocr-service.provider.js";
 
 
 export type { OcrProvider, OcrPageInput, OcrBatchResult, OcrPageResult, OcrLanguage } from "./types.js";
 export { FakeOcrProvider } from "./fake.provider.js";
 export { TesseractOcrProvider } from "./tesseract.provider.js";
-export { PaddleOcrProvider } from "./paddle.provider.js";
+export { OcrServiceProvider } from "./ocr-service.provider.js";
 export {
   OcrProviderError,
   ProviderTimeoutError,
@@ -24,7 +24,8 @@ function createProvider(type: string): OcrProvider {
     case "tesseract":
       return new TesseractOcrProvider();
     case "paddle":
-      return new PaddleOcrProvider();
+    case "ocr":
+      return new OcrServiceProvider();
     case "fake":
       return new FakeOcrProvider();
     default:
@@ -151,8 +152,8 @@ export function createTesseractOcrProvider(): TesseractOcrProvider {
   return new TesseractOcrProvider();
 }
 
-export function createPaddleOcrProvider(serviceUrl?: string): PaddleOcrProvider {
-  return new PaddleOcrProvider(serviceUrl);
+export function createOcrServiceProvider(serviceUrl?: string): OcrServiceProvider {
+  return new OcrServiceProvider(serviceUrl);
 }
 
 export function resetOcrProvider(): void {

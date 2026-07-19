@@ -33,6 +33,10 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
     prefix: "/dashboard/settings",
     permissions: [Permission.COMPANY_SETTINGS_READ],
   },
+  {
+    prefix: "/dashboard/chat",
+    permissions: [Permission.CHAT_READ],
+  },
 ];
 const TENANT_SHELL_ROLES = ["COMPANY_ADMIN", "EMPLOYEE"] as const;
 

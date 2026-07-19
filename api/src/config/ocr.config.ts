@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const OcrProviderType = z.enum(["fake", "tesseract", "paddle"]);
+const OcrProviderType = z.enum(["fake", "tesseract", "paddle", "ocr"]);
 
 const ocrConfigSchema = z.object({
   provider: OcrProviderType.default("fake"),
@@ -12,7 +12,7 @@ const ocrConfigSchema = z.object({
   criticalConfidenceThreshold: z.coerce.number().min(0).max(1).default(0.4),
   maxPages: z.coerce.number().int().positive().default(500),
   maxFileSizeBytes: z.coerce.number().int().positive().default(50 * 1024 * 1024),
-  paddleServiceUrl: z.string().url().default("http://localhost:8501"),
+  ocrServiceUrl: z.string().url().default("http://localhost:8501"),
 });
 
 export type OcrConfig = z.infer<typeof ocrConfigSchema>;
@@ -31,7 +31,7 @@ export function getOcrConfig(): OcrConfig {
       criticalConfidenceThreshold: process.env.OCR_CRITICAL_CONFIDENCE_THRESHOLD,
       maxPages: process.env.OCR_MAX_PAGES,
       maxFileSizeBytes: process.env.OCR_MAX_FILE_SIZE_BYTES,
-      paddleServiceUrl: process.env.PADDLE_OCR_SERVICE_URL,
+      ocrServiceUrl: process.env.OCR_SERVICE_URL || process.env.PADDLE_OCR_SERVICE_URL,
     });
   }
   return cachedConfig;

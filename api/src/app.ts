@@ -22,7 +22,10 @@ import emailRoutes from "./modules/email/email.routes.js";
 import emailWebhooks from "./modules/email/email.webhooks.js";
 import permissionsRoutes from "./modules/permissions/permissions.routes.js";
 import jobsRoutes from "./modules/jobs/jobs.routes.js";
-import { agentsRoutes, agentsAdminRoutes } from "./modules/agents/agents.routes.js";
+import {
+  agentsRoutes,
+  agentsAdminRoutes,
+} from "./modules/agents/agents.routes.js";
 import checkoutRoutes from "./modules/checkout/checkout.routes.js";
 import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.routes.js";
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";

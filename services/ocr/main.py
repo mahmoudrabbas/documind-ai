@@ -1,5 +1,5 @@
 """
-PaddleOCR microservice exposing a REST endpoint for document OCR.
+Tesseract OCR microservice exposing a REST endpoint for document OCR.
 
 POST /ocr
   - files: image files (multipart)
@@ -13,94 +13,82 @@ import os
 import time
 import uuid
 import logging
-from typing import List, Optional
+from typing import List
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
-from paddleocr import PaddleOCR
 from PIL import Image
-import numpy as np
+import pytesseract
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("paddle-ocr")
+logger = logging.getLogger("ocr")
 
-app = FastAPI(title="PaddleOCR Service", version="1.0.0")
+app = FastAPI(title="OCR Service", version="1.0.0")
 
 LANG_MAP = {
-    "ar": "ar",
-    "en": "en",
-    "ar+en": "ar",
+    "ar": "ara",
+    "en": "eng",
+    "ar+en": "ara+eng",
 }
-
-_ocr_instances: dict = {}
-
-
-def get_ocr(lang: str) -> PaddleOCR:
-    if lang not in _ocr_instances:
-        _ocr_instances[lang] = PaddleOCR(
-            use_angle_cls=True,
-            lang=lang,
-            show_log=False,
-            use_gpu=False,
-        )
-    return _ocr_instances[lang]
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "providers": list(_ocr_instances.keys())}
+    return {"status": "ok"}
 
 
 @app.post("/ocr")
 async def ocr(
     files: List[UploadFile] = File(...),
-    languages: List[str] = Form(default=["ar"]),
+    languages: List[str] = Form(default=["ara"]),
 ):
     request_id = str(uuid.uuid4())[:12]
     start = time.time()
     results = []
 
     for idx, file in enumerate(files):
-        lang = languages[idx] if idx < len(languages) else languages[0]
-        lang = LANG_MAP.get(lang, "ar")
+        lang_code = languages[idx] if idx < len(languages) else languages[0]
+        tess_lang = LANG_MAP.get(lang_code, "ara")
         page_start = time.time()
 
         try:
             image_bytes = await file.read()
             image = Image.open(io.BytesIO(image_bytes))
-            image_array = np.array(image)
 
-            ocr = get_ocr(lang)
-            ocr_result = ocr.ocr(image_array, cls=True)
+            data = pytesseract.image_to_data(image, lang=tess_lang, output_type=pytesseract.Output.DICT)
 
             all_text_parts = []
             all_words = []
             confidences = []
 
-            if ocr_result and ocr_result[0]:
-                for line in ocr_result[0]:
-                    box, (text, confidence) = line
-                    all_text_parts.append(text)
-                    confidences.append(confidence)
+            n_boxes = len(data["text"])
+            for i in range(n_boxes):
+                text = data["text"][i].strip()
+                conf = int(data["conf"][i])
+                if not text or conf < 0:
+                    continue
 
-                    x_coords = [p[0] for p in box]
-                    y_coords = [p[1] for p in box]
-                    x_min, x_max = min(x_coords), max(x_coords)
-                    y_min, y_max = min(y_coords), max(y_coords)
+                all_text_parts.append(text)
+                confidences.append(conf)
 
-                    all_words.append({
-                        "text": text,
-                        "confidence": round(confidence, 4),
-                        "boundingBox": {
-                            "x": round(x_min, 2),
-                            "y": round(y_min, 2),
-                            "width": round(x_max - x_min, 2),
-                            "height": round(y_max - y_min, 2),
-                        },
-                    })
+                x = data["left"][i]
+                y = data["top"][i]
+                w = data["width"][i]
+                h = data["height"][i]
+
+                all_words.append({
+                    "text": text,
+                    "confidence": round(conf / 100, 4),
+                    "boundingBox": {
+                        "x": round(float(x), 2),
+                        "y": round(float(y), 2),
+                        "width": round(float(w), 2),
+                        "height": round(float(h), 2),
+                    },
+                })
 
             full_text = " ".join(all_text_parts)
-            avg_confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0
+            avg_confidence = round(sum(confidences) / len(confidences) / 100, 4) if confidences else 0
             duration_ms = round((time.time() - page_start) * 1000)
 
             warnings = []
@@ -116,7 +104,7 @@ async def ocr(
             })
 
             logger.info(
-                f"[{request_id}] Page {idx + 1}: {len(all_text_parts)} lines, "
+                f"[{request_id}] Page {idx + 1}: {len(all_text_parts)} words, "
                 f"confidence={avg_confidence:.2%}, duration={duration_ms}ms"
             )
 

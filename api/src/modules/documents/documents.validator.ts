@@ -23,9 +23,17 @@ const uploadDocumentSchema = z
       .optional()
       .default(""),
     tags: z
-      .array(z.string().trim().max(50, "each tag must be at most 50 characters"))
-      .max(10, "at most 10 tags allowed")
-      .optional()
+      .preprocess(
+        (value) => {
+          if (Array.isArray(value)) return value;
+          if (typeof value === "string" && value.trim() !== "") {
+            return value.split(",").map((t) => t.trim()).filter(Boolean);
+          }
+          return [];
+        },
+        z.array(z.string().trim().max(50, "each tag must be at most 50 characters"))
+          .max(10, "at most 10 tags allowed"),
+      )
       .default([]),
   })
   .strict();
