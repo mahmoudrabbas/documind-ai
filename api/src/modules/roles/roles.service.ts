@@ -21,6 +21,7 @@ import RoleModel, { normalizeRoleName, type RoleDocument } from "../../db/models
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { tenantScopedFind } from "../../db/repositories/tenantScopedRepository.js";
+import { revokeActiveRefreshSessionsForTenantUser } from "../auth/sessionRevocation.repository.js";
 import { PERMISSION_CONTRACT_VERSION, Permission } from "../permissions/permissions.catalog.js";
 import { assertDelegableGrants, authorizePermission } from "../permissions/permissions.authorization.js";
 import { normalizeRoleGrants } from "../permissions/permissions.grants.js";
@@ -44,7 +45,8 @@ import type {
 } from "./roles.types.js";
 
 type RoleRecord = Pick<RoleDocument, "tenantId" | "name" | "baseRole" | "grants" | "contractVersion" | "status" | "version" | "createdBy" | "updatedBy" | "migrationState" | "migrationReason" | "createdAt" | "updatedAt"> & { _id: { toString(): string } };
-export interface RoleOperationContext { tenantId: string; actorId: string; actorEmail?: string; actorRole?: BaseRole; traceId?: string; requestId?: string }
+export interface RoleOperationContext { tenantId: string; actorId: string; actorEmail: string; actorRole: BaseRole; traceId?: string; requestId?: string }
+type LegacyRoleOperationContext = Pick<RoleOperationContext, "tenantId" | "actorId">;
 type ResolvedRoleOperationContext = AuthenticatedAuditActor & Pick<RoleOperationContext, "traceId" | "requestId">;
 
 function serializeRole(doc: RoleRecord, userCount = 0): RolePublicView {
@@ -246,12 +248,22 @@ export async function deleteRole(contextOrTenant: RoleOperationContext | string,
 export async function assignRole(input: unknown, inputContext: RoleOperationContext, roleId: string): Promise<RoleAssignmentResult> {
   const context = await resolveRoleOperationContext(inputContext);
   assertObjectId(roleId);
+  await authorizePermission(context, Permission.USERS_UPDATE);
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateAssignRoleInput(input);
   let changed = false;
   await withTenantRoleTransaction(context.tenantId, async (session) => {
+    await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     changed = await assignRoleInSession(context, payload.userId, roleId, payload.roleVersion, session);
+    if (changed) {
+      await revokeActiveRefreshSessionsForTenantUser(
+        payload.userId,
+        context.tenantId,
+        new Date(),
+        session,
+      );
+    }
   });
   if (changed) {
     await audit(context, "ROLE_ASSIGNED", roleId, { targetUserId: payload.userId, changed: true });
@@ -262,10 +274,12 @@ export async function assignRole(input: unknown, inputContext: RoleOperationCont
 export async function removeRoleAssignment(input: unknown, inputContext: RoleOperationContext, roleId: string): Promise<RoleAssignmentResult> {
   const context = await resolveRoleOperationContext(inputContext);
   assertObjectId(roleId);
+  await authorizePermission(context, Permission.USERS_UPDATE);
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateRemoveRoleAssignmentInput(input);
   let changed = false;
   await withTenantRoleTransaction(context.tenantId, async (session) => {
+    await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     const role = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
     if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
@@ -276,6 +290,12 @@ export async function removeRoleAssignment(input: unknown, inputContext: RoleOpe
     if (target.customRoleId?.toString() !== roleId) return;
     target.customRoleId = null;
     await target.save({ session });
+    await revokeActiveRefreshSessionsForTenantUser(
+      payload.userId,
+      context.tenantId,
+      new Date(),
+      session,
+    );
     changed = true;
   });
   if (changed) {
@@ -287,12 +307,14 @@ export async function removeRoleAssignment(input: unknown, inputContext: RoleOpe
 export async function migrateRoleUsers(input: unknown, inputContext: RoleOperationContext, sourceRoleId: string): Promise<RoleMigrationResult> {
   const context = await resolveRoleOperationContext(inputContext);
   assertObjectId(sourceRoleId);
+  await authorizePermission(context, Permission.USERS_UPDATE);
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateMigrateRoleUsersInput(input);
   if (sourceRoleId === payload.destinationRoleId) throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Source and destination roles must differ");
   let affected = 0;
   let skipped = 0;
   await withTenantRoleTransaction(context.tenantId, async (session) => {
+    await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     const [source, destination] = await Promise.all([
       RoleModel.findOne({ _id: sourceRoleId, tenantId: context.tenantId }).session(session).exec(),
@@ -310,12 +332,29 @@ export async function migrateRoleUsers(input: unknown, inputContext: RoleOperati
     const assigned = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: sourceRoleId }).session(session);
     const eligible = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: sourceRoleId, role: source.baseRole }).session(session);
     skipped = assigned - eligible;
+    const affectedUsers = await UserModel.find({
+      tenantId: context.tenantId,
+      customRoleId: sourceRoleId,
+      role: source.baseRole,
+    })
+      .select("_id")
+      .session(session)
+      .lean()
+      .exec();
     const result = await UserModel.updateMany(
       { tenantId: context.tenantId, customRoleId: sourceRoleId, role: source.baseRole },
       { $set: { customRoleId: destination._id } },
       { session, runValidators: true },
     );
     affected = result.modifiedCount;
+    for (const user of affectedUsers) {
+      await revokeActiveRefreshSessionsForTenantUser(
+        user._id.toString(),
+        context.tenantId,
+        new Date(),
+        session,
+      );
+    }
   });
   const result = { sourceRoleId, destinationRoleId: payload.destinationRoleId, affected, skipped, conflicted: 0 };
   await audit(context, "ROLE_USERS_MIGRATED", sourceRoleId, result);
@@ -440,7 +479,10 @@ async function audit(context: ResolvedRoleOperationContext, action: import("../.
   }
 }
 
-function normalizeContext(value: RoleOperationContext | string, actorId?: string): RoleOperationContext {
+function normalizeContext(
+  value: RoleOperationContext | string,
+  actorId?: string,
+): RoleOperationContext | LegacyRoleOperationContext {
   if (typeof value !== "string") {
     return value;
   }
@@ -454,7 +496,9 @@ function normalizeContext(value: RoleOperationContext | string, actorId?: string
     actorId,
   };
 }
-async function resolveRoleOperationContext(context: RoleOperationContext): Promise<ResolvedRoleOperationContext> {
+async function resolveRoleOperationContext(
+  context: RoleOperationContext | LegacyRoleOperationContext,
+): Promise<ResolvedRoleOperationContext> {
   assertObjectId(context.tenantId);
   assertObjectId(context.actorId);
   const actor = await UserModel.findOne({
@@ -475,8 +519,8 @@ async function resolveRoleOperationContext(context: RoleOperationContext): Promi
       actorEmail: actor.email,
       actorRole: actor.role,
     }),
-    traceId: context.traceId,
-    requestId: context.requestId,
+    traceId: "traceId" in context ? context.traceId : undefined,
+    requestId: "requestId" in context ? context.requestId : undefined,
   };
 }
 function duplicateNameError() { return new AppError(409, DUPLICATE_ROLE_NAME, "A role with this name already exists in your tenant"); }

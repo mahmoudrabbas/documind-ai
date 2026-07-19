@@ -299,7 +299,12 @@ test("direct services enforce authorization, delegation, archive state, and tena
   const first = await fixture("first-tenant");
   const second = await fixture("second-tenant");
   await assert.rejects(
-    createRole({ name: "Bypass", baseRole: "EMPLOYEE", grants: [] }, { tenantId: first.tenant.id, actorId: first.employee.id, actorRole: first.employee.role }),
+    createRole({ name: "Bypass", baseRole: "EMPLOYEE", grants: [] }, {
+      tenantId: first.tenant.id,
+      actorId: first.employee.id,
+      actorEmail: first.employee.email,
+      actorRole: first.employee.role,
+    }),
     (error: unknown) => (error as { code?: string }).code === "PERMISSION_REQUIRED",
   );
   await assert.rejects(
@@ -335,6 +340,7 @@ test("delegation rejects scope widening and direct-service crafted grants", asyn
   const employeeActor = {
     tenantId: tenant.id,
     actorId: employee.id,
+    actorEmail: employee.email,
     actorRole: employee.role,
   };
 

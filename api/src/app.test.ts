@@ -23,6 +23,7 @@ import TenantModel from "./db/models/tenant.model.js";
 import UserModel from "./db/models/user.model.js";
 import AuditLogModel from "./db/models/auditLog.model.js";
 import RefreshTokenModel from "./db/models/refreshToken.model.js";
+import RoleModel from "./db/models/role.model.js";
 import DocumentModel from "./db/models/document.model.js";
 import UsageLogModel from "./db/models/usageLog.model.js";
 import { PLATFORM_TENANT_SLUG } from "./common/auth/platformTenant.js";
@@ -194,6 +195,7 @@ beforeEach(async () => {
   await AuditLogModel.deleteMany({});
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
+  await RoleModel.deleteMany({});
   await DocumentModel.deleteMany({});
   await UsageLogModel.deleteMany({});
 });
@@ -842,6 +844,66 @@ test("returns a paginated list of tenant users", async () => {
         body.data.users.some((user) => user.email === "bob@acme.com"),
     );
     assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("user routes require authentication and effective users:read permission", async () => {
+  const server = await createServer();
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await UserModel.create({
+      tenantId: tenant.id,
+      name: "Permission Employee",
+      email: "permission-employee@acme.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "EMPLOYEE",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    const unauthenticated = await fetch(`http://127.0.0.1:${port}/users`);
+    assert.equal(unauthenticated.status, 401);
+
+    const employeeLogin = await postLogin(
+      port,
+      tenant.slug,
+      employee.email,
+    );
+    const employeeBody = (await employeeLogin.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+    const denied = await fetch(`http://127.0.0.1:${port}/users`, {
+      headers: {
+        Authorization: `Bearer ${employeeBody.data.tokens.accessToken}`,
+      },
+    });
+    assert.equal(denied.status, 403);
+
+    const role = await RoleModel.create({
+      tenantId: tenant.id,
+      name: "User Directory Reader",
+      normalizedName: "user directory reader",
+      baseRole: "EMPLOYEE",
+      grants: [{ permission: "users:read" }],
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    });
+    await UserModel.updateOne(
+      { _id: employee._id, tenantId: tenant._id },
+      { $set: { customRoleId: role._id } },
+    );
+
+    const allowed = await fetch(`http://127.0.0.1:${port}/users`, {
+      headers: {
+        Authorization: `Bearer ${employeeBody.data.tokens.accessToken}`,
+      },
+    });
+    assert.equal(allowed.status, 200);
   } finally {
     await closeServer(server);
   }
