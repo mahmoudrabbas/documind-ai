@@ -185,8 +185,10 @@ userSchema.index(
 userSchema.index(
   { tenantId: 1, "employeeProfile.employeeId": 1 },
   {
-    sparse: true,
     unique: true,
+    partialFilterExpression: {
+      "employeeProfile.employeeId": { $type: "string" },
+    },
     name: "uniq_tenant_employee_id",
   }
 );
