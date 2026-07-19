@@ -2,7 +2,6 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { ObjectId, type Db } from "mongodb";
 import { Queue } from "bullmq";
-import { config } from "../config/index.js";
 import { getMongoClient } from "../db/mongo.js";
 import { getRedisClient, isRedisConnected } from "../db/redis.js";
 import { logger } from "../logger.js";
@@ -275,7 +274,6 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
         }
 
         // ── 5c. Dedup: existing user with same email + tenant ────────────────
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const existingUser = await users.findOne({ tenantId, email: rowEmail }) as Record<string, unknown> | null;
         if (existingUser) {
           await markRowSkipped(db, row._id, `User already exists: ${rowEmail}`);
@@ -358,7 +356,6 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
             const dup = (await users.findOne({
               tenantId,
               email: rowEmail,
-              /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
             })) as Record<string, unknown> | null;
             if (dup) {
               await markRowCreated(db, row._id, dup._id as ObjectId);
