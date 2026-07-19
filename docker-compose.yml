@@ -19,6 +19,7 @@ services:
       - SUPER_ADMIN_BOOTSTRAP_KEY_FILE=/run/secrets/api_super_admin_bootstrap_key
       - STRIPE_SECRET_KEY_FILE=/run/secrets/stripe_secret_key
       - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/stripe_webhook_secret
+      - SEND_EMAILS=true
     secrets:
       - api_jwt_secret
       - api_refresh_secret

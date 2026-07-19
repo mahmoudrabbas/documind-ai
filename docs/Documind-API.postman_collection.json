@@ -1,0 +1,362 @@
+{
+	"info": {
+		"name": "DocuMind AI — Import API",
+		"description": "Collection for testing employee Excel/CSV import flow.\n\n**Variables** — set these before starting:\n- `base_url`: API base URL (default: http://localhost:5000)\n- `company_slug`: your tenant slug\n- `email`: admin email\n- `password`: admin password\n\nThe **Sign In** request auto-saves the access token into `access_token` — all subsequent requests pick it up automatically.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "company_slug",
+			"value": "acme-consulting",
+			"type": "string"
+		},
+		{
+			"key": "email",
+			"value": "admin@acme.com",
+			"type": "string"
+		},
+		{
+			"key": "password",
+			"value": "your-password",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "batch_id",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Auth",
+			"description": "Sign in and automatically save the access token.",
+			"item": [
+				{
+					"name": "Sign In",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const json = pm.response.json();",
+									"if (json.success && json.data?.tokens?.accessToken) {",
+									"  pm.collectionVariables.set('access_token', json.data.tokens.accessToken);",
+									"  console.log('Token saved:', json.data.tokens.accessToken.slice(0, 20) + '...');",
+									"}",
+									"",
+									"// Also save tenant/user info for reference",
+									"if (json.data?.tenant?.slug) {",
+									"  pm.collectionVariables.set('company_slug', json.data.tenant.slug);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"companySlug\": \"{{company_slug}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Sign In (Super Admin)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const json = pm.response.json();",
+									"if (json.success && json.data?.tokens?.accessToken) {",
+									"  pm.collectionVariables.set('access_token', json.data.tokens.accessToken);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/super-admin/login",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "super-admin", "login"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Import — Preparation",
+			"description": "Download template and upload a file.",
+			"item": [
+				{
+					"name": "Download Template",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/imports/template",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "template"]
+						}
+					}
+				},
+				{
+					"name": "Upload CSV File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const json = pm.response.json();",
+									"if (json.success && json.data?.batchId) {",
+									"  pm.collectionVariables.set('batch_id', json.data.batchId);",
+									"  console.log('Batch ID saved:', json.data.batchId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "",
+									"description": "Select an .xlsx, .xls, or .csv file to upload"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/imports/upload",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "upload"]
+						}
+					}
+				},
+				{
+					"name": "Update Mapping (optional)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"Name\": \"name\",\n  \"Email\": \"email\",\n  \"Department\": \"employeeProfile.department\",\n  \"Job Title\": \"employeeProfile.jobTitle\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/imports/{{batch_id}}/mapping",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "{{batch_id}}", "mapping"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Import — Execute",
+			"description": "Confirm the import and track progress.",
+			"item": [
+				{
+					"name": "Confirm Import",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const json = pm.response.json();",
+									"if (json.success && json.data?.id) {",
+									"  pm.collectionVariables.set('batch_id', json.data.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"idempotencyKey\": \"import-{{$timestamp}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/imports/{{batch_id}}/confirm",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "{{batch_id}}", "confirm"]
+						}
+					}
+				},
+				{
+					"name": "Get Batch Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/imports/{{batch_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "{{batch_id}}"]
+						}
+					}
+				},
+				{
+					"name": "List All Batches",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/imports?page=1&pageSize=20",
+							"host": ["{{base_url}}"],
+							"path": ["imports"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "pageSize", "value": "20" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Import — Recovery",
+			"description": "Cancel or retry a batch.",
+			"item": [
+				{
+					"name": "Cancel Batch",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/imports/{{batch_id}}/cancel",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "{{batch_id}}", "cancel"]
+						}
+					}
+				},
+				{
+					"name": "Retry Failed Rows",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"rowNumbers\": [2, 5, 10]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/imports/{{batch_id}}/retry",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "{{batch_id}}", "retry"]
+						}
+					}
+				},
+				{
+					"name": "Export Results",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/imports/{{batch_id}}/export",
+							"host": ["{{base_url}}"],
+							"path": ["imports", "{{batch_id}}", "export"]
+						}
+					}
+				}
+			]
+		}
+	]
+}
