@@ -105,7 +105,11 @@ test(
       });
       assert.equal(first.deduplicated, false);
       // Wait for BullMQ to persist the first job before checking dedup.
-      await new Promise((r) => setTimeout(r, 500));
+      for (let i = 0; i < 10; i++) {
+        const found = await adapter.getJobStatus(first.jobId);
+        if (found) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
       const second = await adapter.enqueue({
         jobType: "system.sample.noop",
         tenantId: "t1",
