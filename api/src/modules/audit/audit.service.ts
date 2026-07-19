@@ -47,7 +47,6 @@ export async function listTenantAuditLogs(
     findAuditLogs(context.tenantId, filter, page, pageSize),
     countAuditLogs(context.tenantId, filter),
   ]);
-  await auditAccess(context, "list", filter, logs.length);
   return {
     logs,
     pagination: {
@@ -67,7 +66,6 @@ export async function getTenantAuditLog(
   const { id } = validateAuditLogIdInput(input);
   const log = await getAuditLogById(context.tenantId, id);
   if (!log) throw new AppError(404, NOT_FOUND, "Audit log not found");
-  await auditAccess(context, "detail", { resourceId: id }, 1);
   return { log };
 }
 
@@ -112,7 +110,6 @@ export async function listPlatformAuditLogs(
   const context = await authorizePlatformAudit(inputContext);
   const payload = validatePlatformAuditInput(input);
   const result = await findPlatformAuditLogs(payload);
-  await auditAccess(context, "list", {}, result.logs.length);
   return result;
 }
 
@@ -204,29 +201,6 @@ async function authorizePlatformAudit(
   };
   await authorizePermission(resolved, Permission.AUDIT_READ);
   return resolved;
-}
-
-async function auditAccess(
-  context: ResolvedAuditContext,
-  operation: "list" | "detail",
-  filter: AuditQueryFilter,
-  count: number,
-): Promise<void> {
-  await getAuditWriter().write({
-    tenantId: context.tenantId,
-    action: "AUDIT_QUERIED",
-    resourceType: "System",
-    resourceId: operation === "detail" ? filter.resourceId ?? "audit_log" : "audit_logs",
-    actorId: context.actorId,
-    actorEmail: context.actorEmail,
-    actorRole: context.actorRole,
-    actorKind: context.actorKind,
-    changes: { operation, count, filters: safeFilters(filter) },
-    metadata: {
-      traceId: context.traceId,
-      requestId: context.requestId,
-    },
-  });
 }
 
 function safeFilters(filter: AuditQueryFilter): AuditQueryFilter {

@@ -326,25 +326,52 @@ test("historical secrets are redacted and export is bounded and spreadsheet-safe
   );
 });
 
-test("audit access events are authoritative, allowlisted, and non-recursive", async () => {
+test("reading audit logs does not create AUDIT_QUERIED events", async () => {
   const first = await fixture("audit-event");
   await createLog(first.tenant._id, first.admin._id, first.admin.email);
-  await listTenantAuditLogs({ action: "USER_UPDATED" }, {
-    ...first.context,
-    actorEmail: "untrusted@example.test",
-    actorRole: "EMPLOYEE",
+  await listTenantAuditLogs({ action: "USER_UPDATED" }, first.context);
+  // Reading audit logs must NOT write any events — no self-auditing noise
+  assert.equal(auditWriter.events.length, 0);
+});
+
+test("platform audit reads do not create AUDIT_QUERIED events", async () => {
+  const platform = await TenantModel.create({
+    name: "Platform",
+    slug: "documind.ai",
+    status: "active",
+    plan: "pro",
+    isSystemTenant: true,
   });
+  const superAdmin = await UserModel.create({
+    tenantId: platform._id,
+    name: "Platform Admin",
+    email: "platform-admin-noise@test.com",
+    passwordHash: "test",
+    role: "SUPER_ADMIN",
+    status: "active",
+    emailVerified: true,
+  });
+  const context: AuditOperationContext = {
+    tenantId: platform.id,
+    actorId: superAdmin.id,
+    actorEmail: superAdmin.email,
+    actorRole: superAdmin.role,
+  };
+  await listPlatformAuditLogs({ page: 1, pageSize: 20 }, context);
+  assert.equal(auditWriter.events.length, 0);
+});
+
+test("audit export still writes AUDIT_EXPORTED event", async () => {
+  const first = await fixture("audit-export");
+  await createLog(first.tenant._id, first.admin._id, first.admin.email);
+  await exportTenantAuditLogs({
+    dateFrom: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+  }, first.context);
+  // Export is a security-relevant mutation — it SHOULD create an audit event
   assert.equal(auditWriter.events.length, 1);
   const event = auditWriter.events[0];
-  assert.equal(event?.action, "AUDIT_QUERIED");
+  assert.equal(event?.action, "AUDIT_EXPORTED");
   assert.equal(event?.actorEmail, first.admin.email);
-  assert.equal(event?.actorRole, "COMPANY_ADMIN");
-  assert.deepEqual(event?.changes, {
-    operation: "list",
-    count: 1,
-    filters: { action: "USER_UPDATED" },
-  });
-  assert.equal(JSON.stringify(event).includes("password"), false);
 });
 
 test("platform audit service requires an authoritative platform Super Admin", async () => {
