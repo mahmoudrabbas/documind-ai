@@ -107,7 +107,7 @@ export default function BatchDetailPage() {
       stopPolling();
     }
     return () => stopPolling();
-  }, [batch?.status, loadData, stopPolling]);
+  }, [batch, loadData, stopPolling]);
 
   async function handleCancel() {
     setCancelling(true);

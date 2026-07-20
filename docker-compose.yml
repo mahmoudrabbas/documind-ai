@@ -99,8 +99,8 @@ services:
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_SECURE=false
-      - SMTP_USER=mahmoudrabass11@gmail.com
-      - SMTP_FROM=mahmoudrabass11@gmail.com
+      - SMTP_USER=marcoreda51@gmail.com
+      - SMTP_FROM=marcoreda51@gmail.com
     secrets:
       - worker_mongodb_uri
       - worker_redis_url

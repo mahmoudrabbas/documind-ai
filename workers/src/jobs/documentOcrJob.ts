@@ -181,6 +181,7 @@ function createOcrServiceStub(): OcrProviderStub {
 
 async function renderPdfPageToImage(pdfBuffer: Buffer, pageNumber: number, scale?: number): Promise<Buffer> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer) });
   const pdfDoc = await loadingTask.promise;
@@ -410,6 +411,7 @@ async function detectPageCount(fileBuffer: Buffer, mimeType: string): Promise<nu
   if (mimeType === "application/pdf") {
     try {
       const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(fileBuffer) });
       const pdfDoc = await loadingTask.promise;
       return pdfDoc.numPages;

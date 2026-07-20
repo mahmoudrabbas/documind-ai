@@ -68,6 +68,10 @@ const en: TranslationDictionary = {
   "auth.errorTenantNotActive": "Tenant is not active.",
   "auth.errorRegistrationDisabled":
     "New registrations are currently disabled. Please contact your administrator.",
+  "auth.errorEmailAlreadyExists":
+    "An account with this email already exists. Please sign in or use a different email.",
+  "auth.errorTenantAlreadyExists":
+    "A company with this name or URL already exists. Please choose a different one.",
   "auth.backToHome": "Back to Home",
   "auth.rateLimitTitle": "Too many requests",
   "auth.rateLimitCountdown": "Please wait {{seconds}} seconds before trying again.",

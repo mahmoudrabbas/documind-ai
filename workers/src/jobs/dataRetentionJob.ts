@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { ObjectId } from "mongodb";
 import type { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";

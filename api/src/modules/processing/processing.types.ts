@@ -88,6 +88,7 @@ export interface ReviewQualityInput {
 
 export interface RetryOcrInput {
   pageNumbers?: number[];
+  version?: number;
 }
 
 export interface OcrUsageSummaryView {

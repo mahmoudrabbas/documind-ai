@@ -11,10 +11,8 @@ import {
   uploadImportFile,
 } from "@/services/imports.service";
 import type {
-  ImportBatchStatus,
   ImportBatchView,
   ImportPreview,
-  ImportRowView,
   ImportRowState,
 } from "@/types/api/imports.types";
 import {
@@ -48,12 +46,6 @@ const TARGET_FIELDS = [
   { value: "_skip", label: "(Skip column)" },
 ];
 
-const ROW_STATE_STYLES: Record<ImportRowState, string> = {
-  VALID: "bg-emerald-50 text-emerald-900",
-  WARNING: "bg-amber-50 text-amber-900",
-  INVALID: "bg-red-50 text-red-900",
-};
-
 const ROW_STATE_BADGE: Record<ImportRowState, string> = {
   VALID: "bg-emerald-100 text-emerald-800",
   WARNING: "bg-amber-100 text-amber-800",
@@ -64,30 +56,12 @@ function generateIdempotencyKey(): string {
   return `import_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function getStatusBadgeClass(status: ImportBatchStatus): string {
-  switch (status) {
-    case "PROCESSING":
-    case "VALIDATING":
-      return "bg-blue-100 text-blue-800";
-    case "COMPLETED":
-      return "bg-emerald-100 text-emerald-800";
-    case "PARTIALLY_COMPLETED":
-      return "bg-amber-100 text-amber-800";
-    case "FAILED":
-      return "bg-red-100 text-red-800";
-    case "CANCELLED":
-      return "bg-neutral-100 text-neutral-800";
-    default:
-      return "bg-surface-container text-on-surface-variant";
-  }
-}
-
 export default function ImportPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<PagePhase>("upload");
   const [error, setError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [, setUploadProgress] = useState<number>(0);
   const [isDragging, setIsDragging] = useState(false);
 
   const [preview, setPreview] = useState<ImportPreview | null>(null);

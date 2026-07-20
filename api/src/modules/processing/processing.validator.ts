@@ -48,6 +48,7 @@ export function validateReviewQualityInput(input: unknown): ReviewQualityInput {
 
 const retryOcrSchema = z.object({
   pageNumbers: z.array(z.number().int().positive()).max(500).optional(),
+  version: z.number().int().positive().optional(),
 }).strict();
 
 export function validateRetryOcrInput(input: unknown): RetryOcrInput {

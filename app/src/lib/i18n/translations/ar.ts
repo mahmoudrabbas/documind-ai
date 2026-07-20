@@ -68,6 +68,10 @@ const ar: TranslationDictionary = {
   "auth.errorTenantNotActive": "المستأجر غير مفعّل.",
   "auth.errorRegistrationDisabled":
     "التسجيلات الجديدة معطّلة حالياً. يرجى التواصل مع المسؤول.",
+  "auth.errorEmailAlreadyExists":
+    "يوجد حساب بهذا البريد الإلكتروني بالفعل. يرجى تسجيل الدخول أو استخدام بريد إلكتروني آخر.",
+  "auth.errorTenantAlreadyExists":
+    "يوجد شركة بهذا الاسم أو الرابط بالفعل. يرجى اختيار اسم أو رابط مختلف.",
   "auth.backToHome": "العودة إلى الرئيسية",
   "auth.rateLimitTitle": "طلبات كثيرة جداً",
   "auth.rateLimitCountdown": "يرجى الانتظار {{seconds}} ثانية قبل المحاولة مرة أخرى.",
