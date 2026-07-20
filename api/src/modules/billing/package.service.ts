@@ -191,14 +191,14 @@ export async function createVersion(
   // the versions array. Mongoose validates the entire array on save, so a
   // missing entitlements field on any historical snapshot causes a validation
   // error. We normalise lazily on the next version bump.
-  let dirty = false;
+  let _dirty = false;
   for (const v of pkg.versions) {
     if (!v.entitlements) {
       const legacy = (v as unknown as { limits?: LegacyLimits }).limits;
       v.entitlements = legacy
         ? entitlementsFromLimits(legacy)
         : pkg.entitlements;
-      dirty = true;
+      _dirty = true;
     }
   }
 

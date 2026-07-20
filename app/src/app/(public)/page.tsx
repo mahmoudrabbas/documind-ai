@@ -20,7 +20,15 @@ type PackageData = {
     documents: number;
     queriesPerMonth: number;
     storageMb: number;
+    admins?: number;
+    fileSizeMb?: number;
+    tokensPerMonth?: number;
+    ocrPagesPerMonth?: number;
   };
+  supportedModels?: string[];
+  analyticsLevel?: string;
+  supportLevel?: string;
+  retentionDays?: number;
 };
 
 function SectionHeading({ title, subtitle, center = true }: { title: string; subtitle: string; center?: boolean }) {
@@ -230,6 +238,219 @@ function UseCasesSection() {
   );
 }
 
+function formatCurrency(amount: number, currency: string): string {
+  if (currency === "USD") return `$${amount}`;
+  return `${currency} ${amount}`;
+}
+
+function formatEntitlementLabel(key: string, value: number): string {
+  switch (key) {
+    case "employees":
+      return `${value} user${value !== 1 ? "s" : ""}`;
+    case "documents":
+      return `${value.toLocaleString()} document${value !== 1 ? "s" : ""}`;
+    case "queriesPerMonth":
+      return `${value.toLocaleString()} questions/mo`;
+    case "storageMb":
+      return value >= 1024
+        ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)} GB storage`
+        : `${value} MB storage`;
+    case "admins":
+      return `${value} admin${value !== 1 ? "s" : ""}`;
+    case "fileSizeMb":
+      return `Up to ${value} MB per file`;
+    case "tokensPerMonth":
+      return `${(value / 1_000_000).toFixed(0)}M tokens/mo`;
+    case "ocrPagesPerMonth":
+      return `${value.toLocaleString()} OCR pages/mo`;
+    default:
+      return `${key}: ${value}`;
+  }
+}
+
+function PricingCard({
+  pkg,
+  t,
+  annual,
+  isRecommended,
+  isFree,
+}: {
+  pkg: PackageData;
+  t: (key: string) => string;
+  annual: boolean;
+  isRecommended?: boolean;
+  isFree?: boolean;
+}) {
+  const effectivePrice = annual && pkg.annualPrice
+    ? Math.round(pkg.annualPrice / 12)
+    : pkg.monthlyPrice;
+
+  const hasTrial = typeof pkg.trialDays === "number" && pkg.trialDays > 0;
+  const annualSavings =
+    annual && pkg.annualPrice && pkg.monthlyPrice > 0
+      ? Math.round(
+          ((pkg.monthlyPrice * 12 - pkg.annualPrice) /
+            (pkg.monthlyPrice * 12)) *
+            100,
+        )
+      : 0;
+
+  const entitlementEntries = Object.entries(pkg.entitlements).filter(
+    ([, v]) => typeof v === "number" && v > 0,
+  );
+
+  return (
+    <div
+      className={cn(
+        "relative flex flex-col rounded-2xl border bg-surface-container-lowest p-7 transition-all duration-200 sm:p-8",
+        isRecommended
+          ? "border-primary/40 shadow-md ring-1 ring-primary/10"
+          : "border-outline-variant/60 shadow-card hover:border-outline-variant hover:shadow-md",
+      )}
+    >
+      {isRecommended && (
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3.5 py-1 text-label-xs font-semibold text-on-primary shadow-sm">
+            <span
+              className="material-symbols-outlined text-sm"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              star
+            </span>
+            Most Popular
+          </span>
+        </div>
+      )}
+
+      {hasTrial && (
+        <div className={cn("mb-3", isRecommended && "mt-1")}>
+          <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
+            {pkg.trialDays}-day free trial
+          </span>
+        </div>
+      )}
+
+      <h3
+        className={cn(
+          "text-xl font-bold",
+          isRecommended ? "text-primary" : "text-on-surface",
+        )}
+      >
+        {pkg.name}
+      </h3>
+
+      {pkg.description && (
+        <p className="mt-1.5 text-body-sm text-on-surface-variant line-clamp-2">
+          {pkg.description}
+        </p>
+      )}
+
+      <div className="mt-5 flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            "text-4xl font-extrabold tracking-tight",
+            isRecommended ? "text-primary" : "text-on-surface",
+          )}
+        >
+          {isFree ? "$0" : formatCurrency(effectivePrice, pkg.currency)}
+        </span>
+        {!isFree && (
+          <span className="text-body-sm text-on-surface-variant">/month</span>
+        )}
+      </div>
+
+      {annual && annualSavings > 0 && pkg.annualPrice ? (
+        <p className="mt-1 text-label-xs text-tertiary">
+          Billed annually at {formatCurrency(pkg.annualPrice, pkg.currency)}/yr — save {annualSavings}%
+        </p>
+      ) : annual && pkg.annualPrice ? (
+        <p className="mt-1 text-label-xs text-on-surface-variant">
+          Billed annually at {formatCurrency(pkg.annualPrice, pkg.currency)}/yr
+        </p>
+      ) : null}
+
+      <div className="my-5 h-px bg-outline-variant/50" />
+
+      <ul className="flex-1 space-y-2.5">
+        {entitlementEntries.map(([key, value]) => (
+          <li
+            key={key}
+            className="flex items-start gap-2.5 text-sm text-on-surface-variant"
+          >
+            <span
+              className={cn(
+                "material-symbols-outlined mt-0.5 text-base",
+                isRecommended ? "text-primary" : "text-tertiary",
+              )}
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              check_circle
+            </span>
+            {formatEntitlementLabel(key, value)}
+          </li>
+        ))}
+
+        {pkg.supportedModels && pkg.supportedModels.length > 0 && (
+          <li className="flex items-start gap-2.5 text-sm text-on-surface-variant">
+            <span
+              className={cn(
+                "material-symbols-outlined mt-0.5 text-base",
+                isRecommended ? "text-primary" : "text-tertiary",
+              )}
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              check_circle
+            </span>
+            {pkg.supportedModels.length} AI model{pkg.supportedModels.length !== 1 ? "s" : ""}
+          </li>
+        )}
+
+        {pkg.supportLevel && (
+          <li className="flex items-start gap-2.5 text-sm text-on-surface-variant">
+            <span
+              className={cn(
+                "material-symbols-outlined mt-0.5 text-base",
+                isRecommended ? "text-primary" : "text-tertiary",
+              )}
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              check_circle
+            </span>
+            {pkg.supportLevel} support
+          </li>
+        )}
+
+        {typeof pkg.retentionDays === "number" && pkg.retentionDays > 0 && (
+          <li className="flex items-start gap-2.5 text-sm text-on-surface-variant">
+            <span
+              className={cn(
+                "material-symbols-outlined mt-0.5 text-base",
+                isRecommended ? "text-primary" : "text-tertiary",
+              )}
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              check_circle
+            </span>
+            {pkg.retentionDays}-day data retention
+          </li>
+        )}
+      </ul>
+
+      <Link
+        href={isFree ? "/register" : `/register?package=${pkg.code}`}
+        className={cn(
+          "mt-7 block w-full rounded-xl py-3 text-center text-label-md font-semibold transition-all active:scale-[0.98]",
+          isRecommended
+            ? "bg-primary text-on-primary shadow-sm hover:opacity-90"
+            : "border border-primary bg-transparent text-primary hover:bg-primary hover:text-on-primary",
+        )}
+      >
+        {isFree ? t("landing.pricingFreeCta") : t("landing.pricingCta")}
+      </Link>
+    </div>
+  );
+}
+
 function PricingSection() {
   const { t, dir } = useI18n();
   const [packages, setPackages] = useState<PackageData[]>([]);
@@ -252,180 +473,92 @@ function PricingSection() {
     return () => { active = false; };
   }, []);
 
+  const paidPackages = packages.filter((p) => p.code !== "free");
+  const freePkg = packages.find((p) => p.code === "free");
+  const recommendedCode =
+    paidPackages.length >= 2
+      ? paidPackages[paidPackages.length - 1]?.code
+      : paidPackages.length === 1
+        ? paidPackages[0].code
+        : null;
+
+  const fallbackFree: PackageData = {
+    id: "free-fallback",
+    name: t("landing.pricingFree"),
+    code: "free",
+    description: t("landing.pricingFreeDesc"),
+    monthlyPrice: 0,
+    currency: "USD",
+    entitlements: { employees: 3, documents: 50, queriesPerMonth: 500, storageMb: 100 },
+  };
+
+  const gridCols =
+    paidPackages.length + (freePkg || packages.length === 0 ? 1 : 0) <= 2
+      ? "md:grid-cols-2"
+      : "md:grid-cols-2 lg:grid-cols-3";
+
   return (
     <section id="pricing" className="bg-surface py-24" dir={dir}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading title={t("landing.pricingTitle")} subtitle={t("landing.pricingSubtitle")} />
 
-        {/* Billing toggle */}
-        <div className="mb-10 flex justify-center">
+        <div className="mb-12 flex justify-center">
           <div className="inline-flex items-center rounded-xl border border-outline-variant bg-surface p-1">
             <button
+              type="button"
               onClick={() => setAnnual(false)}
               className={cn(
                 "rounded-lg px-5 py-2 text-label-md font-medium transition-all",
                 !annual
                   ? "bg-primary text-on-primary shadow-sm"
-                  : "text-on-surface-variant hover:text-primary"
+                  : "text-on-surface-variant hover:text-primary",
               )}
             >
               Monthly
             </button>
             <button
+              type="button"
               onClick={() => setAnnual(true)}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-lg px-5 py-2 text-label-md font-medium transition-all",
                 annual
                   ? "bg-primary text-on-primary shadow-sm"
-                  : "text-on-surface-variant hover:text-primary"
+                  : "text-on-surface-variant hover:text-primary",
               )}
             >
               Annual
-              <span className="rounded-full bg-tertiary/10 px-2 py-0.5 text-label-xs text-tertiary">Save</span>
+              <span className="rounded-full bg-tertiary/10 px-2 py-0.5 text-label-xs text-tertiary">
+                Save
+              </span>
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-12">
+          <div className="flex justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
           </div>
-        ) : packages.length === 0 ? (
-          <div className="grid gap-8 md:grid-cols-3">
-            <PricingCardFree t={t} packages={[]} annual={annual} />
-          </div>
         ) : (
-          <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3 items-start">
-            <PricingCardFree t={t} packages={packages} annual={annual} />
-            {packages.map((pkg) => (
-              <PricingCard key={pkg.id} pkg={pkg} t={t} annual={annual} />
+          <div className={cn("grid items-stretch gap-6 lg:gap-8", gridCols)}>
+            <PricingCard
+              pkg={freePkg || fallbackFree}
+              t={t}
+              annual={annual}
+              isFree
+            />
+            {paidPackages.map((pkg) => (
+              <PricingCard
+                key={pkg.id}
+                pkg={pkg}
+                t={t}
+                annual={annual}
+                isRecommended={pkg.code === recommendedCode}
+              />
             ))}
           </div>
         )}
       </div>
     </section>
-  );
-}
-
-function PricingCardFree({ t, packages, annual: _annual }: { t: (key: string) => string; packages: PackageData[]; annual: boolean }) {
-  const freePkg = packages.find((p) => p.code === "free");
-
-  if (freePkg) {
-    return (
-      <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card">
-        {typeof freePkg.trialDays === "number" && freePkg.trialDays > 0 && (
-          <div className="mb-3">
-            <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
-              {freePkg.trialDays}-day free trial
-            </span>
-          </div>
-        )}
-        <h3 className="text-title-lg font-bold text-primary">{freePkg.name}</h3>
-        <div className="mt-4 flex items-baseline gap-1">
-          <span className="text-display-lg font-bold text-primary">$0</span>
-          <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
-        </div>
-        <p className="mt-2 text-body-sm text-on-surface-variant">{freePkg.description}</p>
-        <ul className="mt-8 flex-1 space-y-3">
-          {[
-            `${freePkg.entitlements.employees} users`,
-            `${freePkg.entitlements.documents} documents`,
-            `${freePkg.entitlements.queriesPerMonth.toLocaleString()} questions/mo`,
-            `${freePkg.entitlements.storageMb} MB storage`,
-          ].map((item) => (
-            <li key={item} className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-              <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-              {item}
-            </li>
-          ))}
-        </ul>
-        <Link
-          href="/register"
-          className="mt-8 block w-full rounded-xl border border-primary py-3 text-center text-label-md font-semibold text-primary transition-all hover:bg-primary hover:text-on-primary"
-        >
-          {t("landing.pricingFreeCta")}
-        </Link>
-      </div>
-    );
-  }
-
-  // Fallback: hardcoded free card when API data unavailable
-  return (
-    <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card">
-      <h3 className="text-title-lg font-bold text-primary">{t("landing.pricingFree")}</h3>
-      <div className="mt-4 flex items-baseline gap-1">
-        <span className="text-display-lg font-bold text-primary">$0</span>
-        <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
-      </div>
-      <p className="mt-2 text-body-sm text-on-surface-variant">{t("landing.pricingFreeDesc")}</p>
-      <ul className="mt-8 flex-1 space-y-3">
-        {["3 users", "50 documents", "500 questions/mo", "100 MB storage"].map((item) => (
-          <li key={item} className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-            <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-            {item}
-          </li>
-        ))}
-      </ul>
-      <Link
-        href="/register"
-        className="mt-8 block w-full rounded-xl border border-primary py-3 text-center text-label-md font-semibold text-primary transition-all hover:bg-primary hover:text-on-primary"
-      >
-        {t("landing.pricingFreeCta")}
-      </Link>
-    </div>
-  );
-}
-
-function PricingCard({ pkg, t, annual }: { pkg: PackageData; t: (key: string) => string; annual: boolean }) {
-  const effectivePrice = annual && pkg.annualPrice !== undefined
-    ? Math.round(pkg.annualPrice / 12)
-    : pkg.monthlyPrice;
-
-  return (
-    <div className="flex flex-col rounded-2xl border border-outline-variant bg-surface-container-lowest p-8 shadow-card transition-shadow hover:shadow-popover">
-      {typeof pkg.trialDays === "number" && pkg.trialDays > 0 && (
-        <div className="mb-3">
-          <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
-            {pkg.trialDays}-day free trial
-          </span>
-        </div>
-      )}
-      <h3 className="text-title-lg font-bold text-primary">{pkg.name}</h3>
-      <div className="mt-4 flex items-baseline gap-1">
-        <span className="text-display-lg font-bold text-primary">
-          {pkg.currency === "USD" ? "$" : pkg.currency}{effectivePrice}
-        </span>
-        <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
-      </div>
-      {annual && pkg.annualPrice !== undefined && (
-        <p className="mt-1 text-label-xs text-on-surface-variant">billed annually</p>
-      )}
-      <p className="mt-2 text-body-sm text-on-surface-variant">{pkg.description}</p>
-      <ul className="mt-8 flex-1 space-y-3">
-        <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-          <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.entitlements.employees} users
-        </li>
-        <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-          <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.entitlements.documents} documents
-        </li>
-        <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-          <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.entitlements.queriesPerMonth.toLocaleString()} questions/mo
-        </li>
-        <li className="flex items-center gap-2 text-body-sm text-on-surface-variant">
-          <span className="material-symbols-outlined text-sm text-tertiary" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-          {pkg.entitlements.storageMb} MB storage
-        </li>
-      </ul>
-      <Link
-        href={`/register?package=${pkg.code}`}
-        className="mt-8 block w-full rounded-xl bg-primary py-3 text-center text-label-md font-semibold text-on-primary shadow-sm transition-all hover:opacity-90 active:scale-[0.98]"
-      >
-        {t("landing.pricingCta")}
-      </Link>
-    </div>
   );
 }
 

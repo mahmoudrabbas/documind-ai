@@ -69,7 +69,7 @@ export interface Pagination {
 }
 
 export interface PublicPackage {
-  _id: string;
+  id: string;
   name: string;
   code: string;
   description: string;
@@ -79,13 +79,9 @@ export interface PublicPackage {
   trialDays: number;
   entitlements: {
     employees: number;
-    admins: number;
     documents: number;
     storageMb: number;
-    fileSizeMb: number;
     queriesPerMonth: number;
-    tokensPerMonth: number;
-    ocrPagesPerMonth: number;
   };
   supportedModels: string[];
   analyticsLevel: string;

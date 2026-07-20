@@ -78,7 +78,7 @@ export class FakePaymentProvider implements PaymentProvider {
     this.sessions.push(session);
     return {
       id: session.id,
-      url: `https://fake-payment.test/checkout/${session.id}`,
+      url: session.successUrl.replace("{CHECKOUT_SESSION_ID}", session.id),
       status: "open",
       customerId: session.customerId,
       metadata: session.metadata,
@@ -94,7 +94,7 @@ export class FakePaymentProvider implements PaymentProvider {
     }
     return {
       id: session.id,
-      url: `https://fake-payment.test/checkout/${session.id}`,
+      url: session.successUrl.replace("{CHECKOUT_SESSION_ID}", session.id),
       status: session.status,
       customerId: session.customerId,
       metadata: session.metadata,

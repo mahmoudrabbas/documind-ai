@@ -107,7 +107,7 @@ export async function listPlatformAuditLogs(
   },
   inputContext: AuditOperationContext,
 ) {
-  const context = await authorizePlatformAudit(inputContext);
+  const _context = await authorizePlatformAudit(inputContext);
   const payload = validatePlatformAuditInput(input);
   const result = await findPlatformAuditLogs(payload);
   return result;

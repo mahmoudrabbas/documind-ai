@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import { UNAUTHORIZED } from "../../common/errors/errorCodes.js";
+import { config } from "../../config/index.js";
+import { logger } from "../../common/logger/logger.js";
 import {
   createCheckoutSession,
   getCheckoutStatus,
@@ -16,6 +18,10 @@ import {
 import { getPaymentProvider } from "./payment-provider-loader.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
+import { FakePaymentProvider } from "../billing/ports/fakes/fake-payment-provider.js";
+import { transitionSubscription } from "../billing/subscription.service.js";
+import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -65,8 +71,9 @@ export const createCheckoutController = endpoint(async (req, res) => {
   const body = parse(createCheckoutSchema, req.body);
   const provider = await getPaymentProvider();
 
-  const successUrl = `${req.protocol}://${req.get("host")}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${req.protocol}://${req.get("host")}/checkout/cancel`;
+  const frontendUrl = config.APP_FRONTEND_URL;
+  const successUrl = `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${frontendUrl}/checkout/cancel`;
 
   const result = await createCheckoutSession(
     tenantId,
@@ -77,6 +84,27 @@ export const createCheckoutController = endpoint(async (req, res) => {
     cancelUrl,
     operationContext(req),
   );
+
+  if (provider instanceof FakePaymentProvider) {
+    provider.markSessionComplete(result.providerSessionId);
+
+    try {
+      const sub = await SubscriptionModel.findOne({ tenantId }).exec();
+      if (sub && ["INCOMPLETE", "TRIALING"].includes(sub.status)) {
+        await transitionSubscription(tenantId, "ACTIVE", {
+          triggeredBy: "provider_event",
+          providerEventId: `fake_${result.providerSessionId}`,
+        });
+      }
+
+      await CheckoutSessionModel.updateOne(
+        { providerSessionId: result.providerSessionId },
+        { $set: { status: "completed", completedAt: new Date() } },
+      );
+    } catch (err) {
+      logger.warn({ err }, "Failed to auto-complete fake checkout session");
+    }
+  }
 
   res.status(201).json({ success: true, data: result });
 });

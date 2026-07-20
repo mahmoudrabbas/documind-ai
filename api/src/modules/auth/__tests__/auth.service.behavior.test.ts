@@ -72,6 +72,18 @@ vi.mock("../../billing/registration.service.js", () => ({
   provisionSubscription: billingMocks.provisionSubscription,
 }));
 
+const globalSettingsMocks = vi.hoisted(() => ({
+  getGlobalSettings: vi.fn().mockResolvedValue({
+    supportEmail: "support@example.com",
+    maintenanceMode: false,
+    allowRegistrations: true,
+    defaultTrialDays: 0,
+    dataRetentionDays: 365,
+  }),
+  invalidateGlobalSettingsCache: vi.fn(),
+}));
+vi.mock("../../platform/global-settings.js", () => globalSettingsMocks);
+
 vi.mock("../emailVerificationToken.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../emailVerificationToken.js")>();

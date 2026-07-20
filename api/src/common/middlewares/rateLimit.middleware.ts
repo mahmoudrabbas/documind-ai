@@ -271,7 +271,7 @@ export class InMemorySlidingWindowLimitStore implements SlidingWindowLimitStore 
 
 function createSlidingWindowLimitStore(): SlidingWindowLimitStore {
   if (isTestEnv()) {
-    return new RedisSlidingWindowLimitStore();
+    return new InMemorySlidingWindowLimitStore();
   }
   return new RedisSlidingWindowLimitStore();
 }

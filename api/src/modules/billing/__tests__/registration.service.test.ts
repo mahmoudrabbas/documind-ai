@@ -23,6 +23,11 @@ vi.mock("../package.service.js", () => ({
   mapToSnapshot: vi.fn(),
 }));
 
+const mockGetGlobalSettings = vi.hoisted(() => vi.fn());
+vi.mock("../../platform/global-settings.js", () => ({
+  getGlobalSettings: mockGetGlobalSettings,
+}));
+
 // ── Imports under test ───────────────────────────────────────────────────────
 
 import { provisionSubscription } from "../registration.service.js";
@@ -118,6 +123,13 @@ function queryChainLean<T>(result: T) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetGlobalSettings.mockResolvedValue({
+    supportEmail: "support@example.com",
+    maintenanceMode: false,
+    allowRegistrations: true,
+    defaultTrialDays: 0,
+    dataRetentionDays: 365,
+  });
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -145,6 +157,7 @@ describe("RegistrationService", () => {
         1,
         "TRIALING",
         undefined,
+        0,
       );
       expect(result).toBeDefined();
     });

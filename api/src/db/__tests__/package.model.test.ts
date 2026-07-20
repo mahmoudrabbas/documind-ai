@@ -55,7 +55,7 @@ describe("PackageModel — limits virtual", () => {
 
   it("returns safe defaults when entitlements has undefined values", () => {
     const pkg = new PackageModel();
-    pkg.set("entitlements", { employees: undefined, documents: undefined, queriesPerMonth: undefined, storageMb: undefined } as any);
+    pkg.set("entitlements", { employees: undefined, documents: undefined, queriesPerMonth: undefined, storageMb: undefined } as Record<string, unknown>);
 
     const limits = pkg.get("limits");
 

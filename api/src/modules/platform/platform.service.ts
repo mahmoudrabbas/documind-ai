@@ -173,7 +173,7 @@ export async function updatePackage(
             tokensPerMonth: 0,
             ocrPagesPerMonth: 0,
           }
-        : (existing.entitlements as any);
+        : existing.entitlements;
     }
   }
 

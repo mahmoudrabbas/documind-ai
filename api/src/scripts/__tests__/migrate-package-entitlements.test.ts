@@ -158,7 +158,7 @@ describe("Migration idempotency logic", () => {
     };
 
     const hasRoot = pkg.entitlements != null && Object.keys(pkg.entitlements).length > 0;
-    const versionsMissing = (pkg.versions as any[]).filter((v) => !v.entitlements);
+    const versionsMissing = (pkg.versions as Record<string, unknown>[]).filter((v) => !v.entitlements);
 
     expect(hasRoot).toBe(true);
     expect(versionsMissing).toHaveLength(0);
@@ -173,7 +173,7 @@ describe("Migration idempotency logic", () => {
     };
 
     const hasRoot = pkg.entitlements != null && Object.keys(pkg.entitlements).length > 0;
-    const versionsMissing = (pkg.versions as any[]).filter((v) => !v.entitlements);
+    const versionsMissing = (pkg.versions as Record<string, unknown>[]).filter((v) => !v.entitlements);
 
     expect(hasRoot).toBe(false);
     expect(versionsMissing).toHaveLength(2);
@@ -189,7 +189,7 @@ describe("Migration idempotency logic", () => {
     };
 
     const hasRoot = pkg.entitlements != null && Object.keys(pkg.entitlements).length > 0;
-    const versionsMissing = (pkg.versions as any[]).filter((v) => !v.entitlements);
+    const versionsMissing = (pkg.versions as Record<string, unknown>[]).filter((v) => !v.entitlements);
 
     expect(hasRoot).toBe(true);
     expect(versionsMissing).toHaveLength(1);

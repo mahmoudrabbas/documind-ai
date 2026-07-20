@@ -29,7 +29,7 @@ interface LegacyLimits {
   storageMb: number;
 }
 
-function entitlementsFromLimits(l: LegacyLimits) {
+function _entitlementsFromLimits(l: LegacyLimits) {
   return {
     employees: l.users,
     admins: 1,
@@ -74,9 +74,9 @@ async function main(): Promise<void> {
       const pkgId = pkg._id;
       const hasRootEntitlements =
         pkg.entitlements != null && Object.keys(pkg.entitlements).length > 0;
-      const versions = (pkg as any).versions ?? [];
+      const versions = ((pkg as unknown as Record<string, unknown>).versions as Record<string, unknown>[]) ?? [];
       const versionsMissingEntitlements = versions.filter(
-        (v: any) => !v.entitlements,
+        (v: Record<string, unknown>) => !v.entitlements,
       );
 
       if (hasRootEntitlements && versionsMissingEntitlements.length === 0) {
@@ -134,7 +134,7 @@ async function main(): Promise<void> {
 
       // Normalize version snapshots that lack entitlements
       if (versionsMissingEntitlements.length > 0) {
-        const updatedVersions = versions.map((v: any) => {
+        const updatedVersions = versions.map((v: Record<string, unknown>) => {
           if (v.entitlements) return v;
           return { ...v, entitlements: rootEntitlements };
         });
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
 
       // Remove legacy `limits` fields (root and per-version)
       const unsetOps: Record<string, string> = {};
-      if ((pkg as any).limits) {
+      if ((pkg as unknown as Record<string, unknown>).limits) {
         unsetOps["limits"] = "";
       }
       for (let i = 0; i < versions.length; i++) {
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
     } catch (err) {
       summary.errors += 1;
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`Error processing package "${(pkg as any).name}": ${msg}`);
+      console.error(`Error processing package "${(pkg as unknown as Record<string, unknown>).name}": ${msg}`);
     }
   }
 
