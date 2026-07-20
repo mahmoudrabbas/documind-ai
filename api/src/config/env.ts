@@ -132,6 +132,13 @@ const envSchema = z
         "application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword",
       ),
 
+    IMPORT_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+    IMPORT_ALLOWED_MIME_TYPES: z
+      .string()
+      .default(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv",
+      ),
+
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     LOG_PRETTY: z
       .string()

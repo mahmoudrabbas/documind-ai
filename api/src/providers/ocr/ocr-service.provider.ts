@@ -3,13 +3,13 @@ import { getOcrConfig } from "../../config/ocr.config.js";
 import { ProviderTimeoutError, OcrProviderError } from "./errors.js";
 import { logger } from "../../common/logger/logger.js";
 
-const PADDLE_LANG_MAP: Record<OcrLanguage, string> = {
+const OCR_LANG_MAP: Record<OcrLanguage, string> = {
   ar: "ar",
   en: "en",
   "ar+en": "ar",
 };
 
-interface PaddleOcrResponse {
+interface OcrServiceResponse {
   pages: Array<{
     pageNumber: number;
     text: string;
@@ -24,14 +24,14 @@ interface PaddleOcrResponse {
   requestId?: string;
 }
 
-export class PaddleOcrProvider implements OcrProvider {
-  readonly name = "paddle";
-  readonly version = "2.x";
+export class OcrServiceProvider implements OcrProvider {
+  readonly name = "ocr";
+  readonly version = "1.0";
   private serviceUrl: string;
 
   constructor(serviceUrl?: string) {
     const config = getOcrConfig();
-    this.serviceUrl = serviceUrl || config.paddleServiceUrl;
+    this.serviceUrl = serviceUrl || config.ocrServiceUrl;
   }
 
   async recognizeBatch(pages: OcrPageInput[]): Promise<OcrBatchResult> {
@@ -39,7 +39,7 @@ export class PaddleOcrProvider implements OcrProvider {
     const startTime = Date.now();
     const multipartBody = new FormData();
     for (const page of pages) {
-      const lang = PADDLE_LANG_MAP[page.language] || "ar";
+      const lang = OCR_LANG_MAP[page.language] || "ar";
       multipartBody.append("languages", lang);
       const ext = page.mimeType.includes("png") ? "png" : "jpg";
       const blob = new Blob([new Uint8Array(page.imageBuffer)], { type: page.mimeType });
@@ -61,16 +61,16 @@ export class PaddleOcrProvider implements OcrProvider {
       if (!response.ok) {
         const body = await response.text().catch(() => "unknown");
         throw new OcrProviderError(
-          `PaddleOCR service returned ${response.status}: ${body}`,
+          `OCR service returned ${response.status}: ${body}`,
           this.name,
         );
       }
 
-      const data = (await response.json()) as PaddleOcrResponse;
+      const data = (await response.json()) as OcrServiceResponse;
       const totalDurationMs = Date.now() - startTime;
 
       logger.info({
-        msg: "PaddleOCR batch processed",
+        msg: "OCR service batch processed",
         provider: this.name,
         pageCount: pages.length,
         durationMs: totalDurationMs,
@@ -109,7 +109,7 @@ export class PaddleOcrProvider implements OcrProvider {
       }
 
       logger.error({
-        msg: "PaddleOCR service error",
+        msg: "OCR service error",
         provider: this.name,
         durationMs: Date.now() - startTime,
         error: error.message,
@@ -124,7 +124,7 @@ export class PaddleOcrProvider implements OcrProvider {
         provider: this.name,
         providerModel: `${this.name}-v${this.version}`,
         durationMs: Date.now() - startTime,
-        warnings: [`PaddleOCR service error: ${error.message}`],
+        warnings: [`OCR service error: ${error.message}`],
       }));
 
       return {
@@ -136,10 +136,10 @@ export class PaddleOcrProvider implements OcrProvider {
   }
 
   isLanguageSupported(lang: OcrLanguage): boolean {
-    return lang in PADDLE_LANG_MAP;
+    return lang in OCR_LANG_MAP;
   }
 }
 
-export function createPaddleOcrProvider(serviceUrl?: string): PaddleOcrProvider {
-  return new PaddleOcrProvider(serviceUrl);
+export function createOcrServiceProvider(serviceUrl?: string): OcrServiceProvider {
+  return new OcrServiceProvider(serviceUrl);
 }

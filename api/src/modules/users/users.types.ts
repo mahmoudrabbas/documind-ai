@@ -4,6 +4,7 @@ export interface InviteUserInput {
   name: string;
   email: string;
   role: "COMPANY_ADMIN" | "EMPLOYEE";
+  customRoleId?: string;
 }
 
 export interface InviteUserResult {

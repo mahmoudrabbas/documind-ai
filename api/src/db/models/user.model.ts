@@ -20,6 +20,15 @@ export interface UserDocument extends mongoose.Document {
   permissionBaseline: "standard" | "legacy-none";
   roleMigrationState: "complete" | "pending-session-revocation";
   sessionGuardVersion: number;
+  employeeProfile?: {
+    employeeId?: string;
+    department?: string;
+    jobTitle?: string;
+    phone?: string;
+    hireDate?: Date;
+    managerId?: mongoose.Types.ObjectId;
+    preferredLanguage?: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +49,19 @@ function sanitizeUserTransform(
 
   return ret;
 }
+
+const EmployeeProfileSchema = new Schema(
+  {
+    employeeId: { type: String, trim: true, maxlength: 50 },
+    department: { type: String, trim: true, maxlength: 100 },
+    jobTitle: { type: String, trim: true, maxlength: 100 },
+    phone: { type: String, trim: true, maxlength: 30 },
+    hireDate: { type: Date },
+    managerId: { type: Schema.Types.ObjectId, ref: "User" },
+    preferredLanguage: { type: String, enum: ["en", "ar"], default: "en" },
+  },
+  { _id: false }
+);
 
 const userSchema = new Schema<UserDocument>(
   {
@@ -89,6 +111,7 @@ const userSchema = new Schema<UserDocument>(
       default: "complete",
     },
     sessionGuardVersion: { type: Number, default: 0, min: 0 },
+    employeeProfile: { type: EmployeeProfileSchema, required: false },
     status: {
       type: String,
       enum: ["active", "pending", "pending_email_verification", "disabled"],
@@ -157,6 +180,22 @@ userSchema.index(
   {
     name: "idx_user_email",
   }
+);
+
+userSchema.index(
+  { tenantId: 1, "employeeProfile.employeeId": 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      "employeeProfile.employeeId": { $type: "string" },
+    },
+    name: "uniq_tenant_employee_id",
+  }
+);
+
+userSchema.index(
+  { "employeeProfile.department": 1 },
+  { name: "idx_employee_department" },
 );
 
 const UserModel = mongoose.model<UserDocument>("User", userSchema);

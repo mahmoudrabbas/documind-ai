@@ -22,7 +22,7 @@ import {
 const router = Router();
 const invitationRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   message: "Too many invitation attempts. Please try again later.",
 });
 const requireUserUpdate = requirePermission(Permission.USERS_UPDATE);

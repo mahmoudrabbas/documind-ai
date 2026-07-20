@@ -22,11 +22,15 @@ import emailRoutes from "./modules/email/email.routes.js";
 import emailWebhooks from "./modules/email/email.webhooks.js";
 import permissionsRoutes from "./modules/permissions/permissions.routes.js";
 import jobsRoutes from "./modules/jobs/jobs.routes.js";
-import { agentsRoutes, agentsAdminRoutes } from "./modules/agents/agents.routes.js";
+import {
+  agentsRoutes,
+  agentsAdminRoutes,
+} from "./modules/agents/agents.routes.js";
 import checkoutRoutes from "./modules/checkout/checkout.routes.js";
 import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.routes.js";
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
+import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
@@ -137,6 +141,7 @@ app.use("/webhooks/payment", paymentWebhookRoutes);
 app.use("/super-admin", paymentWebhookAdminRoutes);
 app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
+app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
 
 app.get("/", (_, res) => {

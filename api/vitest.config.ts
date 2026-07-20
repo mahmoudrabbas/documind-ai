@@ -10,6 +10,9 @@ export default defineConfig({
       "src/modules/auth/__tests__/*.test.ts",
       "src/db/__tests__/*.test.ts",
       "src/scripts/__tests__/*.test.ts",
+      "src/modules/imports/__tests__/*.test.ts",
+      "src/modules/imports/ports/__tests__/*.test.ts",
+      "src/modules/imports/services/__tests__/*.test.ts",
     ],
     exclude: [
       "**/node_modules/**",
