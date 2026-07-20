@@ -5,35 +5,6 @@ import type {
   MetadataCandidate,
 } from "./metadataAgent.port.js";
 
-const DOCUMENT_TYPES = [
-  "policy",
-  "procedure",
-  "contract",
-  "report",
-  "memo",
-  "presentation",
-  "spreadsheet",
-  "manual",
-  "guide",
-  "specification",
-  "other",
-];
-
-const CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"];
-
-const DEPARTMENTS = [
-  "human_resources",
-  "finance",
-  "legal",
-  "operations",
-  "marketing",
-  "engineering",
-  "sales",
-  "admin",
-  "it",
-  "other",
-];
-
 function extractTitleFromFileName(fileName: string): string {
   return fileName
     .replace(/\.[^.]+$/, "")
@@ -129,7 +100,7 @@ function detectClassification(text: string): { value: string; confidence: number
 
 function detectDates(text: string): Array<{ field: "effectiveDate" | "expiryDate"; value: string; confidence: number; evidence: string }> {
   const results: Array<{ field: "effectiveDate" | "expiryDate"; value: string; confidence: number; evidence: string }> = [];
-  const dateRegex = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g;
+  const dateRegex = /(\d{1,2})[-/](\d{1,2})[-/](\d{4})/g;
   const matches = [...text.matchAll(dateRegex)];
 
   if (matches.length >= 2) {
