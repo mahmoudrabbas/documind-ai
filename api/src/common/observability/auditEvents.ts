@@ -72,6 +72,12 @@ export type AuditAction =
   | "PAYMENT_EVENT_REPROCESSED"
   | "SUBSCRIPTION_RECONCILED"
   | "JOB_REPLAYED"
+  // Intent Query
+  | "INTENT_QUERY_ANALYZED"
+  | "INTENT_QUERY_CLARIFICATION_REQUESTED"
+  | "INTENT_QUERY_UNSAFE_BLOCKED"
+  | "INTENT_QUERY_FALLBACK_USED"
+  | "INTENT_QUERY_CONTEXT_DENIED"
   // Authorization
   | "LAST_ADMIN_PROTECTION_TRIGGERED"
   | "PERMISSION_DENIED"
@@ -99,7 +105,8 @@ export type AuditResourceType =
   | "Tenant"
   | "Session"
   | "System"
-  | "Permission";
+  | "Permission"
+  | "IntentQuery";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

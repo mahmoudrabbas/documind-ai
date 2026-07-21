@@ -18,20 +18,90 @@ export class FakeModelAdapter implements ModelAdapter {
       ? `[tool:${(params.tools[0] as Record<string, unknown>).function ? String((params.tools[0] as Record<string, unknown>).function) : "unknown"}(${JSON.stringify({ ok: true })})]`
       : "";
 
-    const inputMatch = rawContent.match(/Input:\s*(\{.*?\})\s*\./s);
-    const inputJson = inputMatch ? inputMatch[1] : rawContent;
-    const lower = inputJson.toLowerCase();
+    const hasIntentSystemPrompt = params.messages.some(
+      (m) => m.role === "system" && (m.content.includes("intent detection") || m.content.includes("QueryPlan"))
+    );
 
-    if (/handoff\s+to/i.test(lower)) {
-      text = `Handoff requested. ${toolCall ? toolCall + " " : ""}Transferred to specialized agent.`;
-    } else if (/\bapproval\b/i.test(lower)) {
-      text = `Handoff to approval-agent for human approval.`;
-    } else if (/\bfail\b/i.test(lower)) {
-      text = `Simulated failure.`;
-    } else if (/\btool\b|\bcall\b/i.test(lower)) {
-      text = `Use tool: echo.`;
+    if (hasIntentSystemPrompt) {
+      const question = rawContent;
+      const lowerQ = question.toLowerCase();
+      
+      let detectedIntent = "knowledge_question";
+      const intentConfidence = 0.95;
+      let clarificationNeeded = false;
+      let clarification = null;
+      const isFollowUp = params.messages.length > 2; // system prompt + user question = length 2, anything more is context history
+
+      if (/unsafe|hack|ignore\s+previous|system\s+prompt/i.test(question)) {
+        detectedIntent = "unsafe";
+        clarificationNeeded = true;
+        clarification = {
+          reason: "ambiguous_intent",
+          suggestedQuestions: ["How can I help you safely?"],
+          messageEn: "This request violates safety policies and cannot be processed.",
+          messageAr: "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
+        };
+      } else if (lowerQ.includes("compare") || lowerQ.includes("مقارنة")) {
+        detectedIntent = "comparison";
+      } else if (lowerQ.includes("summarize") || lowerQ.includes("ملخص")) {
+        detectedIntent = "summarization";
+      } else if (lowerQ.includes("where") || lowerQ.includes("أين")) {
+        detectedIntent = "navigation";
+      } else if (lowerQ.includes("upload") || lowerQ.includes("delete") || lowerQ.includes("حذف")) {
+        detectedIntent = "administrative_action";
+      }
+
+      const isArabic = /[\u0600-\u06FF]/.test(question);
+      const language = isArabic ? "ar" : "en";
+
+      const simulatedPlan = {
+        schemaVersion: "1.0.0",
+        normalizedQuestion: question.trim(),
+        originalQuestion: question,
+        language,
+        detectedIntent,
+        intentConfidence,
+        entities: [],
+        temporalConstraints: [],
+        referencedDocumentIds: [],
+        departments: [],
+        categories: [],
+        exactTerms: [],
+        semanticQueries: [
+          { text: question, language, weight: 1.0 }
+        ],
+        keywordQueries: [],
+        clarificationNeeded,
+        clarification,
+        isFollowUp,
+        conversationContextUsed: isFollowUp,
+        promptVersion: "1.0.0",
+        modelVersion: "fake-chat",
+        processingMetadata: {
+          tokensUsed: 100,
+          latencyMs: 10,
+          estimatedCost: 0,
+          fallbackUsed: false
+        }
+      };
+
+      text = JSON.stringify(simulatedPlan);
     } else {
-      text = `Plan: continue with default agent.`;
+      const inputMatch = rawContent.match(/Input:\s*(\{.*?\})\s*\./s);
+      const inputJson = inputMatch ? inputMatch[1] : rawContent;
+      const lower = inputJson.toLowerCase();
+
+      if (/handoff\s+to/i.test(lower)) {
+        text = `Handoff requested. ${toolCall ? toolCall + " " : ""}Transferred to specialized agent.`;
+      } else if (/\bapproval\b/i.test(lower)) {
+        text = `Handoff to approval-agent for human approval.`;
+      } else if (/\bfail\b/i.test(lower)) {
+        text = `Simulated failure.`;
+      } else if (/\btool\b|\bcall\b/i.test(lower)) {
+        text = `Use tool: echo.`;
+      } else {
+        text = `Plan: continue with default agent.`;
+      }
     }
 
     return {
