@@ -48,6 +48,14 @@ export type AuditAction =
   | "QUALITY_ASSESSED"
   | "QUALITY_REVIEWED"
   | "OCR_PAGES_RETRIED"
+  // Metadata & Version/Conflict
+  | "METADATA_ANALYSIS_TRIGGERED"
+  | "METADATA_CANDIDATE_REVIEWED"
+  | "VERSION_CONFLICT_ANALYSIS_TRIGGERED"
+  | "DOCUMENT_RELATIONSHIP_APPROVED"
+  | "DOCUMENT_RELATIONSHIP_REJECTED"
+  | "CONFLICT_FINDING_RESOLVED"
+  | "CONFLICT_FINDING_DISMISSED"
   // Platform
   | "PACKAGE_CREATED"
   | "PACKAGE_UPDATED"
@@ -64,6 +72,12 @@ export type AuditAction =
   | "PAYMENT_EVENT_REPROCESSED"
   | "SUBSCRIPTION_RECONCILED"
   | "JOB_REPLAYED"
+  // Intent Query
+  | "INTENT_QUERY_ANALYZED"
+  | "INTENT_QUERY_CLARIFICATION_REQUESTED"
+  | "INTENT_QUERY_UNSAFE_BLOCKED"
+  | "INTENT_QUERY_FALLBACK_USED"
+  | "INTENT_QUERY_CONTEXT_DENIED"
   // Authorization
   | "LAST_ADMIN_PROTECTION_TRIGGERED"
   | "PERMISSION_DENIED"
@@ -80,6 +94,9 @@ export type AuditResourceType =
   | "Document"
   | "DocumentQuality"
   | "OcrPageResult"
+  | "MetadataCandidate"
+  | "DocumentRelationship"
+  | "ConflictFinding"
   | "Package"
   | "Subscription"
   | "EmailMessage"
@@ -88,7 +105,8 @@ export type AuditResourceType =
   | "Tenant"
   | "Session"
   | "System"
-  | "Permission";
+  | "Permission"
+  | "IntentQuery";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

@@ -11,6 +11,17 @@ import {
   reviewDocumentQualityController,
   retryOcrController,
   getOcrUsageSummaryController,
+  triggerMetadataAnalysisController,
+  getMetadataCandidatesController,
+  reviewMetadataCandidateController,
+  triggerVersionConflictAnalysisController,
+  getDocumentRelationshipsController,
+  approveDocumentRelationshipController,
+  rejectDocumentRelationshipController,
+  getConflictFindingsController,
+  resolveConflictFindingController,
+  dismissConflictFindingController,
+  getPendingReviewItemsController,
 } from "./processing.controller.js";
 
 const router = Router();
@@ -71,6 +82,94 @@ router.get(
   tenantScoping,
   requirePermission(Permission.BILLING_READ),
   getOcrUsageSummaryController,
+);
+
+router.post(
+  "/:id/metadata/analyze",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
+  triggerMetadataAnalysisController,
+);
+
+router.get(
+  "/:id/metadata/candidates",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
+  getMetadataCandidatesController,
+);
+
+router.post(
+  "/metadata/candidates/:candidateId/review",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  reviewMetadataCandidateController,
+);
+
+router.post(
+  "/:id/version-conflict/analyze",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
+  triggerVersionConflictAnalysisController,
+);
+
+router.get(
+  "/:id/relationships",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
+  getDocumentRelationshipsController,
+);
+
+router.post(
+  "/relationships/:relationshipId/approve",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  approveDocumentRelationshipController,
+);
+
+router.post(
+  "/relationships/:relationshipId/reject",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  rejectDocumentRelationshipController,
+);
+
+router.get(
+  "/:id/conflicts",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
+  getConflictFindingsController,
+);
+
+router.post(
+  "/conflicts/:conflictId/resolve",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  resolveConflictFindingController,
+);
+
+router.post(
+  "/conflicts/:conflictId/dismiss",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  dismissConflictFindingController,
+);
+
+router.get(
+  "/review/pending",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  getPendingReviewItemsController,
 );
 
 export default router;

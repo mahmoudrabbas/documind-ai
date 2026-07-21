@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { TriggerOcrInput, ReviewQualityInput, RetryOcrInput } from "./processing.types.js";
+import type { TriggerOcrInput, ReviewQualityInput, RetryOcrInput, ReviewCandidateInput, ResolveConflictInput } from "./processing.types.js";
 
 function groupValidationIssues(issues: z.ZodIssue[]): Record<string, string[]> {
   return issues.reduce(
@@ -53,6 +53,33 @@ const retryOcrSchema = z.object({
 
 export function validateRetryOcrInput(input: unknown): RetryOcrInput {
   const result = retryOcrSchema.safeParse(input);
+  if (!result.success) {
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+  }
+  return result.data;
+}
+
+const reviewCandidateSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
+  appliedValue: z.unknown().optional(),
+  notes: z.string().trim().max(2000).optional(),
+}).strict();
+
+export function validateReviewCandidateInput(input: unknown): ReviewCandidateInput {
+  const result = reviewCandidateSchema.safeParse(input);
+  if (!result.success) {
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+  }
+  return result.data;
+}
+
+const resolveConflictSchema = z.object({
+  resolution: z.enum(["keep_source", "keep_target", "merge", "archive_both", "escalate"]),
+  notes: z.string().trim().max(2000).optional(),
+}).strict();
+
+export function validateResolveConflictInput(input: unknown): ResolveConflictInput {
+  const result = resolveConflictSchema.safeParse(input);
   if (!result.success) {
     throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
   }

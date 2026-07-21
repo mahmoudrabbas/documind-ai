@@ -32,7 +32,11 @@ import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhoo
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
+<<<<<<< HEAD
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
+=======
+import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
+>>>>>>> origin/master
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -148,6 +152,7 @@ app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
+app.use("/intent-query", intentQueryRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });
