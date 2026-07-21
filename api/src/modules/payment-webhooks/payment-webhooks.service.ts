@@ -57,6 +57,11 @@ const EVENT_STATUS_MAP: Record<
     paymentState: "paid",
     fromStatuses: ["INCOMPLETE", "PAST_DUE", "ACTIVE"],
   },
+  "invoice_payment.paid": {
+    toStatus: "ACTIVE",
+    paymentState: "paid",
+    fromStatuses: ["INCOMPLETE", "PAST_DUE", "ACTIVE"],
+  },
   "invoice.payment_failed": {
     toStatus: "PAST_DUE",
     paymentState: "failed",
@@ -150,7 +155,9 @@ export async function handlePaymentEvent(
       return;
     }
 
-    const isSubscriptionUpdate = event.type === "customer.subscription.updated";
+    const isSubscriptionUpdate =
+      event.type === "customer.subscription.updated" ||
+      event.type === "customer.subscription.created";
 
     if (isSubscriptionUpdate) {
       await handleSubscriptionUpdated(event, eventRecord);
