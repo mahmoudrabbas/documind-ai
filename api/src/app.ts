@@ -32,6 +32,7 @@ import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhoo
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
+import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
@@ -103,11 +104,29 @@ app.get("/healthz", (_req, res) => {
 
 app.use(cors(corsOptions));
 
-app.use(express.json());
-
+// Stripe webhook raw body MUST be parsed before express.json() consumes the stream.
+// express.raw() captures the raw Buffer for signature verification.
 const rawBodyBuffer = express.raw({ type: "application/json", limit: "100kb" });
-
 app.use("/webhooks/payment/stripe", rawBodyBuffer);
+
+// JSON parser for all non-webhook routes
+app.use((req, res, next) => {
+  if (req.path.startsWith("/webhooks/")) return next();
+  express.json()(req, res, next);
+});
+
+// ── Maintenance mode guard ───────────────────────────────────────────────
+// Blocks non-admin traffic when maintenanceMode is enabled in Global Settings.
+// Exempts: health probes, webhooks, and Super Admin users.
+const MAINTENANCE_EXEMPT_PREFIXES = ["/healthz", "/readyz", "/webhooks/", "/auth/"];
+app.use((req, res, next) => {
+  const path = req.path;
+  if (MAINTENANCE_EXEMPT_PREFIXES.some((p) => path.startsWith(p))) {
+    next();
+    return;
+  }
+  maintenanceModeGuard(req, res, next);
+});
 
 app.use("/auth", authRoutes);
 app.use("/users", usersRoutes);

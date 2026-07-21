@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listBatches } from "@/services/imports.service";
-import type {
-  ImportBatchStatus,
-  ImportBatchView,
-} from "@/types/api/imports.types";
+import type { ImportBatchView } from "@/types/api/imports.types";
 import {
   DashboardPageHeader,
   DashboardPanel,

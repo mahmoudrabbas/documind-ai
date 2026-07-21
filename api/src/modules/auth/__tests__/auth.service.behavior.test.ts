@@ -1,5 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const configMocks = vi.hoisted(() => ({
+  config: {
+    NODE_ENV: "test",
+    APP_FRONTEND_URL: "http://localhost:3000",
+    STRIPE_SUCCESS_URL: "",
+    STRIPE_CANCEL_URL: "",
+    EMAIL_VERIFICATION_BASE_URL: "http://localhost:3000/verify",
+    PASSWORD_RESET_BASE_URL: "http://localhost:3000/reset",
+    JWT_SECRET: "test-jwt-secret",
+    JWT_REFRESH_SECRET: "test-jwt-refresh-secret",
+    JWT_EXPIRES_IN: "15m",
+    JWT_REFRESH_EXPIRES_IN: "7d",
+    EMAIL_VERIFICATION_JWT_SECRET: "test-email-verification-secret",
+    EMAIL_VERIFICATION_JWT_EXPIRES_IN: "24h",
+    PASSWORD_RESET_JWT_SECRET: "test-password-reset-secret",
+    PASSWORD_RESET_JWT_EXPIRES_IN: "15m",
+    EMAIL_WEBHOOK_SECRET: "test-email-webhook-secret",
+    MONGODB_URI: "mongodb://localhost:27017/test",
+    REDIS_URL: "redis://localhost:6379",
+  },
+}));
+vi.mock("../../../config/index.js", () => configMocks);
+
 const repoMocks = vi.hoisted(() => ({
   createTenant: vi.fn(),
   createUser: vi.fn(),
@@ -71,6 +94,18 @@ vi.mock("../auth.mailer.js", async (importOriginal) => {
 vi.mock("../../billing/registration.service.js", () => ({
   provisionSubscription: billingMocks.provisionSubscription,
 }));
+
+const globalSettingsMocks = vi.hoisted(() => ({
+  getGlobalSettings: vi.fn().mockResolvedValue({
+    supportEmail: "support@example.com",
+    maintenanceMode: false,
+    allowRegistrations: true,
+    defaultTrialDays: 0,
+    dataRetentionDays: 365,
+  }),
+  invalidateGlobalSettingsCache: vi.fn(),
+}));
+vi.mock("../../platform/global-settings.js", () => globalSettingsMocks);
 
 vi.mock("../emailVerificationToken.js", async (importOriginal) => {
   const actual =

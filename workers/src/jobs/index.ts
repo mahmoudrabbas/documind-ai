@@ -5,6 +5,7 @@ import { createEmailSendJobHandler } from "./emailSendJob.js";
 import { employeeImportJobHandler } from "./employeeImportJob.js";
 import { createDocumentExtractionJobHandler } from "./documentExtractionJob.js";
 import { createDocumentOcrJobHandler } from "./documentOcrJob.js";
+import { dataRetentionJobHandler } from "./dataRetentionJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
 import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
 
@@ -25,6 +26,7 @@ export function buildHandlerRegistry(): JobHandlerRegistry {
   registry.register(createEmailSendJobHandler(emailProvider));
   registry.register(createDocumentExtractionJobHandler());
   registry.register(createDocumentOcrJobHandler());
+  registry.register(dataRetentionJobHandler);
   
   return registry;
 }

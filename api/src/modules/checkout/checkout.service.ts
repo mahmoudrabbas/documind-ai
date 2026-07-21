@@ -6,6 +6,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import {
   NOT_FOUND,
   BAD_REQUEST,
+  PRICE_NOT_CONFIGURED,
+  BILLING_PORTAL_UNAVAILABLE,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { PaymentProvider } from "../billing/ports/payment-provider.port.js";
@@ -42,7 +44,7 @@ function writeAudit(
 }
 
 function getProviderPriceId(
-  pkg: { monthlyPrice: number; annualPrice: number; code: string },
+  pkg: { monthlyPrice: number; annualPrice: number; code: string; stripePriceId?: string; stripeAnnualPriceId?: string },
   billingInterval: "monthly" | "annual",
 ): string {
   const price =
@@ -54,7 +56,18 @@ function getProviderPriceId(
       `Package has no ${billingInterval} price configured`,
     );
   }
-  return `price_${pkg.code}_${billingInterval}`;
+
+  const priceId = billingInterval === "annual" ? pkg.stripeAnnualPriceId : pkg.stripePriceId;
+
+  if (priceId) {
+    return priceId;
+  }
+
+  throw new AppError(
+    400,
+    PRICE_NOT_CONFIGURED,
+    `Package "${pkg.code}" has no Stripe ${billingInterval} price configured. Sync the package with Stripe first.`,
+  );
 }
 
 export async function createCheckoutSession(
@@ -87,12 +100,19 @@ export async function createCheckoutSession(
   }
 
   let providerCustomerId = sub?.providerCustomerId ?? "";
-  if (!providerCustomerId) {
+  const isFakeCustomer = providerCustomerId.startsWith("cus_fake_");
+  if (!providerCustomerId || isFakeCustomer) {
     providerCustomerId = await provider.createCustomer({
       tenantId,
       email: actor.actorEmail,
       name: actor.actorEmail,
     });
+    if (sub) {
+      await SubscriptionModel.updateOne(
+        { tenantId },
+        { $set: { providerCustomerId } },
+      );
+    }
   }
 
   const returnUrl = successUrl;
@@ -227,11 +247,57 @@ export async function getSubscriptionStatus(
     throw new AppError(404, NOT_FOUND, "Subscription not found");
   }
   const sub = await SubscriptionModel.findOne({ tenantId })
-    .populate("packageId", "name code version monthlyPrice annualPrice currency")
+    .populate("packageId", "name code version monthlyPrice annualPrice currency entitlements")
     .lean()
     .exec();
   if (!sub) {
     throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
   }
   return sub;
+}
+
+export async function createBillingPortalSession(
+  tenantId: string,
+  inputContext: OperationAuthorizationContext,
+  provider: PaymentProvider,
+  returnUrl: string,
+) {
+  const actor = await authorizeTenantOperation(
+    inputContext,
+    Permission.BILLING_MANAGE,
+  );
+  if (tenantId !== actor.tenantId) {
+    throw new AppError(404, NOT_FOUND, "Subscription not found");
+  }
+
+  const sub = await SubscriptionModel.findOne({ tenantId }).lean().exec();
+  if (!sub) {
+    throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
+  }
+
+  if (!sub.providerCustomerId) {
+    throw new AppError(
+      400,
+      BILLING_PORTAL_UNAVAILABLE,
+      "No billing customer on file. Please complete a checkout first.",
+    );
+  }
+
+  const session = await provider.createBillingPortalSession({
+    customerId: sub.providerCustomerId,
+    returnUrl,
+  });
+
+  writeAudit(
+    "BILLING_PORTAL_SESSION_CREATED",
+    String(sub._id),
+    {
+      tenantId,
+      providerCustomerId: sub.providerCustomerId,
+    },
+    tenantId,
+    actor,
+  );
+
+  return { url: session.url };
 }

@@ -22,7 +22,8 @@ export class ImportErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error("[ImportErrorBoundary]", error, info.componentStack);
+    void error;
+    void info;
   }
 
   handleReset = (): void => {

@@ -63,6 +63,33 @@ function writeAudit(
   });
 }
 
+// ── Legacy limits → entitlements mapping ─────────────────────────────────────
+
+/** Legacy `limits` shape stored in pre-migration documents. */
+interface LegacyLimits {
+  users: number;
+  documents: number;
+  questionsPerMonth: number;
+  storageMb: number;
+}
+
+/**
+ * Derive a full `PackageEntitlements` from a legacy `limits` object.
+ * Mirrors the mapping in `migrateLimits` / `mapLimitsToEntitlements`.
+ */
+function entitlementsFromLimits(l: LegacyLimits): PackageEntitlements {
+  return {
+    employees: l.users,
+    admins: 1,
+    documents: l.documents,
+    storageMb: l.storageMb,
+    fileSizeMb: 10,
+    queriesPerMonth: l.questionsPerMonth,
+    tokensPerMonth: 0,
+    ocrPagesPerMonth: 0,
+  };
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /**
@@ -89,6 +116,9 @@ export async function createPackage(
     retentionDays: data.retentionDays ?? 90,
     supportLevel: data.supportLevel ?? "community",
     visibility: data.visibility ?? "public",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
     version,
     versions: [
       {
@@ -102,6 +132,9 @@ export async function createPackage(
         analyticsLevel: data.analyticsLevel ?? "basic",
         retentionDays: data.retentionDays ?? 90,
         supportLevel: data.supportLevel ?? "community",
+        stripeProductId: "",
+        stripePriceId: "",
+        stripeAnnualPriceId: "",
         createdAt,
       },
     ],
@@ -159,6 +192,22 @@ export async function createVersion(
     throw new AppError(404, NOT_FOUND, "Package not found");
   }
 
+  // Backfill entitlements on any legacy version snapshots that lack them.
+  // Pre-migration documents stored `limits` instead of `entitlements` inside
+  // the versions array. Mongoose validates the entire array on save, so a
+  // missing entitlements field on any historical snapshot causes a validation
+  // error. We normalise lazily on the next version bump.
+  let _dirty = false;
+  for (const v of pkg.versions) {
+    if (!v.entitlements) {
+      const legacy = (v as unknown as { limits?: LegacyLimits }).limits;
+      v.entitlements = legacy
+        ? entitlementsFromLimits(legacy)
+        : pkg.entitlements;
+      _dirty = true;
+    }
+  }
+
   pkg.version += 1;
   pkg.versions.push({
     version: pkg.version,
@@ -171,6 +220,9 @@ export async function createVersion(
     analyticsLevel: pkg.analyticsLevel,
     retentionDays: pkg.retentionDays,
     supportLevel: pkg.supportLevel,
+    stripeProductId: pkg.stripeProductId ?? "",
+    stripePriceId: pkg.stripePriceId ?? "",
+    stripeAnnualPriceId: pkg.stripeAnnualPriceId ?? "",
     createdAt: new Date(),
   });
   await pkg.save();

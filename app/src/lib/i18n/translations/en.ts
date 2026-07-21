@@ -36,6 +36,9 @@ const en: TranslationDictionary = {
     "This item changed since you opened it. Refresh before trying again.",
   "permissions.rateLimited":
     "Too many requests. Try again in {{seconds}} seconds.",
+  "permissions.maintenanceTitle": "Scheduled Maintenance",
+  "permissions.maintenanceMessage":
+    "The platform is currently undergoing maintenance. Please try again later.",
 
   /* ── auth ──────────────────────────────────────────────── */
   "auth.signIn": "Sign in",
@@ -63,6 +66,12 @@ const en: TranslationDictionary = {
   "auth.errorInvalidCredentials": "Invalid company, email, or password.",
   "auth.errorAccountNotActive": "Account is not active.",
   "auth.errorTenantNotActive": "Tenant is not active.",
+  "auth.errorRegistrationDisabled":
+    "New registrations are currently disabled. Please contact your administrator.",
+  "auth.errorEmailAlreadyExists":
+    "An account with this email already exists. Please sign in or use a different email.",
+  "auth.errorTenantAlreadyExists":
+    "A company with this name or URL already exists. Please choose a different one.",
   "auth.backToHome": "Back to Home",
   "auth.rateLimitTitle": "Too many requests",
   "auth.rateLimitCountdown": "Please wait {{seconds}} seconds before trying again.",

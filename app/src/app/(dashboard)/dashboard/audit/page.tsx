@@ -4,6 +4,7 @@ import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPag
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { getAuditLogs, type AuditLog, type AuditQueryFilter } from "@/services/audit.service";
 import { useI18n } from "@/providers/i18n-provider";
+import { actionLabel, resourceLabel, describeChanges } from "@/lib/audit-formatters";
 
 export default function TenantAuditPage() {
   const { t } = useI18n();
@@ -35,7 +36,7 @@ export default function TenantAuditPage() {
         title={t("audit.title")}
         description={t("audit.description")}
       />
-      
+
       {error && (
         <div className="mb-4 p-4 rounded bg-red-50 text-red-700 text-sm">
           {error}
@@ -48,40 +49,42 @@ export default function TenantAuditPage() {
         <div className="p-8 text-center text-sm text-on-surface-variant">No audit logs found.</div>
       ) : (
         <PlatformTable
-          headers={["Action", "Actor", "Role", "Resource", "Changes", "Time"]}
+          headers={["Action", "Actor", "Role", "Resource", "Details", "Time"]}
           minWidth="920px"
         >
-          {logs.map((log) => (
-            <tr key={log._id}>
-              <td className={cell}>
-                <strong className="text-on-surface">
-                  {log.action.replaceAll("_", " ")}
-                </strong>
-                {log.outcome !== "SUCCESS" && (
-                  <span className="ml-2 text-xs text-red-500">[{log.outcome}]</span>
-                )}
-              </td>
-              <td className={cell}>{log.actorEmail ?? "Unauthenticated"}</td>
-              <td className={cell}>
-                <StatusPill value={log.actorRole ?? "N/A"} />
-              </td>
-              <td className={cell}>
-                {log.resourceType}
-                <p className="max-w-44 truncate text-xs">{log.resourceId}</p>
-              </td>
-              <td className={cell}>
-                <code
-                  className="block max-w-64 truncate text-xs"
-                  title={JSON.stringify(log.changes)}
-                >
-                  {JSON.stringify(log.changes)}
-                </code>
-              </td>
-              <td className={cell}>
-                {new Date(log.createdAt).toLocaleString()}
-              </td>
-            </tr>
-          ))}
+          {logs.map((log) => {
+            const changeDesc = describeChanges(log.action, log.changes);
+            return (
+              <tr key={log._id}>
+                <td className={cell}>
+                  <strong className="text-on-surface">
+                    {actionLabel(log.action)}
+                  </strong>
+                  {log.outcome !== "SUCCESS" && (
+                    <span className="ml-2 text-xs text-red-500">[{log.outcome}]</span>
+                  )}
+                </td>
+                <td className={cell}>{log.actorEmail ?? "Unauthenticated"}</td>
+                <td className={cell}>
+                  <StatusPill value={log.actorRole ?? "N/A"} />
+                </td>
+                <td className={cell}>
+                  <span className="text-on-surface">{resourceLabel(log.resourceType)}</span>
+                  <p className="max-w-44 truncate text-xs text-on-surface-variant">{log.resourceId}</p>
+                </td>
+                <td className={cell}>
+                  {changeDesc ? (
+                    <span className="text-xs">{changeDesc}</span>
+                  ) : (
+                    <span className="text-xs text-on-surface-variant italic">No changes</span>
+                  )}
+                </td>
+                <td className={cell}>
+                  {new Date(log.createdAt).toLocaleString()}
+                </td>
+              </tr>
+            );
+          })}
         </PlatformTable>
       )}
     </DashboardPage>

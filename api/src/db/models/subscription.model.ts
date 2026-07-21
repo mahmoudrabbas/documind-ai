@@ -27,12 +27,14 @@ export interface SubscriptionDocument extends mongoose.Document {
   trialEnd: Date | null;
   cancelledAt: Date | null;
   cancellationReason: string;
+  cancelAtPeriodEnd: boolean;
   providerCustomerId: string;
   providerSubscriptionId: string;
   providerPriceId: string;
   paymentState: PaymentState;
   providerMetadata: Map<string, string>;
   lastProviderEventId: string;
+  lastProviderEventTimestamp: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,6 +79,7 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
     trialEnd: { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
     cancellationReason: { type: String, default: "" },
+    cancelAtPeriodEnd: { type: Boolean, default: false },
     providerCustomerId: { type: String, default: "" },
     providerSubscriptionId: { type: String, default: "" },
     providerPriceId: { type: String, default: "" },
@@ -87,6 +90,7 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
     },
     providerMetadata: { type: Schema.Types.Map, of: String, default: {} },
     lastProviderEventId: { type: String, default: "" },
+    lastProviderEventTimestamp: { type: Date, default: null },
   },
   { timestamps: true },
 );

@@ -35,6 +35,9 @@ const ar: TranslationDictionary = {
     "تم تغيير هذا العنصر منذ فتحه. حدّث البيانات قبل المحاولة مرة أخرى.",
   "permissions.rateLimited":
     "طلبات كثيرة جداً. حاول مرة أخرى بعد {{seconds}} ثانية.",
+  "permissions.maintenanceTitle": "صيانة مجدولة",
+  "permissions.maintenanceMessage":
+    "المنصة حالياً تحت الصيانة. يرجى المحاولة مرة أخرى لاحقاً.",
 
   /* ── auth ──────────────────────────────────────────────── */
   "auth.signIn": "تسجيل الدخول",
@@ -63,6 +66,12 @@ const ar: TranslationDictionary = {
     "الشركة أو البريد الإلكتروني أو كلمة المرور غير صحيحة.",
   "auth.errorAccountNotActive": "الحساب غير مفعّل.",
   "auth.errorTenantNotActive": "المستأجر غير مفعّل.",
+  "auth.errorRegistrationDisabled":
+    "التسجيلات الجديدة معطّلة حالياً. يرجى التواصل مع المسؤول.",
+  "auth.errorEmailAlreadyExists":
+    "يوجد حساب بهذا البريد الإلكتروني بالفعل. يرجى تسجيل الدخول أو استخدام بريد إلكتروني آخر.",
+  "auth.errorTenantAlreadyExists":
+    "يوجد شركة بهذا الاسم أو الرابط بالفعل. يرجى اختيار اسم أو رابط مختلف.",
   "auth.backToHome": "العودة إلى الرئيسية",
   "auth.rateLimitTitle": "طلبات كثيرة جداً",
   "auth.rateLimitCountdown": "يرجى الانتظار {{seconds}} ثانية قبل المحاولة مرة أخرى.",

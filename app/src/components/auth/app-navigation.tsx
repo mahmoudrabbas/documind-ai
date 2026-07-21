@@ -125,14 +125,14 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                 href={href}
                 onClick={onClose}
                 aria-current={isActive ? "page" : undefined}
-                className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                className={`flex min-w-0 items-center gap-3 px-4 py-3 transition-colors ${
                   isActive
                     ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
                     : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
                 }`}
               >
-                <span className="material-symbols-outlined">{icon}</span>
-                <span className="text-body-md">{label}</span>
+                <span className="material-symbols-outlined shrink-0">{icon}</span>
+                <span className="min-w-0 truncate text-body-md">{label}</span>
               </Link>
             );
           })}

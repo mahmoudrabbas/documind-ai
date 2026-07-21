@@ -34,6 +34,7 @@ import type { Role } from "@/constants/routes";
 type PermissionState =
   | { status: "loading" }
   | { status: "idle" }
+  | { status: "maintenance"; error: ApiError }
   | {
       status: "ready";
       permissions: Set<PermissionValue>;
@@ -86,17 +87,21 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       if (shouldApplyResponse(reqGenRef.current, gen, mountedRef.current)) {
-        setState(
-          error instanceof ApiError && error.status === 403
-            ? { status: "denied", error }
-            : {
-                status: "error",
-                error:
-                  error instanceof Error
-                    ? error
-                    : new Error("Failed to load permissions"),
-              },
-        );
+        if (error instanceof ApiError && error.code === "MAINTENANCE_MODE") {
+          setState({ status: "maintenance", error });
+        } else {
+          setState(
+            error instanceof ApiError && error.status === 403
+              ? { status: "denied", error }
+              : {
+                  status: "error",
+                  error:
+                    error instanceof Error
+                      ? error
+                      : new Error("Failed to load permissions"),
+                },
+          );
+        }
       }
     }
   }, [authStatus]);

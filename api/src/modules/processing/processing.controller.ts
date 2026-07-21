@@ -338,7 +338,7 @@ export async function retryOcrController(
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found or access denied");
     }
 
-    const versionQuery = req.body?.version || req.query?.version;
+    const versionQuery = input.version || req.query?.version;
     let version = doc.version;
 
     if (versionQuery) {

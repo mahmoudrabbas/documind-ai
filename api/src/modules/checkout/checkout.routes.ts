@@ -8,6 +8,7 @@ import {
   checkoutStatusController,
   listCheckoutSessionsController,
   subscriptionStatusController,
+  createBillingPortalController,
 } from "./checkout.controller.js";
 
 const router = Router();
@@ -36,6 +37,12 @@ router.get(
   "/subscription",
   requirePermission(Permission.BILLING_READ),
   subscriptionStatusController,
+);
+
+router.post(
+  "/billing-portal",
+  requirePermission(Permission.BILLING_MANAGE),
+  createBillingPortalController,
 );
 
 export default router;

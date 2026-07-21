@@ -115,7 +115,7 @@ export function getAppContext(role: Role): AppContext {
 
 export function filterNavigationLinks(
   links: readonly NavLink[],
-  permissionStatus: "loading" | "idle" | "ready" | "denied" | "error",
+  permissionStatus: "loading" | "idle" | "ready" | "denied" | "error" | "maintenance",
   can: (permission: PermissionValue) => boolean,
 ): readonly NavLink[] {
   if (permissionStatus !== "ready") return [];

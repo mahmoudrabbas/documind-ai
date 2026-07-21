@@ -143,6 +143,12 @@ export default function RegisterPage() {
         return t("auth.errorAccountNotActive");
       case "TENANT_NOT_ACTIVE":
         return t("auth.errorTenantNotActive");
+      case "REGISTRATION_DISABLED":
+        return t("auth.errorRegistrationDisabled");
+      case "EMAIL_ALREADY_EXISTS":
+        return t("auth.errorEmailAlreadyExists");
+      case "TENANT_ALREADY_EXISTS":
+        return t("auth.errorTenantAlreadyExists");
       default:
         return t("auth.errorGeneric");
     }

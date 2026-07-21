@@ -7,7 +7,7 @@ const tsconfigRootDir = dirname(fileURLToPath(import.meta.url));
 export default [
   ...rootConfig,
   {
-    ignores: ["eslint.config.mjs"],
+    ignores: ["eslint.config.mjs", "vitest.config.ts"],
     languageOptions: {
       globals: {
         console: "readonly",

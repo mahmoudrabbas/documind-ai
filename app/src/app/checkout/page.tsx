@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
-import { createCheckoutSession, getSubscriptionStatus } from "@/services/billing.service";
+import { createCheckoutSession, getSubscriptionStatus, createBillingPortalSession } from "@/services/billing.service";
 import type { PublicPackage } from "@/types/api/billing.types";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
@@ -49,7 +49,9 @@ export default function CheckoutPage() {
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [currentSub, setCurrentSub] = useState<{ status: string; packageId?: { _id: string; name: string } } | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState("");
+  const [currentSub, setCurrentSub] = useState<{ status: string; providerCustomerId: string; packageId?: { _id: string; name: string } } | null>(null);
 
   useEffect(() => {
     if (!canReadBilling) {
@@ -61,8 +63,15 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, [canReadBilling]);
 
+  const selectedPkgData = packages.find((p) => p.id === selectedPkg);
+  const selectedPrice = selectedPkgData
+    ? billingInterval === "annual"
+      ? selectedPkgData.annualPrice
+      : selectedPkgData.monthlyPrice
+    : 0;
+
   const handleCheckout = useCallback(async () => {
-    if (!selectedPkg || !canManageBilling) return;
+    if (!selectedPkg || !canManageBilling || selectedPrice <= 0) return;
     setSubmitting(true);
     setSubmitError("");
     try {
@@ -75,7 +84,22 @@ export default function CheckoutPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [billingInterval, canManageBilling, selectedPkg]);
+  }, [billingInterval, canManageBilling, selectedPkg, selectedPrice]);
+
+  const handleManageBilling = useCallback(async () => {
+    setPortalLoading(true);
+    setPortalError("");
+    try {
+      const result = await createBillingPortalSession();
+      if (result.data.url) {
+        window.location.href = result.data.url;
+      }
+    } catch {
+      setPortalError("Failed to open billing portal. Please try again.");
+    } finally {
+      setPortalLoading(false);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -124,18 +148,33 @@ export default function CheckoutPage() {
         <div className="mt-4 rounded-xl bg-surface-container p-4 text-sm">
           Current subscription: <strong>{currentSub.status.replaceAll("_", " ")}</strong>
           {currentSub.packageId ? ` — ${currentSub.packageId.name}` : ""}
+          {currentSub.providerCustomerId && canManageBilling && (
+            <button
+              type="button"
+              disabled={portalLoading}
+              onClick={() => void handleManageBilling()}
+              className="ml-4 min-h-9 rounded-lg border border-outline-variant bg-surface px-4 font-bold text-on-surface transition-colors hover:bg-surface-container-high disabled:opacity-50"
+            >
+              {portalLoading ? "Opening…" : "Manage Billing"}
+            </button>
+          )}
         </div>
+      )}
+      {portalError && (
+        <p className="mt-2 text-sm text-error" role="alert">
+          {portalError}
+        </p>
       )}
 
       <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {packages.map((pkg) => (
           <button
-            key={pkg._id}
+            key={pkg.id}
             type="button"
             disabled={auth.status === "authenticated" && !canManageBilling}
-            onClick={() => setSelectedPkg(pkg._id)}
+            onClick={() => setSelectedPkg(pkg.id)}
             className={`rounded-2xl border-2 p-6 text-start transition-all ${
-              selectedPkg === pkg._id
+              selectedPkg === pkg.id
                 ? "border-primary bg-primary-container/20 shadow-lg"
                 : "border-outline-variant bg-surface hover:border-primary/50"
             }`}
@@ -143,12 +182,19 @@ export default function CheckoutPage() {
             <h2 className="text-title-lg font-bold text-on-surface">{pkg.name}</h2>
             <p className="mt-1 text-sm text-on-surface-variant">{pkg.description}</p>
             <div className="mt-4">
-              <span className="text-display-sm font-bold text-primary">
-                {billingInterval === "annual" ? pkg.annualPrice : pkg.monthlyPrice}
-              </span>
-              <span className="text-on-surface-variant">
-                /{billingInterval === "annual" ? "year" : "month"}
-              </span>
+              {(() => {
+                const price = billingInterval === "annual" ? pkg.annualPrice : pkg.monthlyPrice;
+                return price > 0 ? (
+                  <>
+                    <span className="text-display-sm font-bold text-primary">{price}</span>
+                    <span className="text-on-surface-variant">
+                      /{billingInterval === "annual" ? "year" : "month"}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-display-sm font-bold text-primary">Free</span>
+                );
+              })()}
             </div>
             <ul className="mt-4 space-y-2 text-sm text-on-surface-variant">
               <li>Up to {pkg.entitlements.employees} employees</li>
@@ -201,7 +247,7 @@ export default function CheckoutPage() {
       <div className="mt-6">
         <button
           type="button"
-          disabled={!selectedPkg || submitting}
+          disabled={!selectedPkg || selectedPrice <= 0 || submitting}
           onClick={() => void handleCheckout()}
           className="min-h-12 rounded-xl bg-primary px-8 font-bold text-on-primary disabled:opacity-50"
         >
