@@ -116,6 +116,9 @@ export async function createPackage(
     retentionDays: data.retentionDays ?? 90,
     supportLevel: data.supportLevel ?? "community",
     visibility: data.visibility ?? "public",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
     version,
     versions: [
       {
@@ -129,6 +132,9 @@ export async function createPackage(
         analyticsLevel: data.analyticsLevel ?? "basic",
         retentionDays: data.retentionDays ?? 90,
         supportLevel: data.supportLevel ?? "community",
+        stripeProductId: "",
+        stripePriceId: "",
+        stripeAnnualPriceId: "",
         createdAt,
       },
     ],
@@ -214,6 +220,9 @@ export async function createVersion(
     analyticsLevel: pkg.analyticsLevel,
     retentionDays: pkg.retentionDays,
     supportLevel: pkg.supportLevel,
+    stripeProductId: pkg.stripeProductId ?? "",
+    stripePriceId: pkg.stripePriceId ?? "",
+    stripeAnnualPriceId: pkg.stripeAnnualPriceId ?? "",
     createdAt: new Date(),
   });
   await pkg.save();

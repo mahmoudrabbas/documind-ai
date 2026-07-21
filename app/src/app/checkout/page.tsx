@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
-import { createCheckoutSession, getSubscriptionStatus } from "@/services/billing.service";
+import { createCheckoutSession, getSubscriptionStatus, createBillingPortalSession } from "@/services/billing.service";
 import type { PublicPackage } from "@/types/api/billing.types";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
@@ -49,7 +49,9 @@ export default function CheckoutPage() {
   const [billingInterval, setBillingInterval] = useState<"monthly" | "annual">("monthly");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [currentSub, setCurrentSub] = useState<{ status: string; packageId?: { _id: string; name: string } } | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState("");
+  const [currentSub, setCurrentSub] = useState<{ status: string; providerCustomerId: string; packageId?: { _id: string; name: string } } | null>(null);
 
   useEffect(() => {
     if (!canReadBilling) {
@@ -83,6 +85,21 @@ export default function CheckoutPage() {
       setSubmitting(false);
     }
   }, [billingInterval, canManageBilling, selectedPkg, selectedPrice]);
+
+  const handleManageBilling = useCallback(async () => {
+    setPortalLoading(true);
+    setPortalError("");
+    try {
+      const result = await createBillingPortalSession();
+      if (result.data.url) {
+        window.location.href = result.data.url;
+      }
+    } catch {
+      setPortalError("Failed to open billing portal. Please try again.");
+    } finally {
+      setPortalLoading(false);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -131,7 +148,22 @@ export default function CheckoutPage() {
         <div className="mt-4 rounded-xl bg-surface-container p-4 text-sm">
           Current subscription: <strong>{currentSub.status.replaceAll("_", " ")}</strong>
           {currentSub.packageId ? ` — ${currentSub.packageId.name}` : ""}
+          {currentSub.providerCustomerId && canManageBilling && (
+            <button
+              type="button"
+              disabled={portalLoading}
+              onClick={() => void handleManageBilling()}
+              className="ml-4 min-h-9 rounded-lg border border-outline-variant bg-surface px-4 font-bold text-on-surface transition-colors hover:bg-surface-container-high disabled:opacity-50"
+            >
+              {portalLoading ? "Opening…" : "Manage Billing"}
+            </button>
+          )}
         </div>
+      )}
+      {portalError && (
+        <p className="mt-2 text-sm text-error" role="alert">
+          {portalError}
+        </p>
       )}
 
       <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">

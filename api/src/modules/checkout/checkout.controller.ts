@@ -8,6 +8,7 @@ import {
   getCheckoutStatus,
   listCheckoutSessions,
   getSubscriptionStatus,
+  createBillingPortalSession,
 } from "./checkout.service.js";
 import {
   createCheckoutSchema,
@@ -71,9 +72,10 @@ export const createCheckoutController = endpoint(async (req, res) => {
   const body = parse(createCheckoutSchema, req.body);
   const provider = await getPaymentProvider();
 
-  const frontendUrl = config.APP_FRONTEND_URL;
-  const successUrl = `${frontendUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${frontendUrl}/checkout/cancel`;
+  const successUrl = config.STRIPE_SUCCESS_URL
+    ? `${config.STRIPE_SUCCESS_URL}?session_id={CHECKOUT_SESSION_ID}`
+    : `${config.APP_FRONTEND_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = config.STRIPE_CANCEL_URL || `${config.APP_FRONTEND_URL}/checkout/cancel`;
 
   const result = await createCheckoutSession(
     tenantId,
@@ -124,4 +126,16 @@ export const listCheckoutSessionsController = endpoint((req) => {
 export const subscriptionStatusController = endpoint((req) => {
   const tenantId = tenant(req);
   return getSubscriptionStatus(tenantId, operationContext(req));
+});
+
+export const createBillingPortalController = endpoint(async (req) => {
+  const tenantId = tenant(req);
+  const provider = await getPaymentProvider();
+  const returnUrl = config.STRIPE_BILLING_PORTAL_RETURN_URL || `${config.APP_FRONTEND_URL}/checkout`;
+  return createBillingPortalSession(
+    tenantId,
+    operationContext(req),
+    provider,
+    returnUrl,
+  );
 });

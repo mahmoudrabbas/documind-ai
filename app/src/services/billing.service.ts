@@ -5,6 +5,7 @@ import type {
   SubscriptionStatus,
   PaymentEvent,
   Pagination,
+  BillingPortalSessionResponse,
 } from "@/types/api/billing.types";
 
 type Success<T> = { success: true; data: T };
@@ -72,5 +73,12 @@ export function listCheckoutSessions(
   return apiClient<Success<{ sessions: CheckoutSession[]; pagination: Pagination }>>(
     `/checkout/sessions${qs ? `?${qs}` : ""}`,
     { signal },
+  );
+}
+
+export function createBillingPortalSession() {
+  return apiClient<Success<BillingPortalSessionResponse>>(
+    "/checkout/billing-portal",
+    { method: "POST" },
   );
 }

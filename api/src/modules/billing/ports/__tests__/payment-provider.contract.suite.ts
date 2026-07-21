@@ -102,5 +102,58 @@ export function paymentProviderContractTests(
       });
       expect(id2).toBe(id1);
     });
+
+    it("creates a product and returns an id and name", async () => {
+      const product = await provider.createProduct({
+        name: "Test Product",
+        description: "A test product",
+        metadata: { packageCode: "test" },
+      });
+      expect(product.id).toBeTruthy();
+      expect(product.name).toBe("Test Product");
+    });
+
+    it("creates a recurring price for a product", async () => {
+      const product = await provider.createProduct({
+        name: "Price Test Product",
+      });
+      const price = await provider.createPrice({
+        productId: product.id,
+        unitAmount: 2900,
+        currency: "usd",
+        interval: "month",
+        metadata: { packageCode: "test" },
+      });
+      expect(price.id).toBeTruthy();
+      expect(price.unitAmount).toBe(2900);
+      expect(price.currency).toBe("usd");
+      expect(price.interval).toBe("month");
+    });
+
+    it("creates an annual recurring price for a product", async () => {
+      const product = await provider.createProduct({
+        name: "Annual Test Product",
+      });
+      const price = await provider.createPrice({
+        productId: product.id,
+        unitAmount: 29000,
+        currency: "usd",
+        interval: "year",
+        metadata: { packageCode: "test", billingInterval: "annual" },
+      });
+      expect(price.id).toBeTruthy();
+      expect(price.unitAmount).toBe(29000);
+      expect(price.currency).toBe("usd");
+      expect(price.interval).toBe("year");
+    });
+
+    it("creates a billing portal session with a url", async () => {
+      const session = await provider.createBillingPortalSession({
+        customerId: "cus_test_portal",
+        returnUrl: "https://example.com/checkout",
+      });
+      expect(session.url).toBeTruthy();
+      expect(typeof session.url).toBe("string");
+    });
   });
 }

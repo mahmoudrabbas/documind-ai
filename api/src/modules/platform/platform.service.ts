@@ -14,6 +14,8 @@ import { getAuditWriter } from "../../common/observability/index.js";
 import * as PackageService from "../billing/package.service.js";
 import * as SubscriptionService from "../billing/subscription.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
+import { syncPackageToStripe } from "../billing/stripe-sync.service.js";
+import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import {
   LEGACY_PLATFORM_TENANT_SLUGS,
   PLATFORM_TENANT_SLUG,
@@ -127,12 +129,36 @@ export async function createPackage(
     context,
     Permission.BILLING_MANAGE,
   );
-  return PackageService.createPackage(input, {
+
+  const pkg = await PackageService.createPackage(input, {
     userId: actor.actorId,
     email: actor.actorEmail,
     role: actor.actorRole,
     tenantId: actor.tenantId,
   });
+
+  // Sync billable packages to Stripe
+  if (pkg.monthlyPrice > 0 || pkg.annualPrice > 0) {
+    try {
+      const provider = await getPaymentProvider();
+      await syncPackageToStripe(pkg, provider);
+      // Persist Stripe IDs to the database
+      await PackageModel.findByIdAndUpdate(pkg._id, {
+        $set: {
+          stripeProductId: pkg.stripeProductId,
+          stripePriceId: pkg.stripePriceId,
+          stripeAnnualPriceId: pkg.stripeAnnualPriceId,
+        },
+      }).exec();
+    } catch (err) {
+      // Clean up: delete the package since it can't function as a billable package
+      // without valid Stripe references
+      await PackageModel.findByIdAndDelete(pkg._id).exec();
+      throw err;
+    }
+  }
+
+  return pkg;
 }
 
 /**
@@ -174,6 +200,86 @@ export async function updatePackage(
             ocrPagesPerMonth: 0,
           }
         : existing.entitlements;
+    }
+  }
+
+  // Detect pricing changes before applying updates
+  const monthlyPriceChanged =
+    input.monthlyPrice !== undefined && (input.monthlyPrice as number) !== existing.monthlyPrice;
+  const annualPriceChanged =
+    input.annualPrice !== undefined && (input.annualPrice as number) !== existing.annualPrice;
+  const currencyChanged =
+    input.currency !== undefined && (input.currency as string) !== existing.currency;
+  const pricingChanged = monthlyPriceChanged || annualPriceChanged || currencyChanged;
+
+  const isCurrentlyBillable = existing.monthlyPrice > 0 || existing.annualPrice > 0;
+  const willBeBillable =
+    ((input.monthlyPrice as number) ?? existing.monthlyPrice) > 0 ||
+    ((input.annualPrice as number) ?? existing.annualPrice) > 0;
+
+  // Create new Stripe Prices if pricing changed or becoming billable
+  if (willBeBillable && (pricingChanged || !isCurrentlyBillable || !existing.stripePriceId || !existing.stripeAnnualPriceId)) {
+    const provider = await getPaymentProvider();
+
+    // Build a temporary object with the final values for sync (no Mongoose mutation)
+    const finalMonthly = (input.monthlyPrice as number) ?? existing.monthlyPrice;
+    const finalAnnual = (input.annualPrice as number) ?? existing.annualPrice;
+    const finalCurrency = (input.currency as string) ?? existing.currency;
+
+    if (!existing.stripeProductId) {
+      // No product yet — apply updates to the doc so sync reads correct final values
+      Object.assign(existing, {
+        monthlyPrice: finalMonthly,
+        annualPrice: finalAnnual,
+        currency: finalCurrency,
+      });
+      await syncPackageToStripe(existing, provider, {
+        monthlyPrice: finalMonthly,
+        annualPrice: finalAnnual,
+        currency: finalCurrency,
+      });
+    } else {
+      // Product exists — create new prices as needed without mutating the document
+      if (monthlyPriceChanged || (!existing.stripePriceId && finalMonthly > 0)) {
+        try {
+          const price = await provider.createPrice({
+            productId: existing.stripeProductId,
+            unitAmount: finalMonthly,
+            currency: finalCurrency.toLowerCase(),
+            interval: "month",
+            metadata: {
+              packageCode: existing.code,
+              packageId: String(existing._id),
+              version: String(existing.version),
+            },
+          });
+          existing.stripePriceId = price.id;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new AppError(500, "STRIPE_PRODUCT_SYNC_FAILED", `Failed to create Stripe monthly price: ${message}`);
+        }
+      }
+
+      if (annualPriceChanged || (!existing.stripeAnnualPriceId && finalAnnual > 0)) {
+        try {
+          const price = await provider.createPrice({
+            productId: existing.stripeProductId,
+            unitAmount: finalAnnual,
+            currency: finalCurrency.toLowerCase(),
+            interval: "year",
+            metadata: {
+              packageCode: existing.code,
+              packageId: String(existing._id),
+              version: String(existing.version),
+              billingInterval: "annual",
+            },
+          });
+          existing.stripeAnnualPriceId = price.id;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new AppError(500, "STRIPE_PRODUCT_SYNC_FAILED", `Failed to create Stripe annual price: ${message}`);
+        }
+      }
     }
   }
 

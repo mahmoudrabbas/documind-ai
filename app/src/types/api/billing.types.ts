@@ -88,3 +88,7 @@ export interface PublicPackage {
   retentionDays: number;
   supportLevel: string;
 }
+
+export interface BillingPortalSessionResponse {
+  url: string;
+}

@@ -33,6 +33,10 @@ test("checkout routes exist for GET sessions and subscription status", async () 
     source.includes('"/subscription"'),
     "GET subscription route exists",
   );
+  assert.ok(
+    source.includes('"/billing-portal"'),
+    "POST billing-portal route exists",
+  );
 });
 
 test("checkout controller creates checkout session", async () => {
@@ -45,6 +49,14 @@ test("checkout controller creates checkout session", async () => {
     source.includes("createCheckoutSchema"),
     "Controller validates with schema",
   );
+  assert.ok(
+    source.includes("createBillingPortalController"),
+    "Controller has billing portal handler",
+  );
+  assert.ok(
+    source.includes("createBillingPortalSession"),
+    "Controller delegates billing portal to service",
+  );
 });
 
 test("checkout validator accepts packageId and billingInterval", async () => {
@@ -55,6 +67,11 @@ test("checkout validator accepts packageId and billingInterval", async () => {
     source.includes("monthly") && source.includes("annual"),
     "Schema accepts monthly and annual intervals",
   );
+});
+
+test("checkout validator rejects extra unexpected fields", async () => {
+  const source = await readFile(validatorSourceUrl, "utf8");
+  assert.ok(source.includes(".strict()"), "Schema uses strict() to reject unknown fields");
 });
 
 test("checkout service uses PaymentProvider interface", async () => {
@@ -70,5 +87,13 @@ test("checkout service uses PaymentProvider interface", async () => {
   assert.ok(
     source.includes("provider.createCustomer"),
     "Service calls provider.createCustomer",
+  );
+  assert.ok(
+    source.includes("createBillingPortalSession"),
+    "Service has billing portal session function",
+  );
+  assert.ok(
+    source.includes("provider.createBillingPortalSession"),
+    "Service calls provider.createBillingPortalSession",
   );
 });

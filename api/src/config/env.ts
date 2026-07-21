@@ -149,6 +149,9 @@ const envSchema = z
     STRIPE_SECRET_KEY: z.string().default(""),
     STRIPE_WEBHOOK_SECRET: z.string().default(""),
     STRIPE_PUBLISHABLE_KEY: z.string().default(""),
+    STRIPE_SUCCESS_URL: z.string().url().default("http://localhost:3000/checkout/success"),
+    STRIPE_CANCEL_URL: z.string().url().default("http://localhost:3000/checkout/cancel"),
+    STRIPE_BILLING_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3000/checkout"),
   })
   .superRefine((env, context) => {
     const controlledEnvironment = env.NODE_ENV === "production" || env.NODE_ENV === "test";
@@ -186,6 +189,13 @@ const envSchema = z
         path: ["SUPER_ADMIN_BOOTSTRAP_KEY"],
         message:
           "must contain at least 32 characters when bootstrap is enabled",
+      });
+    }
+    if (env.PAYMENT_PROVIDER === "stripe" && !env.STRIPE_SECRET_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["STRIPE_SECRET_KEY"],
+        message: "is required when PAYMENT_PROVIDER is stripe",
       });
     }
   });

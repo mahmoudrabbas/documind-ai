@@ -37,6 +37,9 @@ export interface PackageDocument extends mongoose.Document {
   analyticsLevel: "basic" | "advanced" | "enterprise";
   retentionDays: number;
   supportLevel: "community" | "standard" | "priority" | "dedicated";
+  stripeProductId: string;
+  stripePriceId: string;
+  stripeAnnualPriceId: string;
   versions: Array<{
     version: number;
     monthlyPrice: number;
@@ -48,6 +51,9 @@ export interface PackageDocument extends mongoose.Document {
     analyticsLevel: "basic" | "advanced" | "enterprise";
     retentionDays: number;
     supportLevel: "community" | "standard" | "priority" | "dedicated";
+    stripeProductId: string;
+    stripePriceId: string;
+    stripeAnnualPriceId: string;
     createdAt: Date;
   }>;
   createdAt: Date;
@@ -104,6 +110,9 @@ const packageSchema = new Schema<PackageDocument>(
       enum: ["community", "standard", "priority", "dedicated"],
       default: "community",
     },
+    stripeProductId: { type: String, trim: true, default: "" },
+    stripePriceId: { type: String, trim: true, default: "" },
+    stripeAnnualPriceId: { type: String, trim: true, default: "" },
     versions: {
       type: [
         new Schema(
@@ -130,6 +139,9 @@ const packageSchema = new Schema<PackageDocument>(
               enum: ["community", "standard", "priority", "dedicated"],
               default: "community",
             },
+            stripeProductId: { type: String, trim: true, default: "" },
+            stripePriceId: { type: String, trim: true, default: "" },
+            stripeAnnualPriceId: { type: String, trim: true, default: "" },
             createdAt: { type: Date, required: true },
           },
           { _id: false },

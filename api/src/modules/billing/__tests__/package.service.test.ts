@@ -79,6 +79,9 @@ function doc(overrides: Record<string, unknown> = {}) {
     retentionDays: 365,
     supportLevel: "standard",
     visibility: "public",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
     versions: [
       {
         version: 1,
