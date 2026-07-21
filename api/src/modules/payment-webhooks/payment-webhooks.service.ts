@@ -6,7 +6,7 @@ import SubscriptionModel from "../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
 import { logger } from "../../common/logger/logger.js";
 import { getAuditWriter } from "../../common/observability/index.js";
-import { transitionSubscription } from "../billing/subscription.service.js";
+import { transitionSubscription, LEGAL_TRANSITIONS } from "../billing/subscription.service.js";
 import type { PaymentProviderEvent } from "../billing/ports/payment-provider.port.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { AppError } from "../../common/errors/AppError.js";
@@ -83,9 +83,7 @@ const STRIPE_STATUS_MAP: Record<string, SubscriptionStatus> = {
 
 function mapStripeStatusToInternal(
   stripeStatus: string,
-  cancelAtPeriodEnd: boolean,
 ): SubscriptionStatus | null {
-  if (cancelAtPeriodEnd) return "CANCEL_AT_PERIOD_END";
   return STRIPE_STATUS_MAP[stripeStatus] ?? null;
 }
 
@@ -120,6 +118,24 @@ export async function handlePaymentEvent(
 
   try {
     eventRecord.status = "verified";
+
+    if (event.type === "payment_intent.payment_failed") {
+      await handlePaymentFailure(
+        event,
+        eventRecord,
+        extractPaymentIntentFailureReason(event),
+      );
+      return;
+    }
+
+    if (event.type === "charge.failed") {
+      await handlePaymentFailure(
+        event,
+        eventRecord,
+        extractChargeFailureReason(event),
+      );
+      return;
+    }
 
     if (event.type === "checkout.session.expired") {
       await handleCheckoutSessionExpired(event, eventRecord);
@@ -195,7 +211,14 @@ async function handleStaticMappingEvent(
     transitionOptions.packageId = packageId;
   }
 
-  if (mapping.fromStatuses.includes(currentStatus)) {
+  const isSameStatus = currentStatus === mapping.toStatus;
+
+  if (isSameStatus) {
+    logger.info(
+      { tenantId, currentStatus, eventType: event.type },
+      "Static mapping event — subscription already at target status, skipping transition",
+    );
+  } else if (mapping.fromStatuses.includes(currentStatus)) {
     await transitionSubscription(
       String(tenantId),
       mapping.toStatus,
@@ -269,10 +292,7 @@ async function handleSubscriptionUpdated(
   const stripeStatus = extractStripeSubscriptionStatus(event);
   const cancelAtPeriodEnd = extractCancelAtPeriodEnd(event);
 
-  const mappedStatus = mapStripeStatusToInternal(
-    stripeStatus,
-    cancelAtPeriodEnd,
-  );
+  const mappedStatus = mapStripeStatusToInternal(stripeStatus);
 
   if (!mappedStatus) {
     logger.warn(
@@ -282,52 +302,53 @@ async function handleSubscriptionUpdated(
     return;
   }
 
-  const LEGAL_TRANSITIONS: Record<SubscriptionStatus, readonly SubscriptionStatus[]> = {
-    TRIALING: ["ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
-    INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
-    ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
-    PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],
-    PAUSED: ["ACTIVE", "EXPIRED"],
-    "CANCEL_AT_PERIOD_END": ["ACTIVE", "CANCELED", "EXPIRED"],
-    CANCELED: [],
-    EXPIRED: ["ACTIVE", "UNPAID"],
-    UNPAID: ["ACTIVE", "EXPIRED"],
-  };
+  const isSameStatus = currentStatus === mappedStatus;
 
-  const legalTargets = LEGAL_TRANSITIONS[currentStatus];
+  if (!isSameStatus) {
+    const legalTargets = LEGAL_TRANSITIONS[currentStatus];
 
-  if (!legalTargets.includes(mappedStatus)) {
-    logger.info(
-      {
-        eventId: event.id,
-        currentStatus,
-        mappedStatus,
-        stripeStatus,
-        cancelAtPeriodEnd,
-      },
-      "Subscription update skipped — transition not legal from current status",
+    if (!legalTargets.includes(mappedStatus)) {
+      logger.info(
+        {
+          eventId: event.id,
+          currentStatus,
+          mappedStatus,
+          stripeStatus,
+          cancelAtPeriodEnd,
+        },
+        "Subscription update skipped — transition not legal from current status",
+      );
+      return;
+    }
+
+    const transitionOptions: Record<string, unknown> = {
+      triggeredBy: "provider_event",
+      providerEventId: event.id,
+    };
+
+    const packageId = extractPackageIdFromEvent(event);
+    if (packageId) {
+      transitionOptions.packageId = packageId;
+    }
+
+    await transitionSubscription(
+      String(tenantId),
+      mappedStatus,
+      transitionOptions,
     );
-    return;
+  } else {
+    logger.info(
+      { tenantId, currentStatus, eventType: event.type },
+      "Subscription update — status unchanged, persisting metadata only",
+    );
   }
 
-  const transitionOptions: Record<string, unknown> = {
-    triggeredBy: "provider_event",
-    providerEventId: event.id,
-  };
-
-  const packageId = extractPackageIdFromEvent(event);
-  if (packageId) {
-    transitionOptions.packageId = packageId;
-  }
-
-  await transitionSubscription(
-    String(tenantId),
-    mappedStatus,
-    transitionOptions,
-  );
+  const periodEnd = extractCurrentPeriodEnd(event);
+  const cancelAt = extractCancelAt(event);
 
   const subscriptionUpdate: Record<string, unknown> = {
-    paymentState: mappedStatus === "EXPIRED" || mappedStatus === "CANCELED"
+    cancelAtPeriodEnd,
+    paymentState: mappedStatus === "EXPIRED" || mappedStatus === "CANCELED" || mappedStatus === "PAST_DUE" || mappedStatus === "UNPAID"
       ? "failed"
       : "paid",
     lastProviderEventId: event.id,
@@ -336,9 +357,22 @@ async function handleSubscriptionUpdated(
       sub.providerSubscriptionId,
   };
 
+  if (periodEnd !== null) {
+    subscriptionUpdate.periodEnd = periodEnd;
+  }
+
+  if (cancelAt !== null) {
+    subscriptionUpdate.cancelledAt = cancelAt;
+  } else if (!cancelAtPeriodEnd) {
+    subscriptionUpdate.cancelledAt = null;
+  }
+
+  const packageId = extractPackageIdFromEvent(event);
   if (packageId) {
     subscriptionUpdate.packageId = new Types.ObjectId(packageId);
   }
+
+  subscriptionUpdate.lastProviderEventTimestamp = event.timestamp;
 
   await SubscriptionModel.updateOne(
     { tenantId },
@@ -352,6 +386,7 @@ async function handleSubscriptionUpdated(
       eventType: event.type,
       stripeStatus,
       cancelAtPeriodEnd,
+      cancelAt,
       newStatus: mappedStatus,
       providerEventId: event.id,
     },
@@ -373,18 +408,18 @@ async function handleCheckoutSessionCompleted(
 
   const failureReason = extractFailureReason(event);
 
-  const metadata: Record<string, string> = {
-    payment_status: "unpaid",
-    providerEventId: event.id,
+  const metadataUpdate: Record<string, string> = {
+    "metadata.payment_status": "unpaid",
+    "metadata.providerEventId": event.id,
   };
-  if (failureReason) metadata.failureReason = failureReason;
+  if (failureReason) metadataUpdate["metadata.failureReason"] = failureReason;
 
   await CheckoutSessionModel.updateOne(
     { providerSessionId: sessionId },
     {
       $set: {
         status: "failed",
-        metadata: new Map(Object.entries(metadata)),
+        ...metadataUpdate,
       },
     },
   );
@@ -415,16 +450,12 @@ async function handleCheckoutSessionExpired(
   const sessionId = extractCheckoutSessionId(event);
   if (!sessionId) return;
 
-  const metadata: Record<string, string> = {
-    providerEventId: event.id,
-  };
-
   await CheckoutSessionModel.updateOne(
     { providerSessionId: sessionId },
     {
       $set: {
         status: "expired",
-        metadata: new Map(Object.entries(metadata)),
+        "metadata.providerEventId": event.id,
       },
     },
   );
@@ -441,6 +472,106 @@ async function handleCheckoutSessionExpired(
       providerEventId: event.id,
     },
     extractTenantFromEvent(event)?.toString() ?? "",
+  );
+}
+
+// ── Payment failure handler (payment_intent.payment_failed, charge.failed) ──
+
+async function handlePaymentFailure(
+  event: PaymentProviderEvent,
+  eventRecord: PaymentEventDocument,
+  failureReason: string | undefined,
+): Promise<void> {
+  // Stripe propagates CheckoutSession.id → PaymentIntent.payment_details.order_reference.
+  // This is a deterministic 1:1 correlation via providerSessionId (unique index).
+  // Other fields (customer, metadata.tenantId) are ambiguous when multiple pending
+  // sessions exist for the same tenant or customer.
+  let session = null;
+
+  // Tier 1: Deterministic — order_reference → providerSessionId
+  const orderRef = extractOrderReferenceFromEvent(event);
+  if (orderRef) {
+    session = await CheckoutSessionModel.findOne({
+      providerSessionId: orderRef,
+      status: "pending",
+    })
+      .lean()
+      .exec();
+    // If not found here, the session may have already been completed/expired
+    // by a checkout.session.completed event. Fall through to safe fallbacks.
+  }
+
+  // Tier 2: tenantId — only if exactly one pending session exists
+  if (!session) {
+    const tenantId = extractTenantFromEvent(event);
+    if (tenantId) {
+      const sessions = await CheckoutSessionModel.find({
+        tenantId,
+        status: "pending",
+      })
+        .lean()
+        .exec();
+      if (sessions.length === 1) {
+        session = sessions[0];
+      }
+    }
+  }
+
+  // Tier 3: customer — only if exactly one pending session exists
+  if (!session) {
+    const customerId = extractCustomerIdFromEvent(event);
+    if (customerId) {
+      const sessions = await CheckoutSessionModel.find({
+        providerCustomerId: customerId,
+        status: "pending",
+      })
+        .lean()
+        .exec();
+      if (sessions.length === 1) {
+        session = sessions[0];
+      }
+    }
+  }
+
+  if (!session) {
+    eventRecord.processingErrors.push(
+      "No pending CheckoutSession found for payment failure event (order_reference, tenantId, and customer all failed to correlate unambiguously)",
+    );
+    eventRecord.status = "failed";
+    await eventRecord.save();
+    return;
+  }
+
+  const tenantId = session.tenantId;
+
+  const metadataUpdate: Record<string, string> = {
+    "metadata.providerEventId": event.id,
+  };
+  if (failureReason) metadataUpdate["metadata.failureReason"] = failureReason;
+
+  await CheckoutSessionModel.updateOne(
+    { _id: session._id, status: "pending" },
+    {
+      $set: {
+        status: "failed",
+        ...metadataUpdate,
+      },
+    },
+  );
+
+  eventRecord.status = "processed";
+  eventRecord.processedAt = new Date();
+  await eventRecord.save();
+
+  writeAudit(
+    "CHECKOUT_SESSION_UPDATED",
+    String(session._id),
+    {
+      eventType: event.type,
+      failureReason,
+      providerEventId: event.id,
+    },
+    tenantId.toString(),
   );
 }
 
@@ -504,6 +635,17 @@ function extractCustomerIdFromEvent(
   return obj?.customer as string | undefined;
 }
 
+function extractOrderReferenceFromEvent(
+  event: PaymentProviderEvent,
+): string | null {
+  const obj = extractRawObject(event);
+  const details = obj?.payment_details as
+    | Record<string, unknown>
+    | undefined;
+  if (details?.order_reference) return details.order_reference as string;
+  return null;
+}
+
 function extractStripeSubscriptionIdFromEvent(
   event: PaymentProviderEvent,
 ): string | undefined {
@@ -523,6 +665,24 @@ function extractCancelAtPeriodEnd(
 ): boolean {
   const obj = extractRawObject(event);
   return (obj?.cancel_at_period_end as boolean) ?? false;
+}
+
+function extractCancelAt(
+  event: PaymentProviderEvent,
+): Date | null {
+  const obj = extractRawObject(event);
+  const ts = obj?.cancel_at as number | undefined;
+  if (typeof ts === "number" && ts > 0) return new Date(ts * 1000);
+  return null;
+}
+
+function extractCurrentPeriodEnd(
+  event: PaymentProviderEvent,
+): Date | null {
+  const obj = extractRawObject(event);
+  const ts = obj?.current_period_end as number | undefined;
+  if (typeof ts === "number" && ts > 0) return new Date(ts * 1000);
+  return null;
 }
 
 function extractCheckoutSessionId(
@@ -555,6 +715,30 @@ function extractFailureReason(
     | Record<string, unknown>
     | undefined;
   if (lastError?.message) return lastError.message as string;
+  return undefined;
+}
+
+function extractPaymentIntentFailureReason(
+  event: PaymentProviderEvent,
+): string | undefined {
+  const obj = extractRawObject(event);
+  const lastError = obj?.last_payment_error as
+    | Record<string, unknown>
+    | undefined;
+  if (lastError?.message) return lastError.message as string;
+  const declineCode = obj?.last_payment_error as
+    | Record<string, unknown>
+    | undefined;
+  if (declineCode?.decline_code) return declineCode.decline_code as string;
+  return undefined;
+}
+
+function extractChargeFailureReason(
+  event: PaymentProviderEvent,
+): string | undefined {
+  const obj = extractRawObject(event);
+  if (obj?.failure_message) return obj.failure_message as string;
+  if (obj?.failure_code) return obj.failure_code as string;
   return undefined;
 }
 

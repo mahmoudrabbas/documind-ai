@@ -16,6 +16,8 @@ vi.mock("../../../db/models/paymentEvent.model.js", () => ({
 
 vi.mock("../../../db/models/checkoutSession.model.js", () => ({
   default: {
+    find: vi.fn(),
+    findOne: vi.fn(),
     updateOne: vi.fn(),
   },
 }));
@@ -26,6 +28,17 @@ vi.mock("../../../common/observability/index.js", () => ({
 
 vi.mock("../../billing/subscription.service.js", () => ({
   transitionSubscription: vi.fn(),
+  LEGAL_TRANSITIONS: {
+    TRIALING: ["ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
+    INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
+    ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
+    PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],
+    PAUSED: ["ACTIVE", "EXPIRED"],
+    "CANCEL_AT_PERIOD_END": ["ACTIVE", "CANCELED", "EXPIRED"],
+    CANCELED: [],
+    EXPIRED: ["ACTIVE", "UNPAID"],
+    UNPAID: ["ACTIVE", "EXPIRED"],
+  },
 }));
 
 vi.mock("../../permissions/permissions.operation.js", () => ({
@@ -112,6 +125,12 @@ describe("handlePaymentEvent", () => {
     (CheckoutSessionModel.updateOne as ReturnType<
       typeof vi.fn
     >).mockResolvedValue({ modifiedCount: 1 });
+    (CheckoutSessionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryChain(null),
+    );
+    (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryChain([]),
+    );
     (transitionSubscription as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeSub(),
     );
@@ -302,6 +321,26 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).not.toHaveBeenCalled();
     });
+
+    it("skips transition when subscription is already ACTIVE", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_ip_act_4",
+        type: "invoice.paid",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[1].$set).toMatchObject({ paymentState: "paid" });
+    });
   });
 
   describe("invoice.payment_failed — tenant resolution", () => {
@@ -468,7 +507,7 @@ describe("handlePaymentEvent", () => {
   });
 
   describe("customer.subscription.updated — cancel_at_period_end", () => {
-    it("transitions to CANCEL_AT_PERIOD_END when cancel_at_period_end is true", async () => {
+    it("persists cancelAtPeriodEnd=true without transition when status is unchanged", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
         mockQueryChain(makeSub({ status: "ACTIVE" })),
       );
@@ -484,11 +523,10 @@ describe("handlePaymentEvent", () => {
       });
       await handlePaymentEvent(event, "{}", "sig");
 
-      expect(transitionSubscription).toHaveBeenCalledWith(
-        TENANT_ID,
-        "CANCEL_AT_PERIOD_END",
-        expect.anything(),
-      );
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[1].$set).toMatchObject({ cancelAtPeriodEnd: true });
     });
 
     it("does NOT immediately cancel when cancel_at_period_end is true", async () => {
@@ -519,9 +557,9 @@ describe("handlePaymentEvent", () => {
       );
     });
 
-    it("reverts to ACTIVE when cancel_at_period_end changes from true to false", async () => {
+    it("clears cancelAtPeriodEnd when cancel_at_period_end changes to false", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
-        mockQueryChain(makeSub({ status: "CANCEL_AT_PERIOD_END" })),
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
       );
 
       const event = makeEvent({
@@ -535,11 +573,10 @@ describe("handlePaymentEvent", () => {
       });
       await handlePaymentEvent(event, "{}", "sig");
 
-      expect(transitionSubscription).toHaveBeenCalledWith(
-        TENANT_ID,
-        "ACTIVE",
-        expect.anything(),
-      );
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[1].$set).toMatchObject({ cancelAtPeriodEnd: false });
     });
 
     it("transitions to CANCELED when Stripe status is canceled", async () => {
@@ -563,6 +600,59 @@ describe("handlePaymentEvent", () => {
         "CANCELED",
         expect.anything(),
       );
+    });
+  });
+
+  describe("customer.subscription.updated — current_period_end persistence", () => {
+    it("persists current_period_end as periodEnd", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_cpe_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "active",
+          cancel_at_period_end: false,
+          current_period_end: 1700000000,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({ periodEnd: new Date(1700000000 * 1000) });
+    });
+
+    it("persists cancelAtPeriodEnd and periodEnd on status change", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_cpe_2",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "past_due",
+          cancel_at_period_end: false,
+          current_period_end: 1700000000,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "PAST_DUE",
+        expect.anything(),
+      );
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({
+        cancelAtPeriodEnd: false,
+        periodEnd: new Date(1700000000 * 1000),
+      });
     });
   });
 
@@ -732,10 +822,12 @@ describe("handlePaymentEvent", () => {
       expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
         { providerSessionId: "cs_session_fail_3" },
         {
-          $set: expect.objectContaining({
+          $set: {
             status: "failed",
-            metadata: expect.any(Map),
-          }),
+            "metadata.payment_status": "unpaid",
+            "metadata.providerEventId": "evt_csc_fail_3",
+            "metadata.failureReason": "Your card was declined.",
+          },
         },
       );
     });
@@ -828,6 +920,623 @@ describe("handlePaymentEvent", () => {
     });
   });
 
+  describe("payment_intent.payment_failed — initial checkout decline", () => {
+    it("marks pending CheckoutSession as failed", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_1", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_1",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID, packageId: "pkg_1" },
+          last_payment_error: { message: "Your card was declined." },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.find).toHaveBeenCalledWith({
+        tenantId: expect.anything(),
+        status: "pending",
+      });
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_1", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+
+    it("does NOT create or transition an internal Subscription", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_2", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_2",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          last_payment_error: { message: "Card declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      expect(SubscriptionModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it("stores failure reason from last_payment_error", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_3", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_3",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          last_payment_error: { message: "Insufficient funds" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_3", status: "pending" },
+        {
+          $set: {
+            status: "failed",
+            "metadata.providerEventId": "evt_pipf_3",
+            "metadata.failureReason": "Insufficient funds",
+          },
+        },
+      );
+    });
+
+    it("records error when no pending CheckoutSession exists for tenantId", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([]),
+      );
+
+      const eventRecord = {
+        _id: "rec_pipf_4",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        eventRecord,
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_4",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      expect(eventRecord.status).toBe("failed");
+      expect(eventRecord.processingErrors).toContainEqual(
+        expect.stringContaining("No pending CheckoutSession found"),
+      );
+    });
+
+    it("records error when neither tenantId nor customer is present", async () => {
+      const eventRecord = {
+        _id: "rec_pipf_5",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        eventRecord,
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_5",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          last_payment_error: { message: "Declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+      expect(eventRecord.status).toBe("failed");
+      expect(eventRecord.processingErrors).toContainEqual(
+        expect.stringContaining("No pending CheckoutSession found"),
+      );
+    });
+
+    it("is idempotent for duplicate webhook delivery", async () => {
+      (PaymentEventModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({ eventId: "evt_pipf_dup" }),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_dup",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("payment_intent.payment_failed — providerCustomerId fallback (real Stripe behavior)", () => {
+    it("marks pending CheckoutSession as failed via customer ID when metadata.tenantId is absent", async () => {
+      // No order_reference, no metadata.tenantId → only customer lookup runs via find()
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_fallback_1", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_fb_1",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          last_payment_error: { message: "Your card was declined." },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.find).toHaveBeenCalledWith({
+        providerCustomerId: CUSTOMER_ID,
+        status: "pending",
+      });
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_fallback_1", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+
+    it("does NOT create or transition an internal Subscription via fallback path", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_fallback_2", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_fb_2",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          last_payment_error: { message: "Card declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      expect(SubscriptionModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it("records error when tenantId lookup fails and customer ID has no pending session", async () => {
+      // No order_reference, no metadata.tenantId, customer lookup → empty
+      // find already returns [] from beforeEach default.
+
+      const eventRecord = {
+        _id: "rec_pipf_fb_3",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        eventRecord,
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_fb_3",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+      expect(eventRecord.status).toBe("failed");
+      expect(eventRecord.processingErrors).toContainEqual(
+        expect.stringContaining("No pending CheckoutSession found"),
+      );
+    });
+
+    it("is idempotent for duplicate webhook delivery via fallback path", async () => {
+      (PaymentEventModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({ eventId: "evt_pipf_fb_dup" }),
+      );
+
+      const event = makeEvent({
+        id: "evt_pipf_fb_dup",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("charge.failed — initial checkout decline", () => {
+    it("marks pending CheckoutSession as failed", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_c1", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_cf_1",
+        type: "charge.failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          failure_message: "Your card was declined.",
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.find).toHaveBeenCalledWith({
+        tenantId: expect.anything(),
+        status: "pending",
+      });
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_c1", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+
+    it("does NOT create or transition an internal Subscription", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_c2", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_cf_2",
+        type: "charge.failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          failure_message: "Card declined",
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      expect(SubscriptionModel.findOne).not.toHaveBeenCalled();
+    });
+
+    it("is idempotent for duplicate webhook delivery", async () => {
+      (PaymentEventModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({ eventId: "evt_cf_dup" }),
+      );
+
+      const event = makeEvent({
+        id: "evt_cf_dup",
+        type: "charge.failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it("marks pending CheckoutSession as failed via customer ID fallback", async () => {
+      // No order_reference on Charge, no metadata.tenantId → only customer lookup via find()
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_cf_fb", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_cf_fb_1",
+        type: "charge.failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          failure_message: "Your card was declined.",
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.find).toHaveBeenCalledWith({
+        providerCustomerId: CUSTOMER_ID,
+        status: "pending",
+      });
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_cf_fb", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+
+    it("records error when no correlation identifier is present", async () => {
+      const eventRecord = {
+        _id: "rec_cf_no_id",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        eventRecord,
+      );
+
+      const event = makeEvent({
+        id: "evt_cf_no_id",
+        type: "charge.failed",
+        rawObject: {
+          failure_message: "Declined",
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+      expect(eventRecord.status).toBe("failed");
+      expect(eventRecord.processingErrors).toContainEqual(
+        expect.stringContaining("No pending CheckoutSession found"),
+      );
+    });
+  });
+
+  describe("real-world declined card flow — both events", () => {
+    it("second failure event is a no-op when CheckoutSession already failed", async () => {
+      // In real Stripe, PaymentIntent/Charge events carry customer, NOT metadata.
+      // The first event (PI) correlates via customer find().
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(                        // PI: customer lookup → found
+          mockQueryChain([{ _id: "cs_real", status: "pending", tenantId: TENANT_ID }]),
+        );
+
+      const piEvent = makeEvent({
+        id: "evt_real_pi",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          last_payment_error: { message: "Declined" },
+        },
+      });
+      await handlePaymentEvent(piEvent, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_real", status: "pending" },
+        expect.objectContaining({ $set: expect.objectContaining({ status: "failed" }) }),
+      );
+
+      // Second event (charge.failed) arrives — CheckoutSession already failed
+      vi.clearAllMocks();
+      (PaymentEventModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(null),
+      );
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        _id: "evt_record_2",
+        eventId: "evt_real_charge",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      });
+      // customer lookup finds no pending sessions (already failed)
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(
+          mockQueryChain([]),
+        );
+
+      const chargeEvent = makeEvent({
+        id: "evt_real_charge",
+        type: "charge.failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          failure_message: "Declined",
+        },
+      });
+      await handlePaymentEvent(chargeEvent, "{}", "sig");
+
+      // The updateOne is NOT called because no pending session was found
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("payment_intent.payment_failed — order_reference deterministic correlation", () => {
+    it("correlates via payment_details.order_reference → providerSessionId (real Stripe event shape)", async () => {
+      // This is the exact event shape from the production incident:
+      // PI has customer AND payment_details.order_reference (the CheckoutSession ID).
+      // findOne is called for the deterministic order_reference lookup.
+      (CheckoutSessionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          _id: "cs_exact_1",
+          providerSessionId: "cs_test_a1X2sh462MQExU0cLbyRZd17ITCpkK6Q7ejXjQH0jgMDDnLLVF4yuzvzI7",
+          status: "pending",
+          tenantId: TENANT_ID,
+        }),
+      );
+
+      const event = makeEvent({
+        id: "evt_3TveqfBWDqJ5axSm17XF56sI",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          id: "pi_3TveqfBWDqJ5axSm1LKI3Mtd",
+          customer: "cus_UvGUvNvyTSEObm",
+          payment_details: {
+            order_reference: "cs_test_a1X2sh462MQExU0cLbyRZd17ITCpkK6Q7ejXjQH0jgMDDnLLVF4yuzvzI7",
+          },
+          metadata: {},
+          last_payment_error: { message: "Your card was declined." },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      // findOne was called with providerSessionId (deterministic lookup)
+      expect(CheckoutSessionModel.findOne).toHaveBeenCalledWith({
+        providerSessionId: "cs_test_a1X2sh462MQExU0cLbyRZd17ITCpkK6Q7ejXjQH0jgMDDnLLVF4yuzvzI7",
+        status: "pending",
+      });
+      // find was NOT called (deterministic hit on tier 1)
+      expect(CheckoutSessionModel.find).not.toHaveBeenCalled();
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_exact_1", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+
+    it("falls through to tenantId/customer when order_reference does not match any pending session", async () => {
+      // order_reference present but no matching session (already completed/expired)
+      (CheckoutSessionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(null),
+      );
+      // Tier 2: tenantId lookup → exactly one pending session
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_fb_tenant", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_or_fb_1",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          payment_details: {
+            order_reference: "cs_completed_session",
+          },
+          metadata: { tenantId: TENANT_ID },
+          last_payment_error: { message: "Declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      // Tier 1: tried order_reference → null
+      expect(CheckoutSessionModel.findOne).toHaveBeenCalledWith({
+        providerSessionId: "cs_completed_session",
+        status: "pending",
+      });
+      // Tier 2: tried tenantId → found exactly one
+      expect(CheckoutSessionModel.find).toHaveBeenCalledWith({
+        tenantId: expect.anything(),
+        status: "pending",
+      });
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_fb_tenant", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+  });
+
+  describe("payment_intent.payment_failed — ambiguous multi-session rejection", () => {
+    it("rejects correlation when two pending sessions share the same providerCustomerId", async () => {
+      // This is the exact production scenario: two pending sessions for the same customer.
+      // Without order_reference, the handler MUST NOT pick one arbitrarily.
+      const eventRecord = {
+        _id: "rec_ambig_1",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        eventRecord,
+      );
+
+      // Tier 1: no order_reference → skipped
+      // Tier 2: no metadata.tenantId → skipped
+      // Tier 3: customer has 2 pending sessions → ambiguous → reject
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([
+          { _id: "cs_ambig_a", status: "pending", providerCustomerId: CUSTOMER_ID },
+          { _id: "cs_ambig_b", status: "pending", providerCustomerId: CUSTOMER_ID },
+        ]),
+      );
+
+      const event = makeEvent({
+        id: "evt_ambig_1",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          last_payment_error: { message: "Declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      // MUST NOT update either session
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+      expect(eventRecord.status).toBe("failed");
+      expect(eventRecord.processingErrors).toContainEqual(
+        expect.stringContaining("No pending CheckoutSession found"),
+      );
+    });
+
+    it("rejects correlation when two pending sessions share the same tenantId", async () => {
+      const eventRecord = {
+        _id: "rec_ambig_2",
+        status: "received",
+        processingErrors: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      (PaymentEventModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        eventRecord,
+      );
+
+      // Tier 1: no order_reference → skipped
+      // Tier 2: tenantId has 2 pending sessions → ambiguous → reject
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([
+          { _id: "cs_tenant_a", status: "pending", tenantId: TENANT_ID },
+          { _id: "cs_tenant_b", status: "pending", tenantId: TENANT_ID },
+        ]),
+      );
+
+      const event = makeEvent({
+        id: "evt_ambig_2",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          last_payment_error: { message: "Declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
+      expect(eventRecord.status).toBe("failed");
+    });
+
+    it("succeeds via order_reference even when customer has multiple pending sessions", async () => {
+      // The exact production scenario: two pending sessions for same customer,
+      // but order_reference disambiguates to the correct one.
+      (CheckoutSessionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          _id: "cs_target",
+          providerSessionId: "cs_test_a1X2sh462MQExU0cLbyRZd17ITCpkK6Q7ejXjQH0jgMDDnLLVF4yuzvzI7",
+          status: "pending",
+          tenantId: TENANT_ID,
+          providerCustomerId: CUSTOMER_ID,
+        }),
+      );
+
+      const event = makeEvent({
+        id: "evt_target_1",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          id: "pi_target",
+          customer: CUSTOMER_ID,
+          payment_details: {
+            order_reference: "cs_test_a1X2sh462MQExU0cLbyRZd17ITCpkK6Q7ejXjQH0jgMDDnLLVF4yuzvzI7",
+          },
+          metadata: {},
+          last_payment_error: { message: "Declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      // Tier 1 hit: deterministic lookup by order_reference
+      expect(CheckoutSessionModel.findOne).toHaveBeenCalledWith({
+        providerSessionId: "cs_test_a1X2sh462MQExU0cLbyRZd17ITCpkK6Q7ejXjQH0jgMDDnLLVF4yuzvzI7",
+        status: "pending",
+      });
+      // find was NOT called — order_reference was sufficient
+      expect(CheckoutSessionModel.find).not.toHaveBeenCalled();
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_target", status: "pending" },
+        { $set: expect.objectContaining({ status: "failed" }) },
+      );
+    });
+  });
+
   describe("customer.subscription.deleted", () => {
     it("transitions to EXPIRED with paymentState failed", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -880,6 +1589,329 @@ describe("handlePaymentEvent", () => {
         { tenantId: TENANT_ID },
         expect.anything(),
       );
+    });
+  });
+
+  describe("TEST 1: cancellation via portal — cancel_at_period_end + cancel_at", () => {
+    it("persists cancelAtPeriodEnd=true, cancelledAt timestamp, and keeps status ACTIVE", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const cancelAtTs = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+      const event = makeEvent({
+        id: "evt_cancel_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "active",
+          cancel_at_period_end: true,
+          cancel_at: cancelAtTs,
+          current_period_end: cancelAtTs,
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[1].$set).toMatchObject({
+        cancelAtPeriodEnd: true,
+        cancelledAt: new Date(cancelAtTs * 1000),
+        periodEnd: new Date(cancelAtTs * 1000),
+        paymentState: "paid",
+        lastProviderEventId: "evt_cancel_1",
+      });
+    });
+  });
+
+  describe("TEST 2: cancel_at_period_end cleared — subscription stays active", () => {
+    it("clears cancelAtPeriodEnd and cancelledAt when cancel_at_period_end changes to false", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_cancel_clear_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "active",
+          cancel_at_period_end: false,
+          cancel_at: 0,
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({
+        cancelAtPeriodEnd: false,
+        cancelledAt: null,
+        paymentState: "paid",
+      });
+    });
+  });
+
+  describe("TEST 3: customer.subscription.deleted expires subscription", () => {
+    it("transitions ACTIVE → EXPIRED with paymentState failed", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_delete_1",
+        type: "customer.subscription.deleted",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "EXPIRED",
+        expect.objectContaining({ triggeredBy: "provider_event" }),
+      );
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({ paymentState: "failed" });
+    });
+
+    it("transitions CANCEL_AT_PERIOD_END → EXPIRED when period ends", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "CANCEL_AT_PERIOD_END" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_delete_2",
+        type: "customer.subscription.deleted",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "EXPIRED",
+        expect.anything(),
+      );
+    });
+  });
+
+  describe("TEST 4: duplicate customer.subscription.updated is idempotent", () => {
+    it("processes only once — duplicate is skipped", async () => {
+      (PaymentEventModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({ eventId: "evt_dup_csu_1" }),
+      );
+
+      const event = makeEvent({
+        id: "evt_dup_csu_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "active",
+          cancel_at_period_end: true,
+          cancel_at: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("TEST 5: event timestamp ordering — lastProviderEventTimestamp is persisted", () => {
+    it("stores event.timestamp as lastProviderEventTimestamp", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const eventTimestamp = new Date("2026-08-01T12:00:00Z");
+      const event = makeEvent({
+        id: "evt_ts_1",
+        type: "customer.subscription.updated",
+        timestamp: eventTimestamp,
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "active",
+          cancel_at_period_end: true,
+          cancel_at: Math.floor(eventTimestamp.getTime() / 1000) + 30 * 24 * 60 * 60,
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({
+        lastProviderEventTimestamp: eventTimestamp,
+      });
+    });
+  });
+
+  describe("TEST 6: ACTIVE → ACTIVE metadata-only update — no error", () => {
+    it("does not call transitionSubscription and persists metadata", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_meta_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "active",
+          cancel_at_period_end: true,
+          cancel_at: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+          current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).not.toHaveBeenCalled();
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[1].$set).toMatchObject({
+        cancelAtPeriodEnd: true,
+        paymentState: "paid",
+      });
+    });
+  });
+
+  describe("TEST 7: checkout.session.completed uses cs_... session ID", () => {
+    it("queries CheckoutSession by the actual Stripe session ID, not event ID", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "TRIALING" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_csc_cs_1",
+        type: "checkout.session.completed",
+        rawObject: {
+          id: "cs_test_session_abc123",
+          metadata: { tenantId: TENANT_ID, packageId: "507f1f77bcf86cd799439012" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { providerSessionId: "cs_test_session_abc123" },
+        { $set: expect.objectContaining({ status: "completed" }) },
+      );
+    });
+  });
+
+  describe("TEST 8: payment failure preserves CheckoutSession metadata", () => {
+    it("uses $set with individual metadata fields instead of replacing entire Map", async () => {
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([{ _id: "cs_meta_1", status: "pending", tenantId: TENANT_ID }]),
+      );
+
+      const event = makeEvent({
+        id: "evt_pm_1",
+        type: "payment_intent.payment_failed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID, packageId: "pkg_1" },
+          last_payment_error: { message: "Card declined" },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "cs_meta_1", status: "pending" },
+        {
+          $set: {
+            status: "failed",
+            "metadata.providerEventId": "evt_pm_1",
+            "metadata.failureReason": "Card declined",
+          },
+        },
+      );
+    });
+
+    it("checkout.session.expired uses $set with individual metadata fields", async () => {
+      const event = makeEvent({
+        id: "evt_pm_2",
+        type: "checkout.session.expired",
+        rawObject: {
+          id: "cs_exp_meta_1",
+          metadata: { tenantId: TENANT_ID },
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { providerSessionId: "cs_exp_meta_1" },
+        {
+          $set: {
+            status: "expired",
+            "metadata.providerEventId": "evt_pm_2",
+          },
+        },
+      );
+    });
+  });
+
+  describe("TEST 9: past_due status sets paymentState to failed", () => {
+    it("maps Stripe past_due to paymentState failed, not paid", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_pd_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "past_due",
+          cancel_at_period_end: false,
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "PAST_DUE",
+        expect.anything(),
+      );
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({ paymentState: "failed" });
+    });
+
+    it("maps Stripe unpaid to paymentState failed via PAST_DUE", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "PAST_DUE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_pd_2",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "unpaid",
+          cancel_at_period_end: false,
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({ paymentState: "failed" });
     });
   });
 });
