@@ -123,7 +123,9 @@ export const listCheckoutSessionsController = endpoint((req) => {
   return listCheckoutSessions({ ...query, tenantId }, operationContext(req));
 });
 
-export const subscriptionStatusController = endpoint((req) => {
+export const subscriptionStatusController = endpoint((req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
   const tenantId = tenant(req);
   return getSubscriptionStatus(tenantId, operationContext(req));
 });

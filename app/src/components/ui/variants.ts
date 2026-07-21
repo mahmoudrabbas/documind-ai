@@ -22,17 +22,17 @@ export const BUTTON_SIZES: readonly ButtonSize[] = ["sm", "md", "lg"];
 const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
   // Navy background, white text — DESIGN.md "Primary" button.
   primary:
-    "bg-primary text-on-primary hover:bg-primary-container disabled:bg-outline-variant disabled:text-outline",
+    "bg-primary text-white hover:bg-primary-container disabled:bg-outline-variant disabled:text-outline",
   // Accent teal — DESIGN.md "Secondary", reserved for AI-specific actions.
   secondary:
-    "bg-on-tertiary-container text-on-tertiary hover:opacity-90 disabled:bg-outline-variant disabled:text-outline",
+    "bg-on-tertiary-container text-white hover:opacity-90 disabled:bg-outline-variant disabled:text-outline",
   // Transparent, navy text — DESIGN.md "Ghost".
   ghost:
     "bg-transparent text-primary hover:bg-surface-container disabled:text-outline",
   outline:
     "bg-transparent text-primary border border-outline hover:bg-surface-container disabled:text-outline disabled:border-outline-variant",
   danger:
-    "bg-error text-on-error hover:opacity-90 disabled:bg-outline-variant disabled:text-outline",
+    "bg-error text-white hover:opacity-90 disabled:bg-outline-variant disabled:text-outline",
 };
 
 const BUTTON_SIZE_CLASSES: Record<ButtonSize, string> = {
