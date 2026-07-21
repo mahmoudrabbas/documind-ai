@@ -52,7 +52,7 @@ const ALL_STATUSES: SubscriptionStatus[] = [
 
 // Mirror of LEGAL_TRANSITIONS from subscription.service.ts
 const LEGAL: Record<SubscriptionStatus, readonly SubscriptionStatus[]> = {
-  TRIALING: ["ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
+  TRIALING: ["ACTIVE", "INCOMPLETE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
   INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
   ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
   PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],
