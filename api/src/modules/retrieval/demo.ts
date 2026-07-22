@@ -12,8 +12,8 @@ import mongoose from "mongoose";
 
 // ── Models ──────────────────────────────────────────────────────────────
 import DocumentChunkModel from "../../db/models/documentChunk.model.js";
-import DocumentModel from "../../db/models/document.model.js";
-import DocumentVersionModel from "../../db/models/documentVersion.model.js";
+// import DocumentModel from "../../db/models/document.model.js";
+// import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 
 // ── Adapters & engines ──────────────────────────────────────────────────
 import { createFakeVectorStoreAdapter } from "../../providers/embedding/fakeVectorStoreAdapter.js";
