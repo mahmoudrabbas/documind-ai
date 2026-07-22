@@ -40,6 +40,9 @@ export interface DocumentDocument extends mongoose.Document {
   quarantineStatus: DocumentQuarantineStatus;
   scanResult: ScanInfo | null;
   uploadedBy: mongoose.Types.ObjectId;
+  activePolicyId?: mongoose.Types.ObjectId | null;
+  activePolicyVersion?: number | null;
+  policyChangedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -142,6 +145,16 @@ const documentSchema = new Schema<DocumentDocument>(
       ref: "User",
       required: true,
     },
+    activePolicyId: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
+    activePolicyVersion: {
+      type: Number,
+      min: 1,
+      default: null,
+    },
+    policyChangedAt: { type: Date, default: null },
   },
   {
     timestamps: true,
@@ -165,6 +178,13 @@ documentSchema.index({ tenantId: 1, checksum: 1 });
 documentSchema.index({ tenantId: 1, deletedAt: 1 });
 documentSchema.index({ tenantId: 1, category: 1 });
 documentSchema.index({ tenantId: 1, classification: 1 });
+documentSchema.index(
+  { tenantId: 1, activePolicyId: 1, activePolicyVersion: 1 },
+  {
+    name: "idx_document_tenant_active_policy",
+    partialFilterExpression: { activePolicyId: { $type: "objectId" } },
+  },
+);
 
 const DocumentModel = mongoose.model<DocumentDocument>("Document", documentSchema);
 export default DocumentModel;
