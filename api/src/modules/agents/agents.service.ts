@@ -3,6 +3,8 @@ import { BAD_REQUEST, NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { Supervisor } from "./supervisor.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { createFakeTools } from "./fakeTools.js";
+import { createRetrievalTool } from "./tools/retrievalTool.js";
+import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
 import { createDefaultGuardrails } from "./guardrails.js";
 import { FakeModelAdapter } from "../../providers/llm/fakeAdapters.js";
 import {
@@ -42,6 +44,12 @@ const supervisor = new Supervisor(model, createDefaultGuardrails());
 const toolRegistry = new ToolRegistry();
 for (const tool of createFakeTools()) {
   toolRegistry.register(tool);
+}
+
+export function registerRetrievalService(
+  service: HybridRetrievalService,
+): void {
+  toolRegistry.register(createRetrievalTool(service));
 }
 
 async function requireAgentPermission(_permission?: string): Promise<boolean> {

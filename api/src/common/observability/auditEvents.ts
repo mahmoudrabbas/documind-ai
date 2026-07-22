@@ -84,6 +84,9 @@ export type AuditAction =
   // Audit
   | "AUDIT_QUERIED"
   | "AUDIT_EXPORTED"
+  // Retrieval
+  | "RETRIEVAL_SEARCH"
+  | "RETRIEVAL_DENIAL"
   // System
   | "SYSTEM_STARTUP"
   | "SYSTEM_HEALTH_CHECK_FAILED";
@@ -106,7 +109,8 @@ export type AuditResourceType =
   | "Session"
   | "System"
   | "Permission"
-  | "IntentQuery";
+  | "IntentQuery"
+  | "Retrieval";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

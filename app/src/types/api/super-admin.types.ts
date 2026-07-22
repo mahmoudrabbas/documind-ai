@@ -148,6 +148,45 @@ export interface PlatformJob {
 }
 import type { Role } from "@/constants/routes";
 
+export interface RetrievalDebugCandidate {
+  chunkId: string;
+  documentId: string;
+  documentVersionId: string;
+  tenantId: string;
+  text: string;
+  score: number;
+  pageNumber?: number;
+  sectionTitle?: string;
+  classification?: string;
+  retrievalMethod: "vector" | "keyword" | "hybrid";
+  scoreBreakdown?: {
+    vectorScore?: number;
+    keywordScore?: number;
+    fusionScore: number;
+  };
+}
+
+export interface RetrievalDebugResult {
+  candidates: RetrievalDebugCandidate[];
+  totalCandidates: number;
+  filterSummary: {
+    tenantFilter: boolean;
+    roleFilter: string;
+    permissionScopes: string[];
+    explicitFilters: string[];
+    versionFilter: boolean;
+  };
+  diagnostics: {
+    vectorLatencyMs?: number;
+    keywordLatencyMs?: number;
+    fusionLatencyMs?: number;
+    totalLatencyMs: number;
+    vectorCandidateCount: number;
+    keywordCandidateCount: number;
+    traceId: string;
+  };
+}
+
 export const SUBSCRIPTION_STATUS_COLORS: Record<SubscriptionStatus, string> = {
   trialing: "bg-blue-100 text-blue-800",
   incomplete: "bg-yellow-100 text-yellow-800",

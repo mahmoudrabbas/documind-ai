@@ -23,6 +23,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
   { prefix: "/super-admin/audit", permissions: [Permission.AUDIT_READ] },
   { prefix: "/super-admin/settings", permissions: [Permission.COMPANY_SETTINGS_READ] },
   { prefix: "/super-admin/payments", permissions: [Permission.BILLING_READ] },
+  { prefix: "/super-admin/retrieval-debug", permissions: [Permission.DOCUMENTS_READ] },
   { prefix: "/super-admin", permissions: [Permission.AUDIT_READ] },
 ];
 
