@@ -4,7 +4,7 @@
 
 This contract defines deterministic, tenant-scoped document authorization for Issue 18. Version 1 contains pure TypeScript contracts, an evaluator port, a deterministic in-memory adapter, capability adapters, and provider-neutral list/retrieval filters. It does not define persistence, APIs, migrations, route enforcement, indexing, retrieval, audit, or UI behavior.
 
-Permission contract v1 remains the coarse capability authority. A document policy may narrow an allowed capability but can never create or override one. `PermissionEvaluatorDocumentCapabilityAdapter` composes the existing evaluator without importing role repositories. `manage_access` and `use_in_ai` remain unmapped until canonical coarse permissions exist; the production adapter denies them as `ACTION_UNMAPPED`.
+Permission contract v1 remains the coarse capability authority. A document policy may narrow an allowed capability but can never create or override one. `PermissionEvaluatorDocumentCapabilityAdapter` composes the existing evaluator without importing role repositories. Phase 5 maps `manage_access` only to `documents:manage-access` and `use_in_ai` only to `documents:use-in-ai`.
 
 ## Versioned actions
 

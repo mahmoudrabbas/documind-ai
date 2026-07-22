@@ -34,6 +34,8 @@ export const DOCUMENT_ACTION_PERMISSION_MAP: Readonly<
   restore: Permission.DOCUMENTS_ARCHIVE,
   replace: Permission.DOCUMENTS_UPDATE,
   reprocess: Permission.DOCUMENTS_OCR_PROCESS,
+  manage_access: Permission.DOCUMENTS_MANAGE_ACCESS,
+  use_in_ai: Permission.DOCUMENTS_USE_IN_AI,
 });
 
 export class PermissionEvaluatorDocumentCapabilityAdapter

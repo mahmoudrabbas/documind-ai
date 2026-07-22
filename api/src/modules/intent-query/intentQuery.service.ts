@@ -16,6 +16,22 @@ import { INTENT_SYSTEM_PROMPT, INTENT_PROMPT_VERSION } from "./intentQuery.promp
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { recordIntentQueryMetrics } from "./intentQuery.metrics.js";
+import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
+
+export interface ExplicitDocumentAuthorizer {
+  authorizeDocumentsAction(context: { tenantId: string; actorId: string }, documentIds: readonly string[], action: "use_in_ai"): Promise<void>;
+}
+
+export async function authorizeExplicitIntentDocuments(
+  authorizer: ExplicitDocumentAuthorizer,
+  context: { tenantId: string; actorId: string },
+  documentIds: readonly string[],
+): Promise<void> {
+  if (documentIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+    throw new AppError(400, "INTENT_QUERY_VALIDATION_ERROR", "Invalid document ID format");
+  }
+  await authorizer.authorizeDocumentsAction(context, [...new Set(documentIds)], "use_in_ai");
+}
 
 export class IntentQueryService {
 
@@ -47,31 +63,9 @@ export class IntentQueryService {
 
     // 3. Document ownership validation for inputs
     if (input.referencedDocumentIds && input.referencedDocumentIds.length > 0) {
-      // Validate they are valid ObjectIds
-      const validDocIds = input.referencedDocumentIds.filter(id => mongoose.Types.ObjectId.isValid(id));
-      if (validDocIds.length !== input.referencedDocumentIds.length) {
-        throw new AppError(400, "INTENT_QUERY_VALIDATION_ERROR", "Invalid document ID format");
-      }
-
-      // Check ownership
-      const dbDocs = await DocumentModel.find({
-        _id: { $in: validDocIds },
-        tenantId: actor.tenantId,
-      }).select("_id").lean().exec();
-
-      if (dbDocs.length !== validDocIds.length) {
-        await auditWriter.write({
-          action: "INTENT_QUERY_CONTEXT_DENIED",
-          resourceType: "IntentQuery",
-          resourceId: "none",
-          outcome: "DENIED",
-          tenantId: tenantIdStr,
-          actorId: actor.actorId,
-          actorRole: actor.actorRole,
-          metadata: { inputDocIds: input.referencedDocumentIds, foundDocCount: dbDocs.length },
-        });
-        throw new AppError(403, "INTENT_QUERY_CONTEXT_UNAUTHORIZED", "Document reference unauthorized or not found");
-      }
+      await authorizeExplicitIntentDocuments(
+        getDocumentAccessAuthorizationService(), { tenantId: tenantIdStr, actorId: actor.actorId }, input.referencedDocumentIds,
+      );
     }
 
     // 4. Determine language and entities early to handle fallback/clarification deterministically if needed
@@ -392,4 +386,3 @@ export class IntentQueryService {
     return validatedPlan;
   }
 }
-

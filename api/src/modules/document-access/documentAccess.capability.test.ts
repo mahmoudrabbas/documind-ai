@@ -50,12 +50,13 @@ test("permission adapter maps supported actions and preserves evaluator denial",
   assert.equal(DOCUMENT_ACTION_PERMISSION_MAP.download, "documents:download");
 });
 
-test("permission adapter fails closed without inventing manage_access or use_in_ai permissions", async () => {
-  let calls = 0;
+test("manage_access and use_in_ai map only to their canonical permissions", async () => {
+  const calls: string[] = [];
   const evaluator = {
-    async evaluate() {
-      calls += 1;
-      throw new Error("must not be called for unmapped actions");
+    async evaluate(input: { permission: string }) {
+      calls.push(input.permission);
+      return { allowed: false, permission: input.permission, source: null, scope: null,
+        denialCode: "PERMISSION_REQUIRED", reason: "not granted", roleId: null, roleVersion: null };
     },
   } as unknown as PermissionEvaluator;
   const adapter = new PermissionEvaluatorDocumentCapabilityAdapter(evaluator);
@@ -66,11 +67,8 @@ test("permission adapter fails closed without inventing manage_access or use_in_
       resource: tenantADocument,
       action,
     });
-    assert.deepEqual(decision, {
-      allowed: false,
-      reason: "ACTION_UNMAPPED",
-      permission: null,
-    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.reason, "CAPABILITY_DENIED");
   }
-  assert.equal(calls, 0);
+  assert.deepEqual(calls, ["documents:manage-access", "documents:use-in-ai"]);
 });

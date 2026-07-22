@@ -88,7 +88,7 @@ router.post(
   "/:id/metadata/analyze",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
   triggerMetadataAnalysisController,
 );
 
@@ -112,7 +112,7 @@ router.post(
   "/:id/version-conflict/analyze",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
   triggerVersionConflictAnalysisController,
 );
 

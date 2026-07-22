@@ -44,7 +44,7 @@ export async function getDocumentExtractionStatusController(
     }
 
     // 2. Fetch the extraction artifact status
-    const status = await getExtractionStatus(tenantId, documentId, version);
+    const status = await getExtractionStatus(tenantId, documentId, version, auth.userId);
     if (!status) {
       // If it doesn't exist yet, return a safe pending view indicating it hasn't started
       res.json({

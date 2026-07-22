@@ -50,7 +50,7 @@ router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUME
 
 router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
 
-router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), retriggerDocumentExtractionController);
+router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), retriggerDocumentExtractionController);
 
 router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
 
