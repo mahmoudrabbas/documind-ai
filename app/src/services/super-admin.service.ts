@@ -6,6 +6,7 @@ import type {
   PlatformPackage,
   PlatformSubscription,
   PlatformUser,
+  RetrievalDebugResult,
 } from "@/types/api/super-admin.types";
 
 type Success<T> = { success: true; data: T };
@@ -96,4 +97,12 @@ export const updatePlatformSetting = (
   apiClient<Success<Record<string, string | number | boolean | null>>>(
     `/platform/${key}`,
     { method: "PATCH", body },
+  );
+export const searchRetrievalDebug = (
+  params: { queryText: string; topK?: number; method?: string },
+  signal?: AbortSignal,
+) =>
+  apiClient<Success<RetrievalDebugResult>>(
+    `/retrieval/debug?queryText=${encodeURIComponent(params.queryText)}${params.topK ? `&topK=${params.topK}` : ""}${params.method ? `&method=${params.method}` : ""}`,
+    { signal },
   );
