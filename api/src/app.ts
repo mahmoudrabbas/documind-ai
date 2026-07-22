@@ -34,6 +34,7 @@ import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
+import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -150,6 +151,7 @@ app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
 app.use("/intent-query", intentQueryRoutes);
+app.use("/document-taxonomy", documentTaxonomyRoutes);
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });
