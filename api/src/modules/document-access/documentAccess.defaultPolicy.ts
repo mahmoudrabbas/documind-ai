@@ -7,6 +7,8 @@ export interface DefaultDocumentPolicyInput {
   policyId: string;
   ownerId: string;
   classificationId: string;
+  categoryId?: string | null;
+  departmentId?: string | null;
   createdAt: string;
   reason?: string;
 }
@@ -39,8 +41,8 @@ export function createDefaultDocumentAccessPolicy(
       policyId: input.policyId,
       policyVersion: 1,
       classificationId: input.classificationId,
-      categoryId: null,
-      departmentId: null,
+      categoryId: input.categoryId ?? null,
+      departmentId: input.departmentId ?? null,
     },
   });
   return deepFreeze(policy);

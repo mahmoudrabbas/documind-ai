@@ -22,6 +22,8 @@
     "migrate:users:employee:apply": "tsx src/scripts/migrate-users-employee.ts --apply",
     "migrate:platform-tenant": "tsx src/scripts/migrate-platform-tenant-invariants.ts --dry-run",
     "migrate:platform-tenant:apply": "tsx src/scripts/migrate-platform-tenant-invariants.ts --apply",
+    "migrate:document-policy:v1": "tsx src/scripts/migrate-document-access-policy-v1.ts",
+    "migrate:document-policy:v1:apply": "tsx src/scripts/migrate-document-access-policy-v1.ts --apply",
     "pretypecheck": "npm run build --workspace workers",
     "prebuild": "npm run build --workspace workers",
     "pretest": "npm run build --workspace workers"

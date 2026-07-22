@@ -28,6 +28,9 @@ export interface DocumentDocument extends mongoose.Document {
   department: string | null;
   classification: DocumentClassification;
   owner: mongoose.Types.ObjectId | null;
+  categoryId?: mongoose.Types.ObjectId | null;
+  departmentId?: mongoose.Types.ObjectId | null;
+  classificationId?: mongoose.Types.ObjectId | null;
   effectiveDate: Date | null;
   expiryDate: Date | null;
   version: number;
@@ -117,6 +120,9 @@ const documentSchema = new Schema<DocumentDocument>(
       ref: "User",
       default: null,
     },
+    categoryId: { type: Schema.Types.ObjectId, ref: "DocumentCategory", default: null },
+    departmentId: { type: Schema.Types.ObjectId, ref: "Department", default: null },
+    classificationId: { type: Schema.Types.ObjectId, ref: "DocumentClassification", default: null },
     effectiveDate: { type: Date, default: null },
     expiryDate: { type: Date, default: null },
     version: { type: Number, default: 1, min: 1 },
@@ -178,6 +184,9 @@ documentSchema.index({ tenantId: 1, checksum: 1 });
 documentSchema.index({ tenantId: 1, deletedAt: 1 });
 documentSchema.index({ tenantId: 1, category: 1 });
 documentSchema.index({ tenantId: 1, classification: 1 });
+documentSchema.index({ tenantId: 1, categoryId: 1 });
+documentSchema.index({ tenantId: 1, departmentId: 1 });
+documentSchema.index({ tenantId: 1, classificationId: 1 });
 documentSchema.index(
   { tenantId: 1, activePolicyId: 1, activePolicyVersion: 1 },
   {
