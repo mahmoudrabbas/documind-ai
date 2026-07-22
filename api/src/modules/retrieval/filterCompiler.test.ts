@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { AdapterFilter } from "../../providers/embedding/adapterFilter.types.js";
-import type { AccessContext, RetrievalFilter } from "./retrieval.types.js";
+import type { AccessContext } from "./retrieval.types.js";
 import {
   compileAccessFilters,
   compileQueryFilters,

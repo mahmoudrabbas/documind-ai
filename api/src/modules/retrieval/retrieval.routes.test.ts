@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { Request, Response, NextFunction } from "express";
 import { createRetrievalController } from "./retrieval.controller.js";
 import type { HybridRetrievalService } from "./retrieval.service.js";
 import type { RetrievalResult } from "./retrieval.types.js";
@@ -106,7 +107,7 @@ test("GET /retrieval/debug with SUPER_ADMIN token returns 200", async () => {
     capturedError = err;
   };
 
-  await controller.debugSearch(req as any, res as any, next as any);
+  await controller.debugSearch(req as unknown as Request, res as unknown as Response, next as NextFunction);
 
   assert.equal(capturedError, undefined);
   assert.equal(res._state.statusCode, 200);
@@ -136,7 +137,7 @@ test("GET /retrieval/debug with EMPLOYEE token returns 403", async () => {
     capturedError = err;
   };
 
-  await controller.debugSearch(req as any, res as any, next as any);
+  await controller.debugSearch(req as unknown as Request, res as unknown as Response, next as NextFunction);
 
   assert.ok(capturedError instanceof AppError);
   assert.equal((capturedError as AppError).statusCode, 403);
@@ -150,7 +151,7 @@ test("GET /retrieval/debug with no token returns 401", async () => {
     capturedError = err;
   };
 
-  await controller.debugSearch(req as any, res as any, next as any);
+  await controller.debugSearch(req as unknown as Request, res as unknown as Response, next as NextFunction);
 
   assert.ok(capturedError instanceof AppError);
   assert.equal((capturedError as AppError).statusCode, 401);
@@ -172,7 +173,7 @@ test("GET /retrieval/debug without queryText returns 400", async () => {
     capturedError = err;
   };
 
-  await controller.debugSearch(req as any, res as any, next as any);
+  await controller.debugSearch(req as unknown as Request, res as unknown as Response, next as NextFunction);
 
   assert.ok(capturedError instanceof AppError);
   assert.equal((capturedError as AppError).statusCode, 400);
@@ -194,7 +195,7 @@ test("GET /retrieval/debug response includes filterSummary and diagnostics", asy
     capturedError = err;
   };
 
-  await controller.debugSearch(req as any, res as any, next as any);
+  await controller.debugSearch(req as unknown as Request, res as unknown as Response, next as NextFunction);
 
   assert.equal(capturedError, undefined);
   assert.equal(res._state.statusCode, 200);

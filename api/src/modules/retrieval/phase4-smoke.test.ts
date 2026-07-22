@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createRetrievalService, type RetrievalServiceDeps, type HybridRetrievalService } from "./retrieval.service.js";
+import { createRetrievalService, type RetrievalServiceDeps } from "./retrieval.service.js";
 import { createRetrievalRepository, type RetrievalRepository } from "./retrieval.repository.js";
 import { compileAccessFilters, mergeFilters, compileQueryFilters } from "./filterCompiler.js";
 import { FusionEngine } from "./fusionEngine.js";
-import type { AccessContext, RetrievalQuery, RetrievalResult } from "./retrieval.types.js";
+import type { AccessContext, RetrievalQuery } from "./retrieval.types.js";
 import type { AdapterFilter } from "../../providers/embedding/adapterFilter.types.js";
 import type { VectorStoreAdapter } from "../../providers/embedding/vectorStoreAdapter.js";
 import type { KeywordAdapter } from "../../providers/embedding/keywordAdapter.js";

@@ -46,12 +46,9 @@ for (const tool of createFakeTools()) {
   toolRegistry.register(tool);
 }
 
-let retrievalServiceInstance: HybridRetrievalService | null = null;
-
 export function registerRetrievalService(
   service: HybridRetrievalService,
 ): void {
-  retrievalServiceInstance = service;
   toolRegistry.register(createRetrievalTool(service));
 }
 
