@@ -19,6 +19,13 @@ class TransactionOutcome extends Error {
 }
 
 export class MongoDocumentAccessPolicyRepository implements DocumentAccessPolicyRepository {
+  async listFamilyHistory(tenantId: string, documentId: string, policyId: string, cursor: number | null, limit: number) {
+    const boundedLimit = Math.max(1, Math.min(100, limit));
+    const records = await DocumentAccessPolicyModel.find({ tenantId, documentId, policyId,
+      ...(cursor === null ? {} : { policyVersion: { $lt: cursor } }) }).sort({ policyVersion: -1 }).limit(boundedLimit + 1).lean().exec();
+    const hasMore = records.length > boundedLimit; const policies = records.slice(0, boundedLimit).map(toPolicy);
+    return { policies, nextCursor: hasMore ? policies.at(-1)?.policyVersion ?? null : null };
+  }
   async createInitial(
     tenantId: string,
     documentId: string,

@@ -41,12 +41,26 @@ import {
   getDocumentExtractionStatusController,
   retriggerDocumentExtractionController,
 } from "../extraction/extraction.controller.js";
+import {
+  applyPolicyController, batchApplyPolicyController, batchPreviewPolicyController, effectivePolicyAccessController,
+  getActivePolicyController, getPolicyAssignmentsController, getPolicyHistoryController, previewPolicyController,
+} from "../document-access/documentPolicyManagement.controller.js";
 
 const router = Router();
+const requirePolicyManagement = requirePermission(Permission.DOCUMENTS_MANAGE_ACCESS, { allowScoped: true, resourceType: "Document" });
 
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+
+router.post("/access-policy/batch/preview", authenticate, tenantScoping, requirePolicyManagement, batchPreviewPolicyController);
+router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePolicyManagement, batchApplyPolicyController);
+router.get("/:id/access-policy", authenticate, tenantScoping, requirePolicyManagement, getActivePolicyController);
+router.get("/:id/access-policy/history", authenticate, tenantScoping, requirePolicyManagement, getPolicyHistoryController);
+router.get("/:id/access-policy/assignments", authenticate, tenantScoping, requirePolicyManagement, getPolicyAssignmentsController);
+router.post("/:id/access-policy/effective-access", authenticate, tenantScoping, requirePolicyManagement, effectivePolicyAccessController);
+router.post("/:id/access-policy/preview", authenticate, tenantScoping, requirePolicyManagement, previewPolicyController);
+router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePolicyManagement, applyPolicyController);
 
 router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
 
