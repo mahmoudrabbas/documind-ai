@@ -10,6 +10,7 @@ import type { DocumentChunkDocument } from "../../db/models/documentChunk.model.
 import type { FilterCompiler } from "./filterCompiler.js";
 import type { FusionEngine } from "./fusionEngine.js";
 import type { RetrievalRepository } from "./retrieval.repository.js";
+import type { RerankerService } from "../reranker/reranker.service.js";
 import type {
   AccessContext,
   FilterSummary,
@@ -31,6 +32,7 @@ export interface RetrievalServiceDeps {
   fusionEngine: FusionEngine;
   filterCompiler: FilterCompiler;
   repository: RetrievalRepository;
+  rerankerService?: RerankerService;
 }
 
 export interface HybridRetrievalService {
@@ -207,6 +209,24 @@ async function compileFilters(
 }
 
 // ---------------------------------------------------------------------------
+// Evidence bundle builder (optional)
+// ---------------------------------------------------------------------------
+
+async function buildEvidenceBundle(
+  deps: RetrievalServiceDeps,
+  candidates: RetrievalCandidate[],
+  queryText: string,
+): Promise<import("../reranker/reranker.types.js").EvidenceBundle | undefined> {
+  if (!deps.rerankerService) return undefined;
+  try {
+    return await deps.rerankerService.buildEvidenceBundle(candidates, queryText);
+  } catch (error) {
+    logger.warn({ error }, "Reranker failed, returning candidates without evidence bundle");
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Audit helper
 // ---------------------------------------------------------------------------
 
@@ -360,6 +380,8 @@ export function createRetrievalService(
         keywordCandidateCount: keywordResults.length,
       });
 
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText);
+
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context,
@@ -378,6 +400,7 @@ export function createRetrievalService(
         totalCandidates: hydrated.length,
         filterSummary,
         diagnostics,
+        evidenceBundle,
       };
     },
 
@@ -438,6 +461,8 @@ export function createRetrievalService(
         keywordCandidateCount: 0,
       });
 
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText);
+
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context,
@@ -454,6 +479,7 @@ export function createRetrievalService(
         totalCandidates: hydrated.length,
         filterSummary,
         diagnostics,
+        evidenceBundle,
       };
     },
 
@@ -513,6 +539,8 @@ export function createRetrievalService(
         keywordCandidateCount: keywordResults.length,
       });
 
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText);
+
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context,
@@ -529,6 +557,7 @@ export function createRetrievalService(
         totalCandidates: hydrated.length,
         filterSummary,
         diagnostics,
+        evidenceBundle,
       };
     },
   };
