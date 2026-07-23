@@ -117,6 +117,7 @@ export function createRetrievalController(
           totalCandidates: result.totalCandidates,
           filterSummary: result.filterSummary,
           diagnostics: result.diagnostics,
+          evidenceBundle: result.evidenceBundle,
         },
         trace: {
           requestId: req.requestId,
@@ -175,6 +176,7 @@ export function createRetrievalController(
           totalCandidates: result.totalCandidates,
           filterSummary: result.filterSummary,
           diagnostics: result.diagnostics,
+          evidenceBundle: result.evidenceBundle,
         },
       });
     } catch (error) {

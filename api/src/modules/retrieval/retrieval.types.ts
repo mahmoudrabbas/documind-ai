@@ -71,6 +71,7 @@ export interface RetrievalResult {
   totalCandidates: number;
   filterSummary: FilterSummary;
   diagnostics: RetrievalDiagnostics;
+  evidenceBundle?: import("../reranker/reranker.types.js").EvidenceBundle;
 }
 
 export interface ScoreStrategy {

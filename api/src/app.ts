@@ -47,6 +47,8 @@ import {
   getKeywordAdapter,
 } from "./providers/embedding/adapterLoader.js";
 import { FakeEmbeddingAdapter } from "./providers/llm/fakeAdapters.js";
+import { FakeRerankerAdapter } from "./modules/reranker/fakeReranker.adapter.js";
+import { createRerankerService } from "./modules/reranker/reranker.service.js";
 import { registerRetrievalService } from "./modules/agents/agents.service.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
@@ -173,6 +175,10 @@ const filterCompiler: FilterCompiler = {
   mergeFilters,
 };
 
+const rerankerService = createRerankerService({
+  reranker: new FakeRerankerAdapter(),
+});
+
 const retrievalService = createRetrievalService({
   vectorAdapter: await getVectorStoreAdapter(),
   keywordAdapter: await getKeywordAdapter(),
@@ -180,6 +186,7 @@ const retrievalService = createRetrievalService({
   fusionEngine: new FusionEngine(),
   filterCompiler,
   repository: createRetrievalRepository(),
+  rerankerService,
 });
 
 registerRetrievalService(retrievalService);

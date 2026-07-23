@@ -35,3 +35,13 @@ export type {
   FilterSummary,
   ScoreBreakdown,
 } from "./retrieval.types.js";
+
+export type {
+  EvidenceBundle,
+  EvidenceItem,
+  EvidenceScoreBreakdown,
+  CitationAnchor,
+  ConflictGroup,
+  SufficiencyAssessment,
+  SufficiencyLevel,
+} from "../reranker/reranker.types.js";
