@@ -43,6 +43,10 @@ export interface EvidenceItem {
   scoreBreakdown: EvidenceScoreBreakdown;
   citationAnchor: CitationAnchor;
   textExcerpt: string;
+  /** Whether this item was expanded with neighbor context. */
+  expanded?: boolean;
+  /** Neighbor items added for context (if any). */
+  neighborChunkIds?: string[];
 }
 
 // ---------------------------------------------------------------------------
