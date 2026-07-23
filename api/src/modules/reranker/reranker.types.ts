@@ -67,6 +67,7 @@ export interface EvidenceBundle {
   items: EvidenceItem[];
   totalTokenCount: number;
   maxTokenCount: number;
+  inputCandidateCount: number;
   conflictGroups: ConflictGroup[];
   sufficiency: SufficiencyAssessment;
   scoreExplanation: string;
@@ -90,6 +91,8 @@ export interface RerankResponse {
   conflictGroups: ConflictGroup[];
   sufficiency: SufficiencyAssessment;
   scoreExplanation: string;
+  /** True when the reranker fell back to a deterministic path due to provider failure. */
+  fallbackUsed?: boolean;
 }
 
 export interface RerankerAdapter {

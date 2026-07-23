@@ -216,10 +216,11 @@ async function buildEvidenceBundle(
   deps: RetrievalServiceDeps,
   candidates: RetrievalCandidate[],
   queryText: string,
+  traceId: string,
 ): Promise<import("../reranker/reranker.types.js").EvidenceBundle | undefined> {
   if (!deps.rerankerService) return undefined;
   try {
-    return await deps.rerankerService.buildEvidenceBundle(candidates, queryText);
+    return await deps.rerankerService.buildEvidenceBundle(candidates, queryText, traceId);
   } catch (error) {
     logger.warn({ error }, "Reranker failed, returning candidates without evidence bundle");
     return undefined;
@@ -380,7 +381,7 @@ export function createRetrievalService(
         keywordCandidateCount: keywordResults.length,
       });
 
-      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText);
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
@@ -461,7 +462,7 @@ export function createRetrievalService(
         keywordCandidateCount: 0,
       });
 
-      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText);
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
@@ -539,7 +540,7 @@ export function createRetrievalService(
         keywordCandidateCount: keywordResults.length,
       });
 
-      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText);
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
