@@ -1,4 +1,4 @@
-import type { RetrievalCandidate } from "../retrieval/retrieval.types.js";
+import type { RetrievalCandidate } from "../../retrieval/retrieval.types.js";
 
 // ---------------------------------------------------------------------------
 // Evaluation fixtures — diverse scenarios for reranker quality assessment.
