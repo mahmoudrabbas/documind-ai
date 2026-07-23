@@ -8,7 +8,7 @@ COPY app/package.json app/package.json
 COPY workers/package.json workers/package.json
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python-is-python3 make g++ ca-certificates libcurl4 curl \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 ENV MONGOMS_DISABLE_POSTINSTALL=1

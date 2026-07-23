@@ -106,22 +106,6 @@ services:
       - worker_redis_url
       - api_smtp_pass
 
-  ocr:
-    build:
-      context: ./services/ocr
-    ports:
-      - "8501:8501"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8501/health', timeout=5)\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
   redis:
     image: redis:7
     container_name: docsai-redis
