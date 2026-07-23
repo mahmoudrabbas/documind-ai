@@ -23,9 +23,11 @@ const fixedDate = new Date("2026-07-22T12:00:00.000Z");
 test("category lifecycle normalizes names, rejects duplicates, archives, and restores", async () => {
   const repository = new FakeTaxonomyRepository();
   const permissions: PermissionValue[] = [];
+  const auditOperations: string[] = [];
   const service = createDocumentTaxonomyService({
     repository,
     authorization: { async authorize(_context, permission) { permissions.push(permission); } },
+    audit: async ({ kind, operation }) => { auditOperations.push(`${kind}:${operation}`); },
   });
 
   const created = await service.create("category", {
@@ -67,6 +69,7 @@ test("category lifecycle normalizes names, rejects duplicates, archives, and res
   assert.equal(restored.status, "active");
   assert.ok(permissions.includes("company-settings:read"));
   assert.ok(permissions.includes("company-settings:update"));
+  assert.deepEqual(auditOperations, ["category:created", "category:created", "category:updated", "category:archived", "category:restored"]);
 });
 
 test("department operations hide cross-tenant records", async () => {

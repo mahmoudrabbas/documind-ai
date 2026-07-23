@@ -7,6 +7,9 @@ import DocumentModel from "../../db/models/document.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { normalizeDocumentAccessPolicy } from "./documentAccess.policy.validator.js";
 import { applyManagedPolicy } from "./documentPolicyManagement.persistence.js";
+import DocumentPolicyGenerationModel from "../../db/models/documentPolicyGeneration.model.js";
+import DocumentPolicyPropagationOutboxModel from "../../db/models/documentPolicyPropagationOutbox.model.js";
+import AuditLogModel from "../../db/models/auditLog.model.js";
 
 let mongo: MongoMemoryReplSet | null = null; let blocked: string | null = null;
 before(async () => { try { mongo = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger" } }); await mongoose.connect(mongo.getUri()); } catch { blocked = "replica-set listener unavailable"; } });
@@ -23,10 +26,23 @@ test("CAS apply commits snapshot, pointer, and idempotency together", async (con
     rules: first.rules.map((rule) => ({ ...rule, subject: { ...rule.subject }, actions: [...rule.actions] })),
     effectiveFrom: new Date(first.effectiveFrom), provenance: { ...first.provenance, createdAt: new Date(first.provenance.createdAt) }, createdAt: new Date(first.provenance.createdAt) });
   await snapshot.save();
-  const input = { tenantId: tenantId.toString(), documentId: documentId.toString(), actorId: actorId.toString(), idempotencyKey: "apply-1", requestFingerprint: "a".repeat(64), expectedPolicyId: policyId.toString(), expectedPolicyVersion: 1, policy: make(2) };
-  assert.equal((await applyManagedPolicy(input)).outcome, "applied");
+  const input = { tenantId: tenantId.toString(), documentId: documentId.toString(), actorId: actorId.toString(), idempotencyKey: "apply-1", requestFingerprint: "a".repeat(64), expectedPolicyId: policyId.toString(), expectedPolicyVersion: 1,
+    documentVersion: 1, changeDirection: "tightening" as const, sensitiveBroadening: false, policy: make(2) };
+  const applied = await applyManagedPolicy(input);
+  assert.equal(applied.outcome, "applied");
   assert.equal((await applyManagedPolicy(input)).outcome, "replay");
   assert.equal((await applyManagedPolicy({ ...input, requestFingerprint: "b".repeat(64) })).outcome, "idempotency_conflict");
   assert.equal((await DocumentModel.findById(documentId).lean())?.activePolicyVersion, 2);
   assert.equal(await DocumentAccessPolicyModel.countDocuments({ tenantId, documentId, policyId }), 2);
+  assert.equal(await DocumentPolicyPropagationOutboxModel.countDocuments({ tenantId, documentId }), 1);
+  const generation = await DocumentPolicyGenerationModel.findOne({ tenantId, documentId, documentVersion: 1 }).lean();
+  assert.equal(generation?.desiredPolicyVersion, 2); assert.equal(generation?.appliedPolicyVersion, 1); assert.equal(generation?.status, "stale");
+  const requestedAudits = await AuditLogModel.find({ tenantId, resourceType: "DocumentPolicyPropagation",
+    action: "DOCUMENT_POLICY_PROPAGATION_REQUESTED" }).lean();
+  assert.equal(requestedAudits.length, 1);
+  const requestedAudit = requestedAudits[0];
+  assert.ok(requestedAudit?.tenantId instanceof mongoose.Types.ObjectId);
+  assert.equal(requestedAudit.tenantId.toString(), tenantId.toString());
+  assert.equal(requestedAudit.metadata?.propagationEventId, applied.outcome === "applied" ? applied.propagationEventId : null);
+  assert.equal(requestedAudit.metadata?.generationId, generation?.generationId);
 });

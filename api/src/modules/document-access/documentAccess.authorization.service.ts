@@ -1,6 +1,7 @@
 import mongoose, { type PipelineStage } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
+import { getAuditWriter } from "../../common/observability/index.js";
 import DepartmentModel from "../../db/models/department.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UserModel from "../../db/models/user.model.js";
@@ -21,27 +22,28 @@ export class DocumentAccessAuthorizationService {
 
   async authorizeDocumentAction(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction): Promise<void> {
     try {
-      const [actor, document] = await Promise.all([this.loadActor(context), this.loadDocument(context.tenantId, documentId)]);
-      if (!document) return hidden();
+      const [actor, document] = await Promise.all([this.loadActor(context).catch(() => null), this.loadDocument(context.tenantId, documentId)]);
+      if (!actor) return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
+      if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING");
       const resource = resourceContext(document);
-      if (!resource.activePolicyId || !resource.activePolicyVersion) return hidden();
+      if (!resource.activePolicyId || !resource.activePolicyVersion) return this.deny(context, documentId, action, "POLICY_MISSING");
       const policy = await this.policies.findExact(context.tenantId, documentId, resource.activePolicyId, resource.activePolicyVersion);
-      if (!policy) return hidden();
+      if (!policy) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT");
       if ((policy.indexMetadata.categoryId ?? null) !== (resource.categoryId ?? null) ||
           (policy.indexMetadata.departmentId ?? null) !== (resource.departmentId ?? null) ||
-          (policy.indexMetadata.classificationId ?? null) !== (resource.classificationId ?? null)) return hidden();
+          (policy.indexMetadata.classificationId ?? null) !== (resource.classificationId ?? null)) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT");
       const inherited = policy.inherits
         ? await this.policies.findExact(context.tenantId, documentId, policy.inherits.policyId, policy.inherits.policyVersion)
         : null;
-      if (policy.inherits && !inherited) return hidden();
+      if (policy.inherits && !inherited) return this.deny(context, documentId, action, "INVALID_INHERITED_POLICY");
       const evaluator = new InMemoryDocumentAccessPolicyEvaluator(
         new PermissionEvaluatorDocumentCapabilityAdapter(getPermissionEvaluator()),
       );
       const decision = await evaluator.evaluate({ actor, resource, action, policy, inheritedPolicy: inherited, evaluatedAt: new Date().toISOString() });
-      if (!decision.allowed) return hidden();
+      if (!decision.allowed) return this.deny(context, documentId, action, decision.reasonCode);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      hidden();
+      return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
     }
   }
 
@@ -76,6 +78,12 @@ export class DocumentAccessAuthorizationService {
   private async loadDocument(tenantId: string, documentId: string) {
     if (!mongoose.isObjectIdOrHexString(documentId)) return null;
     return DocumentModel.findOne({ _id: documentId, tenantId }).select("tenantId owner uploadedBy category department classification categoryId departmentId classificationId status isArchived deletedAt activePolicyId activePolicyVersion").lean().exec();
+  }
+
+  private async deny(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction, reasonCode: string): Promise<never> {
+    await getAuditWriter().write({ action: "DOCUMENT_ACCESS_DENIED", resourceType: "Document", resourceId: documentId,
+      tenantId: context.tenantId, actorId: context.actorId, outcome: "DENIED", metadata: { documentId, action, reasonCode } });
+    return hidden();
   }
 }
 

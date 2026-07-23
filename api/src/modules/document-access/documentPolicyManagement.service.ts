@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { createHash } from "node:crypto";
 import { AppError } from "../../common/errors/AppError.js";
+import { getAuditWriter } from "../../common/observability/index.js";
 import {
   DOCUMENT_NOT_FOUND, DOCUMENT_POLICY_BATCH_LIMIT_EXCEEDED, DOCUMENT_POLICY_DRAFT_INVALID,
   DOCUMENT_POLICY_IDEMPOTENCY_CONFLICT, DOCUMENT_POLICY_INHERITANCE_INVALID, DOCUMENT_POLICY_PREVIEW_MISMATCH,
@@ -13,6 +14,7 @@ import RoleModel from "../../db/models/role.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentPolicyBatchIdempotencyModel from "../../db/models/documentPolicyBatchIdempotency.model.js";
 import DocumentPolicyIdempotencyModel from "../../db/models/documentPolicyIdempotency.model.js";
+import DocumentPolicyGenerationModel from "../../db/models/documentPolicyGeneration.model.js";
 import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { normalizeTaxonomyName } from "../document-taxonomy/documentTaxonomy.normalization.js";
@@ -29,6 +31,7 @@ import { createPolicyPreviewArtifact, verifyPolicyPreviewArtifact } from "./docu
 import { POLICY_BATCH_MAX_DOCUMENTS, POLICY_IMPACT_ACTIONS, POLICY_PREVIEW_MAX_USERS, type NormalizedPolicyDraft, type PolicyImpact, type PreviewArtifactEntry } from "./documentPolicyManagement.types.js";
 import { aggregateBatchImpact, classifyPolicyImpact, emptyActionImpact, requiresSensitiveBroadeningConfirmation } from "./documentPolicyManagement.impact.js";
 import { delegatedPolicyApprovalRequired } from "./documentPolicyManagement.authorization.js";
+import { schedulePolicyPropagationDispatch } from "./documentPolicyPropagation.dispatcher.js";
 
 export interface PolicyManagementContext { tenantId: string; actorId: string }
 
@@ -56,6 +59,19 @@ export class DocumentPolicyManagementService {
     return { assignments };
   }
 
+  async propagationStatus(documentId: string, context: PolicyManagementContext) {
+    const state = await this.managedState(documentId, context);
+    const generation = await DocumentPolicyGenerationModel.findOne({ tenantId: context.tenantId, documentId,
+      documentVersion: state.document.version }).select("desiredPolicyVersion appliedPolicyVersion status reindexRequired attemptCount requestedAt completedAt failureCode").lean().exec();
+    return generation ? { desiredPolicyVersion: generation.desiredPolicyVersion, appliedPolicyVersion: generation.appliedPolicyVersion,
+      status: generation.status, reindexRequired: generation.reindexRequired, attempts: generation.attemptCount,
+      requestedAt: generation.requestedAt, completedAt: generation.completedAt, failureCode: generation.failureCode,
+      retryAvailable: generation.status === "failed" || generation.status === "dead_letter" } : {
+      desiredPolicyVersion: state.policy.policyVersion, appliedPolicyVersion: null, status: "pending", reindexRequired: false,
+      attempts: 0, requestedAt: null, completedAt: null, failureCode: null, retryAvailable: false,
+    };
+  }
+
   async effectiveAccess(documentId: string, input: unknown, context: PolicyManagementContext) {
     const state = await this.managedState(documentId, context); const value = object(input);
     const ids = idList(value.userIds, POLICY_PREVIEW_MAX_USERS, false);
@@ -79,6 +95,9 @@ export class DocumentPolicyManagementService {
     const entry: PreviewArtifactEntry = { documentId, policyId: state.policy.policyId, policyVersion: state.policy.policyVersion,
       draftFingerprint: fingerprints.draft, semanticFingerprint: fingerprints.semantic, sensitive, materializedEffectiveFrom: draft.effectiveFrom! };
     const artifact = createPolicyPreviewArtifact({ purpose: "document_policy_preview", tenantId: context.tenantId, actorId: context.actorId, entries: [entry] });
+    await auditPolicy(context, "DOCUMENT_POLICY_PREVIEWED", documentId, { policyId: state.policy.policyId, policyVersion: state.policy.policyVersion,
+      proposedPolicyVersion: state.policy.policyVersion + 1, changeDirection: impact.direction, usersGainingAny: impact.usersGainingAny,
+      usersLosingAny: impact.usersLosingAny, sensitiveConfirmationRequired: sensitive });
     return { documentId, currentPolicyId: state.policy.policyId, currentPolicyVersion: state.policy.policyVersion,
       proposedPolicyVersion: state.policy.policyVersion + 1, normalizedSummary: draftSummary(draft), impact: { ...impact, sensitiveBroadening: sensitive },
       sensitiveConfirmationRequired: sensitive, previewToken: artifact.token, previewExpiresAt: artifact.expiresAt, previewFingerprint: fingerprints.draft };
@@ -100,12 +119,28 @@ export class DocumentPolicyManagementService {
     const proposed = proposedPolicy(state, draft, context.actorId);
     const impact = await this.impact(state, proposed); const sensitive = await this.sensitive(state.document, impact);
     if (sensitive !== entry.sensitive) mismatch();
+    if (impact.direction === "no_change") {
+      const replay = await recordNoChange(context, documentId, idempotencyKey, operationFingerprint(entry), state.policy);
+      return { status: replay ? "idempotent_replay" : "no_change", policyId: state.policy.policyId,
+        policyVersion: state.policy.policyVersion, propagationEventId: null };
+    }
     if (sensitive && value.confirmSensitiveBroadening !== true) throw new AppError(409, DOCUMENT_POLICY_SENSITIVE_CONFIRMATION_REQUIRED, "Sensitive access broadening requires confirmation");
     const result = await applyManagedPolicy({ tenantId: context.tenantId, documentId, actorId: context.actorId, idempotencyKey,
-      requestFingerprint: operationFingerprint(entry), expectedPolicyId: state.policy.policyId, expectedPolicyVersion: state.policy.policyVersion, policy: proposed });
+      requestFingerprint: operationFingerprint(entry), expectedPolicyId: state.policy.policyId, expectedPolicyVersion: state.policy.policyVersion,
+      documentVersion: state.document.version, changeDirection: impact.direction,
+      sensitiveBroadening: sensitive, policy: proposed });
     if (result.outcome === "version_conflict") throw new AppError(409, DOCUMENT_POLICY_VERSION_CONFLICT, "Document policy version changed");
     if (result.outcome === "idempotency_conflict") throw new AppError(409, DOCUMENT_POLICY_IDEMPOTENCY_CONFLICT, "Idempotency key was used for another request");
-    return { status: result.outcome === "replay" ? "idempotent_replay" : "applied", policyId: result.policyId, policyVersion: result.policyVersion };
+    if (result.outcome === "applied") {
+      schedulePolicyPropagationDispatch(context.tenantId, result.propagationEventId);
+      await auditPolicy(context, "DOCUMENT_POLICY_APPLIED", documentId, { policyId: result.policyId, previousPolicyVersion: state.policy.policyVersion,
+        policyVersion: result.policyVersion, changeDirection: impact.direction, sensitiveBroadeningConfirmed: sensitive,
+        propagationEventId: result.propagationEventId, correlationId: idempotencyKey });
+      if (sensitive) await auditPolicy(context, "DOCUMENT_POLICY_SENSITIVE_BROADENING_CONFIRMED", documentId,
+        { policyId: result.policyId, policyVersion: result.policyVersion, propagationEventId: result.propagationEventId });
+    }
+    return { status: result.outcome === "replay" ? "idempotent_replay" : "applied", policyId: result.policyId,
+      policyVersion: result.policyVersion, propagationEventId: result.propagationEventId };
   }
 
   async batchPreview(input: unknown, context: PolicyManagementContext) {
@@ -120,7 +155,9 @@ export class DocumentPolicyManagementService {
       results.push({ documentId: id, direction: impact.direction, usersGainingAny: impact.usersGainingAny, usersLosingAny: impact.usersLosingAny, sensitiveConfirmationRequired: sensitive, byAction: impact.byAction });
     }
     const artifact = createPolicyPreviewArtifact({ purpose: "document_policy_batch_preview", tenantId: context.tenantId, actorId: context.actorId, entries });
-    return { documentCount: ids.length, aggregate: aggregateBatchImpact(results), results, previewToken: artifact.token, previewExpiresAt: artifact.expiresAt };
+    const aggregate = aggregateBatchImpact(results);
+    await auditPolicy(context, "DOCUMENT_POLICY_BATCH_PREVIEWED", "batch", { documentCount: ids.length, ...aggregate });
+    return { documentCount: ids.length, aggregate, results, previewToken: artifact.token, previewExpiresAt: artifact.expiresAt };
   }
 
   async batchApply(input: unknown, idempotencyKey: string, context: PolicyManagementContext) {
@@ -154,7 +191,11 @@ export class DocumentPolicyManagementService {
       catch (error) { if (error instanceof AppError && error.code === DOCUMENT_POLICY_VERSION_CONFLICT) results.push({ documentId: entry.documentId, status: "version_conflict" }); else results.push({ documentId: entry.documentId, status: "failed" }); }
     }
     await DocumentPolicyBatchIdempotencyModel.updateOne(batchIdentity, { $set: { status: "completed", results } }).exec();
-    return { status: results.every((item) => item.status !== "failed" && item.status !== "version_conflict") ? "complete" : "partial", results };
+    const status = results.every((item) => item.status !== "failed" && item.status !== "version_conflict") ? "complete" : "partial";
+    await auditPolicy(context, "DOCUMENT_POLICY_BATCH_APPLIED", "batch", { documentCount: results.length, status,
+      appliedCount: results.filter((item) => item.status === "applied").length, replayCount: results.filter((item) => item.status === "idempotent_replay").length,
+      noChangeCount: results.filter((item) => item.status === "no_change").length, failedCount: results.filter((item) => item.status === "failed" || item.status === "version_conflict").length });
+    return { status, results };
   }
 
   private async managedState(documentId: string, context: PolicyManagementContext) {
@@ -290,6 +331,9 @@ function referenceInvalid(): never { throw new AppError(400, DOCUMENT_POLICY_REF
 function inheritanceInvalid(): never { throw new AppError(400, DOCUMENT_POLICY_INHERITANCE_INVALID, "Policy inheritance is invalid"); }
 function mismatch(): never { throw new AppError(409, DOCUMENT_POLICY_PREVIEW_MISMATCH, "Policy preview no longer matches"); }
 function draftInvalid(): never { throw new AppError(400, DOCUMENT_POLICY_DRAFT_INVALID, "Policy management input is invalid"); }
+async function auditPolicy(context: PolicyManagementContext, action: Parameters<ReturnType<typeof getAuditWriter>["write"]>[0]["action"], resourceId: string, metadata: Record<string, unknown>) {
+  await getAuditWriter().write({ action, resourceType: "DocumentPolicy", resourceId, tenantId: context.tenantId, actorId: context.actorId, metadata });
+}
 
 let singleton: DocumentPolicyManagementService | null = null;
 export function getDocumentPolicyManagementService() { singleton ??= new DocumentPolicyManagementService(); return singleton; }

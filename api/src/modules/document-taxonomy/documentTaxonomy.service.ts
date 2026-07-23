@@ -29,6 +29,9 @@ import {
   validateTaxonomyStatusChange,
   validateUpdateTaxonomyInput,
 } from "./documentTaxonomy.validator.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import type { AuditAction } from "../../common/observability/auditEvents.js";
+import { requestClassificationPropagation } from "../document-access/documentTaxonomyPropagation.service.js";
 
 export interface TaxonomyAuthorizationPort {
   authorize(context: TaxonomyOperationContext, permission: PermissionValue): Promise<void>;
@@ -64,6 +67,8 @@ export interface DocumentTaxonomyService {
 export function createDocumentTaxonomyService(dependencies: {
   repository: DocumentTaxonomyRepository;
   authorization: TaxonomyAuthorizationPort;
+  propagation?: { requestClassification(input: { tenantId: string; classificationId: string; taxonomyVersion: number; actorId: string }): Promise<void> };
+  audit?: (input: { context: TaxonomyOperationContext; kind: TaxonomyKind; operation: "created" | "updated" | "archived" | "restored"; resourceId: string }) => Promise<void>;
 }): DocumentTaxonomyService {
   const { repository, authorization } = dependencies;
 
@@ -118,14 +123,16 @@ export function createDocumentTaxonomyService(dependencies: {
       throw duplicate(kind);
     }
     try {
-      return toView(await repository.create(context.tenantId, kind, {
+      const created = await repository.create(context.tenantId, kind, {
         name: payload.name,
         normalizedName,
         description: payload.description ?? null,
         createdBy: context.actorId,
         updatedBy: context.actorId,
         ...(kind === "classification" && payload.level ? { level: payload.level } : {}),
-      }));
+      });
+      await dependencies.audit?.({ context, kind, operation: "created", resourceId: created.id });
+      return toView(created);
     } catch (error) {
       if (isDuplicateKeyError(error)) throw duplicate(kind);
       throw error;
@@ -165,6 +172,9 @@ export function createDocumentTaxonomyService(dependencies: {
         ...(kind === "classification" && payload.level ? { level: payload.level } : {}),
       });
       if (!updated) throw versionConflict();
+      await dependencies.audit?.({ context, kind, operation: "updated", resourceId: updated.id });
+      if (kind === "classification" && existing.level !== updated.level) await dependencies.propagation?.requestClassification({ tenantId: context.tenantId,
+        classificationId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
       return toView(updated);
     } catch (error) {
       if (isDuplicateKeyError(error)) throw duplicate(kind);
@@ -196,6 +206,9 @@ export function createDocumentTaxonomyService(dependencies: {
       context.actorId,
     );
     if (!updated) throw versionConflict();
+    await dependencies.audit?.({ context, kind, operation: target === "archived" ? "archived" : "restored", resourceId: updated.id });
+    if (kind === "classification") await dependencies.propagation?.requestClassification({ tenantId: context.tenantId,
+      classificationId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
     return toView(updated);
   }
 
@@ -217,6 +230,8 @@ export const documentTaxonomyService = createDocumentTaxonomyService({
       await authorizeTenantOperation(context, permission);
     },
   },
+  propagation: { requestClassification: requestClassificationPropagation },
+  audit: ({ context, kind, operation, resourceId }) => auditTaxonomy(context, kind, operation, resourceId),
 });
 
 async function requireRecord(
@@ -285,4 +300,12 @@ function isDuplicateKeyError(error: unknown): boolean {
     "code" in error &&
     (error as { code?: number }).code === 11000,
   );
+}
+
+async function auditTaxonomy(context: TaxonomyOperationContext, kind: TaxonomyKind,
+  operation: "created" | "updated" | "archived" | "restored", resourceId: string) {
+  const prefix = kind === "category" ? "DOCUMENT_CATEGORY" : kind === "department" ? "DOCUMENT_DEPARTMENT" : "DOCUMENT_CLASSIFICATION";
+  const action = `${prefix}_${operation.toUpperCase()}` as AuditAction;
+  await getAuditWriter().write({ action, resourceType: "DocumentTaxonomy", resourceId, tenantId: context.tenantId,
+    actorId: context.actorId, metadata: { taxonomyEntityId: resourceId, taxonomyType: kind, operation } });
 }

@@ -43,7 +43,7 @@ import {
 } from "../extraction/extraction.controller.js";
 import {
   applyPolicyController, batchApplyPolicyController, batchPreviewPolicyController, effectivePolicyAccessController,
-  getActivePolicyController, getPolicyAssignmentsController, getPolicyHistoryController, previewPolicyController,
+  getActivePolicyController, getPolicyAssignmentsController, getPolicyHistoryController, getPolicyPropagationStatusController, previewPolicyController,
 } from "../document-access/documentPolicyManagement.controller.js";
 
 const router = Router();
@@ -58,6 +58,7 @@ router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePo
 router.get("/:id/access-policy", authenticate, tenantScoping, requirePolicyManagement, getActivePolicyController);
 router.get("/:id/access-policy/history", authenticate, tenantScoping, requirePolicyManagement, getPolicyHistoryController);
 router.get("/:id/access-policy/assignments", authenticate, tenantScoping, requirePolicyManagement, getPolicyAssignmentsController);
+router.get("/:id/access-policy/propagation-status", authenticate, tenantScoping, requirePolicyManagement, getPolicyPropagationStatusController);
 router.post("/:id/access-policy/effective-access", authenticate, tenantScoping, requirePolicyManagement, effectivePolicyAccessController);
 router.post("/:id/access-policy/preview", authenticate, tenantScoping, requirePolicyManagement, previewPolicyController);
 router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePolicyManagement, applyPolicyController);

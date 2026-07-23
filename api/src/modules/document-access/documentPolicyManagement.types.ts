@@ -15,8 +15,9 @@ export interface NormalizedPolicyDraft {
 }
 export interface PolicyPointerInput { expectedPolicyId: string; expectedPolicyVersion: number }
 export interface ActionImpact { gained: number; lost: number }
+export type PolicyImpactDirection = "broadening" | "tightening" | "mixed" | "no_change";
 export interface PolicyImpact {
-  direction: "broadening" | "tightening" | "mixed" | "no_change";
+  direction: PolicyImpactDirection;
   byAction: Record<DocumentAccessAction, ActionImpact>;
   usersGainingAny: number;
   usersLosingAny: number;
