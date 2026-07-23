@@ -4,6 +4,7 @@ import {
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
 import { SessionSecurity } from "@/components/auth/session-security";
+import Link from "next/link";
 
 export default function SettingsPage() {
   return (
@@ -15,6 +16,13 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         <SessionSecurity />
+
+        <DashboardPanel>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div><h2 className="text-title-lg font-bold text-primary">Document taxonomy</h2><p className="mt-1 text-sm text-on-surface-variant">Manage categories, departments, and document sensitivity classifications.</p></div>
+            <Link href="/dashboard/settings/document-taxonomy" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">Open document taxonomy</Link>
+          </div>
+        </DashboardPanel>
 
         <DashboardPanel className="flex flex-col items-center py-8 text-center sm:py-10">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary-container/50">

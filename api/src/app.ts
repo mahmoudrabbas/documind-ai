@@ -83,6 +83,7 @@ const corsOptions: CorsOptions = {
     "X-Request-ID",
     "X-Correlation-ID",
     "X-Confirm-Logout-All",
+    "Idempotency-Key",
   ],
   exposedHeaders: ["X-Request-ID"],
   credentials: true,

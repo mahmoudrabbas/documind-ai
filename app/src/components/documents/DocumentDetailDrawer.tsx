@@ -11,13 +11,8 @@ import { getFileSizeLabel } from "@/lib/validation";
 import * as documentsService from "@/services/documents.service";
 import type { DocumentView, DocumentVersionView, DocumentExtractionStatusResponse } from "@/types/api/documents.types";
 import { DocumentQualityPanel } from "./DocumentQualityPanel";
-
-const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
-  public: "success",
-  internal: "info",
-  confidential: "warning",
-  restricted: "error",
-};
+import { ClassificationBadge } from "./ClassificationBadge";
+import { DocumentPolicyPanel } from "./DocumentPolicyPanel";
 
 const SCAN_RESULT_MAP: Record<string, string> = {
   clean: "success",
@@ -121,10 +116,10 @@ export function DocumentDetailDrawer({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-s border-outline-variant/30 bg-surface shadow-2xl transition-transform sm:max-w-xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="document-detail-title" className="fixed inset-y-0 end-0 z-50 flex w-full max-w-lg flex-col border-s border-outline-variant/30 bg-surface shadow-2xl transition-transform sm:max-w-xl">
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-6 py-4">
-          <h2 className="text-title-lg font-bold text-on-surface truncate">{t("documents.detailTitle")}</h2>
-          <button onClick={onClose} className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high">
+          <h2 id="document-detail-title" className="text-title-lg font-bold text-on-surface truncate">{t("documents.detailTitle")}</h2>
+          <button aria-label={t("common.close")} onClick={onClose} className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high">
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
@@ -144,9 +139,7 @@ export function DocumentDetailDrawer({
             <Badge status={STATUS_BADGE_MAP[doc.status] as "success" | "info" | "warning" | "error" | undefined}>
               {t(`documents.status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`)}
             </Badge>
-            <Badge status={CLASSIFICATION_BADGE_MAP[doc.classification] as "success" | "info" | "warning" | "error" | undefined}>
-              {doc.classification}
-            </Badge>
+            <ClassificationBadge level={doc.classification} />
             {doc.isArchived && <Badge status="warning">{t("documents.archived")}</Badge>}
             {doc.quarantineStatus === "quarantined" && <Badge status="error">{t("documents.quarantined")}</Badge>}
             <Badge status="neutral">{doc.versionLabel}</Badge>
@@ -225,6 +218,8 @@ export function DocumentDetailDrawer({
               canReviewQuality={canReviewQuality}
             />
           </div>
+
+          <DocumentPolicyPanel document={doc} />
 
           <div className="mb-6 space-y-3">
             <h4 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.metadata")}</h4>
