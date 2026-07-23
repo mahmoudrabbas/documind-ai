@@ -9,6 +9,7 @@ export interface InviteUserInput {
 
 export interface InviteUserResult {
   user: UserPublicView;
+  emailDelivery?: { sent: boolean; error?: string };
 }
 
 export interface UpdateUserInput {

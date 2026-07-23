@@ -35,10 +35,6 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to send verification email";
-    if (config.NODE_ENV !== "production") {
-      console.warn(`[email-verification] ${message}`);
-      return;
-    }
     throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send verification email", { details: message });
   }
 }
@@ -77,10 +73,6 @@ export async function sendForgotPasswordEmail(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to send password reset email";
-    if (config.NODE_ENV !== "production") {
-      console.warn(`[forgot-password] ${message}`);
-      return;
-    }
     throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send password reset email", { details: message });
   }
 }
@@ -123,10 +115,6 @@ export async function sendInvitationEmail(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to send invitation email";
-    if (config.NODE_ENV !== "production") {
-      console.warn(`[user-invitation] ${message}`);
-      return;
-    }
     throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send invitation email", { details: message });
   }
 }
