@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 
-export type DocumentClassification = "public" | "internal" | "confidential" | "restricted";
+export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 export type DocumentQuarantineStatus = "none" | "quarantined" | "cleared";
 
 export interface ScanInfo {
@@ -112,7 +112,7 @@ const documentSchema = new Schema<DocumentDocument>(
     department: { type: String, default: null, maxlength: 100 },
     classification: {
       type: String,
-      enum: ["public", "internal", "confidential", "restricted"],
+      enum: ["public", "internal", "confidential", "restricted", "highly_confidential"],
       default: "internal",
     },
     owner: {

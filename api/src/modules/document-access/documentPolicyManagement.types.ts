@@ -14,6 +14,7 @@ export interface NormalizedPolicyDraft {
   reason: string | null;
 }
 export interface PolicyPointerInput { expectedPolicyId: string; expectedPolicyVersion: number }
+export interface PolicyTaxonomySelection { classificationId: string; categoryId: string | null; departmentId: string | null }
 export interface ActionImpact { gained: number; lost: number }
 export type PolicyImpactDirection = "broadening" | "tightening" | "mixed" | "no_change";
 export interface PolicyImpact {

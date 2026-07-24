@@ -1,8 +1,9 @@
 import { ApiError, api } from "@/lib/api-client";
 import type {
   ActivePolicyResponse, BatchApplyResponse, BatchExpectedPolicy, BatchPreviewResponse,
-  EffectiveAccessResponse, PolicyApplyResponse, PolicyDraft, PolicyErrorKind,
+  EffectiveAccessResponse, PolicyApplyResponse, PolicyDraft, PolicyEditorOptionsResponse, PolicyErrorKind,
   PolicyHistoryResponse, PolicyAssignmentsResponse, PolicyPreviewResponse,
+  PolicyTaxonomySelection,
   PropagationStatusResponse, TaxonomyKind, TaxonomyListResponse,
   TaxonomyMutationResponse, TaxonomyCreateInput, TaxonomyUpdateInput,
 } from "@/types/api/document-policy.types";
@@ -22,14 +23,17 @@ const POLICY_ERROR_CODES: Record<string, PolicyErrorKind> = {
   DEPARTMENT_DUPLICATE: "taxonomy_duplicate",
   DOCUMENT_CLASSIFICATION_DUPLICATE: "taxonomy_duplicate",
   TAXONOMY_RECORD_ARCHIVED: "taxonomy_archived",
+  DOCUMENT_POLICY_OWNER_RULE_PROTECTED: "owner_rule_protected",
+  DOCUMENT_POLICY_TAXONOMY_PROTECTED: "taxonomy_protected",
 };
 
 export function classifyPolicyError(error: unknown): PolicyErrorKind {
   if (!(error instanceof ApiError)) return "unknown";
+  if (error.code && POLICY_ERROR_CODES[error.code]) return POLICY_ERROR_CODES[error.code];
   if (error.status === 403) return "denied";
   if (error.status === 404) return "unavailable";
   if (error.status === 0) return "network";
-  return (error.code && POLICY_ERROR_CODES[error.code]) || "unknown";
+  return "unknown";
 }
 
 export function listTaxonomy(kind: TaxonomyKind, input: { page?: number; pageSize?: number; status?: "active" | "archived" | "all"; search?: string }, signal?: AbortSignal) {
@@ -44,12 +48,13 @@ export function changeTaxonomyStatus(kind: TaxonomyKind, id: string, version: nu
 }
 
 export function getActivePolicy(documentId: string, signal?: AbortSignal) { return api.get<ActivePolicyResponse>(`/documents/${documentId}/access-policy`, { signal }); }
+export function getPolicyEditorOptions(documentId: string, signal?: AbortSignal) { return api.get<PolicyEditorOptionsResponse>(`/documents/${documentId}/policy-editor/options`, { signal }); }
 export function getPolicyHistory(documentId: string, cursor?: number, signal?: AbortSignal) { const query = new URLSearchParams({ limit: "20" }); if (cursor) query.set("cursor", String(cursor)); return api.get<PolicyHistoryResponse>(`/documents/${documentId}/access-policy/history?${query}`, { signal }); }
 export function getPolicyAssignments(documentId: string, signal?: AbortSignal) { return api.get<PolicyAssignmentsResponse>(`/documents/${documentId}/access-policy/assignments`, { signal }); }
 export function getPropagationStatus(documentId: string, signal?: AbortSignal) { return api.get<PropagationStatusResponse>(`/documents/${documentId}/access-policy/propagation-status`, { signal }); }
 export function getEffectiveAccess(documentId: string, userIds: string[], signal?: AbortSignal) { return api.post<EffectiveAccessResponse>(`/documents/${documentId}/access-policy/effective-access`, { userIds }, { signal }); }
-export function previewPolicy(documentId: string, expectedPolicyId: string, expectedPolicyVersion: number, draft: PolicyDraft, signal?: AbortSignal) { return api.post<PolicyPreviewResponse>(`/documents/${documentId}/access-policy/preview`, { expectedPolicyId, expectedPolicyVersion, draft }, { signal }); }
-export function applyPolicy(documentId: string, previewToken: string, draft: PolicyDraft, idempotencyKey: string, confirmSensitiveBroadening = false, signal?: AbortSignal) { return api.post<PolicyApplyResponse>(`/documents/${documentId}/access-policy/apply`, { previewToken, draft, ...(confirmSensitiveBroadening ? { confirmSensitiveBroadening: true } : {}) }, { signal, headers: { "Idempotency-Key": idempotencyKey } }); }
+export function previewPolicy(documentId: string, expectedPolicyId: string, expectedPolicyVersion: number, draft: PolicyDraft, taxonomy?: PolicyTaxonomySelection, signal?: AbortSignal) { return api.post<PolicyPreviewResponse>(`/documents/${documentId}/access-policy/preview`, { expectedPolicyId, expectedPolicyVersion, draft, ...(taxonomy ? { taxonomy } : {}) }, { signal }); }
+export function applyPolicy(documentId: string, previewToken: string, draft: PolicyDraft, idempotencyKey: string, confirmSensitiveBroadening = false, taxonomy?: PolicyTaxonomySelection, signal?: AbortSignal) { return api.post<PolicyApplyResponse>(`/documents/${documentId}/access-policy/apply`, { previewToken, draft, ...(taxonomy ? { taxonomy } : {}), ...(confirmSensitiveBroadening ? { confirmSensitiveBroadening: true } : {}) }, { signal, headers: { "Idempotency-Key": idempotencyKey } }); }
 export function previewBatch(documentIds: string[], expectedPolicies: BatchExpectedPolicy[], draft: PolicyDraft, signal?: AbortSignal) { return api.post<BatchPreviewResponse>("/documents/access-policy/batch/preview", { documentIds, expectedPolicies, draft }, { signal }); }
 export function applyBatch(previewToken: string, draft: PolicyDraft, idempotencyKey: string, confirmSensitiveBroadening = false, signal?: AbortSignal) { return api.post<BatchApplyResponse>("/documents/access-policy/batch/apply", { previewToken, draft, ...(confirmSensitiveBroadening ? { confirmSensitiveBroadening: true } : {}) }, { signal, headers: { "Idempotency-Key": idempotencyKey } }); }
 

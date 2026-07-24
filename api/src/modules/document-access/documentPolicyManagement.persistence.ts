@@ -9,6 +9,7 @@ import DocumentModel from "../../db/models/document.model.js";
 import type { DocumentAccessPolicy } from "./documentAccess.types.js";
 import { DOCUMENT_POLICY_PROPAGATION_SCHEMA_VERSION, type DocumentPolicyPropagationJobV1 } from "./documentPolicyPropagation.contracts.js";
 import type { PolicyImpactDirection } from "./documentPolicyManagement.types.js";
+import type { ClassificationLevel } from "../document-taxonomy/documentTaxonomy.types.js";
 
 export type ManagementApplyResult =
   | { outcome: "applied"; policyId: string; policyVersion: number; propagationEventId: string }
@@ -22,7 +23,11 @@ class IdempotencyConflict extends Error {}
 export async function applyManagedPolicy(input: {
   tenantId: string; documentId: string; actorId: string; idempotencyKey: string; requestFingerprint: string;
   expectedPolicyId: string; expectedPolicyVersion: number; documentVersion: number; changeDirection: Exclude<PolicyImpactDirection, "no_change">;
-  sensitiveBroadening: boolean; policy: DocumentAccessPolicy;
+  sensitiveBroadening: boolean; propagationReason: "policy_change" | "taxonomy_change"; policy: DocumentAccessPolicy;
+  taxonomy: {
+    classificationId: string; classificationName: string; classificationLevel: ClassificationLevel;
+    categoryId: string | null; categoryName: string | null; departmentId: string | null; departmentName: string | null;
+  };
 }): Promise<ManagementApplyResult> {
   const identity = { tenantId: input.tenantId, documentId: input.documentId, actorId: input.actorId, operation: "policy_apply" as const, key: input.idempotencyKey };
   const existing = await DocumentPolicyIdempotencyModel.findOne(identity).lean().exec();
@@ -43,7 +48,10 @@ export async function applyManagedPolicy(input: {
       }
       const changed = await DocumentModel.updateOne({ _id: input.documentId, tenantId: input.tenantId,
         activePolicyId: input.expectedPolicyId, activePolicyVersion: input.expectedPolicyVersion },
-      { $set: { activePolicyId: input.policy.policyId, activePolicyVersion: input.policy.policyVersion, policyChangedAt: new Date(input.policy.provenance.createdAt) } },
+      { $set: { activePolicyId: input.policy.policyId, activePolicyVersion: input.policy.policyVersion, policyChangedAt: new Date(input.policy.provenance.createdAt),
+        classificationId: input.taxonomy.classificationId, classification: input.taxonomy.classificationLevel,
+        categoryId: input.taxonomy.categoryId, category: input.taxonomy.categoryName,
+        departmentId: input.taxonomy.departmentId, department: input.taxonomy.departmentName } },
       { session, runValidators: true });
       if (changed.modifiedCount !== 1) throw new VersionConflict();
       const snapshot = new DocumentAccessPolicyModel({ ...input.policy,
@@ -67,7 +75,7 @@ export async function applyManagedPolicy(input: {
         policyVersion: input.policy.policyVersion, previousPolicyVersion: input.expectedPolicyVersion, generationId,
         classificationId: input.policy.indexMetadata.classificationId ?? null, categoryId: input.policy.indexMetadata.categoryId ?? null,
         departmentId: input.policy.indexMetadata.departmentId ?? null, changeDirection: input.changeDirection,
-        sensitiveBroadening: input.sensitiveBroadening, propagationReason: "policy_change",
+        sensitiveBroadening: input.sensitiveBroadening, propagationReason: input.propagationReason,
         requestedAt: requestedAt.toISOString(), correlationId: input.idempotencyKey };
       await DocumentPolicyPropagationOutboxModel.create([{ eventId, tenantId: input.tenantId, documentId: input.documentId,
         actorId: input.actorId, operationCorrelationId: input.idempotencyKey, payload, state: "pending", attempts: 0,

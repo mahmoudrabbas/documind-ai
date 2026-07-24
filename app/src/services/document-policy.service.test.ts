@@ -7,6 +7,7 @@ import {
   classifyPolicyError,
   createTaxonomy,
   getActivePolicy,
+  previewPolicy,
   updateTaxonomy,
 } from "./document-policy.service";
 import type { ActivePolicyResponse, PolicyDraft } from "@/types/api/document-policy.types";
@@ -17,7 +18,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("document policy API", () => {
   it("returns the typed active-policy envelope", async () => {
-    const response: ActivePolicyResponse = { success: true, data: { mayManage: true, taxonomy: { categoryId: null, departmentId: null, classificationId: "c1" }, policy: { contractVersion: 1, documentId: "d1", policyId: "p1", policyVersion: 3, status: "active", effectiveFrom: "2026-07-23T00:00:00.000Z", rules: [], provenance: { createdBy: "u1", createdAt: "2026-07-23T00:00:00.000Z" }, indexMetadata: { policyId: "p1", policyVersion: 3 } } } };
+    const response: ActivePolicyResponse = { success: true, data: { mayManage: true, taxonomy: { categoryId: null, categoryName: null, departmentId: null, departmentName: null, classificationId: "c1", classificationName: "Restricted", classificationLevel: "restricted" }, policy: { contractVersion: 1, documentId: "d1", policyId: "p1", policyVersion: 3, status: "active", effectiveFrom: "2026-07-23T00:00:00.000Z", rules: [], provenance: { createdBy: "u1", createdAt: "2026-07-23T00:00:00.000Z" }, indexMetadata: { policyId: "p1", policyVersion: 3 } } } };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(response)));
     await expect(getActivePolicy("d1")).resolves.toEqual(response);
   });
@@ -49,6 +50,15 @@ describe("document policy API", () => {
     await applyPolicy("d1", "opaque-token", draft, "key-two", true);
     expect(String(fetchMock.mock.calls[0][1]?.body)).not.toContain("confirmSensitiveBroadening");
     expect(String(fetchMock.mock.calls[1][1]?.body)).toContain('"confirmSensitiveBroadening":true');
+  });
+
+  it("binds taxonomy selections into preview and apply requests", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(json({ success: true, data: {} }))); vi.stubGlobal("fetch", fetchMock);
+    const taxonomy = { classificationId: "c1", categoryId: "cat1", departmentId: null };
+    await previewPolicy("d1", "p1", 3, draft, taxonomy);
+    await applyPolicy("d1", "opaque-token", draft, "taxonomy-key", false, taxonomy);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedPolicyId: "p1", expectedPolicyVersion: 3, taxonomy });
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ previewToken: "opaque-token", taxonomy });
   });
 
   it("sends only the supported backend taxonomy create fields", async () => {

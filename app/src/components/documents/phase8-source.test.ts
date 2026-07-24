@@ -6,6 +6,7 @@ const taxonomy = read("TaxonomyManager.tsx");
 const editor = read("PolicyEditor.tsx");
 const panel = read("DocumentPolicyPanel.tsx");
 const batch = read("BatchPolicyDialog.tsx");
+const policyService = read("../../services/document-policy.service.ts");
 
 describe("Phase 8 safety source contracts", () => {
   it("uses all four backend classification levels", () => expect(taxonomy).toContain('"highly_confidential"'));
@@ -25,13 +26,43 @@ describe("Phase 8 safety source contracts", () => {
   it("does not persist or decode preview artifacts", () => { expect(editor).not.toContain("localStorage"); expect(editor).not.toContain("sessionStorage"); expect(editor).not.toContain("atob("); });
   it("requires backend preview before apply", () => expect(editor).toContain("if (!preview || !idempotencyKey"));
   it("disables apply for no-change", () => expect(editor).toContain('preview.impact.direction === "no_change"'));
+  it("loads policy editor options from a scoped document endpoint", () => { expect(editor).toContain("getPolicyEditorOptions(documentId"); });
+  it("loads documentOwnerId from editor options for owner-rule enforcement", () => { expect(editor).toContain("documentOwnerId"); expect(editor).toContain("result.data.documentOwnerId"); });
+  it("loads only active options via the backend-scoped endpoint", () => expect(policyService).toContain("policy-editor/options"));
+  it("does not call general admin endpoints for users, roles, or taxonomy", () => { expect(editor).not.toContain('from "@/services/users.service"'); expect(editor).not.toContain('from "@/services/roles.service"'); expect(editor).not.toContain("listTaxonomy("); });
+  it("preselects current taxonomy and supports clearing optional assignments", () => { expect(editor).toContain("currentTaxonomy.classificationId"); expect(editor).toContain('categoryId: event.target.value || null'); expect(editor).toContain('departmentId: event.target.value || null'); });
+  it("binds taxonomy to preview and apply", () => { expect(editor).toContain("pointer.policyVersion, draft, taxonomy"); expect(editor).toContain("confirmSensitive, taxonomy"); });
+  it("invalidates a preview after taxonomy changes", () => { expect(editor).toContain("function editTaxonomy"); expect(editor).toContain("setPreview(null)"); });
+  it("protects owner rules for non-owner users", () => { expect(editor).toContain("ownerReadOnly"); expect(editor).toContain("Protected owner rule"); expect(editor).toContain("Protected owner rule — only the document owner can modify it."); });
+  it("compares current user with document owner for owner-rule read-only", () => { expect(editor).toContain("currentUserId === documentOwnerId"); });
+  it("enforces minimum actions for owner rules owned by the document owner", () => { expect(editor).toContain("isOwnerRule && OWNER_MINIMUM_ACTIONS.has(action)"); expect(editor).toContain("(required)"); });
+  it("prevents subject type change for owner rules", () => { expect(editor).toContain("ownerReadOnly || isOwnerRule"); });
+  it("protects taxonomy for delegated non-owner managers", () => { expect(editor).toContain("taxonomyEditable"); expect(editor).toContain("Document taxonomy can only be changed by the document owner or a Company Admin."); });
+  it("disables taxonomy controls when not editable", () => { expect(editor).toContain("disabled={!taxonomyEditable}"); });
+  it("shows owner-rule-protected error message", () => { expect(editor).toContain("owner_rule_protected"); expect(editor).toContain("Only the document owner may modify the owner rule."); });
+  it("shows taxonomy-protected error message", () => { expect(editor).toContain("taxonomy_protected"); expect(editor).toContain("Only the document owner or a Company Admin may change document taxonomy."); });
+  it("shows options loading, error, and taxonomy empty states", () => { expect(editor).toContain("Loading policy editor options"); expect(editor).toContain("No active classifications are available"); expect(editor).toContain("Taxonomy options could not be loaded"); expect(editor).toContain("Policy editor options could not be loaded"); });
+  it("shows a retry button for failed options loading", () => { expect(editor).toContain("Retry loading options"); expect(editor).toContain("Retry taxonomy"); });
+  it("uses the backend-selected sensitivity for confirmation", () => expect(editor).toContain("preview.taxonomy.classificationLevel"));
   it("does not auto-confirm sensitive broadening", () => expect(editor).toContain("setAcknowledged(false)"));
   it("sends sensitive confirmation only from the explicit dialog", () => expect(editor).toContain("doApply(true)"));
   it("preserves draft while reloading a stale pointer", () => expect(editor).toContain("Reload pointer and preserve draft"));
+  it("preserves taxonomy selections while reloading a stale pointer", () => {
+    const reload = editor.slice(editor.indexOf("async function reloadPointer"), editor.indexOf("async function doApply"));
+    expect(reload).not.toContain("setTaxonomy(");
+  });
 
   it("shows deny assignments instead of omitting them", () => expect(panel).toContain('assignment.effect === "deny"'));
   it("shows stale references safely", () => expect(panel).toContain("Unavailable principal"));
   it("sorts history newest first and marks it read-only", () => { expect(panel).toContain("b.policyVersion - a.policyVersion"); expect(panel).toContain("Read only"); });
+  it("keeps history failures out of the panel-wide error state", () => { expect(panel).toContain("setHistoryError(policyApi.classifyPolicyError(cause))"); expect(panel).toContain("Other policy data remains available"); });
+  it("shows a History-tab retry action", () => { expect(panel).toContain("<HistoryLoadError"); expect(panel).toContain("Retry history"); });
+  it("retries only history after an isolated failure", () => {
+    const retry = panel.match(/function HistoryLoadError[^\n]+/)?.[0] ?? "";
+    expect(retry).toContain("retry");
+    expect(retry).not.toContain("refresh");
+    expect(panel).toContain("HistoryLoadError retry={() => void refreshHistory()}");
+  });
   it("renders each effective action independently", () => expect(panel).toContain("user.actions[action]"));
   it("does not infer effective access locally", () => expect(panel).toContain("getEffectiveAccess"));
   it("labels propagation current only when versions match", () => expect(panel).toContain('status.appliedPolicyVersion === status.desiredPolicyVersion'));

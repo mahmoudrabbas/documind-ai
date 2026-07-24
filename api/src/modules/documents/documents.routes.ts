@@ -43,7 +43,7 @@ import {
 } from "../extraction/extraction.controller.js";
 import {
   applyPolicyController, batchApplyPolicyController, batchPreviewPolicyController, effectivePolicyAccessController,
-  getActivePolicyController, getPolicyAssignmentsController, getPolicyHistoryController, getPolicyPropagationStatusController, previewPolicyController,
+  getActivePolicyController, getPolicyAssignmentsController, getPolicyHistoryController, getPolicyPropagationStatusController, policyEditorOptionsController, previewPolicyController,
 } from "../document-access/documentPolicyManagement.controller.js";
 
 const router = Router();
@@ -55,6 +55,7 @@ router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUME
 
 router.post("/access-policy/batch/preview", authenticate, tenantScoping, requirePolicyManagement, batchPreviewPolicyController);
 router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePolicyManagement, batchApplyPolicyController);
+router.get("/:id/policy-editor/options", authenticate, tenantScoping, requirePolicyManagement, policyEditorOptionsController);
 router.get("/:id/access-policy", authenticate, tenantScoping, requirePolicyManagement, getActivePolicyController);
 router.get("/:id/access-policy/history", authenticate, tenantScoping, requirePolicyManagement, getPolicyHistoryController);
 router.get("/:id/access-policy/assignments", authenticate, tenantScoping, requirePolicyManagement, getPolicyAssignmentsController);
