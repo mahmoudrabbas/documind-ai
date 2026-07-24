@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -16,6 +16,8 @@ import {
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
 import { DocumentDetailDrawer } from "@/components/documents/DocumentDetailDrawer";
+import { ClassificationBadge } from "@/components/documents/ClassificationBadge";
+import { BatchPolicyDialog } from "@/components/documents/BatchPolicyDialog";
 import {
   validateDocumentTitle,
   validateFileType,
@@ -37,6 +39,7 @@ export default function DocumentsPage() {
   const canCreate = permissions.can(Permission.DOCUMENTS_CREATE);
   const canDelete = permissions.can(Permission.DOCUMENTS_DELETE);
   const canArchive = permissions.can(Permission.DOCUMENTS_ARCHIVE);
+  const canManageAccess = permissions.can(Permission.DOCUMENTS_MANAGE_ACCESS);
   const {
     documents,
     isLoading,
@@ -71,9 +74,13 @@ export default function DocumentsPage() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBatchPolicy, setShowBatchPolicy] = useState(false);
 
   const [searchInput, setSearchInput] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+
+  useEffect(() => { setSelectedIds([]); setShowBatchPolicy(false); }, [filters, page]);
 
   const handleSearch = useCallback(() => {
     updateFilters({ ...filters, search: searchInput || undefined, isArchived: showArchived });
@@ -241,6 +248,11 @@ export default function DocumentsPage() {
                 <p className="mt-1 text-xs">{t("documents.duplicateHint", { title: duplicateWarning.existingTitle })}</p>
               </div>
             ) : null}
+
+            <div className="mt-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 text-sm text-on-surface-variant">
+              <strong className="text-on-surface">Restricted and private by default.</strong>{" "}
+              A new upload grants its owner discover, read, and download only. Broader access requires policy management after upload.
+            </div>
           </DashboardPanel>
 
           <DashboardPanel className="group relative overflow-hidden bg-gradient-to-br from-surface-container via-surface-container-low to-surface-container-lowest transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-lg">
@@ -306,6 +318,7 @@ export default function DocumentsPage() {
               )}
             </div>
           </div>
+          {canManageAccess && selectedIds.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-primary/5 p-3" role="status"><strong>{selectedIds.length} / 50 selected</strong><Button size="sm" onClick={() => setShowBatchPolicy(true)}>Manage selected access</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear selection</Button></div>}
         </div>
 
         {error ? (
@@ -338,10 +351,13 @@ export default function DocumentsPage() {
             <table className="w-full min-w-[860px] border-collapse text-start text-sm">
               <thead className="border-b border-outline-variant/30 bg-surface-container-low">
                 <tr>
+                  {canManageAccess && <th className="p-4 text-start"><span className="sr-only">Select</span></th>}
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableName")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableSize")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableType")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableStatus")}</th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Classification</th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Taxonomy</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.version")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableDate")}</th>
                   <th className="px-lg py-4 text-end text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableActions")}</th>
@@ -354,6 +370,7 @@ export default function DocumentsPage() {
                     className="cursor-pointer transition-colors hover:bg-surface-container-low/50 group"
                     onClick={() => openDrawer(doc)}
                   >
+                    {canManageAccess && <td className="p-4" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${doc.metadata.title || doc.fileName} for batch policy`} checked={selectedIds.includes(doc.id)} disabled={!selectedIds.includes(doc.id) && selectedIds.length >= 50} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, doc.id].slice(0, 50) : current.filter((id) => id !== doc.id))} /></td>}
                     <td className="max-w-xs truncate px-lg py-4 font-bold text-on-surface">
                       <div className="flex items-center gap-3">
                         <span className="material-symbols-outlined text-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>description</span>
@@ -377,6 +394,8 @@ export default function DocumentsPage() {
                         {doc.mimeType.split("/").pop() ?? "-"}
                       </span>
                     </td>
+                    <td className="px-lg py-4"><ClassificationBadge level={doc.classification} /></td>
+                    <td className="px-lg py-4 text-xs text-on-surface-variant"><div>{doc.category ?? "No category"}</div><div>{doc.department ?? "No department"}</div></td>
                     <td className="px-lg py-4">
                       <Badge status={STATUS_BADGE_MAP[doc.status] as "success" | "info" | "warning" | "error" | undefined}>
                         {t(`documents.status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`)}
@@ -456,6 +475,7 @@ export default function DocumentsPage() {
           isLoadingVersions={isLoadingVersions}
         />
       )}
+      {showBatchPolicy && <BatchPolicyDialog documents={documents.filter((document) => selectedIds.includes(document.id))} onClose={() => setShowBatchPolicy(false)} onComplete={() => { setShowBatchPolicy(false); setSelectedIds([]); void goToPage(page); }} />}
     </DashboardPage>
   );
 }

@@ -62,7 +62,7 @@ export async function uploadDocumentController(req: Request, res: Response, next
 export async function listDocumentsController(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    const result = await service.listDocuments(req.query, req.tenantId);
+    const result = await service.listDocuments(req.query, req.tenantId, { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) });
     res.status(200).json({ success: true, data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -72,7 +72,7 @@ export async function getDocumentController(req: Request, res: Response, next: N
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    const result = await service.getDocument(documentId, req.tenantId);
+    const result = await service.getDocument(documentId, req.tenantId, { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) });
     res.status(200).json({ success: true, data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -194,7 +194,7 @@ export async function listDocumentVersionsController(req: Request, res: Response
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
-    const result = await service.listVersions(documentId, req.tenantId);
+    const result = await service.listVersions(documentId, req.tenantId, { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) });
     res.status(200).json({ success: true, data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }

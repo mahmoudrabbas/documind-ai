@@ -10,10 +10,13 @@ import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { connectRedis, disconnectRedis } from "../../db/redis.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
-import DocumentModel from "../../db/models/document.model.js";
+import DocumentModel, { type DocumentClassification, type DocumentDocument } from "../../db/models/document.model.js";
 import DocumentVersionModel from "../../db/models/documentVersion.model.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
+import DocumentAccessPolicyModel from "../../db/models/documentAccessPolicy.model.js";
 import RoleModel from "../../db/models/role.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
+import type { DocumentAccessAction } from "../document-access/documentAccess.actions.js";
 import * as fsp from "node:fs/promises";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
@@ -114,6 +117,139 @@ function buildMultipartBody(fileName: string, fileContent: Buffer, metadata: Rec
   return { buffer: Buffer.concat([head, fileContent, tail]), boundary };
 }
 
+interface TestDocOverrides {
+  fileName?: string;
+  originalFileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  storageKey?: string;
+  checksum?: string;
+  status?: DocumentDocument["status"];
+  metadata?: DocumentDocument["metadata"];
+  version?: number;
+  versionLabel?: string;
+  isArchived?: boolean;
+  archivedAt?: Date | null;
+  archivedBy?: string | null;
+  deletedAt?: Date | null;
+  deletedBy?: string | null;
+  quarantineStatus?: DocumentDocument["quarantineStatus"];
+  scanResult?: DocumentDocument["scanResult"];
+  category?: string | null;
+  department?: string | null;
+  effectiveDate?: Date | null;
+  expiryDate?: Date | null;
+}
+
+async function createTestDocumentWithPolicy(
+  tenantId: string,
+  userId: string,
+  classification: string,
+  actions: string[],
+  overrides: TestDocOverrides = {},
+) {
+  const normalizedClassification = classification.toLowerCase().trim();
+  let classificationDoc = await DocumentClassificationModel.findOne({
+    tenantId,
+    normalizedName: normalizedClassification,
+    status: "active",
+  });
+  if (!classificationDoc) {
+    try {
+      classificationDoc = await DocumentClassificationModel.create({
+        tenantId,
+        name: classification.charAt(0).toUpperCase() + classification.slice(1),
+        normalizedName: normalizedClassification,
+        level: "confidential" as const,
+        description: `${classification} classification`,
+        status: "active" as const,
+        version: 1,
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    } catch (error: unknown) {
+      if (error && typeof error === "object" && "code" in error && (error as { code?: number }).code === 11000) {
+        classificationDoc = await DocumentClassificationModel.findOne({
+          tenantId,
+          normalizedName: normalizedClassification,
+          status: "active",
+        });
+        if (!classificationDoc) throw error;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const policyId = new Types.ObjectId();
+  const now = new Date().toISOString();
+
+  const doc = await DocumentModel.create({
+    tenantId,
+    fileName: overrides.fileName ?? "test.pdf",
+    originalFileName: overrides.originalFileName ?? "test.pdf",
+    fileSize: overrides.fileSize ?? 1234,
+    mimeType: overrides.mimeType ?? "application/pdf",
+    storageKey: overrides.storageKey ?? `${tenantId}/${overrides.fileName ?? "test.pdf"}`,
+    checksum: overrides.checksum ?? "abc123",
+    status: overrides.status ?? "uploaded",
+    metadata: overrides.metadata ?? { title: "Test", description: "Desc", tags: [] },
+    classification: normalizedClassification as DocumentClassification,
+    version: overrides.version ?? 1,
+    versionLabel: overrides.versionLabel ?? "v1",
+    uploadedBy: userId,
+    owner: userId,
+    classificationId: classificationDoc._id,
+    activePolicyId: policyId,
+    activePolicyVersion: 1,
+    policyChangedAt: new Date(),
+    isArchived: overrides.isArchived ?? false,
+    archivedAt: overrides.archivedAt ?? null,
+    archivedBy: overrides.archivedBy ?? null,
+    deletedAt: overrides.deletedAt ?? null,
+    deletedBy: overrides.deletedBy ?? null,
+    quarantineStatus: overrides.quarantineStatus ?? "none",
+    scanResult: overrides.scanResult ?? null,
+    category: overrides.category ?? null,
+    department: overrides.department ?? null,
+    effectiveDate: overrides.effectiveDate ?? null,
+    expiryDate: overrides.expiryDate ?? null,
+  });
+
+  const policy = await DocumentAccessPolicyModel.create({
+    tenantId,
+    documentId: doc._id,
+    policyId,
+    policyVersion: 1,
+    contractVersion: 1,
+    status: "active",
+    effectiveFrom: now,
+    effectiveUntil: null,
+    inherits: null,
+    rules: [{
+      ruleId: "test-owner-rule",
+      effect: "allow",
+      subject: { type: "owner" },
+      actions: actions as DocumentAccessAction[],
+    }],
+    provenance: {
+      createdBy: userId,
+      createdAt: now,
+      reason: "Test fixture",
+    },
+    indexMetadata: {
+      policyId,
+      policyVersion: 1,
+      classificationId: classificationDoc._id,
+      categoryId: null,
+      departmentId: null,
+    },
+    createdAt: now,
+  });
+
+  return { doc, classification: classificationDoc, policy };
+}
+
 before(async () => {
   if (process.env.MONGODB_URI) {
     await mongoose.connect(process.env.MONGODB_URI, { dbName: "documents-test" });
@@ -134,6 +270,8 @@ beforeEach(async () => {
   await UserModel.deleteMany({});
   await DocumentModel.deleteMany({});
   await DocumentVersionModel.deleteMany({});
+  await DocumentClassificationModel.deleteMany({});
+  await DocumentAccessPolicyModel.deleteMany({});
   await RoleModel.deleteMany({});
 
   const uploads = await fsp.readdir(UPLOAD_TEST_DIR).catch(() => []);
@@ -184,7 +322,7 @@ void test("POST /documents — upload a document successfully", async () => {
   assert.equal((doc.metadata as Record<string, unknown>).title, "Annual Report 2024");
   assert.equal(doc.version, 1);
   assert.equal(doc.versionLabel, "v1");
-  assert.equal(doc.classification, "internal");
+  assert.equal(doc.classification, "restricted");
   assert.equal(doc.isArchived, false);
   assert.equal(doc.quarantineStatus, "none");
   assert.ok(doc.checksum);
@@ -300,52 +438,39 @@ void test("GET /documents — returns empty list when no documents", async () =>
 
 void test("GET /documents — paginated list", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  const { tenant, user } = await createActiveTenantAdmin();
-  const accessToken = await login(port);
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const accessToken = await login(port);
 
-  const docs = Array.from({ length: 3 }, (_, i) => ({
-    tenantId: tenant.id,
-    fileName: `doc-${i}.pdf`,
-    originalFileName: `doc-${i}.pdf`,
-    fileSize: 100 + i,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/file-${i}.pdf`,
-    checksum: `checksum-${i}`,
-    status: "uploaded" as const,
-    metadata: { title: `Doc ${i}`, description: "", tags: [] },
-    category: null,
-    department: null,
-    classification: "internal" as const,
-    owner: null,
-    effectiveDate: null,
-    expiryDate: null,
-    version: 1,
-    versionLabel: "v1",
-    isArchived: false,
-    archivedAt: null,
-    archivedBy: null,
-    deletedAt: null,
-    deletedBy: null,
-    quarantineStatus: "none" as const,
-    scanResult: null,
-    uploadedBy: user.id,
-  }));
+    const allActions = ["discover", "read", "download", "update", "delete", "archive", "restore", "replace"];
+    await Promise.all(
+      Array.from({ length: 3 }, (_, i) =>
+        createTestDocumentWithPolicy(tenant.id, user.id, "internal", allActions, {
+          fileName: `doc-${i}.pdf`,
+          originalFileName: `doc-${i}.pdf`,
+          fileSize: 100 + i,
+          storageKey: `${tenant.id}/file-${i}.pdf`,
+          checksum: `checksum-${i}`,
+          metadata: { title: `Doc ${i}`, description: "", tags: [] },
+        }),
+      ),
+    );
 
-  await DocumentModel.insertMany(docs);
+    const response = await fetch(`http://127.0.0.1:${port}/documents?page=1&pageSize=2`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  const response = await fetch(`http://127.0.0.1:${port}/documents?page=1&pageSize=2`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as Record<string, unknown>;
+    const data = body.data as Record<string, unknown>;
 
-  assert.equal(response.status, 200);
-  const body = (await response.json()) as Record<string, unknown>;
-  const data = body.data as Record<string, unknown>;
-
-  assert.equal((data.documents as unknown[]).length, 2);
-  assert.equal((data.pagination as Record<string, unknown>).totalRecords, 3);
-  assert.equal((data.pagination as Record<string, unknown>).totalPages, 2);
-  await closeServer(server);
+    assert.equal((data.documents as unknown[]).length, 2);
+    assert.equal((data.pagination as Record<string, unknown>).totalRecords, 3);
+    assert.equal((data.pagination as Record<string, unknown>).totalPages, 2);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("GET /documents/:id — returns single document", async () => {
@@ -354,21 +479,11 @@ void test("GET /documents/:id — returns single document", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "test.pdf",
-    originalFileName: "test.pdf",
-    fileSize: 1234,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/test.pdf`,
-    checksum: "abc123",
-    status: "uploaded",
-    metadata: { title: "Test", description: "Desc", tags: ["tag1"] },
-    classification: "internal",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: user.id,
-  });
+  const { doc } = await createTestDocumentWithPolicy(
+    tenant.id, user.id, "internal",
+    ["discover", "read", "download"],
+    { metadata: { title: "Test", description: "Desc", tags: ["tag1"] } },
+  );
 
   const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -405,21 +520,11 @@ void test("PATCH /documents/:id — updates metadata", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "test.pdf",
-    originalFileName: "test.pdf",
-    fileSize: 1234,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/test.pdf`,
-    checksum: "abc123",
-    status: "uploaded",
-    metadata: { title: "Original", description: "Orig", tags: ["old"] },
-    classification: "internal",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: user.id,
-  });
+  const { doc } = await createTestDocumentWithPolicy(
+    tenant.id, user.id, "internal",
+    ["discover", "read", "download", "update"],
+    { metadata: { title: "Original", description: "Orig", tags: ["old"] } },
+  );
 
   const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
     method: "PATCH",
@@ -446,21 +551,11 @@ void test("DELETE /documents/:id — soft deletes document", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "test.pdf",
-    originalFileName: "test.pdf",
-    fileSize: 1234,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/test.pdf`,
-    checksum: "abc123",
-    status: "uploaded",
-    metadata: { title: "To Delete", description: "", tags: [] },
-    classification: "internal",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: user.id,
-  });
+  const { doc } = await createTestDocumentWithPolicy(
+    tenant.id, user.id, "internal",
+    ["discover", "read", "download", "delete"],
+    { metadata: { title: "To Delete", description: "", tags: [] } },
+  );
 
   const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
     method: "DELETE",
@@ -541,36 +636,29 @@ void test("GET /documents/:id/download — downloads document", async () => {
 
 void test("GET /documents/:id/download — returns 404 for cross-tenant", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
+  try {
+    const port = (server.address() as { port: number }).port;
 
-  await createActiveTenantAdmin({ slug: "tenant-a", email: "admin@a.com", companyName: "Tenant A" });
-  const { tenant: tenantB, user: userB } = await createActiveTenantAdmin({
-    slug: "tenant-b", email: "admin@b.com", companyName: "Tenant B",
-  });
+    await createActiveTenantAdmin({ slug: "tenant-a", email: "admin@a.com", companyName: "Tenant A" });
+    const { tenant: tenantB, user: userB } = await createActiveTenantAdmin({
+      slug: "tenant-b", email: "admin@b.com", companyName: "Tenant B",
+    });
 
-  const doc = await DocumentModel.create({
-    tenantId: tenantB.id,
-    fileName: "secret.pdf",
-    originalFileName: "secret.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey: `${tenantB.id}/secret.pdf`,
-    checksum: "secret-checksum",
-    status: "uploaded",
-    metadata: { title: "Secret", description: "", tags: [] },
-    classification: "restricted",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: userB.id,
-  });
+    const { doc } = await createTestDocumentWithPolicy(
+      tenantB.id, userB.id, "restricted",
+      ["discover", "read", "download"],
+      { metadata: { title: "Secret", description: "", tags: [] } },
+    );
 
-  const accessToken = await login(port, "tenant-a", "admin@a.com");
-  const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/download`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+    const accessToken = await login(port, "tenant-a", "admin@a.com");
+    const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/download`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  assert.equal(response.status, 404);
-  await closeServer(server);
+    assert.equal(response.status, 404);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("POST /documents/:id/archive — archives document", async () => {
@@ -579,21 +667,11 @@ void test("POST /documents/:id/archive — archives document", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "archive-test.pdf",
-    originalFileName: "archive-test.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/archive-test.pdf`,
-    checksum: "archive-cs",
-    status: "uploaded",
-    metadata: { title: "Archive Me", description: "", tags: [] },
-    classification: "internal",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: user.id,
-  });
+  const { doc } = await createTestDocumentWithPolicy(
+    tenant.id, user.id, "internal",
+    ["discover", "read", "download", "archive"],
+    { metadata: { title: "Archive Me", description: "", tags: [] } },
+  );
 
   const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/archive`, {
     method: "POST",
@@ -623,24 +701,16 @@ void test("POST /documents/:id/restore — restores archived document", async ()
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "restore-test.pdf",
-    originalFileName: "restore-test.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/restore-test.pdf`,
-    checksum: "restore-cs",
-    status: "uploaded",
-    metadata: { title: "Restore Me", description: "", tags: [] },
-    classification: "internal",
-    version: 1,
-    versionLabel: "v1",
-    isArchived: true,
-    archivedAt: new Date(),
-    archivedBy: user.id,
-    uploadedBy: user.id,
-  });
+  const { doc } = await createTestDocumentWithPolicy(
+    tenant.id, user.id, "internal",
+    ["discover", "read", "download", "restore"],
+    {
+      metadata: { title: "Restore Me", description: "", tags: [] },
+      isArchived: true,
+      archivedAt: new Date(),
+      archivedBy: user.id,
+    },
+  );
 
   const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/restore`, {
     method: "POST",
@@ -663,21 +733,19 @@ void test("GET /documents/:id/versions — lists version history", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "versioned.pdf",
-    originalFileName: "versioned.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/versioned.pdf`,
-    checksum: "v-cs",
-    status: "uploaded",
-    metadata: { title: "Versioned", description: "", tags: [] },
-    classification: "internal",
-    version: 2,
-    versionLabel: "v2",
-    uploadedBy: user.id,
-  });
+  const { doc } = await createTestDocumentWithPolicy(
+    tenant.id, user.id, "internal",
+    ["discover", "read", "download"],
+    {
+      metadata: { title: "Versioned", description: "", tags: [] },
+      fileName: "versioned.pdf",
+      originalFileName: "versioned.pdf",
+      storageKey: `${tenant.id}/versioned.pdf`,
+      checksum: "v-cs",
+      version: 2,
+      versionLabel: "v2",
+    },
+  );
 
   await DocumentVersionModel.insertMany([
     {
@@ -728,34 +796,27 @@ void test("GET /documents/:id/versions — lists version history", async () => {
 
 void test("employee cannot archive (permission denied)", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  const { tenant } = await createActiveTenantAdmin();
-  const empUser = await createEmployee(tenant.id);
-  const empToken = await login(port, "acme-consulting", "john@acme.com");
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant } = await createActiveTenantAdmin();
+    const empUser = await createEmployee(tenant.id);
+    const empToken = await login(port, "acme-consulting", "john@acme.com");
 
-  const doc = await DocumentModel.create({
-    tenantId: tenant.id,
-    fileName: "emp-test.pdf",
-    originalFileName: "emp-test.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey: `${tenant.id}/emp-test.pdf`,
-    checksum: "emp-cs",
-    status: "uploaded",
-    metadata: { title: "Emp Test", description: "", tags: [] },
-    classification: "internal",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: empUser.id,
-  });
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, empUser.id, "internal",
+      ["discover", "read", "download", "archive"],
+      { metadata: { title: "Emp Test", description: "", tags: [] } },
+    );
 
-  const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/archive`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${empToken}` },
-  });
+    const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/archive`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${empToken}` },
+    });
 
-  assert.equal(response.status, 403);
-  await closeServer(server);
+    assert.equal(response.status, 403);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("employee can download documents with documents.download and matching document access", async () => {
@@ -792,24 +853,21 @@ void test("employee can download documents with documents.download and matching 
     await fsp.mkdir(path.dirname(fullPath), { recursive: true });
     await fsp.writeFile(fullPath, fileContent);
 
-    const doc = await DocumentModel.create({
-      tenantId: tenant.id,
-      fileName: "download-test.pdf",
-      originalFileName: "download-test.pdf",
-      fileSize: fileContent.length,
-      mimeType: "application/pdf",
-      storageKey,
-      checksum: "dl-cs",
-      status: "uploaded",
-      metadata: { title: "Download Test", description: "", tags: [] },
-      classification: "internal",
-      category: "policy",
-      quarantineStatus: "none",
-      version: 1,
-      versionLabel: "v1",
-      isArchived: false,
-      uploadedBy: empUser.id,
-    });
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, empUser.id, "internal",
+      ["discover", "read", "download"],
+      {
+        fileName: "download-test.pdf",
+        originalFileName: "download-test.pdf",
+        fileSize: fileContent.length,
+        storageKey,
+        checksum: "dl-cs",
+        metadata: { title: "Download Test", description: "", tags: [] },
+        category: "policy",
+        quarantineStatus: "none",
+        isArchived: false,
+      },
+    );
 
     const empToken = await login(port, "acme-consulting", "john@acme.com");
     const response = await fetch(
@@ -839,23 +897,20 @@ void test("employee without documents.download receives a stable authorization d
     await fsp.mkdir(path.dirname(fullPath), { recursive: true });
     await fsp.writeFile(fullPath, fileContent);
 
-    const doc = await DocumentModel.create({
-      tenantId: tenant.id,
-      fileName: "ordinary-employee.pdf",
-      originalFileName: "ordinary-employee.pdf",
-      fileSize: fileContent.length,
-      mimeType: "application/pdf",
-      storageKey,
-      checksum: "ordinary-employee",
-      status: "uploaded",
-      metadata: { title: "Ordinary Employee", description: "", tags: [] },
-      classification: "internal",
-      quarantineStatus: "none",
-      version: 1,
-      versionLabel: "v1",
-      isArchived: false,
-      uploadedBy: empUser.id,
-    });
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, empUser.id, "internal",
+      ["discover", "read", "download"],
+      {
+        fileName: "ordinary-employee.pdf",
+        originalFileName: "ordinary-employee.pdf",
+        fileSize: fileContent.length,
+        storageKey,
+        checksum: "ordinary-employee",
+        metadata: { title: "Ordinary Employee", description: "", tags: [] },
+        quarantineStatus: "none",
+        isArchived: false,
+      },
+    );
 
     const empToken = await login(port, "acme-consulting", "john@acme.com");
     const response = await fetch(
@@ -910,23 +965,20 @@ void test("employee with documents.download but without document-level access is
     await fsp.mkdir(path.dirname(fullPath), { recursive: true });
     await fsp.writeFile(fullPath, fileContent);
 
-    const doc = await DocumentModel.create({
-      tenantId: tenant.id,
-      fileName: "no-access.pdf",
-      originalFileName: "no-access.pdf",
-      fileSize: fileContent.length,
-      mimeType: "application/pdf",
-      storageKey,
-      checksum: "no-access",
-      status: "uploaded",
-      metadata: { title: "No Access", description: "", tags: [] },
-      classification: "internal",
-      quarantineStatus: "none",
-      version: 1,
-      versionLabel: "v1",
-      isArchived: false,
-      uploadedBy: adminUser.id,
-    });
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, adminUser.id, "internal",
+      ["discover", "read", "download"],
+      {
+        fileName: "no-access.pdf",
+        originalFileName: "no-access.pdf",
+        fileSize: fileContent.length,
+        storageKey,
+        checksum: "no-access",
+        metadata: { title: "No Access", description: "", tags: [] },
+        quarantineStatus: "none",
+        isArchived: false,
+      },
+    );
 
     const empToken = await login(port, "acme-consulting", "john@acme.com");
     const response = await fetch(
@@ -944,48 +996,41 @@ void test("employee with documents.download but without document-level access is
 
 void test("cross-tenant isolation — tenant A cannot see tenant B's documents", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
+  try {
+    const port = (server.address() as { port: number }).port;
 
-  await createActiveTenantAdmin({
-    slug: "tenant-a",
-    email: "admin@a.com",
-    companyName: "Tenant A",
-  });
-  const { user: userB, tenant: tenantB } = await createActiveTenantAdmin({
-    slug: "tenant-b",
-    email: "admin@b.com",
-    companyName: "Tenant B",
-  });
+    await createActiveTenantAdmin({
+      slug: "tenant-a",
+      email: "admin@a.com",
+      companyName: "Tenant A",
+    });
+    const { user: userB, tenant: tenantB } = await createActiveTenantAdmin({
+      slug: "tenant-b",
+      email: "admin@b.com",
+      companyName: "Tenant B",
+    });
 
-  const accessToken = await login(port, "tenant-a", "admin@a.com");
+    const accessToken = await login(port, "tenant-a", "admin@a.com");
 
-  await DocumentModel.create({
-    tenantId: tenantB.id,
-    fileName: "secret.pdf",
-    originalFileName: "secret.pdf",
-    fileSize: 100,
-    mimeType: "application/pdf",
-    storageKey: `${tenantB.id}/secret.pdf`,
-    checksum: "secret-cs",
-    status: "uploaded",
-    metadata: { title: "Secret", description: "", tags: [] },
-    classification: "restricted",
-    version: 1,
-    versionLabel: "v1",
-    uploadedBy: userB.id,
-  });
+    await createTestDocumentWithPolicy(
+      tenantB.id, userB.id, "restricted",
+      ["discover", "read", "download"],
+      { metadata: { title: "Secret", description: "", tags: [] } },
+    );
 
-  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+    const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  assert.equal(response.status, 200);
-  const body = (await response.json()) as Record<string, unknown>;
-  const data = body.data as Record<string, unknown>;
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as Record<string, unknown>;
+    const data = body.data as Record<string, unknown>;
 
-  assert.equal((data.documents as unknown[]).length, 0);
-  assert.equal((data.pagination as Record<string, unknown>).totalRecords, 0);
-  await closeServer(server);
+    assert.equal((data.documents as unknown[]).length, 0);
+    assert.equal((data.pagination as Record<string, unknown>).totalRecords, 0);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("GET /documents — search by title substring", async () => {
@@ -994,21 +1039,24 @@ void test("GET /documents — search by title substring", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  await DocumentModel.insertMany([
-    {
-      tenantId: tenant.id, fileName: "hr-policy.pdf", originalFileName: "hr-policy.pdf",
-      fileSize: 100, mimeType: "application/pdf", storageKey: `${tenant.id}/hr.pdf`,
-      checksum: "hr-cs", status: "uploaded", classification: "internal", version: 1,
-      versionLabel: "v1", metadata: { title: "HR Policy 2024", description: "", tags: [] },
-      uploadedBy: user.id,
-    },
-    {
-      tenantId: tenant.id, fileName: "finance.pdf", originalFileName: "finance.pdf",
-      fileSize: 200, mimeType: "application/pdf", storageKey: `${tenant.id}/fin.pdf`,
-      checksum: "fin-cs", status: "uploaded", classification: "confidential", version: 1,
-      versionLabel: "v1", metadata: { title: "Finance Report", description: "", tags: [] },
-      uploadedBy: user.id,
-    },
+  const allActions = ["discover", "read", "download", "update", "delete", "archive", "restore", "replace"];
+  await Promise.all([
+    createTestDocumentWithPolicy(tenant.id, user.id, "internal", allActions, {
+      fileName: "hr-policy.pdf",
+      originalFileName: "hr-policy.pdf",
+      fileSize: 100,
+      storageKey: `${tenant.id}/hr.pdf`,
+      checksum: "hr-cs",
+      metadata: { title: "HR Policy 2024", description: "", tags: [] },
+    }),
+    createTestDocumentWithPolicy(tenant.id, user.id, "confidential", allActions, {
+      fileName: "finance.pdf",
+      originalFileName: "finance.pdf",
+      fileSize: 200,
+      storageKey: `${tenant.id}/fin.pdf`,
+      checksum: "fin-cs",
+      metadata: { title: "Finance Report", description: "", tags: [] },
+    }),
   ]);
 
   const response = await fetch(`http://127.0.0.1:${port}/documents?search=HR`, {
@@ -1029,21 +1077,24 @@ void test("GET /documents — filter by classification", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const accessToken = await login(port);
 
-  await DocumentModel.insertMany([
-    {
-      tenantId: tenant.id, fileName: "public.pdf", originalFileName: "public.pdf",
-      fileSize: 100, mimeType: "application/pdf", storageKey: `${tenant.id}/pub.pdf`,
-      checksum: "pub-cs", status: "uploaded", classification: "public", version: 1,
-      versionLabel: "v1", metadata: { title: "Public Doc", description: "", tags: [] },
-      uploadedBy: user.id,
-    },
-    {
-      tenantId: tenant.id, fileName: "restricted.pdf", originalFileName: "restricted.pdf",
-      fileSize: 200, mimeType: "application/pdf", storageKey: `${tenant.id}/res.pdf`,
-      checksum: "res-cs", status: "uploaded", classification: "restricted", version: 1,
-      versionLabel: "v1", metadata: { title: "Restricted Doc", description: "", tags: [] },
-      uploadedBy: user.id,
-    },
+  const allActions = ["discover", "read", "download", "update", "delete", "archive", "restore", "replace"];
+  await Promise.all([
+    createTestDocumentWithPolicy(tenant.id, user.id, "public", allActions, {
+      fileName: "public.pdf",
+      originalFileName: "public.pdf",
+      fileSize: 100,
+      storageKey: `${tenant.id}/pub.pdf`,
+      checksum: "pub-cs",
+      metadata: { title: "Public Doc", description: "", tags: [] },
+    }),
+    createTestDocumentWithPolicy(tenant.id, user.id, "restricted", allActions, {
+      fileName: "restricted.pdf",
+      originalFileName: "restricted.pdf",
+      fileSize: 200,
+      storageKey: `${tenant.id}/res.pdf`,
+      checksum: "res-cs",
+      metadata: { title: "Restricted Doc", description: "", tags: [] },
+    }),
   ]);
 
   const response = await fetch(`http://127.0.0.1:${port}/documents?classification=restricted`, {
@@ -1060,118 +1111,154 @@ void test("GET /documents — filter by classification", async () => {
 
 void test("PUT /documents/:id/replace — replaces document and creates new version", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  await createActiveTenantAdmin();
-  const accessToken = await login(port);
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const accessToken = await login(port);
 
-  const pdfContent = Buffer.from("%PDF-1.4 original content", "utf-8");
-  const { buffer: uploadBuffer, boundary: uploadBoundary } = buildMultipartBody("original.pdf", pdfContent, { title: "Original" });
+    const pdfContent = Buffer.from("%PDF-1.4 original content", "utf-8");
+    const allActions = ["discover", "read", "download", "update", "delete", "archive", "restore", "replace"];
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, user.id, "restricted", allActions, {
+        fileName: "original.pdf",
+        originalFileName: "original.pdf",
+        fileSize: pdfContent.length,
+        storageKey: `${tenant.id}/original.pdf`,
+        checksum: "original-cs",
+        metadata: { title: "Original", description: null, tags: [] },
+      },
+    );
 
-  const uploadRes = await fetch(`http://127.0.0.1:${port}/documents`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${uploadBoundary}` },
-    body: uploadBuffer,
-  });
-  assert.equal(uploadRes.status, 201);
-  const uploadBody = (await uploadRes.json()) as Record<string, unknown>;
-  const docId = ((uploadBody.data as Record<string, unknown>).document as Record<string, unknown>).id;
+    const fullPath = path.join(UPLOAD_TEST_DIR, `${tenant.id}/original.pdf`);
+    await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+    await fsp.writeFile(fullPath, pdfContent);
 
-  const newContent = Buffer.from("%PDF-1.4 replaced content v2", "utf-8");
-  const { buffer: replaceBuffer, boundary: replaceBoundary } = buildMultipartBody("replaced.pdf", newContent, {});
+    await DocumentVersionModel.create({
+      documentId: doc.id,
+      tenantId: tenant.id,
+      version: 1,
+      versionLabel: "v1",
+      fileName: "original.pdf",
+      fileSize: pdfContent.length,
+      mimeType: "application/pdf",
+      checksum: "original-cs",
+      storageKey: `${tenant.id}/original.pdf`,
+      uploadedBy: user.id,
+      uploadReason: "initial",
+      changeDescription: null,
+    });
 
-  const replaceRes = await fetch(`http://127.0.0.1:${port}/documents/${docId}/replace`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${replaceBoundary}` },
-    body: replaceBuffer,
-  });
-  assert.equal(replaceRes.status, 200);
-  const replaceBody = (await replaceRes.json()) as Record<string, unknown>;
-  assert.equal(replaceBody.success, true);
+    const newContent = Buffer.from("%PDF-1.4 replaced content v2", "utf-8");
+    const { buffer: replaceBuffer, boundary: replaceBoundary } = buildMultipartBody("replaced.pdf", newContent, {});
 
-  const doc = (replaceBody.data as Record<string, unknown>).document as Record<string, unknown>;
-  assert.equal(doc.fileName, "replaced.pdf");
-  assert.equal(doc.version, 2);
-  assert.equal(doc.versionLabel, "v2");
-  assert.equal(doc.fileSize, newContent.length);
+    const replaceRes = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/replace`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${replaceBoundary}` },
+      body: replaceBuffer,
+    });
+    assert.equal(replaceRes.status, 200);
+    const replaceBody = (await replaceRes.json()) as Record<string, unknown>;
+    assert.equal(replaceBody.success, true);
 
-  const versionsRes = await fetch(`http://127.0.0.1:${port}/documents/${docId}/versions`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const versionsBody = (await versionsRes.json()) as Record<string, unknown>;
-  const versions = (versionsBody.data as Record<string, unknown>).versions as unknown[];
-  assert.equal(versions.length, 2);
+    const result = (replaceBody.data as Record<string, unknown>).document as Record<string, unknown>;
+    assert.equal(result.fileName, "replaced.pdf");
+    assert.equal(result.version, 2);
+    assert.equal(result.versionLabel, "v2");
+    assert.equal(result.fileSize, newContent.length);
 
-  await closeServer(server);
+    const versionsRes = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/versions`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const versionsBody = (await versionsRes.json()) as Record<string, unknown>;
+    const versions = (versionsBody.data as Record<string, unknown>).versions as unknown[];
+    assert.equal(versions.length, 2);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("DELETE /documents/:id/permanent — permanently deletes document and versions", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  await createActiveTenantAdmin();
-  const accessToken = await login(port);
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const accessToken = await login(port);
 
-  const pdfContent = Buffer.from("%PDF-1.4 to be deleted", "utf-8");
-  const { buffer, boundary } = buildMultipartBody("delete-me.pdf", pdfContent, { title: "Delete Me" });
+    const pdfContent = Buffer.from("%PDF-1.4 to be deleted", "utf-8");
+    const allActions = ["discover", "read", "download", "update", "delete", "archive", "restore", "replace"];
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, user.id, "restricted", allActions, {
+        fileName: "delete-me.pdf",
+        originalFileName: "delete-me.pdf",
+        fileSize: pdfContent.length,
+        storageKey: `${tenant.id}/delete-me.pdf`,
+        checksum: "delete-cs",
+        metadata: { title: "Delete Me", description: null, tags: [] },
+      },
+    );
 
-  const uploadRes = await fetch(`http://127.0.0.1:${port}/documents`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
-    body: buffer,
-  });
-  assert.equal(uploadRes.status, 201);
-  const uploadBody = (await uploadRes.json()) as Record<string, unknown>;
-  const docId = ((uploadBody.data as Record<string, unknown>).document as Record<string, unknown>).id;
+    const fullPath = path.join(UPLOAD_TEST_DIR, `${tenant.id}/delete-me.pdf`);
+    await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+    await fsp.writeFile(fullPath, pdfContent);
 
-  const softDeleteRes = await fetch(`http://127.0.0.1:${port}/documents/${docId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  assert.equal(softDeleteRes.status, 200);
+    const softDeleteRes = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(softDeleteRes.status, 200);
 
-  const permDeleteRes = await fetch(`http://127.0.0.1:${port}/documents/${docId}/permanent`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  assert.equal(permDeleteRes.status, 200);
-  const permBody = (await permDeleteRes.json()) as Record<string, unknown>;
-  assert.equal(permBody.success, true);
+    const permDeleteRes = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/permanent`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(permDeleteRes.status, 200);
+    const permBody = (await permDeleteRes.json()) as Record<string, unknown>;
+    assert.equal(permBody.success, true);
 
-  const getRes = await fetch(`http://127.0.0.1:${port}/documents/${docId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  assert.equal(getRes.status, 404);
+    const getRes = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(getRes.status, 404);
 
-  const versions = await DocumentVersionModel.find({ documentId: new Types.ObjectId(docId as string) }).exec();
-  assert.equal(versions.length, 0);
-
-  await closeServer(server);
+    const versions = await DocumentVersionModel.find({ documentId: new Types.ObjectId(doc.id as string) }).exec();
+    assert.equal(versions.length, 0);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("DELETE /documents/:id/permanent — returns 400 if not soft-deleted first", async () => {
   const server = await createServer();
-  const port = (server.address() as { port: number }).port;
-  await createActiveTenantAdmin();
-  const accessToken = await login(port);
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const accessToken = await login(port);
 
-  const pdfContent = Buffer.from("%PDF-1.4 not deleted", "utf-8");
-  const { buffer, boundary } = buildMultipartBody("not-deleted.pdf", pdfContent, { title: "Not Deleted" });
+    const pdfContent = Buffer.from("%PDF-1.4 not deleted", "utf-8");
+    const allActions = ["discover", "read", "download", "update", "delete", "archive", "restore", "replace"];
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id, user.id, "restricted", allActions, {
+        fileName: "not-deleted.pdf",
+        originalFileName: "not-deleted.pdf",
+        fileSize: pdfContent.length,
+        storageKey: `${tenant.id}/not-deleted.pdf`,
+        checksum: "not-deleted-cs",
+        metadata: { title: "Not Deleted", description: null, tags: [] },
+      },
+    );
 
-  const uploadRes = await fetch(`http://127.0.0.1:${port}/documents`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
-    body: buffer,
-  });
-  assert.equal(uploadRes.status, 201);
-  const uploadBody = (await uploadRes.json()) as Record<string, unknown>;
-  const docId = ((uploadBody.data as Record<string, unknown>).document as Record<string, unknown>).id;
+    const fullPath = path.join(UPLOAD_TEST_DIR, `${tenant.id}/not-deleted.pdf`);
+    await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+    await fsp.writeFile(fullPath, pdfContent);
 
-  const permDeleteRes = await fetch(`http://127.0.0.1:${port}/documents/${docId}/permanent`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  assert.equal(permDeleteRes.status, 400);
-
-  await closeServer(server);
+    const permDeleteRes = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/permanent`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(permDeleteRes.status, 400);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("POST /documents — returns duplicate warning when same checksum exists", async () => {

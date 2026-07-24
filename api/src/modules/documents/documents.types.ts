@@ -1,4 +1,4 @@
-export type DocumentClassification = "public" | "internal" | "confidential" | "restricted";
+export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 
 export interface DocumentPublicView {
   id: string;

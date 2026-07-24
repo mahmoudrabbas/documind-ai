@@ -52,6 +52,7 @@ import { createRerankerService } from "./modules/reranker/reranker.service.js";
 import { registerRetrievalService } from "./modules/agents/agents.service.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
+import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -100,6 +101,7 @@ const corsOptions: CorsOptions = {
     "X-Request-ID",
     "X-Correlation-ID",
     "X-Confirm-Logout-All",
+    "Idempotency-Key",
   ],
   exposedHeaders: ["X-Request-ID"],
   credentials: true,
@@ -168,6 +170,7 @@ app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
 app.use("/intent-query", intentQueryRoutes);
+app.use("/document-taxonomy", documentTaxonomyRoutes);
 
 const filterCompiler: FilterCompiler = {
   compileAccessFilters,

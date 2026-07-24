@@ -8,3 +8,4 @@ export * from "./inMemoryQueue.js";
 export * from "./bullmqQueue.js";
 export * from "./extractionContract.js";
 export * from "./ocrContract.js";
+export * from "./documentPolicyPropagation.js";

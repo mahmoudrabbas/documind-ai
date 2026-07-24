@@ -1,10 +1,12 @@
 import test, { before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
 import DocumentModel from "../../../db/models/document.model.js";
+import DocumentClassificationModel from "../../../db/models/documentClassification.model.js";
+import DocumentAccessPolicyModel from "../../../db/models/documentAccessPolicy.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 
@@ -13,6 +15,7 @@ import { FakeConversationContextAdapter } from "../adapters/conversationContext.
 import { FakeModelAdapter } from "../../../providers/llm/fakeAdapters.js";
 import type { ModelAdapter } from "../../agents/agents.types.js";
 import type { OperationAuthorizationContext } from "../../permissions/permissions.operation.js";
+import type { DocumentAccessAction } from "../../document-access/documentAccess.actions.js";
 
 let mongoServer: MongoMemoryReplSet | null = null;
 const TEST_PASSWORD = "StrongPass123!";
@@ -46,10 +49,120 @@ let companyAdminContext: OperationAuthorizationContext;
 let fakeConvoAdapter: FakeConversationContextAdapter;
 let service: IntentQueryService;
 
+async function createTestDocWithPolicy(
+  forTenantId: string,
+  userId: string,
+  fileName: string,
+  actions: DocumentAccessAction[],
+) {
+  const normalizedName = "internal";
+  let classificationDoc = await DocumentClassificationModel.findOne({
+    tenantId: forTenantId,
+    normalizedName,
+    status: "active",
+  });
+  if (!classificationDoc) {
+    try {
+      classificationDoc = await DocumentClassificationModel.create({
+        tenantId: forTenantId,
+        name: "Internal",
+        normalizedName,
+        level: "confidential" as const,
+        description: "Internal classification",
+        status: "active" as const,
+        version: 1,
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    } catch (error: unknown) {
+      if (error && typeof error === "object" && "code" in error && (error as { code?: number }).code === 11000) {
+        classificationDoc = await DocumentClassificationModel.findOne({
+          tenantId: forTenantId,
+          normalizedName,
+          status: "active",
+        });
+        if (!classificationDoc) throw error;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const policyId = new Types.ObjectId();
+  const now = new Date();
+
+  const doc = await DocumentModel.create({
+    tenantId: forTenantId,
+    fileName,
+    originalFileName: fileName,
+    fileSize: 1024,
+    mimeType: "application/pdf",
+    storageKey: `${forTenantId}/${fileName}`,
+    checksum: `cs-${fileName}`,
+    status: "uploaded" as const,
+    metadata: { title: fileName, description: null, tags: [] },
+    classification: "internal" as const,
+    version: 1,
+    versionLabel: "v1",
+    uploadedBy: userId,
+    owner: userId,
+    classificationId: classificationDoc._id,
+    activePolicyId: policyId,
+    activePolicyVersion: 1,
+    policyChangedAt: now,
+    isArchived: false,
+    archivedAt: null,
+    archivedBy: null,
+    deletedAt: null,
+    deletedBy: null,
+    quarantineStatus: "none" as const,
+    scanResult: null,
+    category: null,
+    department: null,
+    effectiveDate: null,
+    expiryDate: null,
+  });
+
+  await DocumentAccessPolicyModel.create({
+    tenantId: forTenantId,
+    documentId: doc._id,
+    policyId,
+    policyVersion: 1,
+    contractVersion: 1,
+    status: "active",
+    effectiveFrom: now,
+    effectiveUntil: null,
+    inherits: null,
+    rules: [{
+      ruleId: "test-owner-rule",
+      effect: "allow",
+      subject: { type: "owner" },
+      actions,
+    }],
+    provenance: {
+      createdBy: userId,
+      createdAt: now,
+      reason: "Test fixture",
+    },
+    indexMetadata: {
+      policyId,
+      policyVersion: 1,
+      classificationId: classificationDoc._id,
+      categoryId: null,
+      departmentId: null,
+    },
+    createdAt: now,
+  });
+
+  return doc;
+}
+
 beforeEach(async () => {
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
   await DocumentModel.deleteMany({});
+  await DocumentClassificationModel.deleteMany({});
+  await DocumentAccessPolicyModel.deleteMany({});
 
   const tenant = await TenantModel.create({
     name: "Intent Corp",
@@ -153,17 +266,7 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
   });
 
   await t.test("should restrict document reference to tenant scope", async () => {
-    // Create document in current tenant
-    const myDoc = await DocumentModel.create({
-      tenantId: new mongoose.Types.ObjectId(tenantId),
-      fileName: "policy.pdf",
-      originalFileName: "policy.pdf",
-      fileSize: 1024,
-      mimeType: "application/pdf",
-      storageKey: "policy-key",
-      checksum: "checksum1",
-      uploadedBy: new mongoose.Types.ObjectId(actorId),
-    });
+    const myDoc = await createTestDocWithPolicy(tenantId, actorId, "policy.pdf", ["discover", "read", "download", "use_in_ai"]);
 
     const plan = await service.analyzeQuery(
       {
@@ -177,17 +280,26 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
   });
 
   await t.test("should throw error if input document reference belongs to another tenant", async () => {
-    const otherTenantId = new mongoose.Types.ObjectId().toString();
-    const otherDoc = await DocumentModel.create({
-      tenantId: new mongoose.Types.ObjectId(otherTenantId),
-      fileName: "other-policy.pdf",
-      originalFileName: "other-policy.pdf",
-      fileSize: 1024,
-      mimeType: "application/pdf",
-      storageKey: "other-policy-key",
-      checksum: "checksum2",
-      uploadedBy: new mongoose.Types.ObjectId(actorId),
+    const otherTenant = await TenantModel.create({
+      name: "Other Corp",
+      slug: "other-corp",
+      status: "active",
+      plan: "free",
     });
+    const otherUser = await UserModel.create({
+      tenantId: otherTenant.id,
+      name: "Other Admin",
+      email: "admin@other.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "COMPANY_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    const otherDoc = await createTestDocWithPolicy(
+      otherTenant.id, otherUser.id, "other-policy.pdf",
+      ["discover", "read", "download", "use_in_ai"],
+    );
 
     await assert.rejects(
       service.analyzeQuery(

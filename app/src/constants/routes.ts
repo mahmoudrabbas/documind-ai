@@ -64,6 +64,13 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
     requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
   },
   {
+    label: "Document Taxonomy",
+    href: "/dashboard/settings/document-taxonomy",
+    icon: "category",
+    context: "tenant",
+    requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
+  },
+  {
     label: "Audit Log",
     href: "/dashboard/audit",
     icon: "policy",

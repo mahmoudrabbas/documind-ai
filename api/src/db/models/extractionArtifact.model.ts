@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { derivedAccessMetadataSchema, type StoredDerivedAccessMetadataV1 } from "./derivedAccessMetadata.schema.js";
 
 export interface ExtractionBlock {
   type: "paragraph" | "heading" | "table" | "list";
@@ -36,6 +37,7 @@ export interface ExtractionArtifactDocument extends mongoose.Document {
   durationMs: number | null;
   createdAt: Date;
   updatedAt: Date;
+  accessMetadata?: StoredDerivedAccessMetadataV1;
 }
 
 const blockSchema = new Schema<ExtractionBlock>(
@@ -122,6 +124,7 @@ const extractionArtifactSchema = new Schema<ExtractionArtifactDocument>(
     },
     artifactChecksum: { type: String, default: null },
     durationMs: { type: Number, default: null },
+    accessMetadata: { type: derivedAccessMetadataSchema, default: undefined },
   },
   {
     timestamps: true,

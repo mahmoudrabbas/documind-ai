@@ -42,6 +42,7 @@ import {
   type OperationAuthorizationContext,
   type ResolvedOperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
+import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 
 const metadataAgent = new FakeMetadataAgent();
 const versionConflictAgent = new FakeVersionConflictAgent();
@@ -62,11 +63,33 @@ async function authorizeProcessingOperation(
   return actor;
 }
 
+async function authorizeDocumentPolicy(
+  tenantId: string,
+  documentId: string,
+  context: OperationAuthorizationContext,
+  action: "read" | "update" | "reprocess",
+): Promise<void> {
+  await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+    { tenantId, actorId: context.actorId }, documentId, action,
+  );
+}
+
+async function canReadDocuments(tenantId: string, actorId: string, documentIds: readonly string[]): Promise<boolean> {
+  try {
+    await getDocumentAccessAuthorizationService().authorizeDocumentsAction({ tenantId, actorId }, documentIds, "read");
+    return true;
+  } catch (error) {
+    if (error instanceof AppError && error.statusCode === 404) return false;
+    throw error;
+  }
+}
+
 export async function triggerOcrProcessing(
   tenantId: string,
   input: TriggerOcrInput,
   inputContext: OperationAuthorizationContext,
 ): Promise<{ jobId: string; idempotencyKey: string }> {
+  await authorizeDocumentPolicy(tenantId, input.documentId, inputContext, "reprocess");
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -179,6 +202,7 @@ export async function getOcrPageResults(
   documentVersion: number,
   inputContext: OperationAuthorizationContext,
 ): Promise<OcrPageResultView[]> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "read");
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -213,6 +237,7 @@ export async function getDocumentQuality(
   documentVersion: number,
   inputContext: OperationAuthorizationContext,
 ): Promise<DocumentQualityView | null> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "read");
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -256,6 +281,7 @@ export async function assessDocumentQuality(
   documentVersion: number,
   inputContext: OperationAuthorizationContext,
 ): Promise<DocumentQualityView> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "update");
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -327,6 +353,7 @@ export async function reviewDocumentQuality(
   input: ReviewQualityInput,
   inputContext: OperationAuthorizationContext,
 ): Promise<DocumentQualityView> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "update");
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -393,6 +420,7 @@ export async function retryOcrPages(
   input: RetryOcrInput,
   inputContext: OperationAuthorizationContext,
 ): Promise<{ jobId: string; idempotencyKey: string }> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "reprocess");
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -486,6 +514,7 @@ export async function triggerMetadataAnalysis(
   input: TriggerMetadataAnalysisInput,
   inputContext: OperationAuthorizationContext,
 ): Promise<{ candidates: MetadataCandidateView[]; summary: string }> {
+  await authorizeDocumentPolicy(tenantId, input.documentId, inputContext, "reprocess");
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -614,6 +643,7 @@ export async function getMetadataCandidates(
   documentId: string,
   inputContext: OperationAuthorizationContext,
 ): Promise<MetadataCandidateView[]> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "read");
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -665,6 +695,7 @@ export async function reviewMetadataCandidate(
   if (!candidate) {
     throw new AppError(404, REVIEW_NOT_FOUND, "Metadata candidate not found");
   }
+  await authorizeDocumentPolicy(tenantId, candidate.documentId.toString(), inputContext, "update");
 
   candidate.status = input.decision;
   candidate.reviewedBy = new Types.ObjectId(actor.actorId);
@@ -723,6 +754,7 @@ export async function triggerVersionConflictAnalysis(
   conflicts: ConflictFindingView[];
   summary: string;
 }> {
+  await authorizeDocumentPolicy(tenantId, input.documentId, inputContext, "reprocess");
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -965,6 +997,7 @@ export async function getDocumentRelationships(
   documentId: string,
   inputContext: OperationAuthorizationContext,
 ): Promise<DocumentRelationshipView[]> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "read");
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -978,6 +1011,10 @@ export async function getDocumentRelationships(
       { targetDocumentId: new Types.ObjectId(documentId) },
     ],
   }).sort({ confidence: -1 });
+  await getDocumentAccessAuthorizationService().authorizeDocumentsAction(
+    { tenantId, actorId: inputContext.actorId },
+    relationships.flatMap((item) => [item.sourceDocumentId.toString(), item.targetDocumentId.toString()]), "read",
+  );
 
   return relationships.map((r) => ({
     id: r._id?.toString() || "",
@@ -1015,6 +1052,10 @@ export async function approveDocumentRelationship(
   if (!relationship) {
     throw new AppError(404, REVIEW_NOT_FOUND, "Document relationship not found");
   }
+  await getDocumentAccessAuthorizationService().authorizeDocumentsAction(
+    { tenantId, actorId: inputContext.actorId },
+    [relationship.sourceDocumentId.toString(), relationship.targetDocumentId.toString()], "update",
+  );
 
   relationship.status = "active";
   relationship.approvedBy = new Types.ObjectId(actor.actorId);
@@ -1075,6 +1116,10 @@ export async function rejectDocumentRelationship(
   if (!relationship) {
     throw new AppError(404, REVIEW_NOT_FOUND, "Document relationship not found");
   }
+  await getDocumentAccessAuthorizationService().authorizeDocumentsAction(
+    { tenantId, actorId: inputContext.actorId },
+    [relationship.sourceDocumentId.toString(), relationship.targetDocumentId.toString()], "update",
+  );
 
   relationship.status = "rejected";
   relationship.rejectionReason = reason;
@@ -1119,6 +1164,7 @@ export async function getConflictFindings(
   documentId: string,
   inputContext: OperationAuthorizationContext,
 ): Promise<ConflictFindingView[]> {
+  await authorizeDocumentPolicy(tenantId, documentId, inputContext, "read");
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
@@ -1132,6 +1178,10 @@ export async function getConflictFindings(
       { targetDocumentId: new Types.ObjectId(documentId) },
     ],
   }).sort({ severity: 1, confidence: -1 });
+  await getDocumentAccessAuthorizationService().authorizeDocumentsAction(
+    { tenantId, actorId: inputContext.actorId },
+    conflicts.flatMap((item) => [item.sourceDocumentId.toString(), item.targetDocumentId.toString()]), "read",
+  );
 
   return conflicts.map((c) => ({
     id: c._id?.toString() || "",
@@ -1173,6 +1223,10 @@ export async function resolveConflictFinding(
   if (!conflict) {
     throw new AppError(404, REVIEW_NOT_FOUND, "Conflict finding not found");
   }
+  await getDocumentAccessAuthorizationService().authorizeDocumentsAction(
+    { tenantId, actorId: inputContext.actorId },
+    [conflict.sourceDocumentId.toString(), conflict.targetDocumentId.toString()], "update",
+  );
 
   conflict.status = "resolved";
   conflict.resolution = input.resolution;
@@ -1239,6 +1293,10 @@ export async function dismissConflictFinding(
   if (!conflict) {
     throw new AppError(404, REVIEW_NOT_FOUND, "Conflict finding not found");
   }
+  await getDocumentAccessAuthorizationService().authorizeDocumentsAction(
+    { tenantId, actorId: inputContext.actorId },
+    [conflict.sourceDocumentId.toString(), conflict.targetDocumentId.toString()], "update",
+  );
 
   conflict.status = "dismissed";
   conflict.resolutionNotes = reason;
@@ -1321,8 +1379,15 @@ export async function getPendingReviewItems(
     .sort({ severity: 1, confidence: -1 })
     .limit(50);
 
+  const visibleCandidates = [];
+  for (const item of pendingCandidates) if (await canReadDocuments(tenantId, inputContext.actorId, [item.documentId.toString()])) visibleCandidates.push(item);
+  const visibleRelationships = [];
+  for (const item of pendingRelationships) if (await canReadDocuments(tenantId, inputContext.actorId, [item.sourceDocumentId.toString(), item.targetDocumentId.toString()])) visibleRelationships.push(item);
+  const visibleConflicts = [];
+  for (const item of pendingConflicts) if (await canReadDocuments(tenantId, inputContext.actorId, [item.sourceDocumentId.toString(), item.targetDocumentId.toString()])) visibleConflicts.push(item);
+
   return {
-    metadataCandidates: pendingCandidates.map((c) => ({
+    metadataCandidates: visibleCandidates.map((c) => ({
       id: c._id?.toString() || "",
       documentId: c.documentId.toString(),
       tenantId: c.tenantId.toString(),
@@ -1340,7 +1405,7 @@ export async function getPendingReviewItems(
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     })),
-    relationships: pendingRelationships.map((r) => ({
+    relationships: visibleRelationships.map((r) => ({
       id: r._id?.toString() || "",
       sourceDocumentId: r.sourceDocumentId.toString(),
       targetDocumentId: r.targetDocumentId.toString(),
@@ -1355,7 +1420,7 @@ export async function getPendingReviewItems(
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     })),
-    conflicts: pendingConflicts.map((c) => ({
+    conflicts: visibleConflicts.map((c) => ({
       id: c._id?.toString() || "",
       sourceDocumentId: c.sourceDocumentId.toString(),
       targetDocumentId: c.targetDocumentId.toString(),

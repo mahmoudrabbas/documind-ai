@@ -1,4 +1,4 @@
-export type DocumentClassification = "public" | "internal" | "confidential" | "restricted";
+export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 
 export interface DocumentView {
   id: string;
@@ -106,4 +106,3 @@ export interface DocumentExtractionStatusResponse {
   createdAt: string | null;
   updatedAt: string | null;
 }
-

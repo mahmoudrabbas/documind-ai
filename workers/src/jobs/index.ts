@@ -8,6 +8,7 @@ import { createDocumentOcrJobHandler } from "./documentOcrJob.js";
 import { dataRetentionJobHandler } from "./dataRetentionJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
 import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
+import { createDocumentPolicyPropagationJobHandler } from "./documentPolicyPropagationJob.js";
 
 /**
  * Assembles the worker's handler registry.
@@ -27,6 +28,7 @@ export function buildHandlerRegistry(): JobHandlerRegistry {
   registry.register(createDocumentExtractionJobHandler());
   registry.register(createDocumentOcrJobHandler());
   registry.register(dataRetentionJobHandler);
+  registry.register(createDocumentPolicyPropagationJobHandler());
   
   return registry;
 }
