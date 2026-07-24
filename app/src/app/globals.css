@@ -73,6 +73,20 @@
   --on-background: #191c1e;
   --surface-variant: #e0e3e6;
 
+  /* ---- Semantic action tokens ------------------------------------------ */
+  --warning: #b45309;
+  --on-warning: #ffffff;
+  --warning-container: #fef3c7;
+  --on-warning-container: #92400e;
+  --success: #047857;
+  --on-success: #ffffff;
+  --success-container: #d1fae5;
+  --on-success-container: #065f46;
+  --info: #1d4ed8;
+  --on-info: #ffffff;
+  --info-container: #dbeafe;
+  --on-info-container: #1e40af;
+
   /* ---- Elevation (DESIGN.md > Elevation & Depth) ---------------------- */
   --shadow-color-card: 15 42 61;
 
@@ -146,6 +160,19 @@
   --color-background: var(--background);
   --color-on-background: var(--on-background);
   --color-surface-variant: var(--surface-variant);
+
+  --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
+  --color-warning-container: var(--warning-container);
+  --color-on-warning-container: var(--on-warning-container);
+  --color-success: var(--success);
+  --color-on-success: var(--on-success);
+  --color-success-container: var(--success-container);
+  --color-on-success-container: var(--on-success-container);
+  --color-info: var(--info);
+  --color-on-info: var(--on-info);
+  --color-info-container: var(--info-container);
+  --color-on-info-container: var(--on-info-container);
 
   /* ---- Font family ------------------------------------------------------ */
   --font-sans:

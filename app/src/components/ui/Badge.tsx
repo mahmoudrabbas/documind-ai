@@ -11,12 +11,19 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
    * unrecognized renders as a neutral pill instead of throwing.
    */
   status?: BadgeStatus | string;
+  /** Optional leading icon (Material Symbol name). */
+  icon?: string;
 }
 
 /** Status pill — see DESIGN.md > Components > "Tables & Data > Status Badges". */
-export function Badge({ status = "neutral", className, children, ...props }: BadgeProps) {
+export function Badge({ status = "neutral", icon, className, children, ...props }: BadgeProps) {
   return (
     <span className={cn(getBadgeClasses(status), className)} {...props}>
+      {icon ? (
+        <span className="material-symbols-outlined me-0.5 align-middle text-[14px]" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
       {children ?? status}
     </span>
   );

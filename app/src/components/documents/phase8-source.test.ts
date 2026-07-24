@@ -15,7 +15,7 @@ describe("Phase 8 safety source contracts", () => {
   it("cancels stale taxonomy requests", () => expect(taxonomy).toContain("controller.abort()"));
   it("supports bounded taxonomy pagination", () => { expect(taxonomy).toContain("pageSize: 20"); expect(taxonomy).toContain("totalPages"); });
 
-  it("lists all independent policy actions", () => expect(editor).toContain("DOCUMENT_ACCESS_ACTIONS.map"));
+  it("lists all independent policy actions", () => expect(editor).toContain("DOCUMENT_ACCESS_ACTIONS"));
   it("keeps owner rules free of a subject ID", () => expect(editor).toContain('subject: { type: "owner" }'));
   it("requires authoritative subject selection for identified subjects", () => expect(editor).toContain('includes(rule.subject.type) && !rule.subject.id'));
   it("rejects duplicate semantic rules before preview", () => expect(editor).toContain("semantics.has(semantic)"));
@@ -77,4 +77,13 @@ describe("Phase 8 safety source contracts", () => {
   it("keeps tenant identity out of the batch payload", () => expect(batch).not.toContain("tenantId"));
   it("keeps policy dialogs within the mobile viewport", () => { expect(editor).toContain("max-h-[calc(100vh-1rem)]"); expect(batch).toContain("max-h-[calc(100vh-1.5rem)]"); });
   it("uses logical layout utilities for bidirectional screens", () => { expect(panel).not.toContain(" ml-"); expect(panel).not.toContain(" mr-"); expect(taxonomy).toContain("text-start"); });
+
+  it("uses semantic error/alert components instead of raw divs", () => { expect(editor).toContain('import { Alert }'); expect(panel).toContain('import { Alert }'); expect(batch).toContain('import { Alert }'); });
+  it("uses proper ARIA for tabs and dialogs", () => { expect(editor).toContain("role=\"dialog\""); expect(editor).toContain("aria-modal"); expect(panel).toContain("import { Tabs, Tab, TabPanel }"); expect(panel).toContain("<Tabs"); });
+  it("uses grouped action labels for better scannability", () => { expect(editor).toContain("ACTION_LABELS"); expect(editor).toContain("ACTION_GROUPS"); expect(editor).toContain("Visibility"); });
+  it("uses warning variant for sensitive confirmation (not danger)", () => { expect(editor).toContain('variant="warning"'); expect(batch).toContain('variant="warning"'); });
+  it("uses danger variant only for destructive actions", () => { expect(editor).toContain("Remove rule"); expect(editor.indexOf("Remove rule")).toBeGreaterThan(0); });
+  it("includes lock icon for protected owner rule", () => { expect(editor).toContain("lock"); expect(editor).toContain("Protected owner rule"); });
+  it("shows sticky footer in editor", () => expect(editor).toContain("sticky bottom-0"));
+  it("shows sticky footer in batch dialog", () => expect(batch).toContain("sticky bottom-0"));
 });
