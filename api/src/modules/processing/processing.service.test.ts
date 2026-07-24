@@ -1,14 +1,16 @@
 import test, { after, afterEach, before, beforeEach } from "node:test";
 import assert from "node:assert";
-import mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import DocumentModel from "../../db/models/document.model.js";
+import DocumentModel, { type DocumentClassification } from "../../db/models/document.model.js";
 import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import OcrPageResultModel from "../../db/models/ocrPageResult.model.js";
 import DocumentQualityModel from "../../db/models/documentQuality.model.js";
 import OcrUsageRecordModel from "../../db/models/ocrUsageRecord.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
+import DocumentAccessPolicyModel from "../../db/models/documentAccessPolicy.model.js";
 import {
   getOcrPageResults,
   getDocumentQuality,
@@ -19,6 +21,7 @@ import {
 } from "./processing.service.js";
 import { closeApiJobDispatcher } from "../jobs/jobDispatcher.js";
 import { disconnectRedis } from "../../db/redis.js";
+import type { DocumentAccessAction } from "../document-access/documentAccess.actions.js";
 
 let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
@@ -57,6 +60,8 @@ afterEach(async () => {
   await DocumentVersionModel.deleteMany({});
   await UserModel.deleteMany({});
   await TenantModel.deleteMany({});
+  await DocumentClassificationModel.deleteMany({});
+  await DocumentAccessPolicyModel.deleteMany({});
 });
 
 beforeEach(async () => {
@@ -90,24 +95,80 @@ beforeEach(async () => {
   );
 });
 
-async function createTestDocument(version = 1) {
+async function createTestDocument(version = 1, actions: DocumentAccessAction[] = ["read", "update", "reprocess"]) {
   const actorId = new mongoose.Types.ObjectId(ACTOR_ID);
-  const tenantId = new mongoose.Types.ObjectId(TENANT_ID);
+  const tenantIdObj = new mongoose.Types.ObjectId(TENANT_ID);
+  const normalizedName = "internal";
+
+  let classificationDoc = await DocumentClassificationModel.findOne({
+    tenantId: TENANT_ID,
+    normalizedName,
+    status: "active",
+  });
+  if (!classificationDoc) {
+    try {
+      classificationDoc = await DocumentClassificationModel.create({
+        tenantId: TENANT_ID,
+        name: "Internal",
+        normalizedName,
+        level: "confidential" as const,
+        description: "Internal classification",
+        status: "active" as const,
+        version: 1,
+        createdBy: ACTOR_ID,
+        updatedBy: ACTOR_ID,
+      });
+    } catch (error: unknown) {
+      if (error && typeof error === "object" && "code" in error && (error as { code?: number }).code === 11000) {
+        classificationDoc = await DocumentClassificationModel.findOne({
+          tenantId: TENANT_ID,
+          normalizedName,
+          status: "active",
+        });
+        if (!classificationDoc) throw error;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const policyId = new Types.ObjectId();
+  const now = new Date();
 
   const doc = await DocumentModel.create({
-    tenantId,
+    tenantId: tenantIdObj,
     fileName: "test-document.pdf",
     originalFileName: "test-document.pdf",
     fileSize: 1024,
     mimeType: "application/pdf",
     storageKey: "test-key",
     checksum: "test-checksum",
+    status: "uploaded" as const,
+    metadata: { title: "Test Document", description: null, tags: [] },
+    classification: "internal" as DocumentClassification,
     version,
+    versionLabel: `v${version}`,
     uploadedBy: actorId,
+    owner: actorId,
+    classificationId: classificationDoc._id,
+    activePolicyId: policyId,
+    activePolicyVersion: 1,
+    policyChangedAt: now,
+    isArchived: false,
+    archivedAt: null,
+    archivedBy: null,
+    deletedAt: null,
+    deletedBy: null,
+    quarantineStatus: "none" as const,
+    scanResult: null,
+    category: null,
+    department: null,
+    effectiveDate: null,
+    expiryDate: null,
   });
 
   await DocumentVersionModel.create({
-    tenantId,
+    tenantId: tenantIdObj,
     documentId: doc._id,
     version,
     versionLabel: `v${version}`,
@@ -118,6 +179,37 @@ async function createTestDocument(version = 1) {
     storageKey: "test-key-v" + version,
     uploadedBy: actorId,
     uploadReason: "initial",
+  });
+
+  await DocumentAccessPolicyModel.create({
+    tenantId: TENANT_ID,
+    documentId: doc._id,
+    policyId,
+    policyVersion: 1,
+    contractVersion: 1,
+    status: "active",
+    effectiveFrom: now,
+    effectiveUntil: null,
+    inherits: null,
+    rules: [{
+      ruleId: "test-owner-rule",
+      effect: "allow",
+      subject: { type: "owner" },
+      actions,
+    }],
+    provenance: {
+      createdBy: ACTOR_ID,
+      createdAt: now,
+      reason: "Test fixture",
+    },
+    indexMetadata: {
+      policyId,
+      policyVersion: 1,
+      classificationId: classificationDoc._id,
+      categoryId: null,
+      departmentId: null,
+    },
+    createdAt: now,
   });
 
   return doc;
@@ -354,5 +446,153 @@ test("processing.service", async (t) => {
   await t.test("getOcrUsageSummary returns zero when no usage", async () => {
     const summary = await getOcrUsageSummary(TENANT_ID, TEST_CONTEXT);
     assert.equal(summary.pagesUsed, 0);
+  });
+
+  await t.test("getOcrPageResults returns hidden DOCUMENT_NOT_FOUND for non-owner actor", async () => {
+    const doc = await createTestDocument();
+    const docId = doc._id.toString();
+    await seedOcrPages(docId, [
+      { pageNumber: 1, text: "Page content", confidence: 0.95 },
+    ]);
+
+    const nonOwnerContext = {
+      tenantId: TENANT_ID,
+      actorId: new mongoose.Types.ObjectId().toString(),
+      actorEmail: "stranger@example.com",
+      actorRole: "COMPANY_ADMIN" as const,
+    };
+    await UserModel.create({
+      _id: new mongoose.Types.ObjectId(nonOwnerContext.actorId),
+      tenantId: new mongoose.Types.ObjectId(TENANT_ID),
+      name: "Stranger",
+      email: nonOwnerContext.actorEmail,
+      passwordHash: "test-hash",
+      role: nonOwnerContext.actorRole,
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    await assert.rejects(
+      () => getOcrPageResults(TENANT_ID, docId, 1, nonOwnerContext),
+      (err: Error & { statusCode?: number; code?: string }) => {
+        assert.equal(err.statusCode, 404);
+        assert.equal(err.code, "DOCUMENT_NOT_FOUND");
+        return true;
+      },
+    );
+  });
+
+  await t.test("getOcrPageResults returns hidden DOCUMENT_NOT_FOUND for cross-tenant actor", async () => {
+    const doc = await createTestDocument();
+    const docId = doc._id.toString();
+    await seedOcrPages(docId, [
+      { pageNumber: 1, text: "Page content", confidence: 0.95 },
+    ]);
+
+    const crossTenantId = new mongoose.Types.ObjectId().toString();
+    const crossTenantContext = {
+      tenantId: crossTenantId,
+      actorId: new mongoose.Types.ObjectId().toString(),
+      actorEmail: "other@example.com",
+      actorRole: "COMPANY_ADMIN" as const,
+    };
+    await TenantModel.create({
+      _id: new mongoose.Types.ObjectId(crossTenantId),
+      name: "Other Tenant",
+      slug: "other-tenant",
+      status: "active",
+      plan: "free",
+    });
+    await UserModel.create({
+      _id: new mongoose.Types.ObjectId(crossTenantContext.actorId),
+      tenantId: new mongoose.Types.ObjectId(crossTenantId),
+      name: "Other User",
+      email: crossTenantContext.actorEmail,
+      passwordHash: "test-hash",
+      role: crossTenantContext.actorRole,
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    await assert.rejects(
+      () => getOcrPageResults(TENANT_ID, docId, 1, crossTenantContext),
+      (err: Error & { statusCode?: number; code?: string }) => {
+        assert.equal(err.statusCode, 404);
+        assert.equal(err.code, "DOCUMENT_NOT_FOUND");
+        return true;
+      },
+    );
+  });
+
+  await t.test("assessDocumentQuality returns hidden DOCUMENT_NOT_FOUND for non-owner actor", async () => {
+    const doc = await createTestDocument();
+    const docId = doc._id.toString();
+    await seedOcrPages(docId, [
+      { pageNumber: 1, text: "Good quality text", confidence: 0.95 },
+    ]);
+
+    const nonOwnerContext = {
+      tenantId: TENANT_ID,
+      actorId: new mongoose.Types.ObjectId().toString(),
+      actorEmail: "stranger@example.com",
+      actorRole: "COMPANY_ADMIN" as const,
+    };
+    await UserModel.create({
+      _id: new mongoose.Types.ObjectId(nonOwnerContext.actorId),
+      tenantId: new mongoose.Types.ObjectId(TENANT_ID),
+      name: "Stranger",
+      email: nonOwnerContext.actorEmail,
+      passwordHash: "test-hash",
+      role: nonOwnerContext.actorRole,
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    await assert.rejects(
+      () => assessDocumentQuality(TENANT_ID, docId, 1, nonOwnerContext),
+      (err: Error & { statusCode?: number; code?: string }) => {
+        assert.equal(err.statusCode, 404);
+        assert.equal(err.code, "DOCUMENT_NOT_FOUND");
+        return true;
+      },
+    );
+  });
+
+  await t.test("retryOcrPages returns hidden DOCUMENT_NOT_FOUND for non-owner actor", async () => {
+    const doc = await createTestDocument();
+    const docId = doc._id.toString();
+    await seedOcrPages(docId, [
+      { pageNumber: 1, text: "", confidence: 0, status: "failed" },
+    ]);
+
+    const nonOwnerContext = {
+      tenantId: TENANT_ID,
+      actorId: new mongoose.Types.ObjectId().toString(),
+      actorEmail: "stranger@example.com",
+      actorRole: "COMPANY_ADMIN" as const,
+    };
+    await UserModel.create({
+      _id: new mongoose.Types.ObjectId(nonOwnerContext.actorId),
+      tenantId: new mongoose.Types.ObjectId(TENANT_ID),
+      name: "Stranger",
+      email: nonOwnerContext.actorEmail,
+      passwordHash: "test-hash",
+      role: nonOwnerContext.actorRole,
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    await assert.rejects(
+      () => retryOcrPages(TENANT_ID, docId, 1, {}, nonOwnerContext),
+      (err: Error & { statusCode?: number; code?: string }) => {
+        assert.equal(err.statusCode, 404);
+        assert.equal(err.code, "DOCUMENT_NOT_FOUND");
+        return true;
+      },
+    );
   });
 });

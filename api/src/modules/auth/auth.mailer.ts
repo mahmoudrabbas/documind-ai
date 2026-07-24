@@ -3,6 +3,21 @@ import { config } from "../../config/index.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { EMAIL_SENDING_FAILED } from "../../common/errors/errorCodes.js";
 
+function getRuntimeEnvironment(): string {
+  return process.env.NODE_ENV ?? config.NODE_ENV;
+}
+
+function isDevelopmentEmailDeliveryUnavailable(): boolean {
+  const hasRequiredSmtpConfiguration =
+    Boolean(config.SMTP_HOST?.trim()) &&
+    Boolean(config.SMTP_FROM?.trim());
+
+  return (
+    getRuntimeEnvironment() === "development" &&
+    (!config.SEND_EMAILS || !hasRequiredSmtpConfiguration)
+  );
+}
+
 interface SendVerificationEmailInput {
   to: string;
   adminName: string;
@@ -11,11 +26,17 @@ interface SendVerificationEmailInput {
   tenantId: string;
 }
 
-export async function sendVerificationEmail(input: SendVerificationEmailInput) {
-  if (process.env.NODE_ENV === "test") return;
+export async function sendVerificationEmail(
+  input: SendVerificationEmailInput,
+) {
+  if (getRuntimeEnvironment() === "test") {
+    return;
+  }
 
-  if (!config.SEND_EMAILS && config.NODE_ENV === "development") {
-    console.info("[email-verification] delivery disabled in development");
+  if (isDevelopmentEmailDeliveryUnavailable()) {
+    console.info(
+      "[email-verification] delivery unavailable in development",
+    );
     return;
   }
 
@@ -34,8 +55,17 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput) {
       idempotencyKey: `verify-${input.tenantId}-${input.to}-${Date.now()}`,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to send verification email";
-    throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send verification email", { details: message });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send verification email";
+
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "Unable to send verification email",
+      { details: message },
+    );
   }
 }
 
@@ -50,10 +80,14 @@ interface SendForgotPasswordEmailInput {
 export async function sendForgotPasswordEmail(
   input: SendForgotPasswordEmailInput,
 ) {
-  if (process.env.NODE_ENV === "test") return;
+  if (getRuntimeEnvironment() === "test") {
+    return;
+  }
 
-  if (!config.SEND_EMAILS && config.NODE_ENV === "development") {
-    console.info("[forgot-password] email delivery disabled");
+  if (isDevelopmentEmailDeliveryUnavailable()) {
+    console.info(
+      "[forgot-password] email delivery unavailable in development",
+    );
     return;
   }
 
@@ -72,8 +106,17 @@ export async function sendForgotPasswordEmail(
       idempotencyKey: `pwdreset-${input.tenantId}-${input.to}-${Date.now()}`,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to send password reset email";
-    throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send password reset email", { details: message });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send password reset email";
+
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "Unable to send password reset email",
+      { details: message },
+    );
   }
 }
 
@@ -90,10 +133,14 @@ export interface InvitationTemplateInput {
 export async function sendInvitationEmail(
   input: InvitationTemplateInput & { to: string },
 ) {
-  if (process.env.NODE_ENV === "test") return;
+  if (getRuntimeEnvironment() === "test") {
+    return;
+  }
 
-  if (!config.SEND_EMAILS && config.NODE_ENV === "development") {
-    console.info("[user-invitation] email delivery disabled");
+  if (isDevelopmentEmailDeliveryUnavailable()) {
+    console.info(
+      "[user-invitation] email delivery unavailable in development",
+    );
     return;
   }
 
@@ -114,7 +161,17 @@ export async function sendInvitationEmail(
       idempotencyKey: `invite-${input.tenantId}-${input.to}-${Date.now()}`,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to send invitation email";
-    throw new AppError(500, EMAIL_SENDING_FAILED, "Unable to send invitation email", { details: message });
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to send invitation email";
+
+    throw new AppError(
+      500,
+      EMAIL_SENDING_FAILED,
+      "Unable to send invitation email",
+      { details: message },
+    );
   }
 }
+

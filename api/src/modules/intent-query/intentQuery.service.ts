@@ -63,9 +63,16 @@ export class IntentQueryService {
 
     // 3. Document ownership validation for inputs
     if (input.referencedDocumentIds && input.referencedDocumentIds.length > 0) {
-      await authorizeExplicitIntentDocuments(
-        getDocumentAccessAuthorizationService(), { tenantId: tenantIdStr, actorId: actor.actorId }, input.referencedDocumentIds,
-      );
+      try {
+        await authorizeExplicitIntentDocuments(
+          getDocumentAccessAuthorizationService(), { tenantId: tenantIdStr, actorId: actor.actorId }, input.referencedDocumentIds,
+        );
+      } catch (error) {
+        if (error instanceof AppError) {
+          throw new AppError(403, "INTENT_QUERY_CONTEXT_UNAUTHORIZED", "Referenced document is not accessible in this tenant scope");
+        }
+        throw error;
+      }
     }
 
     // 4. Determine language and entities early to handle fallback/clarification deterministically if needed
