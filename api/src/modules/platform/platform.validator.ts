@@ -3,6 +3,64 @@ import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import type { SubscriptionStatus } from "../../db/models/subscription.model.js";
 
+// ─── Global Settings strict contract ────────────────────────────────────────
+
+const supportEmailField = z
+  .string()
+  .trim()
+  .max(254, "supportEmail must be at most 254 characters")
+  .refine(
+    (v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+    "supportEmail must be a valid email address or empty",
+  );
+
+const _globalSettingsSchema = z
+  .object({
+    supportEmail: supportEmailField,
+    maintenanceMode: z.boolean(),
+    allowRegistrations: z.boolean(),
+    defaultTrialDays: z
+      .number()
+      .int("defaultTrialDays must be an integer")
+      .min(0, "defaultTrialDays must be at least 0")
+      .max(3650, "defaultTrialDays must be at most 3650"),
+    dataRetentionDays: z
+      .number()
+      .int("dataRetentionDays must be an integer")
+      .min(1, "dataRetentionDays must be at least 1")
+      .max(36500, "dataRetentionDays must be at most 36500"),
+  })
+  .strict();
+
+export type GlobalSettings = z.infer<typeof _globalSettingsSchema>;
+
+const globalSettingsPatchFields = z.object({
+  supportEmail: supportEmailField.optional(),
+  maintenanceMode: z.boolean().optional(),
+  allowRegistrations: z.boolean().optional(),
+  defaultTrialDays: z
+    .number()
+    .int("defaultTrialDays must be an integer")
+    .min(0, "defaultTrialDays must be at least 0")
+    .max(3650, "defaultTrialDays must be at most 3650")
+    .optional(),
+  dataRetentionDays: z
+    .number()
+    .int("dataRetentionDays must be an integer")
+    .min(1, "dataRetentionDays must be at least 1")
+    .max(36500, "dataRetentionDays must be at most 36500")
+    .optional(),
+});
+
+export const globalSettingsPatchSchema = globalSettingsPatchFields
+  .strict()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "At least one setting must be provided",
+  );
+
+export type GlobalSettingsPatch = z.infer<typeof globalSettingsPatchSchema>;
+
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid identifier");
 const paging = {
   page: z.coerce.number().int().positive().default(1),

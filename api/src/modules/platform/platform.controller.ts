@@ -19,6 +19,7 @@ import {
   updateSubscription,
 } from "./platform.service.js";
 import {
+  globalSettingsPatchSchema,
   idSchema,
   listSchema,
   packageBodySchema,
@@ -134,7 +135,7 @@ export const settingsController = endpoint((req) => getSetting("global_settings"
 export const updateSettingsController = endpoint((req) =>
   updateSetting(
     "global_settings",
-    parse(settingsBodySchema, req.body),
+    parse(globalSettingsPatchSchema, req.body),
     auditContext(req),
   ),
 );

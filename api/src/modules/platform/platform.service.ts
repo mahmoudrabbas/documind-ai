@@ -7,7 +7,12 @@ import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import PlatformSettingModel from "../../db/models/platformSetting.model.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { invalidateGlobalSettingsCache } from "./global-settings.js";
+import {
+  getGlobalSettings,
+  invalidateGlobalSettingsCache,
+  normalizeGlobalSettings,
+  GLOBAL_SETTINGS_KEY,
+} from "./global-settings.js";
 import { isMongoConnected } from "../../db/connection.js";
 import { isRedisConnected } from "../../db/redis.js";
 import { getAuditWriter } from "../../common/observability/index.js";
@@ -545,6 +550,9 @@ export async function getSetting(
   context: OperationAuthorizationContext,
 ) {
   await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
+  if (key === GLOBAL_SETTINGS_KEY) {
+    return getGlobalSettings();
+  }
   return sanitizeSettingValue(
     (await PlatformSettingModel.findOne({ key }).lean().exec())?.value ?? {}
   );
@@ -559,9 +567,22 @@ export async function updateSetting(
     context,
     Permission.COMPANY_SETTINGS_UPDATE,
   );
+
+  let finalValue: Record<string, unknown> = value;
+
+  if (key === GLOBAL_SETTINGS_KEY) {
+    const currentRaw =
+      (await PlatformSettingModel.findOne({ key }).lean().exec())?.value ??
+      {};
+    const normalized = normalizeGlobalSettings(
+      currentRaw as Record<string, unknown>,
+    );
+    finalValue = { ...normalized, ...value };
+  }
+
   const setting = await PlatformSettingModel.findOneAndUpdate(
     { key },
-    { $set: { value, updatedBy: new Types.ObjectId(actor.actorId) } },
+    { $set: { value: finalValue, updatedBy: new Types.ObjectId(actor.actorId) } },
     { upsert: true, returnDocument: "after", runValidators: true },
   )
     .lean()
@@ -578,11 +599,11 @@ export async function updateSetting(
     actorKind: actor.actorKind,
   });
 
-  if (key === "global_settings") {
+  if (key === GLOBAL_SETTINGS_KEY) {
     invalidateGlobalSettingsCache();
   }
 
-  return sanitizeSettingValue(setting?.value ?? value);
+  return sanitizeSettingValue(setting?.value ?? finalValue);
 }
 
 function sanitizeSettingValue(value: unknown): unknown {

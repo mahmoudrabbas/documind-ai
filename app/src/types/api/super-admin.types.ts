@@ -34,6 +34,16 @@ export type SubscriptionStatus =
   | "expired"
   | "unpaid";
 
+export interface GlobalSettings {
+  supportEmail: string;
+  maintenanceMode: boolean;
+  allowRegistrations: boolean;
+  defaultTrialDays: number;
+  dataRetentionDays: number;
+}
+
+export type GlobalSettingsPatch = Partial<GlobalSettings>;
+
 export interface PackageVersionSnapshot {
   version: number;
   monthlyPrice: number;

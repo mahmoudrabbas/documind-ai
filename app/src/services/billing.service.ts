@@ -57,7 +57,7 @@ export function reprocessPaymentEvent(eventId: string) {
 
 export function triggerReconciliation() {
   return apiClient<Success<{ totalSubscriptions: number; mismatched: Array<Record<string, unknown>> }>>(
-    "/reconciliation/subscriptions",
+    "/super-admin/reconciliation/subscriptions",
     { method: "POST" },
   );
 }
