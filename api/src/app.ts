@@ -32,6 +32,7 @@ import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhoo
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
+import processingProgressRoutes from "./modules/processing-progress/processingProgress.routes.js";
 import { createRetrievalRoutes } from "./modules/retrieval/retrieval.routes.js";
 import { createRetrievalService } from "./modules/retrieval/retrieval.service.js";
 import { createRetrievalRepository } from "./modules/retrieval/retrieval.repository.js";
@@ -169,6 +170,7 @@ app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
+app.use("/documents", processingProgressRoutes);
 app.use("/intent-query", intentQueryRoutes);
 app.use("/document-taxonomy", documentTaxonomyRoutes);
 

@@ -91,6 +91,13 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
     context: "tenant",
     requiredPermissions: [Permission.CHAT_READ],
   },
+  {
+    label: "Failed Processing",
+    href: "/dashboard/processing-failed",
+    icon: "error",
+    context: "tenant",
+    requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
+  },
 ];
 
 export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
@@ -101,6 +108,7 @@ export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
   { label: "Platform Users", href: "/super-admin/users", icon: "group", context: "platform", requiredPermissions: [Permission.USERS_READ] },
   { label: "Usage & Costs", href: "/super-admin/usage", icon: "monitoring", context: "platform", requiredPermissions: [Permission.ANALYTICS_READ] },
   { label: "Processing Jobs", href: "/super-admin/jobs", icon: "manufacturing", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
+  { label: "Processing Overview", href: "/super-admin/processing-overview", icon: "monitoring", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
   { label: "System Health", href: "/super-admin/system-health", icon: "health_and_safety", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "AI Configuration", href: "/super-admin/ai-configuration", icon: "psychology", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "Security & Audit", href: "/super-admin/audit", icon: "policy", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
