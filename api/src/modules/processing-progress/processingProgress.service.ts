@@ -135,7 +135,7 @@ async function resolveDocumentForProcessing(
   documentId: string,
   callerTenantId: string,
   isSuperAdmin: boolean,
-): Promise<{ doc: Awaited<ReturnType<typeof DocumentModel.findOne>>; effectiveTenantId: string }> {
+): Promise<{ doc: NonNullable<Awaited<ReturnType<typeof DocumentModel.findOne>>>; effectiveTenantId: string }> {
   const docId = new Types.ObjectId(documentId);
   if (isSuperAdmin) {
     const doc = await DocumentModel.findOne({ _id: docId });
