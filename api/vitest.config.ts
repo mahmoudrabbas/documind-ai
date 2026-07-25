@@ -13,6 +13,7 @@ export default defineConfig({
       "src/modules/imports/__tests__/*.test.ts",
       "src/modules/imports/ports/__tests__/*.test.ts",
       "src/modules/imports/services/__tests__/*.test.ts",
+      "src/modules/processing-progress/__tests__/*.test.ts",
     ],
     exclude: [
       "**/node_modules/**",

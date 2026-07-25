@@ -6,6 +6,7 @@ import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatch
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
 import { config } from "../config/index.js";
+import { reportProgressToProcessingRun } from "./progressReporter.js";
 
 const OcrLanguageSchema = z.enum(["ar", "en", "ar+en"]);
 
@@ -268,6 +269,15 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
 
       ctx.progress(`Starting OCR processing with ${provider.name} for ${pageNumbers.length} page(s)...`);
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "ocr",
+        status: "running",
+        progress: 10,
+      });
+
       const startTime = Date.now();
       let totalPagesProcessed = 0;
       let totalPagesFailed = 0;
@@ -383,6 +393,18 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
       const totalDurationMs = Date.now() - startTime;
 
       ctx.progress(`OCR processing completed. ${totalPagesProcessed} succeeded, ${totalPagesFailed} failed. Duration: ${totalDurationMs}ms`);
+
+      const ocrProgress = totalPagesFailed === 0 ? 100 : Math.round((totalPagesProcessed / pageNumbers.length) * 100);
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "ocr",
+        status: totalPagesFailed === 0 ? "completed" : "failed",
+        progress: ocrProgress,
+        errorCode: totalPagesFailed > 0 ? "ocr_failed" : undefined,
+        errorMessage: totalPagesFailed > 0 ? `${totalPagesFailed} pages failed OCR` : undefined,
+      });
 
       if (totalPagesProcessed > 0) {
         try {

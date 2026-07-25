@@ -1,6 +1,7 @@
 import type { ProcessingDispatcher } from "../storage/types.js";
 import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
 import { triggerExtraction } from "../../modules/extraction/extraction.service.js";
+import { initiateProcessingRun } from "../../modules/processing-progress/processingProgress.service.js";
 
 export class StubProcessingDispatcher implements ProcessingDispatcher {
   private events: Array<{ documentId: string; tenantId: string; actorId: string; documentVersion: number; dispatchedAt: Date }> = [];
@@ -27,6 +28,19 @@ export class RealProcessingDispatcher implements ProcessingDispatcher {
       { documentId, tenantId, actorId, documentVersion },
       "Processing dispatch: triggering extraction job",
     );
+    try {
+      await initiateProcessingRun(tenantId, documentId, documentVersion, actorId);
+      log.info(
+        { documentId, tenantId, documentVersion },
+        "Processing dispatch: processing run initiated",
+      );
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      log.error(
+        { documentId, tenantId, documentVersion, error: error.message },
+        "Processing dispatch: failed to initiate processing run (continuing with extraction)",
+      );
+    }
     try {
       const result = await triggerExtraction(tenantId, documentId, actorId, documentVersion);
       log.info(

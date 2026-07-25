@@ -18,7 +18,7 @@ export interface DocumentDocument extends mongoose.Document {
   mimeType: string;
   storageKey: string;
   checksum: string;
-  status: "uploading" | "uploaded" | "processing" | "processed" | "failed";
+  status: "uploading" | "uploaded" | "processing" | "processed" | "failed" | "canceled" | "reprocessing";
   metadata: {
     title: string | null;
     description: string | null;
@@ -100,7 +100,7 @@ const documentSchema = new Schema<DocumentDocument>(
     },
     status: {
       type: String,
-      enum: ["uploading", "uploaded", "processing", "processed", "failed"],
+      enum: ["uploading", "uploaded", "processing", "processed", "failed", "canceled", "reprocessing"],
       default: "uploaded",
     },
     metadata: {

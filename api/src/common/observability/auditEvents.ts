@@ -116,7 +116,12 @@ export type AuditAction =
   | "RETRIEVAL_DENIAL"
   // System
   | "SYSTEM_STARTUP"
-  | "SYSTEM_HEALTH_CHECK_FAILED";
+  | "SYSTEM_HEALTH_CHECK_FAILED"
+  // Processing Progress
+  | "PROCESSING_RUN_INITIATED"
+  | "PROCESSING_STAGE_RETRIED"
+  | "DOCUMENT_REPROCESSED"
+  | "PROCESSING_CANCELED";
 
 export type AuditResourceType =
   | "User"
