@@ -11,6 +11,7 @@ import { getFileSizeLabel } from "@/lib/validation";
 import * as documentsService from "@/services/documents.service";
 import type { DocumentView, DocumentVersionView, DocumentExtractionStatusResponse } from "@/types/api/documents.types";
 import { DocumentQualityPanel } from "./DocumentQualityPanel";
+import { IndexingStatusCard } from "./IndexingStatusCard";
 
 const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
   public: "success",
@@ -223,6 +224,13 @@ export function DocumentDetailDrawer({
               documentVersion={doc.version}
               canProcessOcr={canProcessOcr}
               canReviewQuality={canReviewQuality}
+            />
+          </div>
+
+          <div className="mb-6">
+            <IndexingStatusCard
+              documentId={doc.id}
+              canUpdate={canUpdate}
             />
           </div>
 

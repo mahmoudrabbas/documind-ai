@@ -1,0 +1,15 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Comprehensive Terms", "level": 1 },
+      { "type": "paragraph", "text": "This is a normal paragraph that fits within standard token limits and should not be split under normal circumstances." }
+    ]
+  },
+  {
+    "pageNumber": 2,
+    "blocks": [
+      { "type": "paragraph", "text": "This is an oversized clause that deliberately exceeds the hard token ceiling to test the sentence-boundary splitting behavior. It contains many sentences that collectively produce a very large token count. The first sentence establishes the scope of this clause. The second sentence elaborates on the specific terms and conditions that govern the relationship between the parties involved. The third sentence introduces additional obligations that each party must fulfill during the term of this agreement. The fourth sentence addresses the remedies available to either party in the event of a material breach. The fifth sentence specifies the governing law and dispute resolution mechanism that applies to this agreement. The sixth sentence outlines the confidentiality obligations that survive termination. The seventh sentence describes the intellectual property rights that each party retains. The eighth sentence covers data protection and privacy requirements under applicable law. The ninth sentence details the business continuity and disaster recovery provisions. The tenth and final sentence provides for amendments to this clause only by written agreement signed by authorized representatives of both parties." }
+    ]
+  }
+]

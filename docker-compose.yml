@@ -9,17 +9,32 @@ services:
       - path: ./api/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai?replicaSet=rs0
+      - MONGODB_URI=mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET_FILE=/run/secrets/api_jwt_secret
       - JWT_REFRESH_SECRET_FILE=/run/secrets/api_refresh_secret
       - EMAIL_VERIFICATION_JWT_SECRET_FILE=/run/secrets/api_email_verification_secret
       - PASSWORD_RESET_JWT_SECRET_FILE=/run/secrets/api_password_reset_secret
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_SECURE=false
+      - SMTP_USER=marcoreda51@gmail.com
       - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
+      - SMTP_FROM=DocuMind AI <marcoreda51@gmail.com>
       - SUPER_ADMIN_BOOTSTRAP_KEY_FILE=/run/secrets/api_super_admin_bootstrap_key
       - STRIPE_SECRET_KEY_FILE=/run/secrets/stripe_secret_key
       - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/stripe_webhook_secret
       - SEND_EMAILS=true
+      - ENABLE_SUPER_ADMIN_BOOTSTRAP=true
+      - SEED_SUPER_ADMIN_ENABLED=true
+      - SEED_PLATFORM_TENANT_NAME=DocuMind AI
+      - SEED_PLATFORM_TENANT_SLUG=documind.ai
+      - SEED_SUPER_ADMIN_NAME=DocuMind Platform Admin
+      - SEED_SUPER_ADMIN_EMAIL=superadmin@documind.ai
+      - SEED_SUPER_ADMIN_PASSWORD=DocuMind@2026
+      - AI_PROVIDER=student-bedrock
+      - SBG_API_KEY=sbg_MnMwDD6bRnvLaxMt9dM6P1iSa9ZHM276
+      - SBG_BASE_URL=https://apiaccess.iti.net.eg
     secrets:
       - api_jwt_secret
       - api_refresh_secret
@@ -30,8 +45,6 @@ services:
       - stripe_secret_key
       - stripe_webhook_secret
     depends_on:
-      mongos-init-replicaset:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -72,8 +85,6 @@ services:
       context: .
       dockerfile: workers/Dockerfile
     depends_on:
-      mongos-init-replicaset:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -90,20 +101,19 @@ services:
       - path: ./workers/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai?replicaSet=rs0
+      - MONGODB_URI=mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority
       - REDIS_URL=redis://redis:6379
       - UPLOAD_DIR=/repo/api/uploads
-      - MONGODB_URI_FILE=/run/secrets/worker_mongodb_uri
-      - REDIS_URL_FILE=/run/secrets/worker_redis_url
       - SMTP_PASS_FILE=/run/secrets/api_smtp_pass
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_SECURE=false
       - SMTP_USER=marcoreda51@gmail.com
       - SMTP_FROM=marcoreda51@gmail.com
+      - AI_PROVIDER=student-bedrock
+      - SBG_API_KEY=sbg_MnMwDD6bRnvLaxMt9dM6P1iSa9ZHM276
+      - SBG_BASE_URL=https://apiaccess.iti.net.eg
     secrets:
-      - worker_mongodb_uri
-      - worker_redis_url
       - api_smtp_pass
 
   redis:
@@ -119,35 +129,7 @@ services:
       timeout: 5s
       retries: 5
 
-  mongodb:
-    image: mongo:8
-    container_name: docsai-mongodb
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_DATABASE: docsai
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-
-  mongos-init-replicaset:
-    image: mongo:8
-    depends_on:
-      mongodb:
-        condition: service_healthy
-    restart: "no"
-    entrypoint: ["/bin/bash", "/scripts/init-replicaset.sh"]
-    volumes:
-      - ./scripts/mongo-init-replicaset.sh:/scripts/init-replicaset.sh:ro
-
 volumes:
-  mongo_data:
   redis_data:
   uploads_data:
   api_node_modules:
@@ -170,7 +152,5 @@ secrets:
     file: ./secrets/stripe_secret_key.txt
   stripe_webhook_secret:
     file: ./secrets/stripe_webhook_secret.txt
-  worker_mongodb_uri:
-    file: ./secrets/worker_mongodb_uri.txt
   worker_redis_url:
     file: ./secrets/worker_redis_url.txt

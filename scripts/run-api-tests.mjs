@@ -55,7 +55,10 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${scriptsVitestTestsDir}/`)
     || normalized.startsWith(`${importsVitestTestsDir}/`)
     || normalized.startsWith(`${importsServicesVitestTestsDir}/`)
-    || normalized.startsWith(`${importsPortsVitestTestsDir}/`);
+    || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
+    || normalized.includes("/__tests__/provider-contracts.test.ts")
+    || normalized.includes("/__tests__/security-tenant-isolation.test.ts")
+    || normalized.includes("/__tests__/chunking.golden.test.ts");
 }
 
 function findTests(directory) {

@@ -88,11 +88,11 @@ const resetPasswordSchema = z
       .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, "password must contain at least one letter and one number"),
     confirmPassword: z.string().min(1, "confirmPassword is required").max(128),
   })
+  .strict()
   .refine((value) => value.password === value.confirmPassword, {
     path: ["confirmPassword"],
     message: "passwords must match",
-  })
-  .strict();
+  });
 
 export function validateRegisterInput(input: unknown): RegisterInput {
   const result = registerSchema.safeParse(input);

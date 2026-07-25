@@ -69,15 +69,19 @@ export async function createWorkerRuntime(): Promise<WorkerRuntime> {
   }
 
   const start = async (): Promise<void> => {
-    try {
-      await connectMongo();
-    } catch (err) {
-      // Stay alive so readiness can report a degraded status (503) instead of
-      // the process crashing. The consumer will not run until Mongo is up.
-      logger.error(
-        { err: (err as Error).message },
-        "mongo connection failed during startup",
-      );
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await connectMongo();
+        break;
+      } catch (err) {
+        logger.error(
+          { err: (err as Error).message, attempt, totalAttempts: 5 },
+          "mongo connection attempt failed",
+        );
+        if (attempt < 5) {
+          await new Promise((r) => setTimeout(r, 3000 * attempt));
+        }
+      }
     }
     if (bullmq) bullmq.start(shutdownController.signal);
     if (inMemory) inMemory.start();

@@ -6,6 +6,9 @@ import { employeeImportJobHandler } from "./employeeImportJob.js";
 import { createDocumentExtractionJobHandler } from "./documentExtractionJob.js";
 import { createDocumentOcrJobHandler } from "./documentOcrJob.js";
 import { dataRetentionJobHandler } from "./dataRetentionJob.js";
+import { createDocumentChunkingJobHandler } from "./documentChunkingJob.js";
+import { createDocumentEmbeddingJobHandler } from "./documentEmbeddingJob.js";
+import { createDocumentIndexingJobHandler } from "./documentIndexingJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
 import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
 
@@ -27,6 +30,9 @@ export function buildHandlerRegistry(): JobHandlerRegistry {
   registry.register(createDocumentExtractionJobHandler());
   registry.register(createDocumentOcrJobHandler());
   registry.register(dataRetentionJobHandler);
+  registry.register(createDocumentChunkingJobHandler());
+  registry.register(createDocumentEmbeddingJobHandler());
+  registry.register(createDocumentIndexingJobHandler());
   
   return registry;
 }

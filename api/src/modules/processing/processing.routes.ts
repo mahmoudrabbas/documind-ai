@@ -23,8 +23,11 @@ import {
   dismissConflictFindingController,
   getPendingReviewItemsController,
 } from "./processing.controller.js";
+import indexingRoutes from "./indexing/indexing.routes.js";
 
 const router = Router();
+
+router.use(indexingRoutes);
 
 router.post(
   "/:id/ocr/trigger",

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
@@ -72,6 +73,76 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
             { $set: { status: "processed" } }
           );
         }
+
+        // Auto-trigger chunking if no active generation exists
+        const existingGen = await db.collection("indexgenerations")
+          .findOne({ tenantId, documentId, status: { $in: ["BUILDING", "VERIFYING", "VERIFIED", "ACTIVE"] } });
+        if (!existingGen) {
+          try {
+            const latestGen = await db.collection("indexgenerations")
+              .find({ tenantId, documentId })
+              .sort({ generationNumber: -1 })
+              .limit(1)
+              .toArray();
+            const nextGenNumber = (latestGen[0]?.generationNumber ?? 0) + 1;
+            const generationId = new ObjectId();
+            await db.collection("indexgenerations").insertOne({
+              _id: generationId,
+              tenantId,
+              documentId,
+              documentVersion: payload.documentVersion,
+              generationNumber: nextGenNumber,
+              status: "BUILDING",
+              expectedChunkCount: 0,
+              actualChunkCount: 0,
+              expectedEmbeddingCount: 0,
+              actualEmbeddingCount: 0,
+              atlasIndexName: "vidx_chunk_embeddings_v1",
+              atlasIndexStatus: "UNKNOWN",
+              failureReason: null,
+              triggeredBy: "INITIAL",
+              chunkingConfig: {
+                targetTokens: 400,
+                hardCeiling: 800,
+                overlap: 50,
+                tokenizerVersion: "cl100k_base",
+              },
+              activatedAt: null,
+              retiredAt: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+            await db.collection("documents").updateOne(
+              { _id: documentId },
+              { $set: { searchStatus: "INDEXING" } },
+            );
+            await ctx.enqueue({
+              jobType: "document.chunk",
+              tenantId: payload.tenantId,
+              actorId: "system",
+              traceId: ctx.traceId,
+              idempotencyKey: `${payload.documentId}:${payload.documentVersion}:chunk:${generationId.toString()}`,
+              payload: {
+                documentId: payload.documentId,
+                tenantId: payload.tenantId,
+                documentVersion: payload.documentVersion,
+                generationId: generationId.toString(),
+                department: document.department ?? null,
+                classification: document.classification ?? null,
+                chunkingConfig: {
+                  targetTokens: 400,
+                  hardCeiling: 800,
+                  overlap: 50,
+                  tokenizerVersion: "cl100k_base",
+                },
+              },
+            });
+            ctx.progress("Auto-triggered chunking pipeline for previously extracted document.");
+          } catch (err) {
+            ctx.progress(`Failed to auto-trigger chunking: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
         return { summary: { skipped: true, reason: "already_completed" } };
       }
 
@@ -197,6 +268,82 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
         );
 
         ctx.progress(`Extraction completed successfully in ${durationMs}ms.`);
+
+        // Auto-trigger chunking pipeline after extraction
+        try {
+          const tenantObjectId = new ObjectId(payload.tenantId);
+
+          // Get next generation number for this document
+          const latestGen = await db.collection("indexgenerations")
+            .find({ tenantId: tenantObjectId, documentId })
+            .sort({ generationNumber: -1 })
+            .limit(1)
+            .toArray();
+          const nextGenNumber = (latestGen[0]?.generationNumber ?? 0) + 1;
+
+          // Create index generation record
+          const generationId = new ObjectId();
+          await db.collection("indexgenerations").insertOne({
+            _id: generationId,
+            tenantId: tenantObjectId,
+            documentId,
+            documentVersion: payload.documentVersion,
+            generationNumber: nextGenNumber,
+            status: "BUILDING",
+            expectedChunkCount: 0,
+            actualChunkCount: 0,
+            expectedEmbeddingCount: 0,
+            actualEmbeddingCount: 0,
+            atlasIndexName: "vidx_chunk_embeddings_v1",
+            atlasIndexStatus: "UNKNOWN",
+            failureReason: null,
+            triggeredBy: "INITIAL",
+            chunkingConfig: {
+              targetTokens: 400,
+              hardCeiling: 800,
+              overlap: 50,
+              tokenizerVersion: "cl100k_base",
+            },
+            activatedAt: null,
+            retiredAt: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          // Update document search status to INDEXING
+          await db.collection("documents").updateOne(
+            { _id: documentId },
+            { $set: { searchStatus: "INDEXING" } },
+          );
+
+          // Enqueue chunk job to start the pipeline
+          await ctx.enqueue({
+            jobType: "document.chunk",
+            tenantId: payload.tenantId,
+            actorId: "system",
+            traceId: ctx.traceId,
+            idempotencyKey: `${payload.documentId}:${payload.documentVersion}:chunk:${generationId.toString()}`,
+            payload: {
+              documentId: payload.documentId,
+              tenantId: payload.tenantId,
+              documentVersion: payload.documentVersion,
+              generationId: generationId.toString(),
+              department: document.department ?? null,
+              classification: document.classification ?? null,
+              chunkingConfig: {
+                targetTokens: 400,
+                hardCeiling: 800,
+                overlap: 50,
+                tokenizerVersion: "cl100k_base",
+              },
+            },
+          });
+
+          ctx.progress("Auto-triggered chunking pipeline after extraction.");
+        } catch (err) {
+          ctx.progress(`Failed to auto-trigger chunking: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
         return { summary: { success: true, pages: result.pages.length, characters: result.metadata.totalCharacters } };
 
       } catch (err: unknown) {

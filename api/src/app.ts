@@ -46,12 +46,13 @@ import {
   getVectorStoreAdapter,
   getKeywordAdapter,
 } from "./providers/embedding/adapterLoader.js";
-import { FakeEmbeddingAdapter } from "./providers/llm/fakeAdapters.js";
+import { getEmbeddingAdapter } from "./providers/embedding/atlasEmbeddingAdapter.js";
 import { FakeRerankerAdapter } from "./modules/reranker/fakeReranker.adapter.js";
 import { createRerankerService } from "./modules/reranker/reranker.service.js";
 import { registerRetrievalService } from "./modules/agents/agents.service.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
+import { initializeIntentQueryService } from "./modules/intent-query/intentQuery.factory.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -182,7 +183,7 @@ const rerankerService = createRerankerService({
 const retrievalService = createRetrievalService({
   vectorAdapter: await getVectorStoreAdapter(),
   keywordAdapter: await getKeywordAdapter(),
-  embeddingAdapter: new FakeEmbeddingAdapter(),
+  embeddingAdapter: await getEmbeddingAdapter(),
   fusionEngine: new FusionEngine(),
   filterCompiler,
   repository: createRetrievalRepository(),
@@ -190,6 +191,8 @@ const retrievalService = createRetrievalService({
 });
 
 registerRetrievalService(retrievalService);
+
+await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
 
 app.get("/", (_, res) => {

@@ -1,0 +1,17 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Article 4: Data Protection", "level": 2 },
+      { "type": "paragraph", "text": "The Provider shall implement appropriate technical and organizational measures to protect personal data against unauthorized or unlawful processing and against accidental loss, destruction, or damage. These measures shall include but not be limited to encryption of data at rest and in transit, access controls, regular security audits, and employee training on data protection practices." },
+      { "type": "paragraph", "text": "The Provider shall notify the Client within 48 hours of becoming aware of any personal data breach. The notification shall include the nature of the breach, the categories and approximate number of data subjects affected, and the measures taken or proposed to address the breach." }
+    ]
+  },
+  {
+    "pageNumber": 2,
+    "blocks": [
+      { "type": "paragraph", "text": "Both parties shall cooperate in conducting data protection impact assessments where required. The Provider shall maintain records of processing activities and make them available to the Client upon request. The Provider shall appoint a data protection officer where required by applicable law." },
+      { "type": "paragraph", "text": "Upon termination of this Agreement, the Provider shall securely delete or return all personal data within 30 days, except where retention is required by applicable law. The Provider shall provide written certification of deletion upon request." }
+    ]
+  }
+]

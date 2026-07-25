@@ -7,6 +7,8 @@ import type { VectorStoreAdapter } from "../../providers/embedding/vectorStoreAd
 import type { KeywordAdapter } from "../../providers/embedding/keywordAdapter.js";
 import type { EmbeddingAdapter } from "../agents/agents.types.js";
 import type { DocumentChunkDocument } from "../../db/models/documentChunk.model.js";
+import DocumentModel from "../../db/models/document.model.js";
+import { Types } from "mongoose";
 import type { FilterCompiler } from "./filterCompiler.js";
 import type { FusionEngine } from "./fusionEngine.js";
 import type { RetrievalRepository } from "./retrieval.repository.js";
@@ -137,6 +139,7 @@ async function revalidateAndHydrate(
   tenantId: string,
   candidates: RetrievalCandidate[],
   mandatoryFilter: AdapterFilter,
+  context?: AccessContext,
 ): Promise<RetrievalCandidate[]> {
   if (candidates.length === 0) return [];
 
@@ -145,6 +148,20 @@ async function revalidateAndHydrate(
   const chunkMap = new Map<string, DocumentChunkDocument>();
   for (const chunk of chunks) {
     chunkMap.set(chunk._id.toString(), chunk);
+  }
+
+  // selfOnly enforcement: fetch parent documents and check ownership
+  let ownedDocumentIds: Set<string> | null = null;
+  if (context?.permissionScopes?.selfOnly) {
+    const docIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
+    if (docIds.length > 0) {
+      const docs = await DocumentModel.find({
+        _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
+        tenantId: new Types.ObjectId(tenantId),
+        uploadedBy: new Types.ObjectId(context.actorId),
+      }, { _id: 1 }).lean().exec();
+      ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+    }
   }
 
   const hydrated: RetrievalCandidate[] = [];
@@ -159,19 +176,36 @@ async function revalidateAndHydrate(
     // Re-validate: classification must be in the mandatory filter's allowed set
     if (mandatoryFilter.classification) {
       const allowedSet = mandatoryFilter.classification.$in;
-      if (!allowedSet.includes(chunk.classification)) continue;
+      if (chunk.classification && !allowedSet.includes(chunk.classification)) continue;
+    }
+
+    // Re-validate: department must be in the mandatory filter's allowed set
+    if (mandatoryFilter.department) {
+      const allowedSet = mandatoryFilter.department.$in;
+      if (chunk.department && !allowedSet.includes(chunk.department)) continue;
+    }
+
+    // Re-validate: category must be in the mandatory filter's allowed set
+    if (mandatoryFilter.category) {
+      const allowedSet = mandatoryFilter.category.$in;
+      if (chunk.category && !allowedSet.includes(chunk.category)) continue;
+    }
+
+    // selfOnly enforcement: skip chunks from documents not owned by the actor
+    if (ownedDocumentIds !== null) {
+      if (!ownedDocumentIds.has(chunk.documentId.toString())) continue;
     }
 
     // Hydrate from the DB document
     hydrated.push({
       ...candidate,
       documentId: chunk.documentId.toString(),
-      documentVersionId: chunk.documentVersionId.toString(),
+      documentVersionId: chunk.documentVersionId?.toString() ?? "",
       tenantId: chunk.tenantId.toString(),
       text: chunk.text,
       pageNumber: chunk.pageNumber ?? undefined,
       sectionTitle: chunk.sectionTitle ?? undefined,
-      classification: chunk.classification,
+      classification: chunk.classification ?? undefined,
     });
   }
 
@@ -367,6 +401,7 @@ export function createRetrievalService(
         context.tenantId,
         fused,
         mandatory,
+        context,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
@@ -449,6 +484,7 @@ export function createRetrievalService(
         context.tenantId,
         fused,
         mandatory,
+        context,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
@@ -527,6 +563,7 @@ export function createRetrievalService(
         context.tenantId,
         fused,
         mandatory,
+        context,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;

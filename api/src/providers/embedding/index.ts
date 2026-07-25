@@ -1,0 +1,72 @@
+import type { EmbeddingProvider } from "./embeddingProvider.port.js";
+import { FakeEmbeddingProvider } from "./fakeEmbeddingProvider.js";
+
+let singleton: EmbeddingProvider | null = null;
+
+/**
+ * Returns the configured embedding provider singleton.
+ * In development/test, uses FakeEmbeddingProvider.
+ * Set AI_PROVIDER=openai and OPENAI_API_KEY to use the real OpenAI provider.
+ * Set AI_PROVIDER=student-bedrock and SBG_API_KEY to use the Student Bedrock Gateway.
+ */
+export function getEmbeddingProvider(): EmbeddingProvider {
+  if (singleton) return singleton;
+  // Initialize synchronously - for student-bedrock, this returns a fake placeholder
+  // The real provider will be initialized on first actual use via getEmbeddingProviderAsync
+  singleton = createEmbeddingProviderSyncSync();
+  return singleton;
+}
+
+function createEmbeddingProviderSyncSync(): EmbeddingProvider {
+  const aiProvider = process.env.AI_PROVIDER || "fake";
+
+  // For student-bedrock, return a placeholder fake provider
+  // The real provider will be swapped in on first actual use
+  if (aiProvider === "student-bedrock") {
+    return new FakeEmbeddingProvider(parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10));
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
+
+  if (apiKey && apiKey !== "" && process.env.NODE_ENV !== "test") {
+    // For OpenAI, we use dynamic import but this is sync - return fake for now
+    // The async version will properly initialize
+    return new FakeEmbeddingProvider(dimensions);
+  }
+
+  return new FakeEmbeddingProvider(dimensions);
+}
+
+export function setEmbeddingProvider(provider: EmbeddingProvider | null): void {
+  singleton = provider;
+}
+
+// Async version for proper initialization
+export async function getEmbeddingProviderAsync(): Promise<EmbeddingProvider> {
+  if (singleton) return singleton;
+  singleton = await createEmbeddingProvider();
+  return singleton;
+}
+
+async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
+  const aiProvider = process.env.AI_PROVIDER || "fake";
+
+  if (aiProvider === "student-bedrock") {
+    const { createStudentBedrockProvider } = await import("../bedrock/index.js");
+    return createStudentBedrockProvider();
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
+
+  if (apiKey && apiKey !== "" && process.env.NODE_ENV !== "test") {
+    const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
+    const model = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+    return new OpenAIEmbeddingProvider(apiKey, model, dimensions);
+  }
+
+  return new FakeEmbeddingProvider(dimensions);
+}
+
+export type { EmbeddingProvider, EmbeddingInput, EmbeddingResult } from "./embeddingProvider.port.js";

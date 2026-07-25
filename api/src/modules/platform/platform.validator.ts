@@ -113,7 +113,7 @@ export const subscriptionUpdateSchema = z
     packageId: objectId,
     status: z.enum(subscriptionStatuses).transform((s) => s.toUpperCase() as SubscriptionStatus),
     /** @deprecated Use periodEnd */
-    renewsAt: z.iso.datetime().nullable().optional(),
+    renewsAt: z.string().datetime().nullable().optional(),
   })
   .strict();
 export const settingsBodySchema = z

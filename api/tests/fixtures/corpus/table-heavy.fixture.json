@@ -1,0 +1,14 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Schedule C - Pricing Details", "level": 2 },
+      { "type": "table", "text": "Service Tier | Monthly Cost | Users Included\nBasic | $99 | 10\nProfessional | $299 | 50\nEnterprise | $999 | Unlimited" },
+      { "type": "paragraph", "text": "All prices are in USD and exclude applicable taxes. Volume discounts are available for annual commitments." },
+      { "type": "heading", "text": "Schedule D - SLA Metrics", "level": 2 },
+      { "type": "table", "text": "Metric | Target | Measurement Period\nUptime | 99.9% | Monthly\nResponse Time | < 200ms | 95th percentile\nResolution Time | < 4 hours | Per incident" },
+      { "type": "heading", "text": "Schedule E - Supported Platforms", "level": 2 },
+      { "type": "table", "text": "Platform | Browser | Minimum Version\nWindows | Chrome | 100+\nmacOS | Safari | 15+\nLinux | Firefox | 100+\niOS | Safari Mobile | 15+\nAndroid | Chrome Mobile | 100+" }
+    ]
+  }
+]
