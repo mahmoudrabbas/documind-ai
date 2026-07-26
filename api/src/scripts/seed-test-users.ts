@@ -211,15 +211,15 @@ async function run() {
       },
       { upsert: true, returnDocument: "after" }
     );
-    console.log(`\nTenant: ${tenantInput.name} (${tenantInput.slug}) -> ${tenant._id}`);
+    console.log(`\nTenant: ${tenantInput.name} (${tenantInput.slug}) -> ${tenant!._id}`);
 
     // Create subscription for non-system tenants
     if (!tenantInput.isSystemTenant && freePackage) {
       await subscriptionsCol.updateOne(
-        { tenantId: tenant._id },
+        { tenantId: tenant!._id },
         {
           $setOnInsert: {
-            tenantId: tenant._id,
+            tenantId: tenant!._id,
             packageId: freePackage._id,
             packageVersion: freePackage.version,
             status: "ACTIVE",
@@ -250,10 +250,10 @@ async function run() {
       const passwordHash = await hashPassword(userInput.password);
 
       const user = await usersCol.findOneAndUpdate(
-        { tenantId: tenant._id, email: userInput.email },
+        { tenantId: tenant!._id, email: userInput.email },
         {
           $set: {
-            tenantId: tenant._id,
+            tenantId: tenant!._id,
             name: userInput.name,
             email: userInput.email,
             passwordHash,
@@ -276,7 +276,7 @@ async function run() {
       );
 
       console.log(
-        `  User: ${userInput.name} <${userInput.email}> [${userInput.role}] -> ${user._id}`
+        `  User: ${userInput.name} <${userInput.email}> [${userInput.role}] -> ${user!._id}`
       );
       results.push({
         tenant: tenantInput.name,
