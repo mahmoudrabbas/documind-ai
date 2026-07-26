@@ -286,6 +286,7 @@ async function emitRetrievalAudit(params: {
       resourceId: params.traceId,
       action: params.action,
       actorId: params.context.actorId,
+      actorEmail: params.context.actorEmail,
       actorRole: params.context.baseRole,
       actorKind: "USER",
       outcome: params.outcome ?? "SUCCESS",
