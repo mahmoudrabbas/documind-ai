@@ -66,6 +66,7 @@ function isVitestOnlyTest(path) {
     || normalized.includes("/__tests__/provider-contracts.test.ts")
     || normalized.includes("/__tests__/security-tenant-isolation.test.ts")
     || normalized.includes("/__tests__/chunking.golden.test.ts")
+    || normalized.includes("/processing/chunking/__tests__/chunker.test.ts")
     || normalized.startsWith(`${processingProgressVitestTestsDir}/`);
 }
 
