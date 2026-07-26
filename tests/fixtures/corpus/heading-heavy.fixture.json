@@ -1,0 +1,19 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Master Services Agreement", "level": 1 },
+      { "type": "heading", "text": "Article 1: Definitions", "level": 2 },
+      { "type": "heading", "text": "1.1 Key Terms", "level": 3 },
+      { "type": "paragraph", "text": "\"Provider\" means the entity delivering services under this Agreement. \"Client\" means the entity receiving services. \"Services\" means all cloud computing services described herein." },
+      { "type": "heading", "text": "Article 2: Service Delivery", "level": 2 },
+      { "type": "heading", "text": "2.1 Cloud Infrastructure", "level": 3 },
+      { "type": "paragraph", "text": "The Provider shall maintain and operate cloud infrastructure with a minimum of three availability zones. All data shall be encrypted at rest using AES-256 and in transit using TLS 1.3." },
+      { "type": "heading", "text": "2.2 Monitoring", "level": 3 },
+      { "type": "paragraph", "text": "Round-the-clock monitoring shall be provided with a maximum response time of 15 minutes for critical incidents and 4 hours for non-critical issues." },
+      { "type": "heading", "text": "Article 3: Financial Terms", "level": 2 },
+      { "type": "heading", "text": "3.1 Pricing Structure", "level": 3 },
+      { "type": "paragraph", "text": "Base pricing is set at $50,000 per month with annual escalation of 3%. Overage charges apply beyond the agreed compute thresholds." }
+    ]
+  }
+]

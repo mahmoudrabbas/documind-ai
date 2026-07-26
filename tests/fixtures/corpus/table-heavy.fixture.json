@@ -1,0 +1,12 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Data Summary Report", "level": 1 },
+      { "type": "paragraph", "text": "Monthly performance metrics for Q4 2024." },
+      { "type": "table", "text": "Metric | January | February | March\nRevenue | $120,000 | $135,000 | $142,000\nExpenses | $80,000 | $85,000 | $82,000\nProfit | $40,000 | $50,000 | $60,000\nUptime | 99.95% | 99.98% | 99.92%" },
+      { "type": "paragraph", "text": "The above table shows consistent growth across all metrics. Revenue increased by 18.3% over the quarter while expenses remained relatively stable." },
+      { "type": "table", "text": "Region | Users | Growth\nNorth America | 45,000 | +12%\nEurope | 32,000 | +8%\nMiddle East | 18,000 | +25%\nAsia Pacific | 22,000 | +15%" }
+    ]
+  }
+]

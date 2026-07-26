@@ -9,7 +9,7 @@ import {
 } from "../../common/errors/errorCodes.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
-import { intentQueryService } from "./intentQuery.factory.js";
+import { getIntentQueryService } from "./intentQuery.factory.js";
 import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
 
 function operationContext(req: Request): OperationAuthorizationContext {
@@ -68,7 +68,7 @@ export async function analyzeQueryController(
     }
 
     const context = operationContext(req);
-    const queryPlan = await intentQueryService.analyzeQuery(req.body, context);
+    const queryPlan = await getIntentQueryService().analyzeQuery(req.body, context);
 
     res.status(200).json({
       success: true,

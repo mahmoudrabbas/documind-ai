@@ -13,11 +13,19 @@ import * as processingProgressService from "@/services/processingProgress.servic
 import type { DocumentView, DocumentVersionView } from "@/types/api/documents.types";
 import type { ProcessingRunView } from "@/types/api/processingProgress.types";
 import { DocumentQualityPanel } from "./DocumentQualityPanel";
+import { IndexingStatusCard } from "./IndexingStatusCard";
 import { ClassificationBadge } from "./ClassificationBadge";
 import { DocumentPolicyPanel } from "./DocumentPolicyPanel";
 import { ProcessingTimeline } from "./ProcessingTimeline";
 import { ProcessingStatusBadge } from "./ProcessingStatusBadge";
 import { RetryConfirmDialog, ReprocessConfirmDialog, CancelConfirmDialog } from "./ProcessingConfirmDialogs";
+
+const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
+  public: "success",
+  internal: "info",
+  confidential: "warning",
+  restricted: "error",
+};
 
 const SCAN_RESULT_MAP: Record<string, string> = {
   clean: "success",
@@ -352,6 +360,13 @@ export function DocumentDetailDrawer({
               documentVersion={doc.version}
               canProcessOcr={canProcessOcr}
               canReviewQuality={permissions.can(Permission.DOCUMENTS_QUALITY_REVIEW)}
+            />
+          </div>
+
+          <div className="mb-6">
+            <IndexingStatusCard
+              documentId={doc.id}
+              canUpdate={canUpdate}
             />
           </div>
 

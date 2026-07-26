@@ -90,6 +90,7 @@ export class IntentQueryService {
         outcome: "DENIED",
         tenantId: tenantIdStr,
         actorId: actor.actorId,
+        actorEmail: actor.actorEmail,
         actorRole: actor.actorRole,
         metadata: { inputQuestion: input.question },
       });
@@ -355,6 +356,7 @@ export class IntentQueryService {
       outcome: "SUCCESS",
       tenantId: tenantIdStr,
       actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
       actorRole: actor.actorRole,
       metadata: {
         intent: validatedPlan.detectedIntent,

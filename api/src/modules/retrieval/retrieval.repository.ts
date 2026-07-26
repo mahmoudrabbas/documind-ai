@@ -6,7 +6,6 @@ import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import {
   tenantScopedFind,
-  tenantScopedFindById,
 } from "../../db/repositories/tenantScopedRepository.js";
 import type { AdapterFilter } from "../../providers/embedding/adapterFilter.types.js";
 
@@ -122,21 +121,15 @@ export function createRetrievalRepository(): RetrievalRepository {
     },
 
     async findChunksByIds(tenantId, chunkIds) {
-      const results: DocumentChunkDocument[] = [];
+      if (chunkIds.length === 0) return [];
 
-      for (const chunkId of chunkIds) {
-        const chunk = await tenantScopedFindById(
-          DocumentChunkModel,
-          tenantId,
-          chunkId,
-        )
-          .lean<DocumentChunkDocument | null>()
-          .exec();
-
-        if (chunk !== null) {
-          results.push(chunk);
-        }
-      }
+      const results = await tenantScopedFind(
+        DocumentChunkModel,
+        tenantId,
+        { _id: { $in: chunkIds.map((id) => new mongoose.Types.ObjectId(id)) } } as Record<string, unknown>,
+      )
+        .lean<DocumentChunkDocument[]>()
+        .exec();
 
       return results;
     },

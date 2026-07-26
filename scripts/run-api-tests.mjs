@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { delimiter, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -55,7 +55,8 @@ const apiSrcRoot = resolve(apiRoot, "src");
 
 function isVitestOnlyTest(path) {
   const normalized = path.replace(/\\/g, "/");
-  return normalized.includes(billingModuleDir)
+  if (
+    normalized.includes(billingModuleDir)
     || normalized === checkoutServiceTestFile
     || normalized.startsWith(`${authVitestTestsDir}/`)
     || normalized.startsWith(`${dbVitestTestsDir}/`)
@@ -63,7 +64,16 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${importsVitestTestsDir}/`)
     || normalized.startsWith(`${importsServicesVitestTestsDir}/`)
     || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
-    || normalized.startsWith(`${processingProgressVitestTestsDir}/`);
+    || normalized.startsWith(`${processingProgressVitestTestsDir}/`)
+  ) {
+    return true;
+  }
+  try {
+    const head = readFileSync(path, "utf-8").slice(0, 2000);
+    return /from\s+["']vitest["']/.test(head);
+  } catch {
+    return false;
+  }
 }
 
 function findTests(directory) {

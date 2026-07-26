@@ -1,0 +1,10 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Detailed Terms and Conditions", "level": 1 },
+      { "type": "paragraph", "text": "This is a very long clause that exceeds the target token count and needs to be split into multiple parts. It contains detailed information about the service terms, conditions, and various legal provisions that govern the relationship between the parties. The first part of this clause discusses the general terms of service including uptime guarantees, support response times, and data handling procedures. The second part extends into more specific provisions about data retention policies, backup schedules, disaster recovery procedures, and incident response protocols. The third part covers compliance requirements including GDPR, CCPA, and other applicable data protection regulations. Each of these sections contains detailed sub-provisions that outline specific requirements, timelines, and responsibilities of each party." },
+      { "type": "paragraph", "text": "This is a second paragraph that provides additional context to the oversized clause. It discusses the implementation timeline, milestones, and acceptance criteria for each phase of the project." }
+    ]
+  }
+]

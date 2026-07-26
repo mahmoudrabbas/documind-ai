@@ -34,6 +34,10 @@ export function isMongoConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
+export function getDb(): mongoose.mongo.Db | undefined {
+  return mongoose.connection.db;
+}
+
 function registerConnectionListeners(): void {
   if (listenersRegistered) {
     return;

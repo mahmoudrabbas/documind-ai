@@ -23,6 +23,7 @@ export interface RetrievalQuery {
 export interface AccessContext {
   tenantId: string;
   actorId: string;
+  actorEmail?: string | null;
   baseRole: BaseRole;
   permissionScopes?: PermissionScopes;
   customRoleId?: string | null;

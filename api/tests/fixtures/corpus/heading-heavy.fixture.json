@@ -1,0 +1,27 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Technical Architecture Document", "level": 1 },
+      { "type": "heading", "text": "1. System Overview", "level": 2 },
+      { "type": "heading", "text": "1.1 Architecture Principles", "level": 3 },
+      { "type": "paragraph", "text": "The system follows a microservices architecture with event-driven communication between services. All services are containerized using Docker and orchestrated with Kubernetes." },
+      { "type": "heading", "text": "1.2 Technology Stack", "level": 3 },
+      { "type": "paragraph", "text": "The backend is built with Node.js 20 LTS using Express.js as the HTTP framework. The frontend uses React 18 with TypeScript. PostgreSQL 16 is the primary data store." },
+      { "type": "heading", "text": "2. Service Architecture", "level": 2 },
+      { "type": "heading", "text": "2.1 Authentication Service", "level": 3 },
+      { "type": "paragraph", "text": "The authentication service handles user registration, login, token refresh, and session management. It uses JWT tokens with RS256 signing." },
+      { "type": "heading", "text": "2.1.1 Token Management", "level": 4 },
+      { "type": "paragraph", "text": "Access tokens expire after 15 minutes. Refresh tokens expire after 7 days. Both tokens are stored in HttpOnly secure cookies." },
+      { "type": "heading", "text": "2.2 Document Service", "level": 3 },
+      { "type": "paragraph", "text": "The document service manages file upload, storage, versioning, and retrieval. It interfaces with S3-compatible object storage." },
+      { "type": "heading", "text": "2.3 Search Service", "level": 3 },
+      { "type": "paragraph", "text": "The search service provides full-text search across all documents using Elasticsearch. It supports faceted search, autocomplete, and relevance tuning." },
+      { "type": "heading", "text": "3. Data Architecture", "level": 2 },
+      { "type": "heading", "text": "3.1 Database Schema", "level": 3 },
+      { "type": "paragraph", "text": "The PostgreSQL database uses a schema-per-tenant approach for multi-tenancy. Each tenant schema contains all application tables." },
+      { "type": "heading", "text": "3.2 Caching Layer", "level": 3 },
+      { "type": "paragraph", "text": "Redis is used for session storage, rate limiting, and application-level caching. Cache invalidation follows a write-through pattern." }
+    ]
+  }
+]

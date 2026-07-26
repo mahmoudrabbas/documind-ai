@@ -2,6 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 export type DocumentQuarantineStatus = "none" | "quarantined" | "cleared";
+export type DocumentSearchStatus = "NOT_INDEXED" | "INDEXING" | "READY" | "FAILED" | "STALE";
 
 export interface ScanInfo {
   scanner: string;
@@ -43,6 +44,8 @@ export interface DocumentDocument extends mongoose.Document {
   quarantineStatus: DocumentQuarantineStatus;
   scanResult: ScanInfo | null;
   uploadedBy: mongoose.Types.ObjectId;
+  activeChunkGeneration: mongoose.Types.ObjectId | null;
+  searchStatus: DocumentSearchStatus;
   activePolicyId?: mongoose.Types.ObjectId | null;
   activePolicyVersion?: number | null;
   policyChangedAt?: Date | null;
@@ -151,6 +154,16 @@ const documentSchema = new Schema<DocumentDocument>(
       ref: "User",
       required: true,
     },
+    activeChunkGeneration: {
+      type: Schema.Types.ObjectId,
+      ref: "IndexGeneration",
+      default: null,
+    },
+    searchStatus: {
+      type: String,
+      enum: ["NOT_INDEXED", "INDEXING", "READY", "FAILED", "STALE"],
+      default: "NOT_INDEXED",
+    },
     activePolicyId: {
       type: Schema.Types.ObjectId,
       default: null,
@@ -184,6 +197,8 @@ documentSchema.index({ tenantId: 1, checksum: 1 });
 documentSchema.index({ tenantId: 1, deletedAt: 1 });
 documentSchema.index({ tenantId: 1, category: 1 });
 documentSchema.index({ tenantId: 1, classification: 1 });
+documentSchema.index({ tenantId: 1, searchStatus: 1 });
+documentSchema.index({ tenantId: 1, activeChunkGeneration: 1 });
 documentSchema.index({ tenantId: 1, categoryId: 1 });
 documentSchema.index({ tenantId: 1, departmentId: 1 });
 documentSchema.index({ tenantId: 1, classificationId: 1 });

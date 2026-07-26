@@ -17,7 +17,7 @@ class FakeQueue {
   }
 
   async add(name: string, data: JobEnvelope, opts: unknown) {
-    const id = `${name}::${data.idempotencyKey}`;
+    const id = `${name}__${data.idempotencyKey}`;
     const job = { id, data };
     this.jobs.set(id, job);
     this.addCalls.push({ name, data, opts });
