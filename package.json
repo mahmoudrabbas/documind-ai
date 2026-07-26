@@ -63,5 +63,8 @@
     "@esbuild/win32-x64": "^0.28.1",
     "@rolldown/binding-linux-x64-gnu": "^1.2.0",
     "@rolldown/binding-win32-x64-msvc": "^1.2.0"
+  },
+  "dependencies": {
+    "lightningcss-win32-x64-msvc": "^1.33.0"
   }
 }
