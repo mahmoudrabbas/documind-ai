@@ -7,13 +7,18 @@ const mockPackageModel = vi.hoisted(() => ({
   findById: vi.fn(),
   find: vi.fn(),
   findOne: vi.fn(),
+  findOneAndUpdate: vi.fn(),
   findByIdAndUpdate: vi.fn(),
 }));
+const mockSubscriptionModel = vi.hoisted(() => ({ aggregate: vi.fn() }));
 
 const mockAuditWrite = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("../../../db/models/package.model.js", () => ({
   default: mockPackageModel,
+}));
+vi.mock("../../../db/models/subscription.model.js", () => ({
+  default: mockSubscriptionModel,
 }));
 
 vi.mock("../../../common/observability/index.js", () => ({
@@ -30,6 +35,8 @@ import {
   getPackageByCode,
   createVersion,
   archivePackage,
+  activatePackage,
+  previewPackageImpact,
   mapToSnapshot,
 } from "../package.service.js";
 import { AppError } from "../../../common/errors/AppError.js";
@@ -257,6 +264,14 @@ describe("PackageService", () => {
       expect(result.supportedModels).toEqual(["basic"]);
       expect(result.currency).toBe("USD");
     });
+
+    it("normalizes a duplicate database key into a stable package-code conflict", async () => {
+      mockPackageModel.create.mockRejectedValue({ code: 11000 });
+      await expect(createPackage(INPUT)).rejects.toMatchObject({
+        statusCode: 409,
+        code: "PACKAGE_CODE_CONFLICT",
+      });
+    });
   });
 
   // ── getPackage ──────────────────────────────────────────────────────────
@@ -280,7 +295,7 @@ describe("PackageService", () => {
       await expect(getPackage("nonexistent")).rejects.toThrow(AppError);
       await expect(getPackage("nonexistent")).rejects.toMatchObject({
         statusCode: 404,
-        code: "NOT_FOUND",
+        code: "PACKAGE_NOT_FOUND",
       });
     });
   });
@@ -349,41 +364,61 @@ describe("PackageService", () => {
   // ── createVersion ───────────────────────────────────────────────────────
 
   describe("createVersion", () => {
-    it("bumps version (+1) and returns versionBumped=true", async () => {
-      const pkg = doc({ version: 1, versions: [] });
-      // createVersion uses .exec() only, no .lean()
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
+    it("atomically creates a complete new snapshot without mutating the previous snapshot", async () => {
+      const previous = doc();
+      const previousSnapshot = structuredClone(previous.versions[0]);
+      const updated = doc({ version: 2 });
+      mockPackageModel.findById.mockReturnValue(queryChain(previous));
+      mockPackageModel.findOneAndUpdate.mockReturnValue(queryChain(updated));
 
-      const result = await createVersion(PKG_ID);
+      const result = await createVersion(PKG_ID, {
+        expectedVersion: 1,
+        monthlyPrice: 39,
+      });
 
       expect(result.versionBumped).toBe(true);
-      expect(pkg.version).toBe(2);
-      expect(pkg.versions).toHaveLength(1);
-      expect(pkg.versions[0].version).toBe(2);
-      expect(pkg.save).toHaveBeenCalledOnce();
+      expect(previous.versions[0]).toEqual(previousSnapshot);
+      expect(mockPackageModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: PKG_ID, version: 1 },
+        expect.objectContaining({
+          $inc: { version: 1 },
+          $push: {
+            versions: expect.objectContaining({
+              version: 2,
+              name: "Basic Plan",
+              code: "basic",
+              currency: "USD",
+              monthlyPrice: 39,
+            }),
+          },
+        }),
+        { returnDocument: "after", runValidators: true },
+      );
     });
 
-    it("pushes a full snapshot into the versions array", async () => {
-      const pkg = doc({ version: 1, versions: [] });
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
-
-      await createVersion(PKG_ID);
-
-      expect(pkg.versions[0]).toMatchObject({
-        version: 2,
-        monthlyPrice: 29,
-        annualPrice: 290,
-        trialDays: 14,
-        visibility: "public",
+    it("rejects a stale expected version with a stable conflict", async () => {
+      mockPackageModel.findById.mockReturnValue(queryChain(doc({ version: 3 })));
+      await expect(
+        createVersion(PKG_ID, { expectedVersion: 2, monthlyPrice: 39 }),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: "PACKAGE_VERSION_CONFLICT",
       });
+      expect(mockPackageModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(mockAuditWrite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "PACKAGE_VERSION_CREATED",
+          outcome: "DENIED",
+        }),
+      );
     });
 
     it("throws 404 when package is not found", async () => {
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
+      mockPackageModel.findById.mockReturnValue(queryChain(null));
 
-      await expect(createVersion("nonexistent")).rejects.toMatchObject({
+      await expect(createVersion("507f1f77bcf86cd799439099", { expectedVersion: 1 })).rejects.toMatchObject({
         statusCode: 404,
-        code: "NOT_FOUND",
+        code: "PACKAGE_NOT_FOUND",
       });
     });
   });
@@ -391,26 +426,56 @@ describe("PackageService", () => {
   // ── archivePackage ──────────────────────────────────────────────────────
 
   describe("archivePackage", () => {
-    it("sets active=false on the package", async () => {
+    it("previews in-use impact and archives without changing subscription references", async () => {
+      mockSubscriptionModel.aggregate.mockResolvedValue([{ _id: "ACTIVE", count: 2 }]);
+      mockPackageModel.findById.mockReturnValue(queryChain(doc()));
       const archived = doc({ active: false });
-      mockPackageModel.findByIdAndUpdate.mockReturnValue(queryChain(archived));
+      mockPackageModel.findOneAndUpdate.mockReturnValue(queryChain(archived));
 
-      const result = await archivePackage(PKG_ID);
+      const result = await archivePackage(PKG_ID, 1, "Retiring this package");
 
       expect(result.active).toBe(false);
-      expect(mockPackageModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        PKG_ID,
+      expect(mockPackageModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: PKG_ID, version: 1, active: true },
         { $set: { active: false } },
         { returnDocument: "after", runValidators: true },
       );
+      expect(mockAuditWrite).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "PACKAGE_ARCHIVED", outcome: "SUCCESS" }),
+      );
     });
 
-    it("throws 404 when package is not found", async () => {
-      mockPackageModel.findByIdAndUpdate.mockReturnValue(queryChain(null));
+    it("returns a stable conflict for a repeated archive", async () => {
+      mockSubscriptionModel.aggregate.mockResolvedValue([]);
+      mockPackageModel.findById.mockReturnValue(queryChain(doc({ active: false })));
+      await expect(
+        archivePackage(PKG_ID, 1, "Retiring this package"),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: "PACKAGE_ALREADY_ARCHIVED",
+      });
+    });
 
-      await expect(archivePackage("nonexistent")).rejects.toMatchObject({
-        statusCode: 404,
-        code: "NOT_FOUND",
+    it("activates an archived package explicitly", async () => {
+      mockSubscriptionModel.aggregate.mockResolvedValue([]);
+      mockPackageModel.findById.mockReturnValue(queryChain(doc({ active: false })));
+      mockPackageModel.findOneAndUpdate.mockReturnValue(queryChain(doc({ active: true })));
+      const result = await activatePackage(PKG_ID, 1, "Returning to sale");
+      expect(result.active).toBe(true);
+    });
+
+    it("reports public visibility and subscription states in impact preview", async () => {
+      mockSubscriptionModel.aggregate.mockResolvedValue([
+        { _id: "ACTIVE", count: 2 },
+        { _id: "TRIALING", count: 1 },
+      ]);
+      mockPackageModel.findById.mockReturnValue(queryChain(doc()));
+      const preview = await previewPackageImpact(PKG_ID, "archive");
+      expect(preview).toMatchObject({
+        subscriptionUsageCount: 3,
+        affectedSubscriptionStates: { ACTIVE: 2, TRIALING: 1 },
+        landingVisibilityImpact: "removed",
+        transitionAllowed: true,
       });
     });
   });
@@ -490,10 +555,8 @@ describe("PackageService", () => {
     });
   });
 
-  // ── Legacy normalisation in createVersion ──────────────────────────────────
-
-  describe("createVersion — legacy snapshot normalisation", () => {
-    it("backfills entitlements on legacy version snapshots that lack them", async () => {
+  describe("createVersion — historical snapshot preservation", () => {
+    it("never rewrites a legacy snapshot while adding a complete current snapshot", async () => {
       const legacyVersions = [
         {
           version: 1,
@@ -510,116 +573,24 @@ describe("PackageService", () => {
         },
       ];
       const pkg = doc({ version: 1, versions: legacyVersions });
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
+      const original = structuredClone(pkg.versions);
+      mockPackageModel.findById.mockReturnValue(queryChain(pkg));
+      mockPackageModel.findOneAndUpdate.mockReturnValue(
+        queryChain(doc({ version: 2, versions: [...legacyVersions] })),
+      );
 
-      const result = await createVersion(PKG_ID);
+      const result = await createVersion(PKG_ID, { expectedVersion: 1 });
 
       expect(result.versionBumped).toBe(true);
-      expect(pkg.versions).toHaveLength(2);
-      // The first snapshot should now have entitlements derived from limits
-      expect(pkg.versions[0].entitlements).toBeDefined();
-      expect(pkg.versions[0].entitlements!.employees).toBe(5);
-      expect(pkg.versions[0].entitlements!.documents).toBe(100);
-      expect(pkg.versions[0].entitlements!.queriesPerMonth).toBe(500);
-      expect(pkg.versions[0].entitlements!.admins).toBe(1);
-      expect(pkg.versions[0].entitlements!.fileSizeMb).toBe(10);
-      expect(pkg.versions[0].entitlements!.tokensPerMonth).toBe(0);
-      expect(pkg.versions[0].entitlements!.ocrPagesPerMonth).toBe(0);
-    });
-
-    it("backfills entitlements from root entitlements when no legacy limits exist", async () => {
-      const legacyVersions = [
-        {
-          version: 1,
-          monthlyPrice: 29,
-          annualPrice: 290,
-          trialDays: 14,
-          visibility: "public",
-          supportedModels: ["basic"],
-          analyticsLevel: "basic" as const,
-          retentionDays: 90,
-          supportLevel: "community" as const,
-          createdAt: new Date("2024-01-01"),
-          // no entitlements, no limits
-        },
-      ];
-      const pkg = doc({ version: 1, versions: legacyVersions });
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
-
-      await createVersion(PKG_ID);
-
-      // Should fall back to root entitlements
-      expect(pkg.versions[0].entitlements).toBeDefined();
-      expect(pkg.versions[0].entitlements!.employees).toBe(10); // from root entitlements
-      expect(pkg.versions[0].entitlements!.documents).toBe(500);
-    });
-
-    it("does not modify already-correct version snapshots", async () => {
-      const correctVersions = [
-        {
-          version: 1,
-          monthlyPrice: 29,
-          entitlements: {
-            employees: 10, admins: 2, documents: 500, storageMb: 1024,
-            fileSizeMb: 25, queriesPerMonth: 5000, tokensPerMonth: 100_000, ocrPagesPerMonth: 100,
-          },
-          annualPrice: 290,
-          trialDays: 14,
-          visibility: "public",
-          supportedModels: ["basic"],
-          analyticsLevel: "basic" as const,
-          retentionDays: 90,
-          supportLevel: "community" as const,
-          createdAt: new Date("2024-01-01"),
-        },
-      ];
-      const pkg = doc({ version: 1, versions: correctVersions });
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
-
-      await createVersion(PKG_ID);
-
-      // First snapshot should remain unchanged
-      expect(pkg.versions[0].entitlements!.employees).toBe(10);
-      expect(pkg.versions[0].entitlements!.admins).toBe(2);
-    });
-
-    it("normalises multiple legacy snapshots in one pass", async () => {
-      const legacyVersions = [
-        {
-          version: 1,
-          monthlyPrice: 19,
-          limits: { users: 1, documents: 10, questionsPerMonth: 100, storageMb: 50 },
-          annualPrice: 190,
-          trialDays: 7,
-          visibility: "public",
-          supportedModels: ["basic"],
-          analyticsLevel: "basic" as const,
-          retentionDays: 30,
-          supportLevel: "community" as const,
-          createdAt: new Date("2024-01-01"),
-        },
-        {
-          version: 2,
-          monthlyPrice: 29,
-          limits: { users: 5, documents: 100, questionsPerMonth: 500, storageMb: 512 },
-          annualPrice: 290,
-          trialDays: 14,
-          visibility: "public",
-          supportedModels: ["basic"],
-          analyticsLevel: "basic" as const,
-          retentionDays: 90,
-          supportLevel: "community" as const,
-          createdAt: new Date("2024-06-01"),
-        },
-      ];
-      const pkg = doc({ version: 2, versions: legacyVersions });
-      mockPackageModel.findById.mockReturnValue({ exec: vi.fn().mockResolvedValue(pkg) });
-
-      await createVersion(PKG_ID);
-
-      expect(pkg.versions).toHaveLength(3);
-      expect(pkg.versions[0].entitlements!.employees).toBe(1);
-      expect(pkg.versions[1].entitlements!.employees).toBe(5);
+      expect(pkg.versions).toEqual(original);
+      const update = mockPackageModel.findOneAndUpdate.mock.calls[0]?.[1];
+      expect(update.$push.versions).toMatchObject({
+        version: 2,
+        name: "Basic Plan",
+        code: "basic",
+        currency: "USD",
+        entitlements: pkg.entitlements,
+      });
     });
   });
 });

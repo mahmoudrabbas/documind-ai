@@ -25,6 +25,7 @@ import {
   LEGACY_PLATFORM_TENANT_SLUGS,
   PLATFORM_TENANT_SLUG,
 } from "../../common/auth/platformTenant.js";
+import { PACKAGE_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import {
   listPlatformAuditLogs,
   type AuditOperationContext,
@@ -140,6 +141,8 @@ export async function createPackage(
     email: actor.actorEmail,
     role: actor.actorRole,
     tenantId: actor.tenantId,
+    traceId: actor.traceId,
+    requestId: actor.requestId,
   });
 
   // Sync billable packages to Stripe
@@ -156,9 +159,11 @@ export async function createPackage(
         },
       }).exec();
     } catch (err) {
-      // Clean up: delete the package since it can't function as a billable package
-      // without valid Stripe references
-      await PackageModel.findByIdAndDelete(pkg._id).exec();
+      // Preserve package history: a failed provider sync archives the package
+      // and removes it from public selection instead of hard-deleting it.
+      await PackageModel.findByIdAndUpdate(pkg._id, {
+        $set: { active: false, visibility: "internal" },
+      }).exec();
       throw err;
     }
   }
@@ -185,28 +190,7 @@ export async function updatePackage(
     Permission.BILLING_MANAGE,
   );
   const existing = await PackageModel.findById(id).exec();
-  if (!existing) throw new AppError(404, "NOT_FOUND", "Package not found");
-
-  // Normalise legacy version snapshots that pre-date the entitlements migration.
-  // Without this, Mongoose validation fails when any historical versions[].entitlements
-  // is missing — even if the root-level entitlements are being set correctly.
-  for (const v of existing.versions) {
-    if (!v.entitlements) {
-      const legacy = (v as unknown as { limits?: { users: number; documents: number; questionsPerMonth: number; storageMb: number } }).limits;
-      v.entitlements = legacy
-        ? {
-            employees: legacy.users,
-            admins: 1,
-            documents: legacy.documents,
-            storageMb: legacy.storageMb,
-            fileSizeMb: 10,
-            queriesPerMonth: legacy.questionsPerMonth,
-            tokensPerMonth: 0,
-            ocrPagesPerMonth: 0,
-          }
-        : existing.entitlements;
-    }
-  }
+  if (!existing) throw new AppError(404, PACKAGE_NOT_FOUND, "Package not found");
 
   // Detect pricing changes before applying updates
   const monthlyPriceChanged =
@@ -255,7 +239,7 @@ export async function updatePackage(
             metadata: {
               packageCode: existing.code,
               packageId: String(existing._id),
-              version: String(existing.version),
+              version: String(existing.version + 1),
             },
           });
           existing.stripePriceId = price.id;
@@ -275,7 +259,7 @@ export async function updatePackage(
             metadata: {
               packageCode: existing.code,
               packageId: String(existing._id),
-              version: String(existing.version),
+              version: String(existing.version + 1),
               billingInterval: "annual",
             },
           });
@@ -288,23 +272,69 @@ export async function updatePackage(
     }
   }
 
-  // Apply field changes before version bump
-  Object.assign(existing, input);
-  await existing.save();
-
-  // Delegate version bump + snapshot to billing domain
-  await PackageService.createVersion(id, {
+  const result = await PackageService.createVersion(id, {
+    ...(input as Omit<PackageService.PackageVersionInput, "stripeProductId" | "stripePriceId" | "stripeAnnualPriceId">),
+    stripeProductId: existing.stripeProductId,
+    stripePriceId: existing.stripePriceId,
+    stripeAnnualPriceId: existing.stripeAnnualPriceId,
+  }, {
     userId: actor.actorId,
     email: actor.actorEmail,
     role: actor.actorRole,
     tenantId: actor.tenantId,
+    traceId: actor.traceId,
+    requestId: actor.requestId,
   });
-
-  // Re-read for full backward-compat document shape (includes _id, __v, virtuals)
-  const updated = await PackageModel.findById(id).lean().exec();
-
-  return { ...updated, versionBumped: true };
+  return { ...(await PackageService.getPackage(id)), versionBumped: result.versionBumped };
 }
+
+export async function previewPackageImpact(
+  id: string,
+  action: PackageService.PackageLifecycleAction,
+  context: OperationAuthorizationContext,
+) {
+  const actor = await authorizePlatformOperation(context, Permission.BILLING_READ);
+  return PackageService.previewPackageImpact(id, action, {
+    userId: actor.actorId,
+    email: actor.actorEmail,
+    role: actor.actorRole,
+    tenantId: actor.tenantId,
+    traceId: actor.traceId,
+    requestId: actor.requestId,
+  });
+}
+
+async function transitionPackage(
+  id: string,
+  action: PackageService.PackageLifecycleAction,
+  input: { expectedVersion: number; reason: string },
+  context: OperationAuthorizationContext,
+) {
+  const actor = await authorizePlatformOperation(context, Permission.BILLING_MANAGE);
+  const billingActor = {
+    userId: actor.actorId,
+    email: actor.actorEmail,
+    role: actor.actorRole,
+    tenantId: actor.tenantId,
+    traceId: actor.traceId,
+    requestId: actor.requestId,
+  };
+  return action === "archive"
+    ? PackageService.archivePackage(id, input.expectedVersion, input.reason, billingActor)
+    : PackageService.activatePackage(id, input.expectedVersion, input.reason, billingActor);
+}
+
+export const archivePackage = (
+  id: string,
+  input: { expectedVersion: number; reason: string },
+  context: OperationAuthorizationContext,
+) => transitionPackage(id, "archive", input, context);
+
+export const activatePackage = (
+  id: string,
+  input: { expectedVersion: number; reason: string },
+  context: OperationAuthorizationContext,
+) => transitionPackage(id, "activate", input, context);
 
 /**
  * Create a subscription — delegates to {@link SubscriptionService.createSubscription}.

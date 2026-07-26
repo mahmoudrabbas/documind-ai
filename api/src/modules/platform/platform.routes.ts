@@ -4,13 +4,16 @@ import { requirePlatformTenant } from "../../common/middlewares/platformTenant.m
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
+  activatePackageController,
   aiConfigurationController,
+  archivePackageController,
   auditController,
   createPackageController,
   healthController,
   jobsController,
   overviewController,
   packageController,
+  packageImpactController,
   packagesController,
   platformUsersController,
   settingsController,
@@ -29,6 +32,10 @@ router.get("/packages", requirePermission(Permission.BILLING_READ), packagesCont
 router.post("/packages", requirePermission(Permission.BILLING_MANAGE), createPackageController);
 router.get("/packages/:id", requirePermission(Permission.BILLING_READ), packageController);
 router.patch("/packages/:id", requirePermission(Permission.BILLING_MANAGE), updatePackageController);
+router.post("/packages/:id/versions", requirePermission(Permission.BILLING_MANAGE), updatePackageController);
+router.get("/packages/:id/impact", requirePermission(Permission.BILLING_READ), packageImpactController);
+router.post("/packages/:id/archive", requirePermission(Permission.BILLING_MANAGE), archivePackageController);
+router.post("/packages/:id/activate", requirePermission(Permission.BILLING_MANAGE), activatePackageController);
 router.get("/subscriptions", requirePermission(Permission.BILLING_READ), subscriptionsController);
 router.patch("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE), updateSubscriptionController);
 router.get("/users", requirePermission(Permission.USERS_READ), platformUsersController);

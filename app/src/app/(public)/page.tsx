@@ -482,18 +482,8 @@ function PricingSection() {
         ? paidPackages[0].code
         : null;
 
-  const fallbackFree: PackageData = {
-    id: "free-fallback",
-    name: t("landing.pricingFree"),
-    code: "free",
-    description: t("landing.pricingFreeDesc"),
-    monthlyPrice: 0,
-    currency: "USD",
-    entitlements: { employees: 3, documents: 50, queriesPerMonth: 500, storageMb: 100 },
-  };
-
   const gridCols =
-    paidPackages.length + (freePkg || packages.length === 0 ? 1 : 0) <= 2
+    packages.length <= 2
       ? "md:grid-cols-2"
       : "md:grid-cols-2 lg:grid-cols-3";
 
@@ -538,14 +528,11 @@ function PricingSection() {
           <div className="flex justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
           </div>
+        ) : packages.length === 0 ? (
+          <p className="py-12 text-center text-on-surface-variant">No packages are currently available.</p>
         ) : (
           <div className={cn("grid items-stretch gap-6 lg:gap-8", gridCols)}>
-            <PricingCard
-              pkg={freePkg || fallbackFree}
-              t={t}
-              annual={annual}
-              isFree
-            />
+            {freePkg ? <PricingCard pkg={freePkg} t={t} annual={annual} isFree /> : null}
             {paidPackages.map((pkg) => (
               <PricingCard
                 key={pkg.id}

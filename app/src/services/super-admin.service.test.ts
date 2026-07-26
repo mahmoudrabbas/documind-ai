@@ -4,8 +4,16 @@ import {
   updateGlobalSettings,
   getAiConfiguration,
   updateAiConfiguration,
+  listPackages,
+  getPackage,
+  createPackage,
+  updatePackage,
+  createPackageVersion,
+  previewPackageImpact,
+  archivePackage,
+  activatePackage,
 } from "./super-admin.service";
-import type { GlobalSettings, GlobalSettingsPatch } from "@/types/api/super-admin.types";
+import type { GlobalSettings, GlobalSettingsPatch, PackageCreateInput, PackageVersionInput } from "@/types/api/super-admin.types";
 
 const mockApiClient = vi.fn();
 vi.mock("@/lib/api-client", () => ({
@@ -14,6 +22,48 @@ vi.mock("@/lib/api-client", () => ({
 
 beforeEach(() => {
   mockApiClient.mockReset();
+});
+
+describe("super-admin.service package operations", () => {
+  const createBody: PackageCreateInput = {
+    name: "Professional", code: "professional", description: "For teams",
+    monthlyPrice: 49, annualPrice: 490, currency: "USD", trialDays: 14,
+    visibility: "public",
+    entitlements: { employees: 20, admins: 2, documents: 1000, storageMb: 10000,
+      fileSizeMb: 25, queriesPerMonth: 5000, tokensPerMonth: 100000, ocrPagesPerMonth: 500 },
+    supportedModels: ["basic"], analyticsLevel: "advanced", retentionDays: 365,
+    supportLevel: "priority",
+  };
+  const versionBody: PackageVersionInput = { ...createBody, expectedVersion: 2 };
+
+  it("uses the package list and detail routes", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: [] });
+    await listPackages();
+    await getPackage("pkg/id");
+    expect(mockApiClient).toHaveBeenNthCalledWith(1, "/platform/packages", { signal: undefined });
+    expect(mockApiClient).toHaveBeenNthCalledWith(2, "/platform/packages/pkg%2Fid", { signal: undefined });
+  });
+
+  it("sends typed create, patch, and immutable-version contracts", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: {} });
+    await createPackage(createBody);
+    await updatePackage("abc", versionBody);
+    await createPackageVersion("abc", versionBody);
+    expect(mockApiClient).toHaveBeenNthCalledWith(1, "/platform/packages", { method: "POST", body: createBody });
+    expect(mockApiClient).toHaveBeenNthCalledWith(2, "/platform/packages/abc", { method: "PATCH", body: versionBody });
+    expect(mockApiClient).toHaveBeenNthCalledWith(3, "/platform/packages/abc/versions", { method: "POST", body: versionBody });
+  });
+
+  it("uses impact, archive, and activate lifecycle routes", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: {} });
+    const lifecycle = { expectedVersion: 2, reason: "Lifecycle review" };
+    await previewPackageImpact("abc", "archive");
+    await archivePackage("abc", lifecycle);
+    await activatePackage("abc", lifecycle);
+    expect(mockApiClient).toHaveBeenNthCalledWith(1, "/platform/packages/abc/impact?action=archive", { signal: undefined });
+    expect(mockApiClient).toHaveBeenNthCalledWith(2, "/platform/packages/abc/archive", { method: "POST", body: lifecycle });
+    expect(mockApiClient).toHaveBeenNthCalledWith(3, "/platform/packages/abc/activate", { method: "POST", body: lifecycle });
+  });
 });
 
 describe("super-admin.service Global Settings", () => {

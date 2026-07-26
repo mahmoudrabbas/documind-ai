@@ -6,6 +6,11 @@ import type {
   PlatformAuditLog,
   PlatformJob,
   PlatformPackage,
+  PackageCreateInput,
+  PackageImpactPreview,
+  PackageLifecycleAction,
+  PackageLifecycleInput,
+  PackageVersionInput,
   PlatformSubscription,
   PlatformUser,
   RetrievalDebugResult,
@@ -26,15 +31,39 @@ export const getPackage = (id: string, signal?: AbortSignal) =>
     `/platform/packages/${encodeURIComponent(id)}`,
     { signal },
   );
-export const createPackage = (body: Record<string, unknown>) =>
+export const createPackage = (body: PackageCreateInput) =>
   apiClient<Success<PlatformPackage>>("/platform/packages", {
     method: "POST",
-    body,
+    body: { ...body },
   });
-export const updatePackage = (id: string, body: Record<string, unknown>) =>
+export const updatePackage = (id: string, body: PackageVersionInput) =>
   apiClient<Success<PlatformPackage>>(
     `/platform/packages/${encodeURIComponent(id)}`,
     { method: "PATCH", body },
+  );
+export const createPackageVersion = (id: string, body: PackageVersionInput) =>
+  apiClient<Success<PlatformPackage>>(
+    `/platform/packages/${encodeURIComponent(id)}/versions`,
+    { method: "POST", body: { ...body } },
+  );
+export const previewPackageImpact = (
+  id: string,
+  action: PackageLifecycleAction,
+  signal?: AbortSignal,
+) =>
+  apiClient<Success<PackageImpactPreview>>(
+    `/platform/packages/${encodeURIComponent(id)}/impact?action=${action}`,
+    { signal },
+  );
+export const archivePackage = (id: string, body: PackageLifecycleInput) =>
+  apiClient<Success<PlatformPackage>>(
+    `/platform/packages/${encodeURIComponent(id)}/archive`,
+    { method: "POST", body: { ...body } },
+  );
+export const activatePackage = (id: string, body: PackageLifecycleInput) =>
+  apiClient<Success<PlatformPackage>>(
+    `/platform/packages/${encodeURIComponent(id)}/activate`,
+    { method: "POST", body: { ...body } },
   );
 export const listSubscriptions = (signal?: AbortSignal) =>
   apiClient<Success<PlatformSubscription[]>>("/platform/subscriptions", {

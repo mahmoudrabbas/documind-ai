@@ -3,6 +3,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { AuditOperationContext } from "../audit/audit.service.js";
 import {
+  activatePackage,
+  archivePackage,
   createPackage,
   getOverview,
   getPackage,
@@ -14,6 +16,7 @@ import {
   listPackages,
   listPlatformUsers,
   listSubscriptions,
+  previewPackageImpact,
   updatePackage,
   updateSetting,
   updateSubscription,
@@ -23,6 +26,8 @@ import {
   idSchema,
   listSchema,
   packageBodySchema,
+  packageImpactQuerySchema,
+  packageLifecycleBodySchema,
   packageUpdateSchema,
   parse,
   settingsBodySchema,
@@ -99,6 +104,27 @@ export const updatePackageController = endpoint((req) =>
   updatePackage(
     parse(idSchema, req.params).id,
     parse(packageUpdateSchema, migrateLimits(req.body)),
+    auditContext(req),
+  ),
+);
+export const packageImpactController = endpoint((req) =>
+  previewPackageImpact(
+    parse(idSchema, req.params).id,
+    parse(packageImpactQuerySchema, req.query).action,
+    auditContext(req),
+  ),
+);
+export const archivePackageController = endpoint((req) =>
+  archivePackage(
+    parse(idSchema, req.params).id,
+    parse(packageLifecycleBodySchema, req.body),
+    auditContext(req),
+  ),
+);
+export const activatePackageController = endpoint((req) =>
+  activatePackage(
+    parse(idSchema, req.params).id,
+    parse(packageLifecycleBodySchema, req.body),
     auditContext(req),
   ),
 );

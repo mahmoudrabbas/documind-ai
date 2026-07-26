@@ -46,12 +46,16 @@ export type GlobalSettingsPatch = Partial<GlobalSettings>;
 
 export interface PackageVersionSnapshot {
   version: number;
+  name: string;
+  code: string;
+  description: string;
   monthlyPrice: number;
   annualPrice: number;
   currency: string;
   trialDays: number;
+  visibility: PackageVisibility;
   /** @deprecated Use `entitlements` instead */
-  limits: {
+  limits?: {
     users: number;
     documents: number;
     questionsPerMonth: number;
@@ -78,7 +82,7 @@ export interface PlatformPackage {
   trialDays: number;
   visibility: PackageVisibility;
   /** @deprecated Use `entitlements` instead */
-  limits: {
+  limits?: {
     users: number;
     documents: number;
     questionsPerMonth: number;
@@ -92,6 +96,50 @@ export interface PlatformPackage {
   versions: PackageVersionSnapshot[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PackageCreateInput {
+  name: string;
+  code: string;
+  description: string;
+  monthlyPrice: number;
+  annualPrice: number;
+  currency: string;
+  trialDays: number;
+  visibility: PackageVisibility;
+  entitlements: PackageEntitlements;
+  supportedModels: string[];
+  analyticsLevel: AnalyticsLevel;
+  retentionDays: number;
+  supportLevel: SupportLevel;
+}
+
+export type PackageVersionInput = Omit<PackageCreateInput, "code"> & {
+  expectedVersion: number;
+};
+
+export interface PackageLifecycleInput {
+  expectedVersion: number;
+  reason: string;
+}
+
+export type PackageLifecycleAction = "archive" | "activate";
+
+export interface PackageImpactPreview {
+  package: {
+    id: string;
+    name: string;
+    code: string;
+    version: number;
+    active: boolean;
+  };
+  action: PackageLifecycleAction;
+  subscriptionUsageCount: number;
+  affectedSubscriptionStates: Record<string, number>;
+  landingVisibilityImpact: "removed" | "restored" | "unchanged";
+  warnings: string[];
+  blockingReasons: string[];
+  transitionAllowed: boolean;
 }
 
 export interface PlatformSubscription {

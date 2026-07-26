@@ -100,10 +100,12 @@ The billing module provides a coherent package/subscription domain with versione
 
 ### `PATCH /platform/packages/:id`
 
-- **Auth:** SUPER_ADMIN
-- **Request body:** Partial package fields (any subset of the FR-PAY-001 fields)
-- **Behavior:** Applies field changes, then bumps version + snapshot
+- **Auth:** platform SUPER_ADMIN with `BILLING_MANAGE`
+- **Request body:** `expectedVersion` plus any versioned fields; `code` and lifecycle state are rejected
+- **Behavior:** Atomically appends an immutable snapshot and rejects stale writers with `PACKAGE_VERSION_CONFLICT`
 - **Response:** `{ success: true, data: { ...package, versionBumped: true } }`
+
+`POST /platform/packages/:id/versions` is the explicit immutable-version endpoint and uses the same request contract. Impact preview and audited archive/activate operations are documented in `docs/issue-26-phase-3-package-operations.md`.
 
 ### `GET /platform/subscriptions`
 
