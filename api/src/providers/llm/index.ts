@@ -45,6 +45,13 @@ async function createModelAdapter(): Promise<ModelAdapter> {
     return createStudentBedrockProvider();
   }
 
+  if (aiProvider === "groq") {
+    const { GroqChatAdapter } = await import("./groqChat.adapter.js");
+    const apiKey = process.env.GROQ_API_KEY;
+    const model = process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile";
+    return new GroqChatAdapter(apiKey, model);
+  }
+
   return new FakeModelAdapter();
 }
 

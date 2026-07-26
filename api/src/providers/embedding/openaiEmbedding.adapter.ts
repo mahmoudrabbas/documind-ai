@@ -17,8 +17,8 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private client: OpenAI;
   private modelVersion: string;
 
-  constructor(apiKey: string, model: string, dimensions: number) {
-    this.client = new OpenAI({ apiKey });
+  constructor(apiKey: string, model: string, dimensions: number, baseURL?: string) {
+    this.client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     this.model = model;
     this.dimensions = dimensions;
     this.modelVersion = model;

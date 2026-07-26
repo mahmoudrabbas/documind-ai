@@ -24,7 +24,7 @@ async function ensureSearchIndexes(): Promise<void> {
       type: "vectorSearch",
       definition: {
         fields: [
-          { type: "vector", numDimensions: parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || (process.env.AI_PROVIDER === "student-bedrock" ? "1024" : "1536"), 10), path: "vector", similarity: "cosine" },
+          { type: "vector", numDimensions: parseInt(process.env.AI_PROVIDER === "groq" ? (process.env.JINA_EMBEDDING_DIMENSIONS || "1024") : process.env.AI_PROVIDER === "student-bedrock" ? "1024" : (process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536"), 10), path: "vector", similarity: "cosine" },
           { type: "filter", path: "tenantId" },
           { type: "filter", path: "documentId" },
           { type: "filter", path: "generationId" },

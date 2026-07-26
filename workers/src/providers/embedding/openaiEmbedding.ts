@@ -30,9 +30,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions: number;
   private client: any;
 
-  constructor(apiKey: string, model = "text-embedding-3-small", dimensions = 1536) {
+  constructor(apiKey: string, model = "text-embedding-3-small", dimensions = 1536, baseURL?: string) {
     const OpenAI = require("openai");
-    this.client = new OpenAI({ apiKey });
+    this.client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     this.model = model;
     this.dimensions = dimensions;
   }
@@ -305,6 +305,13 @@ export function createEmbeddingProvider(): EmbeddingProvider {
       parseInt(process.env.BEDROCK_MAX_RETRIES || "3", 10),
       parseInt(process.env.BEDROCK_RETRY_DELAY_MS || "1000", 10)
     );
+  }
+
+  if (aiProvider === "groq") {
+    const apiKey = process.env.JINA_API_KEY || "";
+    const model = process.env.JINA_EMBEDDING_MODEL || "jina-embeddings-v3";
+    const dimensions = parseInt(process.env.JINA_EMBEDDING_DIMENSIONS || "1024", 10);
+    return new OpenAIEmbeddingProvider(apiKey, model, dimensions, "https://api.jina.ai/v1");
   }
 
   const apiKey = process.env.OPENAI_API_KEY;

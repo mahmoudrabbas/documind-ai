@@ -57,6 +57,14 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
     return createStudentBedrockProvider();
   }
 
+  if (aiProvider === "groq") {
+    const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
+    const apiKey = process.env.JINA_API_KEY;
+    const model = process.env.JINA_EMBEDDING_MODEL || "jina-embeddings-v3";
+    const dimensions = parseInt(process.env.JINA_EMBEDDING_DIMENSIONS || "1024", 10);
+    return new OpenAIEmbeddingProvider(apiKey, model, dimensions, "https://api.jina.ai/v1");
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
 

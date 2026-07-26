@@ -157,7 +157,15 @@ const envSchema = z
     OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
     OPENAI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
 
-    AI_PROVIDER: z.enum(["openai", "student-bedrock", "fake"]).default("fake"),
+    AI_PROVIDER: z.enum(["openai", "groq", "student-bedrock", "fake"]).default("fake"),
+
+    GROQ_API_KEY: z.string().default(""),
+    GROQ_CHAT_MODEL: z.string().default("llama-3.3-70b-versatile"),
+
+    JINA_API_KEY: z.string().default(""),
+    JINA_EMBEDDING_MODEL: z.string().default("jina-embeddings-v3"),
+    JINA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),
+
     SBG_API_KEY: z.string().default(""),
     SBG_BASE_URL: z.string().url().default("https://apiaccess.iti.net.eg"),
     BEDROCK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
@@ -227,6 +235,22 @@ const envSchema = z
           code: "custom",
           path: ["SBG_BASE_URL"],
           message: "is required when AI_PROVIDER is student-bedrock",
+        });
+      }
+    }
+    if (env.AI_PROVIDER === "groq") {
+      if (!env.GROQ_API_KEY || env.GROQ_API_KEY.trim() === "") {
+        context.addIssue({
+          code: "custom",
+          path: ["GROQ_API_KEY"],
+          message: "is required when AI_PROVIDER is groq",
+        });
+      }
+      if (!env.JINA_API_KEY || env.JINA_API_KEY.trim() === "") {
+        context.addIssue({
+          code: "custom",
+          path: ["JINA_API_KEY"],
+          message: "is required when AI_PROVIDER is groq (for embeddings)",
         });
       }
     }

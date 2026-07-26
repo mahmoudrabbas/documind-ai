@@ -32,9 +32,12 @@ services:
       - SEED_SUPER_ADMIN_NAME=DocuMind Platform Admin
       - SEED_SUPER_ADMIN_EMAIL=superadmin@documind.ai
       - SEED_SUPER_ADMIN_PASSWORD=DocuMind@2026
-      - AI_PROVIDER=student-bedrock
-      - SBG_API_KEY=sbg_MnMwDD6bRnvLaxMt9dM6P1iSa9ZHM276
-      - SBG_BASE_URL=https://apiaccess.iti.net.eg
+      - AI_PROVIDER=groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
+      - JINA_API_KEY=${JINA_API_KEY}
+      - JINA_EMBEDDING_MODEL=jina-embeddings-v3
+      - JINA_EMBEDDING_DIMENSIONS=1024
     secrets:
       - api_jwt_secret
       - api_refresh_secret
@@ -110,9 +113,12 @@ services:
       - SMTP_SECURE=false
       - SMTP_USER=marcoreda51@gmail.com
       - SMTP_FROM=marcoreda51@gmail.com
-      - AI_PROVIDER=student-bedrock
-      - SBG_API_KEY=sbg_MnMwDD6bRnvLaxMt9dM6P1iSa9ZHM276
-      - SBG_BASE_URL=https://apiaccess.iti.net.eg
+      - AI_PROVIDER=groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
+      - JINA_API_KEY=${JINA_API_KEY}
+      - JINA_EMBEDDING_MODEL=jina-embeddings-v3
+      - JINA_EMBEDDING_DIMENSIONS=1024
     secrets:
       - api_smtp_pass
 

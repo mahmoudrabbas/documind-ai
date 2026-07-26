@@ -31,11 +31,14 @@ let _instance: IntentQueryService = createIntentQueryService();
  */
 export async function initializeIntentQueryService(): Promise<void> {
   const { setModelAdapter } = await import("../../providers/llm/index.js");
-  const { createStudentBedrockProvider } = await import("../../providers/bedrock/index.js");
   const aiProvider = process.env.AI_PROVIDER || "fake";
   let modelAdapter;
   if (aiProvider === "student-bedrock") {
+    const { createStudentBedrockProvider } = await import("../../providers/bedrock/index.js");
     modelAdapter = createStudentBedrockProvider();
+  } else if (aiProvider === "groq") {
+    const { GroqChatAdapter } = await import("../../providers/llm/groqChat.adapter.js");
+    modelAdapter = new GroqChatAdapter(process.env.GROQ_API_KEY || "", process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile");
   } else {
     const { FakeModelAdapter } = await import("../../providers/llm/fakeAdapters.js");
     modelAdapter = new FakeModelAdapter();
