@@ -37,10 +37,11 @@ export class ApiJobDispatcher {
   private flowProducer: FlowProducer;
 
   constructor(queue?: Queue) {
-    const redis: Redis = getRedisClient() as unknown as Redis;
     if (queue) {
       this.queue = queue;
+      this.flowProducer = null as unknown as FlowProducer;
     } else {
+      const redis: Redis = getRedisClient() as unknown as Redis;
       this.queue = new Queue(JOBS_QUEUE_NAME, {
         connection: redis,
         defaultJobOptions: {
@@ -50,8 +51,8 @@ export class ApiJobDispatcher {
           removeOnFail: false,
         },
       });
+      this.flowProducer = new FlowProducer({ connection: redis });
     }
-    this.flowProducer = new FlowProducer({ connection: redis });
   }
 
   /**
