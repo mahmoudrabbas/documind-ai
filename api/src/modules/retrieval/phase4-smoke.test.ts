@@ -15,6 +15,17 @@ import type { DocumentChunkDocument } from "../../db/models/documentChunk.model.
 // Mock adapters
 // ---------------------------------------------------------------------------
 
+const VALID_IDS = {
+  doc1: "64a1b2c3d4e5f6a7b8c9d0f1",
+  doc2: "64a1b2c3d4e5f6a7b8c9d0f2",
+  doc3: "64a1b2c3d4e5f6a7b8c9d0f3",
+  ver1: "64a1b2c3d4e5f6a7b8c9d0a1",
+  ver2: "64a1b2c3d4e5f6a7b8c9d0a2",
+  ver3: "64a1b2c3d4e5f6a7b8c9d0a3",
+  tenant1: "64a1b2c3d4e5f6a7b8c90001",
+  actor1: "64a1b2c3d4e5f6a7b8c90002",
+};
+
 function createMockVectorAdapter(results: { chunkId: string; score: number }[]): VectorStoreAdapter {
   return {
     search: async (_opts: { vector: number[]; topK: number; filter?: AdapterFilter }) => results,
@@ -54,9 +65,9 @@ function makeChunk(overrides: Partial<Record<string, unknown>> = {}): DocumentCh
   const id = (overrides._id as string) ?? "chunk1";
   return {
     _id: { toString: () => id } as unknown,
-    tenantId: { toString: () => "t1" } as unknown,
-    documentId: { toString: () => "doc1" } as unknown,
-    documentVersionId: { toString: () => "ver1" } as unknown,
+    tenantId: { toString: () => VALID_IDS.tenant1 } as unknown,
+    documentId: { toString: () => VALID_IDS.doc1 } as unknown,
+    documentVersionId: { toString: () => VALID_IDS.ver1 } as unknown,
     text: "Sample chunk text",
     classification: "public",
     allowAiUse: true,
@@ -70,8 +81,8 @@ function makeChunk(overrides: Partial<Record<string, unknown>> = {}): DocumentCh
 
 function makeAccessContext(overrides: Partial<AccessContext> = {}): AccessContext {
   return {
-    tenantId: "t1",
-    actorId: "actor1",
+    tenantId: VALID_IDS.tenant1,
+    actorId: VALID_IDS.actor1,
     baseRole: "EMPLOYEE",
     permissionScopes: {
       selfOnly: false,
@@ -125,6 +136,7 @@ describe("Phase 4 — createRetrievalService", () => {
         makeChunk({ _id: "chunk2", text: "Second chunk", classification: "internal" }),
         makeChunk({ _id: "chunk3", text: "Third chunk", classification: "public" }),
       ]),
+      findOwnedDocumentIds: async (_tenantId, _actorId, docIds) => docIds,
       ...overrides,
     };
   }

@@ -35,6 +35,11 @@ export interface RetrievalServiceDeps {
   filterCompiler: FilterCompiler;
   repository: RetrievalRepository;
   rerankerService?: RerankerService;
+  findOwnedDocumentIds?: (
+    tenantId: string,
+    actorId: string,
+    documentIds: string[],
+  ) => Promise<string[]>;
 }
 
 export interface HybridRetrievalService {
@@ -155,12 +160,17 @@ async function revalidateAndHydrate(
   if (context?.permissionScopes?.selfOnly) {
     const docIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
     if (docIds.length > 0) {
-      const docs = await DocumentModel.find({
-        _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
-        tenantId: new Types.ObjectId(tenantId),
-        uploadedBy: new Types.ObjectId(context.actorId),
-      }, { _id: 1 }).lean().exec();
-      ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+      if (deps.findOwnedDocumentIds) {
+        const owned = await deps.findOwnedDocumentIds(tenantId, context.actorId, docIds);
+        ownedDocumentIds = new Set(owned);
+      } else {
+        const docs = await DocumentModel.find({
+          _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
+          tenantId: new Types.ObjectId(tenantId),
+          uploadedBy: new Types.ObjectId(context.actorId),
+        }, { _id: 1 }).lean().exec();
+        ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+      }
     }
   }
 
