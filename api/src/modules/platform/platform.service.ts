@@ -353,8 +353,8 @@ export async function listSubscriptions(
 }
 
 /**
- * Update (transition) a subscription — delegates to
- * {@link SubscriptionService.transitionSubscription}.
+ * Update (transition) a subscription — creates one if none exists yet, or
+ * transitions an existing subscription to a new state.
  *
  * Maps legacy lowercase status values to UPPERCASE model statuses.
  * Maps legacy `renewsAt` to `periodEnd`.
@@ -379,22 +379,39 @@ export async function updateSubscription(
   if (!pkg) throw new AppError(404, "NOT_FOUND", "Active package not found");
 
   const status = input.status.toUpperCase() as SubscriptionStatus;
+  const existing = await SubscriptionModel.findOne({ tenantId }).exec();
 
-  return SubscriptionService.transitionSubscription(
+  if (existing) {
+    return SubscriptionService.transitionSubscription(
+      tenantId,
+      status,
+      {
+        packageId: input.packageId,
+        packageVersion: pkg.version,
+        periodEnd: input.renewsAt ? new Date(input.renewsAt) : undefined,
+        triggeredBy: "admin",
+      },
+      {
+        userId: actor.actorId,
+        email: actor.actorEmail,
+        role: actor.actorRole,
+        tenantId: actor.tenantId,
+      },
+    );
+  }
+
+  return SubscriptionService.createSubscription(
     tenantId,
+    input.packageId,
+    pkg.version,
     status,
-    {
-      packageId: input.packageId,
-      packageVersion: pkg.version,
-      periodEnd: input.renewsAt ? new Date(input.renewsAt) : undefined,
-      triggeredBy: "admin",
-    },
     {
       userId: actor.actorId,
       email: actor.actorEmail,
       role: actor.actorRole,
       tenantId: actor.tenantId,
     },
+    undefined, /* trialDays — admin assignments are not trials */
   );
 }
 
