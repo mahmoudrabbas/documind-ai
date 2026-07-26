@@ -121,7 +121,7 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
               tenantId: payload.tenantId,
               actorId: "system",
               traceId: ctx.traceId,
-              idempotencyKey: `${payload.documentId}:${payload.documentVersion}:chunk:${generationId.toString()}`,
+              idempotencyKey: `${payload.documentId}-${payload.documentVersion}-chunk-${generationId.toString()}`,
               payload: {
                 documentId: payload.documentId,
                 tenantId: payload.tenantId,
@@ -137,10 +137,10 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
                 },
               },
             });
-            ctx.progress("Auto-triggered chunking pipeline for previously extracted document.");
-          } catch (err) {
-            ctx.progress(`Failed to auto-trigger chunking: ${err instanceof Error ? err.message : String(err)}`);
-          }
+            ctx.progress("Auto-triggered chunking pipeline after extraction.");
+        } catch (err) {
+          ctx.progress(`Failed to auto-trigger chunking: ${err instanceof Error ? err.message : String(err)}`);
+        }
         }
 
         return { summary: { skipped: true, reason: "already_completed" } };
@@ -322,7 +322,7 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
             tenantId: payload.tenantId,
             actorId: "system",
             traceId: ctx.traceId,
-            idempotencyKey: `${payload.documentId}:${payload.documentVersion}:chunk:${generationId.toString()}`,
+            idempotencyKey: `${payload.documentId}-${payload.documentVersion}-chunk-${generationId.toString()}`,
             payload: {
               documentId: payload.documentId,
               tenantId: payload.tenantId,

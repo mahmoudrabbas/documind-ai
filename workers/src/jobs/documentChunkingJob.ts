@@ -110,6 +110,25 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
         metric: "indexing.chunk_duration_ms",
       });
 
+      try {
+        await ctx.enqueue({
+          jobType: "document.embed",
+          tenantId: payload.tenantId,
+          actorId: "system",
+          traceId: ctx.traceId,
+          idempotencyKey: `${payload.documentId}-${payload.documentVersion}-embed-${payload.generationId}`,
+          payload: {
+            documentId: payload.documentId,
+            tenantId: payload.tenantId,
+            documentVersion: payload.documentVersion,
+            generationId: payload.generationId,
+          },
+        });
+        ctx.progress("Auto-triggered embedding pipeline after chunking.");
+      } catch (err) {
+        ctx.progress(`Failed to auto-trigger embedding: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       return {
         summary: {
           success: true,

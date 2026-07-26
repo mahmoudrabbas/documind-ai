@@ -21,7 +21,7 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
     jobType: "document.index",
     description: "Ensures Atlas search indexes exist and activates generation.",
     payloadSchema: PayloadSchema,
-    maxAttempts: 3,
+    maxAttempts: 10,
     handle: async (payload, ctx): Promise<JobHandlerResult | void> => {
       const startTime = Date.now();
       const db = getMongoClient()?.db();
@@ -111,13 +111,13 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
               mappings: {
                 dynamic: false,
                 fields: {
-                  text: { type: "string", analyzer: "luceneStandard" },
+                  text: { type: "string", analyzer: "lucene.standard" },
                   tenantId: { type: "objectId" },
                   documentId: { type: "objectId" },
                   generationId: { type: "objectId" },
-                  classification: { type: "string", analyzer: "luceneStandard" },
-                  department: { type: "string", analyzer: "luceneStandard" },
-                  category: { type: "string", analyzer: "luceneStandard" },
+                  classification: { type: "string", analyzer: "lucene.standard" },
+                  department: { type: "string", analyzer: "lucene.standard" },
+                  category: { type: "string", analyzer: "lucene.standard" },
                   allowAiUse: { type: "boolean" },
                 },
               },
@@ -216,19 +216,14 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
           },
         );
 
-        ctx.progress("Atlas indexes still building; generation verified but not activated", {
+        ctx.progress("Atlas indexes still building; retrying later", {
           vectorReady,
           keywordReady,
         });
 
-        return {
-          summary: {
-            verified: true,
-            activated: false,
-            vectorReady,
-            keywordReady,
-          },
-        };
+        throw new RetryableJobError(
+          `Atlas indexes still building (vector: ${vectorReady}, keyword: ${keywordReady})`,
+        );
       }
 
       const actualChunkCount = await db.collection("documentchunks")

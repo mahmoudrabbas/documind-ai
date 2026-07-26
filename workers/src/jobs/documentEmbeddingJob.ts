@@ -197,6 +197,25 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
         metric: "indexing.embedding_duration_ms",
       });
 
+      try {
+        await ctx.enqueue({
+          jobType: "document.index",
+          tenantId: payload.tenantId,
+          actorId: "system",
+          traceId: ctx.traceId,
+          idempotencyKey: `${payload.documentId}-${payload.documentVersion}-index-${payload.generationId}`,
+          payload: {
+            documentId: payload.documentId,
+            tenantId: payload.tenantId,
+            documentVersion: payload.documentVersion,
+            generationId: payload.generationId,
+          },
+        });
+        ctx.progress("Auto-triggered indexing pipeline after embedding.");
+      } catch (err) {
+        ctx.progress(`Failed to auto-trigger indexing: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       return {
         summary: {
           success: failedCount === 0,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import OpenAI from "openai";
 
 export interface EmbeddingInput {
   chunkId: string;
@@ -28,10 +29,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openai";
   readonly model: string;
   readonly dimensions: number;
-  private client: any;
+  private client: OpenAI;
 
   constructor(apiKey: string, model = "text-embedding-3-small", dimensions = 1536, baseURL?: string) {
-    const OpenAI = require("openai");
     this.client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     this.model = model;
     this.dimensions = dimensions;
