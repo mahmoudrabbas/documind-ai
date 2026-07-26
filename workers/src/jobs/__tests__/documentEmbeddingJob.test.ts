@@ -52,7 +52,7 @@ test("documentEmbeddingJob - happy path: embeds DRAFT chunks and persists embedd
   ];
 
   const insertManyCalls: Array<{ name: string; docs: unknown[] }> = [];
-  const updateOneCalls: Array<{ name: string; query: unknown; update: unknown }> = [];
+  const updateCalls: Array<{ name: string; query: unknown; update: unknown }> = [];
 
   const mockDb = {
     collection: (name: string) => ({
@@ -67,8 +67,12 @@ test("documentEmbeddingJob - happy path: embeds DRAFT chunks and persists embedd
         return { insertedCount: docs.length };
       },
       updateOne: async (query: Record<string, unknown>, update: Record<string, unknown>) => {
-        updateOneCalls.push({ name, query, update });
+        updateCalls.push({ name, query, update });
         return { matchedCount: 1, modifiedCount: 1 };
+      },
+      updateMany: async (query: Record<string, unknown>, update: Record<string, unknown>) => {
+        updateCalls.push({ name, query, update });
+        return { matchedCount: 2, modifiedCount: 2 };
       },
     }),
   };
@@ -91,8 +95,8 @@ test("documentEmbeddingJob - happy path: embeds DRAFT chunks and persists embedd
   assert.equal((result.summary as Record<string, unknown>).success, true);
   assert.equal((result.summary as Record<string, unknown>).embeddedCount, 2);
   assert.ok(insertManyCalls.some((c) => c.name === "chunkembeddings"), "Should insert embeddings");
-  assert.ok(updateOneCalls.some((c) => c.name === "documentchunks"), "Should update chunk status");
-  assert.ok(updateOneCalls.some((c) => c.name === "indexgenerations"), "Should update generation counts");
+  assert.ok(updateCalls.some((c) => c.name === "documentchunks"), "Should update chunk status");
+  assert.ok(updateCalls.some((c) => c.name === "indexgenerations"), "Should update generation counts");
 
   setMockClient(null);
 });
