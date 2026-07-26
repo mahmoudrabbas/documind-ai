@@ -138,40 +138,27 @@ export async function sendInvitationEmail(
   }
 
   if (isDevelopmentEmailDeliveryUnavailable()) {
-    console.info(
-      "[user-invitation] email delivery unavailable in development",
-    );
-    return;
-  }
-
-  try {
-    await emailService.enqueue({
-      tenantId: input.tenantId,
-      recipientEmail: input.to,
-      templateId: "user_invitation",
-      language: "en",
-      variables: {
-        companyName: input.companyName,
-        inviterName: input.inviterName,
-        inviterEmail: input.inviterEmail,
-        role: input.role,
-        invitationUrl: input.invitationUrl,
-        expiryDate: input.expiryDate.toUTCString(),
-      },
-      idempotencyKey: `invite-${input.tenantId}-${input.to}-${Date.now()}`,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to send invitation email";
-
     throw new AppError(
       500,
       EMAIL_SENDING_FAILED,
-      "Unable to send invitation email",
-      { details: message },
+      "Email sending is disabled — set SEND_EMAILS=true",
     );
   }
+
+  await emailService.enqueue({
+    tenantId: input.tenantId,
+    recipientEmail: input.to,
+    templateId: "user_invitation",
+    language: "en",
+    variables: {
+      companyName: input.companyName,
+      inviterName: input.inviterName,
+      inviterEmail: input.inviterEmail,
+      role: input.role,
+      invitationUrl: input.invitationUrl,
+      expiryDate: input.expiryDate.toUTCString(),
+    },
+    idempotencyKey: `invite-${input.tenantId}-${input.to}-${Date.now()}`,
+  });
 }
 

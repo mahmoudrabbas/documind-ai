@@ -12,7 +12,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ENV MONGOMS_DISABLE_POSTINSTALL=1
-RUN npm ci --workspace api --workspace workers --include-workspace-root --ignore-scripts \
+RUN --mount=type=cache,target=/root/.npm npm ci --workspace api --workspace workers --include-workspace-root --ignore-scripts --force \
     && npm rebuild argon2
 
 COPY tsconfig.base.json eslint.config.mjs ./

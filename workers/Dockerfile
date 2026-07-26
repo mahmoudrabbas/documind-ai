@@ -7,7 +7,7 @@ COPY api/package.json api/package.json
 COPY app/package.json app/package.json
 COPY workers/package.json workers/package.json
 
-RUN npm ci --workspace workers --include-workspace-root --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm npm ci --workspace workers --include-workspace-root --ignore-scripts --force
 
 COPY tsconfig.base.json eslint.config.mjs ./
 COPY workers/ workers/
