@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
-import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import type { ListTenantsInput, UpdateTenantInput } from "./admin.types.js";
+import {
+  TENANT_INVALID_REASON,
+  TENANT_MISSING_REASON,
+  VALIDATION_ERROR,
+} from "../../common/errors/errorCodes.js";
+import type {
+  ListTenantsInput,
+  TenantLifecycleInput,
+  TenantPreviewInput,
+  UpdateTenantInput,
+} from "./admin.types.js";
 
 const listTenantsSchema = z
   .object({
@@ -21,7 +30,13 @@ const listTenantsSchema = z
       .preprocess(
         (value) => (Array.isArray(value) ? value[0] : value),
         z
-          .enum(["active", "trial", "pending", "pending_verification"])
+          .enum([
+            "active",
+            "trial",
+            "pending",
+            "pending_verification",
+            "suspended",
+          ])
           .optional(),
       )
       .optional(),
@@ -125,4 +140,83 @@ export function validateUpdateTenantInput(
     id: paramsResult.data.id,
     ...bodyResult.data,
   };
+}
+
+const lifecycleBodySchema = z
+  .object({
+    reason: z.unknown().optional(),
+  })
+  .strict();
+
+export function validateLifecycleInput(
+  params: unknown,
+  body: unknown,
+): TenantLifecycleInput {
+  const paramsResult = updateTenantParamsSchema.safeParse(params);
+  if (!paramsResult.success) {
+    throw new AppError(
+      400,
+      VALIDATION_ERROR,
+      "Validation failed",
+      groupValidationIssues(paramsResult.error.issues),
+    );
+  }
+
+  const bodyResult = lifecycleBodySchema.safeParse(body);
+  if (!bodyResult.success) {
+    throw new AppError(
+      400,
+      VALIDATION_ERROR,
+      "Validation failed",
+      groupValidationIssues(bodyResult.error.issues),
+    );
+  }
+
+  if (
+    bodyResult.data.reason === undefined ||
+    bodyResult.data.reason === null ||
+    (typeof bodyResult.data.reason === "string" &&
+      bodyResult.data.reason.trim().length === 0)
+  ) {
+    throw new AppError(
+      400,
+      TENANT_MISSING_REASON,
+      "Reason is required and cannot be empty or whitespace-only",
+    );
+  }
+
+  if (typeof bodyResult.data.reason !== "string") {
+    throw new AppError(
+      400,
+      TENANT_INVALID_REASON,
+      "Reason must be a string between 3 and 500 characters",
+    );
+  }
+
+  const trimmedReason = bodyResult.data.reason.trim();
+  if (trimmedReason.length < 3 || trimmedReason.length > 500) {
+    throw new AppError(
+      400,
+      TENANT_INVALID_REASON,
+      "Reason must be between 3 and 500 characters",
+    );
+  }
+
+  return {
+    id: paramsResult.data.id,
+    reason: trimmedReason,
+  };
+}
+
+export function validatePreviewInput(params: unknown): TenantPreviewInput {
+  const paramsResult = updateTenantParamsSchema.safeParse(params);
+  if (!paramsResult.success) {
+    throw new AppError(
+      400,
+      VALIDATION_ERROR,
+      "Validation failed",
+      groupValidationIssues(paramsResult.error.issues),
+    );
+  }
+  return { id: paramsResult.data.id };
 }

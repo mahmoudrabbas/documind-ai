@@ -5,17 +5,17 @@ import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   getTenantController,
+  getTenantDetailController,
   listTenantsController,
   updateTenantController,
+  suspendTenantController,
+  reinstateTenantController,
+  previewSuspendController,
+  previewReinstateController,
 } from "./admin.controller.js";
 
 const router = Router();
 
-/**
- * GET /platform/tenants
- * List all tenants with optional filters (status, plan) and pagination
- * Requires SUPER_ADMIN role
- */
 router.get(
   "/tenants",
   authenticate,
@@ -32,11 +32,30 @@ router.get(
   getTenantController,
 );
 
-/**
- * PATCH /platform/tenants/:id
- * Suspend, reinstate, or change plan for a specific tenant
- * Requires SUPER_ADMIN role
- */
+router.get(
+  "/tenants/:id/detail",
+  authenticate,
+  requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
+  getTenantDetailController,
+);
+
+router.get(
+  "/tenants/:id/preview/suspend",
+  authenticate,
+  requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
+  previewSuspendController,
+);
+
+router.get(
+  "/tenants/:id/preview/reinstate",
+  authenticate,
+  requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
+  previewReinstateController,
+);
+
 router.patch(
   "/tenants/:id",
   authenticate,
@@ -44,6 +63,22 @@ router.patch(
   requirePermission(Permission.COMPANY_SETTINGS_UPDATE),
   requirePermission(Permission.BILLING_MANAGE),
   updateTenantController,
+);
+
+router.post(
+  "/tenants/:id/suspend",
+  authenticate,
+  requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_UPDATE),
+  suspendTenantController,
+);
+
+router.post(
+  "/tenants/:id/reinstate",
+  authenticate,
+  requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_UPDATE),
+  reinstateTenantController,
 );
 
 export default router;

@@ -4,6 +4,9 @@ import {
   TENANT_PLANS,
   TENANT_STATUSES,
   type PlatformTenant,
+  type TenantDetailView,
+  type TenantLifecyclePreview,
+  type TenantLifecycleResult,
   type TenantListQuery,
   type TenantListResponse,
   type TenantPlan,
@@ -71,6 +74,41 @@ export function updateTenant(
   return apiClient<{ success: true; data: PlatformTenant }>(
     `/platform/tenants/${encodeURIComponent(id)}`,
     { method: "PATCH", body: update },
+  );
+}
+
+export function getTenantDetail(id: string, signal?: AbortSignal) {
+  return apiClient<{ success: true; data: TenantDetailView }>(
+    `/platform/tenants/${encodeURIComponent(id)}/detail`,
+    { signal },
+  );
+}
+
+export function previewTenantSuspend(id: string, signal?: AbortSignal) {
+  return apiClient<{ success: true; data: TenantLifecyclePreview }>(
+    `/platform/tenants/${encodeURIComponent(id)}/preview/suspend`,
+    { signal },
+  );
+}
+
+export function previewTenantReinstate(id: string, signal?: AbortSignal) {
+  return apiClient<{ success: true; data: TenantLifecyclePreview }>(
+    `/platform/tenants/${encodeURIComponent(id)}/preview/reinstate`,
+    { signal },
+  );
+}
+
+export function suspendTenant(id: string, reason: string) {
+  return apiClient<{ success: true; data: TenantLifecycleResult }>(
+    `/platform/tenants/${encodeURIComponent(id)}/suspend`,
+    { method: "POST", body: { reason } },
+  );
+}
+
+export function reinstateTenant(id: string, reason: string) {
+  return apiClient<{ success: true; data: TenantLifecycleResult }>(
+    `/platform/tenants/${encodeURIComponent(id)}/reinstate`,
+    { method: "POST", body: { reason } },
   );
 }
 

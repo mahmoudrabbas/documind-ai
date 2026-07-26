@@ -1,10 +1,12 @@
+import mongoose, { type Types } from "mongoose";
 import TenantModel, {
   type TenantDocument,
 } from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
-import type { Types } from "mongoose";
+import SubscriptionModel from "../../db/models/subscription.model.js";
+import AuditLogModel from "../../db/models/auditLog.model.js";
 import {
   LEGACY_PLATFORM_TENANT_SLUGS,
   PLATFORM_TENANT_SLUG,
@@ -51,6 +53,12 @@ export function findTenantById(id: string) {
     .exec();
 }
 
+export function findAnyTenantById(id: string) {
+  return TenantModel.findOne({ _id: id })
+    .lean<TenantDocument>()
+    .exec();
+}
+
 export async function aggregateTenantStats(tenantIds: Types.ObjectId[]) {
   if (tenantIds.length === 0)
     return { users: new Map(), documents: new Map(), questions: new Map() };
@@ -72,3 +80,62 @@ export async function aggregateTenantStats(tenantIds: Types.ObjectId[]) {
     questions: toMap(questions),
   };
 }
+
+export async function aggregateUserSummary(tenantId: string) {
+  const tid = new mongoose.Types.ObjectId(tenantId);
+  const match = { tenantId: tid };
+  const [total, active, companyAdmins, employees] = await Promise.all([
+    UserModel.countDocuments(match).exec(),
+    UserModel.countDocuments({ ...match, status: "active" }).exec(),
+    UserModel.countDocuments({ ...match, role: "COMPANY_ADMIN" }).exec(),
+    UserModel.countDocuments({ ...match, role: "EMPLOYEE" }).exec(),
+  ]);
+  return { total, active, companyAdmins, employees };
+}
+
+export async function findSubscriptionForTenant(tenantId: string) {
+  return SubscriptionModel.findOne({ tenantId })
+    .populate("packageId", "name code version entitlements")
+    .lean()
+    .exec();
+}
+
+export async function countDocumentsForTenant(tenantId: string) {
+  return DocumentModel.countDocuments({ tenantId }).exec();
+}
+
+export async function sumStorageForTenant(tenantId: string) {
+  const result = await DocumentModel.aggregate([
+    { $match: { tenantId: new mongoose.Types.ObjectId(tenantId) } },
+    { $group: { _id: null, totalSize: { $sum: "$fileSize" } } },
+  ]);
+  return result.length > 0 ? result[0].totalSize : 0;
+}
+
+export async function findRecentAuditForTenant(
+  tenantId: string,
+  limit = 10,
+) {
+  return AuditLogModel.find({ tenantId })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .select("action actorEmail actorRole outcome createdAt")
+    .lean()
+    .exec();
+}
+
+export async function atomicStatusTransition(
+  id: string,
+  currentStatus: string,
+  newStatus: string,
+): Promise<TenantDocument | null> {
+  return TenantModel.findOneAndUpdate(
+    { _id: id, status: currentStatus, ...nonPlatformTenantFilter },
+    { $set: { status: newStatus } },
+    { returnDocument: "after", runValidators: true },
+  )
+    .lean<TenantDocument>()
+    .exec();
+}
+
+export { nonPlatformTenantFilter };

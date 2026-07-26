@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DashboardPage,
   DashboardPageHeader,
@@ -13,15 +13,347 @@ import {
   StatusPill,
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
-import { getTenantById } from "@/services/platform.service";
+import {
+  getTenantDetail,
+  previewTenantSuspend,
+  previewTenantReinstate,
+  suspendTenant,
+  reinstateTenant,
+} from "@/services/platform.service";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
+import type {
+  TenantDetailView,
+  TenantLifecyclePreview,
+} from "@/types/api/platform.types";
+import {
+  canConfirmTenantLifecycle,
+  completeTenantLifecycleTransition,
+  createLifecyclePreviewRequestTracker,
+  lifecyclePreviewRequestKey,
+} from "@/lib/tenant-lifecycle-state";
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function LifecycleDialog({
+  open,
+  onClose,
+  onSuccess,
+  tenant,
+  targetStatus,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  tenant: TenantDetailView;
+  targetStatus: "suspended" | "active";
+}) {
+  const [preview, setPreview] = useState<TenantLifecyclePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  const submittingRef = useRef(submitting);
+  const previewRequestTrackerRef = useRef(
+    createLifecyclePreviewRequestTracker(),
+  );
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    submittingRef.current = submitting;
+  }, [submitting]);
+
+  const isSuspend = targetStatus === "suspended";
+  const title = isSuspend ? "Suspend Tenant" : "Reinstate Tenant";
+  const confirmLabel = isSuspend ? "Suspend" : "Reinstate";
+  const confirmVariant: "danger" | "primary" = isSuspend ? "danger" : "primary";
+
+  const loadPreview = useCallback(async (signal?: AbortSignal, retry = false) => {
+    const requestKey = lifecyclePreviewRequestKey(tenant.id, targetStatus);
+    if (retry) previewRequestTrackerRef.current.reset(requestKey);
+    if (!previewRequestTrackerRef.current.start(requestKey)) return;
+
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const previewFn = isSuspend ? previewTenantSuspend : previewTenantReinstate;
+      const result = await previewFn(tenant.id, signal);
+      if (signal?.aborted) return;
+      setPreview(result.data);
+      previewRequestTrackerRef.current.complete(requestKey);
+    } catch {
+      previewRequestTrackerRef.current.cancel(requestKey);
+      if (signal?.aborted) return;
+      setPreviewError("Unable to load preview. Please try again.");
+    } finally {
+      if (!signal?.aborted) setPreviewLoading(false);
+    }
+  }, [isSuspend, targetStatus, tenant.id]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const requestKey = lifecyclePreviewRequestKey(tenant.id, targetStatus);
+    const controller = new AbortController();
+    const requestTracker = previewRequestTrackerRef.current;
+    const previouslyFocused = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+
+    setPreview(null);
+    setReason("");
+    setSubmitError("");
+    setPreviewLoading(false);
+    setPreviewError("");
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+    void loadPreview(controller.signal);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submittingRef.current) {
+        closeRef.current();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      controller.abort();
+      requestTracker.reset(requestKey);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
+  }, [loadPreview, open, targetStatus, tenant.id]);
+
+  const handleConfirm = async () => {
+    if (!canConfirmTenantLifecycle(preview, reason, submitting)) return;
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const actionFn = isSuspend ? suspendTenant : reinstateTenant;
+      await actionFn(tenant.id, reason.trim());
+      completeTenantLifecycleTransition(onSuccess, onClose);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Operation failed.";
+      setSubmitError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lifecycle-dialog-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+      ref={dialogRef}
+      tabIndex={-1}
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-surface-container-lowest p-6 shadow-modal">
+        <div className="flex items-start justify-between gap-3">
+          <h3
+            id="lifecycle-dialog-title"
+            className="text-title-lg font-bold text-on-surface"
+          >
+            {title}
+          </h3>
+          <button
+            type="button"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-md p-1 text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <p className="mt-1 text-sm text-on-surface-variant">
+          {tenant.name} ({tenant.slug})
+        </p>
+        <p className="mt-1 text-sm text-on-surface-variant">
+          Current status: <StatusPill value={tenant.status} />
+        </p>
+
+        {previewLoading && (
+          <div className="mt-4 space-y-2">
+            <div className="h-8 animate-pulse rounded-lg bg-surface-container" />
+            <div className="h-8 animate-pulse rounded-lg bg-surface-container" />
+          </div>
+        )}
+
+        {previewError && (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-error/20 bg-error-container p-3 text-sm text-on-error-container"
+          >
+            {previewError}
+            <button
+              type="button"
+              onClick={() => void loadPreview(undefined, true)}
+              className="ml-2 font-bold underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {submitError && (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-error/20 bg-error-container p-3 text-sm text-on-error-container"
+          >
+            {submitError}
+          </div>
+        )}
+
+        {preview && (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-on-surface-variant">Users affected:</span>
+                <span className="ml-1 font-bold text-on-surface">
+                  {preview.activeUsersAffected} active /{" "}
+                  {preview.totalUsersAffected} total
+                </span>
+              </div>
+              <div>
+                <span className="text-on-surface-variant">Admins affected:</span>
+                <span className="ml-1 font-bold text-on-surface">
+                  {preview.activeCompanyAdminsAffected}
+                </span>
+              </div>
+              <div>
+                <span className="text-on-surface-variant">Documents:</span>
+                <span className="ml-1 font-bold text-on-surface">
+                  {preview.documentCount}
+                </span>
+              </div>
+              <div>
+                <span className="text-on-surface-variant">Subscription:</span>
+                <span className="ml-1 font-bold text-on-surface">
+                  {preview.currentSubscriptionStatus ?? "none"}
+                </span>
+              </div>
+            </div>
+
+            {preview.warnings.length > 0 && (
+              <div className="mt-3 rounded-lg bg-warning-container/30 p-3 text-sm text-on-surface">
+                {preview.warnings.map((w) => (
+                  <p key={w}>{w}</p>
+                ))}
+              </div>
+            )}
+
+            {preview.blockingReasons.length > 0 && (
+              <div className="mt-3 rounded-lg bg-error-container/30 p-3 text-sm text-on-error-container">
+                {preview.blockingReasons.map((b) => (
+                  <p key={b}>{b}</p>
+                ))}
+              </div>
+            )}
+
+            {preview.transitionAllowed && !preview.alreadyInTargetState && (
+              <div className="mt-4">
+                <label
+                  htmlFor="lifecycle-reason"
+                  className="block text-sm font-medium text-on-surface"
+                >
+                  Reason <span className="text-error">*</span>
+                </label>
+                <textarea
+                  id="lifecycle-reason"
+                  rows={3}
+                  maxLength={500}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Enter a reason (minimum 3 characters)..."
+                  className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={submitting}
+                />
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  {reason.trim().length < 3
+                    ? `${3 - reason.trim().length} more character(s) needed`
+                    : reason.trim().length > 500
+                      ? "Reason must be 500 characters or fewer"
+                      : "Reason is valid"}
+                </p>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex items-center justify-center rounded-md px-4 py-2 text-label-md font-medium text-on-surface-variant transition-colors hover:bg-surface-container-low"
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              {preview.transitionAllowed && !preview.alreadyInTargetState && (
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={!canConfirmTenantLifecycle(preview, reason, submitting)}
+                  className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-label-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    confirmVariant === "danger"
+                      ? "bg-error text-on-error hover:bg-error/90"
+                      : "bg-primary text-on-primary hover:bg-primary-container"
+                  }`}
+                >
+                  {submitting && (
+                    <span className="me-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  )}
+                  {confirmLabel}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function CompanyDetailPage() {
   const id = String(useParams<{ companyId: string }>().companyId ?? "");
+  const permissions = usePermissions();
+  const canManageTenant = permissions.can(Permission.COMPANY_SETTINGS_UPDATE);
+
   const loader = useCallback(
-    (signal?: AbortSignal) => getTenantById(id, signal),
+    (signal?: AbortSignal) => getTenantDetail(id, signal),
     [id],
   );
-  const state = usePlatformData(loader);
+  const state = usePlatformData<TenantDetailView>(loader);
+
+  const [lifecycleAction, setLifecycleAction] = useState<
+    "suspend" | "reinstate" | null
+  >(null);
+  const [lifecycleNotice, setLifecycleNotice] = useState("");
+
+  const canSuspend = [
+    "active",
+    "trial",
+    "pending",
+    "pending_verification",
+  ].includes(state.data?.status ?? "");
+
   return (
     <DashboardPage>
       <Link
@@ -33,26 +365,78 @@ export default function CompanyDetailPage() {
         </span>
         Companies
       </Link>
+
       <PlatformState
         loading={state.loading}
         error={state.error}
         onRetry={state.reload}
       />
+
+      {lifecycleNotice && (
+        <div
+          role="status"
+          className="mb-4 rounded-lg border border-success/20 bg-success-container p-3 text-sm text-on-success-container"
+        >
+          {lifecycleNotice}
+        </div>
+      )}
+
       {state.data ? (
         <>
           <DashboardPageHeader
             title={state.data.name}
             description={state.data.slug}
-            actions={<StatusPill value={state.data.status} />}
+            actions={
+              <div className="flex items-center gap-3">
+                <StatusPill value={state.data.status} />
+                {canManageTenant && canSuspend && (
+                  <button
+                    type="button"
+                    onClick={() => setLifecycleAction("suspend")}
+                    className="inline-flex items-center gap-1 rounded-lg bg-error/10 px-3 py-1.5 text-sm font-medium text-error transition-colors hover:bg-error/20"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      block
+                    </span>
+                    Suspend
+                  </button>
+                )}
+                {canManageTenant && state.data.status === "suspended" && (
+                  <button
+                    type="button"
+                    onClick={() => setLifecycleAction("reinstate")}
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      restart_alt
+                    </span>
+                    Reinstate
+                  </button>
+                )}
+              </div>
+            }
           />
+
           <div className="grid auto-rows-auto items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 xl:gap-5">
             {[
               ["Plan", state.data.plan],
-              ["Users", state.data.stats.users],
-              ["Documents", state.data.stats.documents],
-              ["Queries", state.data.stats.questions],
-              ["Created", new Date(state.data.createdAt).toLocaleDateString()],
-              ["Updated", new Date(state.data.updatedAt).toLocaleDateString()],
+              [
+                "Users",
+                `${state.data.users.active} active / ${state.data.users.total} total`,
+              ],
+              ["Company Admins", state.data.users.companyAdmins],
+              ["Employees", state.data.users.employees],
+              ["Documents", state.data.usage.documents],
+              ["Storage", formatBytes(state.data.usage.storageBytes)],
+              ["Queries", state.data.usage.questions],
+              [
+                "Created",
+                new Date(state.data.createdAt).toLocaleDateString(),
+              ],
+              [
+                "Updated",
+                new Date(state.data.updatedAt).toLocaleDateString(),
+              ],
             ].map(([label, value]) => (
               <DashboardPanel key={label} padding="compact">
                 <p className="text-sm text-on-surface-variant">{label}</p>
@@ -62,8 +446,198 @@ export default function CompanyDetailPage() {
               </DashboardPanel>
             ))}
           </div>
+
+          {state.data.subscription && (
+            <DashboardPanel className="mt-4">
+              <h3 className="text-title-sm font-bold text-on-surface">
+                Subscription
+              </h3>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                <div>
+                  <span className="text-on-surface-variant">Status:</span>
+                  <span className="ml-1 font-bold text-on-surface">
+                    {state.data.subscription.status}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-on-surface-variant">Provider:</span>
+                  <span className="ml-1 font-bold text-on-surface">
+                    {state.data.subscription.provider}
+                  </span>
+                </div>
+                {state.data.subscription.periodStart && (
+                  <div>
+                    <span className="text-on-surface-variant">Period start:</span>
+                    <span className="ml-1 font-bold text-on-surface">
+                      {new Date(
+                        state.data.subscription.periodStart,
+                      ).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {state.data.subscription.periodEnd && (
+                  <div>
+                    <span className="text-on-surface-variant">Period end:</span>
+                    <span className="ml-1 font-bold text-on-surface">
+                      {new Date(
+                        state.data.subscription.periodEnd,
+                      ).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {state.data.subscription.trialEnd && (
+                  <div>
+                    <span className="text-on-surface-variant">Trial end:</span>
+                    <span className="ml-1 font-bold text-on-surface">
+                      {new Date(
+                        state.data.subscription.trialEnd,
+                      ).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {state.data.subscription.cancelAtPeriodEnd && (
+                  <div>
+                    <span className="text-on-surface-variant">
+                      Cancel at period end:
+                    </span>
+                    <span className="ml-1 font-bold text-error">Yes</span>
+                  </div>
+                )}
+              </div>
+            </DashboardPanel>
+          )}
+
+          {state.data.package && (
+            <DashboardPanel className="mt-4">
+              <h3 className="text-title-sm font-bold text-on-surface">
+                Package
+              </h3>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                <div>
+                  <span className="text-on-surface-variant">Name:</span>
+                  <span className="ml-1 font-bold text-on-surface">
+                    {state.data.package.packageName}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-on-surface-variant">Code:</span>
+                  <span className="ml-1 font-bold text-on-surface">
+                    {state.data.package.packageCode}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-on-surface-variant">Version:</span>
+                  <span className="ml-1 font-bold text-on-surface">
+                    {state.data.package.packageVersion}
+                  </span>
+                </div>
+                {state.data.package.entitlements && (
+                  <>
+                    <div>
+                      <span className="text-on-surface-variant">
+                        Max employees:
+                      </span>
+                      <span className="ml-1 font-bold text-on-surface">
+                        {state.data.package.entitlements.employees}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-on-surface-variant">
+                        Max admins:
+                      </span>
+                      <span className="ml-1 font-bold text-on-surface">
+                        {state.data.package.entitlements.admins}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-on-surface-variant">
+                        Max documents:
+                      </span>
+                      <span className="ml-1 font-bold text-on-surface">
+                        {state.data.package.entitlements.documents}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-on-surface-variant">
+                        Storage:
+                      </span>
+                      <span className="ml-1 font-bold text-on-surface">
+                        {state.data.package.entitlements.storageMb} MB
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-on-surface-variant">
+                        Queries/month:
+                      </span>
+                      <span className="ml-1 font-bold text-on-surface">
+                        {state.data.package.entitlements.queriesPerMonth}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </DashboardPanel>
+          )}
+
+          {state.data.recentAudit.length > 0 && (
+            <DashboardPanel className="mt-4">
+              <h3 className="text-title-sm font-bold text-on-surface">
+                Recent Activity
+              </h3>
+              <div className="mt-3 space-y-2">
+                {state.data.recentAudit.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between rounded-lg bg-surface-container px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-on-surface">
+                        {entry.action}
+                      </span>
+                      {entry.actorEmail && (
+                        <span className="text-on-surface-variant">
+                          by {entry.actorEmail}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusPill value={entry.outcome.toLowerCase()} />
+                      <span className="text-on-surface-variant">
+                        {new Date(entry.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </DashboardPanel>
+          )}
+
+          {!state.data.subscription && !state.data.package && (
+            <DashboardPanel className="mt-4">
+              <p className="text-sm text-on-surface-variant">
+                No subscription or package configured for this tenant.
+              </p>
+            </DashboardPanel>
+          )}
         </>
       ) : null}
+
+      {state.data && lifecycleAction && (
+        <LifecycleDialog
+          open={true}
+          onClose={() => setLifecycleAction(null)}
+          onSuccess={() => {
+            setLifecycleNotice(
+              lifecycleAction === "suspend"
+                ? "Tenant suspended successfully."
+                : "Tenant reinstated successfully.",
+            );
+            state.reload();
+          }}
+          tenant={state.data}
+          targetStatus={lifecycleAction === "suspend" ? "suspended" : "active"}
+        />
+      )}
     </DashboardPage>
   );
 }
