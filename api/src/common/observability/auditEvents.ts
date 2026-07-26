@@ -114,6 +114,10 @@ export type AuditAction =
   // Retrieval
   | "RETRIEVAL_SEARCH"
   | "RETRIEVAL_DENIAL"
+  // Entitlement & Quota
+  | "QUOTA_DENIED"
+  | "QUOTA_OVERRIDE"
+  | "QUOTA_RECONCILED"
   // System
   | "SYSTEM_STARTUP"
   | "SYSTEM_HEALTH_CHECK_FAILED";
@@ -141,7 +145,8 @@ export type AuditResourceType =
   | "DocumentPolicy"
   | "DocumentPolicyPropagation"
   | "DocumentPolicyGeneration"
-  | "Retrieval";
+  | "Retrieval"
+  | "EntitlementOverride";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";
