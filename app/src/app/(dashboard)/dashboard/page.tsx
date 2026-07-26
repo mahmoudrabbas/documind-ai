@@ -5,6 +5,8 @@ import {
   DashboardPage as DashboardPageShell,
   DashboardPageHeader,
 } from "@/components/ui/DashboardPage";
+import { SubscriptionWidget } from "@/components/billing/SubscriptionWidget";
+import MetricsCards from "@/components/dashboard/MetricsCards";
 
 export default function DashboardPage() {
   const auth = useAuth();
@@ -36,145 +38,11 @@ export default function DashboardPage() {
 
       {/* Bento Grid Metrics */}
       <div className="grid min-w-0 auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 xl:gap-5">
-        {/* Card 1: Total Docs */}
-        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
-          <div className="mb-3 flex items-start justify-between">
-            <div className="p-3 bg-primary-container text-on-primary-container rounded-xl">
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                folder_open
-              </span>
-            </div>
-            <span className="text-on-tertiary-container bg-tertiary-fixed-dim/20 px-2 py-1 rounded-md text-label-sm font-bold flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">
-                trending_up
-              </span>{" "}
-              +12%
-            </span>
-          </div>
-          <div>
-            <p className="text-label-md text-on-surface-variant">
-              Total Documents
-            </p>
-            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
-              1,284
-            </h3>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 bg-tertiary-fixed-dim rounded-full" />
-                <span className="text-label-sm text-on-surface-variant">
-                  Ready: 1,240
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2 h-2 bg-secondary-fixed-dim rounded-full" />
-                <span className="text-label-sm text-on-surface-variant">
-                  Processing: 44
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Live metric cards */}
+        <MetricsCards />
 
-        {/* Card 2: AI Interaction */}
-        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
-          <div className="mb-3 flex items-start justify-between">
-            <div className="p-3 bg-secondary-container text-on-secondary-container rounded-xl">
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                forum
-              </span>
-            </div>
-            <span className="text-on-secondary-container bg-secondary-fixed-dim/20 px-2 py-1 rounded-md text-label-sm font-bold">
-              Daily Avg: 840
-            </span>
-          </div>
-          <div>
-            <p className="text-label-md text-on-surface-variant">
-              Total Questions
-            </p>
-            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
-              15.2k
-            </h3>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="p-2 bg-surface-container rounded-lg">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant">
-                  Answered
-                </p>
-                <p className="text-label-md font-bold text-primary">14.8k</p>
-              </div>
-              <div className="p-2 bg-surface-container rounded-lg">
-                <p className="text-[10px] uppercase font-bold text-on-surface-variant">
-                  Unanswered
-                </p>
-                <p className="text-label-md font-bold text-error">320</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Performance */}
-        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
-          <div className="mb-3 flex items-start justify-between">
-            <div className="p-3 bg-tertiary-fixed text-on-tertiary-fixed rounded-xl">
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                bolt
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="text-label-md text-on-surface-variant">
-              Avg Response Time
-            </p>
-            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
-              1.2s
-            </h3>
-            <p className="mt-3 flex items-center gap-1 text-label-sm text-on-surface-variant">
-              <span className="material-symbols-outlined text-[16px] text-tertiary-fixed-dim">
-                verified
-              </span>{" "}
-              Optimized via Vector Cache
-            </p>
-          </div>
-        </div>
-
-        {/* Card 4: Costs */}
-        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm transition-transform hover:-translate-y-1 lg:p-5">
-          <div className="mb-3 flex items-start justify-between">
-            <div className="p-3 bg-primary text-on-primary rounded-xl">
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                payments
-              </span>
-            </div>
-            <button className="text-on-primary-container text-label-sm hover:underline">
-              Billing Details
-            </button>
-          </div>
-          <div>
-            <p className="text-label-md text-on-surface-variant">
-              Estimated AI Cost
-            </p>
-            <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
-              $142.50
-            </h3>
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-container">
-              <div className="h-full bg-primary w-[65%]" />
-            </div>
-            <p className="mt-2 text-[10px] text-on-surface-variant">
-              65% of monthly budget reached
-            </p>
-          </div>
-        </div>
+        {/* Subscription */}
+        <SubscriptionWidget />
 
         {/* System Health Widget */}
         <div className="col-span-1 min-h-0 min-w-0 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm sm:col-span-2 lg:p-5">
