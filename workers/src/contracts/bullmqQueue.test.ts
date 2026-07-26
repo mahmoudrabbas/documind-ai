@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Redis } from "ioredis";
 import { BullMQQueue } from "../contracts/bullmqQueue.js";
 import { sampleJobHandler } from "../jobs/sampleJob.js";
+import { logger } from "../logger.js";
 
 /**
  * Integration contract test for the BullMQ adapter.
@@ -173,6 +174,83 @@ test(
       const status2 = await adapter.getJobStatus(res.jobId);
       assert.equal(status2?.state, "failed");
     } finally {
+      await adapter.close();
+    }
+  },
+);
+
+test(
+  "bullmq emits one authoritative dead-letter event per terminal failure",
+  { skip: !REDIS_URL },
+  async (t) => {
+    if (!(await redisReachable())) {
+      t.skip("redis not reachable");
+      return;
+    }
+
+    const traceId = `single-dead-letter-${Math.random().toString(36).slice(2)}`;
+    const observedDeadLetters: Array<Record<string, unknown>> = [];
+    const originalInfo = logger.info;
+    logger.info = ((data: Record<string, unknown>, ...args: unknown[]) => {
+      if (
+        data?.metric === "job.dead-letter" &&
+        data?.traceId === traceId
+      ) {
+        observedDeadLetters.push(data);
+      }
+      return originalInfo.call(logger, data, ...args);
+    }) as typeof logger.info;
+
+    const failing = {
+      jobType: "test.bull.single-dead-letter",
+      description: "always permanent fail",
+      payloadSchema: (await import("zod")).z.object({}),
+      handle: async () => {
+        throw new (
+          await import("../contracts/retryPolicy.js")
+        ).PermanentJobError("terminal failure");
+      },
+    };
+    const connection = new Redis(REDIS_URL, {
+      maxRetriesPerRequest: null,
+    });
+    const adapter = new BullMQQueue({
+      queueName: `test-single-dead-letter-${Math.random().toString(36).slice(2)}`,
+      connection,
+      concurrency: 1,
+      removeOnFail: false,
+    });
+    adapter.registerHandler(failing);
+
+    try {
+      adapter.start(new AbortController().signal);
+      const enqueued = await adapter.enqueue({
+        jobType: failing.jobType,
+        tenantId: "t1",
+        actorId: "a1",
+        traceId,
+        idempotencyKey: traceId,
+        payload: {},
+      });
+
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const status = await adapter.getJobStatus(enqueued.jobId);
+        if (status?.state === "failed") break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      assert.equal(
+        (await adapter.getJobStatus(enqueued.jobId))?.state,
+        "failed",
+      );
+      assert.equal(
+        observedDeadLetters.length,
+        1,
+        "A terminal BullMQ failure must emit one job.dead-letter record",
+      );
+    } finally {
+      logger.info = originalInfo;
       await adapter.close();
     }
   },
