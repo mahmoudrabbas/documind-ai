@@ -200,27 +200,35 @@ export async function inviteUser(
       purpose: USER_INVITATION_PURPOSE,
     });
 
-    await sendInvitationEmail({
-      to: createdUser.email,
-      inviterName,
-      inviterEmail: inviter?.email,
-      companyName: tenant.name,
-      role: createdUser.role,
-      invitationUrl: buildVerificationUrl(token),
-      expiryDate:
-        createdUser.emailVerificationExpiresAt ??
-        new Date(Date.now() + 24 * 60 * 60 * 1000),
-      tenantId: tenantId.toString(),
-    });
+    let emailDelivery: { sent: boolean; error?: string } = { sent: true };
+    try {
+      await sendInvitationEmail({
+        to: createdUser.email,
+        inviterName,
+        inviterEmail: inviter?.email,
+        companyName: tenant.name,
+        role: createdUser.role,
+        invitationUrl: buildVerificationUrl(token),
+        expiryDate:
+          createdUser.emailVerificationExpiresAt ??
+          new Date(Date.now() + 24 * 60 * 60 * 1000),
+        tenantId: tenantId.toString(),
+      });
+    } catch (emailError) {
+      const errorMsg = emailError instanceof Error ? emailError.message : String(emailError);
+      console.error("[users-invite] email enqueue failed for", createdUser.email, errorMsg);
+      emailDelivery = { sent: false, error: errorMsg };
+    }
 
     const result = {
       user: serializeUser(createdUser),
+      emailDelivery,
     };
     await auditUserOperation(
       context,
       "USER_INVITED",
       createdUser._id.toString(),
-      { role: createdUser.role, status: createdUser.status },
+      { role: createdUser.role, status: createdUser.status, emailDelivery },
     );
     return result;
   } catch (error) {

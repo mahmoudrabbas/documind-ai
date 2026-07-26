@@ -1,4 +1,4 @@
-export type DocumentClassification = "public" | "internal" | "confidential" | "restricted";
+export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 
 export interface DocumentPublicView {
   id: string;
@@ -7,7 +7,7 @@ export interface DocumentPublicView {
   originalFileName: string;
   fileSize: number;
   mimeType: string;
-  status: "uploading" | "uploaded" | "processing" | "processed" | "failed";
+  status: "uploading" | "uploaded" | "processing" | "processed" | "failed" | "canceled" | "reprocessing";
   metadata: {
     title: string | null;
     description: string | null;

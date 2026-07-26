@@ -1,5 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 import type {
+  GlobalSettings,
+  GlobalSettingsPatch,
   Pagination,
   PlatformAuditLog,
   PlatformJob,
@@ -82,6 +84,29 @@ export const listPlatformAudit = (signal?: AbortSignal) =>
     "/platform/audit?page=1&pageSize=100",
     { signal },
   );
+export const getGlobalSettings = (signal?: AbortSignal) =>
+  apiClient<Success<GlobalSettings>>("/platform/settings", { signal });
+
+export const updateGlobalSettings = (body: GlobalSettingsPatch) =>
+  apiClient<Success<GlobalSettings>>("/platform/settings", {
+    method: "PATCH",
+    body,
+  });
+
+export const getAiConfiguration = (signal?: AbortSignal) =>
+  apiClient<Success<Record<string, string | number | boolean | null>>>(
+    "/platform/ai-configuration",
+    { signal },
+  );
+
+export const updateAiConfiguration = (
+  body: Record<string, unknown>,
+) =>
+  apiClient<Success<Record<string, string | number | boolean | null>>>(
+    "/platform/ai-configuration",
+    { method: "PATCH", body },
+  );
+
 export const getPlatformSetting = (
   key: "ai-configuration" | "settings",
   signal?: AbortSignal,

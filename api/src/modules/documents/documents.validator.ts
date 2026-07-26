@@ -7,7 +7,7 @@ import type {
   UpdateDocumentMetadataInput,
 } from "./documents.types.js";
 
-const classificationValues = ["public", "internal", "confidential", "restricted"] as const;
+const classificationValues = ["public", "internal", "confidential", "restricted", "highly_confidential"] as const;
 
 const uploadDocumentSchema = z
   .object({

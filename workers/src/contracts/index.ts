@@ -14,3 +14,4 @@ export * from "./chunkDocument.js";
 export { StructuralStrategy } from "./chunkingStrategies/structural.strategy.js";
 export { ParagraphStrategy } from "./chunkingStrategies/paragraph.strategy.js";
 export { TableStrategy } from "./chunkingStrategies/table.strategy.js";
+export * from "./documentPolicyPropagation.js";

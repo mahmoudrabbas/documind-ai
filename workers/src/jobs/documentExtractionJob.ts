@@ -9,6 +9,7 @@ import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.j
 import { config } from "../config/index.js";
 import { parserRegistry } from "../providers/extraction/parserRegistry.js";
 import { getMongoClient } from "../db/mongo.js";
+import { reportProgressToProcessingRun } from "./progressReporter.js";
 
 const PayloadSchema = z.object({
   documentId: z.string(),
@@ -152,6 +153,16 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
         { $set: { status: "processing" } }
       );
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "extraction",
+        status: "running",
+        progress: 10,
+        jobId: ctx.envelope?.jobType,
+      });
+
       // 4. Update/Upsert the ExtractionArtifact record to 'extracting'
       const artifactId = existingArtifact ? existingArtifact._id : new ObjectId();
       await db.collection("extractionartifacts").updateOne(
@@ -267,6 +278,15 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
           { $set: { status: "processed" } }
         );
 
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "extraction",
+          status: "completed",
+          progress: 100,
+        });
+
         ctx.progress(`Extraction completed successfully in ${durationMs}ms.`);
 
         // Auto-trigger chunking pipeline after extraction
@@ -377,6 +397,17 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
           { _id: documentId },
           { $set: { status: "failed" } }
         );
+
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "extraction",
+          status: "failed",
+          errorCode: failureCode,
+          errorMessage: error.message,
+          retryable: !isPermanent,
+        });
 
         if (isPermanent) {
           throw new PermanentJobError(`Extraction failed permanently: ${error.message}`);

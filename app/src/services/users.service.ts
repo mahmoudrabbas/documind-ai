@@ -11,7 +11,11 @@ export function inviteUser(input: {
   email: string;
   role: "COMPANY_ADMIN" | "EMPLOYEE";
 }) {
-  return apiClient<{ success: true; message: string; data: { user: UserView } }>("/users", { method: "POST", body: input });
+  return apiClient<{
+    success: true;
+    message: string;
+    data: { user: UserView; emailDelivery?: { sent: boolean; error?: string } };
+  }>("/users", { method: "POST", body: input });
 }
 
 export function updateUser(
@@ -28,12 +32,13 @@ export function updateUser(
 }
 
 export type InvitationResult =
-  | { status: "complete"; user: UserView }
+  | { status: "complete"; user: UserView; emailDelivery?: { sent: boolean; error?: string } }
   | {
       status: "assignment-failed";
       user: UserView;
       role: RoleView;
       error: unknown;
+      emailDelivery?: { sent: boolean; error?: string };
     };
 
 export async function inviteUserWithRole(input: {
@@ -47,17 +52,19 @@ export async function inviteUserWithRole(input: {
     email: input.email,
     role: baseRole,
   });
+  const emailDelivery = invitation.data.emailDelivery;
   if (typeof input.role === "string") {
-    return { status: "complete", user: invitation.data.user };
+    return { status: "complete", user: invitation.data.user, emailDelivery };
   }
   try {
     await assignRole(input.role.id, invitation.data.user.id, input.role.version);
     return {
       status: "complete",
       user: { ...invitation.data.user, customRoleId: input.role.id, customRoleName: input.role.name },
+      emailDelivery,
     };
   } catch (error) {
-    return { status: "assignment-failed", user: invitation.data.user, role: input.role, error };
+    return { status: "assignment-failed", user: invitation.data.user, role: input.role, error, emailDelivery };
   }
 }
 

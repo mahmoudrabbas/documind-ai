@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { derivedAccessMetadataSchema, type StoredDerivedAccessMetadataV1 } from "./derivedAccessMetadata.schema.js";
 
 export interface OcrWord {
   text: string;
@@ -32,6 +33,7 @@ export interface OcrPageResultDocument extends mongoose.Document {
   maxRetries: number;
   createdAt: Date;
   updatedAt: Date;
+  accessMetadata?: StoredDerivedAccessMetadataV1;
 }
 
 const boundingBoxSchema = new Schema(
@@ -100,6 +102,7 @@ const ocrPageResultSchema = new Schema<OcrPageResultDocument>(
     failureReason: { type: String, default: null },
     retryCount: { type: Number, default: 0 },
     maxRetries: { type: Number, default: 3 },
+    accessMetadata: { type: derivedAccessMetadataSchema, default: undefined },
   },
   {
     timestamps: true,

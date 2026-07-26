@@ -36,4 +36,9 @@ export {
   DashboardPageHeader,
   DashboardPanel,
 } from "./DashboardPage";
+export { Modal, ConfirmDialog, type ModalProps, type ConfirmDialogProps } from "./Modal";
+export { Tabs, Tab, TabPanel, type TabsProps, type TabProps, type TabPanelProps } from "./Tabs";
+export { Alert, type AlertProps } from "./Alert";
+export { Select, type SelectProps } from "./Select";
+export { Checkbox, type CheckboxProps } from "./Checkbox";
 export type { ButtonVariant, ButtonSize, BadgeStatus } from "./variants";

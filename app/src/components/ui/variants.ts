@@ -6,7 +6,7 @@
  * tested fallback instead of silently rendering broken markup.
  */
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "outline" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "outline" | "danger" | "warning";
 export type ButtonSize = "sm" | "md" | "lg";
 
 export const BUTTON_VARIANTS: readonly ButtonVariant[] = [
@@ -15,34 +15,34 @@ export const BUTTON_VARIANTS: readonly ButtonVariant[] = [
   "ghost",
   "outline",
   "danger",
+  "warning",
 ];
 
 export const BUTTON_SIZES: readonly ButtonSize[] = ["sm", "md", "lg"];
 
 const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  // Navy background, white text — DESIGN.md "Primary" button.
   primary:
-    "bg-primary text-white hover:bg-primary-container disabled:bg-outline-variant disabled:text-outline",
-  // Accent teal — DESIGN.md "Secondary", reserved for AI-specific actions.
+    "bg-primary text-on-primary hover:bg-primary-container focus-visible:ring-primary/30 disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:hover:bg-surface-container-high",
   secondary:
-    "bg-on-tertiary-container text-white hover:opacity-90 disabled:bg-outline-variant disabled:text-outline",
-  // Transparent, navy text — DESIGN.md "Ghost".
+    "bg-surface-container-lowest text-primary border border-outline-variant hover:bg-surface-container-low hover:border-outline focus-visible:ring-primary/30 disabled:bg-surface-container disabled:text-on-surface-variant disabled:border-outline-variant disabled:hover:bg-surface-container",
   ghost:
-    "bg-transparent text-primary hover:bg-surface-container disabled:text-outline",
+    "bg-transparent text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface focus-visible:ring-primary/30 disabled:text-on-surface-variant/50 disabled:hover:bg-transparent",
   outline:
-    "bg-transparent text-primary border border-outline hover:bg-surface-container disabled:text-outline disabled:border-outline-variant",
+    "bg-transparent text-primary border border-outline-variant hover:bg-surface-container-low hover:border-outline focus-visible:ring-primary/30 disabled:text-on-surface-variant disabled:border-outline-variant disabled:hover:bg-transparent",
   danger:
-    "bg-error text-white hover:opacity-90 disabled:bg-outline-variant disabled:text-outline",
+    "bg-error text-on-error hover:bg-error/90 focus-visible:ring-error/30 disabled:bg-error/20 disabled:text-error/40 disabled:hover:bg-error/20",
+  warning:
+    "bg-warning text-on-warning hover:bg-warning/90 focus-visible:ring-warning/30 disabled:bg-warning/20 disabled:text-warning/40 disabled:hover:bg-warning/20",
 };
 
 const BUTTON_SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-label-sm rounded-sm gap-1.5",
-  md: "h-10 px-4 text-label-md rounded gap-2",
-  lg: "h-12 px-6 text-body-md rounded gap-2",
+  sm: "h-8 px-3 text-label-sm rounded gap-1.5",
+  md: "h-10 px-4 text-label-md rounded-md gap-2",
+  lg: "h-12 px-6 text-body-md rounded-md gap-2.5",
 };
 
 const BUTTON_BASE_CLASSES =
-  "inline-flex items-center justify-center font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:pointer-events-none select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
 
 function isButtonVariant(value: unknown): value is ButtonVariant {
   return (
@@ -78,39 +78,60 @@ export function getButtonClasses(
 
 export type BadgeStatus = "success" | "warning" | "error" | "info" | "neutral";
 
-const BADGE_STATUS_CLASSES: Record<BadgeStatus, string> = {
-  success: "bg-tertiary-container text-on-tertiary-container",
-  warning: "bg-secondary-container text-on-secondary-container",
-  error: "bg-error-container text-on-error-container",
-  info: "bg-primary-fixed text-on-primary-fixed",
-  neutral: "bg-surface-container-high text-on-surface-variant",
-};
-
 const BADGE_BASE_CLASSES =
-  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-label-sm uppercase tracking-wide";
+  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-label-sm font-medium";
+
+const BADGE_STATUS_CLASSES: Record<BadgeStatus, string> = {
+  success:
+    "bg-success-container text-on-success-container ring-1 ring-success/15",
+  warning:
+    "bg-warning-container text-on-warning-container ring-1 ring-warning/15",
+  error:
+    "bg-error-container text-on-error-container ring-1 ring-error/15",
+  info:
+    "bg-info-container text-on-info-container ring-1 ring-info/15",
+  neutral:
+    "bg-surface-container-high text-on-surface-variant ring-1 ring-outline-variant/50",
+};
 
 /** Known status words -> semantic badge status, matched case-insensitively. */
 const STATUS_WORD_MAP: Record<string, BadgeStatus> = {
   ready: "success",
   active: "success",
+  current: "success",
   answered: "success",
   connected: "success",
   online: "success",
   resolved: "success",
   passed: "success",
+  allowed: "success",
+  clean: "success",
+  processed: "success",
 
   processing: "warning",
   pending: "warning",
   degraded: "warning",
+  uploaded: "warning",
+  reviewing: "warning",
 
   failed: "error",
   refused: "error",
   error: "error",
   disconnected: "error",
   offline: "error",
+  denied: "error",
 
   reviewed: "info",
   open: "info",
+  inherited: "info",
+
+  confidential: "error",
+  "highly confidential": "error",
+  restricted: "warning",
+
+  read_only: "neutral",
+  "read only": "neutral",
+  stale: "neutral",
 };
 
 /**
@@ -137,3 +158,24 @@ export function getBadgeClasses(status: BadgeStatus | (string & {})): string {
 
   return [BADGE_BASE_CLASSES, BADGE_STATUS_CLASSES[resolvedStatus]].join(" ");
 }
+
+/* ---- Select, Checkbox, Modal, Alert class helpers ---- */
+
+export const SELECT_CLASSES =
+  "h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface placeholder:text-outline disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2373777d%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px] bg-[right_8px_center] bg-no-repeat pe-10";
+
+export const CHECKBOX_CLASSES =
+  "h-4 w-4 rounded border-outline-variant text-primary focus:ring-2 focus:ring-primary/30 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50";
+
+export const MODAL_OVERLAY_CLASSES = "fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-2 sm:p-4";
+export const MODAL_PANEL_CLASSES = "flex max-h-[calc(100vh-1rem)] w-full max-w-5xl flex-col rounded-2xl bg-surface-container-lowest shadow-modal sm:max-h-[calc(100vh-2rem)]";
+
+export const ALERT_CLASSES: Record<string, string> = {
+  error: "rounded-xl border border-error/20 bg-error-container p-4 text-on-error-container",
+  warning: "rounded-xl border border-warning/20 bg-warning-container p-4 text-on-warning-container",
+  success: "rounded-xl border border-success/20 bg-success-container p-4 text-on-success-container",
+  info: "rounded-xl border border-info/20 bg-info-container p-4 text-on-info-container",
+};
+
+export const FIELDSET_CLASSES = "rounded-xl border border-outline-variant/40 p-4 sm:p-5";
+export const PROTECTED_FIELDSET_CLASSES = "rounded-xl border border-primary/20 bg-primary/[0.03] p-4 sm:p-5";

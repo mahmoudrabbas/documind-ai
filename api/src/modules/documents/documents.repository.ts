@@ -6,6 +6,7 @@ import {
   tenantScopedUpdateOne,
   tenantScopedDeleteOne,
 } from "../../db/repositories/tenantScopedRepository.js";
+import mongoose, { type PipelineStage } from "mongoose";
 
 export function createDocument(
   data: Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">,
@@ -33,6 +34,28 @@ export function countDocumentsByTenant(
   filter?: Record<string, unknown>,
 ) {
   return tenantScopedFind(DocumentModel, tenantId, filter ?? {}).countDocuments().exec();
+}
+
+export async function findAuthorizedDocumentsPage(
+  tenantId: string,
+  filter: Record<string, unknown>,
+  accessPipeline: PipelineStage[],
+  page: number,
+  pageSize: number,
+  sort: Record<string, 1 | -1>,
+) {
+  const [result] = await DocumentModel.aggregate<{
+    rows: DocumentDocument[];
+    count: Array<{ total: number }>;
+  }>([
+    { $match: { tenantId: new mongoose.Types.ObjectId(tenantId), ...filter } },
+    ...accessPipeline,
+    { $facet: {
+      rows: [{ $sort: sort }, { $skip: (page - 1) * pageSize }, { $limit: pageSize }],
+      count: [{ $count: "total" }],
+    } },
+  ]).exec();
+  return { documents: result?.rows ?? [], totalRecords: result?.count[0]?.total ?? 0 };
 }
 
 export function findDocumentByTenantAndId(tenantId: string, documentId: string) {

@@ -9,8 +9,7 @@ import {
   FILE_ZERO_BYTES,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
-import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
-import { Permission } from "../permissions/permissions.catalog.js";
+import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 import type {
   StorageProvider,
   SecurityScanner,
@@ -18,14 +17,13 @@ import type {
   ProcessingDispatcher,
 } from "../../providers/storage/types.js";
 import {
-  createDocument,
-  countDocumentsByTenant,
-  findDocumentsByTenant,
   findDocumentByTenantAndId,
   updateDocumentByTenantAndId,
   deleteDocumentByTenantAndId,
   findDocumentByChecksum,
+  findAuthorizedDocumentsPage,
 } from "./documents.repository.js";
+import { createDocumentWithPrivatePolicy } from "./documentUpload.repository.js";
 import {
   createVersion,
   findVersionsByDocument,
@@ -49,7 +47,6 @@ import type {
 import type { DocumentDocument, DocumentClassification, DocumentQuarantineStatus } from "../../db/models/document.model.js";
 import type { DocumentVersionDocument } from "../../db/models/documentVersion.model.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
-import type { PermissionDenialCode, PermissionResourceContext } from "../permissions/permissions.types.js";
 
 type MulterFile = {
   fieldname: string;
@@ -66,34 +63,6 @@ type DocumentActor = {
   email?: string;
   role: BaseRole;
 };
-
-function toDocumentPermissionResource(
-  tenantId: string,
-  document: DocumentDocument,
-): PermissionResourceContext {
-  return {
-    tenantId,
-    ownerId:
-      ((document as unknown as { owner?: { toString(): string } | null }).owner?.toString() ??
-        document.uploadedBy?.toString()) ||
-      undefined,
-    departmentId:
-      (document as unknown as { department?: string | null }).department ?? undefined,
-    documentCategory:
-      (document as unknown as { category?: string | null }).category ?? undefined,
-    documentClassification:
-      (document as unknown as { classification?: string | null }).classification ??
-      undefined,
-  };
-}
-
-function isDocumentAccessHiddenDenial(denialCode: PermissionDenialCode | null) {
-  return (
-    denialCode === "SCOPE_MISMATCH" ||
-    denialCode === "RESOURCE_CONTEXT_REQUIRED" ||
-    denialCode === "TENANT_MISMATCH"
-  );
-}
 
 function computeChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -218,7 +187,7 @@ export function createDocumentServiceProviders(deps: {
     let created: DocumentDocument;
 
     try {
-      created = await createDocument({
+      created = await createDocumentWithPrivatePolicy({
         tenantId: tenantId as unknown as DocumentDocument["tenantId"],
         fileName: safeName,
         originalFileName: file.originalname,
@@ -234,8 +203,8 @@ export function createDocumentServiceProviders(deps: {
         },
         category: null,
         department: null,
-        classification: "internal",
-        owner: null,
+        classification: "restricted",
+        owner: actor.userId as unknown as DocumentDocument["owner"],
         effectiveDate: null,
         expiryDate: null,
         version: 1,
@@ -253,26 +222,16 @@ export function createDocumentServiceProviders(deps: {
           details: scanResult.details,
         },
         uploadedBy: actor.userId as unknown as DocumentDocument["uploadedBy"],
-      } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">);
+      } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">, {
+        tenantId: tenantId as unknown as DocumentVersionDocument["tenantId"],
+        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: file.mimetype,
+        checksum, storageKey, uploadedBy: actor.userId as unknown as DocumentVersionDocument["uploadedBy"],
+        uploadReason: "initial", changeDescription: null,
+      } as unknown as Omit<DocumentVersionDocument, "_id" | "documentId" | "createdAt">);
     } catch (error) {
       await storageProvider.deleteFile(storageKey);
       throw error;
     }
-
-    await createVersion({
-      documentId: created._id,
-      tenantId: created.tenantId.toString(),
-      version: 1,
-      versionLabel: "v1",
-      fileName: safeName,
-      fileSize: file.size,
-      mimeType: file.mimetype,
-      checksum,
-      storageKey,
-      uploadedBy: created.uploadedBy.toString(),
-      uploadReason: "initial",
-      changeDescription: null,
-    } as unknown as Omit<DocumentVersionDocument, "_id" | "createdAt">);
 
     await getAuditWriter().write({
       tenantId,
@@ -316,6 +275,7 @@ export function createDocumentServiceProviders(deps: {
   async function listDocuments(
     input: unknown,
     tenantId: string,
+    actor: DocumentActor,
   ): Promise<ListDocumentsResult> {
     const payload = validateListDocumentsInput(input);
 
@@ -353,10 +313,10 @@ export function createDocumentServiceProviders(deps: {
     const sortField = payload.sortBy ?? "createdAt";
     const sortOrder = payload.sortOrder === "asc" ? 1 : -1;
 
-    const [totalRecords, documents] = await Promise.all([
-      countDocumentsByTenant(tenantId, filter),
-      findDocumentsByTenant(tenantId, payload.page, payload.pageSize, filter, { [sortField]: sortOrder }),
-    ]);
+    const accessPipeline = await getDocumentAccessAuthorizationService().buildDiscoverPipeline({ tenantId, actorId: actor.userId });
+    const { totalRecords, documents } = await findAuthorizedDocumentsPage(
+      tenantId, filter, accessPipeline, payload.page, payload.pageSize, { [sortField]: sortOrder, _id: 1 },
+    );
 
     const totalPages = Math.max(1, Math.ceil(totalRecords / payload.pageSize));
 
@@ -374,7 +334,9 @@ export function createDocumentServiceProviders(deps: {
   async function getDocument(
     documentId: string,
     tenantId: string,
+    actor: DocumentActor,
   ): Promise<{ document: DocumentPublicView }> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "read");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -392,6 +354,7 @@ export function createDocumentServiceProviders(deps: {
   ): Promise<UpdateDocumentMetadataResult> {
     const payload = validateUpdateDocumentMetadataInput(input);
 
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "update");
     const existing = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!existing) {
@@ -453,6 +416,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<{ stream: import("node:stream").Readable; contentType: string; fileName: string; fileSize: number }> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "download");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -461,21 +425,6 @@ export function createDocumentServiceProviders(deps: {
 
     if (document.deletedAt) {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
-    }
-
-    const accessDecision = await getPermissionEvaluator().evaluate({
-      actorId: actor.userId,
-      tenantId,
-      baseRole: actor.role,
-      permission: Permission.DOCUMENTS_DOWNLOAD,
-      resource: toDocumentPermissionResource(tenantId, document),
-    });
-
-    if (!accessDecision.allowed) {
-      if (isDocumentAccessHiddenDenial(accessDecision.denialCode)) {
-        throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
-      }
-      throw new AppError(403, "PERMISSION_REQUIRED", "Permission denied");
     }
 
     const stream = storageProvider.getFileStream(document.storageKey);
@@ -516,6 +465,7 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, FILE_ZERO_BYTES, "Replacement file is empty (zero bytes)");
     }
 
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "replace");
     const existing = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!existing) {
@@ -624,6 +574,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "archive");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -663,6 +614,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "restore");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -702,6 +654,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<void> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "delete");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -735,6 +688,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<void> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "delete");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -775,7 +729,9 @@ export function createDocumentServiceProviders(deps: {
   async function listVersions(
     documentId: string,
     tenantId: string,
+    actor: DocumentActor,
   ): Promise<ListVersionsResult> {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "read");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {

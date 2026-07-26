@@ -16,6 +16,7 @@ export const Permission = {
   DOCUMENTS_DELETE: "documents:delete",
   DOCUMENTS_DOWNLOAD: "documents:download",
   DOCUMENTS_ARCHIVE: "documents:archive",
+  DOCUMENTS_MANAGE_ACCESS: "documents:manage-access",
   CHAT_READ: "chat:read",
   CHAT_CREATE: "chat:create",
   CHAT_DELETE: "chat:delete",

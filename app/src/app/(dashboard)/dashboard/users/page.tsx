@@ -187,10 +187,14 @@ export default function UsersPage() {
         : role as "COMPANY_ADMIN" | "EMPLOYEE";
       if (!selectedRole) throw new Error("The selected role is no longer available.");
       const result = await inviteUserWithRole({ name, email, role: selectedRole });
+      const emailFailed = result.emailDelivery && !result.emailDelivery.sent;
       if (result.status === "assignment-failed") {
         setPendingAssignment({ userId: result.user.id, role: result.role });
         setStatus("User invited successfully, but custom-role assignment failed.");
         setError("Retry the role assignment after refreshing the role list.");
+      } else if (emailFailed) {
+        setPendingAssignment(null);
+        setStatus("Invitation created successfully, but the email could not be sent. You can resend the invitation from the user list.");
       } else {
         setPendingAssignment(null);
         setStatus("Invitation sent successfully.");

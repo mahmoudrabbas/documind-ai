@@ -41,6 +41,33 @@ export type AuditAction =
   | "DOCUMENT_REPLACED"
   | "DOCUMENT_ARCHIVED"
   | "DOCUMENT_RESTORED"
+  | "DOCUMENT_CATEGORY_CREATED"
+  | "DOCUMENT_CATEGORY_UPDATED"
+  | "DOCUMENT_CATEGORY_ARCHIVED"
+  | "DOCUMENT_CATEGORY_RESTORED"
+  | "DOCUMENT_DEPARTMENT_CREATED"
+  | "DOCUMENT_DEPARTMENT_UPDATED"
+  | "DOCUMENT_DEPARTMENT_ARCHIVED"
+  | "DOCUMENT_DEPARTMENT_RESTORED"
+  | "DOCUMENT_CLASSIFICATION_CREATED"
+  | "DOCUMENT_CLASSIFICATION_UPDATED"
+  | "DOCUMENT_CLASSIFICATION_ARCHIVED"
+  | "DOCUMENT_CLASSIFICATION_RESTORED"
+  | "DOCUMENT_POLICY_PREVIEWED"
+  | "DOCUMENT_POLICY_APPLIED"
+  | "DOCUMENT_POLICY_BATCH_PREVIEWED"
+  | "DOCUMENT_POLICY_BATCH_APPLIED"
+  | "DOCUMENT_POLICY_SENSITIVE_BROADENING_CONFIRMED"
+  | "DOCUMENT_ACCESS_DENIED"
+  | "DOCUMENT_ACCESS_STALE_POLICY_REJECTED"
+  | "DOCUMENT_POLICY_PROPAGATION_REQUESTED"
+  | "DOCUMENT_POLICY_PROPAGATION_DISPATCHED"
+  | "DOCUMENT_POLICY_PROPAGATION_COMPLETED"
+  | "DOCUMENT_POLICY_PROPAGATION_FAILED"
+  | "DOCUMENT_POLICY_PROPAGATION_SUPERSEDED"
+  | "DOCUMENT_POLICY_REINDEX_REQUESTED"
+  | "DOCUMENT_POLICY_REINDEX_COMPLETED"
+  | "DOCUMENT_POLICY_REINDEX_FAILED"
   // OCR & Quality
   | "OCR_TRIGGERED"
   | "OCR_COMPLETED"
@@ -99,7 +126,12 @@ export type AuditAction =
   | "RETRIEVAL_DENIAL"
   // System
   | "SYSTEM_STARTUP"
-  | "SYSTEM_HEALTH_CHECK_FAILED";
+  | "SYSTEM_HEALTH_CHECK_FAILED"
+  // Processing Progress
+  | "PROCESSING_RUN_INITIATED"
+  | "PROCESSING_STAGE_RETRIED"
+  | "DOCUMENT_REPROCESSED"
+  | "PROCESSING_CANCELED";
 
 export type AuditResourceType =
   | "User"
@@ -123,7 +155,11 @@ export type AuditResourceType =
   | "Retrieval"
   | "IndexGeneration"
   | "DocumentChunk"
-  | "ChunkEmbedding";
+  | "ChunkEmbedding"
+  | "DocumentTaxonomy"
+  | "DocumentPolicy"
+  | "DocumentPolicyPropagation"
+  | "DocumentPolicyGeneration";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";
@@ -135,7 +171,7 @@ export interface AuditEventInput {
   outcome?: AuditOutcome; // Defaults to SUCCESS if not provided
   changes?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
-  
+
   // Explicit overrides if not using the current async context
   tenantId?: string;
   actorId?: string;

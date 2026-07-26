@@ -21,6 +21,7 @@ export default defineConfig({
       "src/modules/processing/indexing/__tests__/*.test.ts",
       "src/modules/retrieval/ports/__tests__/*.test.ts",
       "src/__tests__/*.test.ts",
+      "src/modules/processing-progress/__tests__/*.test.ts",
     ],
     exclude: [
       "**/node_modules/**",

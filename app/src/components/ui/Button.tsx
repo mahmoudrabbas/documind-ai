@@ -14,14 +14,23 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * Base Button — see DESIGN.md > Components > "Buttons & Controls".
  *
  * variant="primary"   Navy background, white text (default actions)
- * variant="secondary" Accent teal, white text ("Ask AI" / AI-specific actions)
- * variant="ghost"     Transparent, navy text (secondary header actions)
+ * variant="secondary" White background, navy text with border (general actions)
+ * variant="ghost"     Transparent, subtle text (low-priority actions)
  * variant="outline"   Transparent with an outline border
- * variant="danger"    Destructive actions (delete, revoke)
+ * variant="danger"    Red background, white text (destructive actions only)
+ * variant="warning"   Amber background, white text (sensitive/broadening confirmations)
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
-    { className, variant = "primary", size = "md", isLoading = false, disabled, children, ...props },
+    {
+      className,
+      variant = "primary",
+      size = "md",
+      isLoading = false,
+      disabled,
+      children,
+      ...props
+    },
     ref,
   ) => {
     return (

@@ -44,6 +44,13 @@ const importsPortsVitestTestsDir = resolve(
   "ports",
   "__tests__",
 ).replace(/\\/g, "/");
+const processingProgressVitestTestsDir = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "processing-progress",
+  "__tests__",
+).replace(/\\/g, "/");
 const apiSrcRoot = resolve(apiRoot, "src");
 
 function isVitestOnlyTest(path) {
@@ -58,7 +65,8 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
     || normalized.includes("/__tests__/provider-contracts.test.ts")
     || normalized.includes("/__tests__/security-tenant-isolation.test.ts")
-    || normalized.includes("/__tests__/chunking.golden.test.ts");
+    || normalized.includes("/__tests__/chunking.golden.test.ts")
+    || normalized.startsWith(`${processingProgressVitestTestsDir}/`);
 }
 
 function findTests(directory) {

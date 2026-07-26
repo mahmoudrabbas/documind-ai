@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 
-export type DocumentClassification = "public" | "internal" | "confidential" | "restricted";
+export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 export type DocumentQuarantineStatus = "none" | "quarantined" | "cleared";
 export type DocumentSearchStatus = "NOT_INDEXED" | "INDEXING" | "READY" | "FAILED" | "STALE";
 
@@ -19,7 +19,7 @@ export interface DocumentDocument extends mongoose.Document {
   mimeType: string;
   storageKey: string;
   checksum: string;
-  status: "uploading" | "uploaded" | "processing" | "processed" | "failed";
+  status: "uploading" | "uploaded" | "processing" | "processed" | "failed" | "canceled" | "reprocessing";
   metadata: {
     title: string | null;
     description: string | null;
@@ -29,6 +29,9 @@ export interface DocumentDocument extends mongoose.Document {
   department: string | null;
   classification: DocumentClassification;
   owner: mongoose.Types.ObjectId | null;
+  categoryId?: mongoose.Types.ObjectId | null;
+  departmentId?: mongoose.Types.ObjectId | null;
+  classificationId?: mongoose.Types.ObjectId | null;
   effectiveDate: Date | null;
   expiryDate: Date | null;
   version: number;
@@ -43,6 +46,9 @@ export interface DocumentDocument extends mongoose.Document {
   uploadedBy: mongoose.Types.ObjectId;
   activeChunkGeneration: mongoose.Types.ObjectId | null;
   searchStatus: DocumentSearchStatus;
+  activePolicyId?: mongoose.Types.ObjectId | null;
+  activePolicyVersion?: number | null;
+  policyChangedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -97,7 +103,7 @@ const documentSchema = new Schema<DocumentDocument>(
     },
     status: {
       type: String,
-      enum: ["uploading", "uploaded", "processing", "processed", "failed"],
+      enum: ["uploading", "uploaded", "processing", "processed", "failed", "canceled", "reprocessing"],
       default: "uploaded",
     },
     metadata: {
@@ -109,7 +115,7 @@ const documentSchema = new Schema<DocumentDocument>(
     department: { type: String, default: null, maxlength: 100 },
     classification: {
       type: String,
-      enum: ["public", "internal", "confidential", "restricted"],
+      enum: ["public", "internal", "confidential", "restricted", "highly_confidential"],
       default: "internal",
     },
     owner: {
@@ -117,6 +123,9 @@ const documentSchema = new Schema<DocumentDocument>(
       ref: "User",
       default: null,
     },
+    categoryId: { type: Schema.Types.ObjectId, ref: "DocumentCategory", default: null },
+    departmentId: { type: Schema.Types.ObjectId, ref: "Department", default: null },
+    classificationId: { type: Schema.Types.ObjectId, ref: "DocumentClassification", default: null },
     effectiveDate: { type: Date, default: null },
     expiryDate: { type: Date, default: null },
     version: { type: Number, default: 1, min: 1 },
@@ -155,6 +164,16 @@ const documentSchema = new Schema<DocumentDocument>(
       enum: ["NOT_INDEXED", "INDEXING", "READY", "FAILED", "STALE"],
       default: "NOT_INDEXED",
     },
+    activePolicyId: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
+    activePolicyVersion: {
+      type: Number,
+      min: 1,
+      default: null,
+    },
+    policyChangedAt: { type: Date, default: null },
   },
   {
     timestamps: true,
@@ -180,6 +199,16 @@ documentSchema.index({ tenantId: 1, category: 1 });
 documentSchema.index({ tenantId: 1, classification: 1 });
 documentSchema.index({ tenantId: 1, searchStatus: 1 });
 documentSchema.index({ tenantId: 1, activeChunkGeneration: 1 });
+documentSchema.index({ tenantId: 1, categoryId: 1 });
+documentSchema.index({ tenantId: 1, departmentId: 1 });
+documentSchema.index({ tenantId: 1, classificationId: 1 });
+documentSchema.index(
+  { tenantId: 1, activePolicyId: 1, activePolicyVersion: 1 },
+  {
+    name: "idx_document_tenant_active_policy",
+    partialFilterExpression: { activePolicyId: { $type: "objectId" } },
+  },
+);
 
 const DocumentModel = mongoose.model<DocumentDocument>("Document", documentSchema);
 export default DocumentModel;

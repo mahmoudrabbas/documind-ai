@@ -32,6 +32,7 @@ import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhoo
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
+import processingProgressRoutes from "./modules/processing-progress/processingProgress.routes.js";
 import { createRetrievalRoutes } from "./modules/retrieval/retrieval.routes.js";
 import { createRetrievalService } from "./modules/retrieval/retrieval.service.js";
 import { createRetrievalRepository } from "./modules/retrieval/retrieval.repository.js";
@@ -56,6 +57,7 @@ import { initializeIntentQueryService } from "./modules/intent-query/intentQuery
 import { ChatService } from "./modules/chat/chat.service.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter } from "./providers/llm/index.js";
+import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 
@@ -104,6 +106,7 @@ const corsOptions: CorsOptions = {
     "X-Request-ID",
     "X-Correlation-ID",
     "X-Confirm-Logout-All",
+    "Idempotency-Key",
   ],
   exposedHeaders: ["X-Request-ID"],
   credentials: true,
@@ -171,7 +174,9 @@ app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
+app.use("/documents", processingProgressRoutes);
 app.use("/intent-query", intentQueryRoutes);
+app.use("/document-taxonomy", documentTaxonomyRoutes);
 
 const filterCompiler: FilterCompiler = {
   compileAccessFilters,

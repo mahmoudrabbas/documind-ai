@@ -42,10 +42,12 @@ export async function inviteUserController(
   try {
     const result = await inviteUser(req.body, context(req));
 
+    const emailOk = result.emailDelivery?.sent !== false;
     res.status(201).json({
       success: true,
-      message:
-        "User invitation created successfully. An email has been sent to the invited user.",
+      message: emailOk
+        ? "User invitation created successfully. An email has been sent to the invited user."
+        : "User invitation created successfully, but the invitation email could not be sent. Please resend the invitation.",
       data: result,
     });
   } catch (error) {

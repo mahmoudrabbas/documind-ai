@@ -49,6 +49,21 @@ export const colors = {
   errorContainer: "#ffdad6",
   onErrorContainer: "#93000a",
 
+  warning: "#b45309",
+  onWarning: "#ffffff",
+  warningContainer: "#fef3c7",
+  onWarningContainer: "#92400e",
+
+  success: "#047857",
+  onSuccess: "#ffffff",
+  successContainer: "#d1fae5",
+  onSuccessContainer: "#065f46",
+
+  info: "#1d4ed8",
+  onInfo: "#ffffff",
+  infoContainer: "#dbeafe",
+  onInfoContainer: "#1e40af",
+
   background: "#f7f9fc",
   onBackground: "#191c1e",
   surfaceVariant: "#e0e3e6",

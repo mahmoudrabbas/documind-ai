@@ -7,6 +7,7 @@ import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import type { ExtractionStatusView } from "./extraction.types.js";
+import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 
 export async function triggerExtraction(
   tenantId: string | Types.ObjectId,
@@ -14,6 +15,9 @@ export async function triggerExtraction(
   actorId: string | Types.ObjectId,
   documentVersion: number,
 ): Promise<{ jobId: string; idempotencyKey: string }> {
+  await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+    { tenantId: tenantId.toString(), actorId: actorId.toString() }, documentId.toString(), "reprocess",
+  );
   const docId = new Types.ObjectId(documentId);
   const tenId = new Types.ObjectId(tenantId);
   const actId = new Types.ObjectId(actorId);
@@ -73,7 +77,11 @@ export async function getExtractionStatus(
   tenantId: string | Types.ObjectId,
   documentId: string | Types.ObjectId,
   documentVersion: number,
+  actorId: string | Types.ObjectId,
 ): Promise<ExtractionStatusView | null> {
+  await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+    { tenantId: tenantId.toString(), actorId: actorId.toString() }, documentId.toString(), "read",
+  );
   const artifact = await findArtifactByVersion(tenantId, documentId, documentVersion);
   if (!artifact) {
     return null;

@@ -24,6 +24,8 @@ export const Permission = {
   DOCUMENTS_DELETE: "documents:delete",
   DOCUMENTS_DOWNLOAD: "documents:download",
   DOCUMENTS_ARCHIVE: "documents:archive",
+  DOCUMENTS_MANAGE_ACCESS: "documents:manage-access",
+  DOCUMENTS_USE_IN_AI: "documents:use-in-ai",
 
   CHAT_READ: "chat:read",
   CHAT_CREATE: "chat:create",
@@ -108,6 +110,8 @@ const definitions: readonly PermissionDefinitionSource[] = [
   { id: Permission.DOCUMENTS_DELETE, group: "documents", label: "Delete Documents", description: "Delete tenant documents", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.DOCUMENTS_DOWNLOAD, group: "documents", label: "Download Documents", description: "Download tenant document files", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.DOCUMENTS_ARCHIVE, group: "documents", label: "Archive Documents", description: "Archive and restore tenant documents", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
+  { id: Permission.DOCUMENTS_MANAGE_ACCESS, group: "documents", label: "Manage Document Access", description: "Manage document access policies", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
+  { id: Permission.DOCUMENTS_USE_IN_AI, group: "documents", label: "Use Documents in AI", description: "Use authorized documents in AI requests", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.CHAT_READ, group: "chat", label: "View Conversations", description: "View conversations", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
   { id: Permission.CHAT_CREATE, group: "chat", label: "Create Conversations", description: "Create conversations", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
   { id: Permission.CHAT_DELETE, group: "chat", label: "Delete Conversations", description: "Delete conversations", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
