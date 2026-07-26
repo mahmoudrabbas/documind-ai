@@ -41,7 +41,7 @@ export class GroqChatAdapter implements ModelAdapter {
     };
 
     if (params.tools && params.tools.length > 0) {
-      requestParams.tools = params.tools as OpenAI.ChatCompletionTool[];
+      requestParams.tools = params.tools as unknown as OpenAI.ChatCompletionTool[];
       if (params.toolChoice) {
         requestParams.tool_choice = params.toolChoice as
           | "auto"

@@ -45,7 +45,7 @@ test("documentChunkingJob - happy path: chunks extraction artifact and persists 
 
   const mockDb = {
     collection: (name: string) => ({
-      findOne: async (query: Record<string, unknown>) => {
+      findOne: async (_query: Record<string, unknown>) => {
         if (name === "extractionartifacts") return mockArtifact;
         return null;
       },
@@ -84,7 +84,7 @@ test("documentChunkingJob - happy path: chunks extraction artifact and persists 
 
 test("documentChunkingJob - fails when extraction artifact not found", async () => {
   const mockDb = {
-    collection: (name: string) => ({
+    collection: (_name: string) => ({
       findOne: async () => null,
     }),
   };

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
-import { chunkDocument, type ChunkCandidate } from "../providers/chunking/chunker.js";
+import { chunkDocument } from "../providers/chunking/chunker.js";
 import { TiktokenTokenizer } from "../providers/chunking/tokenizer.js";
 import type { ExtractionPage } from "../contracts/extractionContract.js";
 

@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import { logger } from "../../common/logger/logger.js";
@@ -14,7 +13,7 @@ import type { AccessContext } from "../retrieval/retrieval.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
 import DocumentModel from "../../db/models/document.model.js";
-import type { ChatSource, ChatResponse, ChatHistoryMessage } from "./chat.types.js";
+import type { ChatSource, ChatResponse } from "./chat.types.js";
 import { ChatSendBodySchema, type ChatSendBody } from "./chat.validator.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
@@ -122,7 +121,7 @@ export class ChatService {
         ),
       ];
 
-      let docTitles = new Map<string, string>();
+      const docTitles = new Map<string, string>();
       if (docIds.length > 0) {
         const docs = await DocumentModel.find({
           _id: { $in: docIds.map((id) => new mongoose.Types.ObjectId(id)) },

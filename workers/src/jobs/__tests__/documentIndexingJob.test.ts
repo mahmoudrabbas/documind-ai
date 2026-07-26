@@ -38,7 +38,7 @@ test("documentIndexingJob - happy path: verifies counts and activates generation
 
   const mockDb = {
     collection: (name: string) => ({
-      findOne: async (query: Record<string, unknown>) => {
+      findOne: async (_query: Record<string, unknown>) => {
         if (name === "indexgenerations") return mockGeneration;
         return null;
       },
@@ -131,7 +131,7 @@ test("documentIndexingJob - fails when count mismatch", async () => {
     status: "BUILDING",
   };
 
-  let callCount = 0;
+  let _callCount = 0;
   const mockDb = {
     collection: (name: string) => ({
       findOne: async () => {
@@ -139,7 +139,7 @@ test("documentIndexingJob - fails when count mismatch", async () => {
         return null;
       },
       countDocuments: async () => {
-        callCount++;
+        _callCount++;
         return 2;
       },
       createSearchIndex: async () => ({}),

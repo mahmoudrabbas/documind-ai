@@ -62,6 +62,7 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
     const apiKey = process.env.JINA_API_KEY;
     const model = process.env.JINA_EMBEDDING_MODEL || "jina-embeddings-v3";
     const dimensions = parseInt(process.env.JINA_EMBEDDING_DIMENSIONS || "1024", 10);
+    if (!apiKey) throw new Error("JINA_API_KEY is required for groq provider");
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions, "https://api.jina.ai/v1");
   }
 

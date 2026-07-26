@@ -51,13 +51,12 @@ test("documentEmbeddingJob - happy path: embeds DRAFT chunks and persists embedd
     },
   ];
 
-  let cursorIndex = 0;
   const insertManyCalls: Array<{ name: string; docs: unknown[] }> = [];
   const updateOneCalls: Array<{ name: string; query: unknown; update: unknown }> = [];
 
   const mockDb = {
     collection: (name: string) => ({
-      find: (query: Record<string, unknown>) => ({
+      find: (_query: Record<string, unknown>) => ({
         toArray: async () => {
           if (name === "documentchunks") return mockChunks;
           return [];

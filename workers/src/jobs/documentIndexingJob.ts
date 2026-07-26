@@ -53,6 +53,7 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
 
         try {
           const chunkEmbeddings = db.collection("chunkembeddings");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (chunkEmbeddings as any).createSearchIndex({
             name: VECTOR_INDEX_NAME,
             type: "vectorSearch",
@@ -104,6 +105,7 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
 
         try {
           const documentChunks = db.collection("documentchunks");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (documentChunks as any).createSearchIndex({
             name: KEYWORD_INDEX_NAME,
             type: "search",
@@ -181,6 +183,7 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
 
       try {
         const chunkEmbeddings = db.collection("chunkembeddings");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const vectorIndexes = await (chunkEmbeddings as any).listSearchIndexes().toArray();
         vectorReady = vectorIndexes.some(
           (idx: { name: string; status?: string }) => idx.name === VECTOR_INDEX_NAME && idx.status === "READY",
@@ -191,6 +194,7 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
 
       try {
         const documentChunks = db.collection("documentchunks");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const keywordIndexes = await (documentChunks as any).listSearchIndexes().toArray();
         keywordReady = keywordIndexes.some(
           (idx: { name: string; status?: string }) => idx.name === KEYWORD_INDEX_NAME && idx.status === "READY",
