@@ -83,6 +83,16 @@ export type AuditAction =
   | "DOCUMENT_RELATIONSHIP_REJECTED"
   | "CONFLICT_FINDING_RESOLVED"
   | "CONFLICT_FINDING_DISMISSED"
+  // Indexing
+  | "INDEX_GENERATION_STARTED"
+  | "INDEX_GENERATION_ACTIVATED"
+  | "INDEX_GENERATION_FAILED"
+  | "INDEX_GENERATION_RETIRED"
+  | "INDEX_GENERATION_ROLLBACK"
+  | "INDEX_REINDEX_TRIGGERED"
+  | "INDEX_ACCESS_POLICY_TRIGGERED_REINDEX"
+  | "INDEX_CROSS_TENANT_ACCESS_DENIED"
+  | "INDEX_CLASSIFICATION_BLOCKED"
   // Platform
   | "PACKAGE_CREATED"
   | "PACKAGE_UPDATED"
@@ -128,7 +138,12 @@ export type AuditAction =
   | "RETRIEVAL_DENIAL"
   // System
   | "SYSTEM_STARTUP"
-  | "SYSTEM_HEALTH_CHECK_FAILED";
+  | "SYSTEM_HEALTH_CHECK_FAILED"
+  // Processing Progress
+  | "PROCESSING_RUN_INITIATED"
+  | "PROCESSING_STAGE_RETRIED"
+  | "DOCUMENT_REPROCESSED"
+  | "PROCESSING_CANCELED";
 
 export type AuditResourceType =
   | "User"
@@ -149,11 +164,14 @@ export type AuditResourceType =
   | "System"
   | "Permission"
   | "IntentQuery"
+  | "Retrieval"
+  | "IndexGeneration"
+  | "DocumentChunk"
+  | "ChunkEmbedding"
   | "DocumentTaxonomy"
   | "DocumentPolicy"
   | "DocumentPolicyPropagation"
-  | "DocumentPolicyGeneration"
-  | "Retrieval";
+  | "DocumentPolicyGeneration";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

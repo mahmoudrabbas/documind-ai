@@ -7,18 +7,36 @@ let connected = false;
 
 function createMongoClient(): MongoClient {
   return new MongoClient(config.MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000,
+    serverSelectionTimeoutMS: 30000,
   });
 }
 
 export async function connectMongo(): Promise<void> {
+  if (client && connected) {
+    return;
+  }
   if (client) {
+    try {
+      await client.connect();
+      connected = true;
+      logger.info("mongodb connected");
+    } catch {
+      client = null;
+      connected = false;
+      throw new Error("mongodb reconnect failed");
+    }
     return;
   }
   client = createMongoClient();
-  await client.connect();
-  connected = true;
-  logger.info("mongodb connected");
+  try {
+    await client.connect();
+    connected = true;
+    logger.info("mongodb connected");
+  } catch {
+    client = null;
+    connected = false;
+    throw new Error("mongodb initial connection failed");
+  }
 }
 
 export function isMongoConnected(): boolean {

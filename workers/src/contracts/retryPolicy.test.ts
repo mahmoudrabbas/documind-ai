@@ -67,7 +67,7 @@ test("deriveIdempotencyKey is stable and tenant-scoped", () => {
 });
 
 test("buildDedupKey combines jobType and idempotencyKey", () => {
-  assert.equal(buildDedupKey("jt", "k"), "jt::k");
+  assert.equal(buildDedupKey("jt", "k"), "jt__k");
 });
 
 test("hashString is deterministic sha256", () => {

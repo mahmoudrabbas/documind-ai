@@ -210,7 +210,7 @@ export const subscriptionUpdateSchema = z
     expectedVersion: expectedSubscriptionVersionSchema,
     reason: reasonSchema,
     /** @deprecated Use periodEnd */
-    renewsAt: z.iso.datetime().nullable().optional(),
+    renewsAt: z.string().datetime().nullable().optional(),
   })
   .strict()
   .refine((value) => value.packageId !== undefined || value.status !== undefined || value.renewsAt !== undefined, {

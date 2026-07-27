@@ -37,6 +37,10 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
     prefix: "/dashboard/chat",
     permissions: [Permission.CHAT_READ],
   },
+  {
+    prefix: "/dashboard/processing-failed",
+    permissions: [Permission.COMPANY_SETTINGS_READ],
+  },
 ];
 const TENANT_SHELL_ROLES = ["COMPANY_ADMIN", "EMPLOYEE"] as const;
 

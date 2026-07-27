@@ -11,7 +11,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-ENV MONGOMS_DISABLE_POSTINSTALL=1
 RUN npm ci --workspace api --workspace workers --include-workspace-root --ignore-scripts \
     && npm rebuild argon2
 

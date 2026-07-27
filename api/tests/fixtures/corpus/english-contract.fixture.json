@@ -1,0 +1,34 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Service Agreement", "level": 1 },
+      { "type": "paragraph", "text": "This Service Agreement (the \"Agreement\") is entered into as of January 1, 2025, by and between Acme Corp (\"Client\") and TechStar Inc (\"Provider\"). The Provider agrees to deliver software development services as described in Schedule A attached hereto." },
+      { "type": "heading", "text": "1. Scope of Work", "level": 2 },
+      { "type": "paragraph", "text": "The Provider shall deliver a web-based document management system including user authentication, file upload and download capabilities, full-text search functionality, and role-based access control. All deliverables must comply with the technical specifications outlined in Appendix B." },
+      { "type": "paragraph", "text": "The Provider shall assign a team of no fewer than five (5) software engineers to the project. The project lead shall have a minimum of seven (7) years of professional experience in distributed systems architecture." },
+      { "type": "heading", "text": "2. Compensation", "level": 2 },
+      { "type": "paragraph", "text": "The Client agrees to pay the Provider a total fee of $250,000 USD for all services rendered under this Agreement. Payment shall be made in monthly installments of $41,666.67, due on the last business day of each calendar month." },
+      { "type": "paragraph", "text": "Late payments shall incur a penalty of 1.5% per month on the outstanding balance. The Provider reserves the right to suspend work if payment is more than thirty (30) days overdue." },
+      { "type": "heading", "text": "3. Confidentiality", "level": 2 },
+      { "type": "paragraph", "text": "Both parties agree to maintain the confidentiality of all proprietary information shared during the course of this Agreement. This obligation shall survive the termination of this Agreement for a period of three (3) years." },
+      { "type": "paragraph", "text": "Confidential information includes but is not limited to: source code, algorithms, business processes, customer data, financial records, and any other materials marked as confidential by either party." },
+      { "type": "heading", "text": "4. Term and Termination", "level": 2 },
+      { "type": "paragraph", "text": "This Agreement shall commence on January 1, 2025 and continue for a period of twelve (12) months unless terminated earlier in accordance with this Section. Either party may terminate this Agreement with sixty (60) days written notice to the other party." }
+    ]
+  },
+  {
+    "pageNumber": 2,
+    "blocks": [
+      { "type": "heading", "text": "5. Intellectual Property", "level": 2 },
+      { "type": "paragraph", "text": "All intellectual property rights in the deliverables created under this Agreement shall vest in the Client upon full payment. The Provider retains ownership of pre-existing tools, libraries, and frameworks used in the development process." },
+      { "type": "paragraph", "text": "The Provider grants the Client a perpetual, non-exclusive license to use any pre-existing intellectual property incorporated into the deliverables." },
+      { "type": "heading", "text": "6. Limitation of Liability", "level": 2 },
+      { "type": "paragraph", "text": "In no event shall either party be liable for indirect, incidental, special, consequential, or punitive damages arising out of or related to this Agreement. The total aggregate liability of either party shall not exceed the total fees paid or payable under this Agreement." },
+      { "type": "heading", "text": "Schedule A - Technical Specifications", "level": 2 },
+      { "type": "table", "text": "Component | Technology | Version\nBackend | Node.js | 20 LTS\nFrontend | React | 18.x\nDatabase | PostgreSQL | 16\nSearch Engine | Elasticsearch | 8.x" },
+      { "type": "heading", "text": "Schedule B - Payment Milestones", "level": 2 },
+      { "type": "table", "text": "Milestone | Deliverable | Amount\nM1 | Project kickoff and design | $41,666.67\nM2 | MVP release | $83,333.34\nM3 | Beta release | $83,333.33\nM4 | Production release | $41,666.67" }
+    ]
+  }
+]

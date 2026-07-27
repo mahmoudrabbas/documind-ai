@@ -9,6 +9,7 @@ import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.j
 import { getMongoClient } from "../db/mongo.js";
 import { config } from "../config/index.js";
 import { logger } from "../logger.js";
+import { reportProgressToProcessingRun } from "./progressReporter.js";
 
 const require = createRequire(import.meta.url);
 
@@ -493,8 +494,8 @@ async function renderPdfPageToImage(
     );
     throw error;
   } finally {
-  await loadingTask.destroy().catch(() => {});
-}
+    await loadingTask.destroy().catch(() => {});
+  }
 }
 
 async function renderImagePageToBuffer(
@@ -682,6 +683,15 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
         `Starting OCR processing with ${provider.name} ` +
           `for ${selectedPages.length} page(s)...`,
       );
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "ocr",
+        status: "running",
+        progress: 10,
+      });
 
       const startedAt = Date.now();
       let totalPagesProcessed = 0;
@@ -984,6 +994,35 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
           `Duration: ${totalDurationMs}ms`,
       );
 
+      const ocrProgress =
+        totalPagesFailed === 0
+          ? 100
+          : Math.round(
+              (totalPagesProcessed /
+                selectedPages.length) *
+                100,
+            );
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "ocr",
+        status:
+          totalPagesFailed === 0
+            ? "completed"
+            : "failed",
+        progress: ocrProgress,
+        errorCode:
+          totalPagesFailed > 0
+            ? "ocr_failed"
+            : undefined,
+        errorMessage:
+          totalPagesFailed > 0
+            ? `${totalPagesFailed} pages failed OCR`
+            : undefined,
+      });
+
       if (
         totalPagesProcessed === 0 &&
         totalPagesFailed > 0
@@ -1096,8 +1135,8 @@ async function detectPageCount(
       `Unable to read PDF page count: ${error.message}`,
     );
   } finally {
-  await loadingTask.destroy().catch(() => {});
-}
+    await loadingTask.destroy().catch(() => {});
+  }
 }
 
 async function renderPageToImage(fileBuffer: Buffer, mimeType: string, pageNumber: number): Promise<Buffer> {

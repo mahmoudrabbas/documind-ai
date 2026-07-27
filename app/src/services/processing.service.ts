@@ -5,6 +5,9 @@ import type {
   DocumentQualityResponse,
   OcrUsageSummaryResponse,
   ReviewQualityResponse,
+  IndexStartResponse,
+  IndexStatusResponse,
+  SearchStatusResponse,
 } from "@/types/api/processing.types";
 
 export async function triggerOcrProcessing(
@@ -77,4 +80,44 @@ export async function retryOcrPages(
 
 export async function getOcrUsageSummary(): Promise<OcrUsageSummaryResponse> {
   return api.get<OcrUsageSummaryResponse>("/documents/ocr/usage");
+}
+
+export async function startIndexing(
+  documentId: string,
+  options?: {
+    triggeredBy?: "INITIAL" | "REINDEX" | "ACCESS_POLICY_CHANGE" | "MODEL_UPGRADE";
+    department?: string;
+    classification?: string;
+  },
+): Promise<IndexStartResponse> {
+  return api.post<IndexStartResponse>(`/documents/${documentId}/index`, {
+    triggeredBy: options?.triggeredBy ?? "INITIAL",
+    department: options?.department,
+    classification: options?.classification,
+  });
+}
+
+export async function getIndexStatus(documentId: string): Promise<IndexStatusResponse> {
+  return api.get<IndexStatusResponse>(`/documents/${documentId}/index/status`);
+}
+
+export async function retryIndexing(documentId: string): Promise<IndexStartResponse> {
+  return api.post<IndexStartResponse>(`/documents/${documentId}/index/retry`);
+}
+
+export async function reindexDocument(
+  documentId: string,
+  options?: {
+    department?: string;
+    classification?: string;
+  },
+): Promise<IndexStartResponse> {
+  return api.post<IndexStartResponse>(`/documents/${documentId}/index/reindex`, {
+    department: options?.department,
+    classification: options?.classification,
+  });
+}
+
+export async function getSearchStatus(documentId: string): Promise<SearchStatusResponse> {
+  return api.get<SearchStatusResponse>(`/documents/${documentId}/search-status`);
 }

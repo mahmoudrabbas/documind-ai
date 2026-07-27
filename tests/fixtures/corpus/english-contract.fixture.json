@@ -1,0 +1,21 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Service Agreement", "level": 1 },
+      { "type": "paragraph", "text": "This Service Agreement (\"Agreement\") is entered into as of January 1, 2025, by and between TechCorp Inc. (\"Provider\") and GlobalFinance Ltd. (\"Client\"). The Provider agrees to deliver cloud computing services as described in this Agreement." },
+      { "type": "heading", "text": "Section 1: Scope of Services", "level": 2 },
+      { "type": "paragraph", "text": "The Provider shall deliver the following services: (a) cloud infrastructure management, (b) 24/7 monitoring and support, (c) data backup and recovery services, and (d) monthly performance reports. All services shall be delivered in accordance with the Service Level Agreement (SLA) attached hereto as Exhibit A." },
+      { "type": "paragraph", "text": "The Provider shall maintain a minimum uptime of 99.9% for all critical systems. Failure to meet this threshold shall result in service credits as defined in the SLA. The Client acknowledges that scheduled maintenance windows are excluded from uptime calculations." }
+    ]
+  },
+  {
+    "pageNumber": 2,
+    "blocks": [
+      { "type": "heading", "text": "Section 2: Payment Terms", "level": 2 },
+      { "type": "paragraph", "text": "The Client shall pay a monthly fee of $50,000 USD, due within 30 days of invoice date. Late payments shall incur a penalty of 1.5% per month. All fees are non-refundable except as expressly provided in Section 5." },
+      { "type": "heading", "text": "Section 3: Confidentiality", "level": 2 },
+      { "type": "paragraph", "text": "Both parties agree to maintain the confidentiality of all proprietary information shared during the term of this Agreement. This obligation shall survive termination for a period of three (3) years. Unauthorized disclosure shall entitle the non-breaching party to injunctive relief and damages." }
+    ]
+  }
+]

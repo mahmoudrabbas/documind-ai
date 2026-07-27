@@ -2,7 +2,8 @@ export * from "./intentQuery.types.js";
 export { IntentQueryService } from "./intentQuery.service.js";
 export {
   createIntentQueryService,
-  intentQueryService,
+  getIntentQueryService,
+  initializeIntentQueryService,
 } from "./intentQuery.factory.js";
 export { FakeIntentQueryAdapter } from "./adapters/intentQuery.fakeAdapter.js";
 export { FakeConversationContextAdapter } from "./adapters/conversationContext.fakeAdapter.js";

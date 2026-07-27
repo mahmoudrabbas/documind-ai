@@ -32,6 +32,7 @@ import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhoo
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
+import processingProgressRoutes from "./modules/processing-progress/processingProgress.routes.js";
 import { createRetrievalRoutes } from "./modules/retrieval/retrieval.routes.js";
 import { createRetrievalService } from "./modules/retrieval/retrieval.service.js";
 import { createRetrievalRepository } from "./modules/retrieval/retrieval.repository.js";
@@ -46,12 +47,16 @@ import {
   getVectorStoreAdapter,
   getKeywordAdapter,
 } from "./providers/embedding/adapterLoader.js";
-import { FakeEmbeddingAdapter } from "./providers/llm/fakeAdapters.js";
+import { getEmbeddingAdapter } from "./providers/embedding/atlasEmbeddingAdapter.js";
 import { FakeRerankerAdapter } from "./modules/reranker/fakeReranker.adapter.js";
 import { createRerankerService } from "./modules/reranker/reranker.service.js";
 import { registerRetrievalService } from "./modules/agents/agents.service.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
+import { initializeIntentQueryService } from "./modules/intent-query/intentQuery.factory.js";
+import { ChatService } from "./modules/chat/chat.service.js";
+import { createChatRoutes } from "./modules/chat/chat.routes.js";
+import { getModelAdapter } from "./providers/llm/index.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
@@ -169,6 +174,7 @@ app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
+app.use("/documents", processingProgressRoutes);
 app.use("/intent-query", intentQueryRoutes);
 app.use("/document-taxonomy", documentTaxonomyRoutes);
 
@@ -185,7 +191,7 @@ const rerankerService = createRerankerService({
 const retrievalService = createRetrievalService({
   vectorAdapter: await getVectorStoreAdapter(),
   keywordAdapter: await getKeywordAdapter(),
-  embeddingAdapter: new FakeEmbeddingAdapter(),
+  embeddingAdapter: await getEmbeddingAdapter(),
   fusionEngine: new FusionEngine(),
   filterCompiler,
   repository: createRetrievalRepository(),
@@ -193,7 +199,12 @@ const retrievalService = createRetrievalService({
 });
 
 registerRetrievalService(retrievalService);
+
+await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
+
+const chatService = new ChatService(retrievalService, getModelAdapter());
+app.use("/chat", createChatRoutes(chatService));
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

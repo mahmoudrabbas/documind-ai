@@ -8,7 +8,7 @@ import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
-import { intentQueryService } from "../intentQuery.factory.js";
+import { getIntentQueryService } from "../intentQuery.factory.js";
 
 const app: Express = (await import("../../../app.js")).default;
 const TEST_PASSWORD = "StrongPass123!";
@@ -186,7 +186,7 @@ test("Intent Query HTTP API", async (t) => {
       requestId: "req-1",
     };
     
-    await intentQueryService.analyzeQuery(
+    await getIntentQueryService().analyzeQuery(
       { question: "Verify trace logging." },
       context
     );

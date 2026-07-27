@@ -1,0 +1,21 @@
+SERVICE AGREEMENT
+
+This Service Agreement ("Agreement") is entered into as of January 15, 2025, between TechCorp Inc. ("Provider") and Global Solutions LLC ("Client").
+
+1. PAYMENT TERMS
+The Client agrees to pay the Provider a total fee of $50,000 USD for the services described herein. Payment shall be made in five (5) monthly installments of $10,000 each, due on the 15th of each month starting February 15, 2025. Late payments will incur a 1.5% monthly interest charge.
+
+2. SCOPE OF SERVICES
+The Provider shall deliver software development, quality assurance testing, and deployment services for the Client's enterprise resource planning (ERP) system migration project. The project timeline is estimated at six (6) months.
+
+3. TERMINATION
+Either party may terminate this Agreement with thirty (30) days written notice. In the event of termination, the Client shall pay for all services rendered up to the termination date. Early termination fees of 20% of remaining contract value shall apply if terminated without cause.
+
+4. INTELLECTUAL PROPERTY
+All deliverables created under this Agreement shall be the property of the Client upon full payment. The Provider retains ownership of pre-existing tools and methodologies used in the delivery of services.
+
+5. LIABILITY LIMITATION
+The Provider's total liability under this Agreement shall not exceed the total fees paid by the Client. Neither party shall be liable for indirect, incidental, or consequential damages.
+
+6. CONFIDENTIALITY
+Both parties agree to maintain confidentiality of proprietary information for a period of two (2) years following the termination of this Agreement.

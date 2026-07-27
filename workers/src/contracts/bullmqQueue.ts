@@ -185,6 +185,7 @@ export class BullMQQueue implements JobDispatcher {
             attemptsMade: job.attemptsMade ?? 0,
             data: { message, ...data },
           }),
+        enqueue: this.enqueue.bind(this),
       };
 
       const outcome: ExecutionOutcome = await executeHandler(

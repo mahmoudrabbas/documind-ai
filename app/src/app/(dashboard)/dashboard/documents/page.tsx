@@ -31,6 +31,8 @@ const STATUS_BADGE_MAP: Record<string, string> = {
   processing: "warning",
   processed: "success",
   failed: "error",
+  canceled: "neutral",
+  reprocessing: "warning",
 };
 
 export default function DocumentsPage() {

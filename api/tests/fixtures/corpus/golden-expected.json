@@ -1,0 +1,89 @@
+{
+  "english-contract": {
+    "totalChunks": 11,
+    "expectedChunks": [
+      {
+        "sectionPath": ["Service Agreement"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Service Agreement", "1. Scope of Work"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Service Agreement", "2. Compensation"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Service Agreement", "3. Confidentiality"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Service Agreement", "4. Term and Termination"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "contentType": "table",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "contentType": "table",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["5. Intellectual Property"],
+        "contentType": "heading",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["5. Intellectual Property", "6. Limitation of Liability"],
+        "contentType": "heading",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["5. Intellectual Property", "Schedule A - Technical Specifications"],
+        "contentType": "heading",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["5. Intellectual Property", "Schedule B - Payment Milestones"],
+        "contentType": "heading",
+        "pageStart": 2,
+        "pageEnd": 2
+      }
+    ]
+  },
+  "arabic-contract": {
+    "totalChunks": 5
+  },
+  "mixed-bilingual": {
+    "totalChunks": 4
+  },
+  "table-heavy": {
+    "totalChunks": 6
+  },
+  "heading-heavy": {
+    "totalChunks": 12
+  },
+  "oversized-clause": {
+    "totalChunks": 1
+  },
+  "page-break-section": {
+    "totalChunks": 2
+  }
+}

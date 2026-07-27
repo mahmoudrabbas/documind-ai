@@ -1,0 +1,15 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "Bilingual Service Agreement", "level": 1 },
+      { "type": "heading", "text": "عقد خدمة ثنائي اللغة", "level": 1 },
+      { "type": "paragraph", "text": "This Agreement is entered into by both parties in English and Arabic. Both versions shall be considered equally authoritative." },
+      { "type": "paragraph", "text": "يُبرم هذا العقد من كلا الطرفين باللغتين الإنجليزية والعربية. تعتبر كلتا النسختين متساويتين في الحجية." },
+      { "type": "heading", "text": "Article 1 - Definitions", "level": 2 },
+      { "type": "heading", "text": "المادة 1 - التعريفات", "level": 2 },
+      { "type": "paragraph", "text": "\"Service\" means the web-based document management system to be delivered by the Provider. \"المشروع\" يعني نظام إدارة المستندات عبر الإنترنت الذي سيقدمه المزود." },
+      { "type": "paragraph", "text": "\"Deliverables\" means all software, documentation, and materials produced under this Agreement. \"المخرجات\" يعني جميع البرمجيات والوثائق والمواد التي تم إنتاجها بموجب هذا العقد." }
+    ]
+  }
+]

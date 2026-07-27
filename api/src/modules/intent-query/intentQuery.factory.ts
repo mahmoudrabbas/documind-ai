@@ -3,6 +3,7 @@ import { FakeModelAdapter } from "../../providers/llm/fakeAdapters.js";
 import { FakeConversationContextAdapter } from "./adapters/conversationContext.fakeAdapter.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
+import { logger } from "../../common/logger/logger.js";
 
 export const fakeConversationContextAdapter = new FakeConversationContextAdapter();
 
@@ -21,5 +22,36 @@ export function createIntentQueryService(options?: {
   return new IntentQueryService(modelAdapter, conversationContextAdapter);
 }
 
-// Default singleton instance for routing/standard application use
-export const intentQueryService = createIntentQueryService();
+// Mutable singleton — swapped in by initializeIntentQueryService() at startup
+let _instance: IntentQueryService = createIntentQueryService();
+
+/**
+ * Called during app startup to swap in the real model adapter.
+ * Uses the async LLM provider which respects AI_PROVIDER env var.
+ */
+export async function initializeIntentQueryService(): Promise<void> {
+  const { setModelAdapter } = await import("../../providers/llm/index.js");
+  const aiProvider = process.env.AI_PROVIDER || "fake";
+  let modelAdapter;
+  if (aiProvider === "student-bedrock") {
+    const { createStudentBedrockProvider } = await import("../../providers/bedrock/index.js");
+    modelAdapter = createStudentBedrockProvider();
+  } else if (aiProvider === "groq") {
+    const { GroqChatAdapter } = await import("../../providers/llm/groqChat.adapter.js");
+    modelAdapter = new GroqChatAdapter(process.env.GROQ_API_KEY || "", process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile");
+  } else {
+    const { FakeModelAdapter } = await import("../../providers/llm/fakeAdapters.js");
+    modelAdapter = new FakeModelAdapter();
+  }
+  setModelAdapter(modelAdapter);
+  _instance = new IntentQueryService(modelAdapter, fakeConversationContextAdapter);
+  logger.info(`IntentQueryService initialized with model: ${aiProvider}`);
+}
+
+/**
+ * Accessor that always returns the current service instance.
+ * Used by controllers so they always get the latest (potentially real) adapter.
+ */
+export function getIntentQueryService(): IntentQueryService {
+  return _instance;
+}
