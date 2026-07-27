@@ -12,7 +12,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm ci --workspace api --workspace workers --include-workspace-root --ignore-scripts \
-    && npm rebuild argon2
+    && npm rebuild argon2 \
+    && npm install @esbuild/linux-x64 --no-save
 
 COPY tsconfig.base.json eslint.config.mjs ./
 COPY workers/ workers/

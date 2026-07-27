@@ -59,6 +59,7 @@ interface DocumentDetailDrawerProps {
   onReplace: (id: string, file: File, desc?: string) => void;
   versions: DocumentVersionView[];
   isLoadingVersions: boolean;
+  highlightPage?: number;
 }
 
 export function DocumentDetailDrawer({
@@ -71,6 +72,7 @@ export function DocumentDetailDrawer({
   onReplace,
   versions,
   isLoadingVersions,
+  highlightPage,
 }: DocumentDetailDrawerProps) {
   const { t } = useI18n();
   const permissions = usePermissions();
@@ -360,6 +362,7 @@ export function DocumentDetailDrawer({
               documentVersion={doc.version}
               canProcessOcr={canProcessOcr}
               canReviewQuality={permissions.can(Permission.DOCUMENTS_QUALITY_REVIEW)}
+              highlightPage={highlightPage}
             />
           </div>
 

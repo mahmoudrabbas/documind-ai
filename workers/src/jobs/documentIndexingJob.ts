@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import type { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
+import { reportProgressToProcessingRun, skipProcessingStages } from "./progressReporter.js";
 
 const PayloadSchema = z.object({
   documentId: z.string(),
@@ -30,12 +31,37 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
       const tenantId = new ObjectId(payload.tenantId);
       const generationId = new ObjectId(payload.generationId);
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "indexing",
+        status: "running",
+        progress: 10,
+      });
+
+      await skipProcessingStages({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageNames: ["finalization"],
+      });
+
       const generation = await db.collection("indexgenerations").findOne({
         _id: generationId,
         tenantId,
       });
 
       if (!generation) {
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "indexing",
+          status: "failed",
+          errorCode: "GENERATION_NOT_FOUND",
+          errorMessage: "Generation not found",
+        });
         throw new PermanentJobError("Generation not found");
       }
 
@@ -170,6 +196,16 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
             { $set: { searchStatus: "FAILED" } },
           );
 
+          await reportProgressToProcessingRun({
+            tenantId: payload.tenantId,
+            documentId: payload.documentId,
+            documentVersion: payload.documentVersion,
+            stageName: "indexing",
+            status: "failed",
+            errorCode: "COUNT_MISMATCH",
+            errorMessage: failureReason.message,
+          });
+
           throw new PermanentJobError(failureReason.message);
         }
       } else {
@@ -302,6 +338,15 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
         embeddings: actualEmbeddingCount,
         durationMs: Date.now() - startTime,
         metric: "indexing.index_duration_ms",
+      });
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "indexing",
+        status: "completed",
+        progress: 100,
       });
 
       return {

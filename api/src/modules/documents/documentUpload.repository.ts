@@ -15,7 +15,7 @@ export async function createDocumentWithPrivatePolicy(
 ): Promise<DocumentDocument> {
   const tenantId = documentData.tenantId.toString();
   const ownerId = documentData.uploadedBy.toString();
-  const classificationId = await ensureRestrictedClassification(tenantId, ownerId);
+  const classificationId = await ensureInternalClassification(tenantId, ownerId);
   const documentId = new mongoose.Types.ObjectId();
   const policyId = new mongoose.Types.ObjectId();
   const createdAt = new Date();
@@ -29,7 +29,7 @@ export async function createDocumentWithPrivatePolicy(
         throw new Error("UPLOAD_OWNER_INELIGIBLE");
       }
       [created] = await DocumentModel.create([{ ...documentData, _id: documentId, owner: documentData.uploadedBy,
-        classification: "restricted", classificationId, activePolicyId: policyId, activePolicyVersion: 1, policyChangedAt: createdAt }], { session });
+        classification: "internal", classificationId, activePolicyId: policyId, activePolicyVersion: 1, policyChangedAt: createdAt }], { session });
       const snapshot = new DocumentAccessPolicyModel({ ...policy, rules: policy.rules.map((rule) => ({ ...rule, subject: { ...rule.subject }, actions: [...rule.actions] })),
         effectiveFrom: createdAt, effectiveUntil: null, provenance: { ...policy.provenance, createdAt }, createdAt });
       await snapshot.save({ session });
@@ -42,21 +42,21 @@ export async function createDocumentWithPrivatePolicy(
   } finally { await session.endSession(); }
 }
 
-async function ensureRestrictedClassification(tenantId: string, actorId: string): Promise<mongoose.Types.ObjectId> {
-  const normalizedName = normalizeTaxonomyName("Restricted");
+async function ensureInternalClassification(tenantId: string, actorId: string): Promise<mongoose.Types.ObjectId> {
+  const normalizedName = normalizeTaxonomyName("Internal");
   const existing = await DocumentClassificationModel.findOne({ tenantId, normalizedName }).select("status level").exec();
   if (existing) {
-    if (existing.status !== "active" || existing.level !== "restricted") throw new AppError(409, DOCUMENT_ACCESS_AUTHORIZATION_FAILED, "Restricted classification is unavailable");
+    if (existing.status !== "active" || existing.level !== "internal") throw new AppError(409, DOCUMENT_ACCESS_AUTHORIZATION_FAILED, "Internal classification is unavailable");
     return existing._id;
   }
   try {
-    const created = await DocumentClassificationModel.create({ tenantId, name: "Restricted", normalizedName, level: "restricted",
+    const created = await DocumentClassificationModel.create({ tenantId, name: "Internal", normalizedName, level: "internal",
       description: null, status: "active", version: 1, createdBy: actorId, updatedBy: actorId });
     return created._id;
   } catch (error) {
     if (!isDuplicate(error)) throw error;
-    const raced = await DocumentClassificationModel.findOne({ tenantId, normalizedName, status: "active", level: "restricted" }).select("_id").exec();
-    if (!raced) throw new AppError(409, DOCUMENT_ACCESS_AUTHORIZATION_FAILED, "Restricted classification is unavailable");
+    const raced = await DocumentClassificationModel.findOne({ tenantId, normalizedName, status: "active", level: "internal" }).select("_id").exec();
+    if (!raced) throw new AppError(409, DOCUMENT_ACCESS_AUTHORIZATION_FAILED, "Internal classification is unavailable");
     return raced._id;
   }
 }

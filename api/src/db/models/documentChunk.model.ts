@@ -20,6 +20,8 @@ export interface DocumentChunkDocument extends mongoose.Document {
   language: ChunkLanguage;
   department: string | null;
   classification: ChunkClassification | null;
+  accessPolicyVersion: string | null;
+  confidenceScore: number | null;
   text: string;
   checksum: string;
   tokenCount: number;
@@ -103,6 +105,8 @@ const documentChunkSchema = new Schema<DocumentChunkDocument>(
       enum: ["public", "internal", "confidential", "restricted"],
       default: null,
     },
+    accessPolicyVersion: { type: String, default: null },
+    confidenceScore: { type: Number, default: null, min: 0, max: 1 },
     text: { type: String, required: true },
     checksum: { type: String, required: true },
     tokenCount: { type: Number, required: true, min: 0 },
@@ -164,6 +168,7 @@ documentChunkSchema.index({ tenantId: 1, classification: 1 });
 documentChunkSchema.index({ tenantId: 1, department: 1 });
 documentChunkSchema.index({ tenantId: 1, category: 1 });
 documentChunkSchema.index({ tenantId: 1, allowAiUse: 1 });
+documentChunkSchema.index({ tenantId: 1, accessPolicyVersion: 1 });
 documentChunkSchema.index({ tenantId: 1, documentVersionId: 1 });
 
 const DocumentChunkModel = mongoose.model<DocumentChunkDocument>(

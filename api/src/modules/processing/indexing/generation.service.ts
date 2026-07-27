@@ -82,10 +82,31 @@ export async function startGeneration(
   });
 
   if (doc) {
+    const now = new Date();
     if (doc.searchStatus === "READY") {
-      await updateDocumentSearchStatus(tenantId, input.documentId, "STALE");
+      await DocumentModel.findOneAndUpdate(
+        { _id: input.documentId, tenantId: tenantId as unknown as import("mongoose").Types.ObjectId },
+        {
+          $set: {
+            searchStatus: "STALE",
+            currentGeneration: generation._id as unknown as import("mongoose").Types.ObjectId,
+            pendingGeneration: null,
+            lastSearchStatusChange: now,
+          },
+        },
+      );
     } else {
-      await updateDocumentSearchStatus(tenantId, input.documentId, "INDEXING");
+      await DocumentModel.findOneAndUpdate(
+        { _id: input.documentId, tenantId: tenantId as unknown as import("mongoose").Types.ObjectId },
+        {
+          $set: {
+            searchStatus: "INDEXING",
+            currentGeneration: generation._id as unknown as import("mongoose").Types.ObjectId,
+            pendingGeneration: null,
+            lastSearchStatusChange: now,
+          },
+        },
+      );
     }
   }
 
@@ -102,6 +123,7 @@ export async function persistChunks(
   chunks: ChunkCandidate[],
   department: string | null,
   classification: string | null,
+  accessPolicyVersion: string | null = null,
 ): Promise<void> {
   const chunkDocs = chunks.map((chunk, index) => ({
     tenantId: tenantId as unknown as import("mongoose").Types.ObjectId,
@@ -118,6 +140,8 @@ export async function persistChunks(
     language: chunk.language,
     department,
     classification,
+    accessPolicyVersion,
+    confidenceScore: null,
     text: chunk.text,
     checksum: createHash("sha256").update(chunk.text).digest("hex"),
     tokenCount: chunk.tokenCount,
@@ -169,7 +193,7 @@ export async function persistEmbeddings(
         .digest("hex"),
       department: chunk?.department ?? null,
       classification: chunk?.classification ?? null,
-      accessPolicyVersion: null,
+      accessPolicyVersion: chunk?.accessPolicyVersion ?? null,
       language: chunk?.language ?? "en",
       contentType: chunk?.contentType ?? "paragraph",
       tokenUsage: result.tokenUsage,
@@ -283,6 +307,10 @@ export async function activateGeneration(
       $set: {
         activeChunkGeneration: generationId as unknown as import("mongoose").Types.ObjectId,
         searchStatus: "READY",
+        currentGeneration: null,
+        pendingGeneration: null,
+        lastSearchStatusChange: new Date(),
+        lastProcessingError: null,
       },
     },
   );
@@ -325,7 +353,16 @@ export async function failGeneration(
 
   const generation = await findGenerationById(tenantId, generationId);
   if (generation) {
-    await updateDocumentSearchStatus(tenantId, generation.documentId.toString(), "FAILED");
+    await DocumentModel.findOneAndUpdate(
+      { _id: generation.documentId, tenantId: tenantId as unknown as import("mongoose").Types.ObjectId },
+      {
+        $set: {
+          searchStatus: "FAILED",
+          lastSearchStatusChange: new Date(),
+          lastProcessingError: { stage, code, message },
+        },
+      },
+    );
   }
 }
 
@@ -346,10 +383,31 @@ export async function rollbackGeneration(
     generation.documentId.toString(),
   );
 
+  const now = new Date();
   if (activeGeneration) {
-    await updateDocumentSearchStatus(tenantId, generation.documentId.toString(), "READY");
+    await DocumentModel.findOneAndUpdate(
+      { _id: generation.documentId, tenantId: tenantId as unknown as import("mongoose").Types.ObjectId },
+      {
+        $set: {
+          searchStatus: "READY",
+          currentGeneration: null,
+          lastSearchStatusChange: now,
+          lastProcessingError: null,
+        },
+      },
+    );
   } else {
-    await updateDocumentSearchStatus(tenantId, generation.documentId.toString(), "NOT_INDEXED");
+    await DocumentModel.findOneAndUpdate(
+      { _id: generation.documentId, tenantId: tenantId as unknown as import("mongoose").Types.ObjectId },
+      {
+        $set: {
+          searchStatus: "NOT_INDEXED",
+          currentGeneration: null,
+          lastSearchStatusChange: now,
+          lastProcessingError: null,
+        },
+      },
+    );
   }
 
   recordGenerationRolledBack(getMetricRecorder(), { tenantId });
@@ -373,7 +431,7 @@ async function updateDocumentSearchStatus(
 ): Promise<void> {
   await DocumentModel.findOneAndUpdate(
     { _id: documentId, tenantId: tenantId as unknown as import("mongoose").Types.ObjectId },
-    { $set: { searchStatus: status } },
+    { $set: { searchStatus: status, lastSearchStatusChange: new Date() } },
   );
 }
 

@@ -213,7 +213,7 @@ async function revalidateAndHydrate(
       documentVersionId: chunk.documentVersionId?.toString() ?? "",
       tenantId: chunk.tenantId.toString(),
       text: chunk.text,
-      pageNumber: chunk.pageNumber ?? undefined,
+      pageNumber: chunk.pageNumber ?? chunk.pageStart ?? undefined,
       sectionTitle: chunk.sectionTitle ?? undefined,
       classification: chunk.classification ?? undefined,
     });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -81,8 +82,24 @@ export default function DocumentsPage() {
 
   const [searchInput, setSearchInput] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [highlightPage, setHighlightPage] = useState<number | undefined>(undefined);
+
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get("id");
+  const deepLinkPage = searchParams.get("page");
 
   useEffect(() => { setSelectedIds([]); setShowBatchPolicy(false); }, [filters, page]);
+
+  useEffect(() => {
+    if (!deepLinkId || isLoading || documents.length === 0) return;
+    const match = documents.find((d) => d.id === deepLinkId);
+    if (match) {
+      openDrawer(match);
+      if (deepLinkPage) {
+        setHighlightPage(Number(deepLinkPage));
+      }
+    }
+  }, [deepLinkId, deepLinkPage, isLoading, documents, openDrawer]);
 
   const handleSearch = useCallback(() => {
     updateFilters({ ...filters, search: searchInput || undefined, isArchived: showArchived });
@@ -467,7 +484,7 @@ export default function DocumentsPage() {
       {selectedDocument && (
         <DocumentDetailDrawer
           document={selectedDocument}
-          onClose={closeDrawer}
+          onClose={() => { closeDrawer(); setHighlightPage(undefined); }}
           onArchive={archive}
           onRestore={restore}
           onSoftDelete={remove}
@@ -475,6 +492,7 @@ export default function DocumentsPage() {
           onReplace={replace}
           versions={versions}
           isLoadingVersions={isLoadingVersions}
+          highlightPage={highlightPage}
         />
       )}
       {showBatchPolicy && <BatchPolicyDialog documents={documents.filter((document) => selectedIds.includes(document.id))} onClose={() => setShowBatchPolicy(false)} onComplete={() => { setShowBatchPolicy(false); setSelectedIds([]); void goToPage(page); }} />}

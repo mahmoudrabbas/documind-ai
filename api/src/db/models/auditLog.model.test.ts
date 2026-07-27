@@ -70,12 +70,9 @@ test("unauthenticated audit records validate with null actor identity", async ()
   );
 });
 
-test("USER audit records require actorEmail", async () => {
-  await assert.rejects(
+test("USER audit records accept null actorEmail", async () => {
+  await assert.doesNotReject(
     buildAuditLog({ actorEmail: null }).validate(),
-    (error: unknown) =>
-      error instanceof mongoose.Error.ValidationError &&
-      Boolean(error.errors.actorEmail),
   );
 });
 

@@ -30,7 +30,7 @@ export function createDefaultDocumentAccessPolicy(
       ruleId: "default-owner-minimum",
       effect: "allow",
       subject: { type: "owner" },
-      actions: ["discover", "read", "download"],
+      actions: ["discover", "read", "download", "reprocess"],
     }],
     provenance: {
       createdBy: input.ownerId,
