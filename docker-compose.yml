@@ -38,6 +38,11 @@ services:
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - AWS_REGION=${AWS_REGION:-eu-north-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     secrets:
       - api_jwt_secret
       - api_refresh_secret
@@ -99,7 +104,6 @@ services:
     volumes:
       - ./workers:/repo/workers
       - worker_node_modules:/repo/workers/node_modules
-      - uploads_data:/repo/api/uploads
     env_file:
       - path: ./workers/.env
         required: false
@@ -119,6 +123,11 @@ services:
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - AWS_REGION=${AWS_REGION:-eu-north-1}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     secrets:
       - api_smtp_pass
 

@@ -150,6 +150,7 @@ export function ChatClient() {
       ...prev,
       [convId]: [...(prev[convId] ?? []), userMsg],
     }));
+
     setInput("");
     setIsTyping(true);
     setError(null);

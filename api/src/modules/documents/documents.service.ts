@@ -432,7 +432,7 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
     }
 
-    const stream = storageProvider.getFileStream(document.storageKey);
+    const stream = await storageProvider.getFileStream(document.storageKey);
     const contentType = storageProvider.getContentType(document.fileName);
 
     await getAuditWriter().write({

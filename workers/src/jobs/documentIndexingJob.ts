@@ -28,6 +28,15 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
       const db = getMongoClient()?.db();
       if (!db) throw new RetryableJobError("Database connection unavailable");
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "indexing",
+        status: "running",
+        progress: 0,
+      });
+
       const tenantId = new ObjectId(payload.tenantId);
       const generationId = new ObjectId(payload.generationId);
 
