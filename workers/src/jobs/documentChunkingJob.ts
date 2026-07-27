@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
+import { reportProgressToProcessingRun, skipProcessingStages } from "./progressReporter.js";
 import { chunkDocument } from "../providers/chunking/chunker.js";
 import { TiktokenTokenizer } from "../providers/chunking/tokenizer.js";
 import type { ExtractionPage } from "../contracts/extractionContract.js";
@@ -39,6 +40,22 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
       const tenantId = new ObjectId(payload.tenantId);
       const generationId = new ObjectId(payload.generationId);
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "chunking",
+        status: "running",
+        progress: 10,
+      });
+
+      await skipProcessingStages({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageNames: ["ocr", "quality_review", "metadata_review"],
+      });
+
       const artifact = await db.collection("extractionartifacts").findOne({
         tenantId,
         documentId,
@@ -47,11 +64,29 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
       });
 
       if (!artifact) {
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "chunking",
+          status: "failed",
+          errorCode: "ARTIFACT_NOT_FOUND",
+          errorMessage: "Extraction artifact not found or not completed",
+        });
         throw new PermanentJobError("Extraction artifact not found or not completed");
       }
 
       const pages = artifact.pages as ExtractionPage[];
       if (!pages || pages.length === 0) {
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "chunking",
+          status: "failed",
+          errorCode: "NO_PAGES",
+          errorMessage: "No pages found in extraction artifact",
+        });
         throw new PermanentJobError("No pages found in extraction artifact");
       }
 
@@ -61,6 +96,15 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
       const chunks = chunkDocument(pages, tokenizer, payload.chunkingConfig);
 
       if (chunks.length === 0) {
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "chunking",
+          status: "failed",
+          errorCode: "ZERO_CHUNKS",
+          errorMessage: "Chunking produced zero chunks",
+        });
         throw new PermanentJobError("Chunking produced zero chunks");
       }
 
@@ -108,6 +152,15 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
         pageCount: pages.length,
         durationMs: Date.now() - startTime,
         metric: "indexing.chunk_duration_ms",
+      });
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "chunking",
+        status: "completed",
+        progress: 100,
       });
 
       try {

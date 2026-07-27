@@ -71,5 +71,81 @@ export function createChatController(service: ChatService) {
     }
   }
 
-  return { sendMessage };
+  async function listConversations(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      const result = await service.listConversations(req.query, context);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
+  async function getConversationMessages(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      const conversationId = String(req.params.conversationId);
+      const result = await service.getConversationMessages(
+        conversationId,
+        context,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
+  async function deleteConversation(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      const conversationId = String(req.params.conversationId);
+      await service.deleteConversation(conversationId, context);
+
+      res.status(200).json({
+        success: true,
+        data: { deleted: true },
+      });
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
+  return {
+    sendMessage,
+    listConversations,
+    getConversationMessages,
+    deleteConversation,
+  };
 }

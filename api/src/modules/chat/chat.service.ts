@@ -13,8 +13,20 @@ import type { AccessContext } from "../retrieval/retrieval.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
 import DocumentModel from "../../db/models/document.model.js";
-import type { ChatSource, ChatResponse } from "./chat.types.js";
-import { ChatSendBodySchema, type ChatSendBody } from "./chat.validator.js";
+import type {
+  ChatSource,
+  ChatResponse,
+  ConversationListItem,
+  ConversationMessageDetail,
+  ConversationListResponse,
+  ConversationMessagesResponse,
+} from "./chat.types.js";
+import {
+  ChatSendBodySchema,
+  type ChatSendBody,
+  ChatListConversationsQuerySchema,
+} from "./chat.validator.js";
+import * as chatRepo from "./chat.repository.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
 
@@ -36,16 +48,51 @@ export class ChatService {
     // 2. Authorize tenant
     const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE);
     const tenantIdStr = actor.tenantId.toString();
+    const userIdStr = actor.actorId.toString();
 
-    // 3. Generate conversationId if not provided
-    const conversationId = input.conversationId ?? new mongoose.Types.ObjectId().toString();
+    // 3. Create or verify conversation
+    let conversationId = input.conversationId;
+    if (!conversationId) {
+      const title =
+        input.message.length > 120
+          ? input.message.slice(0, 117) + "..."
+          : input.message;
+      const conv = await chatRepo.createConversation(tenantIdStr, userIdStr, title);
+      conversationId = conv._id.toString();
+    } else {
+      const existing = await chatRepo.getConversationById(tenantIdStr, conversationId);
+      if (!existing || existing.userId.toString() !== userIdStr) {
+        throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+      }
+    }
 
-    // 4. Analyze query intent via IntentQueryService
+    // 4. Save user message
+    const currentCount = await chatRepo.countMessages(tenantIdStr, conversationId);
+    await chatRepo.addMessage(tenantIdStr, conversationId, "user", input.message, currentCount);
+
+    // 5. Load conversation history from DB for LLM context
+    let historyFromDb: Array<{ role: "user" | "assistant"; content: string }> = [];
+    try {
+      const dbMessages = await chatRepo.getConversationHistory(
+        tenantIdStr,
+        conversationId,
+        20,
+      );
+      historyFromDb = dbMessages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
+    } catch (err) {
+      logger.warn({ err, tenantId: tenantIdStr }, "Failed to load conversation history");
+    }
+
+    // 6. Analyze query intent via IntentQueryService
     let queryText = input.message;
     try {
       const intentResult = await getIntentQueryService().analyzeQuery(
         {
           question: input.message,
+          conversationId,
           maxContext: 5,
         },
         {
@@ -58,7 +105,6 @@ export class ChatService {
         },
       );
 
-      // Use the best semantic query for retrieval
       if (
         intentResult.semanticQueries &&
         intentResult.semanticQueries.length > 0
@@ -66,16 +112,19 @@ export class ChatService {
         queryText = intentResult.semanticQueries[0].text;
       }
 
-      // If intent is unsafe or needs clarification, short-circuit
       if (intentResult.detectedIntent === "unsafe") {
-        return {
-          answer:
-            intentResult.language === "ar"
-              ? "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
-              : "This request cannot be processed due to safety policies.",
-          sources: [],
+        const unsafeAnswer =
+          intentResult.language === "ar"
+            ? "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
+            : "This request cannot be processed due to safety policies.";
+        await chatRepo.addMessage(
+          tenantIdStr,
           conversationId,
-        };
+          "assistant",
+          unsafeAnswer,
+          currentCount + 1,
+        );
+        return { answer: unsafeAnswer, sources: [], conversationId };
       }
 
       if (
@@ -84,22 +133,25 @@ export class ChatService {
         !intentResult.processingMetadata?.fallbackUsed
       ) {
         const lang = intentResult.language;
-        const msg =
+        const clarifyMsg =
           lang === "ar"
             ? intentResult.clarification.messageAr
             : intentResult.clarification.messageEn;
-        return {
-          answer: msg ?? "Could you please clarify your question?",
-          sources: [],
+        const answer = clarifyMsg ?? "Could you please clarify your question?";
+        await chatRepo.addMessage(
+          tenantIdStr,
           conversationId,
-        };
+          "assistant",
+          answer,
+          currentCount + 1,
+        );
+        return { answer, sources: [], conversationId };
       }
     } catch (err) {
-      // Intent analysis failure is non-fallback — use raw message
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
     }
 
-    // 5. Retrieve relevant chunks via hybrid search
+    // 7. Retrieve relevant chunks via hybrid search
     const accessContext: AccessContext = {
       tenantId: tenantIdStr,
       actorId: actor.actorId,
@@ -110,15 +162,12 @@ export class ChatService {
     let sources: ChatSource[] = [];
     try {
       const retrievalResult = await this.retrievalService.hybridSearch(
-        { queryText: queryText, topK: 5 },
+        { queryText, topK: 5 },
         accessContext,
       );
 
-      // Enrich sources with document titles
       const docIds = [
-        ...new Set(
-          retrievalResult.candidates.map((c) => c.documentId),
-        ),
+        ...new Set(retrievalResult.candidates.map((c) => c.documentId)),
       ];
 
       const docTitles = new Map<string, string>();
@@ -140,6 +189,7 @@ export class ChatService {
 
       sources = retrievalResult.candidates.map((c) => ({
         chunkId: c.chunkId,
+        documentId: c.documentId,
         text: c.text,
         pageNumber: c.pageNumber,
         sectionTitle: c.sectionTitle,
@@ -150,14 +200,14 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Retrieval search failed, proceeding without context");
     }
 
-    // 6. Build RAG prompt and generate answer
+    // 8. Build RAG prompt and generate answer
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: RAG_SYSTEM_PROMPT },
     ];
 
-    // Add conversation history for context
-    if (input.history && input.history.length > 0) {
-      const recentHistory = input.history.slice(-10);
+    // Add conversation history from DB
+    if (historyFromDb.length > 0) {
+      const recentHistory = historyFromDb.slice(-10);
       for (const msg of recentHistory) {
         messages.push({ role: msg.role, content: msg.content });
       }
@@ -180,7 +230,7 @@ export class ChatService {
 
     messages.push({ role: "user", content: input.message });
 
-    // 7. Call LLM
+    // 9. Call LLM
     try {
       const response = await this.modelAdapter.complete({
         messages,
@@ -189,6 +239,23 @@ export class ChatService {
       });
 
       const answer = response.choices[0]?.message?.content ?? "";
+
+      // 10. Save assistant response
+      await chatRepo.addMessage(
+        tenantIdStr,
+        conversationId,
+        "assistant",
+        answer,
+        currentCount + 1,
+        sources.map((s) => ({
+          chunkId: s.chunkId,
+          documentId: s.documentId,
+          documentTitle: s.documentTitle ?? "Unknown Document",
+          sectionTitle: s.sectionTitle,
+          pageNumber: s.pageNumber,
+          score: s.score,
+        })),
+      );
 
       await getAuditWriter().write({
         action: "RETRIEVAL_SEARCH",
@@ -214,6 +281,92 @@ export class ChatService {
         "CHAT_LLM_ERROR",
         "Failed to generate response. Please try again.",
       );
+    }
+  }
+
+  async listConversations(
+    rawQuery: unknown,
+    context: OperationAuthorizationContext,
+  ): Promise<ConversationListResponse> {
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ);
+    const tenantIdStr = actor.tenantId.toString();
+    const userIdStr = actor.actorId.toString();
+
+    const query = ChatListConversationsQuerySchema.parse(rawQuery);
+    const result = await chatRepo.listConversationsByUser(
+      tenantIdStr,
+      userIdStr,
+      query.page,
+      query.pageSize,
+    );
+
+    const conversations: ConversationListItem[] = result.conversations.map((c) => ({
+      id: c._id.toString(),
+      title: c.title,
+      lastMessage: "",
+      updatedAt: c.lastMessageAt.toISOString(),
+      messageCount: c.messageCount,
+    }));
+
+    // Fetch last message for each conversation
+    for (const conv of conversations) {
+      const msgs = await chatRepo.getConversationHistory(tenantIdStr, conv.id, 1);
+      if (msgs.length > 0) {
+        const last = msgs[msgs.length - 1];
+        conv.lastMessage = last.content.slice(0, 100);
+      }
+    }
+
+    return {
+      conversations,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+    };
+  }
+
+  async getConversationMessages(
+    conversationId: string,
+    context: OperationAuthorizationContext,
+  ): Promise<ConversationMessagesResponse> {
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ);
+    const tenantIdStr = actor.tenantId.toString();
+    const userIdStr = actor.actorId.toString();
+
+    const conv = await chatRepo.getConversationById(tenantIdStr, conversationId);
+    if (!conv || conv.userId.toString() !== userIdStr) {
+      throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+    }
+
+    const dbMessages = await chatRepo.getConversationHistory(tenantIdStr, conversationId, 200);
+
+    const messages: ConversationMessageDetail[] = dbMessages.map((m) => ({
+      id: m._id.toString(),
+      role: m.role as "user" | "assistant",
+      content: m.content,
+      sources: m.sources?.length > 0 ? m.sources : undefined,
+      createdAt: m.createdAt.toISOString(),
+    }));
+
+    return { messages, conversationId };
+  }
+
+  async deleteConversation(
+    conversationId: string,
+    context: OperationAuthorizationContext,
+  ): Promise<void> {
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_DELETE);
+    const tenantIdStr = actor.tenantId.toString();
+    const userIdStr = actor.actorId.toString();
+
+    const deleted = await chatRepo.deleteConversation(
+      tenantIdStr,
+      conversationId,
+      userIdStr,
+    );
+
+    if (!deleted) {
+      throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
     }
   }
 

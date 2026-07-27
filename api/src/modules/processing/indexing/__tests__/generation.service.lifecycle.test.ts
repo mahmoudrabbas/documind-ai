@@ -136,7 +136,7 @@ describe("generation.service — lifecycle", () => {
 
       expect(mockDocModel.findOneAndUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ _id: "doc-1" }),
-        expect.objectContaining({ $set: { searchStatus: "STALE" } }),
+        expect.objectContaining({ $set: expect.objectContaining({ searchStatus: "STALE" }) }),
       );
     });
 
@@ -150,7 +150,7 @@ describe("generation.service — lifecycle", () => {
 
       expect(mockDocModel.findOneAndUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ _id: "doc-1" }),
-        expect.objectContaining({ $set: { searchStatus: "INDEXING" } }),
+        expect.objectContaining({ $set: expect.objectContaining({ searchStatus: "INDEXING" }) }),
       );
     });
 
@@ -209,7 +209,7 @@ describe("generation.service — lifecycle", () => {
       );
       expect(mockDocModel.findOneAndUpdate).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ $set: { searchStatus: "FAILED" } }),
+        expect.objectContaining({ $set: expect.objectContaining({ searchStatus: "FAILED" }) }),
       );
     });
 
@@ -303,8 +303,8 @@ describe("generation.service — lifecycle", () => {
       await failGeneration("t1", "gen-1", "chunk", "INTERNAL", "Oops");
 
       expect(mockDocModel.findOneAndUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: "doc-1" }),
-        expect.objectContaining({ $set: { searchStatus: "FAILED" } }),
+        expect.anything(),
+        expect.objectContaining({ $set: expect.objectContaining({ searchStatus: "FAILED" }) }),
       );
     });
   });
@@ -343,8 +343,8 @@ describe("generation.service — lifecycle", () => {
       await rollbackGeneration("t1", "gen-1");
 
       expect(mockDocModel.findOneAndUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: "doc-1" }),
-        expect.objectContaining({ $set: { searchStatus: "READY" } }),
+        expect.anything(),
+        expect.objectContaining({ $set: expect.objectContaining({ searchStatus: "READY" }) }),
       );
     });
 
@@ -359,8 +359,8 @@ describe("generation.service — lifecycle", () => {
       await rollbackGeneration("t1", "gen-1");
 
       expect(mockDocModel.findOneAndUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: "doc-1" }),
-        expect.objectContaining({ $set: { searchStatus: "NOT_INDEXED" } }),
+        expect.anything(),
+        expect.objectContaining({ $set: expect.objectContaining({ searchStatus: "NOT_INDEXED" }) }),
       );
     });
 

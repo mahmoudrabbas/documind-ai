@@ -48,7 +48,7 @@ export class MongoAuditWriter implements AuditWriter {
         resourceId: event.resourceId,
         action: event.action,
         actorId: actorIdVal,
-        actorEmail: event.actorEmail ?? null,
+        actorEmail: event.actorEmail || null,
         actorRole,
         actorKind,
         changes: redactedChanges,

@@ -35,6 +35,15 @@ export interface DocumentPublicView {
   } | null;
   checksum: string;
   uploadedBy: string;
+  searchStatus: "STALE" | "INDEXING" | "READY" | "FAILED";
+  currentGeneration: string | null;
+  pendingGeneration: string | null;
+  lastSearchStatusChange: string;
+  lastProcessingError: {
+    stage: string;
+    code: string;
+    message: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }

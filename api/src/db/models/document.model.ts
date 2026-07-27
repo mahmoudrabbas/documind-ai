@@ -45,7 +45,15 @@ export interface DocumentDocument extends mongoose.Document {
   scanResult: ScanInfo | null;
   uploadedBy: mongoose.Types.ObjectId;
   activeChunkGeneration: mongoose.Types.ObjectId | null;
+  currentGeneration: mongoose.Types.ObjectId | null;
+  pendingGeneration: mongoose.Types.ObjectId | null;
   searchStatus: DocumentSearchStatus;
+  lastSearchStatusChange: Date;
+  lastProcessingError: {
+    stage: string;
+    code: string;
+    message: string;
+  } | null;
   activePolicyId?: mongoose.Types.ObjectId | null;
   activePolicyVersion?: number | null;
   policyChangedAt?: Date | null;
@@ -159,10 +167,35 @@ const documentSchema = new Schema<DocumentDocument>(
       ref: "IndexGeneration",
       default: null,
     },
+    currentGeneration: {
+      type: Schema.Types.ObjectId,
+      ref: "IndexGeneration",
+      default: null,
+    },
+    pendingGeneration: {
+      type: Schema.Types.ObjectId,
+      ref: "IndexGeneration",
+      default: null,
+    },
     searchStatus: {
       type: String,
       enum: ["NOT_INDEXED", "INDEXING", "READY", "FAILED", "STALE"],
       default: "NOT_INDEXED",
+    },
+    lastSearchStatusChange: {
+      type: Date,
+      default: Date.now,
+    },
+    lastProcessingError: {
+      type: new Schema(
+        {
+          stage: { type: String, required: true },
+          code: { type: String, required: true },
+          message: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
     },
     activePolicyId: {
       type: Schema.Types.ObjectId,
@@ -199,6 +232,7 @@ documentSchema.index({ tenantId: 1, category: 1 });
 documentSchema.index({ tenantId: 1, classification: 1 });
 documentSchema.index({ tenantId: 1, searchStatus: 1 });
 documentSchema.index({ tenantId: 1, activeChunkGeneration: 1 });
+documentSchema.index({ tenantId: 1, currentGeneration: 1 });
 documentSchema.index({ tenantId: 1, categoryId: 1 });
 documentSchema.index({ tenantId: 1, departmentId: 1 });
 documentSchema.index({ tenantId: 1, classificationId: 1 });

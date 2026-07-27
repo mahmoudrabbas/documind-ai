@@ -27,6 +27,7 @@ interface DocumentQualityPanelProps {
   documentVersion: number;
   canProcessOcr: boolean;
   canReviewQuality: boolean;
+  highlightPage?: number;
 }
 
 export function DocumentQualityPanel({
@@ -34,6 +35,7 @@ export function DocumentQualityPanel({
   documentVersion,
   canProcessOcr,
   canReviewQuality,
+  highlightPage,
 }: DocumentQualityPanelProps) {
   const {
     ocrPages,
@@ -248,7 +250,7 @@ export function DocumentQualityPanel({
           </h4>
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {ocrPages.map((page) => (
-              <OcrPageRow key={page.id} page={page} />
+              <OcrPageRow key={page.id} page={page} highlight={highlightPage === page.pageNumber} />
             ))}
           </div>
         </div>
@@ -257,9 +259,10 @@ export function DocumentQualityPanel({
   );
 }
 
-function OcrPageRow({ page }: { page: OcrPageResultView }) {
+function OcrPageRow({ page, highlight }: { page: OcrPageResultView; highlight?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const confidencePercent = Math.round(page.confidence * 100);
   const statusBadge = OCR_STATUS_MAP[page.status] || "neutral";
   const previewLength = 150;
@@ -268,8 +271,24 @@ function OcrPageRow({ page }: { page: OcrPageResultView }) {
   const previewText = isTruncated ? page.text.slice(0, previewLength) + "..." : page.text;
   const wordCount = page.text ? page.text.split(/\s+/).filter(Boolean).length : 0;
 
+  useEffect(() => {
+    if (highlight) {
+      setExpanded(true);
+      setTimeout(() => {
+        rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+    }
+  }, [highlight]);
+
   return (
-    <div className="rounded-lg border border-outline-variant/20 bg-surface px-3 py-2">
+    <div
+      ref={rowRef}
+      className={`rounded-lg border px-3 py-2 transition-colors duration-500 ${
+        highlight
+          ? "border-primary/50 bg-primary/5 ring-2 ring-primary/30"
+          : "border-outline-variant/20 bg-surface"
+      }`}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-medium text-on-surface">Page {page.pageNumber}</span>
