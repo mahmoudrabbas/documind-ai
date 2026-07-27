@@ -42,7 +42,7 @@ test("owner, references, immutable policy, and pointer commit together and retry
   assert.equal(changed?.category, "Finance"); assert.equal(changed?.department, "Operations");
   const policies = await DocumentAccessPolicyModel.find({ tenantId, documentId: document._id }).lean().exec();
   assert.equal(policies.length, 1);
-  assert.deepEqual(policies[0]?.rules, [{ ruleId: "default-owner-minimum", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] }]);
+  assert.deepEqual(policies[0]?.rules, [{ ruleId: "default-owner-minimum", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download", "reprocess"] }]);
   const retry = await persistence.apply(plan);
   assert.equal(retry.status, "already_migrated");
   assert.equal(await DocumentAccessPolicyModel.countDocuments({ tenantId, documentId: document._id }), 1);
