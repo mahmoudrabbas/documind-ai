@@ -1,14 +1,12 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
-import { readFile } from "node:fs/promises";
-import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
-import { config } from "../config/index.js";
 import { parserRegistry } from "../providers/extraction/parserRegistry.js";
 import { getMongoClient } from "../db/mongo.js";
 import { reportProgressToProcessingRun } from "./progressReporter.js";
+import { storageProvider } from "../providers/storage/index.js";
 
 const PayloadSchema = z.object({
   documentId: z.string(),
@@ -196,18 +194,19 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
         { upsert: true }
       );
 
-      // 5. Read file from disk storage
-      const filePath = path.join(config.UPLOAD_DIR, version.storageKey as string);
+      // 5. Read file from storage provider
+      const storageKey = version.storageKey as string;
       let buffer: Buffer;
       try {
-        buffer = await readFile(filePath);
+        buffer = await storageProvider.getFileBuffer(storageKey);
       } catch (err: unknown) {
-        ctx.progress(`Failed to read file from path: ${filePath}`);
+        ctx.progress(`Failed to read file for key: ${storageKey}`);
         
         const error = err instanceof Error ? err : new Error(String(err));
         const nodeErr = err as NodeJS.ErrnoException;
-        const failureCode = nodeErr.code === "ENOENT" ? "resource_limit" : "timeout";
-        const reason = nodeErr.code === "ENOENT" ? "Source file not found on disk" : `IO Error: ${error.message}`;
+        const isNotFound = nodeErr?.code === "ENOENT" || error.message.includes("ENOENT") || error.message.includes("not found");
+        const failureCode = isNotFound ? "resource_limit" : "timeout";
+        const reason = isNotFound ? "Source file not found in storage" : `IO Error: ${error.message}`;
         
         await db.collection("extractionartifacts").updateOne(
           { _id: artifactId },
@@ -285,6 +284,18 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
           status: "completed",
           progress: 100,
         });
+
+        // Skip intermediate stages that aren't used in the basic pipeline
+        for (const skipStage of ["ocr", "quality_review", "metadata_review"]) {
+          await reportProgressToProcessingRun({
+            tenantId: payload.tenantId,
+            documentId: payload.documentId,
+            documentVersion: payload.documentVersion,
+            stageName: skipStage,
+            status: "skipped",
+            progress: 100,
+          });
+        }
 
         ctx.progress(`Extraction completed successfully in ${durationMs}ms.`);
 

@@ -113,6 +113,10 @@ export async function reportProgressToProcessingRun(params: {
           },
         },
       );
+      await db.collection("documents").updateOne(
+        { _id: new ObjectId(params.documentId) },
+        { $set: { status: "processing", updatedAt: now } },
+      );
     } else if (params.status === "running" && run.status === "running") {
       await db.collection("processingruns").updateOne(
         { _id: run._id },
@@ -121,6 +125,10 @@ export async function reportProgressToProcessingRun(params: {
             currentStage: params.stageName,
           },
         },
+      );
+      await db.collection("documents").updateOne(
+        { _id: new ObjectId(params.documentId) },
+        { $set: { status: "processing", updatedAt: now } },
       );
     }
 
@@ -138,6 +146,10 @@ export async function reportProgressToProcessingRun(params: {
               progress: run.progress || 0,
             },
           },
+        );
+        await db.collection("documents").updateOne(
+          { _id: new ObjectId(params.documentId) },
+          { $set: { status: "failed", updatedAt: now } },
         );
       } else {
         const allStages = await db.collection("processingstages")
@@ -162,6 +174,10 @@ export async function reportProgressToProcessingRun(params: {
                 currentStage: null,
               },
             },
+          );
+          await db.collection("documents").updateOne(
+            { _id: new ObjectId(params.documentId) },
+            { $set: { status: "processed", updatedAt: now } },
           );
         } else {
           const completedCount = allStages.filter(

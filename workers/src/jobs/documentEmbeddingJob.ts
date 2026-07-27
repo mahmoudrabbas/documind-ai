@@ -25,6 +25,10 @@ const CLASSIFICATIONS_BLOCKED_FROM_EXTERNAL_EMBEDDING = new Set([
 
 function isClassificationAllowedForEmbedding(classification: string | null): boolean {
   if (!classification) return true;
+  // In development, only block top_secret; allow restricted for local testing
+  if (process.env.NODE_ENV === "development" || process.env.ALLOW_RESTRICTED_EMBEDDING === "true") {
+    return classification !== "top_secret";
+  }
   return !CLASSIFICATIONS_BLOCKED_FROM_EXTERNAL_EMBEDDING.has(classification);
 }
 
@@ -53,6 +57,15 @@ export function createDocumentEmbeddingJobHandler(
       const startTime = Date.now();
       const db = getMongoClient()?.db();
       if (!db) throw new RetryableJobError("Database connection unavailable");
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "embedding",
+        status: "running",
+        progress: 0,
+      });
 
       const tenantId = new ObjectId(payload.tenantId);
       const generationId = new ObjectId(payload.generationId);

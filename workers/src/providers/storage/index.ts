@@ -6,13 +6,25 @@ import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { config } from "../../config/index.js";
-import type { StorageProvider } from "./types.js";
+
+export interface StorageProvider {
+  saveFile(buffer: Buffer, originalName: string, tenantId: string): Promise<string>;
+  saveFileFromStream(stream: Readable, originalName: string, tenantId: string): Promise<string>;
+  deleteFile(storageKey: string): Promise<void>;
+  getFileStream(storageKey: string): Promise<Readable> | Readable;
+  getFileBuffer(storageKey: string): Promise<Buffer>;
+  getContentType(originalName: string): string;
+}
 
 export class LocalStorageProvider implements StorageProvider {
-  private baseDir: string;
+  private _baseDir?: string;
 
-  constructor(baseDir: string) {
-    this.baseDir = baseDir;
+  constructor(baseDir?: string) {
+    this._baseDir = baseDir;
+  }
+
+  private get baseDir(): string {
+    return this._baseDir ?? config.UPLOAD_DIR;
   }
 
   private async ensureDir(dir: string): Promise<void> {
@@ -62,7 +74,6 @@ export class LocalStorageProvider implements StorageProvider {
 
   getFileStream(storageKey: string): Readable {
     const fullPath = path.join(this.baseDir, storageKey);
-
     return fs.createReadStream(fullPath);
   }
 
@@ -186,7 +197,7 @@ export function createStorageProvider(): StorageProvider {
       config.AWS_SECRET_ACCESS_KEY,
     );
   }
-  return new LocalStorageProvider(config.UPLOAD_DIR);
+  return new LocalStorageProvider();
 }
 
 export const storageProvider: StorageProvider = createStorageProvider();

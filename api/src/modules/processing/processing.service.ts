@@ -435,7 +435,12 @@ export async function retryOcrPages(
   }
 
   const pages = await findOcrPageResults(tenantId, documentId, documentVersion);
-  const retryPages = input.pageNumbers || pages.filter((p) => p.status === "failed" || p.status === "retry").map((p) => p.pageNumber);
+  const retryPages =
+    input.pageNumbers && input.pageNumbers.length > 0
+      ? input.pageNumbers
+      : pages
+          .filter((p) => p.status === "failed" || p.status === "retry")
+          .map((p) => p.pageNumber);
 
   if (retryPages.length === 0) {
     throw new AppError(400, "NO_PAGES_TO_RETRY", "No pages available for retry");

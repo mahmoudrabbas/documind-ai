@@ -49,6 +49,7 @@ export async function getProcessingStatusController(
     const { tenantId, userId } = requireAuth(req);
     const documentId = extractDocumentId(req);
     const result = await getProcessingStatus(tenantId, documentId, userId, isSuperAdmin(req));
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.json({ success: true, data: result });
   } catch (error) {
     next(error);

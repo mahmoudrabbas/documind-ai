@@ -37,6 +37,12 @@ export class InMemoryStorageProvider implements StorageProvider {
     return ReadableStream.from(Buffer.from(buf));
   }
 
+  async getFileBuffer(storageKey: string): Promise<Buffer> {
+    const buf = this.files.get(storageKey);
+    if (!buf) throw new Error(`File not found: ${storageKey}`);
+    return Buffer.from(buf);
+  }
+
   getContentType(originalName: string): string {
     const ext = originalName.substring(originalName.lastIndexOf(".") + 1).toLowerCase();
     const map: Record<string, string> = {

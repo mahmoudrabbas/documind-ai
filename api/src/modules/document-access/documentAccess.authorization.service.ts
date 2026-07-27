@@ -26,6 +26,16 @@ export class DocumentAccessAuthorizationService {
       if (!actor) return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
       if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING");
       const resource = resourceContext(document);
+
+      // Super admin, company admin, or document owner are always authorized for document actions
+      if (
+        actor.baseRole === "SUPER_ADMIN" ||
+        actor.baseRole === "COMPANY_ADMIN" ||
+        actor.actorId === resource.ownerId
+      ) {
+        return;
+      }
+
       if (!resource.activePolicyId || !resource.activePolicyVersion) return this.deny(context, documentId, action, "POLICY_MISSING");
       const policy = await this.policies.findExact(context.tenantId, documentId, resource.activePolicyId, resource.activePolicyVersion);
       if (!policy) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT");

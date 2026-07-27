@@ -1,12 +1,10 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
-import { readFile } from "node:fs/promises";
-import * as path from "node:path";
 import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
-import { config } from "../config/index.js";
 import { reportProgressToProcessingRun } from "./progressReporter.js";
+import { storageProvider } from "../providers/storage/index.js";
 
 const OcrLanguageSchema = z.enum(["ar", "en", "ar+en"]);
 
@@ -239,17 +237,17 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
         throw new PermanentJobError("Document version has no storage key; cannot read file for OCR.");
       }
 
-      const filePath = path.join(config.UPLOAD_DIR, storageKey);
       let fileBuffer: Buffer;
       try {
-        fileBuffer = await readFile(filePath);
+        fileBuffer = await storageProvider.getFileBuffer(storageKey);
       } catch (err: unknown) {
         const error = err instanceof Error ? err : new Error(String(err));
         const nodeErr = err as NodeJS.ErrnoException;
-        if (nodeErr.code === "ENOENT") {
-          throw new PermanentJobError(`Source file not found on disk: ${filePath}`);
+        const isNotFound = nodeErr?.code === "ENOENT" || error.message.includes("ENOENT") || error.message.includes("not found");
+        if (isNotFound) {
+          throw new PermanentJobError(`Source file not found in storage for key: ${storageKey}`);
         }
-        throw new RetryableJobError(`Failed to read file from disk: ${error.message}`);
+        throw new RetryableJobError(`Failed to read file from storage: ${error.message}`);
       }
 
       const fileMimeType = (version.mimeType as string) || "application/pdf";
