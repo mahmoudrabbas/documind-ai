@@ -18,6 +18,9 @@ import {
   platformUsersController,
   settingsController,
   subscriptionsController,
+  subscriptionDetailController,
+  subscriptionImpactController,
+  provisionSubscriptionController,
   updateAiConfigurationController,
   updatePackageController,
   updateSettingsController,
@@ -37,6 +40,9 @@ router.get("/packages/:id/impact", requirePermission(Permission.BILLING_READ), p
 router.post("/packages/:id/archive", requirePermission(Permission.BILLING_MANAGE), archivePackageController);
 router.post("/packages/:id/activate", requirePermission(Permission.BILLING_MANAGE), activatePackageController);
 router.get("/subscriptions", requirePermission(Permission.BILLING_READ), subscriptionsController);
+router.get("/subscriptions/:tenantId/impact", requirePermission(Permission.BILLING_READ), subscriptionImpactController);
+router.get("/subscriptions/:tenantId", requirePermission(Permission.BILLING_READ), subscriptionDetailController);
+router.post("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE), provisionSubscriptionController);
 router.patch("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE), updateSubscriptionController);
 router.get("/users", requirePermission(Permission.USERS_READ), platformUsersController);
 router.get("/usage", requirePermission(Permission.ANALYTICS_READ), usageController);

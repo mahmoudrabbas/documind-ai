@@ -12,6 +12,10 @@ import {
   previewPackageImpact,
   archivePackage,
   activatePackage,
+  getSubscriptionDetail,
+  previewSubscriptionImpact,
+  provisionSubscription,
+  updateSubscription,
 } from "./super-admin.service";
 import type { GlobalSettings, GlobalSettingsPatch, PackageCreateInput, PackageVersionInput } from "@/types/api/super-admin.types";
 
@@ -22,6 +26,30 @@ vi.mock("@/lib/api-client", () => ({
 
 beforeEach(() => {
   mockApiClient.mockReset();
+});
+
+describe("super-admin.service subscription operations", () => {
+  it("uses list, detail, and impact routes", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: {} });
+    await getSubscriptionDetail("tenant/id");
+    await previewSubscriptionImpact("tenant/id", { action: "update", packageId: "pkg", expectedVersion: 2 });
+    expect(mockApiClient).toHaveBeenNthCalledWith(1, "/platform/subscriptions/tenant%2Fid", { signal: undefined });
+    expect(mockApiClient).toHaveBeenNthCalledWith(2, "/platform/subscriptions/tenant%2Fid/impact?action=update&expectedVersion=2&packageId=pkg", { signal: undefined });
+  });
+
+  it("uses POST for provision and PATCH for existing updates with stable caller keys", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: {} });
+    const provision = { packageId: "pkg", status: "trialing" as const, expectedVersion: 0 as const, reason: "Approved provisioning" };
+    const update = { packageId: "pkg2", expectedVersion: 3, reason: "Approved package change" };
+    await provisionSubscription("tenant", provision, "stable-provision-key");
+    await updateSubscription("tenant", update, "stable-update-key");
+    expect(mockApiClient).toHaveBeenNthCalledWith(1, "/platform/subscriptions/tenant", {
+      method: "POST", body: provision, headers: { "Idempotency-Key": "stable-provision-key" },
+    });
+    expect(mockApiClient).toHaveBeenNthCalledWith(2, "/platform/subscriptions/tenant", {
+      method: "PATCH", body: update, headers: { "Idempotency-Key": "stable-update-key" },
+    });
+  });
 });
 
 describe("super-admin.service package operations", () => {

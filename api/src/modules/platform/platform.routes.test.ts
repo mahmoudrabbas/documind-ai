@@ -181,13 +181,17 @@ test("subscription.service.ts LEGAL_TRANSITIONS defines state machine for all 9 
   );
 });
 
-test("platform route source registers PATCH /subscriptions/:tenantId", async () => {
+test("platform subscription routes distinguish reads, provisioning, preview, and update without delete", async () => {
   const source = await readFile(sourceUrl, "utf8");
-
-  assert.ok(
-    source.includes('/subscriptions/:tenantId"'),
-    "PATCH /subscriptions/:tenantId registered",
-  );
+  for (const contract of [
+    'router.get("/subscriptions", requirePermission(Permission.BILLING_READ)',
+    'router.get("/subscriptions/:tenantId/impact", requirePermission(Permission.BILLING_READ)',
+    'router.get("/subscriptions/:tenantId", requirePermission(Permission.BILLING_READ)',
+    'router.post("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE)',
+    'router.patch("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE)',
+  ]) assert.ok(source.includes(contract), `missing route contract: ${contract}`);
+  assert.equal(/router\.delete\([^\n]*subscriptions/.test(source), false);
+  assert.ok(source.includes("router.use(authenticate, requirePlatformTenant)"));
 });
 
 test("package lifecycle and version routes use explicit billing permissions and expose no hard delete", async () => {

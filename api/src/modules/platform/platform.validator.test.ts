@@ -10,6 +10,8 @@ import {
   parse,
   settingsBodySchema,
   subscriptionUpdateSchema,
+  subscriptionProvisionSchema,
+  subscriptionImpactQuerySchema,
 } from "./platform.validator.js";
 
 test("platform package validation accepts bounded entitlements and normalized codes", () => {
@@ -100,10 +102,31 @@ test("subscription validation requires server-valid object identifiers", () => {
       parse(subscriptionUpdateSchema, {
         packageId: "attacker-controlled",
         status: "active",
+        expectedVersion: 1,
+        reason: "Administrative review",
       }),
     AppError,
   );
   assert.throws(() => parse(idSchema, { id: "not-an-object-id" }), AppError);
+});
+
+test("subscription provisioning and update contracts are strict, trimmed, and explicit", () => {
+  const packageId = "6a668bed76ec8e0569d93008";
+  assert.deepEqual(parse(subscriptionProvisionSchema, {
+    packageId, status: "trialing", expectedVersion: 0, reason: "  Approved by billing operations  ",
+  }), { packageId, status: "TRIALING", expectedVersion: 0, reason: "Approved by billing operations" });
+  assert.deepEqual(parse(subscriptionUpdateSchema, {
+    packageId, expectedVersion: 3, reason: "  Package change approved  ",
+  }), { packageId, expectedVersion: 3, reason: "Package change approved" });
+  assert.throws(() => parse(subscriptionUpdateSchema, {
+    expectedVersion: 3, reason: "Long enough but empty update",
+  }), AppError);
+  assert.throws(() => parse(subscriptionUpdateSchema, {
+    status: "active", expectedVersion: 3, reason: "short", unknown: true,
+  }), AppError);
+  assert.deepEqual(parse(subscriptionImpactQuerySchema, {
+    action: "update", packageId, expectedVersion: "3",
+  }), { action: "update", packageId, expectedVersion: 3 });
 });
 
 test("platform settings accept primitives and reject nested secrets", () => {

@@ -16,6 +16,9 @@ import {
   listPackages,
   listPlatformUsers,
   listSubscriptions,
+  getSubscriptionDetail,
+  previewSubscriptionImpact,
+  provisionSubscription,
   previewPackageImpact,
   updatePackage,
   updateSetting,
@@ -32,6 +35,8 @@ import {
   parse,
   settingsBodySchema,
   subscriptionUpdateSchema,
+  subscriptionProvisionSchema,
+  subscriptionImpactQuerySchema,
   tenantIdSchema,
 } from "./platform.validator.js";
 
@@ -129,10 +134,37 @@ export const activatePackageController = endpoint((req) =>
   ),
 );
 export const subscriptionsController = endpoint((req) => listSubscriptions(auditContext(req)));
+const idempotencyKey = (req: Request) => {
+  const value = req.header("Idempotency-Key")?.trim();
+  if (!value || value.length < 8 || value.length > 200) {
+    throw new AppError(400, "VALIDATION_ERROR", "A valid Idempotency-Key header is required");
+  }
+  return value;
+};
+export const subscriptionDetailController = endpoint((req) =>
+  getSubscriptionDetail(parse(tenantIdSchema, req.params).tenantId, auditContext(req)),
+);
+export const subscriptionImpactController = endpoint((req) =>
+  previewSubscriptionImpact(
+    parse(tenantIdSchema, req.params).tenantId,
+    parse(subscriptionImpactQuerySchema, req.query),
+    auditContext(req),
+  ),
+);
+export const provisionSubscriptionController = endpoint(async (req, res) => {
+  const value = await provisionSubscription(
+    parse(tenantIdSchema, req.params).tenantId,
+    parse(subscriptionProvisionSchema, req.body),
+    idempotencyKey(req),
+    auditContext(req),
+  );
+  res.status(201).json({ success: true, data: value });
+});
 export const updateSubscriptionController = endpoint((req) =>
   updateSubscription(
     parse(tenantIdSchema, req.params).tenantId,
     parse(subscriptionUpdateSchema, req.body),
+    idempotencyKey(req),
     auditContext(req),
   ),
 );

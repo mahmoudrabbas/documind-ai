@@ -119,6 +119,8 @@ The billing module provides a coherent package/subscription domain with versione
 - **Status values:** trialing, incomplete, active, past_due, paused, cancel_at_period_end, canceled, expired, unpaid
 - **Behavior:** Validates legal transition via state machine; maps legacy lowercase to UPPERCASE model values
 
+Phase 4 replaces the legacy generic mutation contract with explicit `POST` provisioning and strict `PATCH` existing-subscription updates. Both mutations require `Idempotency-Key`, a trimmed reason, and optimistic concurrency. See `docs/issue-26-phase-4-subscription-operations.md` for the complete contract.
+
 ## Auth (Registration) Integration
 
 ### `POST /auth/register`

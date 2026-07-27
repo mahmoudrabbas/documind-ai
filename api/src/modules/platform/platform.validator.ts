@@ -190,14 +190,43 @@ const subscriptionStatuses = [
   "trialing", "incomplete", "active", "past_due", "paused",
   "cancel_at_period_end", "canceled", "cancelled", "expired", "unpaid",
 ] as const;
-export const subscriptionUpdateSchema = z
+const subscriptionStatusSchema = z.enum(subscriptionStatuses).transform((status) =>
+  (status === "cancelled" ? "CANCELED" : status.toUpperCase()) as SubscriptionStatus,
+);
+const reasonSchema = z.string().trim().min(10).max(1000);
+const expectedSubscriptionVersionSchema = z.number().int().min(0);
+export const subscriptionProvisionSchema = z
   .object({
     packageId: objectId,
-    status: z.enum(subscriptionStatuses).transform((s) => s.toUpperCase() as SubscriptionStatus),
+    status: z.enum(["trialing", "active"]).transform((status) => status.toUpperCase() as "TRIALING" | "ACTIVE"),
+    expectedVersion: z.literal(0),
+    reason: reasonSchema,
+  })
+  .strict();
+export const subscriptionUpdateSchema = z
+  .object({
+    packageId: objectId.optional(),
+    status: subscriptionStatusSchema.optional(),
+    expectedVersion: expectedSubscriptionVersionSchema,
+    reason: reasonSchema,
     /** @deprecated Use periodEnd */
     renewsAt: z.iso.datetime().nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.packageId !== undefined || value.status !== undefined || value.renewsAt !== undefined, {
+    message: "At least one subscription change is required",
+  });
+export const subscriptionImpactQuerySchema = z
+  .object({
+    action: z.enum(["provision", "update"]),
+    packageId: objectId.optional(),
+    targetStatus: subscriptionStatusSchema.optional(),
+    expectedVersion: z.coerce.number().int().min(0),
+  })
+  .strict()
+  .refine((value) => value.packageId !== undefined || value.targetStatus !== undefined, {
+    message: "A target package or status is required",
+  });
 export const settingsBodySchema = z
   .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
   .refine((value) => Object.keys(value).length > 0, "Settings are required");

@@ -12,6 +12,11 @@ import type {
   PackageLifecycleInput,
   PackageVersionInput,
   PlatformSubscription,
+  PlatformSubscriptionDetail,
+  SubscriptionImpactPreview,
+  SubscriptionOperationAction,
+  SubscriptionProvisionInput,
+  SubscriptionUpdateInput,
   PlatformUser,
   RetrievalDebugResult,
 } from "@/types/api/super-admin.types";
@@ -71,12 +76,39 @@ export const listSubscriptions = (signal?: AbortSignal) =>
   });
 export const updateSubscription = (
   tenantId: string,
-  body: Record<string, unknown>,
+  body: SubscriptionUpdateInput,
+  idempotencyKey: string,
 ) =>
   apiClient<Success<PlatformSubscription>>(
     `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
-    { method: "PATCH", body },
+    { method: "PATCH", body: { ...body }, headers: { "Idempotency-Key": idempotencyKey } },
   );
+export const getSubscriptionDetail = (tenantId: string, signal?: AbortSignal) =>
+  apiClient<Success<PlatformSubscriptionDetail>>(
+    `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
+    { signal },
+  );
+export const previewSubscriptionImpact = (
+  tenantId: string,
+  input: { action: SubscriptionOperationAction; packageId?: string; targetStatus?: string; expectedVersion: number },
+  signal?: AbortSignal,
+) => {
+  const query = new URLSearchParams({ action: input.action, expectedVersion: String(input.expectedVersion) });
+  if (input.packageId) query.set("packageId", input.packageId);
+  if (input.targetStatus) query.set("targetStatus", input.targetStatus.toLowerCase());
+  return apiClient<Success<SubscriptionImpactPreview>>(
+    `/platform/subscriptions/${encodeURIComponent(tenantId)}/impact?${query}`,
+    { signal },
+  );
+};
+export const provisionSubscription = (
+  tenantId: string,
+  body: SubscriptionProvisionInput,
+  idempotencyKey: string,
+) => apiClient<Success<PlatformSubscription>>(
+  `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
+  { method: "POST", body: { ...body }, headers: { "Idempotency-Key": idempotencyKey } },
+);
 export const listPlatformUsers = (signal?: AbortSignal) =>
   apiClient<Success<{ users: PlatformUser[]; pagination: Pagination }>>(
     "/platform/users?page=1&pageSize=100",

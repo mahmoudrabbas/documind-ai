@@ -18,6 +18,7 @@ import { isRedisConnected } from "../../db/redis.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import * as PackageService from "../billing/package.service.js";
 import * as SubscriptionService from "../billing/subscription.service.js";
+import * as SubscriptionAdminService from "../billing/subscription-admin.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { syncPackageToStripe } from "../billing/stripe-sync.service.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
@@ -376,10 +377,56 @@ export async function listSubscriptions(
   const subs = await SubscriptionService.listSubscriptions(
     status ? { status } : undefined,
   );
-  return SubscriptionModel.populate(subs, [
+  const populated = await SubscriptionModel.populate(subs, [
     { path: "tenantId", select: "name slug status" },
     { path: "packageId", select: "name code version monthlyPrice currency entitlements" },
   ]);
+  return populated.map((entry) => {
+    const value = typeof (entry as { toObject?: () => unknown }).toObject === "function"
+      ? (entry as unknown as { toObject: () => Record<string, unknown> }).toObject()
+      : entry as unknown as Record<string, unknown>;
+    const { providerCustomerId: _customer, providerSubscriptionId: _subscription, providerPriceId: _price, providerMetadata: _metadata, adminOperations: _operations, ...safe } = value;
+    return {
+      ...safe,
+      status: String(value.status ?? "").toLowerCase(),
+      version: Number(value.revision ?? 0),
+      providerManaged: Boolean(_customer || _subscription || _price),
+      providerState: { hasCustomer: Boolean(_customer), hasSubscription: Boolean(_subscription), hasPrice: Boolean(_price) },
+      currentPeriodStart: value.periodStart ?? null,
+      currentPeriodEnd: value.periodEnd ?? null,
+    };
+  });
+}
+
+const billingActor = (actor: Awaited<ReturnType<typeof authorizePlatformOperation>>) => ({
+  userId: actor.actorId, email: actor.actorEmail, role: actor.actorRole,
+  tenantId: actor.tenantId, traceId: actor.traceId, requestId: actor.requestId,
+});
+
+export async function getSubscriptionDetail(tenantId: string, context: OperationAuthorizationContext) {
+  await authorizePlatformOperation(context, Permission.BILLING_READ);
+  return SubscriptionAdminService.getAdminSubscriptionDetail(tenantId);
+}
+
+export async function previewSubscriptionImpact(
+  tenantId: string,
+  input: { action: "provision" | "update"; packageId?: string; targetStatus?: SubscriptionStatus; expectedVersion: number },
+  context: OperationAuthorizationContext,
+) {
+  await authorizePlatformOperation(context, Permission.BILLING_READ);
+  return SubscriptionAdminService.previewAdminSubscriptionOperation(tenantId, input.action, {
+    expectedVersion: input.expectedVersion, packageId: input.packageId, status: input.targetStatus,
+  });
+}
+
+export async function provisionSubscription(
+  tenantId: string,
+  input: { packageId: string; status: "TRIALING" | "ACTIVE"; expectedVersion: 0; reason: string },
+  idempotencyKey: string,
+  context: OperationAuthorizationContext,
+) {
+  const actor = await authorizePlatformOperation(context, Permission.BILLING_MANAGE);
+  return SubscriptionAdminService.provisionAdminSubscription(tenantId, input, idempotencyKey, billingActor(actor));
 }
 
 /**
@@ -391,41 +438,15 @@ export async function listSubscriptions(
  */
 export async function updateSubscription(
   tenantId: string,
-  input: { packageId: string; status: string; renewsAt?: string | null },
+  input: { packageId?: string; status?: SubscriptionStatus; expectedVersion: number; reason: string; renewsAt?: string | null },
+  idempotencyKey: string,
   context: OperationAuthorizationContext,
 ) {
   const actor = await authorizePlatformOperation(
     context,
     Permission.BILLING_MANAGE,
   );
-  // Validate tenant and package existence first
-  const [tenant, pkg] = await Promise.all([
-    TenantModel.findOne({ _id: tenantId, ...tenantFilter })
-      .lean()
-      .exec(),
-    PackageModel.findOne({ _id: input.packageId, active: true }).lean().exec(),
-  ]);
-  if (!tenant) throw new AppError(404, "NOT_FOUND", "Tenant not found");
-  if (!pkg) throw new AppError(404, "NOT_FOUND", "Active package not found");
-
-  const status = input.status.toUpperCase() as SubscriptionStatus;
-
-  return SubscriptionService.transitionSubscription(
-    tenantId,
-    status,
-    {
-      packageId: input.packageId,
-      packageVersion: pkg.version,
-      periodEnd: input.renewsAt ? new Date(input.renewsAt) : undefined,
-      triggeredBy: "admin",
-    },
-    {
-      userId: actor.actorId,
-      email: actor.actorEmail,
-      role: actor.actorRole,
-      tenantId: actor.tenantId,
-    },
-  );
+  return SubscriptionAdminService.updateAdminSubscription(tenantId, input, idempotencyKey, billingActor(actor));
 }
 
 export async function listPlatformUsers(input: {
