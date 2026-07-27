@@ -119,6 +119,7 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
         sectionPath: chunk.sectionPath,
         pageStart: chunk.pageStart,
         pageEnd: chunk.pageEnd,
+        pageNumber: chunk.pageStart,
         offsetStart: chunk.offsetStart,
         offsetEnd: chunk.offsetEnd,
         contentType: chunk.contentType,

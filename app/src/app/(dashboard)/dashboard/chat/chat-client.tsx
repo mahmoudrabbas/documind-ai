@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
 import {
   sendMessage,
   listConversations,
   getConversationMessages,
   deleteConversation,
 } from "@/services/chat.service";
-import type { ChatSource, ConversationListItem, ConversationMessageDetail } from "@/types/api/chat.types";
+import type { ChatSource, ConversationListItem } from "@/types/api/chat.types";
 
 type Message = {
   id: string;
@@ -43,6 +43,12 @@ export function ChatClient() {
   const [error, setError] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [pdfViewer, setPdfViewer] = useState<{
+    documentId: string;
+    pageNumber?: number;
+    highlightText?: string;
+    documentTitle?: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const currentMessages = messages[activeConversation] ?? [];
@@ -361,13 +367,15 @@ export function ChatClient() {
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
                           Sources
                         </p>
-                        {msg.sources.map((src) => {
-                          const params = new URLSearchParams({ id: src.documentId });
-                          if (src.pageNumber) params.set("page", String(src.pageNumber));
-                          return (
-                            <Link
+                        {msg.sources.map((src) => (
+                            <button
                               key={src.chunkId}
-                              href={`/dashboard/documents?${params.toString()}`}
+                              onClick={() => setPdfViewer({
+                                documentId: src.documentId,
+                                pageNumber: src.pageNumber,
+                                highlightText: src.text,
+                                documentTitle: src.documentTitle,
+                              })}
                               className="flex items-center gap-1 text-xs text-on-surface-variant transition-colors hover:text-primary"
                             >
                               <span className="material-symbols-outlined text-[14px]">
@@ -389,9 +397,8 @@ export function ChatClient() {
                               <span className="ml-1 text-outline">
                                 ({(src.score * 100).toFixed(0)}%)
                               </span>
-                            </Link>
-                          );
-                        })}
+                            </button>
+                          ))}
                       </div>
                     )}
                   </div>
@@ -466,6 +473,16 @@ export function ChatClient() {
           </div>
         </div>
       </div>
+
+      {pdfViewer && (
+        <PdfViewerModal
+          documentId={pdfViewer.documentId}
+          pageNumber={pdfViewer.pageNumber}
+          highlightText={pdfViewer.highlightText}
+          documentTitle={pdfViewer.documentTitle}
+          onClose={() => setPdfViewer(null)}
+        />
+      )}
     </div>
   );
 }

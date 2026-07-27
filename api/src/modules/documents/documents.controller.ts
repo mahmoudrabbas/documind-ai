@@ -114,6 +114,27 @@ export async function downloadDocumentController(req: Request, res: Response, ne
   } catch (error) { handleDocumentError(error, res, next); }
 }
 
+export async function previewDocumentController(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
+    const { stream, contentType, fileSize } =
+      await service.downloadDocument(documentId, req.tenantId, {
+        userId: req.auth.userId,
+        email: req.auth.email,
+        role: requireAuthRole(req),
+      });
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", fileSize);
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+
+    stream.pipe(res);
+  } catch (error) { handleDocumentError(error, res, next); }
+}
+
 export async function replaceDocumentController(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");

@@ -80,6 +80,21 @@ export async function deleteDocument(
   return api.delete<DeleteDocumentResponse>(`/documents/${id}`);
 }
 
+export async function fetchDocumentPreviewUrl(id: string): Promise<string> {
+  const token = (await import("@/lib/auth-tokens")).getAccessToken();
+  const baseUrl = (await import("@/constants/api")).API_BASE_URL;
+  const response = await fetch(`${baseUrl}/documents/${id}/preview`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load document preview");
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
 export async function downloadDocument(id: string): Promise<void> {
   const token = (await import("@/lib/auth-tokens")).getAccessToken();
   const baseUrl = (await import("@/constants/api")).API_BASE_URL;
