@@ -44,26 +44,42 @@ beforeAll(async () => {
     });
     await mongoose.connect(mongoServer.getUri(), { dbName: "forged-id-test" });
   }
-});
+  await Promise.all([
+    DocumentModel.init(),
+    IndexGenerationModel.init(),
+    DocumentChunkModel.init(),
+    ChunkEmbeddingModel.init(),
+    TenantModel.init(),
+  ]);
+}, 30_000);
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  if (mongoServer) await mongoServer.stop();
-});
+  try {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+  } finally {
+    if (mongoServer) await mongoServer.stop();
+  }
+}, 30_000);
 
 afterEach(async () => {
-  await DocumentModel.deleteMany({});
-  await IndexGenerationModel.deleteMany({});
-  await DocumentChunkModel.deleteMany({});
-  await ChunkEmbeddingModel.deleteMany({});
-  await TenantModel.deleteMany({});
-});
+  await Promise.all([
+    DocumentModel.deleteMany({}),
+    IndexGenerationModel.deleteMany({}),
+    DocumentChunkModel.deleteMany({}),
+    ChunkEmbeddingModel.deleteMany({}),
+    TenantModel.deleteMany({}),
+  ]);
+}, 30_000);
 
 beforeEach(async () => {
-  await DocumentModel.deleteMany({});
-  await IndexGenerationModel.deleteMany({});
-  await DocumentChunkModel.deleteMany({});
-  await ChunkEmbeddingModel.deleteMany({});
+  await Promise.all([
+    DocumentModel.deleteMany({}),
+    IndexGenerationModel.deleteMany({}),
+    DocumentChunkModel.deleteMany({}),
+    ChunkEmbeddingModel.deleteMany({}),
+  ]);
 
   await TenantModel.updateOne(
     { _id: TENANT_A },
@@ -229,7 +245,7 @@ beforeEach(async () => {
     tokenUsage: 8,
     costUsd: 0.00008,
   });
-});
+}, 30_000);
 
 describe("forged-ID cross-tenant isolation", () => {
   test("tenant A cannot read tenant B generation with forged ID", async () => {

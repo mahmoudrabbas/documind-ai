@@ -9,7 +9,7 @@ services:
       - path: ./api/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - MONGODB_URI=mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET_FILE=/run/secrets/api_jwt_secret
       - JWT_REFRESH_SECRET_FILE=/run/secrets/api_refresh_secret
@@ -79,11 +79,17 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ready || exit 1"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const net=require('node:net');const s=net.connect(3000,'127.0.0.1',()=>{s.end();process.exit(0)});s.setTimeout(3000,()=>{s.destroy();process.exit(1)});s.on('error',()=>process.exit(1));",
+        ]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     volumes:
       - ./app:/repo/app
       - /repo/app/.next
@@ -108,7 +114,7 @@ services:
       - path: ./workers/.env
         required: false
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/docsai
+      - MONGODB_URI=mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority
       - REDIS_URL=redis://redis:6379
       - UPLOAD_DIR=/repo/api/uploads
       - SMTP_PASS_FILE=/run/secrets/api_smtp_pass

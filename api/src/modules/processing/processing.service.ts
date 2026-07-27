@@ -419,6 +419,7 @@ export async function retryOcrPages(
   documentVersion: number,
   input: RetryOcrInput,
   inputContext: OperationAuthorizationContext,
+  dispatcher?: Pick<ReturnType<typeof getApiJobDispatcher>, "enqueue">,
 ): Promise<{ jobId: string; idempotencyKey: string }> {
   await authorizeDocumentPolicy(tenantId, documentId, inputContext, "reprocess");
   const actor = await authorizeProcessingOperation(
@@ -449,8 +450,7 @@ export async function retryOcrPages(
   const traceId = randomUUID();
   const idempotencyKey = `ocr-retry-${docId.toString()}-${documentVersion}-${retryPages.join(",")}-${Date.now()}`;
 
-  const dispatcher = getApiJobDispatcher();
-  const enqueueResult = await dispatcher.enqueue({
+  const enqueueResult = await (dispatcher ?? getApiJobDispatcher()).enqueue({
     jobType: "document.ocr",
     tenantId: tenId.toString(),
     actorId: actor.actorId,
@@ -596,7 +596,7 @@ export async function triggerMetadataAnalysis(
         agentName: "metadata-agent",
         status: "pending",
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: "after" },
     );
 
     savedCandidates.push({
@@ -906,7 +906,7 @@ export async function triggerVersionConflictAnalysis(
         evidence: rel.evidence,
         status: rel.requiresApproval ? "pending" : "active",
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: "after" },
     );
 
     savedRelationships.push({
@@ -949,7 +949,7 @@ export async function triggerVersionConflictAnalysis(
         agentName: "version-conflict-agent",
         status: "detected",
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: "after" },
     );
 
     savedConflicts.push({

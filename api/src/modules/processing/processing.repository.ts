@@ -49,7 +49,7 @@ export async function upsertOcrPageResult(
       $set: { ...updates, updatedAt: new Date() },
       $setOnInsert: { createdAt: new Date() },
     },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: "after" },
   );
 }
 
@@ -81,7 +81,7 @@ export async function upsertDocumentQuality(
       $set: { ...updates, updatedAt: new Date() },
       $setOnInsert: { createdAt: new Date() },
     },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: "after" },
   );
 }
 
