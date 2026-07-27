@@ -110,6 +110,7 @@ export interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   isLoading?: boolean;
+  error?: string | null;
 }
 
 export function ConfirmDialog({
@@ -122,6 +123,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   isLoading,
+  error,
 }: ConfirmDialogProps) {
   if (!open) return null;
 
@@ -144,6 +146,11 @@ export function ConfirmDialog({
         </h3>
         {description ? (
           <p className="mt-2 text-sm text-on-surface-variant">{description}</p>
+        ) : null}
+        {error ? (
+          <div className="mt-4 rounded-lg border border-error/30 bg-error/10 px-3 py-2">
+            <p className="text-sm text-error">{error}</p>
+          </div>
         ) : null}
         <div className="mt-6 flex justify-end gap-3">
           <button

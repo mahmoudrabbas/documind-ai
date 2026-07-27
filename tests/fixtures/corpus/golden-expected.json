@@ -1,0 +1,183 @@
+{
+  "english-contract": {
+    "totalChunks": 5,
+    "expectedChunks": [
+      {
+        "sectionPath": ["Service Agreement"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Section 1: Scope of Services"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Section 2: Payment Terms"],
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["Section 3: Confidentiality"],
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2
+      }
+    ]
+  },
+  "arabic-contract": {
+    "totalChunks": 4,
+    "expectedChunks": [
+      {
+        "sectionPath": ["عقد خدمة"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["المادة 1: نطاق الخدمات"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["المادة 2: شروط الدفع"],
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["المادة 3: السرية"],
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2
+      }
+    ]
+  },
+  "mixed-bilingual": {
+    "totalChunks": 3,
+    "expectedChunks": [
+      {
+        "sectionPath": ["اتفاقية خدمات مزدوجة اللغة"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Section 1 / المادة الأولى"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      }
+    ]
+  },
+  "table-heavy": {
+    "totalChunks": 3,
+    "expectedChunks": [
+      {
+        "sectionPath": ["Data Summary Report"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "contentType": "table",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "contentType": "table",
+        "pageStart": 1,
+        "pageEnd": 1
+      }
+    ]
+  },
+  "heading-heavy": {
+    "totalChunks": 5,
+    "expectedChunks": [
+      {
+        "sectionPath": ["Master Services Agreement"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Article 1: Definitions", "1.1 Key Terms"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Article 2: Service Delivery", "2.1 Cloud Infrastructure"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Article 2: Service Delivery", "2.2 Monitoring"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Article 3: Financial Terms", "3.1 Pricing Structure"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      }
+    ]
+  },
+  "oversized-clause": {
+    "totalChunks": 3,
+    "notes": "Oversized clause should be split at sentence boundaries with partIndex/partCount",
+    "expectedChunks": [
+      {
+        "sectionPath": ["Comprehensive Terms"],
+        "contentType": "heading",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2,
+        "partIndex": 1,
+        "partCount": 2
+      },
+      {
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2,
+        "partIndex": 2,
+        "partCount": 2
+      }
+    ]
+  },
+  "page-break-section": {
+    "totalChunks": 3,
+    "notes": "Section spans pages 1-2, pageStart/pageEnd should map correctly",
+    "expectedChunks": [
+      {
+        "sectionPath": ["Article 4: Data Protection"],
+        "contentType": "clause",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sectionPath": ["Article 4: Data Protection"],
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sectionPath": ["Article 4: Data Protection"],
+        "contentType": "clause",
+        "pageStart": 2,
+        "pageEnd": 2
+      }
+    ]
+  }
+}

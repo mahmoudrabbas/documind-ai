@@ -1,4 +1,4 @@
-import { Queue } from "bullmq";
+import { Queue, FlowProducer } from "bullmq";
 import { type Redis } from "ioredis";
 import { logger } from "../../common/logger/logger.js";
 import { getRedisClient } from "../../db/redis.js";
@@ -13,6 +13,17 @@ import {
 
 export const JOBS_QUEUE_NAME = "documind-jobs";
 
+export interface FlowJobInput {
+  jobType: string;
+  tenantId: string;
+  actorId: string;
+  traceId: string;
+  idempotencyKey: string;
+  payload?: unknown;
+  displayName?: string;
+  children?: FlowJobInput[];
+}
+
 /**
  * API-side producer implementing the JobDispatcher port.
  *
@@ -23,29 +34,32 @@ export const JOBS_QUEUE_NAME = "documind-jobs";
  */
 export class ApiJobDispatcher {
   private queue: Queue;
+  private flowProducer: FlowProducer;
 
   constructor(queue?: Queue) {
     if (queue) {
       this.queue = queue;
-      return;
+      this.flowProducer = null as unknown as FlowProducer;
+    } else {
+      const redis: Redis = getRedisClient() as unknown as Redis;
+      this.queue = new Queue(JOBS_QUEUE_NAME, {
+        connection: redis,
+        defaultJobOptions: {
+          attempts: 5,
+          backoff: { type: "exponential", delay: 1000 },
+          removeOnComplete: 5000,
+          removeOnFail: false,
+        },
+      });
+      this.flowProducer = new FlowProducer({ connection: redis });
     }
-    const redis: Redis = getRedisClient() as unknown as Redis;
-    this.queue = new Queue(JOBS_QUEUE_NAME, {
-      connection: redis,
-      defaultJobOptions: {
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
-        removeOnComplete: 5000,
-        removeOnFail: false,
-      },
-    });
   }
 
   /**
    * Validates the caller-supplied envelope, derives the dedup jobId, and
    * enqueues. Duplicate idempotency keys are suppressed at the Redis layer.
    */
-  async enqueue(input: unknown): Promise<{
+  async enqueue(input: unknown, dependsOn?: string[]): Promise<{
     ok: boolean;
     jobId?: string;
     idempotencyKey?: string;
@@ -87,6 +101,7 @@ export class ApiJobDispatcher {
       delay: env.scheduledFor
         ? Math.max(0, Date.parse(env.scheduledFor) - Date.now())
         : undefined,
+      ...(dependsOn && dependsOn.length > 0 ? { dependsOn } : {}),
     });
 
     logger.info(
@@ -99,6 +114,60 @@ export class ApiJobDispatcher {
       jobId: job.id ?? jobId,
       idempotencyKey: env.idempotencyKey,
       deduplicated: false,
+    };
+  }
+
+  /**
+   * Enqueue a tree of jobs with proper dependency ordering using FlowProducer.
+   * Children must complete before their parent starts processing.
+   * Returns the root job ID (the final job in the chain).
+   */
+  async enqueueFlow(
+    root: FlowJobInput,
+  ): Promise<{
+    ok: boolean;
+    jobId?: string;
+    error?: string;
+  }> {
+    try {
+      const flowNode = this.buildFlowNode(root);
+      const result = await this.flowProducer.add(flowNode);
+      const jobId = result.job.id ?? "";
+
+      logger.info(
+        { jobType: root.jobType, jobId },
+        "flow chain enqueued",
+      );
+
+      return { ok: true, jobId };
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ err: error.message, jobType: root.jobType }, "flow enqueue failed");
+      return { ok: false, error: error.message };
+    }
+  }
+
+  private buildFlowNode(input: FlowJobInput): Parameters<FlowProducer["add"]>[0] {
+    const envelope: JobEnvelope = {
+      jobType: input.jobType,
+      schemaVersion: "1.0.0",
+      createdAt: new Date().toISOString(),
+      tenantId: input.tenantId,
+      actorId: input.actorId,
+      traceId: input.traceId,
+      idempotencyKey: input.idempotencyKey,
+      payload: input.payload ?? {},
+      displayName: input.displayName,
+    };
+
+    return {
+      name: input.jobType,
+      data: envelope,
+      queueName: JOBS_QUEUE_NAME,
+      opts: {
+        jobId: buildDedupKey(input.jobType, input.idempotencyKey),
+      },
+      children: input.children?.map((child) => this.buildFlowNode(child)) ?? [],
     };
   }
 
@@ -161,6 +230,7 @@ export class ApiJobDispatcher {
 
   async close(): Promise<void> {
     await this.queue.close();
+    await this.flowProducer.close();
   }
 }
 

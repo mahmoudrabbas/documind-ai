@@ -6,7 +6,7 @@ import { createFakeTools } from "./fakeTools.js";
 import { createRetrievalTool } from "./tools/retrievalTool.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
 import { createDefaultGuardrails } from "./guardrails.js";
-import { FakeModelAdapter } from "../../providers/llm/fakeAdapters.js";
+import { getModelAdapter } from "../../providers/llm/index.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   createRun,
@@ -40,8 +40,22 @@ import {
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 
-const model = new FakeModelAdapter();
-const supervisor = new Supervisor(model, createDefaultGuardrails());
+function getSupervisor(): Supervisor {
+  const model = getModelAdapter();
+  return new Supervisor(model, createDefaultGuardrails());
+}
+
+function getModelProviderInfo(): { providerKey: string; modelName: string } {
+  try {
+    const model = getModelAdapter();
+    return {
+      providerKey: model.providerKey,
+      modelName: (model as { model?: string }).model ?? model.providerKey,
+    };
+  } catch {
+    return { providerKey: "unknown", modelName: "unknown" };
+  }
+}
 const toolRegistry = new ToolRegistry();
 for (const tool of createFakeTools()) {
   toolRegistry.register(tool);
@@ -74,7 +88,7 @@ async function runGuardrails(
   action: "allow" | "block" | "approval_required";
   reason: string | null;
 }> {
-  return supervisor.evaluateGuardrails(context, phase, payload);
+  return getSupervisor().evaluateGuardrails(context, phase, payload);
 }
 
 function nullToUndefined<T>(value: T | null | undefined): T | undefined {
@@ -182,7 +196,7 @@ async function executeSupervisedRun(
   let failed = false;
   let error: Record<string, unknown> | null | undefined = undefined;
 
-  const decision: SupervisorDecision = await supervisor.decide(context, input, [
+  const decision: SupervisorDecision = await getSupervisor().decide(context, input, [
     "default-agent",
     "handoff-agent",
     "approval-agent",
@@ -193,6 +207,7 @@ async function executeSupervisedRun(
     stepIndex < (decision.budget.maxSteps ?? 10);
     stepIndex++
   ) {
+    const modelInfo = getModelProviderInfo();
     const step = await createStep({
       runId,
       tenantId: context.tenantId,
@@ -200,8 +215,8 @@ async function executeSupervisedRun(
       agentName: context.agentName,
       action: decision.plan.action,
       input,
-      modelProvider: "fake",
-      modelName: "fake-default",
+      modelProvider: modelInfo.providerKey,
+      modelName: modelInfo.modelName,
       promptVersion: stepVersionSnapshot || null,
       traceId: context.traceId,
       requestId: context.requestId,

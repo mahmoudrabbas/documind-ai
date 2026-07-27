@@ -37,7 +37,7 @@ export async function authorizeTenantOperation(
     .lean()
     .exec();
 
-  if (!tenant || isSystemPlatformTenant(tenant)) {
+  if (!tenant || (isSystemPlatformTenant(tenant) && context.actorRole !== "SUPER_ADMIN")) {
     throw permissionDenied();
   }
 

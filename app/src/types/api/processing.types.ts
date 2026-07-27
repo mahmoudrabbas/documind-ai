@@ -104,3 +104,54 @@ export interface ReviewQualityResponse {
   success: boolean;
   data: DocumentQualityView;
 }
+
+export type DocumentSearchStatus = "NOT_INDEXED" | "INDEXING" | "READY" | "FAILED" | "STALE";
+
+export type GenerationStatus = "BUILDING" | "VERIFYING" | "VERIFIED" | "ACTIVE" | "FAILED" | "RETIRED";
+
+export type GenerationTrigger = "INITIAL" | "REINDEX" | "ACCESS_POLICY_CHANGE" | "MODEL_UPGRADE";
+
+export interface IndexGenerationFailureReason {
+  stage: string;
+  code: string;
+  message: string;
+}
+
+export interface IndexGenerationView {
+  generationId: string;
+  documentId: string;
+  documentVersion: number;
+  generationNumber: number;
+  status: GenerationStatus;
+  expectedChunkCount: number;
+  actualChunkCount: number;
+  expectedEmbeddingCount: number;
+  actualEmbeddingCount: number;
+  atlasIndexName: string;
+  atlasIndexStatus: string;
+  triggeredBy: GenerationTrigger;
+  failureReason: IndexGenerationFailureReason | null;
+  activatedAt: string | null;
+  createdAt: string | null;
+}
+
+export interface IndexStartResponse {
+  message: string;
+  generationId: string;
+  generationNumber: number;
+  status: GenerationStatus;
+}
+
+export interface IndexStatusResponse {
+  success: boolean;
+  data: IndexGenerationView;
+}
+
+export interface SearchStatusResponse {
+  success: boolean;
+  data: {
+    searchStatus: DocumentSearchStatus;
+    activeChunkGeneration: string | null;
+    latestGeneration: IndexGenerationView | null;
+  };
+}

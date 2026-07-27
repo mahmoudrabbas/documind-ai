@@ -38,7 +38,7 @@ openssl rand -hex 32 > secrets/api_super_admin_bootstrap_key.txt
 Use the Docker internal service addresses:
 
 ```bash
-echo -n "mongodb://mongodb:27017/docsai" > secrets/worker_mongodb_uri.txt
+echo -n "mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority" > secrets/worker_mongodb_uri.txt
 echo -n "redis://redis:6379" > secrets/worker_redis_url.txt
 ```
 

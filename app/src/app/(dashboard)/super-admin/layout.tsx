@@ -18,6 +18,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
   { prefix: "/super-admin/users", permissions: [Permission.USERS_READ] },
   { prefix: "/super-admin/usage", permissions: [Permission.ANALYTICS_READ] },
   { prefix: "/super-admin/jobs", permissions: [Permission.DOCUMENTS_READ] },
+  { prefix: "/super-admin/processing-overview", permissions: [Permission.DOCUMENTS_READ] },
   { prefix: "/super-admin/system-health", permissions: [Permission.COMPANY_SETTINGS_READ] },
   { prefix: "/super-admin/ai-configuration", permissions: [Permission.COMPANY_SETTINGS_READ] },
   { prefix: "/super-admin/audit", permissions: [Permission.AUDIT_READ] },

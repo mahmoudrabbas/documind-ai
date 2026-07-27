@@ -25,8 +25,11 @@ import {
 } from "./processing.controller.js";
 import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import indexingRoutes from "./indexing/indexing.routes.js";
 
 const router = Router();
+
+router.use(indexingRoutes);
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 

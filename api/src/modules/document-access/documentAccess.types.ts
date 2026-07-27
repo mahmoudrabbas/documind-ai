@@ -8,7 +8,9 @@ export type DocumentLifecycleStatus =
   | "processed"
   | "failed"
   | "archived"
-  | "deleted";
+  | "deleted"
+  | "canceled"
+  | "reprocessing";
 
 export interface DocumentAccessActorContext {
   /** Must be derived from authenticated server context, never trusted client input. */

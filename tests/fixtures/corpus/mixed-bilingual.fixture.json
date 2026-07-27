@@ -1,0 +1,11 @@
+[
+  {
+    "pageNumber": 1,
+    "blocks": [
+      { "type": "heading", "text": "اتفاقية خدمات مزدوجة اللغة", "level": 1 },
+      { "type": "paragraph", "text": "This bilingual agreement (\"الاتفاقية المزدوجة\") is entered into between TechCorp (شركة تقنية) and GlobalFinance (العالم المالي). Both parties acknowledge the terms set forth herein. يتفق الطرفان بالشروط الواردة أدناه." },
+      { "type": "heading", "text": "Section 1 / المادة الأولى", "level": 2 },
+      { "type": "paragraph", "text": "The Provider shall deliver cloud services including infrastructure management (إدارة البنية التحتية) and 24/7 monitoring (المراقبة على مدار الساعة). All services comply with international standards (المعايير الدولية) and local regulations (الأنظمة المحلية)." }
+    ]
+  }
+]

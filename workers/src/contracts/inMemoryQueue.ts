@@ -192,6 +192,7 @@ export class InMemoryQueue implements JobDispatcher {
           attemptsMade: job.attemptsMade,
           data: { message, ...data },
         }),
+      enqueue: this.enqueue.bind(this),
     };
 
     const outcome: ExecutionOutcome = await executeHandler(

@@ -69,6 +69,14 @@ export interface JobHandlerContext {
   signal: AbortSignal;
   /** Record a structured progress event (same traceId is attached). */
   progress(message: string, data?: Record<string, unknown>): void;
+  /** Enqueue a follow-up job from within a handler (same queue). */
+  enqueue(
+    input: Omit<JobEnvelope, "schemaVersion" | "createdAt" | "payload"> & {
+      schemaVersion?: JobEnvelope["schemaVersion"];
+      payload?: unknown;
+      options?: EnqueueOptions;
+    },
+  ): Promise<EnqueueResult>;
 }
 
 export interface JobHandlerResult {

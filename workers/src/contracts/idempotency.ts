@@ -43,5 +43,5 @@ export function generateTraceId(): string {
  * two distinct job types with the same business idempotencyKey do not collide.
  */
 export function buildDedupKey(jobType: string, idempotencyKey: string): string {
-  return `${jobType}::${idempotencyKey}`;
+  return `${jobType}__${idempotencyKey}`;
 }

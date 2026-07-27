@@ -65,6 +65,8 @@ export function createRetrievalController(
         tenantId: req.tenantId ?? auth.tenantId,
         actorId: auth.userId,
         baseRole: auth.role,
+        permissionScopes: req.permissionDecision?.scope ?? undefined,
+        customRoleId: req.permissionDecision?.roleId ?? undefined,
       };
 
       const query: RetrievalQuery = {
@@ -151,6 +153,8 @@ export function createRetrievalController(
         tenantId: req.tenantId ?? auth.tenantId,
         actorId: auth.userId,
         baseRole: auth.role,
+        permissionScopes: req.permissionDecision?.scope ?? undefined,
+        customRoleId: req.permissionDecision?.roleId ?? undefined,
       };
 
       // Body is already validated by middleware — cast from validated shape

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { delimiter, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -51,11 +51,19 @@ const agentsTokenChargeTestsDir = resolve(
   "agents",
   "__tests__",
 ).replace(/\\/g, "/");
+const processingProgressVitestTestsDir = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "processing-progress",
+  "__tests__",
+).replace(/\\/g, "/");
 const apiSrcRoot = resolve(apiRoot, "src");
 
 function isVitestOnlyTest(path) {
   const normalized = path.replace(/\\/g, "/");
-  return normalized.includes(billingModuleDir)
+  if (
+    normalized.includes(billingModuleDir)
     || normalized === checkoutServiceTestFile
     || normalized.startsWith(`${authVitestTestsDir}/`)
     || normalized.startsWith(`${dbVitestTestsDir}/`)
@@ -63,7 +71,17 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${importsVitestTestsDir}/`)
     || normalized.startsWith(`${importsServicesVitestTestsDir}/`)
     || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
-    || normalized.startsWith(`${agentsTokenChargeTestsDir}/`);
+    || normalized.startsWith(`${agentsTokenChargeTestsDir}/`)
+    || normalized.startsWith(`${processingProgressVitestTestsDir}/`)
+  ) {
+    return true;
+  }
+  try {
+    const head = readFileSync(path, "utf-8").slice(0, 2000);
+    return /from\s+["']vitest["']/.test(head);
+  } catch {
+    return false;
+  }
 }
 
 function findTests(directory) {
