@@ -192,6 +192,7 @@ try {
         cwd: apiRoot,
         stdio: "inherit",
         env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },
+        shell: true,
       });
       child.once("error", (error) => {
         console.error(`Unable to run vitest: ${error.message}`);
