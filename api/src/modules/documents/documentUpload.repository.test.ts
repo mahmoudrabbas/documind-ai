@@ -14,6 +14,8 @@ before(async () => { try { mongo = await MongoMemoryReplSet.create({ replSet: { 
   catch { blocked = "replica-set listener unavailable"; } });
 after(async () => { await mongoose.disconnect(); if (mongo) await mongo.stop(); });
 
+import { DOCUMENT_ACCESS_ACTIONS } from "../document-access/documentAccess.actions.js";
+
 test("upload commits Restricted document, version, private policy, and pointer atomically", async (context) => {
   if (blocked) { context.skip(blocked); return; }
   const tenantId = new mongoose.Types.ObjectId();
@@ -27,5 +29,5 @@ test("upload commits Restricted document, version, private policy, and pointer a
   } as Omit<DocumentVersionDocument, "_id" | "documentId" | "createdAt">);
   assert.equal(document.classification, "internal"); assert.ok(document.classificationId && document.activePolicyId); assert.equal(document.activePolicyVersion, 1);
   const policy = await DocumentAccessPolicyModel.findOne({ tenantId, documentId: document._id }).lean().exec();
-  assert.deepEqual(policy?.rules, [{ ruleId: "default-owner-minimum", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download", "reprocess"] }]);
+  assert.deepEqual(policy?.rules, [{ ruleId: "default-owner-minimum", effect: "allow", subject: { type: "owner" }, actions: [...DOCUMENT_ACCESS_ACTIONS] }]);
 });

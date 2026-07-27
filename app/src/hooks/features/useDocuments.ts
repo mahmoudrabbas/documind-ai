@@ -77,6 +77,38 @@ export function useDocuments() {
     };
   }, [filters]);
 
+  // Auto-poll document status while any document is being processed by background workers
+  const hasProcessingDocs = documents.some(
+    (doc) =>
+      doc.status === "processing" ||
+      doc.status === "uploaded" ||
+      doc.status === "uploading",
+  );
+
+  useEffect(() => {
+    if (!hasProcessingDocs) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const response = await documentsService.listDocuments(page, 20, filters);
+        const { documents: docs, pagination } = response.data;
+        setDocuments(docs);
+        setTotalPages(pagination.totalPages);
+        setTotalRecords(pagination.totalRecords);
+
+        setSelectedDocument((prev) => {
+          if (!prev) return null;
+          const updated = docs.find((d) => d.id === prev.id);
+          return updated ?? prev;
+        });
+      } catch (err) {
+        console.error("Auto-polling document status failed:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [hasProcessingDocs, page, filters]);
+
   async function upload(
     file: File,
     metadata: { title: string; description?: string; tags?: string },
@@ -112,8 +144,8 @@ export function useDocuments() {
       await documentsService.deleteDocument(id);
       setSelectedDocument(null);
       fetchDocuments(page);
-    } catch {
-      setError("common.error");
+    } catch (err) {
+      console.error("Failed to soft-delete document:", err);
     }
   }
 
@@ -122,8 +154,8 @@ export function useDocuments() {
       await documentsService.permanentDeleteDocument(id);
       setSelectedDocument(null);
       fetchDocuments(page);
-    } catch {
-      setError("common.error");
+    } catch (err) {
+      console.error("Failed to permanently delete document:", err);
     }
   }
 
@@ -132,8 +164,8 @@ export function useDocuments() {
       await documentsService.archiveDocument(id);
       setSelectedDocument(null);
       fetchDocuments(page, filters);
-    } catch {
-      setError("common.error");
+    } catch (err) {
+      console.error("Failed to archive document:", err);
     }
   }
 
@@ -142,8 +174,8 @@ export function useDocuments() {
       await documentsService.restoreDocument(id);
       setSelectedDocument(null);
       fetchDocuments(page, filters);
-    } catch {
-      setError("common.error");
+    } catch (err) {
+      console.error("Failed to restore document:", err);
     }
   }
 
@@ -152,8 +184,8 @@ export function useDocuments() {
       await documentsService.replaceDocument(id, file, changeDescription);
       loadVersions(id);
       fetchDocuments(page, filters);
-    } catch {
-      setError("common.error");
+    } catch (err) {
+      console.error("Failed to replace document:", err);
     }
   }
 

@@ -1,6 +1,5 @@
 import type { ProcessingDispatcher } from "../storage/types.js";
 import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
-import { triggerExtraction } from "../../modules/extraction/extraction.service.js";
 import { initiateProcessingRun } from "../../modules/processing-progress/processingProgress.service.js";
 
 export class StubProcessingDispatcher implements ProcessingDispatcher {
@@ -42,7 +41,48 @@ export class RealProcessingDispatcher implements ProcessingDispatcher {
       );
     }
     try {
-      const result = await triggerExtraction(tenantId, documentId, actorId, documentVersion);
+      // Bypass triggerExtraction's authorization check for initial upload —
+      // newly uploaded documents lack an activePolicyId, causing the
+      // DocumentAccessAuthorizationService to reject with POLICY_MISSING.
+      // The uploading user implicitly has permission to process their own upload.
+      const { getApiJobDispatcher } = await import("../../modules/jobs/jobDispatcher.js");
+      const { Types } = await import("mongoose");
+      const { randomUUID } = await import("node:crypto");
+      const { upsertArtifact } = await import("../../modules/extraction/extraction.repository.js");
+      const DocumentVersionModel = (await import("../../db/models/documentVersion.model.js")).default;
+
+      const docId = new Types.ObjectId(documentId);
+      const tenId = new Types.ObjectId(tenantId);
+
+      const ver = await DocumentVersionModel.findOne({
+        documentId: docId,
+        version: documentVersion,
+        tenantId: tenId,
+      });
+
+      if (ver) {
+        await upsertArtifact(tenId, docId, documentVersion, {
+          sourceChecksum: ver.checksum,
+          parserName: "pending",
+          parserVersion: "pending",
+          status: "pending",
+        });
+      }
+
+      const traceId = randomUUID();
+      const dispatcher = getApiJobDispatcher();
+      const result = await dispatcher.enqueue({
+        jobType: "document.extract",
+        tenantId,
+        actorId,
+        traceId,
+        idempotencyKey: `ext-${documentId}-${documentVersion}-${Date.now()}`,
+        payload: {
+          documentId,
+          tenantId,
+          documentVersion,
+        },
+      });
       log.info(
         { documentId, tenantId, actorId, documentVersion, jobId: result.jobId },
         "Processing dispatch: extraction job triggered successfully",

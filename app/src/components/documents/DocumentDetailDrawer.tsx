@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { getFileSizeLabel } from "@/lib/validation";
+import { formatFileType } from "@/lib/utils";
 import * as documentsService from "@/services/documents.service";
 import * as processingProgressService from "@/services/processingProgress.service";
 import type { DocumentView, DocumentVersionView } from "@/types/api/documents.types";
@@ -384,7 +385,7 @@ export function DocumentDetailDrawer({
               </div>
               <div>
                 <p className="text-on-surface-variant">{t("documents.tableType")}</p>
-                <p className="font-medium text-on-surface">{doc.mimeType.split("/").pop()}</p>
+                <p className="font-medium text-on-surface">{formatFileType(doc.mimeType, doc.fileName)}</p>
               </div>
               <div>
                 <p className="text-on-surface-variant">{t("documents.tableDate")}</p>
