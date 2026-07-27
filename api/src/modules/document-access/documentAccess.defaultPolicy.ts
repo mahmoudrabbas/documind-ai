@@ -1,5 +1,6 @@
 import { normalizeDocumentAccessPolicy } from "./documentAccess.policy.validator.js";
 import type { DocumentAccessPolicy } from "./documentAccess.types.js";
+import { DOCUMENT_ACCESS_ACTIONS } from "./documentAccess.actions.js";
 
 export interface DefaultDocumentPolicyInput {
   tenantId: string;
@@ -30,7 +31,7 @@ export function createDefaultDocumentAccessPolicy(
       ruleId: "default-owner-minimum",
       effect: "allow",
       subject: { type: "owner" },
-      actions: ["discover", "read", "download", "reprocess"],
+      actions: [...DOCUMENT_ACCESS_ACTIONS],
     }],
     provenance: {
       createdBy: input.ownerId,

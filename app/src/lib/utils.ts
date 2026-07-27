@@ -51,3 +51,38 @@ export function truncate(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength).replace(/\s+\S*$/, "") + "…";
 }
+
+/** Format MIME type or file extension into a clean, concise badge label (e.g. DOCX, PDF, TXT). */
+export function formatFileType(mimeType?: string | null, fileName?: string | null): string {
+  if (fileName) {
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    if (ext === "docx" || ext === "doc") return "DOCX";
+    if (ext === "pdf") return "PDF";
+    if (ext === "txt") return "TXT";
+    if (ext === "md") return "MD";
+    if (ext === "xlsx" || ext === "xls" || ext === "csv") return "XLSX";
+  }
+
+  if (!mimeType) return "-";
+  const lower = mimeType.toLowerCase();
+  if (
+    lower.includes("wordprocessingml") ||
+    lower.includes("msword") ||
+    lower.includes("officedocument") ||
+    lower.includes("docx") ||
+    lower.includes("doc")
+  ) {
+    return "DOCX";
+  }
+  if (lower.includes("pdf")) return "PDF";
+  if (lower.includes("plain")) return "TXT";
+  if (lower.includes("markdown")) return "MD";
+  if (lower.includes("spreadsheetml") || lower.includes("excel") || lower.includes("csv")) {
+    return "XLSX";
+  }
+
+  const rawSub = mimeType.split("/").pop() || "";
+  const cleanSub = rawSub.replace(/^vnd\./i, "").split(".").pop() || rawSub;
+  return cleanSub.toUpperCase().slice(0, 8) || "FILE";
+}
+

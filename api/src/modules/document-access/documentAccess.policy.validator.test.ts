@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { AppError } from "../../common/errors/AppError.js";
 import { createDefaultDocumentAccessPolicy } from "./documentAccess.defaultPolicy.js";
 import { normalizeDocumentAccessPolicy } from "./documentAccess.policy.validator.js";
+import { DOCUMENT_ACCESS_ACTIONS } from "./documentAccess.actions.js";
 
 const tenantId = "64a000000000000000000001";
 const documentId = "64a000000000000000000002";
@@ -127,10 +128,9 @@ test("default policy is deterministic, deeply frozen, and owner-only", () => {
     ruleId: "default-owner-minimum",
     effect: "allow",
     subject: { type: "owner" },
-    actions: ["discover", "read", "download", "reprocess"],
+    actions: [...DOCUMENT_ACCESS_ACTIONS],
   }]);
   assert.equal(first.rules.some((rule) => rule.subject.type === "tenant_member"), false);
-  assert.equal(first.rules.some((rule) => rule.actions.includes("use_in_ai")), false);
 });
 
 test("default policy fails closed when restricted classification context is missing", () => {

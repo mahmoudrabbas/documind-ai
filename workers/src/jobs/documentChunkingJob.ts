@@ -36,6 +36,15 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
       const db = getMongoClient()?.db();
       if (!db) throw new RetryableJobError("Database connection unavailable");
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "chunking",
+        status: "running",
+        progress: 0,
+      });
+
       const documentId = new ObjectId(payload.documentId);
       const tenantId = new ObjectId(payload.tenantId);
       const generationId = new ObjectId(payload.generationId);

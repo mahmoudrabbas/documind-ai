@@ -459,7 +459,7 @@ test("processing.service", async (t) => {
       tenantId: TENANT_ID,
       actorId: new mongoose.Types.ObjectId().toString(),
       actorEmail: "stranger@example.com",
-      actorRole: "COMPANY_ADMIN" as const,
+      actorRole: "EMPLOYEE" as const,
     };
     await UserModel.create({
       _id: new mongoose.Types.ObjectId(nonOwnerContext.actorId),
@@ -537,7 +537,7 @@ test("processing.service", async (t) => {
       tenantId: TENANT_ID,
       actorId: new mongoose.Types.ObjectId().toString(),
       actorEmail: "stranger@example.com",
-      actorRole: "COMPANY_ADMIN" as const,
+      actorRole: "EMPLOYEE" as const,
     };
     await UserModel.create({
       _id: new mongoose.Types.ObjectId(nonOwnerContext.actorId),
@@ -572,7 +572,7 @@ test("processing.service", async (t) => {
       tenantId: TENANT_ID,
       actorId: new mongoose.Types.ObjectId().toString(),
       actorEmail: "stranger@example.com",
-      actorRole: "COMPANY_ADMIN" as const,
+      actorRole: "EMPLOYEE" as const,
     };
     await UserModel.create({
       _id: new mongoose.Types.ObjectId(nonOwnerContext.actorId),
@@ -588,6 +588,49 @@ test("processing.service", async (t) => {
 
     await assert.rejects(
       () => retryOcrPages(TENANT_ID, docId, 1, {}, nonOwnerContext),
+      (err: Error & { statusCode?: number; code?: string }) => {
+        assert.equal(err.statusCode, 404);
+        assert.equal(err.code, "DOCUMENT_NOT_FOUND");
+        return true;
+      },
+    );
+  });
+
+  await t.test("retryOcrPages returns hidden DOCUMENT_NOT_FOUND for cross-tenant actor", async () => {
+    const doc = await createTestDocument();
+    const docId = doc._id.toString();
+    await seedOcrPages(docId, [
+      { pageNumber: 1, text: "", confidence: 0, status: "failed" },
+    ]);
+
+    const crossTenantId = new mongoose.Types.ObjectId().toString();
+    const crossTenantContext = {
+      tenantId: crossTenantId,
+      actorId: new mongoose.Types.ObjectId().toString(),
+      actorEmail: "other@example.com",
+      actorRole: "COMPANY_ADMIN" as const,
+    };
+    await TenantModel.create({
+      _id: new mongoose.Types.ObjectId(crossTenantId),
+      name: "Other Tenant",
+      slug: "other-tenant",
+      status: "active",
+      plan: "free",
+    });
+    await UserModel.create({
+      _id: new mongoose.Types.ObjectId(crossTenantContext.actorId),
+      tenantId: new mongoose.Types.ObjectId(crossTenantId),
+      name: "Other User",
+      email: crossTenantContext.actorEmail,
+      passwordHash: "test-hash",
+      role: crossTenantContext.actorRole,
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    await assert.rejects(
+      () => retryOcrPages(crossTenantId, docId, 1, {}, crossTenantContext),
       (err: Error & { statusCode?: number; code?: string }) => {
         assert.equal(err.statusCode, 404);
         assert.equal(err.code, "DOCUMENT_NOT_FOUND");

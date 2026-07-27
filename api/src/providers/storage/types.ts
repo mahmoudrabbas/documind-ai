@@ -10,7 +10,8 @@ export interface StorageProvider {
   saveFile(buffer: Buffer, originalName: string, tenantId: string): Promise<string>;
   saveFileFromStream(stream: Readable, originalName: string, tenantId: string): Promise<string>;
   deleteFile(storageKey: string): Promise<void>;
-  getFileStream(storageKey: string): Readable;
+  getFileStream(storageKey: string): Promise<Readable> | Readable;
+  getFileBuffer(storageKey: string): Promise<Buffer>;
   getContentType(originalName: string): string;
 }
 
