@@ -17,10 +17,14 @@ export interface StorageProvider {
 }
 
 export class LocalStorageProvider implements StorageProvider {
-  private baseDir: string;
+  private _baseDir?: string;
 
-  constructor(baseDir: string) {
-    this.baseDir = baseDir;
+  constructor(baseDir?: string) {
+    this._baseDir = baseDir;
+  }
+
+  private get baseDir(): string {
+    return this._baseDir ?? config.UPLOAD_DIR;
   }
 
   private async ensureDir(dir: string): Promise<void> {
@@ -193,7 +197,7 @@ export function createStorageProvider(): StorageProvider {
       config.AWS_SECRET_ACCESS_KEY,
     );
   }
-  return new LocalStorageProvider(config.UPLOAD_DIR);
+  return new LocalStorageProvider();
 }
 
 export const storageProvider: StorageProvider = createStorageProvider();
