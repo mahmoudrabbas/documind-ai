@@ -2,10 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useOcr } from "@/hooks/features/useOcr";
-import type { OcrPageResultView, QualityStatus } from "@/types/api/processing.types";
+import { getRetryableOcrPageNumbers } from "@/lib/ocr-page-state";
+import type { OcrLanguage, OcrPageResultView, QualityStatus } from "@/types/api/processing.types";
 
 const QUALITY_STATUS_MAP: Record<QualityStatus, string> = {
   READY: "success",
@@ -55,6 +58,8 @@ export function DocumentQualityPanel({
 
   const [reviewNotes, setReviewNotes] = useState("");
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [runOcrLanguage, setRunOcrLanguage] = useState<OcrLanguage>("ar+en");
+  const [runOcrPage, setRunOcrPage] = useState("1");
 
   useEffect(() => {
     refreshOcrPages(documentId, documentVersion);
@@ -63,13 +68,26 @@ export function DocumentQualityPanel({
 
   const handleTriggerOcr = useCallback(async () => {
     if (!canProcessOcr) return;
-    await triggerOcr(documentId, { version: documentVersion });
-  }, [canProcessOcr, documentId, documentVersion, triggerOcr]);
+    const parsedPage = Number(runOcrPage);
+    const pageNumbers = runOcrPage.trim()
+      ? [parsedPage]
+      : undefined;
+    await triggerOcr(documentId, {
+      version: documentVersion,
+      language: runOcrLanguage,
+      pageNumbers,
+    });
+  }, [canProcessOcr, documentId, documentVersion, runOcrLanguage, runOcrPage, triggerOcr]);
+
+  const retryablePageNumbers = getRetryableOcrPageNumbers(ocrPages);
 
   const handleRetryOcr = useCallback(async () => {
-    if (!canProcessOcr) return;
-    await retryOcr(documentId, { version: documentVersion });
-  }, [canProcessOcr, documentId, documentVersion, retryOcr]);
+    if (!canProcessOcr || retryablePageNumbers.length === 0) return;
+    await retryOcr(documentId, {
+      version: documentVersion,
+      pageNumbers: retryablePageNumbers,
+    });
+  }, [canProcessOcr, documentId, documentVersion, retryOcr, retryablePageNumbers]);
 
   const handleReview = useCallback(async (decision: "approved" | "rejected" | "retry") => {
     if (!canReviewQuality) return;
@@ -95,6 +113,10 @@ export function DocumentQualityPanel({
 
   const hasOcrPages = ocrPages.length > 0;
   const hasQuality = quality !== null;
+  const parsedRunOcrPage = Number(runOcrPage);
+  const hasInvalidRunOcrPage =
+    runOcrPage.trim().length > 0 &&
+    (!Number.isInteger(parsedRunOcrPage) || parsedRunOcrPage < 1);
 
   return (
     <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
@@ -103,18 +125,40 @@ export function DocumentQualityPanel({
           Document Quality & OCR
         </h3>
         {canProcessOcr && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            <Select
+              label="OCR language"
+              value={runOcrLanguage}
+              options={[
+                { value: "ar+en", label: "Arabic + English" },
+                { value: "ar", label: "Arabic" },
+                { value: "en", label: "English" },
+              ]}
+              onChange={(event) => setRunOcrLanguage(event.target.value as OcrLanguage)}
+              className="w-40"
+            />
+            <Input
+              label="Page"
+              type="number"
+              min={1}
+              step={1}
+              value={runOcrPage}
+              onChange={(event) => setRunOcrPage(event.target.value)}
+              helperText="Clear to run all pages"
+              errorMessage={hasInvalidRunOcrPage ? "Enter a positive page number" : undefined}
+              className="w-28"
+            />
             <Button
               size="sm"
               variant="secondary"
               onClick={handleTriggerOcr}
-              disabled={isTriggeringOcr}
+              disabled={isTriggeringOcr || hasInvalidRunOcrPage}
               isLoading={isTriggeringOcr}
             >
               <span className="material-symbols-outlined me-1 text-[14px]">document_scanner</span>
               Run OCR
             </Button>
-            {hasOcrPages && (
+            {retryablePageNumbers.length > 0 && (
               <Button
                 size="sm"
                 variant="ghost"

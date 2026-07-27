@@ -5,10 +5,13 @@ import {
   globalSettingsPatchSchema,
   idSchema,
   packageBodySchema,
+  packageLifecycleBodySchema,
   packageUpdateSchema,
   parse,
   settingsBodySchema,
   subscriptionUpdateSchema,
+  subscriptionProvisionSchema,
+  subscriptionImpactQuerySchema,
 } from "./platform.validator.js";
 
 test("platform package validation accepts bounded entitlements and normalized codes", () => {
@@ -48,16 +51,82 @@ test("platform package validation rejects unknown and invalid entitlement fields
   assert.throws(() => parse(packageUpdateSchema, {}), AppError);
 });
 
+test("platform package validation rejects non-finite, decimal integer, duplicate model, and unknown nested values", () => {
+  const base = {
+    name: "Professional",
+    code: "professional",
+    monthlyPrice: 49,
+    entitlements: {
+      employees: 25,
+      admins: 3,
+      documents: 1000,
+      storageMb: 10240,
+      fileSizeMb: 20,
+      queriesPerMonth: 5000,
+      tokensPerMonth: 100000,
+      ocrPagesPerMonth: 500,
+    },
+  };
+  assert.throws(() => parse(packageBodySchema, { ...base, monthlyPrice: Number.NaN }), AppError);
+  assert.throws(() => parse(packageBodySchema, { ...base, monthlyPrice: Number.POSITIVE_INFINITY }), AppError);
+  assert.throws(() => parse(packageBodySchema, { ...base, trialDays: 1.5 }), AppError);
+  assert.throws(() => parse(packageBodySchema, { ...base, supportedModels: ["basic", "basic"] }), AppError);
+  assert.throws(() => parse(packageBodySchema, {
+    ...base,
+    entitlements: { ...base.entitlements, hidden: 1 },
+  }), AppError);
+});
+
+test("package version and lifecycle validation enforce immutable code, expected version, and trimmed reason", () => {
+  assert.throws(
+    () => parse(packageUpdateSchema, { expectedVersion: 1, code: "renamed" }),
+    AppError,
+  );
+  assert.throws(
+    () => parse(packageUpdateSchema, { name: "Updated" }),
+    AppError,
+  );
+  assert.deepEqual(
+    parse(packageLifecycleBodySchema, { expectedVersion: 2, reason: "  Commercial review  " }),
+    { expectedVersion: 2, reason: "Commercial review" },
+  );
+  assert.throws(
+    () => parse(packageLifecycleBodySchema, { expectedVersion: 2, reason: " x " }),
+    AppError,
+  );
+});
+
 test("subscription validation requires server-valid object identifiers", () => {
   assert.throws(
     () =>
       parse(subscriptionUpdateSchema, {
         packageId: "attacker-controlled",
         status: "active",
+        expectedVersion: 1,
+        reason: "Administrative review",
       }),
     AppError,
   );
   assert.throws(() => parse(idSchema, { id: "not-an-object-id" }), AppError);
+});
+
+test("subscription provisioning and update contracts are strict, trimmed, and explicit", () => {
+  const packageId = "6a668bed76ec8e0569d93008";
+  assert.deepEqual(parse(subscriptionProvisionSchema, {
+    packageId, status: "trialing", expectedVersion: 0, reason: "  Approved by billing operations  ",
+  }), { packageId, status: "TRIALING", expectedVersion: 0, reason: "Approved by billing operations" });
+  assert.deepEqual(parse(subscriptionUpdateSchema, {
+    packageId, expectedVersion: 3, reason: "  Package change approved  ",
+  }), { packageId, expectedVersion: 3, reason: "Package change approved" });
+  assert.throws(() => parse(subscriptionUpdateSchema, {
+    expectedVersion: 3, reason: "Long enough but empty update",
+  }), AppError);
+  assert.throws(() => parse(subscriptionUpdateSchema, {
+    status: "active", expectedVersion: 3, reason: "short", unknown: true,
+  }), AppError);
+  assert.deepEqual(parse(subscriptionImpactQuerySchema, {
+    action: "update", packageId, expectedVersion: "3",
+  }), { action: "update", packageId, expectedVersion: 3 });
 });
 
 test("platform settings accept primitives and reject nested secrets", () => {

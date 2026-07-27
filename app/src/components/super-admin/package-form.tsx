@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { DashboardPanel } from "@/components/ui/DashboardPage";
 import type {
   AnalyticsLevel,
+  PackageCreateInput,
+  PackageVersionInput,
   PackageVisibility,
   PlatformPackage,
   SupportLevel,
@@ -13,7 +15,9 @@ import {
   ANALYTICS_LEVELS,
   SUPPORT_LEVELS,
 } from "@/types/api/super-admin.types";
-import { createPackage, updatePackage } from "@/services/super-admin.service";
+import { createPackage, createPackageVersion } from "@/services/super-admin.service";
+import { ApiError } from "@/lib/api-client";
+import { validatePackageInput } from "./package-form.contract";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 
@@ -30,14 +34,17 @@ const MODEL_SUGGESTIONS = [
   "gemini-1.5-flash",
 ];
 
-export function PackageForm({ existing }: { existing?: PlatformPackage }) {
+export function PackageForm({ existing, onSaved }: {
+  existing?: PlatformPackage;
+  onSaved?: () => void | Promise<void>;
+}) {
   const permissions = usePermissions();
   const canManage = permissions.can(Permission.BILLING_MANAGE);
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [modelsInput, setModelsInput] = useState(
-    existing?.supportedModels?.join(", ") ?? "",
+    existing?.supportedModels?.join(", ") ?? "basic",
   );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -63,9 +70,8 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
       .map((m) => m.trim())
       .filter(Boolean);
 
-    const body: Record<string, unknown> = {
+    const common = {
       name: String(data.get("name") ?? ""),
-      ...(existing ? {} : { code: String(data.get("code") ?? "") }),
       description: String(data.get("description") ?? ""),
       monthlyPrice: Number(data.get("monthlyPrice")),
       annualPrice: Number(data.get("annualPrice") ?? 0),
@@ -75,13 +81,6 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
         data.get("visibility") ?? "public",
       ) as PackageVisibility,
       entitlements,
-      // deprecated — kept for backward compatibility with older API consumers
-      limits: {
-        users: entitlements.employees,
-        documents: entitlements.documents,
-        questionsPerMonth: entitlements.queriesPerMonth,
-        storageMb: entitlements.storageMb,
-      },
       supportedModels,
       analyticsLevel: String(
         data.get("analyticsLevel") ?? "basic",
@@ -92,13 +91,32 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
       ) as SupportLevel,
     };
 
+    const body: PackageCreateInput | PackageVersionInput = existing
+      ? { ...common, expectedVersion: existing.version }
+      : { ...common, code: String(data.get("code") ?? "").trim().toLowerCase() };
+    const validationError = validatePackageInput(body);
+    if (validationError) {
+      setError(validationError);
+      setPending(false);
+      return;
+    }
+
     try {
-      if (existing) await updatePackage(existing._id, body);
-      else await createPackage(body);
-      router.push("/super-admin/packages");
-      router.refresh();
-    } catch {
-      setError("Unable to save this package. Check the values and try again.");
+      if (existing) {
+        await createPackageVersion(existing._id, body as PackageVersionInput);
+        await onSaved?.();
+      } else {
+        await createPackage(body as PackageCreateInput);
+        router.push("/super-admin/packages");
+        router.refresh();
+      }
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === "PACKAGE_VERSION_CONFLICT") {
+        setError("This package changed in another session. Current data has been reloaded; review it before saving again.");
+        await onSaved?.();
+      } else {
+        setError(caught instanceof ApiError ? caught.message : "Unable to save this package. Check the values and try again.");
+      }
     } finally {
       setPending(false);
     }
@@ -108,7 +126,13 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
     "mt-1 min-h-11 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-primary/30";
   const labelClass = "text-sm font-bold";
 
-  if (!canManage) return null;
+  if (!canManage) {
+    return (
+      <DashboardPanel>
+        <p role="alert">You do not have permission to create or version packages.</p>
+      </DashboardPanel>
+    );
+  }
 
   return (
     <DashboardPanel>
@@ -212,8 +236,9 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
                 name="trialDays"
                 type="number"
                 min={0}
-                max={365}
-                defaultValue={existing?.trialDays ?? 0}
+                max={3650}
+                step={1}
+                defaultValue={existing?.trialDays ?? 30}
                 className={input}
               />
             </label>
@@ -243,13 +268,13 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
                 : // Fallback to deprecated limits for backward compat
                   (
                     {
-                      employees: existing?.limits.users,
-                      admins: 0,
-                      documents: existing?.limits.documents,
-                      storageMb: existing?.limits.storageMb,
-                      fileSizeMb: 50,
+                      employees: existing?.limits?.users ?? 1,
+                      admins: existing ? 0 : 1,
+                      documents: existing?.limits?.documents,
+                      storageMb: existing?.limits?.storageMb,
+                      fileSizeMb: 10,
                       queriesPerMonth:
-                        existing?.limits.questionsPerMonth,
+                        existing?.limits?.questionsPerMonth,
                       tokensPerMonth: 0,
                       ocrPagesPerMonth: 0,
                     } as Record<string, number | undefined>
@@ -260,7 +285,8 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
                   <input
                     name={name}
                     type="number"
-                    min={0}
+                    min={name === "entitlements.employees" ? 1 : 0}
+                    step={1}
                     required
                     defaultValue={Number(existingVal)}
                     className={input}
@@ -310,9 +336,10 @@ export function PackageForm({ existing }: { existing?: PlatformPackage }) {
               <input
                 name="retentionDays"
                 type="number"
-                min={1}
-                max={3650}
-                defaultValue={existing?.retentionDays ?? 30}
+                min={0}
+                max={36500}
+                step={1}
+                defaultValue={existing?.retentionDays ?? 90}
                 className={input}
               />
             </label>

@@ -12,6 +12,7 @@ import {
 import type { GlobalSettings } from "@/types/api/super-admin.types";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
+import { ApiError } from "@/lib/api-client";
 
 const aiConfigurationDefaults = {
   provider: "openai",
@@ -55,6 +56,11 @@ const loaders = {
   settings: (signal?: AbortSignal) => getGlobalSettings(signal),
 };
 
+export function formatSettingsError(error: unknown): string {
+  if (!(error instanceof ApiError)) return "Unable to save settings.";
+  return `${error.message}${error.code ? ` (${error.code})` : ""}`;
+}
+
 export function PlatformSettingsForm({
   kind,
 }: {
@@ -95,8 +101,8 @@ export function PlatformSettingsForm({
         await updateGlobalSettings(body as Partial<GlobalSettings>);
         setNotice("Settings saved successfully.");
         await state.reload();
-      } catch {
-        setNotice("Unable to save settings.");
+      } catch (caught) {
+        setNotice(formatSettingsError(caught));
       } finally {
         setPending(false);
       }
@@ -111,8 +117,8 @@ export function PlatformSettingsForm({
         await updateAiConfiguration(body);
         setNotice("Settings saved successfully.");
         await state.reload();
-      } catch {
-        setNotice("Unable to save settings.");
+      } catch (caught) {
+        setNotice(formatSettingsError(caught));
       } finally {
         setPending(false);
       }

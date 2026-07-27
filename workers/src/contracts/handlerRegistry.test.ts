@@ -10,6 +10,7 @@ import {
   RetryableJobError,
 } from "../contracts/retryPolicy.js";
 import type { JobEnvelope } from "../contracts/jobEnvelope.js";
+import { logger } from "../logger.js";
 
 function envelope(payload: unknown): JobEnvelope {
   return {
@@ -112,6 +113,43 @@ test("executeHandler dead-letters permanent error", async () => {
   const outcome = await executeHandler(handler, ctx({}, 0));
   assert.equal(outcome.shouldRetry, false);
   assert.equal(outcome.deadLettered, true);
+});
+
+test("executeHandler can defer terminal lifecycle logging to a queue adapter", async () => {
+  const observedMetrics: string[] = [];
+  const originalInfo = logger.info;
+  logger.info = ((data: { metric?: string }) => {
+    if (typeof data?.metric === "string") {
+      observedMetrics.push(data.metric);
+    }
+  }) as typeof logger.info;
+
+  try {
+    const handler = {
+      jobType: "a.b",
+      description: "d",
+      payloadSchema: z.object({}),
+      handle: async () => {
+        throw new PermanentJobError("bad input");
+      },
+    };
+
+    const outcome = await executeHandler(
+      handler,
+      ctx({}, 0),
+      undefined,
+      { publishOutcomeEvents: false },
+    );
+
+    assert.equal(outcome.deadLettered, true);
+    assert.deepEqual(
+      observedMetrics,
+      ["job.start"],
+      "The adapter should emit the single authoritative terminal event",
+    );
+  } finally {
+    logger.info = originalInfo;
+  }
 });
 
 test("executeHandler aborts before start", async () => {

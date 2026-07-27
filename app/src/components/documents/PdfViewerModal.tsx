@@ -109,7 +109,11 @@ export function PdfViewerModal({
       const ctx = canvasEl.getContext("2d");
       if (!ctx) return;
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+      }).promise;
+      
       if (generation !== renderGenerationRef.current) return;
 
       const textContent = await page.getTextContent();

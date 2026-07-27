@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   DashboardPage,
   DashboardPageHeader,
+  DashboardPanel,
 } from "@/components/ui/DashboardPage";
 import {
   PlatformState,
@@ -15,9 +16,13 @@ import {
 import { listPackages } from "@/services/super-admin.service";
 import { PermissionAction } from "@/components/auth/permission-boundary";
 import { Permission } from "@/types/api/permissions.types";
+import { usePermissions } from "@/providers/permission-provider";
+import { resolvePackageEntitlement } from "@/components/super-admin/package-display.contract";
 
 export default function PackagesPage() {
+  const permissions = usePermissions();
   const state = usePlatformData(listPackages);
+  const denied = permissions.status === "ready" && !permissions.can(Permission.BILLING_READ);
   return (
     <DashboardPage>
       <DashboardPageHeader
@@ -35,11 +40,15 @@ export default function PackagesPage() {
         }
       />
       <PlatformState
-        loading={state.loading}
-        error={state.error}
+        loading={!denied && state.loading}
+        error={denied ? "" : state.error}
         onRetry={state.reload}
       />
-      {state.data ? (
+      {denied ? (
+        <DashboardPanel><p role="alert">You do not have permission to view packages.</p></DashboardPanel>
+      ) : state.data?.length === 0 ? (
+        <DashboardPanel><p>No packages have been created yet.</p></DashboardPanel>
+      ) : state.data ? (
         <PlatformTable
           headers={[
             "Package",
@@ -73,9 +82,11 @@ export default function PackagesPage() {
               <td className={cell}>
                 {pkg.trialDays > 0 ? `${pkg.trialDays}d` : "—"}
               </td>
-              <td className={cell}>{pkg.entitlements?.employees ?? pkg.limits.users}</td>
               <td className={cell}>
-                {(pkg.entitlements?.queriesPerMonth ?? pkg.limits.questionsPerMonth).toLocaleString()}
+                {resolvePackageEntitlement(pkg, "employees", "users")?.toLocaleString() ?? "—"}
+              </td>
+              <td className={cell}>
+                {resolvePackageEntitlement(pkg, "queriesPerMonth", "questionsPerMonth")?.toLocaleString() ?? "—"}
               </td>
               <td className={cell}>
                 <span

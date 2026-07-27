@@ -46,12 +46,16 @@ export type GlobalSettingsPatch = Partial<GlobalSettings>;
 
 export interface PackageVersionSnapshot {
   version: number;
+  name: string;
+  code: string;
+  description: string;
   monthlyPrice: number;
   annualPrice: number;
   currency: string;
   trialDays: number;
+  visibility: PackageVisibility;
   /** @deprecated Use `entitlements` instead */
-  limits: {
+  limits?: {
     users: number;
     documents: number;
     questionsPerMonth: number;
@@ -78,7 +82,7 @@ export interface PlatformPackage {
   trialDays: number;
   visibility: PackageVisibility;
   /** @deprecated Use `entitlements` instead */
-  limits: {
+  limits?: {
     users: number;
     documents: number;
     questionsPerMonth: number;
@@ -94,6 +98,50 @@ export interface PlatformPackage {
   updatedAt: string;
 }
 
+export interface PackageCreateInput {
+  name: string;
+  code: string;
+  description: string;
+  monthlyPrice: number;
+  annualPrice: number;
+  currency: string;
+  trialDays: number;
+  visibility: PackageVisibility;
+  entitlements: PackageEntitlements;
+  supportedModels: string[];
+  analyticsLevel: AnalyticsLevel;
+  retentionDays: number;
+  supportLevel: SupportLevel;
+}
+
+export type PackageVersionInput = Omit<PackageCreateInput, "code"> & {
+  expectedVersion: number;
+};
+
+export interface PackageLifecycleInput {
+  expectedVersion: number;
+  reason: string;
+}
+
+export type PackageLifecycleAction = "archive" | "activate";
+
+export interface PackageImpactPreview {
+  package: {
+    id: string;
+    name: string;
+    code: string;
+    version: number;
+    active: boolean;
+  };
+  action: PackageLifecycleAction;
+  subscriptionUsageCount: number;
+  affectedSubscriptionStates: Record<string, number>;
+  landingVisibilityImpact: "removed" | "restored" | "unchanged";
+  warnings: string[];
+  blockingReasons: string[];
+  transitionAllowed: boolean;
+}
+
 export interface PlatformSubscription {
   _id: string;
   tenantId: { _id: string; name: string; slug: string; status: string };
@@ -107,17 +155,65 @@ export interface PlatformSubscription {
   };
   packageVersion: number;
   status: SubscriptionStatus;
+  version: number;
   periodStart: string | null;
   periodEnd: string | null;
   trialEnd: string | null;
-  canceledAt: string | null;
+  cancelledAt: string | null;
   renewsAt: string | null;
-  provider: string;
-  providerSubscriptionId: string | null;
-  providerCustomerId: string | null;
+  providerManaged: boolean;
+  providerState: { hasCustomer: boolean; hasSubscription: boolean; hasPrice: boolean };
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   updatedAt: string;
+}
+
+export type SubscriptionOperationAction = "provision" | "update";
+export type SubscriptionModelStatus = Uppercase<SubscriptionStatus>;
+export type PlatformSubscriptionRecord = Omit<PlatformSubscription, "status"> & {
+  status: SubscriptionModelStatus;
+};
+
+export interface PlatformSubscriptionDetail {
+  tenant: { _id: string; name: string; slug: string; status: string };
+  subscription: PlatformSubscriptionRecord | null;
+  legalTransitions: SubscriptionModelStatus[];
+}
+
+export interface SubscriptionImpactPreview {
+  tenant: { _id: string; name: string; slug: string; status: string };
+  subscription: PlatformSubscriptionRecord | null;
+  currentPackage: { id: string; name: string; code: string; version: number; entitlements: PackageEntitlements } | null;
+  targetPackage: { id: string; name: string; code: string; version: number; entitlements: PackageEntitlements } | null;
+  legalTransitions: SubscriptionModelStatus[];
+  packageChanged: boolean;
+  statusChanged: boolean;
+  providerManaged: boolean;
+  operationMode: "local-only" | "provider-managed";
+  checkoutOrProviderActionRequired: boolean;
+  entitlementChanges: Array<{
+    entitlement: keyof PackageEntitlements;
+    from: number;
+    to: number;
+    direction: "increase" | "decrease" | "unchanged";
+  }>;
+  warnings: string[];
+  blockingReasons: string[];
+  transitionAllowed: boolean;
+}
+
+export interface SubscriptionProvisionInput {
+  packageId: string;
+  status: "trialing" | "active";
+  expectedVersion: 0;
+  reason: string;
+}
+
+export interface SubscriptionUpdateInput {
+  packageId?: string;
+  status?: SubscriptionStatus;
+  expectedVersion: number;
+  reason: string;
 }
 
 export interface PlatformAuditLog {

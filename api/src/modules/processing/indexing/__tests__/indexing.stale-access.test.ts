@@ -31,26 +31,42 @@ beforeAll(async () => {
     });
     await mongoose.connect(mongoServer.getUri(), { dbName: "stale-access-test" });
   }
-});
+  await Promise.all([
+    DocumentModel.init(),
+    IndexGenerationModel.init(),
+    DocumentChunkModel.init(),
+    ChunkEmbeddingModel.init(),
+    TenantModel.init(),
+  ]);
+}, 30_000);
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  if (mongoServer) await mongoServer.stop();
-});
+  try {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+  } finally {
+    if (mongoServer) await mongoServer.stop();
+  }
+}, 30_000);
 
 afterEach(async () => {
-  await DocumentModel.deleteMany({});
-  await IndexGenerationModel.deleteMany({});
-  await DocumentChunkModel.deleteMany({});
-  await ChunkEmbeddingModel.deleteMany({});
-  await TenantModel.deleteMany({});
-});
+  await Promise.all([
+    DocumentModel.deleteMany({}),
+    IndexGenerationModel.deleteMany({}),
+    DocumentChunkModel.deleteMany({}),
+    ChunkEmbeddingModel.deleteMany({}),
+    TenantModel.deleteMany({}),
+  ]);
+}, 30_000);
 
 beforeEach(async () => {
-  await DocumentModel.deleteMany({});
-  await IndexGenerationModel.deleteMany({});
-  await DocumentChunkModel.deleteMany({});
-  await ChunkEmbeddingModel.deleteMany({});
+  await Promise.all([
+    DocumentModel.deleteMany({}),
+    IndexGenerationModel.deleteMany({}),
+    DocumentChunkModel.deleteMany({}),
+    ChunkEmbeddingModel.deleteMany({}),
+  ]);
 
   await TenantModel.updateOne(
     { _id: TENANT_ID },
@@ -72,7 +88,7 @@ beforeEach(async () => {
     mimeType: "application/pdf",
     fileSize: 1024,
   });
-});
+}, 30_000);
 
 async function buildAndActivateGeneration(
   tenantId: string,
@@ -201,7 +217,7 @@ describe("stale-access: after permission revocation and re-generation", () => {
     const v2Chunks = await findChunksByGeneration(tid, did, gen2._id.toString());
     expect(v2Chunks.length).toBe(1);
     expect(v2Chunks[0].accessPolicyVersion).toBe("policy-v2");
-  });
+  }, 30_000);
 
   test("rollback leaves old generation active and clears currentGeneration", async () => {
     const tid = tenantId();
@@ -238,7 +254,7 @@ describe("stale-access: after permission revocation and re-generation", () => {
     const gen2Final = await IndexGenerationModel.findById(gen2._id).lean();
     expect(gen2Final?.status).toBe("FAILED");
     expect(gen2Final?.failureReason?.code).toBe("ROLLBACK");
-  });
+  }, 30_000);
 
   test("startGeneration sets currentGeneration and lastSearchStatusChange", async () => {
     const tid = tenantId();

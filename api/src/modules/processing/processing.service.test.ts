@@ -19,8 +19,6 @@ import {
   retryOcrPages,
   getOcrUsageSummary,
 } from "./processing.service.js";
-import { closeApiJobDispatcher } from "../jobs/jobDispatcher.js";
-import { disconnectRedis } from "../../db/redis.js";
 import type { DocumentAccessAction } from "../document-access/documentAccess.actions.js";
 
 let mongoServer: MongoMemoryServer | null = null;
@@ -46,8 +44,6 @@ before(async () => {
 });
 
 after(async () => {
-  await closeApiJobDispatcher();
-  await disconnectRedis();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
@@ -386,7 +382,7 @@ test("processing.service", async (t) => {
     );
   });
 
-  await t.test("retryOcrPages enqueues retry job for failed pages", { skip: !process.env.REDIS_URL }, async () => {
+  await t.test("retryOcrPages enqueues retry job for failed pages", async () => {
     const doc = await createTestDocument();
     const docId = doc._id.toString();
     await seedOcrPages(docId, [
@@ -394,10 +390,34 @@ test("processing.service", async (t) => {
       { pageNumber: 2, text: "Good content", confidence: 0.9, status: "completed" },
     ]);
 
-    const result = await retryOcrPages(TENANT_ID, docId, 1, {}, TEST_CONTEXT);
+    const queuedJobs: unknown[] = [];
+    const dispatcher = {
+      async enqueue(job: unknown) {
+        queuedJobs.push(job);
+        return {
+          ok: true,
+          jobId: "test-ocr-retry-job",
+          idempotencyKey: (job as { idempotencyKey: string }).idempotencyKey,
+        };
+      },
+    };
+
+    const result = await retryOcrPages(
+      TENANT_ID,
+      docId,
+      1,
+      {},
+      TEST_CONTEXT,
+      dispatcher,
+    );
     assert.ok(result.jobId);
     assert.ok(result.idempotencyKey);
     assert.ok(result.idempotencyKey.startsWith("ocr-retry-"));
+    assert.equal(queuedJobs.length, 1);
+    assert.deepEqual(
+      (queuedJobs[0] as { payload: { pageNumbers: number[] } }).payload.pageNumbers,
+      [1],
+    );
   });
 
   await t.test("retryOcrPages throws when no pages are retryable", async () => {

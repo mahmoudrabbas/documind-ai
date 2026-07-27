@@ -6,7 +6,17 @@ import type {
   PlatformAuditLog,
   PlatformJob,
   PlatformPackage,
+  PackageCreateInput,
+  PackageImpactPreview,
+  PackageLifecycleAction,
+  PackageLifecycleInput,
+  PackageVersionInput,
   PlatformSubscription,
+  PlatformSubscriptionDetail,
+  SubscriptionImpactPreview,
+  SubscriptionOperationAction,
+  SubscriptionProvisionInput,
+  SubscriptionUpdateInput,
   PlatformUser,
   RetrievalDebugResult,
 } from "@/types/api/super-admin.types";
@@ -26,15 +36,39 @@ export const getPackage = (id: string, signal?: AbortSignal) =>
     `/platform/packages/${encodeURIComponent(id)}`,
     { signal },
   );
-export const createPackage = (body: Record<string, unknown>) =>
+export const createPackage = (body: PackageCreateInput) =>
   apiClient<Success<PlatformPackage>>("/platform/packages", {
     method: "POST",
-    body,
+    body: { ...body },
   });
-export const updatePackage = (id: string, body: Record<string, unknown>) =>
+export const updatePackage = (id: string, body: PackageVersionInput) =>
   apiClient<Success<PlatformPackage>>(
     `/platform/packages/${encodeURIComponent(id)}`,
     { method: "PATCH", body },
+  );
+export const createPackageVersion = (id: string, body: PackageVersionInput) =>
+  apiClient<Success<PlatformPackage>>(
+    `/platform/packages/${encodeURIComponent(id)}/versions`,
+    { method: "POST", body: { ...body } },
+  );
+export const previewPackageImpact = (
+  id: string,
+  action: PackageLifecycleAction,
+  signal?: AbortSignal,
+) =>
+  apiClient<Success<PackageImpactPreview>>(
+    `/platform/packages/${encodeURIComponent(id)}/impact?action=${action}`,
+    { signal },
+  );
+export const archivePackage = (id: string, body: PackageLifecycleInput) =>
+  apiClient<Success<PlatformPackage>>(
+    `/platform/packages/${encodeURIComponent(id)}/archive`,
+    { method: "POST", body: { ...body } },
+  );
+export const activatePackage = (id: string, body: PackageLifecycleInput) =>
+  apiClient<Success<PlatformPackage>>(
+    `/platform/packages/${encodeURIComponent(id)}/activate`,
+    { method: "POST", body: { ...body } },
   );
 export const listSubscriptions = (signal?: AbortSignal) =>
   apiClient<Success<PlatformSubscription[]>>("/platform/subscriptions", {
@@ -42,12 +76,39 @@ export const listSubscriptions = (signal?: AbortSignal) =>
   });
 export const updateSubscription = (
   tenantId: string,
-  body: Record<string, unknown>,
+  body: SubscriptionUpdateInput,
+  idempotencyKey: string,
 ) =>
   apiClient<Success<PlatformSubscription>>(
     `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
-    { method: "PATCH", body },
+    { method: "PATCH", body: { ...body }, headers: { "Idempotency-Key": idempotencyKey } },
   );
+export const getSubscriptionDetail = (tenantId: string, signal?: AbortSignal) =>
+  apiClient<Success<PlatformSubscriptionDetail>>(
+    `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
+    { signal },
+  );
+export const previewSubscriptionImpact = (
+  tenantId: string,
+  input: { action: SubscriptionOperationAction; packageId?: string; targetStatus?: string; expectedVersion: number },
+  signal?: AbortSignal,
+) => {
+  const query = new URLSearchParams({ action: input.action, expectedVersion: String(input.expectedVersion) });
+  if (input.packageId) query.set("packageId", input.packageId);
+  if (input.targetStatus) query.set("targetStatus", input.targetStatus.toLowerCase());
+  return apiClient<Success<SubscriptionImpactPreview>>(
+    `/platform/subscriptions/${encodeURIComponent(tenantId)}/impact?${query}`,
+    { signal },
+  );
+};
+export const provisionSubscription = (
+  tenantId: string,
+  body: SubscriptionProvisionInput,
+  idempotencyKey: string,
+) => apiClient<Success<PlatformSubscription>>(
+  `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
+  { method: "POST", body: { ...body }, headers: { "Idempotency-Key": idempotencyKey } },
+);
 export const listPlatformUsers = (signal?: AbortSignal) =>
   apiClient<Success<{ users: PlatformUser[]; pagination: Pagination }>>(
     "/platform/users?page=1&pageSize=100",

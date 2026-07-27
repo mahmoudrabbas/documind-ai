@@ -108,13 +108,14 @@ test("billing package.service.ts createPackage sets version=1 with initial snaps
   );
 });
 
-test("billing package.service.ts createVersion bumps version and returns versionBumped", async () => {
+test("billing package.service.ts createVersion uses an atomic optimistic version bump", async () => {
   const source = await readFile(billingPackageServiceUrl, "utf8");
 
   assert.ok(
-    source.includes("pkg.version += 1"),
-    "createVersion increments version by 1",
+    source.includes('$inc: { version: 1 }'),
+    "createVersion increments version atomically",
   );
+  assert.ok(source.includes("version: input.expectedVersion"), "createVersion matches the expected version");
   assert.ok(
     source.includes("versionBumped: true"),
     "createVersion returns versionBumped: true",
@@ -180,13 +181,29 @@ test("subscription.service.ts LEGAL_TRANSITIONS defines state machine for all 9 
   );
 });
 
-test("platform route source registers PATCH /subscriptions/:tenantId", async () => {
+test("platform subscription routes distinguish reads, provisioning, preview, and update without delete", async () => {
   const source = await readFile(sourceUrl, "utf8");
+  for (const contract of [
+    'router.get("/subscriptions", requirePermission(Permission.BILLING_READ)',
+    'router.get("/subscriptions/:tenantId/impact", requirePermission(Permission.BILLING_READ)',
+    'router.get("/subscriptions/:tenantId", requirePermission(Permission.BILLING_READ)',
+    'router.post("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE)',
+    'router.patch("/subscriptions/:tenantId", requirePermission(Permission.BILLING_MANAGE)',
+  ]) assert.ok(source.includes(contract), `missing route contract: ${contract}`);
+  assert.equal(/router\.delete\([^\n]*subscriptions/.test(source), false);
+  assert.ok(source.includes("router.use(authenticate, requirePlatformTenant)"));
+});
 
-  assert.ok(
-    source.includes('/subscriptions/:tenantId"'),
-    "PATCH /subscriptions/:tenantId registered",
-  );
+test("package lifecycle and version routes use explicit billing permissions and expose no hard delete", async () => {
+  const source = await readFile(sourceUrl, "utf8");
+  for (const contract of [
+    'router.post("/packages/:id/versions", requirePermission(Permission.BILLING_MANAGE)',
+    'router.get("/packages/:id/impact", requirePermission(Permission.BILLING_READ)',
+    'router.post("/packages/:id/archive", requirePermission(Permission.BILLING_MANAGE)',
+    'router.post("/packages/:id/activate", requirePermission(Permission.BILLING_MANAGE)',
+  ]) assert.ok(source.includes(contract), `missing route contract: ${contract}`);
+  assert.equal(/router\.delete\([^\n]*packages/.test(source), false);
+  assert.ok(source.includes("router.use(authenticate, requirePlatformTenant)"));
 });
 
 test("subscription.model.ts SubscriptionStatus enum has all 9 values", async () => {

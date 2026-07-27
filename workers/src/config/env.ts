@@ -46,7 +46,7 @@ const envSchema = z
     MONGODB_URI: z
       .string()
       .url()
-      .default("mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority"),
+      .default("mongodb://mongodb:27017/docsai"),
 
     REDIS_URL: z
       .string()
@@ -114,7 +114,7 @@ const envSchema = z
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
-      if (env.MONGODB_URI === "mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority") {
+      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai") {
         context.addIssue({
           code: "custom",
           path: ["MONGODB_URI"],
