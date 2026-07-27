@@ -110,7 +110,6 @@ export function PdfViewerModal({
       if (!ctx) return;
 
       await page.render({
-        canvas: canvasEl,
         canvasContext: ctx,
         viewport,
       }).promise;
