@@ -46,7 +46,7 @@ const envSchema = z
     MONGODB_URI: z
       .string()
       .url()
-      .default("mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority"),
+      .default("mongodb://mongodb:27017/docsai"),
 
     REDIS_URL: z
       .string()
@@ -82,6 +82,12 @@ const envSchema = z
       .string()
       .default("../api/uploads"),
 
+    STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
+    AWS_REGION: z.string().default(""),
+    AWS_S3_BUCKET: z.string().default(""),
+    AWS_ACCESS_KEY_ID: z.string().default(""),
+    AWS_SECRET_ACCESS_KEY: z.string().default(""),
+
     AI_PROVIDER: z.enum(["openai", "groq", "student-bedrock", "fake"]).default("fake"),
 
     GROQ_API_KEY: z.string().default(""),
@@ -108,7 +114,7 @@ const envSchema = z
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
-      if (env.MONGODB_URI === "mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority") {
+      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai") {
         context.addIssue({
           code: "custom",
           path: ["MONGODB_URI"],
@@ -164,6 +170,23 @@ const envSchema = z
           code: "custom",
           path: ["JINA_API_KEY"],
           message: "is required when AI_PROVIDER is groq (for embeddings)",
+        });
+      }
+    }
+
+    if (env.STORAGE_PROVIDER === "s3") {
+      if (!env.AWS_S3_BUCKET || env.AWS_S3_BUCKET.trim() === "") {
+        context.addIssue({
+          code: "custom",
+          path: ["AWS_S3_BUCKET"],
+          message: "is required when STORAGE_PROVIDER is s3",
+        });
+      }
+      if (!env.AWS_REGION || env.AWS_REGION.trim() === "") {
+        context.addIssue({
+          code: "custom",
+          path: ["AWS_REGION"],
+          message: "is required when STORAGE_PROVIDER is s3",
         });
       }
     }

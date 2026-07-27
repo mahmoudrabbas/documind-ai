@@ -113,6 +113,10 @@ export async function reportProgressToProcessingRun(params: {
           },
         },
       );
+      await db.collection("documents").updateOne(
+        { _id: new ObjectId(params.documentId) },
+        { $set: { status: "processing", updatedAt: now } },
+      );
     } else if (params.status === "running" && run.status === "running") {
       await db.collection("processingruns").updateOne(
         { _id: run._id },
@@ -121,6 +125,10 @@ export async function reportProgressToProcessingRun(params: {
             currentStage: params.stageName,
           },
         },
+      );
+      await db.collection("documents").updateOne(
+        { _id: new ObjectId(params.documentId) },
+        { $set: { status: "processing", updatedAt: now } },
       );
     }
 
@@ -138,6 +146,10 @@ export async function reportProgressToProcessingRun(params: {
               progress: run.progress || 0,
             },
           },
+        );
+        await db.collection("documents").updateOne(
+          { _id: new ObjectId(params.documentId) },
+          { $set: { status: "failed", updatedAt: now } },
         );
       } else {
         const allStages = await db.collection("processingstages")
@@ -163,6 +175,10 @@ export async function reportProgressToProcessingRun(params: {
               },
             },
           );
+          await db.collection("documents").updateOne(
+            { _id: new ObjectId(params.documentId) },
+            { $set: { status: "processed", updatedAt: now } },
+          );
         } else {
           const completedCount = allStages.filter(
             (s: Record<string, unknown>) => s.status === "completed" || s.status === "skipped",
@@ -184,6 +200,55 @@ export async function reportProgressToProcessingRun(params: {
     logger.error(
       { err: (err as Error).message, params },
       "Failed to report processing progress (non-blocking)",
+    );
+  }
+}
+
+/**
+ * Marks one or more processing stages as "skipped" for a given run.
+ * Used for stages that don't apply to the current document type
+ * (e.g., OCR is not needed for text-extracted documents).
+ */
+export async function skipProcessingStages(params: {
+  tenantId: string;
+  documentId: string;
+  documentVersion: number;
+  stageNames: string[];
+}): Promise<void> {
+  try {
+    const db = getMongoClient()?.db();
+    if (!db) return;
+
+    const tenantId = new ObjectId(params.tenantId);
+    const documentId = new ObjectId(params.documentId);
+
+    const run = await db.collection("processingruns").findOne({
+      tenantId,
+      documentId,
+      documentVersion: params.documentVersion,
+      status: { $in: ["queued", "running", "paused"] },
+    });
+
+    if (!run) return;
+
+    const now = new Date();
+    for (const stageName of params.stageNames) {
+      const stage = await db.collection("processingstages").findOne({
+        tenantId,
+        runId: run._id,
+        stageName,
+      });
+      if (stage && stage.status === "pending") {
+        await db.collection("processingstages").updateOne(
+          { _id: stage._id },
+          { $set: { status: "skipped", completedAt: now } },
+        );
+      }
+    }
+  } catch (err) {
+    logger.error(
+      { err: (err as Error).message, params },
+      "Failed to skip processing stages (non-blocking)",
     );
   }
 }

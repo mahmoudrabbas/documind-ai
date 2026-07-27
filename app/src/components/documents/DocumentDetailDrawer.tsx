@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { getFileSizeLabel } from "@/lib/validation";
+import { formatFileType } from "@/lib/utils";
 import * as documentsService from "@/services/documents.service";
 import * as processingProgressService from "@/services/processingProgress.service";
 import type { DocumentView, DocumentVersionView } from "@/types/api/documents.types";
@@ -59,6 +60,7 @@ interface DocumentDetailDrawerProps {
   onReplace: (id: string, file: File, desc?: string) => void;
   versions: DocumentVersionView[];
   isLoadingVersions: boolean;
+  highlightPage?: number;
 }
 
 export function DocumentDetailDrawer({
@@ -71,6 +73,7 @@ export function DocumentDetailDrawer({
   onReplace,
   versions,
   isLoadingVersions,
+  highlightPage,
 }: DocumentDetailDrawerProps) {
   const { t } = useI18n();
   const permissions = usePermissions();
@@ -360,6 +363,7 @@ export function DocumentDetailDrawer({
               documentVersion={doc.version}
               canProcessOcr={canProcessOcr}
               canReviewQuality={permissions.can(Permission.DOCUMENTS_QUALITY_REVIEW)}
+              highlightPage={highlightPage}
             />
           </div>
 
@@ -381,7 +385,7 @@ export function DocumentDetailDrawer({
               </div>
               <div>
                 <p className="text-on-surface-variant">{t("documents.tableType")}</p>
-                <p className="font-medium text-on-surface">{doc.mimeType.split("/").pop()}</p>
+                <p className="font-medium text-on-surface">{formatFileType(doc.mimeType, doc.fileName)}</p>
               </div>
               <div>
                 <p className="text-on-surface-variant">{t("documents.tableDate")}</p>

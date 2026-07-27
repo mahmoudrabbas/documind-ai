@@ -11,6 +11,7 @@ node_modules/
 secrets/*
 !secrets/README.md
 !secrets/*.example
+connection_string*.md
 
 # Generated output.
 **/.next/

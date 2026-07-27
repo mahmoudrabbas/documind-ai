@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import { getMongoClient } from "../db/mongo.js";
+import { reportProgressToProcessingRun } from "./progressReporter.js";
 import { createEmbeddingProvider, type EmbeddingInput } from "../providers/embedding/openaiEmbedding.js";
 
 const PayloadSchema = z.object({
@@ -24,10 +25,29 @@ const CLASSIFICATIONS_BLOCKED_FROM_EXTERNAL_EMBEDDING = new Set([
 
 function isClassificationAllowedForEmbedding(classification: string | null): boolean {
   if (!classification) return true;
+  // In development, only block top_secret; allow restricted for local testing
+  if (process.env.NODE_ENV === "development" || process.env.ALLOW_RESTRICTED_EMBEDDING === "true") {
+    return classification !== "top_secret";
+  }
   return !CLASSIFICATIONS_BLOCKED_FROM_EXTERNAL_EMBEDDING.has(classification);
 }
 
-export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<EmbeddingPayload> {
+export type EmbeddingProviderFactory = () => {
+  name: string;
+  model: string;
+  dimensions: number;
+  embedBatch: (inputs: EmbeddingInput[]) => Promise<Array<{
+    chunkId: string;
+    vector: number[];
+    tokenUsage: number;
+    costUsd: number;
+    modelVersion: string;
+  }>>;
+};
+
+export function createDocumentEmbeddingJobHandler(
+  providerFactory?: EmbeddingProviderFactory,
+): JobHandlerDefinition<EmbeddingPayload> {
   return {
     jobType: "document.embed",
     description: "Generates vector embeddings for document chunks.",
@@ -38,15 +58,42 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
       const db = getMongoClient()?.db();
       if (!db) throw new RetryableJobError("Database connection unavailable");
 
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "embedding",
+        status: "running",
+        progress: 0,
+      });
+
       const tenantId = new ObjectId(payload.tenantId);
       const generationId = new ObjectId(payload.generationId);
       const documentId = new ObjectId(payload.documentId);
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "embedding",
+        status: "running",
+        progress: 10,
+      });
 
       const chunks = await db.collection("documentchunks")
         .find({ tenantId, generationId, status: "DRAFT" })
         .toArray();
 
       if (chunks.length === 0) {
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "embedding",
+          status: "failed",
+          errorCode: "NO_DRAFT_CHUNKS",
+          errorMessage: "No DRAFT chunks found; chunking may not have completed",
+        });
         throw new RetryableJobError(
           "No DRAFT chunks found; chunking may not have completed",
         );
@@ -94,6 +141,16 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
           // Audit logging failure should not block the error response
         }
 
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "embedding",
+          status: "failed",
+          errorCode: "CLASSIFICATION_BLOCKED",
+          errorMessage: `Classification "${blockedClassification}" is not permitted for external embedding provider`,
+        });
+
         throw new PermanentJobError(
           `Classification "${blockedClassification}" is not permitted for external embedding provider`,
         );
@@ -101,7 +158,7 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
 
       ctx.progress("Starting embedding...", { chunkCount: chunks.length });
 
-      const provider = createEmbeddingProvider();
+      const provider = providerFactory ? providerFactory() : createEmbeddingProvider();
 
       const batches: Array<Array<typeof chunks[0]>> = [];
       for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
@@ -125,9 +182,17 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
         try {
           const results = await provider.embedBatch(inputs);
 
-          const embeddings = results.map((result, idx) => {
-            const chunk = batch[idx];
-            return {
+          const chunkMap = new Map(batch.map((c) => [c._id.toString(), c]));
+          const matched: Array<Record<string, unknown>> = [];
+          const succeededIds: ObjectId[] = [];
+          let batchTokens = 0;
+          let batchCost = 0;
+
+          for (const result of results) {
+            const chunk = chunkMap.get(result.chunkId);
+            if (!chunk) continue;
+
+            matched.push({
               chunkId: new ObjectId(result.chunkId),
               generationId,
               tenantId,
@@ -148,19 +213,32 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
               tokenUsage: result.tokenUsage,
               costUsd: result.costUsd,
               createdAt: new Date(),
-            };
-          });
+            });
+            succeededIds.push(chunk._id);
+            batchTokens += result.tokenUsage;
+            batchCost += result.costUsd;
+          }
 
-          await db.collection("chunkembeddings").insertMany(embeddings, { ordered: false });
+          if (matched.length > 0) {
+            await db.collection("chunkembeddings").insertMany(matched, { ordered: false });
+            await db.collection("documentchunks").updateMany(
+              { _id: { $in: succeededIds } },
+              { $set: { status: "EMBEDDED" } },
+            );
+          }
 
-          await db.collection("documentchunks").updateMany(
-            { _id: { $in: batch.map((c) => c._id) } },
-            { $set: { status: "EMBEDDED" } },
-          );
-          embeddedCount += batch.length;
-          for (const result of results) {
-            totalTokens += result.tokenUsage;
-            totalCostUsd += result.costUsd;
+          const batchFailed = batch.length - matched.length;
+          embeddedCount += matched.length;
+          failedCount += batchFailed;
+          totalTokens += batchTokens;
+          totalCostUsd += batchCost;
+
+          if (batchFailed > 0) {
+            ctx.progress(`Partial batch failure: ${matched.length}/${batch.length} embedded`, {
+              batchSize: batch.length,
+              succeeded: matched.length,
+              failed: batchFailed,
+            });
           }
         } catch {
           failedCount += batch.length;
@@ -172,6 +250,15 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
       }
 
       if (failedCount > 0 && embeddedCount === 0) {
+        await reportProgressToProcessingRun({
+          tenantId: payload.tenantId,
+          documentId: payload.documentId,
+          documentVersion: payload.documentVersion,
+          stageName: "embedding",
+          status: "failed",
+          errorCode: "ALL_BATCHES_FAILED",
+          errorMessage: `All embedding batches failed (${failedCount} chunks)`,
+        });
         throw new RetryableJobError(
           `All embedding batches failed (${failedCount} chunks)`,
         );
@@ -195,6 +282,15 @@ export function createDocumentEmbeddingJobHandler(): JobHandlerDefinition<Embedd
         model: provider.model,
         durationMs: Date.now() - startTime,
         metric: "indexing.embedding_duration_ms",
+      });
+
+      await reportProgressToProcessingRun({
+        tenantId: payload.tenantId,
+        documentId: payload.documentId,
+        documentVersion: payload.documentVersion,
+        stageName: "embedding",
+        status: "completed",
+        progress: 100,
       });
 
       try {

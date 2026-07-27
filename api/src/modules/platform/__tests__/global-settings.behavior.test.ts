@@ -214,6 +214,21 @@ test("source-contract: platform service updateSetting uses normalizeGlobalSettin
   );
 });
 
+test("source-contract: settings audit preserves request correlation", async () => {
+  const src = await readFile(
+    new URL("../platform.service.ts", import.meta.url),
+    "utf8",
+  );
+  const updateSetting = src.slice(
+    src.indexOf("export async function updateSetting"),
+    src.indexOf("function sanitizeSettingValue"),
+  );
+  assert.ok(updateSetting.includes('action: "PLATFORM_SETTING_UPDATED"'));
+  assert.ok(updateSetting.includes("metadata: {"));
+  assert.ok(updateSetting.includes("traceId: actor.traceId"));
+  assert.ok(updateSetting.includes("requestId: actor.requestId"));
+});
+
 test("source-contract: platform controller uses globalSettingsPatchSchema for PATCH /settings", async () => {
   const src = await readFile(
     new URL("../platform.controller.ts", import.meta.url),

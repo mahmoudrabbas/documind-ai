@@ -70,21 +70,26 @@ export async function executeHandler(
   handler: JobHandlerDefinition,
   ctx: JobHandlerContext,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+  options: { publishOutcomeEvents?: boolean } = {},
 ): Promise<ExecutionOutcome> {
   const { envelope, attemptsMade } = ctx;
+  const publishOutcomeEvents =
+    options.publishOutcomeEvents ?? true;
 
   // 1. Validate payload at execution time (never trust envelope content).
   const payloadResult = handler.payloadSchema.safeParse(envelope.payload);
   if (!payloadResult.success) {
-    publishJobEvent({
-      traceId: ctx.traceId,
-      jobType: envelope.jobType,
-      tenantId: envelope.tenantId,
-      actorId: envelope.actorId,
-      event: "dead-letter",
-      attemptsMade,
-      data: { reason: "payload_validation_failed" },
-    });
+    if (publishOutcomeEvents) {
+      publishJobEvent({
+        traceId: ctx.traceId,
+        jobType: envelope.jobType,
+        tenantId: envelope.tenantId,
+        actorId: envelope.actorId,
+        event: "dead-letter",
+        attemptsMade,
+        data: { reason: "payload_validation_failed" },
+      });
+    }
     return {
       ok: false,
       deadLettered: true,
@@ -109,14 +114,16 @@ export async function executeHandler(
   try {
     await withAbort(handler.handle(payloadResult.data, ctx), ctx.signal);
 
-    publishJobEvent({
-      traceId: ctx.traceId,
-      jobType: envelope.jobType,
-      tenantId: envelope.tenantId,
-      actorId: envelope.actorId,
-      event: "success",
-      attemptsMade,
-    });
+    if (publishOutcomeEvents) {
+      publishJobEvent({
+        traceId: ctx.traceId,
+        jobType: envelope.jobType,
+        tenantId: envelope.tenantId,
+        actorId: envelope.actorId,
+        event: "success",
+        attemptsMade,
+      });
+    }
 
     return {
       ok: true,
@@ -133,15 +140,17 @@ export async function executeHandler(
     const failedReason =
       error instanceof Error ? error.message : "unknown error";
 
-    publishJobEvent({
-      traceId: ctx.traceId,
-      jobType: envelope.jobType,
-      tenantId: envelope.tenantId,
-      actorId: envelope.actorId,
-      event: shouldRetry ? "retry" : "dead-letter",
-      attemptsMade,
-      data: { severity, reason: failedReason },
-    });
+    if (publishOutcomeEvents) {
+      publishJobEvent({
+        traceId: ctx.traceId,
+        jobType: envelope.jobType,
+        tenantId: envelope.tenantId,
+        actorId: envelope.actorId,
+        event: shouldRetry ? "retry" : "dead-letter",
+        attemptsMade,
+        data: { severity, reason: failedReason },
+      });
+    }
 
     if (!shouldRetry) {
       // Permanent error or final attempt exhausted => dead-letter for replay.

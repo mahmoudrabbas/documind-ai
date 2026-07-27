@@ -322,7 +322,7 @@ void test("POST /documents — upload a document successfully", async () => {
   assert.equal((doc.metadata as Record<string, unknown>).title, "Annual Report 2024");
   assert.equal(doc.version, 1);
   assert.equal(doc.versionLabel, "v1");
-  assert.equal(doc.classification, "restricted");
+  assert.equal(doc.classification, "internal");
   assert.equal(doc.isArchived, false);
   assert.equal(doc.quarantineStatus, "none");
   assert.ok(doc.checksum);

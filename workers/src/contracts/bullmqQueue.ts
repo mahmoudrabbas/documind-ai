@@ -192,6 +192,7 @@ export class BullMQQueue implements JobDispatcher {
         handler,
         ctx,
         this.policy,
+        { publishOutcomeEvents: false },
       );
 
       this.processing.record(Date.now() - start);
@@ -242,7 +243,10 @@ export class BullMQQueue implements JobDispatcher {
       if (!job) return;
       const data = job.data as JobEnvelope;
       const attemptsMade = job.attemptsMade ?? 0;
-      const willRetry = attemptsMade < this.policy.maxAttempts;
+      const isPermanent =
+        err instanceof PermanentJobError ||
+        err?.name === "PermanentJobError";
+      const willRetry = !isPermanent && attemptsMade < this.policy.maxAttempts;
       publishJobEvent({
         traceId: data.traceId,
         jobType: data.jobType,

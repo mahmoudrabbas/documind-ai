@@ -117,6 +117,11 @@ function serializeDocument(doc: DocumentDocument): DocumentPublicView {
       : null,
     checksum: (doc as unknown as { checksum?: string }).checksum ?? "",
     uploadedBy: doc.uploadedBy?.toString() ?? "",
+    searchStatus: ((doc as unknown as { searchStatus?: string }).searchStatus ?? "STALE") as "STALE" | "INDEXING" | "READY" | "FAILED",
+    currentGeneration: (doc as unknown as { currentGeneration?: { toString(): string } | null }).currentGeneration?.toString() ?? null,
+    pendingGeneration: (doc as unknown as { pendingGeneration?: { toString(): string } | null }).pendingGeneration?.toString() ?? null,
+    lastSearchStatusChange: (doc as unknown as { lastSearchStatusChange?: Date })?.lastSearchStatusChange?.toISOString() ?? new Date().toISOString(),
+    lastProcessingError: (doc as unknown as { lastProcessingError?: { stage: string; code: string; message: string } | null }).lastProcessingError ?? null,
     createdAt: doc.createdAt?.toISOString() ?? new Date().toISOString(),
     updatedAt: doc.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
@@ -203,7 +208,7 @@ export function createDocumentServiceProviders(deps: {
         },
         category: null,
         department: null,
-        classification: "restricted",
+        classification: "internal",
         owner: actor.userId as unknown as DocumentDocument["owner"],
         effectiveDate: null,
         expiryDate: null,
@@ -427,7 +432,7 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
     }
 
-    const stream = storageProvider.getFileStream(document.storageKey);
+    const stream = await storageProvider.getFileStream(document.storageKey);
     const contentType = storageProvider.getContentType(document.fileName);
 
     await getAuditWriter().write({

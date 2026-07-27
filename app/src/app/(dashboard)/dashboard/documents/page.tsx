@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -24,6 +25,7 @@ import {
   validateFileSize,
   getFileSizeLabel,
 } from "@/lib/validation";
+import { formatFileType } from "@/lib/utils";
 
 const STATUS_BADGE_MAP: Record<string, string> = {
   uploaded: "info",
@@ -81,8 +83,24 @@ export default function DocumentsPage() {
 
   const [searchInput, setSearchInput] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [highlightPage, setHighlightPage] = useState<number | undefined>(undefined);
+
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get("id");
+  const deepLinkPage = searchParams.get("page");
 
   useEffect(() => { setSelectedIds([]); setShowBatchPolicy(false); }, [filters, page]);
+
+  useEffect(() => {
+    if (!deepLinkId || isLoading || documents.length === 0) return;
+    const match = documents.find((d) => d.id === deepLinkId);
+    if (match) {
+      openDrawer(match);
+      if (deepLinkPage) {
+        setHighlightPage(Number(deepLinkPage));
+      }
+    }
+  }, [deepLinkId, deepLinkPage, isLoading, documents, openDrawer]);
 
   const handleSearch = useCallback(() => {
     updateFilters({ ...filters, search: searchInput || undefined, isArchived: showArchived });
@@ -393,7 +411,7 @@ export default function DocumentsPage() {
                     <td className="px-lg py-4 text-body-sm text-on-surface-variant">{getFileSizeLabel(doc.fileSize)}</td>
                     <td className="px-lg py-4">
                       <span className="inline-flex items-center rounded-md border border-outline-variant/30 bg-surface-container px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
-                        {doc.mimeType.split("/").pop() ?? "-"}
+                        {formatFileType(doc.mimeType, doc.fileName)}
                       </span>
                     </td>
                     <td className="px-lg py-4"><ClassificationBadge level={doc.classification} /></td>
@@ -413,8 +431,9 @@ export default function DocumentsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-on-surface-variant transition-opacity hover:bg-surface-container-high md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                            className="text-on-surface-variant hover:bg-surface-container-high"
                             onClick={() => openDrawer(doc)}
+                            title="View Document"
                           >
                             <span className="material-symbols-outlined text-[20px]">visibility</span>
                           </Button>
@@ -422,13 +441,14 @@ export default function DocumentsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-error transition-opacity hover:bg-error-container hover:text-on-error-container md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                              className="text-error hover:bg-error-container hover:text-on-error-container"
                               isLoading={deletingId === doc.id}
                               onClick={async () => {
                                 setDeletingId(doc.id);
                                 await remove(doc.id);
                                 setDeletingId(null);
                               }}
+                              title="Delete Document"
                             >
                               <span className="material-symbols-outlined text-[20px]">delete</span>
                             </Button>
@@ -467,7 +487,7 @@ export default function DocumentsPage() {
       {selectedDocument && (
         <DocumentDetailDrawer
           document={selectedDocument}
-          onClose={closeDrawer}
+          onClose={() => { closeDrawer(); setHighlightPage(undefined); }}
           onArchive={archive}
           onRestore={restore}
           onSoftDelete={remove}
@@ -475,6 +495,7 @@ export default function DocumentsPage() {
           onReplace={replace}
           versions={versions}
           isLoadingVersions={isLoadingVersions}
+          highlightPage={highlightPage}
         />
       )}
       {showBatchPolicy && <BatchPolicyDialog documents={documents.filter((document) => selectedIds.includes(document.id))} onClose={() => setShowBatchPolicy(false)} onComplete={() => { setShowBatchPolicy(false); setSelectedIds([]); void goToPage(page); }} />}

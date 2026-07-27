@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   DashboardPage,
   DashboardPageHeader,
@@ -13,6 +13,11 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { getPackage } from "@/services/super-admin.service";
+import { PackageLifecycleDialog } from "@/components/super-admin/package-lifecycle-dialog";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
+import type { PackageLifecycleAction } from "@/types/api/super-admin.types";
+import { resolvePackageEntitlement } from "@/components/super-admin/package-display.contract";
 
 const label = (value: string) =>
   value.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase());
@@ -52,6 +57,9 @@ function DetailSection({
 }
 
 export default function PackageDetailPage() {
+  const permissions = usePermissions();
+  const canManage = permissions.can(Permission.BILLING_MANAGE);
+  const [lifecycleAction, setLifecycleAction] = useState<PackageLifecycleAction | null>(null);
   const id = String(useParams<{ packageId: string }>().packageId ?? "");
   const loader = useCallback(
     (signal?: AbortSignal) => getPackage(id, signal),
@@ -63,6 +71,12 @@ export default function PackageDetailPage() {
       <DashboardPageHeader
         title="Package Details"
         description="Update this package to create a new immutable version snapshot."
+        actions={state.data && canManage ? (
+          <button type="button" onClick={() => setLifecycleAction(state.data!.active ? "archive" : "activate")}
+            className="min-h-10 rounded-lg bg-primary px-4 py-2 font-bold text-on-primary">
+            {state.data.active ? "Archive package" : "Activate package"}
+          </button>
+        ) : undefined}
       />
       <PlatformState
         loading={state.loading}
@@ -71,7 +85,7 @@ export default function PackageDetailPage() {
       />
       {state.data ? (
         <>
-          <PackageForm existing={state.data} />
+          <PackageForm key={state.data.version} existing={state.data} onSaved={state.reload} />
 
           {/* ─── FR-PAY-001 detail summary ─── */}
           <DashboardPanel className="mt-5">
@@ -110,53 +124,50 @@ export default function PackageDetailPage() {
               <DetailSection title="Entitlements">
                 <DetailRow
                   label="Employees"
-                  value={state.data.entitlements?.employees?.toLocaleString() ?? state.data.limits.users}
+                  value={resolvePackageEntitlement(state.data, "employees", "users")?.toLocaleString()}
                 />
                 <DetailRow
                   label="Admins"
-                  value={state.data.entitlements?.admins?.toLocaleString() ?? "—"}
+                  value={resolvePackageEntitlement(state.data, "admins")?.toLocaleString()}
                 />
                 <DetailRow
                   label="Documents"
-                  value={state.data.entitlements?.documents?.toLocaleString() ?? state.data.limits.documents}
+                  value={resolvePackageEntitlement(state.data, "documents", "documents")?.toLocaleString()}
                 />
                 <DetailRow
                   label="Storage"
                   value={
-                    state.data.entitlements?.storageMb
-                      ? `${state.data.entitlements.storageMb} MB`
-                      : `${state.data.limits.storageMb} MB`
+                    resolvePackageEntitlement(state.data, "storageMb", "storageMb") === undefined
+                      ? "—"
+                      : `${resolvePackageEntitlement(state.data, "storageMb", "storageMb")} MB`
                   }
                 />
                 <DetailRow
                   label="Max file size"
                   value={
-                    state.data.entitlements?.fileSizeMb
-                      ? `${state.data.entitlements.fileSizeMb} MB`
-                      : "—"
+                    resolvePackageEntitlement(state.data, "fileSizeMb") === undefined
+                      ? "—"
+                      : `${resolvePackageEntitlement(state.data, "fileSizeMb")} MB`
                   }
                 />
                 <DetailRow
                   label="Queries / month"
-                  value={(
-                    state.data.entitlements?.queriesPerMonth ??
-                    state.data.limits.questionsPerMonth
+                  value={resolvePackageEntitlement(
+                    state.data,
+                    "queriesPerMonth",
+                    "questionsPerMonth",
                   )?.toLocaleString()}
                 />
                 <DetailRow
                   label="Tokens / month"
                   value={
-                    state.data.entitlements?.tokensPerMonth
-                      ? state.data.entitlements.tokensPerMonth.toLocaleString()
-                      : "—"
+                    resolvePackageEntitlement(state.data, "tokensPerMonth")?.toLocaleString()
                   }
                 />
                 <DetailRow
                   label="OCR pages / month"
                   value={
-                    state.data.entitlements?.ocrPagesPerMonth
-                      ? state.data.entitlements.ocrPagesPerMonth.toLocaleString()
-                      : "—"
+                    resolvePackageEntitlement(state.data, "ocrPagesPerMonth")?.toLocaleString()
                   }
                 />
               </DetailSection>
@@ -244,11 +255,11 @@ export default function PackageDetailPage() {
                           : null}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
-                        {version.currency} {version.monthlyPrice.toFixed(2)}
+                        {version.currency ?? state.data!.currency} {version.monthlyPrice.toFixed(2)}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         {version.annualPrice > 0
-                          ? `${version.currency} ${version.annualPrice.toFixed(2)}`
+                          ? `${version.currency ?? state.data!.currency} ${version.annualPrice.toFixed(2)}`
                           : "—"}
                       </td>
                       <td className="px-3 py-3">
@@ -256,15 +267,15 @@ export default function PackageDetailPage() {
                       </td>
                       <td className="px-3 py-3">
                         {version.entitlements?.employees?.toLocaleString() ??
-                          version.limits.users}
+                          version.limits?.users ?? 0}
                       </td>
                       <td className="px-3 py-3">
                         {(version.entitlements?.queriesPerMonth ??
-                          version.limits.questionsPerMonth
+                          version.limits?.questionsPerMonth ?? 0
                         )?.toLocaleString()}
                       </td>
                       <td className="px-3 py-3">
-                        {version.entitlements?.storageMb ?? version.limits.storageMb} MB
+                        {version.entitlements?.storageMb ?? version.limits?.storageMb ?? 0} MB
                       </td>
                       <td className="max-w-[180px] truncate px-3 py-3">
                         {version.supportedModels?.length
@@ -290,6 +301,15 @@ export default function PackageDetailPage() {
               </table>
             </div>
           </DashboardPanel>
+          {lifecycleAction ? (
+            <PackageLifecycleDialog
+              open
+              action={lifecycleAction}
+              pkg={state.data}
+              onClose={() => setLifecycleAction(null)}
+              onSuccess={state.reload}
+            />
+          ) : null}
         </>
       ) : null}
     </DashboardPage>

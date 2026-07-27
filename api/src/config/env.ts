@@ -19,7 +19,7 @@ const envSchema = z
 
     HOST: z.string().default("0.0.0.0"),
 
-    MONGODB_URI: z.string().url().default("mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority"),
+    MONGODB_URI: z.string().url().default("mongodb://mongodb:27017/docsai"),
     MONGODB_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
     MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
     MONGODB_RETRY_BACKOFF_FACTOR: z.coerce.number().min(1).default(2),
@@ -121,6 +121,11 @@ const envSchema = z
     SMTP_FROM: z.string().default("DocuMind AI <no-reply@localhost>"),
 
     UPLOAD_DIR: z.string().default("./uploads"),
+    STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
+    AWS_REGION: z.string().default(""),
+    AWS_S3_BUCKET: z.string().default(""),
+    AWS_ACCESS_KEY_ID: z.string().default(""),
+    AWS_SECRET_ACCESS_KEY: z.string().default(""),
     MAX_FILE_SIZE_BYTES: z.coerce
       .number()
       .int()
@@ -192,7 +197,7 @@ const envSchema = z
           context.addIssue({ code: "custom", path: [key], message: "is required and must contain at least 32 characters" });
         }
       }
-      if (env.MONGODB_URI === "mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority")
+      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")
         context.addIssue({ code: "custom", path: ["MONGODB_URI"], message: "must be explicitly configured" });
       if (env.REDIS_URL === "redis://redis:6379")
         context.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be explicitly configured" });
@@ -251,6 +256,22 @@ const envSchema = z
           code: "custom",
           path: ["JINA_API_KEY"],
           message: "is required when AI_PROVIDER is groq (for embeddings)",
+        });
+      }
+    }
+    if (env.STORAGE_PROVIDER === "s3") {
+      if (!env.AWS_S3_BUCKET || env.AWS_S3_BUCKET.trim() === "") {
+        context.addIssue({
+          code: "custom",
+          path: ["AWS_S3_BUCKET"],
+          message: "is required when STORAGE_PROVIDER is s3",
+        });
+      }
+      if (!env.AWS_REGION || env.AWS_REGION.trim() === "") {
+        context.addIssue({
+          code: "custom",
+          path: ["AWS_REGION"],
+          message: "is required when STORAGE_PROVIDER is s3",
         });
       }
     }

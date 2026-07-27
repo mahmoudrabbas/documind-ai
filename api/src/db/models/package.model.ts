@@ -42,9 +42,13 @@ export interface PackageDocument extends mongoose.Document {
   stripeAnnualPriceId: string;
   versions: Array<{
     version: number;
+    name: string;
+    code: string;
+    description: string;
     monthlyPrice: number;
     entitlements: PackageEntitlements;
     annualPrice: number;
+    currency: string;
     trialDays: number;
     visibility: "public" | "internal";
     supportedModels: string[];
@@ -118,9 +122,13 @@ const packageSchema = new Schema<PackageDocument>(
         new Schema(
           {
             version: { type: Number, required: true },
+            name: { type: String, trim: true, maxlength: 80, default: "" },
+            code: { type: String, lowercase: true, trim: true, maxlength: 50, default: "" },
+            description: { type: String, trim: true, maxlength: 500, default: "" },
             monthlyPrice: { type: Number, required: true },
             entitlements: { type: entitlementsSchema, required: true },
             annualPrice: { type: Number, min: 0, default: 0 },
+            currency: { type: String, trim: true, uppercase: true, default: "USD" },
             trialDays: { type: Number, min: 0, default: 30 },
             visibility: {
               type: String,

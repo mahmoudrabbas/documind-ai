@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { sendMessage } from "@/services/chat.service";
-import type { ChatSource } from "@/types/api/chat.types";
-
-let nextId = 1;
-function uniqueId(prefix: string) {
-  return `${prefix}-${nextId++}`;
-}
+import { useState, useRef, useEffect, useCallback } from "react";
+import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
+import {
+  sendMessage,
+  listConversations,
+  getConversationMessages,
+  deleteConversation,
+} from "@/services/chat.service";
+import type { ChatSource, ConversationListItem } from "@/types/api/chat.types";
 
 type Message = {
   id: string;
@@ -16,13 +17,16 @@ type Message = {
   sources?: ChatSource[];
 };
 
-type Conversation = {
-  id: string;
-  title: string;
-  lastMessage: string;
-  updatedAt: string;
-  messageCount: number;
-};
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
 
 const SUGGESTED_QUESTIONS = [
   "What is the company holidays schedule?",
@@ -31,51 +35,113 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 export function ChatClient() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [activeConversation, setActiveConversation] = useState<string>("");
-  const [messages, setMessages] = useState<Record<string, Message[]>>(
-    {},
-  );
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [pdfViewer, setPdfViewer] = useState<{
+    documentId: string;
+    pageNumber?: number;
+    highlightText?: string;
+    documentTitle?: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const msgIdCounter = useRef(0);
 
   const currentMessages = messages[activeConversation] ?? [];
+
+  const loadConversations = useCallback(async () => {
+    try {
+      setLoadingConversations(true);
+      const result = await listConversations();
+      setConversations(result.conversations);
+    } catch {
+      // Silently fail on initial load
+    } finally {
+      setLoadingConversations(false);
+    }
+  }, []);
+
+  // Load conversations on mount
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  // Refresh relative timestamps every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setConversations((prev) => [...prev]);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadMessages = useCallback(async (conversationId: string) => {
+    try {
+      setLoadingMessages(true);
+      const result = await getConversationMessages(conversationId);
+      const mapped: Message[] = result.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        sources: m.sources,
+      }));
+      setMessages((prev) => ({ ...prev, [conversationId]: mapped }));
+    } catch {
+      // Handle silently
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages.length, isTyping]);
 
-  function createNewConversation(): string {
-    const id = uniqueId("conv");
-    setConversations((prev) => [
-      {
-        id,
-        title: "New conversation",
-        lastMessage: "",
-        updatedAt: "Just now",
-        messageCount: 0,
-      },
-      ...prev,
-    ]);
+  function handleSelectConversation(id: string) {
     setActiveConversation(id);
-    setMessages((prev) => ({ ...prev, [id]: [] }));
-    return id;
+    if (!messages[id]) {
+      loadMessages(id);
+    }
   }
 
-  function ensureConversation(): string {
-    if (activeConversation) return activeConversation;
-    return createNewConversation();
+  async function handleNewConversation() {
+    setActiveConversation("");
+    setMessages((prev) => {
+      const next = { ...prev };
+      delete next[""];
+      return next;
+    });
+  }
+
+  async function handleDeleteConversation(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await deleteConversation(id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      setMessages((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      if (activeConversation === id) {
+        setActiveConversation("");
+      }
+    } catch {
+      // Handle silently
+    }
   }
 
   async function handleSend(text?: string) {
     const question = (text || input).trim();
     if (!question || isTyping) return;
 
-    const convId = ensureConversation();
+    const convId = activeConversation;
     const userMsg: Message = {
-      id: uniqueId("u"),
+      id: `u-${++msgIdCounter.current}`,
       role: "user",
       content: question,
     };
@@ -84,73 +150,86 @@ export function ChatClient() {
       ...prev,
       [convId]: [...(prev[convId] ?? []), userMsg],
     }));
+
     setInput("");
     setIsTyping(true);
     setError(null);
 
-    // Build history from current messages (before adding the new user message)
-    const history = (messages[convId] ?? []).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    // Update conversation title from first question
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== convId) return c;
-        const isFirstMessage = c.messageCount === 0;
-        return {
-          ...c,
-          title: isFirstMessage
-            ? question.slice(0, 60) + (question.length > 60 ? "..." : "")
-            : c.title,
-          messageCount: c.messageCount + 1,
-          updatedAt: "Just now",
-          lastMessage: question,
-        };
-      }),
-    );
-
-    try {
-      const response = await sendMessage({
-        message: question,
-        conversationId: convId,
-        history,
-      });
-
-      const aiMsg: Message = {
-        id: uniqueId("a"),
-        role: "assistant",
-        content: response.answer,
-        sources: response.sources,
-      };
-
-      setMessages((prev) => ({
-        ...prev,
-        [convId]: [...(prev[convId] ?? []), aiMsg],
-      }));
-
+    // Optimistically update sidebar
+    if (convId) {
       setConversations((prev) =>
         prev.map((c) =>
           c.id === convId
             ? {
                 ...c,
-                lastMessage: response.answer.slice(0, 100),
-                updatedAt: "Just now",
+                lastMessage: question.slice(0, 100),
+                updatedAt: new Date().toISOString(),
+                messageCount: c.messageCount + 1,
               }
             : c,
         ),
       );
+    }
+
+    try {
+      const response = await sendMessage({
+        message: question,
+        conversationId: convId || undefined,
+      });
+
+      const actualConvId = response.conversationId;
+      const aiMsg: Message = {
+        id: `a-${++msgIdCounter.current}`,
+        role: "assistant",
+        content: response.answer,
+        sources: response.sources,
+      };
+
+      // If this was a new conversation, the server created it — update state
+      if (!convId) {
+        setActiveConversation(actualConvId);
+        setMessages((prev) => ({ ...prev, [actualConvId]: [userMsg, aiMsg] }));
+
+        // Add to sidebar
+        setConversations((prev) => [
+          {
+            id: actualConvId,
+            title: question.length > 60 ? question.slice(0, 57) + "..." : question,
+            lastMessage: response.answer.slice(0, 100),
+            updatedAt: new Date().toISOString(),
+            messageCount: 2,
+          },
+          ...prev,
+        ]);
+      } else {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: [...(prev[convId] ?? []), aiMsg],
+        }));
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  lastMessage: response.answer.slice(0, 100),
+                  updatedAt: new Date().toISOString(),
+                }
+              : c,
+          ),
+        );
+      }
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to get response. Please try again.";
       setError(errorMsg);
+      const targetId = convId || activeConversation;
       setMessages((prev) => ({
         ...prev,
-        [convId]: [
-          ...(prev[convId] ?? []),
+        [targetId]: [
+          ...(prev[targetId] ?? []),
           {
-            id: uniqueId("e"),
+            id: `e-${++msgIdCounter.current}`,
             role: "assistant",
             content: `Sorry, something went wrong: ${errorMsg}`,
           },
@@ -168,7 +247,7 @@ export function ChatClient() {
         <div className="border-b border-outline-variant/30 p-4">
           <h2 className="text-title-sm font-bold text-on-surface">Conversations</h2>
           <button
-            onClick={() => createNewConversation()}
+            onClick={() => handleNewConversation()}
             className="mt-3 flex w-full items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
@@ -176,25 +255,47 @@ export function ChatClient() {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {conversations.map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => setActiveConversation(conv.id)}
-              className={`flex w-full flex-col gap-1 border-b border-outline-variant/20 px-4 py-3 text-start transition-colors hover:bg-surface-container ${
-                activeConversation === conv.id
-                  ? "bg-primary/5 border-s-4 border-s-primary"
-                  : ""
-              }`}
-            >
-              <span className="truncate text-sm font-semibold text-on-surface">
-                {conv.title}
-              </span>
-              <span className="truncate text-xs text-on-surface-variant">
-                {conv.lastMessage || "No messages yet"}
-              </span>
-              <span className="text-[11px] text-outline">{conv.updatedAt}</span>
-            </button>
-          ))}
+          {loadingConversations && conversations.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
+              Loading...
+            </div>
+          ) : (
+            conversations.map((conv) => (
+              <div
+                key={conv.id}
+                onClick={() => handleSelectConversation(conv.id)}
+                className={`group flex w-full cursor-pointer flex-col gap-1 border-b border-outline-variant/20 px-4 py-3 text-start transition-colors hover:bg-surface-container ${
+                  activeConversation === conv.id
+                    ? "bg-primary/5 border-s-4 border-s-primary"
+                    : ""
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="truncate text-sm font-semibold text-on-surface">
+                    {conv.title}
+                  </span>
+                  <button
+                    onClick={(e) => handleDeleteConversation(conv.id, e)}
+                    className="hidden shrink-0 rounded p-0.5 text-on-surface-variant/40 transition-colors hover:bg-error/10 hover:text-error group-hover:block"
+                    title="Delete conversation"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </div>
+                <span className="truncate text-xs text-on-surface-variant">
+                  {conv.lastMessage || "No messages yet"}
+                </span>
+                <span className="text-[11px] text-outline">
+                  {formatRelativeTime(conv.updatedAt)}
+                </span>
+              </div>
+            ))
+          )}
+          {!loadingConversations && conversations.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
+              No conversations yet
+            </div>
+          )}
         </div>
       </aside>
 
@@ -202,7 +303,7 @@ export function ChatClient() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
-          {currentMessages.length === 0 ? (
+          {currentMessages.length === 0 && !loadingMessages ? (
             <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                 <span
@@ -233,6 +334,14 @@ export function ChatClient() {
                 ))}
               </div>
             </div>
+          ) : loadingMessages ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="flex gap-1">
+                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:0ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:150ms]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:300ms]" />
+              </div>
+            </div>
           ) : (
             <div className="mx-auto max-w-3xl space-y-6">
               {currentMessages.map((msg) => (
@@ -261,29 +370,37 @@ export function ChatClient() {
                           Sources
                         </p>
                         {msg.sources.map((src) => (
-                          <p
-                            key={src.chunkId}
-                            className="flex items-center gap-1 text-xs text-on-surface-variant"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              description
-                            </span>
-                            {src.documentTitle ?? "Document"}
-                            {src.sectionTitle && (
-                              <span className="text-outline">
-                                — {src.sectionTitle}
+                            <button
+                              key={src.chunkId}
+                              onClick={() => setPdfViewer({
+                                documentId: src.documentId,
+                                pageNumber: src.pageNumber,
+                                highlightText: src.text,
+                                documentTitle: src.documentTitle,
+                              })}
+                              className="flex items-center gap-1 text-xs text-on-surface-variant transition-colors hover:text-primary"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">
+                                description
                               </span>
-                            )}
-                            {src.pageNumber && (
-                              <span className="text-outline">
-                                (p.{src.pageNumber})
+                              <span className="underline-offset-2 hover:underline">
+                                {src.documentTitle ?? "Document"}
                               </span>
-                            )}
-                            <span className="ml-1 text-outline">
-                              ({(src.score * 100).toFixed(0)}%)
-                            </span>
-                          </p>
-                        ))}
+                              {src.sectionTitle && (
+                                <span className="text-outline">
+                                  — {src.sectionTitle}
+                                </span>
+                              )}
+                              {src.pageNumber && (
+                                <span className="text-outline">
+                                  (p.{src.pageNumber})
+                                </span>
+                              )}
+                              <span className="ml-1 text-outline">
+                                ({(src.score * 100).toFixed(0)}%)
+                              </span>
+                            </button>
+                          ))}
                       </div>
                     )}
                   </div>
@@ -358,6 +475,16 @@ export function ChatClient() {
           </div>
         </div>
       </div>
+
+      {pdfViewer && (
+        <PdfViewerModal
+          documentId={pdfViewer.documentId}
+          pageNumber={pdfViewer.pageNumber}
+          highlightText={pdfViewer.highlightText}
+          documentTitle={pdfViewer.documentTitle}
+          onClose={() => setPdfViewer(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,8 +1,10 @@
+export type TenantLifecycleStatus = "active" | "trial" | "pending" | "pending_verification" | "suspended";
+
 export interface TenantPublicView {
   id: string;
   name: string;
   slug: string;
-  status: "active" | "trial" | "pending" | "pending_verification";
+  status: TenantLifecycleStatus;
   plan: "free" | "trial" | "pro";
   createdAt: string;
   updatedAt: string;
@@ -16,7 +18,7 @@ export interface TenantPublicView {
 export interface ListTenantsInput {
   page: number;
   pageSize: number;
-  status?: string;
+  status?: TenantLifecycleStatus;
   plan?: string;
   search?: string;
 }
@@ -39,4 +41,107 @@ export interface UpdateTenantInput {
 export type UpdateTenantResult = TenantPublicView;
 export interface GetTenantInput {
   id: string;
+}
+
+export interface TenantUserSummary {
+  total: number;
+  active: number;
+  companyAdmins: number;
+  employees: number;
+}
+
+export interface TenantPackageSummary {
+  packageId: string;
+  packageName: string;
+  packageCode: string;
+  packageVersion: number;
+  entitlements: {
+    employees: number;
+    admins: number;
+    documents: number;
+    storageMb: number;
+    fileSizeMb: number;
+    queriesPerMonth: number;
+    tokensPerMonth: number;
+    ocrPagesPerMonth: number;
+  } | null;
+}
+
+export interface TenantSubscriptionSummary {
+  subscriptionId: string;
+  status: string;
+  provider: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  trialEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+export interface TenantUsageSummary {
+  documents: number;
+  storageBytes: number;
+  questions: number;
+}
+
+export interface TenantAuditSummaryEntry {
+  id: string;
+  action: string;
+  actorEmail: string | null;
+  actorRole: string | null;
+  outcome: string;
+  createdAt: string;
+}
+
+export interface TenantDetailView {
+  id: string;
+  name: string;
+  slug: string;
+  status: TenantLifecycleStatus;
+  plan: "free" | "trial" | "pro";
+  isSystemTenant: boolean;
+  createdAt: string;
+  updatedAt: string;
+  users: TenantUserSummary;
+  package: TenantPackageSummary | null;
+  subscription: TenantSubscriptionSummary | null;
+  usage: TenantUsageSummary;
+  recentAudit: TenantAuditSummaryEntry[];
+}
+
+export type TenantLifecycleTargetStatus = "active" | "suspended";
+
+export interface TenantLifecycleInput {
+  id: string;
+  reason: string;
+}
+
+export interface TenantPreviewInput {
+  id: string;
+}
+
+export interface TenantLifecyclePreview {
+  tenantId: string;
+  tenantName: string;
+  currentStatus: TenantLifecycleStatus;
+  targetStatus: TenantLifecycleTargetStatus;
+  transitionAllowed: boolean;
+  alreadyInTargetState: boolean;
+  totalUsersAffected: number;
+  activeUsersAffected: number;
+  activeCompanyAdminsAffected: number;
+  currentSubscriptionStatus: string | null;
+  documentCount: number;
+  warnings: string[];
+  blockingReasons: string[];
+}
+
+export interface TenantLifecycleResult {
+  id: string;
+  name: string;
+  slug: string;
+  status: TenantLifecycleStatus;
+  plan: "free" | "trial" | "pro";
+  createdAt: string;
+  updatedAt: string;
+  alreadyInTargetState?: boolean;
 }

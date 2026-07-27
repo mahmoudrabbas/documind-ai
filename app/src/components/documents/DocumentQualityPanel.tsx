@@ -2,10 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useOcr } from "@/hooks/features/useOcr";
-import type { OcrPageResultView, QualityStatus } from "@/types/api/processing.types";
+import { getRetryableOcrPageNumbers } from "@/lib/ocr-page-state";
+import type { OcrLanguage, OcrPageResultView, QualityStatus } from "@/types/api/processing.types";
 
 const QUALITY_STATUS_MAP: Record<QualityStatus, string> = {
   READY: "success",
@@ -27,6 +30,7 @@ interface DocumentQualityPanelProps {
   documentVersion: number;
   canProcessOcr: boolean;
   canReviewQuality: boolean;
+  highlightPage?: number;
 }
 
 export function DocumentQualityPanel({
@@ -34,6 +38,7 @@ export function DocumentQualityPanel({
   documentVersion,
   canProcessOcr,
   canReviewQuality,
+  highlightPage,
 }: DocumentQualityPanelProps) {
   const {
     ocrPages,
@@ -53,6 +58,8 @@ export function DocumentQualityPanel({
 
   const [reviewNotes, setReviewNotes] = useState("");
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [runOcrLanguage, setRunOcrLanguage] = useState<OcrLanguage>("ar+en");
+  const [runOcrPage, setRunOcrPage] = useState("1");
 
   useEffect(() => {
     refreshOcrPages(documentId, documentVersion);
@@ -61,13 +68,26 @@ export function DocumentQualityPanel({
 
   const handleTriggerOcr = useCallback(async () => {
     if (!canProcessOcr) return;
-    await triggerOcr(documentId, { version: documentVersion });
-  }, [canProcessOcr, documentId, documentVersion, triggerOcr]);
+    const parsedPage = Number(runOcrPage);
+    const pageNumbers = runOcrPage.trim()
+      ? [parsedPage]
+      : undefined;
+    await triggerOcr(documentId, {
+      version: documentVersion,
+      language: runOcrLanguage,
+      pageNumbers,
+    });
+  }, [canProcessOcr, documentId, documentVersion, runOcrLanguage, runOcrPage, triggerOcr]);
+
+  const retryablePageNumbers = getRetryableOcrPageNumbers(ocrPages);
 
   const handleRetryOcr = useCallback(async () => {
-    if (!canProcessOcr) return;
-    await retryOcr(documentId, { version: documentVersion });
-  }, [canProcessOcr, documentId, documentVersion, retryOcr]);
+    if (!canProcessOcr || retryablePageNumbers.length === 0) return;
+    await retryOcr(documentId, {
+      version: documentVersion,
+      pageNumbers: retryablePageNumbers,
+    });
+  }, [canProcessOcr, documentId, documentVersion, retryOcr, retryablePageNumbers]);
 
   const handleReview = useCallback(async (decision: "approved" | "rejected" | "retry") => {
     if (!canReviewQuality) return;
@@ -93,6 +113,10 @@ export function DocumentQualityPanel({
 
   const hasOcrPages = ocrPages.length > 0;
   const hasQuality = quality !== null;
+  const parsedRunOcrPage = Number(runOcrPage);
+  const hasInvalidRunOcrPage =
+    runOcrPage.trim().length > 0 &&
+    (!Number.isInteger(parsedRunOcrPage) || parsedRunOcrPage < 1);
 
   return (
     <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
@@ -101,18 +125,40 @@ export function DocumentQualityPanel({
           Document Quality & OCR
         </h3>
         {canProcessOcr && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            <Select
+              label="OCR language"
+              value={runOcrLanguage}
+              options={[
+                { value: "ar+en", label: "Arabic + English" },
+                { value: "ar", label: "Arabic" },
+                { value: "en", label: "English" },
+              ]}
+              onChange={(event) => setRunOcrLanguage(event.target.value as OcrLanguage)}
+              className="w-40"
+            />
+            <Input
+              label="Page"
+              type="number"
+              min={1}
+              step={1}
+              value={runOcrPage}
+              onChange={(event) => setRunOcrPage(event.target.value)}
+              helperText="Clear to run all pages"
+              errorMessage={hasInvalidRunOcrPage ? "Enter a positive page number" : undefined}
+              className="w-28"
+            />
             <Button
               size="sm"
               variant="secondary"
               onClick={handleTriggerOcr}
-              disabled={isTriggeringOcr}
+              disabled={isTriggeringOcr || hasInvalidRunOcrPage}
               isLoading={isTriggeringOcr}
             >
               <span className="material-symbols-outlined me-1 text-[14px]">document_scanner</span>
               Run OCR
             </Button>
-            {hasOcrPages && (
+            {retryablePageNumbers.length > 0 && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -248,7 +294,7 @@ export function DocumentQualityPanel({
           </h4>
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {ocrPages.map((page) => (
-              <OcrPageRow key={page.id} page={page} />
+              <OcrPageRow key={page.id} page={page} highlight={highlightPage === page.pageNumber} />
             ))}
           </div>
         </div>
@@ -257,9 +303,10 @@ export function DocumentQualityPanel({
   );
 }
 
-function OcrPageRow({ page }: { page: OcrPageResultView }) {
+function OcrPageRow({ page, highlight }: { page: OcrPageResultView; highlight?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const confidencePercent = Math.round(page.confidence * 100);
   const statusBadge = OCR_STATUS_MAP[page.status] || "neutral";
   const previewLength = 150;
@@ -268,8 +315,24 @@ function OcrPageRow({ page }: { page: OcrPageResultView }) {
   const previewText = isTruncated ? page.text.slice(0, previewLength) + "..." : page.text;
   const wordCount = page.text ? page.text.split(/\s+/).filter(Boolean).length : 0;
 
+  useEffect(() => {
+    if (highlight) {
+      setExpanded(true);
+      setTimeout(() => {
+        rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+    }
+  }, [highlight]);
+
   return (
-    <div className="rounded-lg border border-outline-variant/20 bg-surface px-3 py-2">
+    <div
+      ref={rowRef}
+      className={`rounded-lg border px-3 py-2 transition-colors duration-500 ${
+        highlight
+          ? "border-primary/50 bg-primary/5 ring-2 ring-primary/30"
+          : "border-outline-variant/20 bg-surface"
+      }`}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-medium text-on-surface">Page {page.pageNumber}</span>

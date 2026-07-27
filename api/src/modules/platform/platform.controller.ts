@@ -3,6 +3,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { AuditOperationContext } from "../audit/audit.service.js";
 import {
+  activatePackage,
+  archivePackage,
   createPackage,
   getOverview,
   getPackage,
@@ -14,6 +16,10 @@ import {
   listPackages,
   listPlatformUsers,
   listSubscriptions,
+  getSubscriptionDetail,
+  previewSubscriptionImpact,
+  provisionSubscription,
+  previewPackageImpact,
   updatePackage,
   updateSetting,
   updateSubscription,
@@ -23,10 +29,14 @@ import {
   idSchema,
   listSchema,
   packageBodySchema,
+  packageImpactQuerySchema,
+  packageLifecycleBodySchema,
   packageUpdateSchema,
   parse,
   settingsBodySchema,
   subscriptionUpdateSchema,
+  subscriptionProvisionSchema,
+  subscriptionImpactQuerySchema,
   tenantIdSchema,
 } from "./platform.validator.js";
 
@@ -102,11 +112,59 @@ export const updatePackageController = endpoint((req) =>
     auditContext(req),
   ),
 );
+export const packageImpactController = endpoint((req) =>
+  previewPackageImpact(
+    parse(idSchema, req.params).id,
+    parse(packageImpactQuerySchema, req.query).action,
+    auditContext(req),
+  ),
+);
+export const archivePackageController = endpoint((req) =>
+  archivePackage(
+    parse(idSchema, req.params).id,
+    parse(packageLifecycleBodySchema, req.body),
+    auditContext(req),
+  ),
+);
+export const activatePackageController = endpoint((req) =>
+  activatePackage(
+    parse(idSchema, req.params).id,
+    parse(packageLifecycleBodySchema, req.body),
+    auditContext(req),
+  ),
+);
 export const subscriptionsController = endpoint((req) => listSubscriptions(auditContext(req)));
+const idempotencyKey = (req: Request) => {
+  const value = req.header("Idempotency-Key")?.trim();
+  if (!value || value.length < 8 || value.length > 200) {
+    throw new AppError(400, "VALIDATION_ERROR", "A valid Idempotency-Key header is required");
+  }
+  return value;
+};
+export const subscriptionDetailController = endpoint((req) =>
+  getSubscriptionDetail(parse(tenantIdSchema, req.params).tenantId, auditContext(req)),
+);
+export const subscriptionImpactController = endpoint((req) =>
+  previewSubscriptionImpact(
+    parse(tenantIdSchema, req.params).tenantId,
+    parse(subscriptionImpactQuerySchema, req.query),
+    auditContext(req),
+  ),
+);
+export const provisionSubscriptionController = endpoint(async (req, res) => {
+  const value = await provisionSubscription(
+    parse(tenantIdSchema, req.params).tenantId,
+    parse(subscriptionProvisionSchema, req.body),
+    idempotencyKey(req),
+    auditContext(req),
+  );
+  res.status(201).json({ success: true, data: value });
+});
 export const updateSubscriptionController = endpoint((req) =>
   updateSubscription(
     parse(tenantIdSchema, req.params).tenantId,
     parse(subscriptionUpdateSchema, req.body),
+    idempotencyKey(req),
     auditContext(req),
   ),
 );

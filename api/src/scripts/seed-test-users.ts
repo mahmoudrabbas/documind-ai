@@ -3,7 +3,7 @@ import argon2 from "argon2";
 
 const MONGODB_URI =
   process.env.MONGODB_URI ||
-  "mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority";
+  "mongodb://mongodb:27017/docsai";
 
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,

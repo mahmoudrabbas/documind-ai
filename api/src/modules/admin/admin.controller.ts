@@ -4,8 +4,18 @@ import {
   validateListTenantsInput,
   validateTenantId,
   validateUpdateTenantInput,
+  validateLifecycleInput,
+  validatePreviewInput,
 } from "./admin.validator.js";
-import { getTenant, listTenants, updateTenant } from "./admin.service.js";
+import {
+  getTenant,
+  getTenantDetail,
+  listTenants,
+  updateTenant,
+  suspendTenant,
+  reinstateTenant,
+  previewTenantLifecycle,
+} from "./admin.service.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 
@@ -56,6 +66,22 @@ export async function getTenantController(
   }
 }
 
+export async function getTenantDetailController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const result = await getTenantDetail(
+      validateTenantId(req.params),
+      operationContext(req),
+    );
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    handleAdminError(error, res, next);
+  }
+}
+
 export async function listTenantsController(
   req: Request,
   res: Response,
@@ -95,6 +121,90 @@ export async function updateTenantController(
       success: true,
       data: result,
     });
+  } catch (error) {
+    handleAdminError(error, res, next);
+  }
+}
+
+export async function suspendTenantController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+
+    const input = validateLifecycleInput(req.params, req.body);
+    const result = await suspendTenant(input, operationContext(req));
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    handleAdminError(error, res, next);
+  }
+}
+
+export async function reinstateTenantController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+
+    const input = validateLifecycleInput(req.params, req.body);
+    const result = await reinstateTenant(input, operationContext(req));
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    handleAdminError(error, res, next);
+  }
+}
+
+export async function previewSuspendController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+
+    const input = validatePreviewInput(req.params);
+    const result = await previewTenantLifecycle(
+      input,
+      "suspended",
+      operationContext(req),
+    );
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    handleAdminError(error, res, next);
+  }
+}
+
+export async function previewReinstateController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+
+    const input = validatePreviewInput(req.params);
+    const result = await previewTenantLifecycle(
+      input,
+      "active",
+      operationContext(req),
+    );
+
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     handleAdminError(error, res, next);
   }

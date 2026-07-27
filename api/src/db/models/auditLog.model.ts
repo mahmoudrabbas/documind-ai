@@ -54,9 +54,6 @@ const auditLogSchema = new Schema<AuditLogDocument>(
       lowercase: true,
       maxlength: 254,
       default: null,
-      required(this: AuditLogDocument) {
-        return this.actorKind === "USER";
-      },
       validate: {
         validator(value: unknown) {
           if (value === "") {

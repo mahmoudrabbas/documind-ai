@@ -1,11 +1,13 @@
 import { IntentQueryService } from "./intentQuery.service.js";
 import { FakeModelAdapter } from "../../providers/llm/fakeAdapters.js";
 import { FakeConversationContextAdapter } from "./adapters/conversationContext.fakeAdapter.js";
+import { MongoConversationContextAdapter } from "./adapters/conversationContext.mongoAdapter.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import { logger } from "../../common/logger/logger.js";
 
 export const fakeConversationContextAdapter = new FakeConversationContextAdapter();
+const mongoConversationContextAdapter = new MongoConversationContextAdapter();
 
 /**
  * Factory function to instantiate the IntentQueryService with required adapters.
@@ -28,6 +30,7 @@ let _instance: IntentQueryService = createIntentQueryService();
 /**
  * Called during app startup to swap in the real model adapter.
  * Uses the async LLM provider which respects AI_PROVIDER env var.
+ * Also swaps in the real MongoDB conversation context adapter.
  */
 export async function initializeIntentQueryService(): Promise<void> {
   const { setModelAdapter } = await import("../../providers/llm/index.js");
@@ -44,8 +47,8 @@ export async function initializeIntentQueryService(): Promise<void> {
     modelAdapter = new FakeModelAdapter();
   }
   setModelAdapter(modelAdapter);
-  _instance = new IntentQueryService(modelAdapter, fakeConversationContextAdapter);
-  logger.info(`IntentQueryService initialized with model: ${aiProvider}`);
+  _instance = new IntentQueryService(modelAdapter, mongoConversationContextAdapter);
+  logger.info(`IntentQueryService initialized with model: ${aiProvider}, conversation context: MongoDB`);
 }
 
 /**
