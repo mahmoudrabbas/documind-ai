@@ -127,7 +127,7 @@ test("default policy is deterministic, deeply frozen, and owner-only", () => {
     ruleId: "default-owner-minimum",
     effect: "allow",
     subject: { type: "owner" },
-    actions: ["discover", "read", "download"],
+    actions: ["discover", "read", "download", "reprocess"],
   }]);
   assert.equal(first.rules.some((rule) => rule.subject.type === "tenant_member"), false);
   assert.equal(first.rules.some((rule) => rule.actions.includes("use_in_ai")), false);

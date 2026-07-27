@@ -11,6 +11,7 @@ import {
   getDocumentController,
   updateDocumentMetadataController,
   downloadDocumentController,
+  previewDocumentController,
   replaceDocumentController,
   archiveDocumentController,
   restoreDocumentController,
@@ -81,6 +82,14 @@ router.get(
       Array.isArray(request.params.id) ? request.params.id[0] : request.params.id,
   }),
   downloadDocumentController,
+);
+
+router.get(
+  "/:id/preview",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.DOCUMENTS_READ),
+  previewDocumentController,
 );
 
 router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
