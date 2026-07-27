@@ -128,6 +128,6 @@ export const searchRetrievalDebug = (
   signal?: AbortSignal,
 ) =>
   apiClient<Success<RetrievalDebugResult>>(
-    `/retrieval/debug?queryText=${encodeURIComponent(params.queryText)}${params.topK ? `&topK=${params.topK}` : ""}${params.method ? `&method=${params.method}` : ""}`,
+    `/retrieval/debug?q=${encodeURIComponent(params.queryText)}${params.topK ? `&topK=${params.topK}` : ""}${params.method ? `&method=${params.method}` : ""}`,
     { signal },
   );

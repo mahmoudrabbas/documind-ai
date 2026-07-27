@@ -110,6 +110,7 @@ export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
   { label: "Processing Jobs", href: "/super-admin/jobs", icon: "manufacturing", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
   { label: "Processing Overview", href: "/super-admin/processing-overview", icon: "monitoring", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
   { label: "System Health", href: "/super-admin/system-health", icon: "health_and_safety", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
+  { label: "Retrieval Debug", href: "/super-admin/retrieval-debug", icon: "search", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "AI Configuration", href: "/super-admin/ai-configuration", icon: "psychology", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "Security & Audit", href: "/super-admin/audit", icon: "policy", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
   { label: "Global Settings", href: "/super-admin/settings", icon: "settings", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
