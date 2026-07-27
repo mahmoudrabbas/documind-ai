@@ -1,11 +1,28 @@
 import { randomUUID } from "node:crypto";
 import { Types } from "mongoose";
 import DocumentModel from "../../db/models/document.model.js";
+import DocumentVersionModel from "../../db/models/documentVersion.model.js";
+import IndexGenerationModel from "../../db/models/indexGeneration.model.js";
 import type { ProcessingStageName } from "../../db/models/processingRun.model.js";
+
+const RETRY_JOB_MAP: Record<ProcessingStageName, string> = {
+  security_scanning: "document.extract",
+  extraction: "document.extract",
+  ocr: "document.extract",
+  quality_review: "document.extract",
+  metadata_review: "document.extract",
+  chunking: "document.chunk",
+  embedding: "document.embed",
+  indexing: "document.index",
+  finalization: "document.index",
+};
 import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import { getApiJobDispatcher } from "../jobs/jobDispatcher.js";
+import { upsertArtifact } from "../extraction/extraction.repository.js";
+import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
 import {
   isValidRunTransition,
   PROCESSING_STAGES,
@@ -364,6 +381,144 @@ export async function retryProcessingStage(
     }
   }
 
+  await DocumentModel.updateOne(
+    { _id: new Types.ObjectId(documentId), tenantId: new Types.ObjectId(effectiveTenantId) },
+    { $set: { status: "processing" } },
+  );
+
+  const log = createStructuredLogger("retry-processing-stage");
+  const jobType = RETRY_JOB_MAP[targetStage] ?? "document.extract";
+
+  try {
+    const docId = new Types.ObjectId(documentId);
+    const tenId = new Types.ObjectId(effectiveTenantId);
+    const dispatcher = getApiJobDispatcher();
+
+    if (jobType === "document.extract") {
+      const ver = await DocumentVersionModel.findOne({
+        documentId: docId,
+        version: doc.version,
+        tenantId: tenId,
+      });
+
+      if (ver) {
+        await upsertArtifact(tenId, docId, doc.version, {
+          sourceChecksum: ver.checksum,
+          parserName: "pending",
+          parserVersion: "pending",
+          status: "pending",
+        });
+      }
+
+      const result = await dispatcher.enqueue({
+        jobType: "document.extract",
+        tenantId: effectiveTenantId,
+        actorId,
+        traceId,
+        idempotencyKey: `ext-${documentId}-${doc.version}-retry-${Date.now()}`,
+        payload: {
+          documentId,
+          tenantId: effectiveTenantId,
+          documentVersion: doc.version,
+        },
+      });
+
+      log.info(
+        { documentId, tenantId: effectiveTenantId, documentVersion: doc.version, stage: targetStage, jobId: result.jobId },
+        "Retry: extraction job enqueued",
+      );
+    } else {
+      const generation = await IndexGenerationModel.findOne({
+        tenantId: tenId,
+        documentId: docId,
+      }).sort({ generationNumber: -1 });
+
+      if (!generation) {
+        throw new AppError(
+          400,
+          "GENERATION_NOT_FOUND",
+          `No index generation found for this document. Cannot retry from stage '${targetStage}'.`,
+        );
+      }
+
+      const generationId = generation._id.toString();
+
+      if (jobType === "document.chunk") {
+        const document = await DocumentModel.findOne({ _id: docId, tenantId: tenId });
+        const result = await dispatcher.enqueue({
+          jobType: "document.chunk",
+          tenantId: effectiveTenantId,
+          actorId,
+          traceId,
+          idempotencyKey: `chunk-${documentId}-${doc.version}-${generationId}-retry-${Date.now()}`,
+          payload: {
+            documentId,
+            tenantId: effectiveTenantId,
+            documentVersion: doc.version,
+            generationId,
+            department: document?.department ?? null,
+            classification: document?.classification ?? null,
+            chunkingConfig: generation.chunkingConfig ?? {
+              targetTokens: 400,
+              hardCeiling: 800,
+              overlap: 50,
+            },
+          },
+        });
+
+        log.info(
+          { documentId, tenantId: effectiveTenantId, stage: targetStage, generationId, jobId: result.jobId },
+          "Retry: chunking job enqueued",
+        );
+      } else if (jobType === "document.embed") {
+        const result = await dispatcher.enqueue({
+          jobType: "document.embed",
+          tenantId: effectiveTenantId,
+          actorId,
+          traceId,
+          idempotencyKey: `embed-${documentId}-${doc.version}-${generationId}-retry-${Date.now()}`,
+          payload: {
+            documentId,
+            tenantId: effectiveTenantId,
+            documentVersion: doc.version,
+            generationId,
+          },
+        });
+
+        log.info(
+          { documentId, tenantId: effectiveTenantId, stage: targetStage, generationId, jobId: result.jobId },
+          "Retry: embedding job enqueued",
+        );
+      } else if (jobType === "document.index") {
+        const result = await dispatcher.enqueue({
+          jobType: "document.index",
+          tenantId: effectiveTenantId,
+          actorId,
+          traceId,
+          idempotencyKey: `index-${documentId}-${doc.version}-${generationId}-retry-${Date.now()}`,
+          payload: {
+            documentId,
+            tenantId: effectiveTenantId,
+            documentVersion: doc.version,
+            generationId,
+          },
+        });
+
+        log.info(
+          { documentId, tenantId: effectiveTenantId, stage: targetStage, generationId, jobId: result.jobId },
+          "Retry: indexing job enqueued",
+        );
+      }
+    }
+  } catch (err: unknown) {
+    if (err instanceof AppError) throw err;
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.error(
+      { documentId, tenantId: effectiveTenantId, stage: targetStage, error: error.message },
+      "Retry: failed to enqueue job",
+    );
+  }
+
   await getAuditWriter().write({
     tenantId: effectiveTenantId,
     resourceType: "Document",
@@ -427,6 +582,58 @@ export async function reprocessDocument(
   await updateProcessingRun(effectiveTenantId, run._id.toString(), {
     currentStage: "extraction",
   });
+
+  await DocumentModel.updateOne(
+    { _id: new Types.ObjectId(documentId), tenantId: new Types.ObjectId(effectiveTenantId) },
+    { $set: { status: "reprocessing" } },
+  );
+
+  try {
+    const docId = new Types.ObjectId(documentId);
+    const tenId = new Types.ObjectId(effectiveTenantId);
+
+    const ver = await DocumentVersionModel.findOne({
+      documentId: docId,
+      version: doc.version,
+      tenantId: tenId,
+    });
+
+    if (ver) {
+      await upsertArtifact(tenId, docId, doc.version, {
+        sourceChecksum: ver.checksum,
+        parserName: "pending",
+        parserVersion: "pending",
+        status: "pending",
+      });
+    }
+
+    const dispatcher = getApiJobDispatcher();
+    const result = await dispatcher.enqueue({
+      jobType: "document.extract",
+      tenantId: effectiveTenantId,
+      actorId,
+      traceId,
+      idempotencyKey: `ext-${documentId}-${doc.version}-${Date.now()}`,
+      payload: {
+        documentId,
+        tenantId: effectiveTenantId,
+        documentVersion: doc.version,
+      },
+    });
+
+    const log = createStructuredLogger("reprocess-document");
+    log.info(
+      { documentId, tenantId: effectiveTenantId, documentVersion: doc.version, jobId: result.jobId },
+      "Reprocess: extraction job enqueued",
+    );
+  } catch (err: unknown) {
+    const log = createStructuredLogger("reprocess-document");
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.error(
+      { documentId, tenantId: effectiveTenantId, error: error.message },
+      "Reprocess: failed to enqueue extraction job",
+    );
+  }
 
   await getAuditWriter().write({
     tenantId: effectiveTenantId,
