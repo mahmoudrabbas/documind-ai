@@ -422,6 +422,7 @@ function findLongestPrefixMatch(
   let bestStart = -1;
   let bestLength = 0;
   const hlLen = highlightWords.length;
+  const pdfLen = pdfWordStrings.length;
 
   // Try matching progressively shorter prefixes (at least 5 words)
   for (let prefixLen = Math.min(hlLen, 30); prefixLen >= Math.min(5, hlLen); prefixLen--) {

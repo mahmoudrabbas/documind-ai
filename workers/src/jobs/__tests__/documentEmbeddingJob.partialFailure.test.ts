@@ -35,7 +35,7 @@ function buildMockDb(chunks: unknown[]) {
         insertManyCalls.push({ name, docs });
         return { insertedCount: docs.length };
       },
-      insertOne: async (doc: unknown) => {
+      insertOne: async (_doc: unknown) => {
         return { insertedId: new ObjectId() };
       },
       updateOne: async (query: Record<string, unknown>, update: Record<string, unknown>) => {

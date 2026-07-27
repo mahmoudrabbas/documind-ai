@@ -50,21 +50,9 @@ export function ChatClient() {
     documentTitle?: string;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const msgIdCounter = useRef(0);
 
   const currentMessages = messages[activeConversation] ?? [];
-
-  // Load conversations on mount
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  // Refresh relative timestamps every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setConversations((prev) => [...prev]);
-    }, 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -76,6 +64,19 @@ export function ChatClient() {
     } finally {
       setLoadingConversations(false);
     }
+  }, []);
+
+  // Load conversations on mount
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  // Refresh relative timestamps every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setConversations((prev) => [...prev]);
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadMessages = useCallback(async (conversationId: string) => {
@@ -140,7 +141,7 @@ export function ChatClient() {
 
     const convId = activeConversation;
     const userMsg: Message = {
-      id: `u-${Date.now()}`,
+      id: `u-${++msgIdCounter.current}`,
       role: "user",
       content: question,
     };
@@ -177,7 +178,7 @@ export function ChatClient() {
 
       const actualConvId = response.conversationId;
       const aiMsg: Message = {
-        id: `a-${Date.now()}`,
+        id: `a-${++msgIdCounter.current}`,
         role: "assistant",
         content: response.answer,
         sources: response.sources,
@@ -227,7 +228,7 @@ export function ChatClient() {
         [targetId]: [
           ...(prev[targetId] ?? []),
           {
-            id: `e-${Date.now()}`,
+            id: `e-${++msgIdCounter.current}`,
             role: "assistant",
             content: `Sorry, something went wrong: ${errorMsg}`,
           },
