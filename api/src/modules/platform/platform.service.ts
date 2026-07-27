@@ -648,6 +648,7 @@ export async function updateSetting(
     actorEmail: actor.actorEmail,
     actorRole: actor.actorRole,
     actorKind: actor.actorKind,
+    metadata: { traceId: actor.traceId, requestId: actor.requestId },
   });
 
   if (key === GLOBAL_SETTINGS_KEY) {
