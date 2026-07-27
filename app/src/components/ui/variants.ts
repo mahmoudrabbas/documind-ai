@@ -22,7 +22,7 @@ export const BUTTON_SIZES: readonly ButtonSize[] = ["sm", "md", "lg"];
 
 const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary !text-white hover:bg-primary-container focus-visible:ring-primary/30 disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:hover:bg-surface-container-high",
+    "bg-primary text-on-primary !text-white hover:bg-primary-container focus-visible:ring-primary/30 disabled:bg-surface-container-high disabled:text-on-surface-variant disabled:hover:bg-surface-container-high",
   secondary:
     "bg-surface-container-lowest text-primary border border-outline-variant hover:bg-surface-container-low hover:border-outline focus-visible:ring-primary/30 disabled:bg-surface-container disabled:text-on-surface-variant disabled:border-outline-variant disabled:hover:bg-surface-container",
   ghost:
