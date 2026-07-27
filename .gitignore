@@ -38,3 +38,12 @@ TEAM_LOCAL_SETUP_AGENT_V2.md
 
 # Stitch design tool output
 app/stitch/
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+
+# Project-level skill files (local agent instructions)
+.skills/
+
+# Runtime uploads directory
+api/uploads/
