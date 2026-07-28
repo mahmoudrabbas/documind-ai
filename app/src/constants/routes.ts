@@ -94,7 +94,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   {
     label: "Knowledge Gaps",
     href: "/dashboard/knowledge-gaps",
-    icon: "psychology",
+    icon: "search_insights",
     context: "tenant",
     requiredPermissions: [Permission.KNOWLEDGE_GAPS_READ],
   },

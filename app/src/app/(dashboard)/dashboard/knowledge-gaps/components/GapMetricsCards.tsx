@@ -22,7 +22,7 @@ export function GapMetricsCards({ metrics, loading }: GapMetricsCardsProps) {
     {
       title: "Total Gaps",
       value: metrics.totalGaps,
-      icon: "psychology",
+      icon: "search_insights",
       color: "text-primary bg-primary/10",
     },
     {

@@ -59,7 +59,7 @@ export default function KnowledgeGapsPage() {
       <DashboardPageHeader
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
-            <span className="material-symbols-outlined text-[16px]">psychology</span>
+            <span className="material-symbols-outlined text-[16px]">search_insights</span>
             Knowledge Intelligence
           </div>
         }
