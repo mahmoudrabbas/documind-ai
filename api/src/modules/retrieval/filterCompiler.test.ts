@@ -36,10 +36,10 @@ function scopes(overrides: Record<string, unknown> = {}) {
 // =========================================================================
 
 describe("compileAccessFilters", () => {
-  it("always sets tenantId and allowAiUse", () => {
+  it("always sets tenantId without mutable AI-use metadata", () => {
     const f = compileAccessFilters(ctx({}));
     assert.equal(f.tenantId, "t1");
-    assert.equal(f.allowAiUse, true);
+    assert.equal(f.allowAiUse, undefined);
   });
 
   it("EMPLOYEE sees public and internal by default", () => {
@@ -218,7 +218,6 @@ describe("compileQueryFilters", () => {
 describe("mergeFilters", () => {
   const mandatory: AdapterFilter = {
     tenantId: "t1",
-    allowAiUse: true,
     classification: { $in: ["public", "internal"] },
   };
 
@@ -227,17 +226,12 @@ describe("mergeFilters", () => {
     assert.equal(m.tenantId, "t-mand");
   });
 
-  it("allowAiUse from mandatory wins over query", () => {
+  it("drops allowAiUse metadata instead of forwarding it to search adapters", () => {
     const m = mergeFilters(
       { ...mandatory, allowAiUse: true },
       { allowAiUse: false }
     );
-    assert.equal(m.allowAiUse, true);
-  });
-
-  it("allowAiUse falls back to query when mandatory is undefined", () => {
-    const m = mergeFilters({ tenantId: "t1" }, { allowAiUse: false });
-    assert.equal(m.allowAiUse, false);
+    assert.equal(m.allowAiUse, undefined);
   });
 
   it("documentVersionId from mandatory wins", () => {
@@ -261,7 +255,7 @@ describe("mergeFilters", () => {
 
     it("uses query only when mandatory has none (SUPER_ADMIN)", () => {
       const m = mergeFilters(
-        { tenantId: "t1", allowAiUse: true },
+        { tenantId: "t1" },
         { classification: { $in: ["confidential"] } }
       );
       assert.deepEqual(m.classification, { $in: ["confidential"] });
@@ -304,7 +298,7 @@ describe("mergeFilters", () => {
     });
   });
 
-  describe("documentIds union", () => {
+  describe("documentIds intersection", () => {
     it("uses mandatory only when query has none", () => {
       const m = mergeFilters({ ...mandatory, documentIds: ["doc1"] }, {});
       assert.deepEqual(m.documentIds, ["doc1"]);
@@ -315,15 +309,15 @@ describe("mergeFilters", () => {
       assert.deepEqual(m.documentIds, ["doc2"]);
     });
 
-    it("unions when both are present", () => {
+    it("intersects when both are present", () => {
       const m = mergeFilters(
         { ...mandatory, documentIds: ["doc1", "doc2"] },
         { documentIds: ["doc2", "doc3"] }
       );
-      assert.deepEqual(m.documentIds, ["doc1", "doc2", "doc3"]);
+      assert.deepEqual(m.documentIds, ["doc2"]);
     });
 
-    it("no duplicates in union", () => {
+    it("does not duplicate the intersection", () => {
       const m = mergeFilters(
         { ...mandatory, documentIds: ["doc1"] },
         { documentIds: ["doc1"] }

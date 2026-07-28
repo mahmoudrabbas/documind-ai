@@ -63,7 +63,6 @@ async function ensureSearchIndexes(): Promise<void> {
             classification: { type: "string", analyzer: "luceneStandard" },
             department: { type: "string", analyzer: "luceneStandard" },
             category: { type: "string", analyzer: "luceneStandard" },
-            allowAiUse: { type: "boolean" },
           },
         },
       },

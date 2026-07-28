@@ -27,11 +27,13 @@ export class DocumentAccessAuthorizationService {
       if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING");
       const resource = resourceContext(document);
 
-      // Super admin, company admin, or document owner are always authorized for document actions
+      // Control-plane recovery does not imply permission to use document content in AI.
       if (
-        actor.baseRole === "SUPER_ADMIN" ||
-        actor.baseRole === "COMPANY_ADMIN" ||
-        actor.actorId === resource.ownerId
+        action !== "use_in_ai" && (
+          actor.baseRole === "SUPER_ADMIN" ||
+          actor.baseRole === "COMPANY_ADMIN" ||
+          actor.actorId === resource.ownerId
+        )
       ) {
         return;
       }
@@ -59,6 +61,10 @@ export class DocumentAccessAuthorizationService {
 
   async authorizeDocumentsAction(context: DocumentAuthorizationContext, documentIds: readonly string[], action: DocumentAccessAction): Promise<void> {
     for (const documentId of [...new Set(documentIds)]) await this.authorizeDocumentAction(context, documentId, action);
+  }
+
+  async resolveActor(context: DocumentAuthorizationContext): Promise<DocumentAccessActorContext> {
+    return this.loadActor(context);
   }
 
   async buildDiscoverPipeline(context: DocumentAuthorizationContext): Promise<PipelineStage[]> {

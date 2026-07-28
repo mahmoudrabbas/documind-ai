@@ -60,6 +60,7 @@ import { getModelAdapter } from "./providers/llm/index.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
+import { getDocumentAccessAuthorizationService } from "./modules/document-access/documentAccess.authorization.service.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -196,6 +197,13 @@ const retrievalService = createRetrievalService({
   filterCompiler,
   repository: createRetrievalRepository(),
   rerankerService,
+  resolveAccessContext: async (context) => {
+    const actor = await getDocumentAccessAuthorizationService().resolveActor({ tenantId: context.tenantId, actorId: context.actorId });
+    return { ...context, baseRole: actor.baseRole, customRoleId: actor.customRoleId, departmentIds: [...(actor.departmentIds ?? [])], requiredAction: "use_in_ai" };
+  },
+  authorizeDocumentForAi: async (context, documentId) => {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId: context.tenantId, actorId: context.actorId }, documentId, "use_in_ai");
+  },
 });
 
 registerRetrievalService(retrievalService);

@@ -50,3 +50,23 @@ test("deny-all coarse query produces an impossible match", () => {
   const impossible = [{ $match: { _id: { $exists: false } } }];
   assert.deepEqual(impossible, [{ $match: { _id: { $exists: false } } }]);
 });
+
+test("use_in_ai evaluates user, role, and department grants with deny precedence", async () => {
+  const capability = new InMemoryDocumentCapabilityEvaluator(true);
+  const evaluator = new InMemoryDocumentAccessPolicyEvaluator(capability);
+  const roleId = tenantAActor.customRoleId!;
+  const departmentId = tenantAActor.departmentIds![0]!;
+  const base = policy("allow");
+  const aiPolicy: DocumentAccessPolicy = { ...base, rules: [
+    { ruleId: "user-ai", effect: "allow", subject: { type: "user", id: tenantAActor.actorId }, actions: ["use_in_ai"] },
+    { ruleId: "role-ai", effect: "allow", subject: { type: "custom_role", id: roleId }, actions: ["use_in_ai"] },
+    { ruleId: "department-ai", effect: "allow", subject: { type: "department", id: departmentId }, actions: ["use_in_ai"] },
+  ] };
+  const allowed = await evaluator.evaluate({ actor: tenantAActor, resource: tenantADocument, action: "use_in_ai", policy: aiPolicy, evaluatedAt: FIXED_EVALUATION_TIME });
+  assert.equal(allowed.allowed, true);
+  assert.deepEqual(allowed.matchedRuleIds, ["department-ai", "role-ai", "user-ai"]);
+
+  const denied = await evaluator.evaluate({ actor: tenantAActor, resource: tenantADocument, action: "use_in_ai", policy: { ...aiPolicy, rules: [...aiPolicy.rules, { ruleId: "deny-user-ai", effect: "deny", subject: { type: "user", id: tenantAActor.actorId }, actions: ["use_in_ai"] }] }, evaluatedAt: FIXED_EVALUATION_TIME });
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.reasonCode, "EXPLICIT_DENY");
+});
