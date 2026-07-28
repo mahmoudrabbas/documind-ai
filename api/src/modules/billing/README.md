@@ -2,7 +2,7 @@
 
 > Module: `api/src/modules/billing/`  
 > Issue: 04 — Normalize Package and Subscription Domain  
-> Status: **COMPLETE** (domain scaffolding; no real payment provider)
+> Status: Existing package/checkout/webhook behavior plus Issue 29 Phase 1 billing foundation
 
 ## Overview
 
@@ -165,10 +165,32 @@ Provides the current entitlement snapshot for a tenant based on their active sub
 
 - `ports/fakes/fake-subscription-provisioning.ts` — In-memory fake with contract tests at `ports/fakes/__tests__/fake-subscription-provisioning.contract.test.ts`
 
-## Known Limitations
+## Issue 29 Phase 1 foundation
 
-- No real payment provider (Stripe/PayPal) — planned for Issues 10/29
-- Tenant `plan` string is deprecated but still present for backward compatibility
-- No quota enforcement middleware — planned for Issue 25
-- No auto-expiry/renewal/cancel cron jobs
-- No billing portal, invoices, or refunds — planned for Issue 29
+`PaymentProvider` is the provider-neutral boundary. Money is always an integer in minor units and currency is an uppercase ISO code. Provider IDs are opaque adapter references and are never part of the Company billing summary. The contract now includes portal sessions, invoice reads/secure links, subscription reads and previews, plan changes, cancellation/reactivation, and refund reads/mutations. Every mutation receives a `ProviderOperationContext`; the Stripe adapter forwards its idempotency key through Stripe request options. The deterministic fake has explicit fixtures, clock/IDs, replay conflicts, timeouts, and failures. Stripe tests use a mocked SDK client and never perform network calls.
+
+`BillingOperation` owns asynchronous intent, retry, correlation, and idempotency. Its state machine is `REQUESTED -> PROVIDER_PENDING -> CONFIRMED`, with `RETRY_PENDING`, `FAILED`, and `SUPERSEDED` recovery outcomes. The raw idempotency key is never stored: a SHA-256 hash and a canonical normalized-request fingerprint are persisted. Same key/same request replays; same key/different request conflicts. Plan changes, cancellation, and reactivation share the `SUBSCRIPTION_MUTATION` conflict group and cannot overlap for one subscription. Refunds have no subscription-mutation conflict group, so independent valid partial refunds are not falsely blocked; their financial validity remains invoice/payment scoped. Invoice synchronization is not a billing mutation operation. Intent is persisted before a provider call.
+
+`Invoice` is a tenant-scoped synchronized projection. `Refund` is the permanent business record and supports partial/multiple refunds; provider attempt and retry state remains in `BillingOperation`. Secure links are excluded from ordinary queries and later routes must validate tenant ownership before selecting them.
+
+Provider events are verified and persisted first, then treated as synchronization triggers. Event IDs and creation timestamps are diagnostics/deduplication keys, never provider sequence numbers. Current provider state is read, ownership checked, normalized, and projected; deterministic observed-state evidence is required to reject a stale projection. Provider-read failure records `BILLING_PROVIDER_UNAVAILABLE`, leaves matching operations retryable, does not project the event payload, and allows a failed event delivery to be reprocessed idempotently.
+
+Lifecycle access is separate from Issue 25 quotas. `ACTIVE` and unexpired `TRIALING` remain eligible; scheduled cancellation remains eligible until its effective period end; `PAST_DUE` uses `BILLING_PAST_DUE_GRACE_DAYS` (default 7); `PAUSED`, `UNPAID`, `CANCELED`, `EXPIRED`, and `INCOMPLETE` fail closed.
+
+Refund confirmation uses platform-only `billing:refund-confirm`, cannot be delegated to tenant roles, and requires requester/confirmer separation. Audit metadata contains only local safe references and normalized states—never card data, raw provider payloads, signatures, secrets, or provider customer IDs.
+
+### Index migration
+
+Run `npm run migrate:billing:issue29` for the default dry run. Only an explicit `npm run migrate:billing:issue29:apply` creates missing indexes. Repeated apply is idempotent and conflicting names/definitions fail without replacement. The migration makes no provider calls, backfills no invoices/refunds, and changes no subscription or entitlement data.
+
+Rollback the application independently. If necessary, an operator may explicitly remove only Issue 29 indexes after confirming no compatible application version uses them. Billing operations, invoices, and refunds are business/audit records and must not be automatically deleted. Subscription state and entitlements must remain untouched.
+
+### Deferred after Phase 1
+
+Phase 1 adds no customer mutation HTTP routes or UI. Company invoice routes/backfill and billing page are Phase 2; plan change, cancellation/reactivation routes and UI are Phase 3; refund request/confirmation routes and Super Admin UI are Phase 4; browser E2E and full security verification are Phase 5. Existing checkout, Billing Portal, verified webhooks, reconciliation, package/subscription administration, permissions, and quota behavior remain in service.
+
+## Known limitations
+
+- Tenant `plan` string remains deprecated for backward compatibility.
+- The Phase 1 adapter mutation methods are deliberately not connected to customer-facing routes.
+- Invoice/refund provider event handlers and live invoice backfill are deferred.

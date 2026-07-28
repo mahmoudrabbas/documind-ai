@@ -31,3 +31,30 @@ test("controlled environments accept explicit safe service contracts", () => {
   });
   assert.equal(env.NODE_ENV, "test");
 });
+
+test("Stripe requires webhook verification in test as well as production", () => {
+  assert.throws(
+    () => parseEnv({ NODE_ENV: "test", PAYMENT_PROVIDER: "stripe", STRIPE_SECRET_KEY: "sk_test_explicit" }),
+    (error: unknown) => error instanceof EnvironmentValidationError && error.keys.includes("STRIPE_WEBHOOK_SECRET"),
+  );
+});
+
+test("fake provider does not require Stripe secrets", () => {
+  const secret = "test-only-secret-value-with-32-characters-minimum";
+  const env = parseEnv({ NODE_ENV: "test", PAYMENT_PROVIDER: "fake", MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test", REDIS_URL: "redis://127.0.0.1:6379/1", APP_FRONTEND_URL: "https://app.test.invalid", JWT_SECRET: secret, JWT_REFRESH_SECRET: `${secret}-refresh`, EMAIL_VERIFICATION_JWT_SECRET: `${secret}-verification`, PASSWORD_RESET_JWT_SECRET: `${secret}-reset`, EMAIL_WEBHOOK_SECRET: `${secret}-webhook` });
+  assert.equal(env.PAYMENT_PROVIDER, "fake");
+});
+
+test("Stripe portal return URL must match its configured allowed origin", () => {
+  assert.throws(
+    () => parseEnv({ NODE_ENV: "test", PAYMENT_PROVIDER: "stripe", STRIPE_SECRET_KEY: "sk_test_explicit", STRIPE_WEBHOOK_SECRET: "whsec_explicit", STRIPE_BILLING_PORTAL_RETURN_URL: "https://evil.example/checkout", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example" }),
+    (error: unknown) => error instanceof EnvironmentValidationError && error.keys.includes("STRIPE_BILLING_PORTAL_RETURN_URL"),
+  );
+});
+
+test("past-due grace rejects negative or non-integer policy values", () => {
+  const secret = "test-only-secret-value-with-32-characters-minimum";
+  const base = { NODE_ENV: "test", PAYMENT_PROVIDER: "fake", MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test", REDIS_URL: "redis://127.0.0.1:6379/1", APP_FRONTEND_URL: "https://app.test.invalid", JWT_SECRET: secret, JWT_REFRESH_SECRET: `${secret}-refresh`, EMAIL_VERIFICATION_JWT_SECRET: `${secret}-verification`, PASSWORD_RESET_JWT_SECRET: `${secret}-reset`, EMAIL_WEBHOOK_SECRET: `${secret}-webhook` };
+  assert.throws(() => parseEnv({ ...base, BILLING_PAST_DUE_GRACE_DAYS: "-1" }), EnvironmentValidationError);
+  assert.throws(() => parseEnv({ ...base, BILLING_PAST_DUE_GRACE_DAYS: "1.5" }), EnvironmentValidationError);
+});

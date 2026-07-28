@@ -20,7 +20,7 @@ export interface CheckoutConflictState {
 
 type SubscriptionLike = Pick<
   SubscriptionStatus,
-  "status" | "providerSubscriptionId" | "providerCustomerId" | "packageId"
+  "status" | "providerLinked" | "providerManaged" | "packageId"
 >;
 
 function resolvePackageId(pkg: SubscriptionLike["packageId"]): string | null {
@@ -50,9 +50,9 @@ function resolvePackageName(pkg: SubscriptionLike["packageId"]): string | null {
 }
 
 export function hasBlockingProviderSubscription(
-  subscription: Pick<SubscriptionStatus, "status" | "providerSubscriptionId"> | null | undefined,
+  subscription: Pick<SubscriptionStatus, "status" | "providerLinked"> | null | undefined,
 ): boolean {
-  if (!subscription?.providerSubscriptionId) {
+  if (!subscription?.providerLinked) {
     return false;
   }
   return BLOCKING_PROVIDER_SUBSCRIPTION_STATUSES.has(subscription.status);

@@ -306,7 +306,7 @@ export function SubscriptionWidget() {
           ) : null}
         </p>
 
-        {canManageBilling && sub.providerCustomerId ? (
+        {canManageBilling && sub.canOpenPortal ? (
           <Button
             variant="outline"
             size="md"

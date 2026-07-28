@@ -40,6 +40,7 @@ export interface SubscriptionDocument extends mongoose.Document {
   providerMetadata: Map<string, string>;
   lastProviderEventId: string;
   lastProviderEventTimestamp: Date | null;
+  providerStateObservedAt: Date | null;
   revision: number;
   adminOperations: Array<{
     keyHash: string;
@@ -111,6 +112,7 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
     providerMetadata: { type: Schema.Types.Map, of: String, default: {} },
     lastProviderEventId: { type: String, default: "" },
     lastProviderEventTimestamp: { type: Date, default: null },
+    providerStateObservedAt: { type: Date, default: null },
     revision: { type: Number, required: true, default: 0, min: 0 },
     adminOperations: {
       type: [{

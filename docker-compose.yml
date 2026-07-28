@@ -26,6 +26,9 @@ services:
       - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/stripe_webhook_secret
       - STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL:-http://localhost:3000/checkout/success}
       - STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL:-http://localhost:3000/checkout/cancel}
+      - STRIPE_BILLING_PORTAL_RETURN_URL=${STRIPE_BILLING_PORTAL_RETURN_URL:-http://localhost:3000/checkout}
+      - BILLING_PORTAL_ALLOWED_ORIGIN=${BILLING_PORTAL_ALLOWED_ORIGIN:-http://localhost:3000}
+      - BILLING_PAST_DUE_GRACE_DAYS=${BILLING_PAST_DUE_GRACE_DAYS:-7}
       - SEND_EMAILS=true
       - ENABLE_SUPER_ADMIN_BOOTSTRAP=true
       - SEED_SUPER_ADMIN_ENABLED=true

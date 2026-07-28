@@ -23,6 +23,10 @@ vi.mock("../../../db/models/checkoutSession.model.js", () => ({
   },
 }));
 
+vi.mock("../../../db/models/billingOperation.model.js", () => ({
+  default: { findOne: vi.fn(), exists: vi.fn() },
+}));
+
 vi.mock("../../../common/observability/index.js", () => ({
   getAuditWriter: () => ({ write: vi.fn().mockResolvedValue(undefined) }),
 }));
@@ -37,8 +41,9 @@ vi.mock("../../permissions/permissions.operation.js", () => ({
 import PackageModel from "../../../db/models/package.model.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../../db/models/checkoutSession.model.js";
+import BillingOperationModel from "../../../db/models/billingOperation.model.js";
 import { FakePaymentProvider } from "../../billing/ports/fakes/fake-payment-provider.js";
-import { createCheckoutSession, getCheckoutStatus, createBillingPortalSession } from "../checkout.service.js";
+import { createCheckoutSession, getCheckoutStatus, createBillingPortalSession, getSubscriptionStatus } from "../checkout.service.js";
 
 const TENANT_ID = "507f1f77bcf86cd799439011";
 const PACKAGE_ID = "507f1f77bcf86cd799439012";
@@ -58,12 +63,14 @@ function mockQueryChain<T>(result: T) {
     skip: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     populate: vi.fn().mockReturnThis(),
+    select: vi.fn().mockReturnThis(),
   };
   chain.lean = vi.fn(() => chain);
   chain.sort = vi.fn(() => chain);
   chain.skip = vi.fn(() => chain);
   chain.limit = vi.fn(() => chain);
   chain.populate = vi.fn(() => chain);
+  chain.select = vi.fn(() => chain);
   return chain;
 }
 
@@ -80,6 +87,8 @@ describe("CheckoutService", () => {
     (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
       mockQueryChain([]),
     );
+    (BillingOperationModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(null));
+    (BillingOperationModel.exists as ReturnType<typeof vi.fn>).mockResolvedValue(null);
   });
 
   describe("createCheckoutSession", () => {
@@ -567,6 +576,16 @@ describe("CheckoutService", () => {
           getSubscription: vi.fn(),
           cancelSubscription: vi.fn(),
           listInvoices: vi.fn(),
+          retrieveInvoice: vi.fn(),
+          getSecureInvoiceLinks: vi.fn(),
+          previewSubscriptionChange: vi.fn(),
+          updateSubscription: vi.fn(),
+          scheduleCancellation: vi.fn(),
+          cancelImmediately: vi.fn(),
+          reactivateSubscription: vi.fn(),
+          createRefund: vi.fn(),
+          retrieveRefund: vi.fn(),
+          retrieveCurrentSubscriptionState: vi.fn(),
         };
       }
 
@@ -588,11 +607,12 @@ describe("CheckoutService", () => {
         );
 
         expect(provider.createCustomer).toHaveBeenCalledOnce();
-        expect(provider.createCustomer).toHaveBeenCalledWith({
+        expect(provider.createCustomer).toHaveBeenCalledWith(expect.objectContaining({
           tenantId: TENANT_ID,
           email: TEST_ACTOR.actorEmail,
           name: TEST_ACTOR.actorEmail,
-        });
+          operationContext: expect.objectContaining({ tenantReference: TENANT_ID, operationReference: "checkout-customer" }),
+        }));
         expect(SubscriptionModel.updateOne).toHaveBeenCalledWith(
           { tenantId: TENANT_ID },
           { $set: { providerCustomerId: "cus_real_new_123" } },
@@ -735,7 +755,7 @@ describe("CheckoutService", () => {
       );
 
       expect(result.url).toBeTruthy();
-      expect(result.url).toContain("cus_real_123");
+      expect(result.url).not.toContain("cus_real_123");
     });
 
     it("throws 404 when subscription not found", async () => {
@@ -800,7 +820,16 @@ describe("CheckoutService", () => {
 
       await expect(
         createBillingPortalSession(TENANT_ID, TEST_ACTOR, fakeProvider, "https://example.com/checkout"),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: "BILLING_PROVIDER_UNAVAILABLE", statusCode: 503 });
+    });
+  });
+
+  describe("company billing summary", () => {
+    it("does not expose provider identifiers or reconciliation metadata", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain({ _id: "sub-local", tenantId: TENANT_ID, packageId: { _id: PACKAGE_ID, name: "Basic", code: "basic", version: 1 }, packageVersion: 1, billingInterval: "monthly", status: "ACTIVE", paymentState: "paid", providerCustomerId: "cus_private", providerSubscriptionId: "sub_private", providerPriceId: "price_private", providerMetadata: { internal: "private" }, lastProviderEventId: "evt_private", cancelAtPeriodEnd: false }));
+      const result = await getSubscriptionStatus(TENANT_ID, TEST_ACTOR); const json = JSON.stringify(result);
+      expect(result).toMatchObject({ providerManaged: true, providerLinked: true, canOpenPortal: true });
+      expect(json).not.toMatch(/cus_private|sub_private|price_private|evt_private|providerMetadata|providerCustomerId|providerSubscriptionId|providerPriceId/);
     });
   });
 });

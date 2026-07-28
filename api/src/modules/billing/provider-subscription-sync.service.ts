@@ -5,6 +5,7 @@ import SubscriptionModel from "../../db/models/subscription.model.js";
 import type { ProviderSubscription } from "./ports/payment-provider.port.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { SubscriptionStatus } from "./billing.types.js";
+import { providerStateFingerprint, shouldApplyProviderProjection } from "./provider-projection-policy.js";
 
 export interface ResolvedPackageVersion {
   packageId: string;
@@ -201,6 +202,7 @@ export interface ProviderSubscriptionSyncInput {
   sourceId: string;
   sourceType: "webhook" | "checkout_session_sync";
   sourceTimestamp?: Date;
+  providerStateObservedAt?: Date;
 }
 
 function sameDate(left: unknown, right: Date | null): boolean {
@@ -280,6 +282,7 @@ export async function synchronizeProviderSubscription(
     cancelAtPeriodEnd: input.providerSubscription.cancelAtPeriodEnd,
     lastProviderEventId: input.sourceId,
     lastProviderEventTimestamp: input.sourceTimestamp ?? new Date(),
+    providerStateObservedAt: input.providerStateObservedAt ?? new Date(),
   };
 
   let changed = false;
@@ -309,6 +312,12 @@ export async function synchronizeProviderSubscription(
       }
     }
 
+    if (!shouldApplyProviderProjection({
+      currentlyAppliedObservedAt: current.providerStateObservedAt instanceof Date ? current.providerStateObservedAt : null,
+      incomingObservedAt: desired.providerStateObservedAt as Date,
+      currentFingerprint: providerStateFingerprint(current), incomingFingerprint: providerStateFingerprint(desired),
+      readCurrentProviderState: true,
+    })) break;
     if (!hasProviderStateChanged(current, desired)) break;
     const result = await SubscriptionModel.updateOne(
       {

@@ -23,8 +23,8 @@ export interface CheckoutSession {
 }
 
 export interface SubscriptionStatus {
-  _id: string;
-  tenantId: string | { _id: string; name: string; slug: string };
+  id: string;
+  tenantId: string;
   packageId: {
     _id: string;
     name: string;
@@ -47,9 +47,7 @@ export interface SubscriptionStatus {
     };
   };
   packageVersion: number;
-  packageVersionId: string | null;
   billingInterval: "monthly" | "annual" | null;
-  provider: string;
   status: string;
   periodStart: string | null;
   periodEnd: string | null;
@@ -57,14 +55,18 @@ export interface SubscriptionStatus {
   currentPeriodEnd: string | null;
   trialStart: string | null;
   trialEnd: string | null;
-  cancelledAt: string | null;
-  cancellationReason: string;
-  providerCustomerId: string;
-  providerSubscriptionId: string;
-  providerPriceId: string;
   paymentState: string;
   cancelAtPeriodEnd: boolean;
-  lastProviderEventId: string;
+  cancellationEffectiveAt: string | null;
+  providerManaged: boolean;
+  providerLinked: boolean;
+  pendingOperation: { type: string; status: string; requestedAt: string } | null;
+  canOpenPortal: boolean;
+  canUpdatePaymentMethod: boolean;
+  canChangePlan: boolean;
+  canCancel: boolean;
+  canReactivate: boolean;
+  canRequestRefund: boolean;
 }
 
 export interface PaymentEvent {

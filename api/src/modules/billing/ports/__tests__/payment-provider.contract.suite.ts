@@ -1,6 +1,36 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { PaymentProvider } from "../payment-provider.port.js";
 
+export interface BillingFoundationContractFixture {
+  provider: PaymentProvider; customerId: string; subscriptionId: string; invoiceId: string; chargeId: string;
+}
+
+export function billingFoundationProviderContractTests(label: string, createFixture: () => BillingFoundationContractFixture): void {
+  describe(`${label} — Issue 29 provider foundation contract`, () => {
+    let fixture: BillingFoundationContractFixture;
+    beforeEach(() => { fixture = createFixture(); });
+    it("normalizes invoice reads and enforces ownership", async () => {
+      const page = await fixture.provider.listInvoices({ customerId: fixture.customerId, limit: 10 });
+      expect(page.invoices.some((invoice) => invoice.id === fixture.invoiceId)).toBe(true);
+      const invoice = await fixture.provider.retrieveInvoice({ invoiceId: fixture.invoiceId, expectedCustomerId: fixture.customerId });
+      expect(invoice.currency).toMatch(/^[A-Z]{3}$/); expect(Number.isSafeInteger(invoice.amountDueMinor)).toBe(true);
+      await expect(fixture.provider.retrieveInvoice({ invoiceId: fixture.invoiceId, expectedCustomerId: "wrong-customer" })).rejects.toThrow();
+    });
+    it("normalizes current subscription reads and mutation idempotency context", async () => {
+      const state = await fixture.provider.retrieveCurrentSubscriptionState({ subscriptionId: fixture.subscriptionId, expectedCustomerId: fixture.customerId });
+      expect(state.id).toBe(fixture.subscriptionId); expect(state.observedAt).toBeInstanceOf(Date);
+      const operationContext = { idempotencyKey: "shared-contract-key", requestFingerprint: "shared-contract-fingerprint", tenantReference: "tenant-1", operationReference: "operation-1" };
+      const result = await fixture.provider.scheduleCancellation({ subscriptionId: fixture.subscriptionId, expectedCustomerId: fixture.customerId, operationContext });
+      expect(result).toMatchObject({ cancellationType: "PERIOD_END", operationReference: "operation-1" });
+    });
+    it("normalizes refund creation and retrieval", async () => {
+      const result = await fixture.provider.createRefund({ chargeId: fixture.chargeId, expectedCustomerId: fixture.customerId, amountMinor: 100, currency: "USD", reason: "customer_request", operationContext: { idempotencyKey: "refund-contract-key", requestFingerprint: "refund-contract-fingerprint", tenantReference: "tenant-1", operationReference: "refund-operation-1" } });
+      expect(result.refund).toMatchObject({ amountMinor: 100, currency: "USD", customerId: fixture.customerId });
+      expect((await fixture.provider.retrieveRefund({ refundId: result.refund.id, expectedCustomerId: fixture.customerId })).id).toBe(result.refund.id);
+    });
+  });
+}
+
 export function paymentProviderContractTests(
   label: string,
   createAdapter: () => PaymentProvider,

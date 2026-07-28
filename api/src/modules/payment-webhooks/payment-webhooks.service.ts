@@ -11,6 +11,7 @@ import type {
   PaymentProvider,
   PaymentProviderEvent,
   ProviderSubscription,
+  ProviderSubscriptionState,
 } from "../billing/ports/payment-provider.port.js";
 import {
   resolvePackageVersion,
@@ -19,12 +20,27 @@ import {
 } from "../billing/provider-subscription-sync.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { NOT_FOUND } from "../../common/errors/errorCodes.js";
+import { BILLING_PROVIDER_UNAVAILABLE, NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   authorizePlatformOperation,
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
+import { reconcileBillingOperation } from "../billing/billing-operation-reconciliation.service.js";
+
+const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
+  "checkout.session.completed",
+  "invoice.paid",
+  "invoice_payment.paid",
+  "invoice.payment_failed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+]);
+
+class ProviderStateReadUnavailableError extends Error {
+  readonly code = BILLING_PROVIDER_UNAVAILABLE;
+}
 
 function writeAudit(
   action: string,
@@ -110,15 +126,20 @@ export async function handlePaymentEvent(
   existingEvent?: PaymentEventDocument,
   provider?: PaymentProvider,
 ): Promise<void> {
-  const duplicate = existingEvent
-    ? null
-    : await PaymentEventModel.findOne({ provider: event.provider, eventId: event.id }).exec();
-  if (duplicate) {
-    logger.info({ eventId: event.id }, "Duplicate webhook event — skipping");
-    return;
-  }
-
   let eventRecord = existingEvent;
+  if (!eventRecord) {
+    const duplicate = await PaymentEventModel.findOne({ provider: event.provider, eventId: event.id }).exec();
+    if (duplicate?.status !== "failed") {
+      if (duplicate) logger.info({ eventId: event.id }, "Duplicate webhook event — skipping");
+      if (duplicate) return;
+    }
+    if (duplicate) {
+      eventRecord = duplicate;
+      eventRecord.status = "received";
+      eventRecord.processingErrors = [];
+      eventRecord.processedAt = null;
+    }
+  }
   if (!eventRecord) {
     try {
       eventRecord = await PaymentEventModel.create({
@@ -182,13 +203,7 @@ export async function handlePaymentEvent(
       return;
     }
 
-    const convergentSyncEvent = new Set([
-      "checkout.session.completed",
-      "invoice.paid",
-      "invoice_payment.paid",
-      "customer.subscription.created",
-      "customer.subscription.updated",
-    ]).has(event.type);
+    const convergentSyncEvent = AUTHORITATIVE_SUBSCRIPTION_EVENTS.has(event.type);
     if (convergentSyncEvent && providerSubscription) {
       const tenantHint = extractTenantFromEvent(event)?.toString() ??
         providerSubscription.metadata.tenantId;
@@ -200,6 +215,14 @@ export async function handlePaymentEvent(
         sourceId: event.id,
         sourceType: "webhook",
         sourceTimestamp: event.timestamp,
+        providerStateObservedAt: providerSubscription.observedAt,
+      });
+      await reconcileBillingOperation({
+        tenantId: tenantHint,
+        operationReference: providerSubscription.metadata.operationReference,
+        providerObjectReference: providerSubscription.id,
+        providerEventId: event.id,
+        outcome: "CONFIRMED",
       });
       eventRecord.tenantId = new Types.ObjectId(tenantHint);
       const checkoutSessionId = extractCheckoutSessionId(event);
@@ -240,11 +263,32 @@ export async function handlePaymentEvent(
       await eventRecord.save();
     }
   } catch (error) {
-    logger.error({ err: error, eventId: event.id }, "Failed to process payment event");
+    const safeFailureCode = error instanceof ProviderStateReadUnavailableError
+      ? error.code
+      : error instanceof AppError
+        ? error.code
+        : error instanceof Error
+          ? error.message
+          : "PAYMENT_EVENT_PROCESSING_FAILED";
+    if (error instanceof ProviderStateReadUnavailableError) {
+      logger.error({ errorCode: safeFailureCode, eventId: event.id }, "Failed to retrieve current provider state");
+      const tenantId = extractTenantFromEvent(event)?.toString();
+      if (tenantId) {
+        await reconcileBillingOperation({
+          tenantId,
+          operationReference: extractMetadataFromEvent(event).operationReference,
+          providerObjectReference: extractStripeSubscriptionIdFromEvent(event),
+          providerEventId: event.id,
+          outcome: "RETRY_PENDING",
+          failureCode: safeFailureCode,
+        }).catch(() => undefined);
+      }
+    } else {
+      logger.error({ err: error, eventId: event.id }, "Failed to process payment event");
+    }
     eventRecord.status = "failed";
-    eventRecord.processingErrors.push(
-      error instanceof Error ? error.message : "Unknown error",
-    );
+    eventRecord.processedAt = null;
+    eventRecord.processingErrors.push(safeFailureCode);
     await eventRecord.save();
   }
 }
@@ -728,32 +772,16 @@ async function resolveSubscriptionFromEvent(
 async function retrieveProviderSubscription(
   event: PaymentProviderEvent,
   provider?: PaymentProvider,
-): Promise<ProviderSubscription | null> {
-  if (!provider?.retrieveSubscription) return null;
+): Promise<ProviderSubscriptionState | null> {
+  if (!provider || !AUTHORITATIVE_SUBSCRIPTION_EVENTS.has(event.type)) return null;
   const subscriptionId = extractStripeSubscriptionIdFromEvent(event);
-  if (!subscriptionId) return null;
-
-  const metadata = extractMetadataFromEvent(event);
-  const priceId = extractPriceIdFromEvent(event);
-  if (
-    metadata.packageId &&
-    (metadata.packageVersionId || metadata.packageVersion) &&
-    metadata.billingInterval &&
-    priceId
-  ) {
-    return {
-      id: subscriptionId,
-      customerId: extractCustomerIdFromEvent(event) ?? "",
-      status: extractStripeSubscriptionStatus(event),
-      metadata,
-      priceId,
-      currentPeriodStart: extractCurrentPeriodStart(event),
-      currentPeriodEnd: extractCurrentPeriodEnd(event),
-      cancelAtPeriodEnd: extractCancelAtPeriodEnd(event),
-    };
+  const expectedCustomerId = extractCustomerIdFromEvent(event);
+  if (!subscriptionId || !expectedCustomerId) throw new ProviderStateReadUnavailableError("Current provider subscription reference is unavailable");
+  try {
+    return await provider.retrieveCurrentSubscriptionState({ subscriptionId, expectedCustomerId });
+  } catch {
+    throw new ProviderStateReadUnavailableError("Current provider subscription state is unavailable");
   }
-
-  return provider.retrieveSubscription(subscriptionId);
 }
 
 async function resolveEventPackageMapping(

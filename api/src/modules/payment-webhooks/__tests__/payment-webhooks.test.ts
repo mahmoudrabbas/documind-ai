@@ -54,7 +54,7 @@ test("webhook controller verifies signature", async () => {
     "Verifies webhook signature",
   );
   assert.ok(
-    source.includes("Invalid signature"),
+    source.includes("BILLING_WEBHOOK_SIGNATURE_INVALID"),
     "Returns error for invalid signature",
   );
 });

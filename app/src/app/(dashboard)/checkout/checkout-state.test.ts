@@ -11,13 +11,13 @@ describe("checkout-state", () => {
     expect(
       hasBlockingProviderSubscription({
         status: "ACTIVE",
-        providerSubscriptionId: "sub_123",
+        providerLinked: true,
       }),
     ).toBe(true);
     expect(
       hasBlockingProviderSubscription({
         status: "CANCELED",
-        providerSubscriptionId: "sub_123",
+        providerLinked: true,
       }),
     ).toBe(false);
   });
@@ -26,16 +26,16 @@ describe("checkout-state", () => {
     expect(
       getCurrentPackageId({
         status: "ACTIVE",
-        providerSubscriptionId: "sub_123",
-        providerCustomerId: "cus_123",
+        providerLinked: true,
+        providerManaged: true,
         packageId: { _id: "pkg_123", name: "Real Pro" } as never,
       }),
     ).toBe("pkg_123");
     expect(
       getCurrentPackageId({
         status: "ACTIVE",
-        providerSubscriptionId: "sub_123",
-        providerCustomerId: "cus_123",
+        providerLinked: true,
+        providerManaged: true,
         packageId: "pkg_456" as never,
       }),
     ).toBe("pkg_456");

@@ -157,6 +157,8 @@ const envSchema = z
     STRIPE_SUCCESS_URL: z.string().url().default("http://localhost:3000/checkout/success"),
     STRIPE_CANCEL_URL: z.string().url().default("http://localhost:3000/checkout/cancel"),
     STRIPE_BILLING_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3000/checkout"),
+    BILLING_PORTAL_ALLOWED_ORIGIN: z.string().url().default("http://localhost:3000"),
+    BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(90).default(7),
 
     OPENAI_API_KEY: z.string().default(""),
     OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
@@ -220,12 +222,20 @@ const envSchema = z
           "must contain at least 32 characters when bootstrap is enabled",
       });
     }
-    if (env.PAYMENT_PROVIDER === "stripe" && !env.STRIPE_SECRET_KEY) {
-      context.addIssue({
-        code: "custom",
-        path: ["STRIPE_SECRET_KEY"],
-        message: "is required when PAYMENT_PROVIDER is stripe",
-      });
+    if (env.PAYMENT_PROVIDER === "stripe") {
+      for (const [key, value] of [
+        ["STRIPE_SECRET_KEY", env.STRIPE_SECRET_KEY],
+        ["STRIPE_WEBHOOK_SECRET", env.STRIPE_WEBHOOK_SECRET],
+      ] as const) {
+        if (!value) context.addIssue({ code: "custom", path: [key], message: "is required when PAYMENT_PROVIDER is stripe" });
+      }
+      try {
+        if (new URL(env.STRIPE_BILLING_PORTAL_RETURN_URL).origin !== new URL(env.BILLING_PORTAL_ALLOWED_ORIGIN).origin) {
+          context.addIssue({ code: "custom", path: ["STRIPE_BILLING_PORTAL_RETURN_URL"], message: "origin is not allowed" });
+        }
+      } catch {
+        context.addIssue({ code: "custom", path: ["BILLING_PORTAL_ALLOWED_ORIGIN"], message: "is invalid" });
+      }
     }
     if (env.AI_PROVIDER === "student-bedrock") {
       if (!env.SBG_API_KEY || env.SBG_API_KEY.trim() === "") {

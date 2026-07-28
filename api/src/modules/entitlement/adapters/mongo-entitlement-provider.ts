@@ -4,6 +4,8 @@ import type { EntitlementSnapshot } from "../../billing/ports/entitlement-snapsh
 import { entitlementSnapshotFrom } from "../../billing/ports/entitlement-snapshot.port.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import PackageModel from "../../../db/models/package.model.js";
+import { evaluateSubscriptionAccess } from "../../billing/subscription-access-policy.js";
+import { config } from "../../../config/index.js";
 
 export class MongoEntitlementProvider implements EntitlementProviderPort {
   async getSnapshot(tenantId: string): Promise<EntitlementSnapshot | null> {
@@ -15,6 +17,13 @@ export class MongoEntitlementProvider implements EntitlementProviderPort {
     if (!subscription) {
       return null; // No subscription = fail closed
     }
+    const access = evaluateSubscriptionAccess({
+      status: subscription.status, now: new Date(), periodEnd: subscription.periodEnd ?? subscription.currentPeriodEnd,
+      trialEnd: subscription.trialEnd, cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      pastDueSince: subscription.lastProviderEventTimestamp ?? subscription.updatedAt,
+      pastDueGraceDays: config.BILLING_PAST_DUE_GRACE_DAYS,
+    });
+    if (!access.eligible) return null;
 
     // Find package
     const pkg = await PackageModel.findById(subscription.packageId);

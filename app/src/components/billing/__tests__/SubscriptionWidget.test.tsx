@@ -31,7 +31,7 @@ function createMockSubscription(
   overrides: Partial<SubscriptionStatus> = {},
 ): SubscriptionStatus {
   return {
-    _id: "sub_123",
+    id: "sub_123",
     tenantId: "tenant_1",
     packageId: {
       _id: "pkg_456",
@@ -55,9 +55,7 @@ function createMockSubscription(
       },
     },
     packageVersion: 1,
-    packageVersionId: null,
     billingInterval: "monthly",
-    provider: "stripe",
     status: "ACTIVE",
     periodStart: "2026-01-15T00:00:00Z",
     periodEnd: "2026-07-15T00:00:00Z",
@@ -65,14 +63,18 @@ function createMockSubscription(
     currentPeriodEnd: "2026-07-15T00:00:00Z",
     trialStart: null,
     trialEnd: null,
-    cancelledAt: null,
-    cancellationReason: "",
-    providerCustomerId: "cus_abc123",
-    providerSubscriptionId: "sub_provider_123",
-    providerPriceId: "",
     paymentState: "paid",
     cancelAtPeriodEnd: false,
-    lastProviderEventId: "",
+    cancellationEffectiveAt: null,
+    providerManaged: true,
+    providerLinked: true,
+    pendingOperation: null,
+    canOpenPortal: true,
+    canUpdatePaymentMethod: true,
+    canChangePlan: true,
+    canCancel: true,
+    canReactivate: false,
+    canRequestRefund: true,
     ...overrides,
   };
 }
@@ -257,9 +259,9 @@ describe("SubscriptionWidget", () => {
 
   /* ── 8. No provider customer — Manage Billing hidden ────────────── */
 
-  it("hides the Manage Billing button when providerCustomerId is empty", async () => {
+  it("hides the Manage Billing button when the portal capability is unavailable", async () => {
     (getSubscriptionStatus as Mock).mockResolvedValue({
-      data: createMockSubscription({ providerCustomerId: "" }),
+      data: createMockSubscription({ canOpenPortal: false }),
     });
 
     const { container } = await renderAndSettle();
