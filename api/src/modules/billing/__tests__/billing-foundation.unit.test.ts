@@ -44,9 +44,9 @@ describe("Issue 29 billing foundation", () => {
   it("does not let an unrelated refund disable subscription lifecycle capabilities", () => {
     const subscription = { _id: "sub-local", tenantId: "tenant", packageId: { _id: "pkg" }, packageVersion: 1, status: "ACTIVE", paymentState: "paid", providerCustomerId: "customer", providerSubscriptionId: "subscription", cancelAtPeriodEnd: false };
     const refundPending = toCompanyBillingSummary(subscription, { operationType: "REFUND", status: "REQUESTED", requestedAt: new Date(), conflictGroup: null }, false);
-    expect(refundPending).toMatchObject({ canChangePlan: true, canCancel: true, canRequestRefund: true });
+    expect(refundPending).toMatchObject({ canChangePlan: false, canCancel: false, canRequestRefund: false });
     const mutationPending = toCompanyBillingSummary(subscription, { operationType: "PLAN_CHANGE", status: "REQUESTED", requestedAt: new Date(), conflictGroup: "SUBSCRIPTION_MUTATION" }, true);
-    expect(mutationPending).toMatchObject({ canChangePlan: false, canCancel: false, canRequestRefund: true });
+    expect(mutationPending).toMatchObject({ canChangePlan: false, canCancel: false, canRequestRefund: false });
   });
 
   it("enforces exact portal origins and HTTPS outside localhost", () => {

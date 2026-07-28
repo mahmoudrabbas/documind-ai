@@ -1,0 +1,16 @@
+import { Router } from "express";
+import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
+import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import { requirePermission } from "../permissions/permissions.middleware.js";
+import { billingSummaryController, invoiceDetailController, invoiceLinksController, invoiceListController, portalSessionController } from "./tenant-billing.controller.js";
+
+const router = Router();
+router.use(authenticate, tenantScoping);
+const billingDenialAudit = { denialAuditAction: "BILLING_AUTHORIZATION_DENIED" as const, resourceType: "Permission" as const };
+router.get("/summary", requirePermission(Permission.BILLING_READ, billingDenialAudit), billingSummaryController);
+router.post("/portal-sessions", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), portalSessionController);
+router.get("/invoices", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceListController);
+router.get("/invoices/:invoiceId", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceDetailController);
+router.get("/invoices/:invoiceId/links", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceLinksController);
+export default router;

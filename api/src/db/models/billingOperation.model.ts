@@ -1,7 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 
 export const BILLING_OPERATION_TYPES = [
-  "PLAN_CHANGE", "CANCEL_PERIOD_END", "CANCEL_IMMEDIATELY", "REACTIVATE", "REFUND",
+  "PLAN_CHANGE", "CANCEL_PERIOD_END", "CANCEL_IMMEDIATELY", "REACTIVATE", "REFUND", "INVOICE_SYNCHRONIZATION",
 ] as const;
 export const BILLING_OPERATION_STATUSES = [
   "REQUESTED", "PROVIDER_PENDING", "CONFIRMED", "FAILED", "RETRY_PENDING", "SUPERSEDED",
@@ -88,6 +88,18 @@ schema.index({ traceId: 1 }, { name: "idx_billing_operation_trace", sparse: true
 schema.index(
   { tenantId: 1, subscriptionId: 1, conflictGroup: 1 },
   { unique: true, name: "uq_billing_operation_pending_conflict_group", partialFilterExpression: { status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] }, subscriptionId: { $type: "objectId" }, conflictGroup: { $type: "string" } } },
+);
+schema.index(
+  { tenantId: 1, operationType: 1, providerObjectReference: 1 },
+  {
+    unique: true,
+    name: "uq_billing_operation_pending_invoice_reconciliation",
+    partialFilterExpression: {
+      status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] },
+      operationType: "INVOICE_SYNCHRONIZATION",
+      providerObjectReference: "invoice-reconciliation",
+    },
+  },
 );
 
 export default mongoose.model<BillingOperationDocument>("BillingOperation", schema);

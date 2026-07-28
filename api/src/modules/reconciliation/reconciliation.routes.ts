@@ -4,6 +4,7 @@ import { requirePlatformTenant } from "../../common/middlewares/platformTenant.m
 import {
   providerReconciliationController,
   reconciliationController,
+  invoiceReconciliationController,
 } from "./reconciliation.controller.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
@@ -17,6 +18,11 @@ router.post(
   "/reconciliation/subscriptions",
   requirePermission(Permission.BILLING_READ),
   reconciliationController,
+);
+router.post(
+  "/reconciliation/invoices/:tenantId",
+  requirePermission(Permission.BILLING_MANAGE, { denialAuditAction: "BILLING_AUTHORIZATION_DENIED", resourceType: "Permission" }),
+  invoiceReconciliationController,
 );
 router.post(
   "/reconciliation/subscriptions/:tenantId/sync-provider",

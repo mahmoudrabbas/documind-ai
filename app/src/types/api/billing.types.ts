@@ -67,6 +67,14 @@ export interface SubscriptionStatus {
   canCancel: boolean;
   canReactivate: boolean;
   canRequestRefund: boolean;
+  canViewInvoices: boolean;
+  lifecycle: {
+    eligible: boolean;
+    inGracePeriod: boolean;
+    accessEndsAt: string | null;
+    reason: string;
+  };
+  invoiceSummary: { total: number; open: number; paid: number; pastDue: number };
 }
 
 export interface PaymentEvent {
@@ -114,4 +122,32 @@ export interface PublicPackage {
 
 export interface BillingPortalSessionResponse {
   url: string;
+  expiresAt: string | null;
+}
+
+export type BillingPortalFlow = "general" | "payment_method_update";
+export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible";
+export interface BillingInvoice {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  currency: string;
+  amountDueMinor: number;
+  amountPaidMinor: number;
+  amountRemainingMinor: number;
+  subtotalMinor: number;
+  taxMinor: number | null;
+  createdAt: string;
+  dueAt: string | null;
+  paidAt: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  hostedInvoiceAvailable: boolean;
+  invoicePdfAvailable: boolean;
+  receiptAvailable: boolean;
+}
+export interface InvoiceLinks {
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+  receiptUrl: string | null;
 }

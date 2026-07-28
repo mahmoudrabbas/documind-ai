@@ -13,6 +13,9 @@ describe("Issue 29 billing schemas", () => {
   it("declares tenant invoice indexes and hides links by default", () => {
     expect((InvoiceModel.schema.indexes() as Array<[Record<string, number>, Record<string, unknown>]>).map(([, options]) => options.name)).toEqual(expect.arrayContaining(["uq_provider_invoice", "idx_invoice_tenant_created", "idx_invoice_tenant_status", "idx_invoice_tenant_subscription"]));
     expect(InvoiceModel.schema.path("hostedInvoiceUrl").options.select).toBe(false);
+    expect(InvoiceModel.schema.path("invoicePdfUrl").options.select).toBe(false);
+    expect(InvoiceModel.schema.path("receiptUrl").options.select).toBe(false);
+    expect(InvoiceModel.schema.path("hostedInvoiceAvailable").options.default).toBe(false);
   });
   it("supports multiple partial refunds without using subscription payment state", () => {
     expect((RefundModel.schema.indexes() as Array<[Record<string, number>, Record<string, unknown>]>).map(([, options]) => options.name)).toEqual(expect.arrayContaining(["uq_provider_refund", "idx_refund_tenant_invoice", "uq_refund_operation"]));

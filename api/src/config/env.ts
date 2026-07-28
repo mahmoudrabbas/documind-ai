@@ -156,7 +156,8 @@ const envSchema = z
     STRIPE_PUBLISHABLE_KEY: z.string().default(""),
     STRIPE_SUCCESS_URL: z.string().url().default("http://localhost:3000/checkout/success"),
     STRIPE_CANCEL_URL: z.string().url().default("http://localhost:3000/checkout/cancel"),
-    STRIPE_BILLING_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3000/checkout"),
+    STRIPE_BILLING_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3000/dashboard/settings/billing"),
+    STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: z.string().default(""),
     BILLING_PORTAL_ALLOWED_ORIGIN: z.string().url().default("http://localhost:3000"),
     BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(90).default(7),
 

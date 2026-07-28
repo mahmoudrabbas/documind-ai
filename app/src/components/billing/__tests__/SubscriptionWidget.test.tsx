@@ -11,6 +11,7 @@ import { SubscriptionWidget } from "../SubscriptionWidget";
 
 vi.mock("@/providers/auth-provider", () => ({ useAuth: vi.fn() }));
 vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
+vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ t: (key: string) => key === "billingAdmin.title" ? "Billing & invoices" : key }) }));
 vi.mock("@/services/billing.service", () => ({
   getSubscriptionStatus: vi.fn(),
   createBillingPortalSession: vi.fn(),
@@ -75,6 +76,14 @@ function createMockSubscription(
     canCancel: true,
     canReactivate: false,
     canRequestRefund: true,
+    canViewInvoices: true,
+    lifecycle: {
+      eligible: true,
+      inGracePeriod: false,
+      accessEndsAt: null,
+      reason: "ACTIVE",
+    },
+    invoiceSummary: { total: 1, open: 0, paid: 1, pastDue: 0 },
     ...overrides,
   };
 }
@@ -189,7 +198,7 @@ describe("SubscriptionWidget", () => {
 
   /* ── 5. Active subscription ────────────────────────────────────── */
 
-  it("renders the full subscription panel (plan name, badge, entitlements, price, Manage Billing) for an active subscription", async () => {
+  it("renders the full subscription panel and dedicated billing-page link for an active subscription", async () => {
     (getSubscriptionStatus as Mock).mockResolvedValue({
       data: createMockSubscription(),
     });
@@ -215,11 +224,8 @@ describe("SubscriptionWidget", () => {
     expect(container.textContent).toContain("$49");
     expect(container.textContent).toContain("$490");
 
-    // Manage Billing button (visible when providerCustomerId is set)
-    const manageBtn = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.textContent?.includes("Manage Billing"),
-    );
-    expect(manageBtn).toBeTruthy();
+    const billingLink = container.querySelector('a[href="/dashboard/settings/billing"]');
+    expect(billingLink?.textContent).toContain("Billing & invoices");
   });
 
   /* ── 6. Trialing ───────────────────────────────────────────────── */
@@ -269,10 +275,6 @@ describe("SubscriptionWidget", () => {
     // The panel is still rendered
     expect(container.textContent).toContain("Professional Plan");
 
-    // No Manage Billing button
-    const manageBtn = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.textContent?.includes("Manage Billing"),
-    );
-    expect(manageBtn).toBeUndefined();
+    expect(container.querySelector('a[href="/dashboard/settings/billing"]')).toBeNull();
   });
 });

@@ -33,6 +33,8 @@ import {
 } from "../payment-provider.port.js";
 import { config } from "../../../../config/index.js";
 import { logger } from "../../../../common/logger/logger.js";
+import { AppError } from "../../../../common/errors/AppError.js";
+import { BILLING_PROVIDER_CONFIGURATION_INVALID } from "../../../../common/errors/errorCodes.js";
 import { assertBillingPortalReturnUrl } from "../../portal-url-policy.js";
 
 let stripeClient: Stripe | null = null;
@@ -171,9 +173,15 @@ export class StripePaymentProvider implements PaymentProvider {
   ): Promise<BillingPortalSession> {
     assertBillingPortalReturnUrl(params.returnUrl, config.BILLING_PORTAL_ALLOWED_ORIGIN);
     const stripe = await this.client();
+    if (params.flow === "general" && !config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID.trim()) {
+      throw new AppError(503, BILLING_PROVIDER_CONFIGURATION_INVALID, "Billing provider configuration is invalid");
+    }
     const session = await stripe.billingPortal.sessions.create({
       customer: params.customerId,
       return_url: params.returnUrl,
+      ...(params.flow === "general"
+        ? { configuration: config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID }
+        : {}),
       ...(params.flow === "payment_method_update"
         ? { flow_data: { type: "payment_method_update" as const } }
         : {}),
@@ -254,7 +262,10 @@ export class StripePaymentProvider implements PaymentProvider {
       ...(params.cursor ? { starting_after: params.cursor } : {}),
     });
     return {
-      invoices: page.data.map((invoice) => this.mapInvoice(invoice)),
+      invoices: page.data.map((invoice) => {
+        assertProviderOwnership(customerId(invoice.customer), params.customerId);
+        return this.mapInvoice(invoice);
+      }),
       hasMore: page.has_more,
       nextCursor: page.has_more ? page.data.at(-1)?.id ?? null : null,
     };
@@ -274,7 +285,7 @@ export class StripePaymentProvider implements PaymentProvider {
     return {
       hostedInvoiceUrl: secureStripeUrl(invoice.hosted_invoice_url),
       invoicePdfUrl: secureStripeUrl(invoice.invoice_pdf),
-      receiptUrl: null,
+      receiptUrl: await this.invoiceReceiptUrl(stripe, invoice.id, params.expectedCustomerId),
     };
   }
 
@@ -391,7 +402,35 @@ export class StripePaymentProvider implements PaymentProvider {
       createdAt: new Date(invoice.created * 1000), dueAt: unixDate(invoice.due_date),
       paidAt: unixDate(invoice.status_transitions?.paid_at), periodStart: unixDate(invoice.period_start),
       periodEnd: unixDate(invoice.period_end), providerVersion: null,
+      observedAt: new Date(),
+      hostedInvoiceAvailable: Boolean(invoice.hosted_invoice_url),
+      invoicePdfAvailable: Boolean(invoice.invoice_pdf),
+      receiptAvailable: invoice.status === "paid",
     };
+  }
+
+  private async invoiceReceiptUrl(stripe: Stripe, invoiceId: string, expectedCustomerId: string): Promise<string | null> {
+    const payments = await stripe.invoicePayments.list({ invoice: invoiceId, status: "paid", limit: 10 });
+    for (const payment of payments.data) {
+      const chargeReference = payment.payment.charge;
+      if (chargeReference) {
+        const charge = typeof chargeReference === "string" ? await stripe.charges.retrieve(chargeReference) : chargeReference;
+        assertProviderOwnership(customerId(charge.customer), expectedCustomerId);
+        const receipt = secureStripeUrl(charge.receipt_url);
+        if (receipt) return receipt;
+      }
+      const intentReference = payment.payment.payment_intent;
+      if (!intentReference) continue;
+      const intent = typeof intentReference === "string" ? await stripe.paymentIntents.retrieve(intentReference) : intentReference;
+      assertProviderOwnership(customerId(intent.customer), expectedCustomerId);
+      const latestCharge = intent.latest_charge;
+      if (!latestCharge) continue;
+      const charge = typeof latestCharge === "string" ? await stripe.charges.retrieve(latestCharge) : latestCharge;
+      assertProviderOwnership(customerId(charge.customer), expectedCustomerId);
+      const receipt = secureStripeUrl(charge.receipt_url);
+      if (receipt) return receipt;
+    }
+    return null;
   }
 
   private mapRefund(refund: Stripe.Refund, owner: string): ProviderRefund {

@@ -73,6 +73,10 @@ export interface ProviderInvoice {
   periodStart: Date | null;
   periodEnd: Date | null;
   providerVersion: string | null;
+  observedAt?: Date;
+  hostedInvoiceAvailable?: boolean;
+  invoicePdfAvailable?: boolean;
+  receiptAvailable?: boolean;
 }
 export interface ProviderInvoicePage {
   invoices: ProviderInvoice[];
@@ -157,7 +161,7 @@ export interface StripePrice {
 export interface CreateBillingPortalSessionParams {
   customerId: string;
   returnUrl: string;
-  flow?: "general" | "payment_method_update";
+  flow: "general" | "payment_method_update";
   operationContext?: ProviderOperationContext;
 }
 export interface ProviderPortalSession { url: string; expiresAt: Date | null }

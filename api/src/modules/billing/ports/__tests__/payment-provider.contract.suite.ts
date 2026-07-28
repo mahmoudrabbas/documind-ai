@@ -182,9 +182,19 @@ export function paymentProviderContractTests(
       const session = await provider.createBillingPortalSession({
         customerId: "cus_test_portal",
         returnUrl: "https://example.com/checkout",
+        flow: "general",
       });
       expect(session.url).toBeTruthy();
       expect(typeof session.url).toBe("string");
+    });
+
+    it("supports an explicit payment-method portal intent", async () => {
+      const session = await provider.createBillingPortalSession({
+        customerId: "cus_test_portal",
+        returnUrl: "https://example.com/dashboard/settings/billing",
+        flow: "payment_method_update",
+      });
+      expect(session.url).toBeTruthy();
     });
   });
 }

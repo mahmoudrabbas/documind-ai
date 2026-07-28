@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
+  createBillingPortalSession,
+  getBillingSummary,
+  getInvoiceLinks,
+  listInvoices,
   syncSubscriptionFromStripe,
   triggerReconciliation,
 } from "./billing.service";
@@ -11,6 +15,23 @@ vi.mock("@/lib/api-client", () => ({
 
 beforeEach(() => {
   mockApiClient.mockReset();
+});
+
+describe("tenant billing API client", () => {
+  it("uses version-stable tenant routes and explicit portal flow intent", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: {} });
+    await getBillingSummary();
+    await createBillingPortalSession("payment_method_update");
+    await listInvoices({ page: 2, pageSize: 10, status: "paid" });
+    await getInvoiceLinks("local/id");
+    expect(mockApiClient.mock.calls.map(([url]) => url)).toEqual([
+      "/billing/summary",
+      "/billing/portal-sessions",
+      "/billing/invoices?page=2&pageSize=10&status=paid",
+      "/billing/invoices/local%2Fid/links",
+    ]);
+    expect(mockApiClient.mock.calls[1][1]).toEqual({ method: "POST", body: { flow: "payment_method_update" } });
+  });
 });
 
 describe("billing.service syncSubscriptionFromStripe", () => {

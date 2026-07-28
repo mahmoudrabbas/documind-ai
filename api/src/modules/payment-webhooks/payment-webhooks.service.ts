@@ -27,6 +27,12 @@ import {
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 import { reconcileBillingOperation } from "../billing/billing-operation-reconciliation.service.js";
+import {
+  BILLING_SUBSCRIPTION_NOT_READY,
+  INVOICE_WEBHOOK_EVENTS,
+  RetryableInvoiceSynchronizationError,
+  synchronizeInvoiceFromReference,
+} from "../billing/invoice-synchronization.service.js";
 
 const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
   "checkout.session.completed",
@@ -40,6 +46,12 @@ const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
 
 class ProviderStateReadUnavailableError extends Error {
   readonly code = BILLING_PROVIDER_UNAVAILABLE;
+}
+
+class RetryableInvoiceStateError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
 }
 
 function writeAudit(
@@ -127,6 +139,11 @@ export async function handlePaymentEvent(
   provider?: PaymentProvider,
 ): Promise<void> {
   let eventRecord = existingEvent;
+  if (eventRecord?.status === "failed") {
+    eventRecord.status = "received";
+    eventRecord.processingErrors = [];
+    eventRecord.processedAt = null;
+  }
   if (!eventRecord) {
     const duplicate = await PaymentEventModel.findOne({ provider: event.provider, eventId: event.id }).exec();
     if (duplicate?.status !== "failed") {
@@ -171,6 +188,30 @@ export async function handlePaymentEvent(
 
     const providerSubscription = await retrieveProviderSubscription(event, provider);
     const packageMapping = await resolveEventPackageMapping(event, providerSubscription);
+
+    if (INVOICE_WEBHOOK_EVENTS.has(event.type) && provider) {
+      const invoiceId = extractInvoiceIdFromEvent(event);
+      const customerId = extractCustomerIdFromEvent(event);
+      if (!invoiceId || !customerId) throw new ProviderStateReadUnavailableError("Current provider invoice reference is unavailable");
+      try {
+        await synchronizeInvoiceFromReference({
+          provider,
+          providerName: event.provider,
+          providerInvoiceId: invoiceId,
+          providerCustomerId: customerId,
+          providerSubscriptionId: extractStripeSubscriptionIdFromEvent(event),
+          sourceEventId: event.id,
+        });
+      } catch (error) {
+        throw retryableInvoiceError(error);
+      }
+      if (!AUTHORITATIVE_SUBSCRIPTION_EVENTS.has(event.type)) {
+        eventRecord.status = "processed";
+        eventRecord.processedAt = new Date();
+        await eventRecord.save();
+        return;
+      }
+    }
 
     if (event.type === "payment_intent.payment_failed") {
       await handlePaymentFailure(
@@ -265,12 +306,14 @@ export async function handlePaymentEvent(
   } catch (error) {
     const safeFailureCode = error instanceof ProviderStateReadUnavailableError
       ? error.code
+      : error instanceof RetryableInvoiceStateError
+      ? error.code
       : error instanceof AppError
         ? error.code
         : error instanceof Error
           ? error.message
           : "PAYMENT_EVENT_PROCESSING_FAILED";
-    if (error instanceof ProviderStateReadUnavailableError) {
+    if (error instanceof ProviderStateReadUnavailableError || error instanceof RetryableInvoiceStateError) {
       logger.error({ errorCode: safeFailureCode, eventId: event.id }, "Failed to retrieve current provider state");
       const tenantId = extractTenantFromEvent(event)?.toString();
       if (tenantId) {
@@ -291,6 +334,16 @@ export async function handlePaymentEvent(
     eventRecord.processingErrors.push(safeFailureCode);
     await eventRecord.save();
   }
+}
+
+function retryableInvoiceError(error: unknown): Error {
+  if (error instanceof RetryableInvoiceSynchronizationError) {
+    return new RetryableInvoiceStateError(error.code);
+  }
+  if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === BILLING_SUBSCRIPTION_NOT_READY) {
+    return new RetryableInvoiceStateError(BILLING_SUBSCRIPTION_NOT_READY);
+  }
+  return error instanceof Error ? error : new Error(BILLING_SUBSCRIPTION_NOT_READY);
 }
 
 // ── Static mapping handler (checkout, invoice, subscription.deleted) ─────────
@@ -850,10 +903,19 @@ function extractStripeSubscriptionIdFromEvent(
 ): string | undefined {
   const obj = extractRawObject(event);
   if (typeof obj?.subscription === "string") return obj.subscription;
+  const parent = obj?.parent as { subscription_details?: { subscription?: string | { id?: string } } } | undefined;
+  const parentSubscription = parent?.subscription_details?.subscription;
+  if (typeof parentSubscription === "string") return parentSubscription;
+  if (parentSubscription?.id) return parentSubscription.id;
   if (event.type.startsWith("customer.subscription.") && typeof obj?.id === "string") {
     return obj.id;
   }
   return undefined;
+}
+
+function extractInvoiceIdFromEvent(event: PaymentProviderEvent): string | undefined {
+  const obj = extractRawObject(event);
+  return typeof obj?.id === "string" ? obj.id : undefined;
 }
 
 function extractPriceIdFromEvent(event: PaymentProviderEvent): string | undefined {

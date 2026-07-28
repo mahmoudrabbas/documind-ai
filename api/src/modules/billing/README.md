@@ -2,7 +2,7 @@
 
 > Module: `api/src/modules/billing/`  
 > Issue: 04 — Normalize Package and Subscription Domain  
-> Status: Existing package/checkout/webhook behavior plus Issue 29 Phase 1 billing foundation
+> Status: Existing package/checkout/webhook behavior plus Issue 29 Phases 1–2 billing read experience
 
 ## Overview
 
@@ -185,12 +185,42 @@ Run `npm run migrate:billing:issue29` for the default dry run. Only an explicit 
 
 Rollback the application independently. If necessary, an operator may explicitly remove only Issue 29 indexes after confirming no compatible application version uses them. Billing operations, invoices, and refunds are business/audit records and must not be automatically deleted. Subscription state and entitlements must remain untouched.
 
-### Deferred after Phase 1
+## Issue 29 Phase 2 billing read experience
 
-Phase 1 adds no customer mutation HTTP routes or UI. Company invoice routes/backfill and billing page are Phase 2; plan change, cancellation/reactivation routes and UI are Phase 3; refund request/confirmation routes and Super Admin UI are Phase 4; browser E2E and full security verification are Phase 5. Existing checkout, Billing Portal, verified webhooks, reconciliation, package/subscription administration, permissions, and quota behavior remain in service.
+Phase 2 adds authenticated, tenant-derived routes under `/billing`:
+
+| Route | Permission | Contract |
+|---|---|---|
+| `GET /billing/summary` | `billing:read` | Sanitized subscription, lifecycle/grace decision, safe Phase 2 capabilities, pending-operation summary, and local invoice counts |
+| `POST /billing/portal-sessions` | `billing:manage` | Strict `{ flow: "general" | "payment_method_update" }`; returns only `{ url, expiresAt }` |
+| `GET /billing/invoices` | `billing:read` | Tenant-local projection, newest first; `page`, `pageSize` (maximum 50), optional status/date/local-subscription filters |
+| `GET /billing/invoices/:invoiceId` | `billing:read` | Tenant-local invoice DTO with hidden-404 semantics |
+| `GET /billing/invoices/:invoiceId/links` | `billing:read` | Fresh provider ownership validation and allowlisted secure links |
+
+Tenant identity never comes from route/query/body input. Normal invoice DTOs contain a local invoice ID, normalized status, uppercase ISO currency, integer minor-unit amounts, dates, and link-availability booleans. They exclude provider customer/subscription/price/event/invoice IDs, raw payloads, reconciliation metadata, and URLs. Link lookup accepts only the local invoice ID, verifies the local tenant and subscription, retrieves current provider invoice ownership, and returns HTTPS links accepted by the provider adapter. URLs and provider identifiers are excluded from audit metadata.
+
+Portal return URLs are configured by `STRIPE_BILLING_PORTAL_RETURN_URL`, must match `BILLING_PORTAL_ALLOWED_ORIGIN`, and default locally to `/dashboard/settings/billing`. Browser input cannot override the return URL or provider flow configuration. Stripe `payment_method_update` flow data and Stripe URL allowlisting stay inside the Stripe adapter. The Phase 2 `general` portal flow is enabled only when `STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID` points to a restricted Stripe Billing Portal configuration that does not expose plan changes, cancellation, quantity changes, or other Phase 3/4 mutations. If that configuration ID is absent, the backend fails safe and exposes only the payment-method-update portal flow. No card data is collected by this application.
+
+`InvoiceSynchronizationService` treats `invoice.created`, `invoice.finalized`, `invoice.updated`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, and `invoice.marked_uncollectible` as verified synchronization triggers. It retrieves normalized current provider state, validates customer/subscription ownership, and idempotently projects by `(provider, providerInvoiceId)`. Provider observation time—not lexical event ID order—guards stale writes. Failures retain local history, mark the durable webhook event failed for replay, emit a stable `BILLING_PROVIDER_UNAVAILABLE` code, and never project the unverified webhook payload.
+
+The existing Super Admin reconciliation architecture also exposes bounded `POST /super-admin/reconciliation/invoices/:tenantId` with platform isolation and `billing:manage`. It scans at most 200 invoices per invocation using provider cursors, continues across per-invoice projection errors, reports examined/created/updated/unchanged/failed counts, and never deletes invoices or changes subscriptions, entitlements, provider subscriptions, or refunds.
+
+The Company Admin page is `/dashboard/settings/billing`. Navigation and direct access require `billing:read`; portal actions additionally require `billing:manage`. It has independent summary/invoice loading and recovery states, a no-provider state, pending/grace messages, responsive table/cards, pagination, secure external invoice actions, duplicate portal-click protection, semantic headings/table headers/live regions/focusable errors, and localized English LTR/Arabic RTL dates, money, labels, and statuses. The dashboard `SubscriptionWidget` remains a compact summary and links to this page.
+
+For local Stripe webhook forwarding use:
+
+```sh
+stripe listen --forward-to http://localhost:5000/webhooks/payment/stripe
+```
+
+The deterministic fake supplies invoice pagination, current invoice reads, availability/secure-link fixtures, portal intents, and configurable invoice-read failures. Stripe adapter tests use a mocked SDK; Phase 2 tests and reconciliation use fakes or the disposable MongoDB harness and make no provider network calls.
+
+### Deferred after Phase 2
+
+Phase 2 exposes no plan-change, proration, cancellation, reactivation, or refund HTTP routes/actions. Those subscription mutations remain Phase 3; refund request/confirmation routes and Super Admin refund UI remain Phase 4; broader browser E2E/full security verification remains Phase 5. Phase 1 provider mutation contracts stay disconnected from customer APIs.
 
 ## Known limitations
 
 - Tenant `plan` string remains deprecated for backward compatibility.
-- The Phase 1 adapter mutation methods are deliberately not connected to customer-facing routes.
-- Invoice/refund provider event handlers and live invoice backfill are deferred.
+- Phase 1 plan/cancel/reactivate/refund adapter methods remain deliberately disconnected from customer-facing routes.
+- Invoice reconciliation is bounded and operator-triggered; normal invoice page reads remain local and do not perform unbounded provider backfills.

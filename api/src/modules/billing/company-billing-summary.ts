@@ -10,12 +10,20 @@ export interface CompanyBillingSummary {
   pendingOperation: { type: string; status: string; requestedAt: Date } | null;
   canOpenPortal: boolean; canUpdatePaymentMethod: boolean; canChangePlan: boolean;
   canCancel: boolean; canReactivate: boolean; canRequestRefund: boolean;
+  canViewInvoices: boolean;
+  lifecycle: { eligible: boolean; inGracePeriod: boolean; accessEndsAt: Date | null; reason: string };
+  invoiceSummary: { total: number; open: number; paid: number; pastDue: number };
 }
 
 export function toCompanyBillingSummary(
   subscription: Record<string, unknown>,
   pendingOperation: { operationType: string; status: string; requestedAt: Date; conflictGroup?: string | null } | null = null,
-  hasPendingSubscriptionMutation = Boolean(pendingOperation?.conflictGroup === "SUBSCRIPTION_MUTATION"),
+  _hasPendingSubscriptionMutation = Boolean(pendingOperation?.conflictGroup === "SUBSCRIPTION_MUTATION"),
+  extras: {
+    lifecycle?: CompanyBillingSummary["lifecycle"];
+    invoiceSummary?: CompanyBillingSummary["invoiceSummary"];
+    capabilities?: Partial<Pick<CompanyBillingSummary, "canOpenPortal" | "canUpdatePaymentMethod" | "canViewInvoices" | "canChangePlan" | "canCancel" | "canReactivate" | "canRequestRefund">>;
+  } = {},
 ): CompanyBillingSummary {
   const status = subscription.status as SubscriptionStatus;
   const providerManaged = Boolean(subscription.providerCustomerId || subscription.providerSubscriptionId);
@@ -34,11 +42,15 @@ export function toCompanyBillingSummary(
     cancellationEffectiveAt: subscription.cancelAtPeriodEnd ? dateOrNull(subscription.currentPeriodEnd ?? subscription.periodEnd) : null,
     providerManaged, providerLinked,
     pendingOperation: pendingOperation ? { type: pendingOperation.operationType, status: pendingOperation.status, requestedAt: pendingOperation.requestedAt } : null,
-    canOpenPortal: Boolean(subscription.providerCustomerId), canUpdatePaymentMethod: Boolean(subscription.providerCustomerId),
-    canChangePlan: providerLinked && active && !hasPendingSubscriptionMutation,
-    canCancel: providerLinked && active && !subscription.cancelAtPeriodEnd && !hasPendingSubscriptionMutation,
-    canReactivate: providerLinked && Boolean(subscription.cancelAtPeriodEnd) && !hasPendingSubscriptionMutation,
-    canRequestRefund: Boolean(subscription.providerCustomerId),
+    canOpenPortal: extras.capabilities?.canOpenPortal ?? Boolean(subscription.providerCustomerId),
+    canUpdatePaymentMethod: extras.capabilities?.canUpdatePaymentMethod ?? Boolean(subscription.providerCustomerId),
+    canViewInvoices: extras.capabilities?.canViewInvoices ?? providerLinked,
+    canChangePlan: extras.capabilities?.canChangePlan ?? false,
+    canCancel: extras.capabilities?.canCancel ?? false,
+    canReactivate: extras.capabilities?.canReactivate ?? false,
+    canRequestRefund: extras.capabilities?.canRequestRefund ?? false,
+    lifecycle: extras.lifecycle ?? { eligible: active, inGracePeriod: false, accessEndsAt: null, reason: status },
+    invoiceSummary: extras.invoiceSummary ?? { total: 0, open: 0, paid: 0, pastDue: 0 },
   };
 }
 

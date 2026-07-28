@@ -25,6 +25,7 @@ import type { PaymentProvider } from "../billing/ports/payment-provider.port.js"
 import type { ProviderOperationContext } from "../billing/ports/payment-provider.port.js";
 import { synchronizeProviderSubscription } from "../billing/provider-subscription-sync.service.js";
 import { toCompanyBillingSummary } from "../billing/company-billing-summary.js";
+import { assertBillingPortalFlowAvailable } from "../billing/portal-flow-policy.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   authorizeTenantOperation,
@@ -659,10 +660,11 @@ export async function createBillingPortalSession(
       "No billing customer on file. Please complete a checkout first.",
     );
   }
+  assertBillingPortalFlowAvailable(sub.provider, "general");
 
   let session;
   try {
-    session = await provider.createBillingPortalSession({ customerId: sub.providerCustomerId, returnUrl });
+    session = await provider.createBillingPortalSession({ customerId: sub.providerCustomerId, returnUrl, flow: "general" });
   } catch {
     throw new AppError(503, BILLING_PROVIDER_UNAVAILABLE, "Billing provider is temporarily unavailable");
   }

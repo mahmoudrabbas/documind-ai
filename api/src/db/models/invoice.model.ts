@@ -8,6 +8,7 @@ export interface InvoiceDocument extends mongoose.Document {
   subtotalMinor: number; taxMinor: number | null; createdAtProvider: Date; dueAt: Date | null;
   paidAt: Date | null; periodStart: Date | null; periodEnd: Date | null; synchronizedAt: Date;
   hostedInvoiceUrl: string; invoicePdfUrl: string; receiptUrl: string;
+  hostedInvoiceAvailable: boolean; invoicePdfAvailable: boolean; receiptAvailable: boolean;
   providerVersion: string; lastProviderEventId: string; providerStateObservedAt: Date | null;
   createdAt: Date; updatedAt: Date;
 }
@@ -25,6 +26,7 @@ const schema = new Schema<InvoiceDocument>({
   dueAt: { type: Date, default: null }, paidAt: { type: Date, default: null }, periodStart: { type: Date, default: null }, periodEnd: { type: Date, default: null },
   synchronizedAt: { type: Date, required: true, default: Date.now },
   hostedInvoiceUrl: { type: String, default: "", select: false }, invoicePdfUrl: { type: String, default: "", select: false }, receiptUrl: { type: String, default: "", select: false },
+  hostedInvoiceAvailable: { type: Boolean, default: false }, invoicePdfAvailable: { type: Boolean, default: false }, receiptAvailable: { type: Boolean, default: false },
   providerVersion: { type: String, default: "" }, lastProviderEventId: { type: String, default: "" }, providerStateObservedAt: { type: Date, default: null },
 }, { timestamps: true });
 schema.index({ provider: 1, providerInvoiceId: 1 }, { unique: true, name: "uq_provider_invoice" });

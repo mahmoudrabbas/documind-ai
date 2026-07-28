@@ -51,7 +51,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Billing",
-    href: "/checkout",
+    href: "/dashboard/settings/billing",
     icon: "payments",
     context: "tenant",
     requiredPermissions: [Permission.BILLING_READ],

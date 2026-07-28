@@ -6,6 +6,10 @@ import type {
   PaymentEvent,
   Pagination,
   BillingPortalSessionResponse,
+  BillingPortalFlow,
+  BillingInvoice,
+  InvoiceLinks,
+  InvoiceStatus,
 } from "@/types/api/billing.types";
 
 type Success<T> = { success: true; data: T };
@@ -91,9 +95,26 @@ export function listCheckoutSessions(
   );
 }
 
-export function createBillingPortalSession() {
+export function createBillingPortalSession(flow: BillingPortalFlow = "general") {
   return apiClient<Success<BillingPortalSessionResponse>>(
-    "/checkout/billing-portal",
-    { method: "POST" },
+    "/billing/portal-sessions",
+    { method: "POST", body: { flow } },
   );
+}
+
+export function getBillingSummary(signal?: AbortSignal) {
+  return apiClient<Success<SubscriptionStatus>>("/billing/summary", { signal, cache: "no-store" });
+}
+
+export function listInvoices(params: { page?: number; pageSize?: number; status?: InvoiceStatus }, signal?: AbortSignal) {
+  const search = new URLSearchParams();
+  if (params.page) search.set("page", String(params.page));
+  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  if (params.status) search.set("status", params.status);
+  const query = search.toString();
+  return apiClient<Success<{ invoices: BillingInvoice[]; pagination: Pagination }>>(`/billing/invoices${query ? `?${query}` : ""}`, { signal, cache: "no-store" });
+}
+
+export function getInvoiceLinks(invoiceId: string) {
+  return apiClient<Success<InvoiceLinks>>(`/billing/invoices/${encodeURIComponent(invoiceId)}/links`, { cache: "no-store" });
 }

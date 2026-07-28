@@ -11,6 +11,7 @@ export default defineConfig({
       "src/modules/reconciliation/__tests__/provider-reconciliation.service.test.ts",
       "src/modules/auth/__tests__/*.test.ts",
       "src/db/__tests__/*.test.ts",
+      "src/db/models/billing-models.test.ts",
       "src/scripts/__tests__/*.test.ts",
       "src/modules/imports/__tests__/*.test.ts",
       "src/modules/imports/ports/__tests__/*.test.ts",

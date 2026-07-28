@@ -88,6 +88,7 @@ export class FakePaymentProvider implements PaymentProvider {
   shouldFailNextCreatePrice = false;
   shouldFailNextCreatePortalSession = false;
   shouldFailNextRetrieveSession = false;
+  shouldFailNextInvoiceRead = false;
 
   _reset(): void {
     this.customers.length = 0;
@@ -105,6 +106,7 @@ export class FakePaymentProvider implements PaymentProvider {
     this.shouldFailNextCreatePrice = false;
     this.shouldFailNextCreatePortalSession = false;
     this.shouldFailNextRetrieveSession = false;
+    this.shouldFailNextInvoiceRead = false;
     this.nextId = 1;
     this.now = new Date("2026-01-01T00:00:00.000Z");
     this.shouldFailNextOperation = false;
@@ -211,7 +213,7 @@ export class FakePaymentProvider implements PaymentProvider {
       this.shouldFailNextCreatePortalSession = false;
       throw new Error("Fake provider: billing portal session creation failed");
     }
-    return { url: `${params.returnUrl}?fake_portal=1`, expiresAt: new Date(this.now.getTime() + 30 * 60_000) };
+    return { url: `${params.returnUrl}?fake_portal=1&flow=${params.flow}`, expiresAt: new Date(this.now.getTime() + 30 * 60_000) };
   }
 
   verifyWebhookSignature(body: string, signature: string): boolean {
@@ -313,23 +315,38 @@ export class FakePaymentProvider implements PaymentProvider {
   }
 
   async listInvoices(params: InvoiceListParams): Promise<ProviderInvoicePage> {
+    this.failInvoiceReadIfConfigured();
     const owned = this.invoices.filter((invoice) => invoice.customerId === params.customerId);
     const start = params.cursor ? Math.max(0, owned.findIndex((invoice) => invoice.id === params.cursor) + 1) : 0;
     const page = owned.slice(start, start + params.limit);
     return {
-      invoices: page.map(({ hostedInvoiceUrl: _h, invoicePdfUrl: _p, receiptUrl: _r, ...invoice }) => invoice),
+      invoices: page.map(({ hostedInvoiceUrl: _h, invoicePdfUrl: _p, receiptUrl: _r, ...invoice }) => ({
+        ...invoice,
+        observedAt: new Date(this.now),
+        hostedInvoiceAvailable: Boolean(_h),
+        invoicePdfAvailable: Boolean(_p),
+        receiptAvailable: Boolean(_r),
+      })),
       hasMore: start + page.length < owned.length,
       nextCursor: start + page.length < owned.length ? page.at(-1)?.id ?? null : null,
     };
   }
 
   async retrieveInvoice(params: InvoiceRetrieveParams): Promise<ProviderInvoice> {
+    this.failInvoiceReadIfConfigured();
     const invoice = this.ownedInvoice(params);
     const { hostedInvoiceUrl: _h, invoicePdfUrl: _p, receiptUrl: _r, ...normalized } = invoice;
-    return normalized;
+    return {
+      ...normalized,
+      observedAt: new Date(this.now),
+      hostedInvoiceAvailable: Boolean(invoice.hostedInvoiceUrl),
+      invoicePdfAvailable: Boolean(invoice.invoicePdfUrl),
+      receiptAvailable: Boolean(invoice.receiptUrl),
+    };
   }
 
   async getSecureInvoiceLinks(params: InvoiceRetrieveParams): Promise<ProviderInvoiceLinks> {
+    this.failInvoiceReadIfConfigured();
     const invoice = this.ownedInvoice(params);
     return {
       hostedInvoiceUrl: invoice.hostedInvoiceUrl,
@@ -432,6 +449,12 @@ export class FakePaymentProvider implements PaymentProvider {
 
   private assertOwnership(actual: string, expected: string): void {
     if (!expected || actual !== expected) throw new Error("Fake provider: ownership mismatch");
+  }
+
+  private failInvoiceReadIfConfigured(): void {
+    if (!this.shouldFailNextInvoiceRead) return;
+    this.shouldFailNextInvoiceRead = false;
+    throw new Error("Fake provider: invoice read failed");
   }
 
   private state(subscription: ProviderSubscription): ProviderSubscriptionState {

@@ -152,7 +152,7 @@ export const subscriptionStatusController = endpoint((req, res) => {
 export const createBillingPortalController = endpoint(async (req) => {
   const tenantId = tenant(req);
   const provider = await getPaymentProvider();
-  const returnUrl = config.STRIPE_BILLING_PORTAL_RETURN_URL || `${config.APP_FRONTEND_URL}/checkout`;
+  const returnUrl = config.STRIPE_BILLING_PORTAL_RETURN_URL || `${config.APP_FRONTEND_URL}/dashboard/settings/billing`;
   assertBillingPortalReturnUrl(returnUrl, config.BILLING_PORTAL_ALLOWED_ORIGIN);
   return createBillingPortalSession(
     tenantId,
