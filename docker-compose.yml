@@ -112,6 +112,7 @@ services:
     volumes:
       - ./workers:/repo/workers
       - worker_node_modules:/repo/workers/node_modules
+      - ./api/uploads:/repo/api/uploads
     env_file:
       - path: ./workers/.env
         required: false
