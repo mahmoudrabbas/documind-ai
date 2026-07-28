@@ -51,10 +51,10 @@ describe("permission-driven navigation", () => {
     ).toBe(true);
   });
 
-  it("does not advertise deferred chat, analytics, or knowledge-gap pages", () => {
+  it("does not advertise deferred chat or analytics pages", () => {
     const destinations = TENANT_SIDEBAR_LINKS.map((link) => link.href);
     expect(destinations).not.toContain("/chat");
     expect(destinations).not.toContain("/dashboard/analytics");
-    expect(destinations).not.toContain("/dashboard/knowledge-gaps");
+    expect(destinations).toContain("/dashboard/knowledge-gaps");
   });
 });

@@ -143,7 +143,19 @@ export type AuditAction =
   | "PROCESSING_RUN_INITIATED"
   | "PROCESSING_STAGE_RETRIED"
   | "DOCUMENT_REPROCESSED"
-  | "PROCESSING_CANCELED";
+  | "PROCESSING_CANCELED"
+  // Knowledge Gaps & Feedback
+  | "KNOWLEDGE_GAP_CREATED"
+  | "KNOWLEDGE_GAP_ASSIGNED"
+  | "KNOWLEDGE_GAP_RESOLVED"
+  | "KNOWLEDGE_GAP_DISMISSED"
+  | "KNOWLEDGE_GAP_REOPENED"
+  | "KNOWLEDGE_GAP_MERGED"
+  | "KNOWLEDGE_GAP_SPLIT"
+  | "KNOWLEDGE_GAP_DOCUMENTS_LINKED"
+  | "KNOWLEDGE_GAP_REEVALUATED"
+  | "FEEDBACK_SUBMITTED"
+  | "FEEDBACK_ACCESS_DENIED";
 
 export type AuditResourceType =
   | "User"
@@ -171,7 +183,11 @@ export type AuditResourceType =
   | "DocumentTaxonomy"
   | "DocumentPolicy"
   | "DocumentPolicyPropagation"
-  | "DocumentPolicyGeneration";
+  | "DocumentPolicyGeneration"
+  | "KnowledgeGap"
+  | "GapOccurrence"
+  | "GapReevaluation"
+  | "Feedback";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

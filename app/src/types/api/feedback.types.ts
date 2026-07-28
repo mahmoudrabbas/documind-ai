@@ -1,7 +1,7 @@
 export type FeedbackRating = "thumbs_up" | "thumbs_down";
 export type FeedbackCategory = "inaccurate" | "incomplete" | "irrelevant" | "harmful" | "other";
 
-export interface FeedbackResponse {
+export interface Feedback {
   id: string;
   tenantId: string;
   messageId: string;
@@ -14,10 +14,18 @@ export interface FeedbackResponse {
   updatedAt: string;
 }
 
-export interface FeedbackStatsResponse {
+export interface FeedbackStats {
   totalCount: number;
   thumbsUpCount: number;
   thumbsDownCount: number;
   satisfactionRate: number;
   byCategory: Record<FeedbackCategory, number>;
+}
+
+export interface SubmitFeedbackPayload {
+  messageId: string;
+  conversationId: string;
+  rating: FeedbackRating;
+  category?: FeedbackCategory;
+  comment?: string;
 }
