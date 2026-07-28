@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
 import {
   createCheckoutSession,
   getSubscriptionStatus,
   createBillingPortalSession,
 } from "@/services/billing.service";
-import type { PublicPackage } from "@/types/api/billing.types";
+import type { PublicPackage, SubscriptionStatus } from "@/types/api/billing.types";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -21,6 +21,13 @@ import {
   DashboardPanel,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { formatMoneyMinor } from "@/lib/money";
+import {
+  classifyCheckoutError,
+  getCurrentPackageId,
+  getCurrentPackageName,
+  hasBlockingProviderSubscription,
+} from "./checkout-state";
 
 /* ── Data hooks ─────────────────────────────────────────────────────────── */
 
@@ -55,12 +62,7 @@ function usePublicPackages() {
 
 function formatPrice(price: number, currency: string): string {
   if (price <= 0) return "Free";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currency || "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(price);
+  return formatMoneyMinor(price, currency || "USD");
 }
 
 function statusLabel(status: string): string {
@@ -98,13 +100,10 @@ export default function CheckoutPage() {
   );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [checkoutConflict, setCheckoutConflict] = useState<ReturnType<typeof classifyCheckoutError> | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState("");
-  const [currentSub, setCurrentSub] = useState<{
-    status: string;
-    providerCustomerId: string;
-    packageId?: { _id: string; name: string };
-  } | null>(null);
+  const [currentSub, setCurrentSub] = useState<SubscriptionStatus | null>(null);
 
   useEffect(() => {
     if (!canReadBilling) {
@@ -122,22 +121,35 @@ export default function CheckoutPage() {
       ? selectedPkgData.annualPrice
       : selectedPkgData.monthlyPrice
     : 0;
+  const providerCheckoutBlocked = hasBlockingProviderSubscription(currentSub);
+  const currentPackageId = getCurrentPackageId(currentSub);
+  const currentPackageName = getCurrentPackageName(currentSub) ?? currentPackageId ?? "";
 
   const handleCheckout = useCallback(async () => {
-    if (!selectedPkg || !canManageBilling || selectedPrice <= 0) return;
+    if (!selectedPkg || !canManageBilling || selectedPrice <= 0 || providerCheckoutBlocked) return;
     setSubmitting(true);
     setSubmitError("");
+    setCheckoutConflict(null);
     try {
       const result = await createCheckoutSession(selectedPkg, billingInterval);
       if (result.data.sessionUrl) {
         window.location.href = result.data.sessionUrl;
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const conflict = classifyCheckoutError(error);
+        if (conflict) {
+          setCheckoutConflict(conflict);
+          setSubmitError(conflict.message);
+          return;
+        }
+      }
+      setCheckoutConflict(null);
       setSubmitError("Failed to create checkout session. Please try again.");
     } finally {
       setSubmitting(false);
     }
-  }, [billingInterval, canManageBilling, selectedPkg, selectedPrice]);
+  }, [billingInterval, canManageBilling, providerCheckoutBlocked, selectedPkg, selectedPrice]);
 
   const handleManageBilling = useCallback(async () => {
     setPortalLoading(true);
@@ -277,8 +289,18 @@ export default function CheckoutPage() {
                   Current Plan
                 </p>
                 <h2 className="text-title-lg font-bold text-on-surface">
-                  {currentSub.packageId?.name ?? "Unknown Plan"}
+                  {currentPackageName || "Unknown Plan"}
                 </h2>
+                {currentSub.billingInterval ? (
+                  <p className="text-body-sm text-on-surface-variant">
+                    {formatMoneyMinor(
+                      currentSub.billingInterval === "annual"
+                        ? currentSub.packageId.annualPriceCents
+                        : currentSub.packageId.monthlyPriceCents,
+                      currentSub.packageId.currency,
+                    )}/{currentSub.billingInterval === "annual" ? "year" : "month"}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -327,6 +349,7 @@ export default function CheckoutPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {packages.map((pkg) => {
           const isSelected = selectedPkg === pkg.id;
+          const isCurrentPlan = providerCheckoutBlocked && currentPackageId === pkg.id;
           const price =
             billingInterval === "annual" ? pkg.annualPrice : pkg.monthlyPrice;
 
@@ -334,7 +357,7 @@ export default function CheckoutPage() {
             <button
               key={pkg.id}
               type="button"
-              disabled={auth.status === "authenticated" && !canManageBilling}
+              disabled={auth.status === "authenticated" && (!canManageBilling || isCurrentPlan)}
               onClick={() => setSelectedPkg(pkg.id)}
               className={cn(
                 "group relative flex flex-col rounded-2xl border p-6 text-start transition-all",
@@ -350,6 +373,12 @@ export default function CheckoutPage() {
                   <span className="material-symbols-outlined text-[18px]">
                     check
                   </span>
+                </div>
+              )}
+
+              {isCurrentPlan && (
+                <div className="absolute left-4 top-4">
+                  <Badge status="success">Current plan</Badge>
                 </div>
               )}
 
@@ -395,6 +424,12 @@ export default function CheckoutPage() {
       </div>
 
       {/* Submit error */}
+      {providerCheckoutBlocked ? (
+        <div className="mt-6 rounded-xl border border-outline-variant bg-surface-container px-5 py-3.5 text-body-sm text-on-surface-variant">
+          Your current subscription is managed by Stripe. Use Manage Billing instead of creating another checkout.
+        </div>
+      ) : null}
+
       {submitError && (
         <div className="mt-6 flex items-center gap-3 rounded-xl border border-error/20 bg-error-container px-5 py-3.5">
           <span className="material-symbols-outlined text-[20px] text-on-error-container">
@@ -405,6 +440,33 @@ export default function CheckoutPage() {
           </p>
         </div>
       )}
+
+      {checkoutConflict?.kind === "checkout-pending" && checkoutConflict.reusableCheckoutUrl ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={() => {
+              window.location.href = checkoutConflict.reusableCheckoutUrl ?? "";
+            }}
+          >
+            Continue checkout
+          </Button>
+        </div>
+      ) : null}
+
+      {checkoutConflict?.kind === "active-subscription" && checkoutConflict.manageBillingAvailable ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="md"
+            isLoading={portalLoading}
+            onClick={() => void handleManageBilling()}
+          >
+            Manage Billing
+          </Button>
+        </div>
+      ) : null}
 
       {/* Portal error */}
       {portalError && (
@@ -430,17 +492,29 @@ export default function CheckoutPage() {
             Sign in to continue
           </Button>
         ) : canManageBilling ? (
-          <Button
-            size="lg"
-            disabled={!selectedPkg || selectedPrice <= 0 || submitting}
-            isLoading={submitting}
-            onClick={() => void handleCheckout()}
-            className="min-h-12 px-8"
-          >
-            {submitting
-              ? "Redirecting to payment…"
-              : "Proceed to checkout"}
-          </Button>
+          providerCheckoutBlocked ? (
+            <Button
+              variant="primary"
+              size="lg"
+              isLoading={portalLoading}
+              onClick={() => void handleManageBilling()}
+              className="min-h-12 px-8"
+            >
+              Manage Billing
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              disabled={!selectedPkg || selectedPrice <= 0 || submitting}
+              isLoading={submitting}
+              onClick={() => void handleCheckout()}
+              className="min-h-12 px-8"
+            >
+              {submitting
+                ? "Redirecting to payment…"
+                : "Proceed to checkout"}
+            </Button>
+          )
         ) : null}
 
         {auth.status === "authenticated" && !canManageBilling && (

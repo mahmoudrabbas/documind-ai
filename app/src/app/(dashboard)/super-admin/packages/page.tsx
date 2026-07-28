@@ -18,6 +18,7 @@ import { PermissionAction } from "@/components/auth/permission-boundary";
 import { Permission } from "@/types/api/permissions.types";
 import { usePermissions } from "@/providers/permission-provider";
 import { resolvePackageEntitlement } from "@/components/super-admin/package-display.contract";
+import { formatMoneyMinor } from "@/lib/money";
 
 export default function PackagesPage() {
   const permissions = usePermissions();
@@ -72,11 +73,11 @@ export default function PackagesPage() {
               </td>
               <td className={cell}>v{pkg.version}</td>
               <td className={cell}>
-                {pkg.currency} {pkg.monthlyPrice.toFixed(2)}
+                {formatMoneyMinor(pkg.monthlyPriceCents ?? pkg.monthlyPrice, pkg.currency)}
               </td>
               <td className={cell}>
                 {pkg.annualPrice > 0
-                  ? `${pkg.currency} ${pkg.annualPrice.toFixed(2)}`
+                  ? formatMoneyMinor(pkg.annualPriceCents ?? pkg.annualPrice, pkg.currency)
                   : "—"}
               </td>
               <td className={cell}>

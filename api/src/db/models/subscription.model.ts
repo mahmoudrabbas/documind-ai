@@ -17,12 +17,15 @@ export interface SubscriptionDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   packageId: mongoose.Types.ObjectId;
   packageVersion: number;
+  packageVersionId: mongoose.Types.ObjectId | null;
   status: SubscriptionStatus;
   /** @deprecated Use periodEnd instead */
   renewsAt: Date | null;
   startedAt: Date;
   periodStart: Date | null;
   periodEnd: Date | null;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
   trialStart: Date | null;
   trialEnd: Date | null;
   cancelledAt: Date | null;
@@ -31,6 +34,8 @@ export interface SubscriptionDocument extends mongoose.Document {
   providerCustomerId: string;
   providerSubscriptionId: string;
   providerPriceId: string;
+  provider: string;
+  billingInterval: "monthly" | "annual" | null;
   paymentState: PaymentState;
   providerMetadata: Map<string, string>;
   lastProviderEventId: string;
@@ -64,6 +69,7 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
       index: true,
     },
     packageVersion: { type: Number, required: true, min: 1 },
+    packageVersionId: { type: Schema.Types.ObjectId, default: null, index: true },
     status: {
       type: String,
       enum: [
@@ -85,6 +91,8 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
     renewsAt: { type: Date, default: null },
     periodStart: { type: Date, default: null },
     periodEnd: { type: Date, default: null },
+    currentPeriodStart: { type: Date, default: null },
+    currentPeriodEnd: { type: Date, default: null },
     trialStart: { type: Date, default: null },
     trialEnd: { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
@@ -93,6 +101,8 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
     providerCustomerId: { type: String, default: "" },
     providerSubscriptionId: { type: String, default: "" },
     providerPriceId: { type: String, default: "" },
+    provider: { type: String, default: "" },
+    billingInterval: { type: String, enum: ["monthly", "annual", null], default: null },
     paymentState: {
       type: String,
       enum: ["pending", "paid", "failed", "refunded"],

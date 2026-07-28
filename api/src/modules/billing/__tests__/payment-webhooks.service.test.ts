@@ -22,6 +22,13 @@ vi.mock("../../../db/models/checkoutSession.model.js", () => ({
   },
 }));
 
+vi.mock("../../../db/models/package.model.js", () => ({
+  default: {
+    findById: vi.fn(),
+    find: vi.fn(),
+  },
+}));
+
 vi.mock("../../../common/observability/index.js", () => ({
   getAuditWriter: () => ({ write: vi.fn().mockResolvedValue(undefined) }),
 }));
@@ -48,11 +55,13 @@ vi.mock("../../permissions/permissions.operation.js", () => ({
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import PaymentEventModel from "../../../db/models/paymentEvent.model.js";
 import CheckoutSessionModel from "../../../db/models/checkoutSession.model.js";
+import PackageModel from "../../../db/models/package.model.js";
 import { handlePaymentEvent } from "../../payment-webhooks/payment-webhooks.service.js";
 import { transitionSubscription } from "../subscription.service.js";
 import type { PaymentProviderEvent } from "../ports/payment-provider.port.js";
 
 const TENANT_ID = "507f1f77bcf86cd799439011";
+const PACKAGE_ID = "507f1f77bcf86cd799439012";
 const SUBSCRIPTION_ID = "507f1f77bcf86cd799439014";
 const CUSTOMER_ID = "cus_abc123";
 const STRIPE_SUB_ID = "sub_xyz789";
@@ -133,6 +142,12 @@ describe("handlePaymentEvent", () => {
     );
     (transitionSubscription as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeSub(),
+    );
+    (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryChain(null),
+    );
+    (PackageModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryChain([]),
     );
   });
 
@@ -766,8 +781,31 @@ describe("handlePaymentEvent", () => {
 
       expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
         { providerSessionId: "cs_session_2" },
-        { $set: expect.objectContaining({ status: "completed" }) },
+        {
+          $set: expect.objectContaining({
+            status: "completed",
+            completedAt: expect.any(Date),
+          }),
+        },
       );
+    });
+
+    it("is idempotent for duplicate completion webhooks", async () => {
+      (PaymentEventModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({ eventId: "evt_csc_dup" }),
+      );
+
+      const event = makeEvent({
+        id: "evt_csc_dup",
+        type: "checkout.session.completed",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          id: "cs_session_dup_2",
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(CheckoutSessionModel.updateOne).not.toHaveBeenCalled();
     });
   });
 
@@ -1912,6 +1950,113 @@ describe("handlePaymentEvent", () => {
 
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(updateArgs[1].$set).toMatchObject({ paymentState: "failed" });
+    });
+  });
+
+  describe("order-independent package recovery", () => {
+    const versionId = "507f1f77bcf86cd799439099";
+    const packageRecord = {
+      _id: PACKAGE_ID,
+      version: 3,
+      stripePriceId: "price_pro_monthly",
+      stripeAnnualPriceId: "price_pro_annual",
+      versions: [{
+        _id: versionId,
+        version: 3,
+        stripePriceId: "price_pro_monthly",
+        stripeAnnualPriceId: "price_pro_annual",
+      }],
+    };
+
+    it("recovers package and version when invoice.paid arrives before checkout", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "TRIALING", packageId: "507f1f77bcf86cd799439055" })),
+      );
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(packageRecord),
+      );
+      const event = makeEvent({
+        id: "evt_invoice_first",
+        type: "invoice.paid",
+        rawObject: {
+          customer: CUSTOMER_ID,
+          subscription: STRIPE_SUB_ID,
+          metadata: {
+            tenantId: TENANT_ID,
+            packageId: PACKAGE_ID,
+            packageVersionId: versionId,
+            packageVersion: "3",
+            billingInterval: "monthly",
+          },
+          lines: { data: [{ price: { id: "price_pro_monthly" } }] },
+        },
+      });
+
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "ACTIVE",
+        expect.objectContaining({ packageId: PACKAGE_ID }),
+      );
+      expect((SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0][1].$set)
+        .toMatchObject({ packageVersion: 3, billingInterval: "monthly", provider: "stripe" });
+    });
+
+    it("recovers a subscription update with no previous checkout event", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE", packageId: "507f1f77bcf86cd799439055" })),
+      );
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(packageRecord),
+      );
+      const event = makeEvent({
+        id: "evt_subscription_only",
+        type: "customer.subscription.updated",
+        rawObject: {
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+          status: "active",
+          metadata: {
+            tenantId: TENANT_ID,
+            packageId: PACKAGE_ID,
+            packageVersionId: versionId,
+            packageVersion: "3",
+            billingInterval: "monthly",
+          },
+          items: { data: [{ price: { id: "price_pro_monthly" } }] },
+        },
+      });
+
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect((SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0][1].$set)
+        .toMatchObject({ packageVersion: 3, providerSubscriptionId: STRIPE_SUB_ID });
+    });
+
+    it("recovers package mapping from a unique Stripe price ID", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE", packageId: "507f1f77bcf86cd799439055" })),
+      );
+      (PackageModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([packageRecord]),
+      );
+      const event = makeEvent({
+        id: "evt_price_recovery",
+        type: "customer.subscription.updated",
+        rawObject: {
+          id: STRIPE_SUB_ID,
+          customer: CUSTOMER_ID,
+          status: "active",
+          metadata: { tenantId: TENANT_ID },
+          items: { data: [{ price: { id: "price_pro_monthly" } }] },
+        },
+      });
+
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect((SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0][1].$set)
+        .toMatchObject({ packageVersion: 3, billingInterval: "monthly" });
     });
   });
 });

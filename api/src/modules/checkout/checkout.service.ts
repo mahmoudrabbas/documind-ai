@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { createHash } from "node:crypto";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
@@ -6,6 +7,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import {
   NOT_FOUND,
   BAD_REQUEST,
+  ACTIVE_SUBSCRIPTION_EXISTS,
+  CHECKOUT_SESSION_PENDING,
   PRICE_NOT_CONFIGURED,
   BILLING_PORTAL_UNAVAILABLE,
 } from "../../common/errors/errorCodes.js";
@@ -70,6 +73,160 @@ function getProviderPriceId(
   );
 }
 
+function legacyPackageVersionId(packageId: string, version: number): string {
+  return createHash("sha256")
+    .update(`${packageId}:${version}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+function resolveCheckoutPackageVersion(
+  pkg: { _id: unknown; version: number; versions?: Array<{ _id?: unknown; version: number }> },
+): { packageVersionId: string; packageVersion: number } {
+  const matches = pkg.versions?.filter((snapshot) => snapshot.version === pkg.version) ?? [];
+  if (matches.length > 1) {
+    throw new AppError(400, BAD_REQUEST, "Package version is ambiguous");
+  }
+
+  return {
+    packageVersionId:
+      matches[0]?._id?.toString() ??
+      legacyPackageVersionId(String(pkg._id), pkg.version),
+    packageVersion: pkg.version,
+  };
+}
+
+const BLOCKING_PROVIDER_SUBSCRIPTION_STATUSES = new Set([
+  "TRIALING",
+  "INCOMPLETE",
+  "ACTIVE",
+  "PAST_DUE",
+  "PAUSED",
+  "CANCEL_AT_PERIOD_END",
+  "UNPAID",
+]);
+
+function isBlockingProviderSubscription(sub: {
+  status: string;
+  providerSubscriptionId?: string;
+} | null | undefined): boolean {
+  if (!sub?.providerSubscriptionId) {
+    return false;
+  }
+  return BLOCKING_PROVIDER_SUBSCRIPTION_STATUSES.has(sub.status);
+}
+
+function getPackageDetails(pkg: unknown): { currentPackageId: string | null; currentPackageName: string | null } {
+  if (typeof pkg === "string") {
+    return { currentPackageId: pkg, currentPackageName: null };
+  }
+
+  if (!pkg || typeof pkg !== "object") {
+    return { currentPackageId: null, currentPackageName: null };
+  }
+
+  const record = pkg as {
+    _id?: { toString(): string } | string;
+    name?: unknown;
+    toString?: () => string;
+  };
+  return {
+    currentPackageId:
+      typeof record._id === "string"
+        ? record._id
+        : record._id?.toString?.() ?? record.toString?.() ?? null,
+    currentPackageName:
+      typeof record.name === "string" && record.name.trim().length > 0
+        ? record.name
+        : null,
+  };
+}
+
+async function expireCheckoutSession(
+  sessionId: unknown,
+  providerSessionId: string,
+  reason: string,
+): Promise<void> {
+  if (!sessionId) return;
+  await CheckoutSessionModel.updateOne(
+    { _id: sessionId, status: "pending" },
+    {
+      $set: {
+        status: "expired",
+        "metadata.expirationReason": reason,
+        "metadata.expiredAt": new Date().toISOString(),
+        "metadata.providerSessionId": providerSessionId,
+      },
+    },
+  );
+}
+
+async function completeCheckoutSession(sessionId: unknown): Promise<void> {
+  if (!sessionId) return;
+  await CheckoutSessionModel.updateOne(
+    { _id: sessionId, status: { $ne: "completed" } },
+    {
+      $set: {
+        status: "completed",
+        completedAt: new Date(),
+      },
+    },
+  );
+}
+
+async function reconcilePendingCheckoutSessions(
+  tenantId: string,
+  provider: PaymentProvider,
+): Promise<{ reusableCheckoutUrl: string; providerSessionId: string; checkoutId: string; expiresAt: Date } | null> {
+  const pendingSessions = await CheckoutSessionModel.find({
+    tenantId: new Types.ObjectId(tenantId),
+    status: "pending",
+  })
+    .sort({ createdAt: -1 })
+    .lean()
+    .exec();
+
+  const now = new Date();
+  let reusableSession: { reusableCheckoutUrl: string; providerSessionId: string; checkoutId: string; expiresAt: Date } | null = null;
+
+  for (const session of pendingSessions) {
+    const expiresAt = new Date(session.expiresAt);
+    if (expiresAt.getTime() <= now.getTime()) {
+      await expireCheckoutSession(session._id, session.providerSessionId, "local_expired");
+      continue;
+    }
+
+    try {
+      const providerSession = await provider.retrieveCheckoutSession(session.providerSessionId);
+      if (providerSession.status === "open" && providerSession.url) {
+        reusableSession = {
+          reusableCheckoutUrl: providerSession.url,
+          providerSessionId: providerSession.id,
+          checkoutId: String(session._id),
+          expiresAt,
+        };
+        break;
+      }
+
+      if (providerSession.status === "complete") {
+        await completeCheckoutSession(session._id);
+        continue;
+      }
+
+      await expireCheckoutSession(session._id, providerSession.id, providerSession.status);
+    } catch (error) {
+      console.warn("Failed to reconcile pending checkout session from provider", {
+        tenantId,
+        providerSessionId: session.providerSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await expireCheckoutSession(session._id, session.providerSessionId, "provider_unavailable");
+    }
+  }
+
+  return reusableSession;
+}
+
 export async function createCheckoutSession(
   tenantId: string,
   packageId: string,
@@ -94,12 +251,39 @@ export async function createCheckoutSession(
     throw new AppError(400, BAD_REQUEST, "Package is not active");
   }
 
-  const sub = await SubscriptionModel.findOne({ tenantId }).lean().exec();
-  if (sub && sub.status === "CANCELED") {
+  const currentSubscription = await SubscriptionModel.findOne({ tenantId })
+    .populate("packageId", "name code")
+    .lean()
+    .exec();
+  if (currentSubscription?.status === "CANCELED") {
     throw new AppError(400, BAD_REQUEST, "Tenant subscription is canceled");
   }
+  if (currentSubscription && isBlockingProviderSubscription(currentSubscription)) {
+    const { currentPackageId, currentPackageName } = getPackageDetails(currentSubscription.packageId);
+    throw new AppError(
+      409,
+      ACTIVE_SUBSCRIPTION_EXISTS,
+      "You already have an active subscription.",
+      {
+        currentStatus: currentSubscription.status,
+        currentPackageId: currentPackageId ?? packageId,
+        currentPackageName: currentPackageName ?? null,
+        manageBillingAvailable: Boolean(currentSubscription.providerCustomerId),
+      },
+    );
+  }
 
-  let providerCustomerId = sub?.providerCustomerId ?? "";
+  const reusableCheckoutSession = await reconcilePendingCheckoutSessions(tenantId, provider);
+  if (reusableCheckoutSession) {
+    throw new AppError(
+      409,
+      CHECKOUT_SESSION_PENDING,
+      "A checkout session is already in progress.",
+      reusableCheckoutSession,
+    );
+  }
+
+  let providerCustomerId = currentSubscription?.providerCustomerId ?? "";
   const isFakeCustomer = providerCustomerId.startsWith("cus_fake_");
   if (!providerCustomerId || isFakeCustomer) {
     providerCustomerId = await provider.createCustomer({
@@ -107,7 +291,7 @@ export async function createCheckoutSession(
       email: actor.actorEmail,
       name: actor.actorEmail,
     });
-    if (sub) {
+    if (currentSubscription) {
       await SubscriptionModel.updateOne(
         { tenantId },
         { $set: { providerCustomerId } },
@@ -119,25 +303,31 @@ export async function createCheckoutSession(
   const cancelUrlFinal = cancelUrl;
 
   const priceId = getProviderPriceId(pkg, billingInterval);
+  const version = resolveCheckoutPackageVersion(pkg);
+  const metadata = {
+    tenantId,
+    packageId,
+    packageVersionId: version.packageVersionId,
+    packageVersion: String(version.packageVersion),
+    billingInterval,
+  };
 
   const session = await provider.createCheckoutSession({
     customerId: providerCustomerId,
     priceId,
     successUrl: returnUrl,
     cancelUrl: cancelUrlFinal,
-    metadata: {
-      tenantId,
-      packageId,
-      packageVersion: String(pkg.version),
-      billingInterval,
-    },
+    metadata,
+    subscriptionMetadata: metadata,
+    clientReferenceId: tenantId,
   });
 
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
   const checkoutSession = await CheckoutSessionModel.create({
     tenantId: new Types.ObjectId(tenantId),
     packageId: new Types.ObjectId(packageId),
-    packageVersion: pkg.version,
+    packageVersion: version.packageVersion,
+    packageVersionId: new Types.ObjectId(version.packageVersionId),
     billingInterval,
     providerSessionId: session.id,
     providerCustomerId,
@@ -148,7 +338,7 @@ export async function createCheckoutSession(
     expiresAt,
   });
 
-  if (providerCustomerId && !sub?.providerCustomerId) {
+  if (providerCustomerId && !currentSubscription?.providerCustomerId) {
     await SubscriptionModel.updateOne(
       { tenantId },
       { $set: { providerCustomerId } },
@@ -252,6 +442,11 @@ export async function getSubscriptionStatus(
     .exec();
   if (!sub) {
     throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
+  }
+  const populatedPackage = sub.packageId as unknown as Record<string, unknown>;
+  if (populatedPackage && typeof populatedPackage === "object") {
+    populatedPackage.monthlyPriceCents = populatedPackage.monthlyPrice;
+    populatedPackage.annualPriceCents = populatedPackage.annualPrice;
   }
   return sub;
 }

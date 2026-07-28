@@ -30,6 +30,7 @@ export function getCheckoutStatus(checkoutId: string, signal?: AbortSignal) {
 export function getSubscriptionStatus(signal?: AbortSignal) {
   return apiClient<Success<SubscriptionStatus>>("/checkout/subscription", {
     signal,
+    cache: "no-store",
   });
 }
 
@@ -58,6 +59,13 @@ export function reprocessPaymentEvent(eventId: string) {
 export function triggerReconciliation() {
   return apiClient<Success<{ totalSubscriptions: number; mismatched: Array<Record<string, unknown>> }>>(
     "/super-admin/reconciliation/subscriptions",
+    { method: "POST" },
+  );
+}
+
+export function syncSubscriptionFromStripe(tenantId: string) {
+  return apiClient<Success<Record<string, unknown>>>(
+    `/super-admin/reconciliation/subscriptions/${encodeURIComponent(tenantId)}/sync-provider`,
     { method: "POST" },
   );
 }

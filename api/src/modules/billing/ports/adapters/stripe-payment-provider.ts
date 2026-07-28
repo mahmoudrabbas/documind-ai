@@ -11,6 +11,7 @@ import {
   type StripeProduct,
   type CreatePriceParams,
   type StripePrice,
+  type ProviderSubscription,
 } from "../payment-provider.port.js";
 import { config } from "../../../../config/index.js";
 import { logger } from "../../../../common/logger/logger.js";
@@ -49,6 +50,8 @@ export class StripePaymentProvider implements PaymentProvider {
       success_url: params.successUrl,
       cancel_url: params.cancelUrl,
       metadata: params.metadata,
+      client_reference_id: params.clientReferenceId,
+      subscription_data: { metadata: params.subscriptionMetadata ?? params.metadata },
     });
 
     return {
@@ -57,6 +60,8 @@ export class StripePaymentProvider implements PaymentProvider {
       status: session.status === "open" ? "open" : "complete",
       customerId: (session.customer as string) ?? params.customerId,
       metadata: (session.metadata as Record<string, string>) ?? {},
+      subscriptionId:
+        typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
     };
   }
 
@@ -77,6 +82,45 @@ export class StripePaymentProvider implements PaymentProvider {
             : "expired",
       customerId: (session.customer as string) ?? "",
       metadata: (session.metadata as Record<string, string>) ?? {},
+      subscriptionId:
+        typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
+    };
+  }
+
+  async retrieveSubscription(subscriptionId: string): Promise<ProviderSubscription> {
+    const stripe = await getClient();
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    return this.mapSubscription(subscription);
+  }
+
+  async listCustomerSubscriptions(customerId: string): Promise<ProviderSubscription[]> {
+    const stripe = await getClient();
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 100,
+    });
+    return subscriptions.data.map((subscription) => this.mapSubscription(subscription));
+  }
+
+  private mapSubscription(subscription: Stripe.Subscription): ProviderSubscription {
+    const item = subscription.items.data[0];
+    return {
+      id: subscription.id,
+      customerId:
+        typeof subscription.customer === "string"
+          ? subscription.customer
+          : subscription.customer.id,
+      status: subscription.status,
+      metadata: subscription.metadata,
+      priceId: item?.price.id ?? "",
+      currentPeriodStart: item?.current_period_start
+        ? new Date(item.current_period_start * 1000)
+        : null,
+      currentPeriodEnd: item?.current_period_end
+        ? new Date(item.current_period_end * 1000)
+        : null,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
     };
   }
 

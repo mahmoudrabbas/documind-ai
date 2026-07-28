@@ -203,6 +203,128 @@ export default function RetrievalDebugPage() {
               ))}
             </PlatformTable>
           )}
+
+          {result.evidenceBundle && (
+            <div className="mt-6">
+              <h3 className="text-title-sm font-semibold text-on-surface mb-3">Evidence Bundle</h3>
+
+              <div className="mb-4 flex flex-wrap gap-3">
+                <div className="rounded-lg bg-surface-container p-3 text-xs">
+                  <span className="block text-on-surface-variant">Sufficiency</span>
+                  <span className={`text-title-md font-bold ${
+                    result.evidenceBundle.sufficiency.level === "SUFFICIENT" ? "text-green-700" :
+                    result.evidenceBundle.sufficiency.level === "CONFLICTING" ? "text-red-700" :
+                    result.evidenceBundle.sufficiency.level === "WEAK" ? "text-yellow-700" :
+                    "text-gray-700"
+                  }`}>
+                    {result.evidenceBundle.sufficiency.level}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface-container p-3 text-xs">
+                  <span className="block text-on-surface-variant">Input Candidates</span>
+                  <span className="text-title-md font-bold text-on-surface">
+                    {result.evidenceBundle.inputCandidateCount}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface-container p-3 text-xs">
+                  <span className="block text-on-surface-variant">Output Items</span>
+                  <span className="text-title-md font-bold text-on-surface">
+                    {result.evidenceBundle.items.length}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface-container p-3 text-xs">
+                  <span className="block text-on-surface-variant">Token Budget</span>
+                  <span className="text-title-md font-bold text-on-surface">
+                    {result.evidenceBundle.totalTokenCount} / {result.evidenceBundle.maxTokenCount}
+                  </span>
+                </div>
+                {result.evidenceBundle.conflictGroups.length > 0 && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs">
+                    <span className="block text-red-600">Conflicts Detected</span>
+                    <span className="text-title-md font-bold text-red-700">
+                      {result.evidenceBundle.conflictGroups.length}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {result.evidenceBundle.sufficiency.reasons.length > 0 && (
+                <div className="mb-4 rounded-lg bg-surface-container p-3 text-xs text-on-surface-variant">
+                  <span className="font-medium text-on-surface">Reasons: </span>
+                  {result.evidenceBundle.sufficiency.reasons.join("; ")}
+                </div>
+              )}
+
+              <PlatformTable
+                headers={["Rank", "Total", "Rerank", "Semantic", "Exact", "Authority", "Version", "Text Excerpt"]}
+                minWidth="1000px"
+              >
+                {result.evidenceBundle.items.map((item) => (
+                  <tr key={item.rank}>
+                    <td className={cell}>
+                      <span className="font-mono text-sm font-bold text-on-surface">
+                        #{item.rank}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <span className="font-mono text-sm text-on-surface">
+                        {item.scoreBreakdown.totalScore.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <span className="font-mono text-xs text-on-surface-variant">
+                        {item.scoreBreakdown.rerankScore.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <span className="font-mono text-xs text-on-surface-variant">
+                        {item.scoreBreakdown.semanticScore.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <span className="font-mono text-xs text-on-surface-variant">
+                        {item.scoreBreakdown.exactTermScore.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <span className="font-mono text-xs text-on-surface-variant">
+                        {item.scoreBreakdown.sourceAuthorityScore.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <span className="font-mono text-xs text-on-surface-variant">
+                        {item.scoreBreakdown.versionPreferenceScore.toFixed(3)}
+                      </span>
+                    </td>
+                    <td className={cell}>
+                      <p className="max-w-sm truncate text-xs text-on-surface-variant">
+                        {item.textExcerpt.length > 150
+                          ? `${item.textExcerpt.slice(0, 150)}...`
+                          : item.textExcerpt}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </PlatformTable>
+
+              {result.evidenceBundle.conflictGroups.length > 0 && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                  <h4 className="text-sm font-semibold text-red-800 mb-2">Conflict Groups</h4>
+                  {result.evidenceBundle.conflictGroups.map((group) => (
+                    <div key={group.conflictId} className="mb-2 text-xs text-red-700">
+                      <span className="font-mono">{group.conflictId}:</span>{" "}
+                      {group.description} (items: {group.itemIndices.join(", ")})
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 rounded-lg bg-surface-container p-3 text-xs text-on-surface-variant">
+                <span className="font-medium text-on-surface">Score Explanation: </span>
+                {result.evidenceBundle.scoreExplanation}
+              </div>
+            </div>
+          )}
         </>
       )}
     </DashboardPage>

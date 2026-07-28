@@ -4,6 +4,7 @@ export interface CheckoutSessionDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   packageId: mongoose.Types.ObjectId;
   packageVersion: number;
+  packageVersionId: mongoose.Types.ObjectId;
   billingInterval: "monthly" | "annual";
   providerSessionId: string;
   providerCustomerId: string;
@@ -31,6 +32,7 @@ const checkoutSessionSchema = new Schema<CheckoutSessionDocument>(
       required: true,
     },
     packageVersion: { type: Number, required: true, min: 1 },
+    packageVersionId: { type: Schema.Types.ObjectId, required: true },
     billingInterval: {
       type: String,
       enum: ["monthly", "annual"],

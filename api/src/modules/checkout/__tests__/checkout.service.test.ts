@@ -18,6 +18,7 @@ vi.mock("../../../db/models/checkoutSession.model.js", () => ({
     create: vi.fn(),
     findOne: vi.fn(),
     find: vi.fn(),
+    updateOne: vi.fn(),
     countDocuments: vi.fn(),
   },
 }));
@@ -56,11 +57,13 @@ function mockQueryChain<T>(result: T) {
     sort: vi.fn().mockReturnThis(),
     skip: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    populate: vi.fn().mockReturnThis(),
   };
   chain.lean = vi.fn(() => chain);
   chain.sort = vi.fn(() => chain);
   chain.skip = vi.fn(() => chain);
   chain.limit = vi.fn(() => chain);
+  chain.populate = vi.fn(() => chain);
   return chain;
 }
 
@@ -71,6 +74,12 @@ describe("CheckoutService", () => {
     vi.clearAllMocks();
     fakeProvider = new FakePaymentProvider();
     fakeProvider._reset();
+    (CheckoutSessionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryChain(null),
+    );
+    (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryChain([]),
+    );
   });
 
   describe("createCheckoutSession", () => {
@@ -114,6 +123,176 @@ describe("CheckoutService", () => {
       expect(result.sessionUrl).toBeTruthy();
       expect(result.checkoutId).toBe("cs_test_123");
       expect(fakeProvider.customers.length).toBe(1);
+      expect(fakeProvider.sessions[0].metadata).toMatchObject({
+        tenantId: TENANT_ID,
+        packageId: PACKAGE_ID,
+        packageVersion: "1",
+        billingInterval: "monthly",
+      });
+      expect(fakeProvider.sessions[0].metadata.packageVersionId).toMatch(/^[a-f0-9]{24}$/);
+      expect(fakeProvider.sessions[0].subscriptionMetadata).toEqual(
+        fakeProvider.sessions[0].metadata,
+      );
+      expect(fakeProvider.sessions[0].clientReferenceId).toBe(TENANT_ID);
+    });
+
+    it("blocks checkout when the tenant already has an active provider subscription", async () => {
+      const currentPackage = {
+        _id: PACKAGE_ID,
+        name: "Real Pro",
+        code: "real-pro",
+      };
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          _id: PACKAGE_ID,
+          active: true,
+          version: 2,
+          code: "real-pro",
+          name: "Real Pro",
+          monthlyPrice: 200,
+          annualPrice: 2000,
+          stripePriceId: "price_real_pro_monthly",
+          stripeAnnualPriceId: "price_real_pro_annual",
+        }),
+      );
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          tenantId: TENANT_ID,
+          status: "ACTIVE",
+          providerSubscriptionId: "sub_123",
+          providerCustomerId: "cus_123",
+          packageId: currentPackage,
+        }),
+      );
+
+      await expect(
+        createCheckoutSession(
+          TENANT_ID,
+          PACKAGE_ID,
+          "monthly",
+          fakeProvider,
+          "https://example.com/success",
+          "https://example.com/cancel",
+          TEST_ACTOR,
+        ),
+      ).rejects.toMatchObject({
+        code: "ACTIVE_SUBSCRIPTION_EXISTS",
+        details: expect.objectContaining({
+          currentStatus: "ACTIVE",
+          currentPackageName: "Real Pro",
+          manageBillingAvailable: true,
+        }),
+      });
+
+      expect(CheckoutSessionModel.find).not.toHaveBeenCalled();
+      expect(CheckoutSessionModel.create).not.toHaveBeenCalled();
+      expect(fakeProvider.sessions).toHaveLength(0);
+    });
+
+    it("expires stale pending checkout sessions and does not let them block a new checkout", async () => {
+      const staleSession = {
+        _id: "checkout_stale",
+        providerSessionId: "cs_stale_1",
+        status: "pending",
+        expiresAt: new Date(Date.now() - 60_000),
+      };
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          _id: PACKAGE_ID,
+          active: true,
+          version: 1,
+          code: "basic",
+          name: "Basic",
+          monthlyPrice: 29,
+          annualPrice: 290,
+          stripePriceId: "price_monthly_basic",
+          stripeAnnualPriceId: "price_annual_basic",
+        }),
+      );
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(null),
+      );
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([staleSession]),
+      );
+      (CheckoutSessionModel.create as ReturnType<typeof vi.fn>).mockResolvedValue(
+        { _id: "cs_new", tenantId: TENANT_ID, packageId: PACKAGE_ID },
+      );
+
+      await createCheckoutSession(
+        TENANT_ID,
+        PACKAGE_ID,
+        "monthly",
+        fakeProvider,
+        "https://example.com/success",
+        "https://example.com/cancel",
+        TEST_ACTOR,
+      );
+
+      expect(CheckoutSessionModel.updateOne).toHaveBeenCalledWith(
+        { _id: "checkout_stale", status: "pending" },
+        expect.objectContaining({
+          $set: expect.objectContaining({ status: "expired" }),
+        }),
+      );
+      expect(CheckoutSessionModel.create).toHaveBeenCalledOnce();
+      expect(fakeProvider.sessions).toHaveLength(1);
+    });
+
+    it("returns a reusable pending checkout URL only when Stripe still reports the session as open", async () => {
+      const openSession = {
+        _id: "checkout_open",
+        providerSessionId: "cs_open_1",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          _id: PACKAGE_ID,
+          active: true,
+          version: 1,
+          code: "basic",
+          name: "Basic",
+          monthlyPrice: 29,
+          annualPrice: 290,
+          stripePriceId: "price_monthly_basic",
+          stripeAnnualPriceId: "price_annual_basic",
+        }),
+      );
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(null),
+      );
+      (CheckoutSessionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain([openSession]),
+      );
+      fakeProvider.sessions.push({
+        id: "cs_open_1",
+        customerId: "cus_1",
+        priceId: "price_monthly_basic",
+        successUrl: "https://checkout.stripe.com/s/continue/{CHECKOUT_SESSION_ID}",
+        cancelUrl: "https://example.com/cancel",
+        metadata: {},
+        subscriptionMetadata: {},
+        clientReferenceId: TENANT_ID,
+        status: "open",
+      } as never);
+
+      await expect(
+        createCheckoutSession(
+          TENANT_ID,
+          PACKAGE_ID,
+          "monthly",
+          fakeProvider,
+          "https://checkout.stripe.com/s/continue/{CHECKOUT_SESSION_ID}",
+          "https://example.com/cancel",
+          TEST_ACTOR,
+        ),
+      ).rejects.toMatchObject({
+        code: "CHECKOUT_SESSION_PENDING",
+        details: expect.objectContaining({
+          reusableCheckoutUrl: expect.stringContaining("cs_open_1"),
+        }),
+      });
     });
 
     it("throws 404 when package not found", async () => {

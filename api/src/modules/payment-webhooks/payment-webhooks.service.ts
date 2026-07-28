@@ -7,7 +7,15 @@ import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
 import { logger } from "../../common/logger/logger.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { transitionSubscription, LEGAL_TRANSITIONS } from "../billing/subscription.service.js";
-import type { PaymentProviderEvent } from "../billing/ports/payment-provider.port.js";
+import type {
+  PaymentProvider,
+  PaymentProviderEvent,
+  ProviderSubscription,
+} from "../billing/ports/payment-provider.port.js";
+import {
+  resolvePackageVersion,
+  type ResolvedPackageVersion,
+} from "../billing/provider-subscription-sync.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { NOT_FOUND } from "../../common/errors/errorCodes.js";
@@ -55,12 +63,12 @@ const EVENT_STATUS_MAP: Record<
   "invoice.paid": {
     toStatus: "ACTIVE",
     paymentState: "paid",
-    fromStatuses: ["INCOMPLETE", "PAST_DUE", "ACTIVE"],
+    fromStatuses: ["TRIALING", "INCOMPLETE", "PAST_DUE", "ACTIVE"],
   },
   "invoice_payment.paid": {
     toStatus: "ACTIVE",
     paymentState: "paid",
-    fromStatuses: ["INCOMPLETE", "PAST_DUE", "ACTIVE"],
+    fromStatuses: ["TRIALING", "INCOMPLETE", "PAST_DUE", "ACTIVE"],
   },
   "invoice.payment_failed": {
     toStatus: "PAST_DUE",
@@ -99,30 +107,48 @@ export async function handlePaymentEvent(
   rawBody: string,
   signature: string,
   existingEvent?: PaymentEventDocument,
+  provider?: PaymentProvider,
 ): Promise<void> {
   const duplicate = existingEvent
     ? null
-    : await PaymentEventModel.findOne({ eventId: event.id }).exec();
+    : await PaymentEventModel.findOne({ provider: event.provider, eventId: event.id }).exec();
   if (duplicate) {
     logger.info({ eventId: event.id }, "Duplicate webhook event — skipping");
     return;
   }
 
-  const eventRecord =
-    existingEvent ??
-    (await PaymentEventModel.create({
-      eventId: event.id,
-      eventType: event.type,
-      provider: event.provider,
-      status: "received",
-      signature,
-      rawBody,
-      payload: event.raw,
-      processingErrors: [],
-    }));
+  let eventRecord = existingEvent;
+  if (!eventRecord) {
+    try {
+      eventRecord = await PaymentEventModel.create({
+        eventId: event.id,
+        eventType: event.type,
+        provider: event.provider,
+        status: "received",
+        signature,
+        rawBody,
+        payload: event.raw,
+        processingErrors: [],
+      });
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        (error as { code?: unknown }).code === 11000
+      ) {
+        logger.info({ eventId: event.id }, "Concurrent duplicate webhook event — skipping");
+        return;
+      }
+      throw error;
+    }
+  }
 
   try {
     eventRecord.status = "verified";
+
+    const providerSubscription = await retrieveProviderSubscription(event, provider);
+    const packageMapping = await resolveEventPackageMapping(event, providerSubscription);
 
     if (event.type === "payment_intent.payment_failed") {
       await handlePaymentFailure(
@@ -160,11 +186,17 @@ export async function handlePaymentEvent(
       event.type === "customer.subscription.created";
 
     if (isSubscriptionUpdate) {
-      await handleSubscriptionUpdated(event, eventRecord);
+      await handleSubscriptionUpdated(event, eventRecord, providerSubscription, packageMapping);
     } else {
       const mapping = EVENT_STATUS_MAP[event.type];
       if (mapping) {
-        await handleStaticMappingEvent(event, mapping, eventRecord);
+        await handleStaticMappingEvent(
+          event,
+          mapping,
+          eventRecord,
+          providerSubscription,
+          packageMapping,
+        );
       }
     }
 
@@ -193,8 +225,10 @@ async function handleStaticMappingEvent(
     fromStatuses: SubscriptionStatus[];
   },
   eventRecord: PaymentEventDocument,
+  providerSubscription?: ProviderSubscription | null,
+  packageMapping?: ResolvedPackageVersion | null,
 ): Promise<void> {
-  const resolved = await resolveSubscriptionFromEvent(event);
+  const resolved = await resolveSubscriptionFromEvent(event, providerSubscription);
 
   if (!resolved) {
     eventRecord.processingErrors.push(
@@ -206,6 +240,7 @@ async function handleStaticMappingEvent(
   }
 
   const { subscription: sub, tenantId } = resolved;
+  eventRecord.tenantId = tenantId;
   const currentStatus = sub.status as SubscriptionStatus;
 
   const transitionOptions: Record<string, unknown> = {
@@ -213,7 +248,7 @@ async function handleStaticMappingEvent(
     providerEventId: event.id,
   };
 
-  const packageId = extractPackageIdFromEvent(event);
+  const packageId = packageMapping?.packageId ?? extractPackageIdFromEvent(event);
   if (packageId) {
     transitionOptions.packageId = packageId;
   }
@@ -239,10 +274,32 @@ async function handleStaticMappingEvent(
     providerSubscriptionId:
       extractStripeSubscriptionIdFromEvent(event) ??
       sub.providerSubscriptionId,
+    providerCustomerId:
+      providerSubscription?.customerId ?? extractCustomerIdFromEvent(event) ?? sub.providerCustomerId,
+    provider: event.provider,
   };
+  const providerPeriodStart = providerSubscription?.currentPeriodStart;
+  const providerPeriodEnd = providerSubscription?.currentPeriodEnd;
+  if (providerPeriodStart) {
+    subscriptionUpdate.periodStart = providerPeriodStart;
+    subscriptionUpdate.currentPeriodStart = providerPeriodStart;
+  }
+  if (providerPeriodEnd) {
+    subscriptionUpdate.periodEnd = providerPeriodEnd;
+    subscriptionUpdate.currentPeriodEnd = providerPeriodEnd;
+  }
+  if (providerSubscription) {
+    subscriptionUpdate.cancelAtPeriodEnd = providerSubscription.cancelAtPeriodEnd;
+  }
 
-  if (packageId) {
+  if (packageMapping) {
     subscriptionUpdate.packageId = new Types.ObjectId(packageId);
+    subscriptionUpdate.packageVersionId = new Types.ObjectId(packageMapping.packageVersionId);
+    subscriptionUpdate.packageVersion = packageMapping.packageVersion;
+    subscriptionUpdate.billingInterval = packageMapping.billingInterval;
+    subscriptionUpdate.providerPriceId = providerSubscription?.priceId ?? extractPriceIdFromEvent(event) ?? "";
+  } else if (packageId && String(sub.packageId) !== packageId) {
+    throw new Error("Stripe event packageId has no unambiguous package version mapping");
   }
 
   await SubscriptionModel.updateOne(
@@ -281,8 +338,10 @@ async function handleStaticMappingEvent(
 async function handleSubscriptionUpdated(
   event: PaymentProviderEvent,
   eventRecord: PaymentEventDocument,
+  providerSubscription?: ProviderSubscription | null,
+  packageMapping?: ResolvedPackageVersion | null,
 ): Promise<void> {
-  const resolved = await resolveSubscriptionFromEvent(event);
+  const resolved = await resolveSubscriptionFromEvent(event, providerSubscription);
 
   if (!resolved) {
     eventRecord.processingErrors.push(
@@ -294,6 +353,7 @@ async function handleSubscriptionUpdated(
   }
 
   const { subscription: sub, tenantId } = resolved;
+  eventRecord.tenantId = tenantId;
   const currentStatus = sub.status as SubscriptionStatus;
 
   const stripeStatus = extractStripeSubscriptionStatus(event);
@@ -302,11 +362,7 @@ async function handleSubscriptionUpdated(
   const mappedStatus = mapStripeStatusToInternal(stripeStatus);
 
   if (!mappedStatus) {
-    logger.warn(
-      { eventId: event.id, stripeStatus },
-      "Unknown Stripe subscription status — skipping transition",
-    );
-    return;
+    throw new Error(`Unknown Stripe subscription status: ${stripeStatus || "missing"}`);
   }
 
   const isSameStatus = currentStatus === mappedStatus;
@@ -315,17 +371,9 @@ async function handleSubscriptionUpdated(
     const legalTargets = LEGAL_TRANSITIONS[currentStatus];
 
     if (!legalTargets.includes(mappedStatus)) {
-      logger.info(
-        {
-          eventId: event.id,
-          currentStatus,
-          mappedStatus,
-          stripeStatus,
-          cancelAtPeriodEnd,
-        },
-        "Subscription update skipped — transition not legal from current status",
+      throw new Error(
+        `Stripe subscription transition ${currentStatus} → ${mappedStatus} is not legal`,
       );
-      return;
     }
 
     const transitionOptions: Record<string, unknown> = {
@@ -333,7 +381,7 @@ async function handleSubscriptionUpdated(
       providerEventId: event.id,
     };
 
-    const packageId = extractPackageIdFromEvent(event);
+    const packageId = packageMapping?.packageId ?? extractPackageIdFromEvent(event);
     if (packageId) {
       transitionOptions.packageId = packageId;
     }
@@ -350,7 +398,8 @@ async function handleSubscriptionUpdated(
     );
   }
 
-  const periodEnd = extractCurrentPeriodEnd(event);
+  const periodStart = providerSubscription?.currentPeriodStart ?? extractCurrentPeriodStart(event);
+  const periodEnd = providerSubscription?.currentPeriodEnd ?? extractCurrentPeriodEnd(event);
   const cancelAt = extractCancelAt(event);
 
   const subscriptionUpdate: Record<string, unknown> = {
@@ -362,10 +411,18 @@ async function handleSubscriptionUpdated(
     providerSubscriptionId:
       extractStripeSubscriptionIdFromEvent(event) ??
       sub.providerSubscriptionId,
+    providerCustomerId:
+      providerSubscription?.customerId ?? extractCustomerIdFromEvent(event) ?? sub.providerCustomerId,
+    provider: event.provider,
   };
 
   if (periodEnd !== null) {
     subscriptionUpdate.periodEnd = periodEnd;
+    subscriptionUpdate.currentPeriodEnd = periodEnd;
+  }
+  if (periodStart !== null) {
+    subscriptionUpdate.periodStart = periodStart;
+    subscriptionUpdate.currentPeriodStart = periodStart;
   }
 
   if (cancelAt !== null) {
@@ -374,9 +431,15 @@ async function handleSubscriptionUpdated(
     subscriptionUpdate.cancelledAt = null;
   }
 
-  const packageId = extractPackageIdFromEvent(event);
-  if (packageId) {
-    subscriptionUpdate.packageId = new Types.ObjectId(packageId);
+  const packageId = packageMapping?.packageId ?? extractPackageIdFromEvent(event);
+  if (packageMapping) {
+    subscriptionUpdate.packageId = new Types.ObjectId(packageMapping.packageId);
+    subscriptionUpdate.packageVersionId = new Types.ObjectId(packageMapping.packageVersionId);
+    subscriptionUpdate.packageVersion = packageMapping.packageVersion;
+    subscriptionUpdate.billingInterval = packageMapping.billingInterval;
+    subscriptionUpdate.providerPriceId = providerSubscription?.priceId ?? extractPriceIdFromEvent(event) ?? "";
+  } else if (packageId && String(sub.packageId) !== packageId) {
+    throw new Error("Stripe subscription packageId has no unambiguous package version mapping");
   }
 
   subscriptionUpdate.lastProviderEventTimestamp = event.timestamp;
@@ -585,20 +648,31 @@ async function handlePaymentFailure(
 // ── Subscription resolution ──────────────────────────────────────────────────
 
 interface ResolvedSubscription {
-  subscription: { _id: Types.ObjectId; status: string; providerSubscriptionId: string; providerCustomerId: string };
+  subscription: {
+    _id: Types.ObjectId;
+    status: string;
+    packageId: Types.ObjectId;
+    providerSubscriptionId: string;
+    providerCustomerId: string;
+  };
   tenantId: Types.ObjectId;
 }
 
 async function resolveSubscriptionFromEvent(
   event: PaymentProviderEvent,
+  providerSubscription?: ProviderSubscription | null,
 ): Promise<ResolvedSubscription | null> {
-  const tenantId = extractTenantFromEvent(event);
+  const providerTenantId = providerSubscription?.metadata.tenantId;
+  const tenantId = extractTenantFromEvent(event) ??
+    (providerTenantId && Types.ObjectId.isValid(providerTenantId)
+      ? new Types.ObjectId(providerTenantId)
+      : null);
   if (tenantId) {
     const sub = await SubscriptionModel.findOne({ tenantId }).exec();
     if (sub) return { subscription: sub, tenantId };
   }
 
-  const customerId = extractCustomerIdFromEvent(event);
+  const customerId = providerSubscription?.customerId ?? extractCustomerIdFromEvent(event);
   if (customerId) {
     const sub = await SubscriptionModel.findOne({
       providerCustomerId: customerId,
@@ -606,7 +680,7 @@ async function resolveSubscriptionFromEvent(
     if (sub) return { subscription: sub, tenantId: sub.tenantId };
   }
 
-  const stripeSubId = extractStripeSubscriptionIdFromEvent(event);
+  const stripeSubId = providerSubscription?.id ?? extractStripeSubscriptionIdFromEvent(event);
   if (stripeSubId) {
     const sub = await SubscriptionModel.findOne({
       providerSubscriptionId: stripeSubId,
@@ -615,6 +689,54 @@ async function resolveSubscriptionFromEvent(
   }
 
   return null;
+}
+
+async function retrieveProviderSubscription(
+  event: PaymentProviderEvent,
+  provider?: PaymentProvider,
+): Promise<ProviderSubscription | null> {
+  if (!provider?.retrieveSubscription) return null;
+  const subscriptionId = extractStripeSubscriptionIdFromEvent(event);
+  if (!subscriptionId) return null;
+
+  const metadata = extractMetadataFromEvent(event);
+  const priceId = extractPriceIdFromEvent(event);
+  if (
+    metadata.packageId &&
+    (metadata.packageVersionId || metadata.packageVersion) &&
+    metadata.billingInterval &&
+    priceId
+  ) {
+    return {
+      id: subscriptionId,
+      customerId: extractCustomerIdFromEvent(event) ?? "",
+      status: extractStripeSubscriptionStatus(event),
+      metadata,
+      priceId,
+      currentPeriodStart: extractCurrentPeriodStart(event),
+      currentPeriodEnd: extractCurrentPeriodEnd(event),
+      cancelAtPeriodEnd: extractCancelAtPeriodEnd(event),
+    };
+  }
+
+  return provider.retrieveSubscription(subscriptionId);
+}
+
+async function resolveEventPackageMapping(
+  event: PaymentProviderEvent,
+  providerSubscription: ProviderSubscription | null,
+): Promise<ResolvedPackageVersion | null> {
+  const eventMetadata = extractMetadataFromEvent(event);
+  const metadata = {
+    ...eventMetadata,
+    ...(providerSubscription?.metadata ?? {}),
+  };
+  const priceId = providerSubscription?.priceId ?? extractPriceIdFromEvent(event) ?? "";
+  const hasVersionMetadata = Boolean(
+    metadata.packageId && (metadata.packageVersionId || metadata.packageVersion),
+  );
+  if (!hasVersionMetadata && !priceId) return null;
+  return resolvePackageVersion(metadata, priceId);
 }
 
 // ── Event data extraction helpers ────────────────────────────────────────────
@@ -632,7 +754,15 @@ function extractTenantFromEvent(
   const obj = extractRawObject(event);
   const metadata = obj?.metadata as Record<string, string> | undefined;
   if (metadata?.tenantId) return new Types.ObjectId(metadata.tenantId);
+  if (typeof obj?.client_reference_id === "string" && Types.ObjectId.isValid(obj.client_reference_id)) {
+    return new Types.ObjectId(obj.client_reference_id);
+  }
   return null;
+}
+
+function extractMetadataFromEvent(event: PaymentProviderEvent): Record<string, string> {
+  const obj = extractRawObject(event);
+  return (obj?.metadata as Record<string, string> | undefined) ?? {};
 }
 
 function extractCustomerIdFromEvent(
@@ -657,7 +787,20 @@ function extractStripeSubscriptionIdFromEvent(
   event: PaymentProviderEvent,
 ): string | undefined {
   const obj = extractRawObject(event);
-  return obj?.subscription as string | undefined;
+  if (typeof obj?.subscription === "string") return obj.subscription;
+  if (event.type.startsWith("customer.subscription.") && typeof obj?.id === "string") {
+    return obj.id;
+  }
+  return undefined;
+}
+
+function extractPriceIdFromEvent(event: PaymentProviderEvent): string | undefined {
+  const obj = extractRawObject(event);
+  const items = obj?.items as { data?: Array<{ price?: { id?: string } }> } | undefined;
+  const itemPrice = items?.data?.[0]?.price?.id;
+  if (itemPrice) return itemPrice;
+  const lines = obj?.lines as { data?: Array<{ price?: { id?: string }; pricing?: { price_details?: { price?: string } } }> } | undefined;
+  return lines?.data?.[0]?.price?.id ?? lines?.data?.[0]?.pricing?.price_details?.price;
 }
 
 function extractStripeSubscriptionStatus(
@@ -688,6 +831,15 @@ function extractCurrentPeriodEnd(
 ): Date | null {
   const obj = extractRawObject(event);
   const ts = obj?.current_period_end as number | undefined;
+  if (typeof ts === "number" && ts > 0) return new Date(ts * 1000);
+  return null;
+}
+
+function extractCurrentPeriodStart(
+  event: PaymentProviderEvent,
+): Date | null {
+  const obj = extractRawObject(event);
+  const ts = obj?.current_period_start as number | undefined;
   if (typeof ts === "number" && ts > 0) return new Date(ts * 1000);
   return null;
 }
@@ -792,7 +944,7 @@ export async function reprocessEvent(
     context,
     Permission.BILLING_MANAGE,
   );
-  const event = await PaymentEventModel.findOne({ eventId }).exec();
+  const event = await PaymentEventModel.findOne({ provider: "stripe", eventId }).exec();
   if (!event) {
     throw new AppError(404, NOT_FOUND, "Payment event not found");
   }
@@ -804,7 +956,7 @@ export async function reprocessEvent(
 
   const provider = await getProviderForReprocess();
   const parsed = provider.parseWebhookEvent(event.payload as Record<string, unknown>);
-  await handlePaymentEvent(parsed, event.rawBody, event.signature, event);
+  await handlePaymentEvent(parsed, event.rawBody, event.signature, event, provider);
   await getAuditWriter().write({
     tenantId: actor.tenantId,
     action: "PAYMENT_EVENT_REPROCESSED",

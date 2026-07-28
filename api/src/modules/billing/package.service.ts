@@ -272,14 +272,34 @@ export async function getPackage(id: string): Promise<PackageDocument> {
   if (!pkg) {
     throw packageNotFound();
   }
-  return pkg;
+  return withMoneyContract(pkg);
 }
 
 /**
  * List ALL packages (active + inactive). Super Admin scope.
  */
 export async function listPackages(): Promise<PackageDocument[]> {
-  return PackageModel.find().sort({ createdAt: -1 }).lean().exec();
+  const packages = await PackageModel.find().sort({ createdAt: -1 }).lean().exec();
+  return packages.map((pkg) => withMoneyContract(pkg));
+}
+
+function withMoneyContract<T>(pkg: T): T {
+  const doc = pkg as unknown as Record<string, unknown>;
+  const monthlyPrice = doc.monthlyPrice as number;
+  const annualPrice = doc.annualPrice as number;
+  const versions = (doc.versions as Array<Record<string, unknown>> | undefined)?.map(
+    (version) => ({
+      ...version,
+      monthlyPriceCents: version.monthlyPrice,
+      annualPriceCents: version.annualPrice,
+    }),
+  );
+  return {
+    ...doc,
+    monthlyPriceCents: monthlyPrice,
+    annualPriceCents: annualPrice,
+    ...(versions ? { versions } : {}),
+  } as unknown as T;
 }
 
 /**

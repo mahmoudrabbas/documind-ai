@@ -51,6 +51,8 @@ export interface PackageVersionSnapshot {
   description: string;
   monthlyPrice: number;
   annualPrice: number;
+  monthlyPriceCents?: number;
+  annualPriceCents?: number;
   currency: string;
   trialDays: number;
   visibility: PackageVisibility;
@@ -78,6 +80,8 @@ export interface PlatformPackage {
   version: number;
   monthlyPrice: number;
   annualPrice: number;
+  monthlyPriceCents?: number;
+  annualPriceCents?: number;
   currency: string;
   trialDays: number;
   visibility: PackageVisibility;
@@ -272,6 +276,57 @@ export interface RetrievalDebugCandidate {
   };
 }
 
+export interface EvidenceScoreBreakdown {
+  fusionScore: number;
+  rerankScore: number;
+  semanticScore: number;
+  exactTermScore: number;
+  sourceAuthorityScore: number;
+  versionPreferenceScore: number;
+  totalScore: number;
+}
+
+export interface CitationAnchor {
+  chunkId: string;
+  documentId: string;
+  documentVersionId?: string;
+  pageNumber?: number;
+  sectionTitle?: string;
+}
+
+export interface EvidenceItem {
+  rank: number;
+  candidate: RetrievalDebugCandidate;
+  scoreBreakdown: EvidenceScoreBreakdown;
+  citationAnchor: CitationAnchor;
+  textExcerpt: string;
+  expanded?: boolean;
+  neighborChunkIds?: string[];
+}
+
+export interface ConflictGroup {
+  conflictId: string;
+  description: string;
+  itemIndices: number[];
+}
+
+export interface SufficiencyAssessment {
+  level: "SUFFICIENT" | "WEAK" | "CONFLICTING" | "NO_EVIDENCE";
+  reasons: string[];
+}
+
+export interface EvidenceBundle {
+  items: EvidenceItem[];
+  totalTokenCount: number;
+  maxTokenCount: number;
+  inputCandidateCount: number;
+  conflictGroups: ConflictGroup[];
+  sufficiency: SufficiencyAssessment;
+  scoreExplanation: string;
+  accessPolicyVersion?: string;
+  createdAt: string;
+}
+
 export interface RetrievalDebugResult {
   candidates: RetrievalDebugCandidate[];
   totalCandidates: number;
@@ -291,6 +346,7 @@ export interface RetrievalDebugResult {
     keywordCandidateCount: number;
     traceId: string;
   };
+  evidenceBundle?: EvidenceBundle;
 }
 
 export const SUBSCRIPTION_STATUS_COLORS: Record<SubscriptionStatus, string> = {

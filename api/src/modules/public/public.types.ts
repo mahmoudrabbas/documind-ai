@@ -12,6 +12,8 @@ export interface PublicPackageDTO {
   description: string;
   monthlyPrice: number;
   annualPrice: number;
+  monthlyPriceCents: number;
+  annualPriceCents: number;
   currency: string;
   trialDays: number;
   entitlements: PublicPackageEntitlement;
