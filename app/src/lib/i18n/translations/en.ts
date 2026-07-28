@@ -425,6 +425,23 @@ const en: TranslationDictionary = {
   "billing.noSessionId": "No session ID provided. Please contact support.",
   "billing.verifyError": "Unable to verify subscription status. Please contact support.",
 
+  /* ── usage (company usage page) ────────────────────────── */
+  "usage.pageTitle": "Usage & Limits",
+  "usage.pageDescription": "Track your organization's entitlement usage across all dimensions.",
+  "usage.fetchError": "Failed to load usage data.",
+  "usage.emptyTitle": "No usage data yet",
+  "usage.emptyDescription": "Usage information will appear here once your organization starts using DocuMind AI.",
+  "usage.readOnlyNote": "You are viewing usage data in read-only mode.",
+  "usage.resetsOn": "Resets on",
+  "usage.dimension.employees": "Employees",
+  "usage.dimension.admins": "Admins",
+  "usage.dimension.documents": "Documents",
+  "usage.dimension.storageMb": "Storage",
+  "usage.dimension.fileSizeMb": "File Size Limit",
+  "usage.dimension.queriesPerMonth": "Queries / Month",
+  "usage.dimension.tokensPerMonth": "Tokens / Month",
+  "usage.dimension.ocrPagesPerMonth": "OCR Pages / Month",
+
   /* ── audit ─────────────────────────────────────────────── */
   "audit.title": "Audit Log",
   "audit.description": "Review sensitive administrative actions across the platform.",

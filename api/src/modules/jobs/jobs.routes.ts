@@ -10,8 +10,18 @@ import {
   getJobStatusController,
   replayJobController,
 } from "./jobs.controller.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
+
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const retentionGuard = createEntitlementGuard(getEntitlementService(), {
+  dimension: "retentionDays",
+  amount: 1,
+  failMode: "fail-open",
+});
 
 /**
  * Authenticated enqueue. Tenant/actor derived from auth context (never body).
@@ -23,6 +33,7 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  retentionGuard,
   enqueueJobController,
 );
 

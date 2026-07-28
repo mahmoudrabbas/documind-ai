@@ -430,8 +430,8 @@ export async function provisionSubscription(
 }
 
 /**
- * Update (transition) a subscription — delegates to
- * {@link SubscriptionService.transitionSubscription}.
+ * Update (transition) a subscription — creates one if none exists yet, or
+ * transitions an existing subscription to a new state.
  *
  * Maps legacy lowercase status values to UPPERCASE model statuses.
  * Maps legacy `renewsAt` to `periodEnd`.
