@@ -41,6 +41,12 @@ test("webhook handler persists events before processing", async () => {
   );
 });
 
+test("webhook and Checkout return recovery converge on the shared state applier", async () => {
+  const source = await readFile(serviceSourceUrl, "utf8");
+  assert.ok(source.includes("synchronizeProviderSubscription"));
+  assert.ok(source.includes('sourceType: "webhook"'));
+});
+
 test("webhook controller verifies signature", async () => {
   const source = await readFile(controllerSourceUrl, "utf8");
   assert.ok(

@@ -30,6 +30,8 @@ interface StoredSession {
   subscriptionMetadata: Record<string, string>;
   clientReferenceId: string;
   status: "open" | "complete" | "expired";
+  paymentStatus: "paid" | "unpaid" | "no_payment_required";
+  subscriptionId?: string;
 }
 
 interface StoredProduct {
@@ -65,6 +67,7 @@ export class FakePaymentProvider implements PaymentProvider {
   shouldFailNextCreateProduct = false;
   shouldFailNextCreatePrice = false;
   shouldFailNextCreatePortalSession = false;
+  shouldFailNextRetrieveSession = false;
 
   _reset(): void {
     this.customers.length = 0;
@@ -77,6 +80,7 @@ export class FakePaymentProvider implements PaymentProvider {
     this.shouldFailNextCreateProduct = false;
     this.shouldFailNextCreatePrice = false;
     this.shouldFailNextCreatePortalSession = false;
+    this.shouldFailNextRetrieveSession = false;
     nextId = 1;
   }
 
@@ -113,6 +117,7 @@ export class FakePaymentProvider implements PaymentProvider {
       subscriptionMetadata: { ...(params.subscriptionMetadata ?? params.metadata) },
       clientReferenceId: params.clientReferenceId ?? "",
       status: "open",
+      paymentStatus: "unpaid",
     };
     this.sessions.push(session);
     return {
@@ -121,6 +126,9 @@ export class FakePaymentProvider implements PaymentProvider {
       status: "open",
       customerId: session.customerId,
       metadata: session.metadata,
+      clientReferenceId: session.clientReferenceId,
+      paymentStatus: session.paymentStatus,
+      subscriptionId: session.subscriptionId,
     };
   }
 
@@ -139,6 +147,10 @@ export class FakePaymentProvider implements PaymentProvider {
   async retrieveCheckoutSession(
     sessionId: string,
   ): Promise<CheckoutSession> {
+    if (this.shouldFailNextRetrieveSession) {
+      this.shouldFailNextRetrieveSession = false;
+      throw new Error("Fake provider: session retrieval failed");
+    }
     const session = this.sessions.find((s) => s.id === sessionId);
     if (!session) {
       throw new Error(`Fake provider: session ${sessionId} not found`);
@@ -149,6 +161,12 @@ export class FakePaymentProvider implements PaymentProvider {
       status: session.status,
       customerId: session.customerId,
       metadata: session.metadata,
+      clientReferenceId: session.clientReferenceId,
+      paymentStatus: session.paymentStatus,
+      subscriptionId: session.subscriptionId,
+      subscription: session.subscriptionId
+        ? await this.retrieveSubscription(session.subscriptionId)
+        : undefined,
     };
   }
 
@@ -184,7 +202,24 @@ export class FakePaymentProvider implements PaymentProvider {
 
   markSessionComplete(sessionId: string): void {
     const session = this.sessions.find((s) => s.id === sessionId);
-    if (session) session.status = "complete";
+    if (session) {
+      session.status = "complete";
+      session.paymentStatus = "paid";
+    }
+  }
+
+  attachSubscriptionToSession(
+    sessionId: string,
+    subscription: ProviderSubscription,
+  ): void {
+    const session = this.sessions.find((item) => item.id === sessionId);
+    if (!session) throw new Error(`Fake provider: session ${sessionId} not found`);
+    const existing = this.subscriptions.findIndex((item) => item.id === subscription.id);
+    if (existing >= 0) this.subscriptions[existing] = subscription;
+    else this.subscriptions.push(subscription);
+    session.subscriptionId = subscription.id;
+    session.status = "complete";
+    session.paymentStatus = "paid";
   }
 
   async createProduct(params: CreateProductParams): Promise<StripeProduct> {

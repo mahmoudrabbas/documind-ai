@@ -20,7 +20,10 @@ export interface CheckoutSession {
   status: "open" | "complete" | "expired";
   customerId: string;
   metadata: Record<string, string>;
+  clientReferenceId?: string;
+  paymentStatus: "paid" | "unpaid" | "no_payment_required";
   subscriptionId?: string;
+  subscription?: ProviderSubscription;
 }
 
 export interface ProviderSubscription {
@@ -81,6 +84,7 @@ export interface BillingPortalSession {
 export interface PaymentProvider {
   createCustomer(params: CreateCustomerParams): Promise<string>;
   createCheckoutSession(params: CreateCheckoutSessionParams): Promise<CheckoutSession>;
+  /** Read-only recovery lookup. Implementations must not create provider resources. */
   retrieveCheckoutSession(sessionId: string): Promise<CheckoutSession>;
   retrieveSubscription?(subscriptionId: string): Promise<ProviderSubscription>;
   listCustomerSubscriptions?(customerId: string): Promise<ProviderSubscription[]>;

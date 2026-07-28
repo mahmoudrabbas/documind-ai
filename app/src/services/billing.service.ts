@@ -27,6 +27,13 @@ export function getCheckoutStatus(checkoutId: string, signal?: AbortSignal) {
   );
 }
 
+export function synchronizeCheckoutSession(sessionId: string, signal?: AbortSignal) {
+  return apiClient<Success<{ synchronized: boolean; changed: boolean; subscription: SubscriptionStatus }>>(
+    `/checkout/sessions/${encodeURIComponent(sessionId)}/sync`,
+    { method: "POST", signal },
+  );
+}
+
 export function getSubscriptionStatus(signal?: AbortSignal) {
   return apiClient<Success<SubscriptionStatus>>("/checkout/subscription", {
     signal,

@@ -3,6 +3,8 @@ import { Types } from "mongoose";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import type { ProviderSubscription } from "./ports/payment-provider.port.js";
+import { getAuditWriter } from "../../common/observability/index.js";
+import type { SubscriptionStatus } from "./billing.types.js";
 
 export interface ResolvedPackageVersion {
   packageId: string;
@@ -190,4 +192,157 @@ export function providerSubscriptionStatus(status: string) {
     paused: "PAUSED",
   } as const;
   return statuses[status as keyof typeof statuses] ?? null;
+}
+
+export interface ProviderSubscriptionSyncInput {
+  providerSubscription: ProviderSubscription;
+  tenantId: string;
+  provider: string;
+  sourceId: string;
+  sourceType: "webhook" | "checkout_session_sync";
+  sourceTimestamp?: Date;
+}
+
+function sameDate(left: unknown, right: Date | null): boolean {
+  const leftTime = left instanceof Date
+    ? left.getTime()
+    : typeof left === "string"
+      ? new Date(left).getTime()
+      : null;
+  return leftTime === right?.getTime() || (leftTime === null && right === null);
+}
+
+function hasProviderStateChanged(
+  current: Record<string, unknown>,
+  desired: Record<string, unknown>,
+): boolean {
+  return (
+    String(current.packageId) !== String(desired.packageId) ||
+    String(current.packageVersionId ?? "") !== String(desired.packageVersionId) ||
+    current.packageVersion !== desired.packageVersion ||
+    current.status !== desired.status ||
+    current.providerCustomerId !== desired.providerCustomerId ||
+    current.providerSubscriptionId !== desired.providerSubscriptionId ||
+    current.providerPriceId !== desired.providerPriceId ||
+    current.provider !== desired.provider ||
+    current.billingInterval !== desired.billingInterval ||
+    current.paymentState !== desired.paymentState ||
+    current.cancelAtPeriodEnd !== desired.cancelAtPeriodEnd ||
+    !sameDate(current.currentPeriodStart, desired.currentPeriodStart as Date | null) ||
+    !sameDate(current.currentPeriodEnd, desired.currentPeriodEnd as Date | null)
+  );
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === 11000
+  );
+}
+
+/**
+ * Apply the provider's current subscription snapshot. Both webhooks and the
+ * authenticated Checkout return recovery path converge here.
+ */
+export async function synchronizeProviderSubscription(
+  input: ProviderSubscriptionSyncInput,
+): Promise<{ changed: boolean; subscription: Record<string, unknown> }> {
+  const resolution = await resolveProviderSubscription(
+    input.providerSubscription,
+    input.tenantId,
+  );
+  if (resolution.tenantId !== input.tenantId) {
+    throw new Error("Provider subscription tenant ownership mismatch");
+  }
+
+  const status = providerSubscriptionStatus(input.providerSubscription.status);
+  if (!status) {
+    throw new Error("Unsupported provider subscription status");
+  }
+
+  const desired: Record<string, unknown> = {
+    packageId: new Types.ObjectId(resolution.packageId),
+    packageVersionId: new Types.ObjectId(resolution.packageVersionId),
+    packageVersion: resolution.packageVersion,
+    providerCustomerId: input.providerSubscription.customerId,
+    providerSubscriptionId: input.providerSubscription.id,
+    providerPriceId: input.providerSubscription.priceId,
+    provider: input.provider,
+    billingInterval: resolution.billingInterval,
+    status: status as SubscriptionStatus,
+    paymentState: providerPaymentState(input.providerSubscription.status),
+    periodStart: input.providerSubscription.currentPeriodStart,
+    periodEnd: input.providerSubscription.currentPeriodEnd,
+    currentPeriodStart: input.providerSubscription.currentPeriodStart,
+    currentPeriodEnd: input.providerSubscription.currentPeriodEnd,
+    cancelAtPeriodEnd: input.providerSubscription.cancelAtPeriodEnd,
+    lastProviderEventId: input.sourceId,
+    lastProviderEventTimestamp: input.sourceTimestamp ?? new Date(),
+  };
+
+  let changed = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const current = await SubscriptionModel.findOne({
+      tenantId: new Types.ObjectId(input.tenantId),
+    }).lean().exec() as unknown as Record<string, unknown> | null;
+
+    if (!current) {
+      try {
+        const created = await SubscriptionModel.updateOne(
+          { tenantId: new Types.ObjectId(input.tenantId) },
+          {
+            $setOnInsert: { tenantId: new Types.ObjectId(input.tenantId), startedAt: new Date() },
+            $set: desired,
+          },
+          { upsert: true },
+        );
+        changed = created.upsertedCount === 1 || created.modifiedCount === 1;
+        break;
+      } catch (error) {
+        // A webhook and Checkout return can both observe no row before the
+        // tenant-unique upsert. The winner owns the transition; the loser
+        // retries against the newly persisted snapshot.
+        if (isDuplicateKeyError(error)) continue;
+        throw error;
+      }
+    }
+
+    if (!hasProviderStateChanged(current, desired)) break;
+    const result = await SubscriptionModel.updateOne(
+      {
+        _id: new Types.ObjectId(String(current._id)),
+        revision: Number(current.revision),
+      },
+      { $set: desired },
+    );
+    if (result.modifiedCount === 1) {
+      changed = true;
+      break;
+    }
+  }
+
+  const synchronized = await SubscriptionModel.findOne({
+    tenantId: new Types.ObjectId(input.tenantId),
+  }).lean().exec() as unknown as Record<string, unknown> | null;
+  if (!synchronized) throw new Error("Synchronized subscription was not found");
+
+  if (changed) {
+    await getAuditWriter().write({
+      action: "SUBSCRIPTION_UPDATED",
+      resourceType: "Subscription",
+      resourceId: String(synchronized._id),
+      tenantId: input.tenantId,
+      changes: {
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        status,
+        packageId: resolution.packageId,
+        packageVersionId: resolution.packageVersionId,
+      },
+    });
+  }
+
+  return { changed, subscription: synchronized };
 }

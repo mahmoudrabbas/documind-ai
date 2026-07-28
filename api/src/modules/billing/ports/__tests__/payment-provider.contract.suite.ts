@@ -65,6 +65,7 @@ export function paymentProviderContractTests(
 
       const retrieved = await provider.retrieveCheckoutSession(session.id);
       expect(retrieved.id).toBe(session.id);
+      expect(["paid", "unpaid", "no_payment_required"]).toContain(retrieved.paymentStatus);
     });
 
     it("verifies webhook signature", () => {

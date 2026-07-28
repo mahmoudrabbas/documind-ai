@@ -14,6 +14,7 @@ import type {
 } from "../billing/ports/payment-provider.port.js";
 import {
   resolvePackageVersion,
+  synchronizeProviderSubscription,
   type ResolvedPackageVersion,
 } from "../billing/provider-subscription-sync.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
@@ -178,6 +179,39 @@ export async function handlePaymentEvent(
       extractPaymentStatus(event) === "unpaid";
     if (isCheckoutFailed) {
       await handleCheckoutSessionCompleted(event, eventRecord);
+      return;
+    }
+
+    const convergentSyncEvent = new Set([
+      "checkout.session.completed",
+      "invoice.paid",
+      "invoice_payment.paid",
+      "customer.subscription.created",
+      "customer.subscription.updated",
+    ]).has(event.type);
+    if (convergentSyncEvent && providerSubscription) {
+      const tenantHint = extractTenantFromEvent(event)?.toString() ??
+        providerSubscription.metadata.tenantId;
+      if (!tenantHint) throw new Error("Provider event tenant mapping is missing");
+      await synchronizeProviderSubscription({
+        providerSubscription,
+        tenantId: tenantHint,
+        provider: event.provider,
+        sourceId: event.id,
+        sourceType: "webhook",
+        sourceTimestamp: event.timestamp,
+      });
+      eventRecord.tenantId = new Types.ObjectId(tenantHint);
+      const checkoutSessionId = extractCheckoutSessionId(event);
+      if (event.type === "checkout.session.completed" && checkoutSessionId) {
+        await CheckoutSessionModel.updateOne(
+          { providerSessionId: checkoutSessionId, tenantId: new Types.ObjectId(tenantHint) },
+          { $set: { status: "completed", completedAt: new Date() } },
+        );
+      }
+      eventRecord.status = "processed";
+      eventRecord.processedAt = new Date();
+      await eventRecord.save();
       return;
     }
 

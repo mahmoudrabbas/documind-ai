@@ -58,8 +58,13 @@ export class StripePaymentProvider implements PaymentProvider {
       id: session.id,
       url: session.url ?? "",
       status: session.status === "open" ? "open" : "complete",
-      customerId: (session.customer as string) ?? params.customerId,
+      customerId:
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id ?? params.customerId,
       metadata: (session.metadata as Record<string, string>) ?? {},
+      clientReferenceId: session.client_reference_id ?? undefined,
+      paymentStatus: session.payment_status,
       subscriptionId:
         typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
     };
@@ -69,7 +74,13 @@ export class StripePaymentProvider implements PaymentProvider {
     sessionId: string,
   ): Promise<CheckoutSession> {
     const stripe = await getClient();
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ["subscription", "customer"],
+    });
+    const expandedSubscription =
+      session.subscription && typeof session.subscription !== "string"
+        ? this.mapSubscription(session.subscription)
+        : undefined;
 
     return {
       id: session.id,
@@ -80,10 +91,16 @@ export class StripePaymentProvider implements PaymentProvider {
           : session.status === "complete"
             ? "complete"
             : "expired",
-      customerId: (session.customer as string) ?? "",
+      customerId:
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id ?? "",
       metadata: (session.metadata as Record<string, string>) ?? {},
+      clientReferenceId: session.client_reference_id ?? undefined,
+      paymentStatus: session.payment_status,
       subscriptionId:
         typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
+      subscription: expandedSubscription,
     };
   }
 

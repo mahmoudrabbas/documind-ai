@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
+import PaymentEventModel from "../../db/models/paymentEvent.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   NOT_FOUND,
@@ -11,9 +12,14 @@ import {
   CHECKOUT_SESSION_PENDING,
   PRICE_NOT_CONFIGURED,
   BILLING_PORTAL_UNAVAILABLE,
+  CHECKOUT_SESSION_NOT_FOUND,
+  CHECKOUT_SESSION_INCOMPLETE,
+  CHECKOUT_PAYMENT_INCOMPLETE,
+  CHECKOUT_SYNC_PROVIDER_UNAVAILABLE,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { PaymentProvider } from "../billing/ports/payment-provider.port.js";
+import { synchronizeProviderSubscription } from "../billing/provider-subscription-sync.service.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   authorizeTenantOperation,
@@ -387,6 +393,158 @@ export async function getCheckoutStatus(
     throw new AppError(404, NOT_FOUND, "Checkout session not found");
   }
   return session;
+}
+
+function hiddenCheckoutSessionError(): AppError {
+  return new AppError(404, CHECKOUT_SESSION_NOT_FOUND, "Checkout session not found");
+}
+
+function isProviderNotFound(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const providerError = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    code?: unknown;
+  };
+  return (
+    providerError.status === 404 ||
+    providerError.statusCode === 404 ||
+    providerError.code === "resource_missing"
+  );
+}
+
+export async function synchronizeCheckoutSession(
+  sessionId: string,
+  tenantId: string,
+  provider: PaymentProvider,
+  inputContext: OperationAuthorizationContext,
+) {
+  const actor = await authorizeTenantOperation(inputContext, Permission.BILLING_MANAGE);
+  if (tenantId !== actor.tenantId) throw hiddenCheckoutSessionError();
+
+  const localSession = await CheckoutSessionModel.findOne({
+    providerSessionId: sessionId,
+  }).lean().exec();
+
+  let providerSession;
+  try {
+    providerSession = await provider.retrieveCheckoutSession(sessionId);
+  } catch (error) {
+    if (isProviderNotFound(error)) throw hiddenCheckoutSessionError();
+    throw new AppError(
+      503,
+      CHECKOUT_SYNC_PROVIDER_UNAVAILABLE,
+      "Checkout synchronization is temporarily unavailable. Please try again.",
+    );
+  }
+
+  const trustedTenantIds = [
+    providerSession.clientReferenceId,
+    providerSession.metadata.tenantId,
+    localSession?.tenantId?.toString(),
+  ].filter((value): value is string => Boolean(value));
+  if (
+    trustedTenantIds.length === 0 ||
+    trustedTenantIds.some((trustedTenantId) => trustedTenantId !== tenantId)
+  ) {
+    throw hiddenCheckoutSessionError();
+  }
+
+  if (providerSession.status !== "complete") {
+    throw new AppError(
+      409,
+      CHECKOUT_SESSION_INCOMPLETE,
+      "Checkout is not complete yet.",
+    );
+  }
+  if (!new Set(["paid", "no_payment_required"]).has(providerSession.paymentStatus)) {
+    throw new AppError(
+      409,
+      CHECKOUT_PAYMENT_INCOMPLETE,
+      "Checkout payment is not complete.",
+    );
+  }
+
+  let providerSubscription = providerSession.subscription;
+  if (!providerSubscription && providerSession.subscriptionId && provider.retrieveSubscription) {
+    try {
+      providerSubscription = await provider.retrieveSubscription(providerSession.subscriptionId);
+    } catch {
+      throw new AppError(
+        503,
+        CHECKOUT_SYNC_PROVIDER_UNAVAILABLE,
+        "Checkout synchronization is temporarily unavailable. Please try again.",
+      );
+    }
+  }
+  if (!providerSubscription) {
+    throw new AppError(
+      409,
+      CHECKOUT_SESSION_PENDING,
+      "The provider subscription is still being prepared.",
+    );
+  }
+  if (
+    providerSession.customerId &&
+    providerSubscription.customerId !== providerSession.customerId
+  ) {
+    throw hiddenCheckoutSessionError();
+  }
+  if (
+    providerSubscription.metadata.tenantId &&
+    providerSubscription.metadata.tenantId !== tenantId
+  ) {
+    throw hiddenCheckoutSessionError();
+  }
+
+  const sourceId = `checkout-session-sync:${sessionId}`;
+  let syncResult;
+  try {
+    syncResult = await synchronizeProviderSubscription({
+      providerSubscription,
+      tenantId,
+      provider: "stripe",
+      sourceId,
+      sourceType: "checkout_session_sync",
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(
+      503,
+      CHECKOUT_SYNC_PROVIDER_UNAVAILABLE,
+      "Checkout synchronization is temporarily unavailable. Please try again.",
+    );
+  }
+
+  await CheckoutSessionModel.updateOne(
+    { providerSessionId: sessionId, tenantId: new Types.ObjectId(tenantId) },
+    { $set: { status: "completed", completedAt: new Date() } },
+  );
+
+  try {
+    await PaymentEventModel.create({
+      eventId: sourceId,
+      eventType: "checkout.session.synchronized",
+      provider: "stripe",
+      status: "processed",
+      signature: "",
+      rawBody: "",
+      payload: { checkoutSessionId: sessionId, recovery: "checkout_session_sync" },
+      processingErrors: [],
+      processedAt: new Date(),
+      tenantId: new Types.ObjectId(tenantId),
+    });
+  } catch (error) {
+    if (!(typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === 11000)) {
+      throw error;
+    }
+  }
+
+  return {
+    synchronized: true,
+    changed: syncResult.changed,
+    subscription: syncResult.subscription,
+  };
 }
 
 export async function listCheckoutSessions(

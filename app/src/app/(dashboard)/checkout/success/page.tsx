@@ -5,11 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   createBillingPortalSession,
   getSubscriptionStatus,
+  synchronizeCheckoutSession,
 } from "@/services/billing.service";
+import { ApiError } from "@/lib/api-client";
 import {
   CHECKOUT_SYNC_BACKOFF_MS,
   CHECKOUT_SYNC_WINDOW_MS,
   checkoutSyncPhase,
+  checkoutSyncErrorPhase,
+  isValidCheckoutSessionId,
   type CheckoutSyncPhase,
 } from "./checkout-sync";
 
@@ -20,10 +24,12 @@ function CheckoutSuccessContent() {
   const [phase, setPhase] = useState<CheckoutSyncPhase>("synchronizing");
   const [retryKey, setRetryKey] = useState(0);
   const [portalPending, setPortalPending] = useState(false);
+  const [packageName, setPackageName] = useState<string | null>(null);
+  const [manageBillingAvailable, setManageBillingAvailable] = useState(false);
 
   useEffect(() => {
-    if (!sessionId) {
-      setPhase("failed");
+    if (!isValidCheckoutSessionId(sessionId)) {
+      setPhase("invalid-session");
       return;
     }
     const controller = new AbortController();
@@ -31,11 +37,14 @@ function CheckoutSuccessContent() {
     const startedAt = Date.now();
     let attempt = 0;
     setPhase("synchronizing");
+    let terminalSyncFailure: CheckoutSyncPhase | null = null;
 
     const poll = async () => {
       try {
         const response = await getSubscriptionStatus(controller.signal);
         const subscription = response.data;
+        setManageBillingAvailable(Boolean(subscription.providerCustomerId));
+        setPackageName(subscription.packageId?.name ?? null);
         const nextPhase = checkoutSyncPhase(subscription, Date.now() - startedAt);
         if (nextPhase !== "synchronizing") { setPhase(nextPhase); return; }
       } catch {
@@ -44,7 +53,7 @@ function CheckoutSuccessContent() {
 
       if (controller.signal.aborted) return;
       if (Date.now() - startedAt >= CHECKOUT_SYNC_WINDOW_MS) {
-        setPhase("pending");
+        setPhase(terminalSyncFailure ?? "pending");
         return;
       }
       const delay = CHECKOUT_SYNC_BACKOFF_MS[Math.min(attempt, CHECKOUT_SYNC_BACKOFF_MS.length - 1)];
@@ -52,7 +61,21 @@ function CheckoutSuccessContent() {
       timer = setTimeout(() => void poll(), delay);
     };
 
-    void poll();
+    const synchronizeThenPoll = async () => {
+      try {
+        await synchronizeCheckoutSession(sessionId, controller.signal);
+      } catch (error) {
+        const mapped = checkoutSyncErrorPhase(error instanceof ApiError ? error.code : null);
+        if (mapped === "session-not-found" || mapped === "payment-incomplete") {
+          setPhase(mapped);
+          return;
+        }
+        terminalSyncFailure = mapped;
+      }
+      await poll();
+    };
+
+    void synchronizeThenPoll();
     return () => {
       controller.abort();
       if (timer) clearTimeout(timer);
@@ -70,22 +93,31 @@ function CheckoutSuccessContent() {
   }, []);
 
   const synchronizing = phase === "synchronizing";
+  const retryable = ["pending", "provider-unavailable", "payment-incomplete"].includes(phase);
   const title = synchronizing
     ? "Payment completed"
     : phase === "active"
       ? "Your subscription is active!"
       : phase === "pending"
         ? "Synchronization pending"
-        : "Unable to activate subscription";
+        : phase === "provider-unavailable"
+          ? "Provider temporarily unavailable"
+          : phase === "payment-incomplete"
+            ? "Payment incomplete"
+            : "Checkout session unavailable";
   const message = synchronizing
     ? "Payment completed. Synchronizing your subscription."
     : phase === "active"
-      ? "You can now use all the features of your plan."
+      ? `${packageName ? `${packageName} is synchronized. ` : ""}You can now use all the features of your plan.`
       : phase === "pending"
         ? "Payment was received, but subscription synchronization is still pending."
-        : sessionId
-          ? "Stripe reported a subscription payment problem. You can retry synchronization or manage billing."
-          : "No Stripe Checkout session was provided.";
+        : phase === "provider-unavailable"
+          ? "Stripe is temporarily unavailable. Your completed payment has not been marked as failed; retry synchronization shortly."
+          : phase === "payment-incomplete"
+            ? "Stripe has not confirmed a completed payment for this Checkout Session."
+            : phase === "session-not-found"
+              ? "This Checkout Session is not available for your company."
+              : "The Checkout Session ID is missing or invalid.";
 
   return (
     <div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">
@@ -100,15 +132,15 @@ function CheckoutSuccessContent() {
       <p className="mt-2 text-on-surface-variant" aria-live="polite">{message}</p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         {phase === "active" ? (
-          <button type="button" onClick={() => router.push("/dashboard")} className="min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary">
-            Go to dashboard
+          <button type="button" onClick={() => router.push("/checkout")} className="min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary">
+            View Billing
           </button>
-        ) : !synchronizing ? (
+        ) : retryable ? (
           <button type="button" onClick={() => setRetryKey((value) => value + 1)} className="min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary">
             Retry
           </button>
         ) : null}
-        {sessionId ? (
+        {manageBillingAvailable ? (
           <button type="button" disabled={portalPending} onClick={() => void manageBilling()} className="min-h-11 rounded-xl border border-outline px-6 font-bold disabled:opacity-50">
             {portalPending ? "Opening…" : "Manage Billing"}
           </button>
