@@ -84,6 +84,10 @@ schema.index({ tenantId: 1, idempotencyKeyHash: 1 }, { unique: true, name: "uq_b
 schema.index({ tenantId: 1, status: 1, createdAt: -1 }, { name: "idx_billing_operation_tenant_status" });
 schema.index({ status: 1, nextRetryAt: 1 }, { name: "idx_billing_operation_retry" });
 schema.index({ subscriptionId: 1, operationType: 1 }, { name: "idx_billing_operation_subscription_type" });
+schema.index({ tenantId: 1, providerObjectReference: 1 }, {
+  name: "idx_billing_operation_tenant_provider_object",
+  partialFilterExpression: { providerObjectReference: { $type: "string" } },
+});
 schema.index({ traceId: 1 }, { name: "idx_billing_operation_trace", sparse: true });
 schema.index(
   { tenantId: 1, subscriptionId: 1, conflictGroup: 1 },

@@ -19,6 +19,13 @@ describe("Issue 29 billing index migration", () => {
     expect(applied.created).toHaveLength(ISSUE29_INDEXES.length);
     const repeated = await migrateIssue29BillingIndexes(fixture.db, true); expect(repeated.created).toHaveLength(0); expect(repeated.existing).toHaveLength(ISSUE29_INDEXES.length);
   });
+  it("covers the additive billing preview indexes", () => {
+    expect(ISSUE29_INDEXES.filter((spec) => spec.collection === "billingpreviews").map((spec) => spec.name)).toEqual([
+      "idx_billing_preview_tenant_subscription",
+      "idx_billing_preview_tenant_expiry",
+      "idx_billing_preview_reuse",
+    ]);
+  });
   it("reports conflicting named indexes without replacing them", async () => {
     const fixture = database({ billingoperations: [{ name: "_id_", key: { _id: 1 } }, { name: "uq_billing_operation_idempotency", key: { wrong: 1 }, unique: true }] });
     await expect(migrateIssue29BillingIndexes(fixture.db, true)).rejects.toBeInstanceOf(BillingIndexMigrationConflict); expect(fixture.creates).not.toContain("billingoperations.uq_billing_operation_idempotency");

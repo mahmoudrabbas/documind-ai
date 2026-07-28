@@ -7,7 +7,7 @@ export interface CompanyBillingSummary {
   periodStart: Date | null; periodEnd: Date | null; currentPeriodStart: Date | null; currentPeriodEnd: Date | null;
   trialStart: Date | null; trialEnd: Date | null; cancelAtPeriodEnd: boolean; cancellationEffectiveAt: Date | null;
   providerManaged: boolean; providerLinked: boolean;
-  pendingOperation: { type: string; status: string; requestedAt: Date } | null;
+  pendingOperation: { id: string; type: string; status: string; requestedAt: Date; failureCode?: string | null; effectiveAt?: Date | null; cancellationType?: "IMMEDIATE" | "PERIOD_END" | null } | null;
   canOpenPortal: boolean; canUpdatePaymentMethod: boolean; canChangePlan: boolean;
   canCancel: boolean; canReactivate: boolean; canRequestRefund: boolean;
   canViewInvoices: boolean;
@@ -17,7 +17,7 @@ export interface CompanyBillingSummary {
 
 export function toCompanyBillingSummary(
   subscription: Record<string, unknown>,
-  pendingOperation: { operationType: string; status: string; requestedAt: Date; conflictGroup?: string | null } | null = null,
+  pendingOperation: { _id?: unknown; operationType: string; status: string; requestedAt: Date; conflictGroup?: string | null; failureCode?: string; effectiveAt?: Date | null; cancellationType?: "IMMEDIATE" | "PERIOD_END" | null } | null = null,
   _hasPendingSubscriptionMutation = Boolean(pendingOperation?.conflictGroup === "SUBSCRIPTION_MUTATION"),
   extras: {
     lifecycle?: CompanyBillingSummary["lifecycle"];
@@ -41,7 +41,15 @@ export function toCompanyBillingSummary(
     cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd),
     cancellationEffectiveAt: subscription.cancelAtPeriodEnd ? dateOrNull(subscription.currentPeriodEnd ?? subscription.periodEnd) : null,
     providerManaged, providerLinked,
-    pendingOperation: pendingOperation ? { type: pendingOperation.operationType, status: pendingOperation.status, requestedAt: pendingOperation.requestedAt } : null,
+    pendingOperation: pendingOperation ? {
+      id: pendingOperation._id ? String(pendingOperation._id) : "",
+      type: pendingOperation.operationType,
+      status: pendingOperation.status,
+      requestedAt: pendingOperation.requestedAt,
+      failureCode: pendingOperation.failureCode || null,
+      effectiveAt: pendingOperation.effectiveAt ?? null,
+      cancellationType: pendingOperation.cancellationType ?? null,
+    } : null,
     canOpenPortal: extras.capabilities?.canOpenPortal ?? Boolean(subscription.providerCustomerId),
     canUpdatePaymentMethod: extras.capabilities?.canUpdatePaymentMethod ?? Boolean(subscription.providerCustomerId),
     canViewInvoices: extras.capabilities?.canViewInvoices ?? providerLinked,

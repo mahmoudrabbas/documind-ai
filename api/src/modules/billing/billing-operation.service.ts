@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import {
+  BILLING_CURRENCY_MISMATCH,
   BILLING_IDEMPOTENCY_KEY_REUSED, BILLING_OPERATION_ALREADY_PENDING,
   BILLING_OPERATION_CONFLICT, BILLING_OPERATION_NOT_FOUND, BILLING_PREVIEW_STALE,
+  BILLING_PROVIDER_OWNERSHIP_MISMATCH,
   BILLING_PROVIDER_UNAVAILABLE, BILLING_SUBSCRIPTION_CHANGED,
+  BILLING_OPERATION_NOT_ALLOWED,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import BillingOperationModel, { type BillingOperationConflictGroup, type BillingOperationDocument, type BillingOperationType } from "../../db/models/billingOperation.model.js";
@@ -18,7 +21,7 @@ export interface StartBillingOperationInput {
   idempotencyKey: string; normalizedRequest: Record<string, unknown>; subscriptionId?: string;
   provider: string; targetPackageId?: string; packageVersionId?: string;
   expectedSubscriptionRevision?: number; previewReference?: string; previewExpiresAt?: Date;
-  cancellationType?: "IMMEDIATE" | "PERIOD_END";
+  cancellationType?: "IMMEDIATE" | "PERIOD_END"; effectiveAt?: Date | null;
 }
 
 export interface StartedBillingOperation {
@@ -39,13 +42,13 @@ export function hashIdempotencyKey(value: string): string {
 }
 
 export class BillingOperationService {
-  async execute<T extends { operationReference?: string }>(input: StartBillingOperationInput, mutation: (operation: BillingOperationDocument) => Promise<T>): Promise<{ operation: BillingOperationDocument; result: T | null; replayed: boolean }> {
+  async execute<T extends { operationReference?: string; state?: { id?: string }; effectiveAt?: Date; cancellationType?: "IMMEDIATE" | "PERIOD_END" }>(input: StartBillingOperationInput, mutation: (operation: BillingOperationDocument) => Promise<T>): Promise<{ operation: BillingOperationDocument; result: T | null; replayed: boolean }> {
     const started = await this.begin(input);
     if (started.replayed) return { operation: started.operation, result: null, replayed: true };
     return this.invokeProvider(await this.markProviderPending(started.operation), input.tenantId, mutation);
   }
 
-  async resume<T extends { operationReference?: string }>(operationId: string, tenantId: string, mutation: (operation: BillingOperationDocument) => Promise<T>): Promise<{ operation: BillingOperationDocument; result: T; replayed: false }> {
+  async resume<T extends { operationReference?: string; state?: { id?: string }; effectiveAt?: Date; cancellationType?: "IMMEDIATE" | "PERIOD_END" }>(operationId: string, tenantId: string, mutation: (operation: BillingOperationDocument) => Promise<T>): Promise<{ operation: BillingOperationDocument; result: T; replayed: false }> {
     const operation = await this.findForTenant(operationId, tenantId);
     if (operation.status !== "RETRY_PENDING") throw new AppError(409, BILLING_OPERATION_CONFLICT, "Billing operation is not retryable");
     return this.invokeProvider(await this.markProviderPending(operation), tenantId, mutation);
@@ -74,7 +77,8 @@ export class BillingOperationService {
         expectedSubscriptionRevision: input.expectedSubscriptionRevision ?? null,
         requestFingerprint, idempotencyKeyHash, provider: input.provider,
         previewReference: input.previewReference ?? "", previewExpiresAt: input.previewExpiresAt ?? null,
-        cancellationType: input.cancellationType ?? null, traceId: input.actor.traceId ?? "", requestId: input.actor.requestId ?? "",
+        cancellationType: input.cancellationType ?? null, effectiveAt: input.effectiveAt ?? null,
+        traceId: input.actor.traceId ?? "", requestId: input.actor.requestId ?? "",
       });
       this.audit("BILLING_OPERATION_CREATED", operation, input.actor);
       return { operation, replayed: false };
@@ -96,10 +100,27 @@ export class BillingOperationService {
     return updated;
   }
 
-  async recordProviderResult(operationId: string, tenantId: string, result: { operationReference?: string; objectReference?: string }): Promise<void> {
+  async recordProviderResult(
+    operationId: string,
+    tenantId: string,
+    result: {
+      operationReference?: string;
+      objectReference?: string;
+      effectiveAt?: Date;
+      cancellationType?: "IMMEDIATE" | "PERIOD_END";
+    },
+  ): Promise<void> {
     const update = await BillingOperationModel.updateOne(
       { _id: operationId, tenantId: new Types.ObjectId(tenantId), status: "PROVIDER_PENDING" },
-      { $set: { providerOperationReference: result.operationReference ?? "", providerObjectReference: result.objectReference ?? "" }, $inc: { revision: 1 } },
+      {
+        $set: {
+          providerOperationReference: result.operationReference ?? "",
+          providerObjectReference: result.objectReference ?? "",
+          ...(result.effectiveAt !== undefined ? { effectiveAt: result.effectiveAt } : {}),
+          ...(result.cancellationType !== undefined ? { cancellationType: result.cancellationType } : {}),
+        },
+        $inc: { revision: 1 },
+      },
     );
     if (update.matchedCount !== 1) throw new AppError(409, BILLING_OPERATION_CONFLICT, "Provider result could not be persisted");
   }
@@ -147,14 +168,24 @@ export class BillingOperationService {
     return { operation: prior, replayed: true };
   }
 
-  private async invokeProvider<T extends { operationReference?: string }>(operation: BillingOperationDocument, tenantId: string, mutation: (operation: BillingOperationDocument) => Promise<T>): Promise<{ operation: BillingOperationDocument; result: T; replayed: false }> {
+  private async invokeProvider<T extends { operationReference?: string; state?: { id?: string }; effectiveAt?: Date; cancellationType?: "IMMEDIATE" | "PERIOD_END" }>(operation: BillingOperationDocument, tenantId: string, mutation: (operation: BillingOperationDocument) => Promise<T>): Promise<{ operation: BillingOperationDocument; result: T; replayed: false }> {
     try {
       const result = await mutation(operation);
-      await this.recordProviderResult(String(operation._id), tenantId, { operationReference: result.operationReference });
+      await this.recordProviderResult(String(operation._id), tenantId, {
+        operationReference: result.operationReference,
+        objectReference: result.state?.id,
+        effectiveAt: result.effectiveAt,
+        cancellationType: result.cancellationType,
+      });
       return { operation, result, replayed: false };
     } catch (error) {
-      await this.markRetryPending(String(operation._id), tenantId, BILLING_PROVIDER_UNAVAILABLE, new Date(Date.now() + 60_000));
-      throw mapBillingProviderError(error);
+      const mapped = mapBillingProviderError(error);
+      if (mapped.statusCode >= 500) {
+        await this.markRetryPending(String(operation._id), tenantId, mapped.code, new Date(Date.now() + 60_000));
+      } else {
+        await this.fail(String(operation._id), tenantId, mapped.code);
+      }
+      throw mapped;
     }
   }
 
@@ -184,6 +215,11 @@ export function validateBillingPreview(input: PreviewValidationInput): void {
 }
 
 export function mapBillingProviderError(_error: unknown): AppError {
+  if (_error instanceof AppError) return _error;
+  const message = _error instanceof Error ? _error.message : "";
+  if (/ownership mismatch/i.test(message)) return new AppError(409, BILLING_PROVIDER_OWNERSHIP_MISMATCH, "Billing provider ownership validation failed");
+  if (/currency mismatch/i.test(message)) return new AppError(409, BILLING_CURRENCY_MISMATCH, "Billing currency does not match the requested operation");
+  if (/already effective|new checkout is required|not allowed|required/i.test(message)) return new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Billing operation is not allowed");
   return new AppError(503, BILLING_PROVIDER_UNAVAILABLE, "Billing provider is temporarily unavailable");
 }
 

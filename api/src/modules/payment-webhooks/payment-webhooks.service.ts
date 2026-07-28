@@ -249,7 +249,7 @@ export async function handlePaymentEvent(
       const tenantHint = extractTenantFromEvent(event)?.toString() ??
         providerSubscription.metadata.tenantId;
       if (!tenantHint) throw new Error("Provider event tenant mapping is missing");
-      await synchronizeProviderSubscription({
+      const synchronized = await synchronizeProviderSubscription({
         providerSubscription,
         tenantId: tenantHint,
         provider: event.provider,
@@ -264,6 +264,7 @@ export async function handlePaymentEvent(
         providerObjectReference: providerSubscription.id,
         providerEventId: event.id,
         outcome: "CONFIRMED",
+        authoritativeSubscription: synchronized.subscription,
       });
       eventRecord.tenantId = new Types.ObjectId(tenantHint);
       const checkoutSessionId = extractCheckoutSessionId(event);

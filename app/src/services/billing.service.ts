@@ -7,9 +7,12 @@ import type {
   Pagination,
   BillingPortalSessionResponse,
   BillingPortalFlow,
+  BillingChangePreview,
+  BillingOperationStatus,
   BillingInvoice,
   InvoiceLinks,
   InvoiceStatus,
+  PublicPackage,
 } from "@/types/api/billing.types";
 
 type Success<T> = { success: true; data: T };
@@ -104,6 +107,30 @@ export function createBillingPortalSession(flow: BillingPortalFlow = "general") 
 
 export function getBillingSummary(signal?: AbortSignal) {
   return apiClient<Success<SubscriptionStatus>>("/billing/summary", { signal, cache: "no-store" });
+}
+
+export function listPublicBillingPackages(signal?: AbortSignal) {
+  return apiClient<Success<PublicPackage[]>>("/public/packages", { signal, auth: false, cache: "no-store" });
+}
+
+export function createSubscriptionChangePreview(body: { targetPackageId: string; billingInterval: "monthly" | "annual" }) {
+  return apiClient<Success<BillingChangePreview>>("/billing/subscription-change-previews", { method: "POST", body });
+}
+
+export function requestSubscriptionChange(body: { previewId: string; idempotencyKey: string }) {
+  return apiClient<Success<{ operation: BillingOperationStatus; replayed: boolean }>>("/billing/subscription-changes", { method: "POST", body });
+}
+
+export function requestBillingCancellation(body: { cancellationType: "PERIOD_END" | "IMMEDIATE"; idempotencyKey: string }) {
+  return apiClient<Success<{ operation: BillingOperationStatus; replayed: boolean }>>("/billing/cancellations", { method: "POST", body });
+}
+
+export function requestBillingReactivation(body: { idempotencyKey: string }) {
+  return apiClient<Success<{ operation: BillingOperationStatus; replayed: boolean }>>("/billing/reactivations", { method: "POST", body });
+}
+
+export function getBillingOperation(operationId: string, signal?: AbortSignal) {
+  return apiClient<Success<BillingOperationStatus>>(`/billing/operations/${encodeURIComponent(operationId)}`, { signal, cache: "no-store" });
 }
 
 export function listInvoices(params: { page?: number; pageSize?: number; status?: InvoiceStatus }, signal?: AbortSignal) {

@@ -1,16 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PermissionBoundary } from "@/components/auth/permission-boundary";
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
+import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { ApiError } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
-import { createBillingPortalSession, getBillingSummary, getInvoiceLinks, listInvoices } from "@/services/billing.service";
-import type { BillingInvoice, BillingPortalFlow, Pagination, SubscriptionStatus } from "@/types/api/billing.types";
+import {
+  createBillingPortalSession,
+  createSubscriptionChangePreview,
+  getBillingOperation,
+  getBillingSummary,
+  getInvoiceLinks,
+  listInvoices,
+  listPublicBillingPackages,
+  requestBillingCancellation,
+  requestBillingReactivation,
+  requestSubscriptionChange,
+} from "@/services/billing.service";
+import type {
+  BillingChangePreview,
+  BillingInvoice,
+  BillingOperationStatus,
+  BillingPortalFlow,
+  Pagination,
+  PublicPackage,
+  SubscriptionStatus,
+} from "@/types/api/billing.types";
 import { Permission } from "@/types/api/permissions.types";
 
 type Loadable<T> = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: T };
+type Interval = "monthly" | "annual";
+type CancellationType = "PERIOD_END" | "IMMEDIATE";
 
 export function CompanyBillingPage() {
   return <PermissionBoundary permissions={[Permission.BILLING_READ]}><BillingContent /></PermissionBoundary>;
@@ -19,44 +41,129 @@ export function CompanyBillingPage() {
 function BillingContent() {
   const { t, locale, dir } = useI18n();
   const permissions = usePermissions();
+  const canRead = permissions.can(Permission.BILLING_READ);
   const canManage = permissions.can(Permission.BILLING_MANAGE);
   const [summary, setSummary] = useState<Loadable<SubscriptionStatus>>({ kind: "loading" });
   const [invoiceState, setInvoiceState] = useState<Loadable<{ invoices: BillingInvoice[]; pagination: Pagination }>>({ kind: "loading" });
+  const [packageState, setPackageState] = useState<Loadable<PublicPackage[]>>({ kind: "loading" });
   const [page, setPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
   const [portalFlow, setPortalFlow] = useState<BillingPortalFlow | null>(null);
   const [portalError, setPortalError] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [operationState, setOperationState] = useState<BillingOperationStatus | null>(null);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [selectedInterval, setSelectedInterval] = useState<Interval>("monthly");
+  const [previewState, setPreviewState] = useState<Loadable<BillingChangePreview> | null>(null);
+  const [previewSubmitting, setPreviewSubmitting] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [confirmCancellation, setConfirmCancellation] = useState<CancellationType | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
+  const [reactivationLoading, setReactivationLoading] = useState(false);
+  const [reactivationError, setReactivationError] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const portalRequestRef = useRef(false);
+  const previewSubmitKeyRef = useRef<string | null>(null);
+  const cancellationKeysRef = useRef<Record<CancellationType, string | null>>({
+    PERIOD_END: null,
+    IMMEDIATE: null,
+  });
+  const reactivationKeyRef = useRef<string | null>(null);
+
+  const currentOperationId = summary.kind === "ready" ? summary.data.pendingOperation?.id ?? null : null;
+
+  const refreshAll = useCallback(() => {
+    setRefresh((value) => value + 1);
+  }, []);
 
   useEffect(() => {
+    if (!canRead) return;
     const controller = new AbortController();
     setSummary({ kind: "loading" });
-    getBillingSummary(controller.signal).then((response) => setSummary({ kind: "ready", data: response.data })).catch((error) => {
-      if (!controller.signal.aborted) setSummary({ kind: "error", message: safeMessage(error, t) });
-    });
+    getBillingSummary(controller.signal)
+      .then((response) => setSummary({ kind: "ready", data: response.data }))
+      .catch((error) => {
+        if (!controller.signal.aborted) setSummary({ kind: "error", message: safeMessage(error, t) });
+      });
     return () => controller.abort();
-  }, [refresh, t]);
+  }, [canRead, refresh, t]);
 
   useEffect(() => {
+    if (!canRead) return;
     const controller = new AbortController();
     setInvoiceState({ kind: "loading" });
-    listInvoices({ page, pageSize: 10 }, controller.signal).then((response) => {
-      setInvoiceState({ kind: "ready", data: response.data });
-      setAnnouncement(t("billingAdmin.refreshSuccess"));
-    }).catch((error) => {
-      if (!controller.signal.aborted) setInvoiceState({ kind: "error", message: safeMessage(error, t) });
-    });
+    listInvoices({ page, pageSize: 10 }, controller.signal)
+      .then((response) => {
+        setInvoiceState({ kind: "ready", data: response.data });
+        setAnnouncement(t("billingAdmin.refreshSuccess"));
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setInvoiceState({ kind: "error", message: safeMessage(error, t) });
+      });
     return () => controller.abort();
-  }, [page, refresh, t]);
+  }, [canRead, page, refresh, t]);
 
-  useEffect(() => { if (portalError) errorRef.current?.focus(); }, [portalError]);
+  useEffect(() => {
+    if (!canManage || summary.kind !== "ready" || !summary.data.canChangePlan) {
+      setPackageState({ kind: "loading" });
+      return;
+    }
+    const controller = new AbortController();
+    listPublicBillingPackages(controller.signal)
+      .then((response) => {
+        const options = response.data.filter((pkg) => pkg.id !== summary.data.packageId?._id);
+        setPackageState({ kind: "ready", data: options });
+        if (!selectedPackageId && options[0]) setSelectedPackageId(options[0].id);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setPackageState({ kind: "error", message: safeMessage(error, t) });
+      });
+    return () => controller.abort();
+  }, [canManage, selectedPackageId, summary, t]);
+
+  useEffect(() => {
+    if (!currentOperationId) {
+      setOperationState(null);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    const poll = async () => {
+      try {
+        const response = await getBillingOperation(currentOperationId, controller.signal);
+        if (!active) return;
+        setOperationState(response.data);
+        if (["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"].includes(response.data.status)) {
+          window.setTimeout(() => {
+            if (active) void poll();
+          }, 3000);
+          return;
+        }
+        setAnnouncement(response.data.status === "CONFIRMED" ? t("billingAdmin.operationConfirmed") : t("billingAdmin.operationFailed"));
+        refreshAll();
+      } catch (error) {
+        if (!controller.signal.aborted) setAnnouncement(safeMessage(error, t));
+      }
+    };
+    void poll();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [currentOperationId, refreshAll, t]);
+
+  useEffect(() => {
+    if (portalError || previewError || confirmError || reactivationError) errorRef.current?.focus();
+  }, [portalError, previewError, confirmError, reactivationError]);
 
   const launchPortal = useCallback(async (flow: BillingPortalFlow) => {
     if (portalRequestRef.current) return;
     portalRequestRef.current = true;
-    setPortalFlow(flow); setPortalError(""); setAnnouncement(t("billingAdmin.portalOpening"));
+    setPortalFlow(flow);
+    setPortalError("");
+    setAnnouncement(t("billingAdmin.portalOpening"));
     try {
       const response = await createBillingPortalSession(flow);
       window.location.assign(response.data.url);
@@ -76,46 +183,333 @@ function BillingContent() {
       if (!url) throw new Error("unavailable");
       window.open(url, "_blank", "noopener,noreferrer");
       setAnnouncement(t("billingAdmin.linkOpened"));
-    } catch (error) { setAnnouncement(safeMessage(error, t)); }
+    } catch (error) {
+      setAnnouncement(safeMessage(error, t));
+    }
   }, [t]);
+
+  const requestPreview = useCallback(async () => {
+    if (!selectedPackageId) return;
+    setPreviewError("");
+    setPreviewState({ kind: "loading" });
+    try {
+      const response = await createSubscriptionChangePreview({ targetPackageId: selectedPackageId, billingInterval: selectedInterval });
+      setPreviewState({ kind: "ready", data: response.data });
+      previewSubmitKeyRef.current = null;
+      setAnnouncement(t("billingAdmin.previewLoaded"));
+    } catch (error) {
+      const message = safeMessage(error, t);
+      setPreviewState({ kind: "error", message });
+      setPreviewError(message);
+    }
+  }, [selectedInterval, selectedPackageId, t]);
+
+  const submitPreview = useCallback(async () => {
+    if (previewState?.kind !== "ready") return;
+    setPreviewSubmitting(true);
+    setPreviewError("");
+    try {
+      const idempotencyKey = previewSubmitKeyRef.current ?? (globalThis.crypto?.randomUUID?.() ?? `plan-${Date.now()}`);
+      previewSubmitKeyRef.current = idempotencyKey;
+      const response = await requestSubscriptionChange({ previewId: previewState.data.id, idempotencyKey });
+      setPreviewSubmitting(false);
+      setPreviewDialogOpen(false);
+      setOperationState(response.data.operation);
+      setAnnouncement(t("billingAdmin.operationPending"));
+      refreshAll();
+    } catch (error) {
+      setPreviewSubmitting(false);
+      setPreviewError(safeMessage(error, t));
+    }
+  }, [previewState, refreshAll, t]);
+
+  const submitCancellation = useCallback(async (cancellationType: CancellationType) => {
+    setConfirmLoading(true);
+    setConfirmError("");
+    try {
+      const idempotencyKey = cancellationKeysRef.current[cancellationType]
+        ?? (globalThis.crypto?.randomUUID?.() ?? `cancel-${Date.now()}`);
+      cancellationKeysRef.current[cancellationType] = idempotencyKey;
+      const response = await requestBillingCancellation({
+        cancellationType,
+        idempotencyKey,
+      });
+      setConfirmLoading(false);
+      setConfirmCancellation(null);
+      setOperationState(response.data.operation);
+      setAnnouncement(t("billingAdmin.operationPending"));
+      refreshAll();
+    } catch (error) {
+      setConfirmLoading(false);
+      setConfirmError(safeMessage(error, t));
+    }
+  }, [refreshAll, t]);
+
+  const submitReactivation = useCallback(async () => {
+    setReactivationLoading(true);
+    setReactivationError("");
+    try {
+      const idempotencyKey = reactivationKeyRef.current ?? (globalThis.crypto?.randomUUID?.() ?? `reactivate-${Date.now()}`);
+      reactivationKeyRef.current = idempotencyKey;
+      const response = await requestBillingReactivation({ idempotencyKey });
+      setReactivationLoading(false);
+      setOperationState(response.data.operation);
+      setAnnouncement(t("billingAdmin.operationPending"));
+      refreshAll();
+    } catch (error) {
+      setReactivationLoading(false);
+      setReactivationError(safeMessage(error, t));
+    }
+  }, [refreshAll, t]);
+
+  const selectedPackage = useMemo(
+    () => packageState.kind === "ready" ? packageState.data.find((pkg) => pkg.id === selectedPackageId) ?? null : null,
+    [packageState, selectedPackageId],
+  );
 
   return (
     <DashboardPage dir={dir}>
       <div className="sr-only" aria-live="polite">{announcement}</div>
-      <DashboardPageHeader title={t("billingAdmin.title")} description={t("billingAdmin.description")} actions={<button type="button" onClick={() => setRefresh((value) => value + 1)} className="min-h-11 rounded-xl border border-outline px-4 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("common.retry")}</button>} />
-      {portalError ? <div ref={errorRef} tabIndex={-1} role="alert" className="mb-4 rounded-xl border border-error/40 bg-error-container p-4 text-on-error-container">{portalError}</div> : null}
+      <DashboardPageHeader
+        title={t("billingAdmin.title")}
+        description={t("billingAdmin.description")}
+        actions={<button type="button" onClick={refreshAll} className="min-h-11 rounded-xl border border-outline px-4 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("common.retry")}</button>}
+      />
+      {portalError || previewError || confirmError || reactivationError ? (
+        <div ref={errorRef} tabIndex={-1} role="alert" className="mb-4 rounded-xl border border-error/40 bg-error-container p-4 text-on-error-container">
+          {portalError || previewError || confirmError || reactivationError}
+        </div>
+      ) : null}
       <div className="space-y-6">
         <DashboardPanel aria-labelledby="current-subscription-heading">
           <h2 id="current-subscription-heading" className="text-title-lg font-bold">{t("billingAdmin.currentSubscription")}</h2>
-          {summary.kind === "loading" ? <Loading label={t("billingAdmin.loadingSummary")} /> : summary.kind === "error" ? <ErrorState message={summary.message} retry={() => setRefresh((value) => value + 1)} label={t("common.retry")} /> : <SubscriptionDetails summary={summary.data} locale={locale} t={t} canManage={canManage} portalFlow={portalFlow} launchPortal={launchPortal} />}
+          {summary.kind === "loading" ? (
+            <Loading label={t("billingAdmin.loadingSummary")} />
+          ) : summary.kind === "error" ? (
+            <ErrorState message={summary.message} retry={refreshAll} label={t("common.retry")} />
+          ) : (
+            <SubscriptionDetails
+              summary={summary.data}
+              locale={locale}
+              t={t}
+              canManage={canManage}
+              portalFlow={portalFlow}
+              launchPortal={launchPortal}
+              openPreview={() => {
+                setPreviewState(null);
+                setPreviewError("");
+                previewSubmitKeyRef.current = null;
+                setPreviewDialogOpen(true);
+              }}
+              openCancel={(value) => {
+                cancellationKeysRef.current[value] = null;
+                setConfirmCancellation(value);
+              }}
+              reactivate={submitReactivation}
+              reactivationLoading={reactivationLoading}
+              reactivationError={reactivationError}
+              operationState={operationState}
+            />
+          )}
         </DashboardPanel>
 
         <DashboardPanel padding="none" aria-labelledby="invoice-history-heading">
-          <div className="flex items-center justify-between border-b border-outline-variant/30 p-4 sm:p-5"><div><h2 id="invoice-history-heading" className="text-title-lg font-bold">{t("billingAdmin.invoices")}</h2><p className="text-sm text-on-surface-variant">{t("billingAdmin.invoiceDescription")}</p></div></div>
-          {invoiceState.kind === "loading" ? <div className="p-5"><Loading label={t("billingAdmin.loadingInvoices")} /></div> : invoiceState.kind === "error" ? <div className="p-5"><ErrorState message={invoiceState.message} retry={() => setRefresh((value) => value + 1)} label={t("common.retry")} /></div> : invoiceState.data.invoices.length === 0 ? <div className="p-8 text-center"><span aria-hidden="true" className="material-symbols-outlined text-4xl">receipt_long</span><h3 className="mt-2 font-bold">{t("billingAdmin.noInvoices")}</h3><p className="text-sm text-on-surface-variant">{t("billingAdmin.noInvoicesDescription")}</p></div> : <InvoiceHistory invoices={invoiceState.data.invoices} pagination={invoiceState.data.pagination} locale={locale} t={t} onLinks={openLinks} setPage={setPage} />}
+          <div className="flex items-center justify-between border-b border-outline-variant/30 p-4 sm:p-5">
+            <div>
+              <h2 id="invoice-history-heading" className="text-title-lg font-bold">{t("billingAdmin.invoices")}</h2>
+              <p className="text-sm text-on-surface-variant">{t("billingAdmin.invoiceDescription")}</p>
+            </div>
+          </div>
+          {invoiceState.kind === "loading" ? (
+            <div className="p-5"><Loading label={t("billingAdmin.loadingInvoices")} /></div>
+          ) : invoiceState.kind === "error" ? (
+            <div className="p-5"><ErrorState message={invoiceState.message} retry={refreshAll} label={t("common.retry")} /></div>
+          ) : invoiceState.data.invoices.length === 0 ? (
+            <div className="p-8 text-center">
+              <span aria-hidden="true" className="material-symbols-outlined text-4xl">receipt_long</span>
+              <h3 className="mt-2 font-bold">{t("billingAdmin.noInvoices")}</h3>
+              <p className="text-sm text-on-surface-variant">{t("billingAdmin.noInvoicesDescription")}</p>
+            </div>
+          ) : (
+            <InvoiceHistory invoices={invoiceState.data.invoices} pagination={invoiceState.data.pagination} locale={locale} t={t} onLinks={openLinks} setPage={setPage} />
+          )}
         </DashboardPanel>
       </div>
+
+      <Modal
+        open={previewDialogOpen}
+        onClose={() => !previewSubmitting && setPreviewDialogOpen(false)}
+        title={t("billingAdmin.changePlan")}
+        maxWidth="max-w-3xl"
+        footer={(
+          <div className="flex flex-wrap justify-end gap-3">
+            <button type="button" onClick={() => setPreviewDialogOpen(false)} className="rounded-lg border px-4 py-2 font-semibold">{t("common.cancel")}</button>
+            <button type="button" onClick={requestPreview} disabled={!selectedPackageId || previewSubmitting} className="rounded-lg border border-outline px-4 py-2 font-semibold disabled:opacity-60">{t("billingAdmin.previewChange")}</button>
+            <button type="button" onClick={submitPreview} disabled={previewState?.kind !== "ready" || previewSubmitting} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{previewSubmitting ? t("billingAdmin.submitting") : t("billingAdmin.confirmChange")}</button>
+          </div>
+        )}
+      >
+        <div className="space-y-6">
+          {packageState.kind === "loading" ? <Loading label={t("billingAdmin.loadingPackages")} /> : packageState.kind === "error" ? <ErrorState message={packageState.message} retry={refreshAll} label={t("common.retry")} /> : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2">
+                  <span className="text-sm font-semibold">{t("billingAdmin.targetPlan")}</span>
+                  <select value={selectedPackageId} onChange={(event) => setSelectedPackageId(event.target.value)} className="min-h-11 rounded-xl border border-outline px-3 py-2">
+                    {packageState.data.map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+                  </select>
+                </label>
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="text-sm font-semibold">{t("billingAdmin.billingInterval")}</legend>
+                  <div className="flex gap-3">
+                    {(["monthly", "annual"] as const).map((interval) => (
+                      <label key={interval} className="flex items-center gap-2 rounded-xl border border-outline px-3 py-2">
+                        <input type="radio" name="billing-interval" checked={selectedInterval === interval} onChange={() => setSelectedInterval(interval)} />
+                        <span>{t(`billingAdmin.interval.${interval}`)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              </div>
+              {selectedPackage ? <p className="text-sm text-on-surface-variant">{selectedPackage.description}</p> : null}
+              {previewState?.kind === "loading" ? <Loading label={t("billingAdmin.loadingPreview")} /> : null}
+              {previewState?.kind === "error" ? <ErrorState message={previewState.message} retry={requestPreview} label={t("common.retry")} /> : null}
+              {previewState?.kind === "ready" ? <PreviewSummary preview={previewState.data} locale={locale} t={t} /> : null}
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmCancellation === "PERIOD_END"}
+        title={t("billingAdmin.cancelAtPeriodEnd")}
+        description={t("billingAdmin.cancelAtPeriodEndDescription")}
+        confirmLabel={t("billingAdmin.confirmCancellation")}
+        cancelLabel={t("common.cancel")}
+        variant="warning"
+        isLoading={confirmLoading}
+        error={confirmError || null}
+        onCancel={() => {
+          if (!confirmLoading) {
+            setConfirmCancellation(null);
+            setConfirmError("");
+          }
+        }}
+        onConfirm={() => void submitCancellation("PERIOD_END")}
+      />
+
+      <ConfirmDialog
+        open={confirmCancellation === "IMMEDIATE"}
+        title={t("billingAdmin.cancelImmediately")}
+        description={t("billingAdmin.cancelImmediatelyDescription")}
+        confirmLabel={t("billingAdmin.confirmImmediateCancellation")}
+        cancelLabel={t("common.cancel")}
+        variant="danger"
+        isLoading={confirmLoading}
+        error={confirmError || null}
+        onCancel={() => {
+          if (!confirmLoading) {
+            setConfirmCancellation(null);
+            setConfirmError("");
+          }
+        }}
+        onConfirm={() => void submitCancellation("IMMEDIATE")}
+      />
     </DashboardPage>
   );
 }
 
-function SubscriptionDetails({ summary, locale, t, canManage, portalFlow, launchPortal }: { summary: SubscriptionStatus; locale: string; t: (key: string) => string; canManage: boolean; portalFlow: BillingPortalFlow | null; launchPortal: (flow: BillingPortalFlow) => void }) {
-  const date = (value: string | null) => value ? new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium" }).format(new Date(value)) : t("billingAdmin.notAvailable");
-  return <div className="mt-4 space-y-4">
-    <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Detail label={t("billingAdmin.plan")} value={`${summary.packageId?.name ?? t("billingAdmin.notAvailable")} · v${summary.packageVersion}`} />
-      <Detail label={t("billingAdmin.status")} value={t(`billingAdmin.status.${summary.status.toLowerCase()}`)} />
-      <Detail label={t("billingAdmin.paymentState")} value={t(`billingAdmin.status.${summary.paymentState.toLowerCase()}`)} />
-      <Detail label={t("billingAdmin.period")} value={`${date(summary.currentPeriodStart ?? summary.periodStart)} – ${date(summary.currentPeriodEnd ?? summary.periodEnd)}`} />
-    </dl>
-    {summary.lifecycle.inGracePeriod ? <p role="status" className="rounded-xl bg-warning-container p-3 text-on-warning-container">{t("billingAdmin.graceWarning")}</p> : null}
-    {summary.pendingOperation ? <p role="status" className="rounded-xl bg-secondary-container p-3">{t("billingAdmin.pendingOperation")}</p> : null}
-    {!summary.providerLinked ? <p className="rounded-xl bg-surface-container p-3">{t("billingAdmin.notLinked")}</p> : null}
-    <div className="flex flex-wrap gap-3">
-      {canManage && summary.canOpenPortal ? <button type="button" disabled={portalFlow !== null} onClick={() => launchPortal("general")} className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{portalFlow === "general" ? t("billingAdmin.opening") : t("billingAdmin.openPortal")}</button> : null}
-      {canManage && summary.canUpdatePaymentMethod ? <button type="button" disabled={portalFlow !== null} onClick={() => launchPortal("payment_method_update")} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{portalFlow === "payment_method_update" ? t("billingAdmin.opening") : t("billingAdmin.updatePayment")}</button> : null}
+function SubscriptionDetails({
+  summary,
+  locale,
+  t,
+  canManage,
+  portalFlow,
+  launchPortal,
+  openPreview,
+  openCancel,
+  reactivate,
+  reactivationLoading,
+  reactivationError,
+  operationState,
+}: {
+  summary: SubscriptionStatus;
+  locale: string;
+  t: (key: string) => string;
+  canManage: boolean;
+  portalFlow: BillingPortalFlow | null;
+  launchPortal: (flow: BillingPortalFlow) => void;
+  openPreview: () => void;
+  openCancel: (value: CancellationType) => void;
+  reactivate: () => void;
+  reactivationLoading: boolean;
+  reactivationError: string;
+  operationState: BillingOperationStatus | null;
+}) {
+  const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium" }).format(new Date(value)) : t("billingAdmin.notAvailable");
+  const pending = operationState ?? summary.pendingOperation;
+  const currentOperationStatus = pending ? t(`billingAdmin.operationStatus.${pending.status.toLowerCase()}`) : null;
+
+  return (
+    <div className="mt-4 space-y-4">
+      <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Detail label={t("billingAdmin.plan")} value={`${summary.packageId?.name ?? t("billingAdmin.notAvailable")} · v${summary.packageVersion}`} />
+        <Detail label={t("billingAdmin.status")} value={t(`billingAdmin.status.${summary.status.toLowerCase()}`)} />
+        <Detail label={t("billingAdmin.paymentState")} value={t(`billingAdmin.status.${summary.paymentState.toLowerCase()}`)} />
+        <Detail label={t("billingAdmin.period")} value={`${formatDate(summary.currentPeriodStart ?? summary.periodStart)} – ${formatDate(summary.currentPeriodEnd ?? summary.periodEnd)}`} />
+      </dl>
+      {summary.lifecycle.inGracePeriod ? <p role="status" className="rounded-xl bg-warning-container p-3 text-on-warning-container">{t("billingAdmin.graceWarning")}</p> : null}
+      {summary.cancelAtPeriodEnd && summary.cancellationEffectiveAt ? <p role="status" className="rounded-xl bg-secondary-container p-3">{t("billingAdmin.cancellationScheduled")} {formatDate(summary.cancellationEffectiveAt)}</p> : null}
+      {pending ? (
+        <p role="status" className="rounded-xl bg-secondary-container p-3">
+          {t("billingAdmin.pendingOperation")} {currentOperationStatus ? `(${currentOperationStatus})` : ""}
+        </p>
+      ) : null}
+      {!summary.providerLinked ? <p className="rounded-xl bg-surface-container p-3">{t("billingAdmin.notLinked")}</p> : null}
+      {reactivationError ? <p role="alert" className="rounded-xl border border-error/40 bg-error-container p-3 text-on-error-container">{reactivationError}</p> : null}
+      <div className="flex flex-wrap gap-3">
+        {canManage && summary.canChangePlan ? <button type="button" disabled={Boolean(summary.pendingOperation)} onClick={openPreview} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.changePlan")}</button> : null}
+        {canManage && summary.canCancel ? <button type="button" disabled={Boolean(summary.pendingOperation)} onClick={() => openCancel("PERIOD_END")} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.cancelAtPeriodEnd")}</button> : null}
+        {canManage && summary.canCancel ? <button type="button" disabled={Boolean(summary.pendingOperation)} onClick={() => openCancel("IMMEDIATE")} className="min-h-11 rounded-xl border border-error px-4 font-semibold text-error disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.cancelImmediately")}</button> : null}
+        {canManage && summary.canReactivate ? <button type="button" disabled={reactivationLoading || Boolean(summary.pendingOperation)} onClick={reactivate} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{reactivationLoading ? t("billingAdmin.submitting") : t("billingAdmin.reactivate")}</button> : null}
+        {canManage && summary.canOpenPortal ? <button type="button" disabled={portalFlow !== null} onClick={() => launchPortal("general")} className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{portalFlow === "general" ? t("billingAdmin.opening") : t("billingAdmin.openPortal")}</button> : null}
+        {canManage && summary.canUpdatePaymentMethod ? <button type="button" disabled={portalFlow !== null} onClick={() => launchPortal("payment_method_update")} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{portalFlow === "payment_method_update" ? t("billingAdmin.opening") : t("billingAdmin.updatePayment")}</button> : null}
+      </div>
     </div>
-  </div>;
+  );
+}
+
+function PreviewSummary({ preview, locale, t }: { preview: BillingChangePreview; locale: string; t: (key: string) => string }) {
+  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const money = (minor: number) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: preview.currency }).format(minor / 100);
+  const date = (value: string | null) => value ? new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(new Date(value)) : t("billingAdmin.notAvailable");
+  return (
+    <section className="space-y-4 rounded-2xl border border-outline-variant/30 p-4" aria-labelledby="billing-preview-heading">
+      <h3 id="billing-preview-heading" className="text-title-md font-bold">{t("billingAdmin.previewTitle")}</h3>
+      <dl className="grid gap-4 sm:grid-cols-2">
+        <Detail label={t("billingAdmin.currentPlan")} value={`${preview.currentPackage.name} · v${preview.currentPackage.version}`} />
+        <Detail label={t("billingAdmin.targetPlan")} value={`${preview.targetPackage.name} · v${preview.targetPackage.version}`} />
+        <Detail label={t("billingAdmin.billingInterval")} value={t(`billingAdmin.interval.${preview.billingInterval}`)} />
+        <Detail label={t("billingAdmin.previewExpires")} value={date(preview.expiresAt)} />
+        <Detail label={t("billingAdmin.amountDue")} value={money(preview.amountDueMinor)} />
+        <Detail label={t("billingAdmin.amountCredit")} value={money(preview.amountCreditMinor)} />
+        <Detail label={t("billingAdmin.effectiveDate")} value={date(preview.effectiveAt)} />
+        <Detail label={t("billingAdmin.nextBillingDate")} value={date(preview.nextBillingDate)} />
+      </dl>
+      {preview.entitlementImpact.length > 0 ? (
+        <div>
+          <h4 className="font-semibold">{t("billingAdmin.entitlementImpact")}</h4>
+          <ul className="mt-2 space-y-2 text-sm">
+            {preview.entitlementImpact.map((entry) => (
+              <li key={entry.field} className="rounded-xl bg-surface-container px-3 py-2">
+                <span className="font-medium">{t(`billingAdmin.entitlement.${entry.field}`)}</span>: {entry.current} → {entry.target} ({entry.delta > 0 ? "+" : ""}{entry.delta})
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : <p className="text-sm text-on-surface-variant">{t("billingAdmin.noEntitlementChange")}</p>}
+    </section>
+  );
 }
 
 function InvoiceHistory({ invoices, pagination, locale, t, onLinks, setPage }: { invoices: BillingInvoice[]; pagination: Pagination; locale: string; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void; setPage: (page: number) => void }) {
@@ -129,10 +523,23 @@ function InvoiceHistory({ invoices, pagination, locale, t, onLinks, setPage }: {
   </>;
 }
 
-function InvoiceAction({ invoice, t, onLinks }: { invoice: BillingInvoice; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void }) { return invoice.hostedInvoiceAvailable || invoice.invoicePdfAvailable || invoice.receiptAvailable ? <button type="button" onClick={() => onLinks(invoice)} aria-label={`${t("billingAdmin.openInvoice")} ${invoice.invoiceNumber}`} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.openInvoice")} <span className="sr-only">{t("billingAdmin.externalLink")}</span></button> : <span className="text-sm text-on-surface-variant">{t("billingAdmin.noLinks")}</span>; }
+function InvoiceAction({ invoice, t, onLinks }: { invoice: BillingInvoice; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void }) {
+  return invoice.hostedInvoiceAvailable || invoice.invoicePdfAvailable || invoice.receiptAvailable ? <button type="button" onClick={() => onLinks(invoice)} aria-label={`${t("billingAdmin.openInvoice")} ${invoice.invoiceNumber}`} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.openInvoice")} <span className="sr-only">{t("billingAdmin.externalLink")}</span></button> : <span className="text-sm text-on-surface-variant">{t("billingAdmin.noLinks")}</span>;
+}
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs text-on-surface-variant">{label}</dt><dd className="mt-1 font-semibold">{value}</dd></div>; }
 function Th({ children }: { children: React.ReactNode }) { return <th scope="col" className="px-4 py-3 text-start text-sm font-bold">{children}</th>; }
 function Td({ children }: { children: React.ReactNode }) { return <td className="px-4 py-3 text-sm">{children}</td>; }
 function Loading({ label }: { label: string }) { return <div role="status" aria-busy="true" className="animate-pulse space-y-3"><div className="h-5 w-40 rounded bg-surface-container-high"/><div className="h-14 rounded bg-surface-container-high"/><span className="sr-only">{label}</span></div>; }
 function ErrorState({ message, retry, label }: { message: string; retry: () => void; label: string }) { return <div role="alert"><p>{message}</p><button type="button" onClick={retry} className="mt-3 rounded-lg border px-3 py-2 font-semibold">{label}</button></div>; }
-function safeMessage(error: unknown, t: (key: string) => string): string { if (error instanceof ApiError) { if (error.code === "BILLING_PROVIDER_UNAVAILABLE") return t("billingAdmin.providerUnavailable"); if (error.code === "BILLING_PROVIDER_CONFIGURATION_INVALID") return t("billingAdmin.configurationError"); if (error.status === 403) return t("permissions.deniedMessage"); } return t("billingAdmin.loadError"); }
+
+function safeMessage(error: unknown, t: (key: string) => string): string {
+  if (error instanceof ApiError) {
+    if (error.code === "BILLING_PROVIDER_UNAVAILABLE") return t("billingAdmin.providerUnavailable");
+    if (error.code === "BILLING_PROVIDER_CONFIGURATION_INVALID") return t("billingAdmin.configurationError");
+    if (error.code === "BILLING_PREVIEW_STALE" || error.code === "BILLING_SUBSCRIPTION_CHANGED") return t("billingAdmin.previewStale");
+    if (error.code === "BILLING_OPERATION_ALREADY_PENDING" || error.code === "BILLING_OPERATION_CONFLICT") return t("billingAdmin.operationConflict");
+    if (error.code === "BILLING_OPERATION_NOT_ALLOWED") return t("billingAdmin.operationNotAllowed");
+    if (error.status === 403) return t("permissions.deniedMessage");
+  }
+  return t("billingAdmin.loadError");
+}

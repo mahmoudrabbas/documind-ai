@@ -50,7 +50,7 @@ describe("tenant billing service", () => {
 
   it("returns a tenant-safe summary with only Phase 2 capabilities", async () => {
     const result = await getCompanyBillingSummary(tenantId, context);
-    expect(result).toMatchObject({ providerLinked: true, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: false, canCancel: false, canReactivate: false, canRequestRefund: false, invoiceSummary: { total: 3, paid: 2, open: 1 } });
+    expect(result).toMatchObject({ providerLinked: true, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: true, canCancel: true, canReactivate: false, canRequestRefund: false, invoiceSummary: { total: 3, paid: 2, open: 1 } });
     expect(JSON.stringify(result)).not.toMatch(/cus_owned|sub_owned|price_private|evt_private|providerCustomerId|providerSubscriptionId|providerPriceId/);
   });
 
@@ -58,6 +58,12 @@ describe("tenant billing service", () => {
     vi.mocked(authorizePermission).mockRejectedValueOnce(new Error("denied"));
     const result = await getCompanyBillingSummary(tenantId, context);
     expect(result).toMatchObject({ canOpenPortal: false, canUpdatePaymentMethod: false, canViewInvoices: true, canChangePlan: false, canCancel: false, canReactivate: false, canRequestRefund: false });
+  });
+
+  it("enables reactivation while a cancellation is scheduled and hides further cancellation", async () => {
+    vi.mocked(SubscriptionModel.findOne).mockReturnValue(chain({ ...subscription, status: "CANCEL_AT_PERIOD_END", cancelAtPeriodEnd: true }) as never);
+    const result = await getCompanyBillingSummary(tenantId, context);
+    expect(result).toMatchObject({ canChangePlan: true, canCancel: false, canReactivate: true });
   });
 
   it("rejects arbitrary portal configuration and unbounded invoice requests", () => {

@@ -190,4 +190,23 @@ describe("shared provider subscription synchronization", () => {
     expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
     expect(auditWrite).not.toHaveBeenCalled();
   });
+
+  it("projects cancel-at-period-end as a lifecycle state while keeping the effective period end", async () => {
+    const oldState = { ...synchronizedState(), status: "ACTIVE", cancelAtPeriodEnd: false, revision: 3 };
+    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(leanQuery(oldState))
+      .mockReturnValueOnce(leanQuery({ ...synchronizedState(), status: "CANCEL_AT_PERIOD_END", cancelAtPeriodEnd: true }));
+    (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 1 });
+
+    await synchronizeProviderSubscription({
+      providerSubscription: { ...providerSubscription, cancelAtPeriodEnd: true },
+      tenantId: TENANT_ID,
+      provider: "stripe",
+      sourceId: "evt_cancel_scheduled",
+      sourceType: "webhook",
+    });
+
+    const [, update] = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(update).toEqual({ $set: expect.objectContaining({ status: "CANCEL_AT_PERIOD_END", cancelAtPeriodEnd: true, periodEnd: providerSubscription.currentPeriodEnd, currentPeriodEnd: providerSubscription.currentPeriodEnd }) });
+  });
 });

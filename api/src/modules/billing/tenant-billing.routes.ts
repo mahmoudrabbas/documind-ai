@@ -3,13 +3,18 @@ import { authenticate } from "../../common/middlewares/authenticate.middleware.j
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
-import { billingSummaryController, invoiceDetailController, invoiceLinksController, invoiceListController, portalSessionController } from "./tenant-billing.controller.js";
+import { billingOperationController, billingSummaryController, cancellationController, invoiceDetailController, invoiceLinksController, invoiceListController, portalSessionController, reactivationController, subscriptionChangeController, subscriptionChangePreviewController } from "./tenant-billing.controller.js";
 
 const router = Router();
 router.use(authenticate, tenantScoping);
 const billingDenialAudit = { denialAuditAction: "BILLING_AUTHORIZATION_DENIED" as const, resourceType: "Permission" as const };
 router.get("/summary", requirePermission(Permission.BILLING_READ, billingDenialAudit), billingSummaryController);
 router.post("/portal-sessions", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), portalSessionController);
+router.post("/subscription-change-previews", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), subscriptionChangePreviewController);
+router.post("/subscription-changes", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), subscriptionChangeController);
+router.post("/cancellations", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), cancellationController);
+router.post("/reactivations", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), reactivationController);
+router.get("/operations/:operationId", requirePermission(Permission.BILLING_READ, billingDenialAudit), billingOperationController);
 router.get("/invoices", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceListController);
 router.get("/invoices/:invoiceId", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceDetailController);
 router.get("/invoices/:invoiceId/links", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceLinksController);

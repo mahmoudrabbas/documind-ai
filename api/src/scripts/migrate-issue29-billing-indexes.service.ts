@@ -20,6 +20,9 @@ export const ISSUE29_INDEXES: readonly IndexSpec[] = [
   { collection: "refunds", name: "idx_refund_tenant_created", key: { tenantId: 1, createdAt: -1 } },
   { collection: "refunds", name: "idx_refund_tenant_invoice", key: { tenantId: 1, invoiceId: 1 } },
   { collection: "refunds", name: "uq_refund_operation", key: { operationId: 1 }, unique: true },
+  { collection: "billingpreviews", name: "idx_billing_preview_tenant_subscription", key: { tenantId: 1, subscriptionId: 1, createdAt: -1 } },
+  { collection: "billingpreviews", name: "idx_billing_preview_tenant_expiry", key: { tenantId: 1, expiresAt: 1 } },
+  { collection: "billingpreviews", name: "idx_billing_preview_reuse", key: { tenantId: 1, subscriptionId: 1, targetPackageVersionId: 1, targetBillingInterval: 1, subscriptionRevision: 1, expiresAt: -1 } },
 ];
 
 export interface MigrationCollection {

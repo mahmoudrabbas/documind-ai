@@ -34,7 +34,7 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
   if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
   const pendingFilter = { tenantId: new Types.ObjectId(tenantId), status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] as const } };
   const [pending, pendingMutation, counts] = await Promise.all([
-    BillingOperationModel.findOne(pendingFilter).select("operationType status requestedAt conflictGroup").sort({ createdAt: -1 }).lean().exec(),
+    BillingOperationModel.findOne(pendingFilter).select("operationType status requestedAt conflictGroup failureCode effectiveAt cancellationType").sort({ createdAt: -1 }).lean().exec(),
     BillingOperationModel.exists({ ...pendingFilter, conflictGroup: "SUBSCRIPTION_MUTATION" }),
     InvoiceModel.aggregate<{ _id: string; count: number }>([
       { $match: { tenantId: new Types.ObjectId(tenantId) } },
@@ -64,9 +64,9 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
       canOpenPortal: canManageBilling && Boolean(record.providerCustomerId) && isBillingPortalFlowAvailable(String(record.provider || ""), "general"),
       canUpdatePaymentMethod: canManageBilling && Boolean(record.providerCustomerId) && Boolean(record.providerSubscriptionId),
       canViewInvoices: Boolean(record.providerSubscriptionId),
-      canChangePlan: false,
-      canCancel: false,
-      canReactivate: false,
+      canChangePlan: canManageBilling && Boolean(record.providerSubscriptionId) && lifecycle.eligible && !pendingMutation,
+      canCancel: canManageBilling && Boolean(record.providerSubscriptionId) && !pendingMutation && ["TRIALING", "ACTIVE", "PAST_DUE"].includes(String(record.status)) && !record.cancelAtPeriodEnd,
+      canReactivate: canManageBilling && Boolean(record.providerSubscriptionId) && !pendingMutation && Boolean(record.cancelAtPeriodEnd) && lifecycle.eligible,
       canRequestRefund: false,
     },
   });

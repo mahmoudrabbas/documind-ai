@@ -2,12 +2,15 @@ import mongoose, { Types } from "mongoose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditWriter } from "../../../common/observability/index.js";
 import BillingOperationModel from "../../../db/models/billingOperation.model.js";
+import BillingPreviewModel from "../../../db/models/billingPreview.model.js";
 import RefundModel from "../../../db/models/refund.model.js";
 import { BillingOperationService } from "../billing-operation.service.js";
 import { reconcileBillingOperation } from "../billing-operation-reconciliation.service.js";
 import { migrateIssue29BillingIndexes, type MigrationDatabase } from "../../../scripts/migrate-issue29-billing-indexes.service.js";
 
 const tenantId = new Types.ObjectId(); const otherTenantId = new Types.ObjectId(); const actorId = new Types.ObjectId(); const subscriptionId = new Types.ObjectId();
+const currentPackageVersionId = new Types.ObjectId();
+const targetPackageVersionId = new Types.ObjectId();
 const actor = { tenantId: String(tenantId), actorId: String(actorId), actorEmail: "billing@example.test", actorRole: "COMPANY_ADMIN" as const, traceId: "trace-1", requestId: "request-1" };
 function input(key: string, normalizedRequest: Record<string, unknown> = { targetPackage: "pro" }, operationType: "PLAN_CHANGE" | "CANCEL_PERIOD_END" | "CANCEL_IMMEDIATELY" | "REACTIVATE" | "REFUND" = "PLAN_CHANGE") { return { tenantId: String(tenantId), actor, operationType, idempotencyKey: key, normalizedRequest, subscriptionId: String(subscriptionId), provider: "fake", expectedSubscriptionRevision: 1 }; }
 
@@ -16,9 +19,23 @@ describe("BillingOperation durable persistence", () => {
     if (mongoose.connection.readyState === 0) await mongoose.connect(process.env.MONGODB_URI!);
     setAuditWriter({ write: async () => true });
     await BillingOperationModel.syncIndexes();
+    await BillingPreviewModel.syncIndexes();
   });
-  beforeEach(async () => { await Promise.all([BillingOperationModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }), RefundModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } })]); });
-  afterAll(async () => { await Promise.all([BillingOperationModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }), RefundModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } })]); setAuditWriter(null); });
+  beforeEach(async () => {
+    await Promise.all([
+      BillingOperationModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
+      BillingPreviewModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
+      RefundModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
+    ]);
+  });
+  afterAll(async () => {
+    await Promise.all([
+      BillingOperationModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
+      BillingPreviewModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
+      RefundModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
+    ]);
+    setAuditWriter(null);
+  });
 
   it("replays same key/request and conflicts for a changed request", async () => {
     const service = new BillingOperationService(); const first = await service.begin(input("key-1")); const replay = await service.begin(input("key-1"));
@@ -79,6 +96,90 @@ describe("BillingOperation durable persistence", () => {
     expect((await BillingOperationModel.findById(started.operation._id))?.status).toBe("SUPERSEDED");
   });
 
+  it("persists previews with tenant-scoped reuse and single-operation consumption", async () => {
+    const expiresAt = new Date(Date.now() + 10 * 60_000);
+    const preview = await BillingPreviewModel.create({
+      tenantId,
+      subscriptionId,
+      currentPackageId: new Types.ObjectId(),
+      currentPackageVersionId,
+      currentPackageVersion: 1,
+      currentBillingInterval: "monthly",
+      targetPackageId: new Types.ObjectId(),
+      targetPackageVersionId,
+      targetPackageVersion: 2,
+      targetBillingInterval: "annual",
+      currency: "USD",
+      amountDueMinor: 1500,
+      amountCreditMinor: 0,
+      effectiveAt: new Date(),
+      nextBillingDate: new Date(Date.now() + 24 * 60 * 60_000),
+      expiresAt,
+      subscriptionRevision: 4,
+      provider: "fake",
+      entitlementImpact: [],
+      createdBy: actorId,
+    });
+    const reusable = await BillingPreviewModel.findOne({
+      tenantId,
+      subscriptionId,
+      targetPackageVersionId,
+      targetBillingInterval: "annual",
+      subscriptionRevision: 4,
+      consumedByOperationId: null,
+      expiresAt: { $gt: new Date() },
+    }).exec();
+    expect(String(reusable?._id)).toBe(String(preview._id));
+
+    const operationId = new Types.ObjectId();
+    const consume = async (candidate: Types.ObjectId) => BillingPreviewModel.findOneAndUpdate(
+      {
+        _id: preview._id,
+        tenantId,
+        $or: [{ consumedByOperationId: null }, { consumedByOperationId: candidate }],
+      },
+      { $set: { consumedByOperationId: candidate, consumedAt: new Date() } },
+      { returnDocument: "after" },
+    ).exec();
+    const [first, replay] = await Promise.all([consume(operationId), consume(operationId)]);
+    expect(String(first?.consumedByOperationId)).toBe(String(operationId));
+    expect(String(replay?.consumedByOperationId)).toBe(String(operationId));
+    const conflicting = await consume(new Types.ObjectId());
+    expect(conflicting).toBeNull();
+  });
+
+  it("treats expired previews as unusable while preserving the record", async () => {
+    const preview = await BillingPreviewModel.create({
+      tenantId,
+      subscriptionId,
+      currentPackageId: new Types.ObjectId(),
+      currentPackageVersionId,
+      currentPackageVersion: 1,
+      currentBillingInterval: "monthly",
+      targetPackageId: new Types.ObjectId(),
+      targetPackageVersionId,
+      targetPackageVersion: 2,
+      targetBillingInterval: "monthly",
+      currency: "USD",
+      amountDueMinor: 1000,
+      amountCreditMinor: 0,
+      effectiveAt: new Date(),
+      nextBillingDate: null,
+      expiresAt: new Date(Date.now() - 60_000),
+      subscriptionRevision: 4,
+      provider: "fake",
+      entitlementImpact: [],
+      createdBy: actorId,
+    });
+    const reusable = await BillingPreviewModel.findOne({
+      _id: preview._id,
+      tenantId,
+      expiresAt: { $gt: new Date() },
+    }).exec();
+    expect(reusable).toBeNull();
+    expect(await BillingPreviewModel.findById(preview._id)).not.toBeNull();
+  });
+
   it("applies indexes idempotently against the disposable database without business mutation", async () => {
     if (!mongoose.connection.db) throw new Error("Disposable test database unavailable");
     const sentinelId = new Types.ObjectId(); await mongoose.connection.db.collection("subscriptions").insertOne({ _id: sentinelId, sentinel: "preserve" });
@@ -98,11 +199,224 @@ describe("BillingOperation durable persistence", () => {
   it("reconciles provider response/webhook order and tolerates missing local operations", async () => {
     const service = new BillingOperationService(); const started = await service.begin(input("webhook-order")); const pending = await service.markProviderPending(started.operation);
     await service.recordProviderResult(String(pending._id), String(tenantId), { operationReference: "provider-operation-1", objectReference: "provider-object-1" });
-    const confirmed = await reconcileBillingOperation({ tenantId: String(tenantId), providerObjectReference: "provider-object-1", providerEventId: "evt-late", outcome: "CONFIRMED" });
-    expect(confirmed.matched).toBe(true); expect((await BillingOperationModel.findById(pending._id))?.confirmingProviderEventIds).toContain("evt-late");
+    const preview = await BillingPreviewModel.create({
+      _id: new Types.ObjectId(String(pending.previewReference || new Types.ObjectId())),
+      tenantId,
+      subscriptionId,
+      currentPackageId: new Types.ObjectId(),
+      currentPackageVersionId,
+      currentPackageVersion: 1,
+      currentBillingInterval: "monthly",
+      targetPackageId: new Types.ObjectId(),
+      targetPackageVersionId,
+      targetPackageVersion: 2,
+      targetBillingInterval: "monthly",
+      currency: "USD",
+      amountDueMinor: 1000,
+      amountCreditMinor: 0,
+      effectiveAt: new Date(),
+      nextBillingDate: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      subscriptionRevision: 1,
+      provider: "fake",
+      entitlementImpact: [],
+      createdBy: actorId,
+    });
+    await BillingOperationModel.updateOne({ _id: pending._id }, {
+      $set: {
+        previewReference: String(preview._id),
+        packageVersionId: targetPackageVersionId,
+      },
+    });
+    const confirmed = await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      providerObjectReference: "provider-object-1",
+      providerEventId: "evt-late",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: new Date("2026-08-01T00:00:00.000Z"),
+        billingInterval: "monthly",
+        packageVersionId: String(targetPackageVersionId),
+      },
+    });
+    expect(confirmed.matched).toBe(true);
+    expect((await BillingOperationModel.findById(pending._id))?.confirmingProviderEventIds).toContain("evt-late");
     expect(await reconcileBillingOperation({ tenantId: String(tenantId), providerOperationReference: "missing", providerEventId: "evt-missing", outcome: "CONFIRMED" })).toEqual({ matched: false, operationId: null });
     const next = await service.begin(input("ownership-check", { targetPackage: "next" }));
     await expect(reconcileBillingOperation({ tenantId: String(otherTenantId), operationReference: String(next.operation._id), providerEventId: "evt-wrong", outcome: "CONFIRMED" })).rejects.toMatchObject({ code: "BILLING_PROVIDER_OWNERSHIP_MISMATCH" });
-    expect(await reconcileBillingOperation({ tenantId: String(tenantId), operationReference: String(next.operation._id), providerEventId: "evt-before-response", outcome: "CONFIRMED" })).toMatchObject({ matched: true });
+    expect(await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(next.operation._id),
+      providerEventId: "evt-before-response",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: new Date("2026-08-01T00:00:00.000Z"),
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    })).toMatchObject({ matched: true });
+    expect((await BillingOperationModel.findById(next.operation._id))?.status).toBe("REQUESTED");
+  });
+
+  it("confirms only when the authoritative state matches the requested outcome", async () => {
+    const service = new BillingOperationService();
+
+    const plan = await service.begin({
+      ...input("plan-target", { targetPackage: "enterprise" }),
+      packageVersionId: String(targetPackageVersionId),
+      previewReference: String(new Types.ObjectId()),
+    });
+    const planPreviewId = new Types.ObjectId(plan.operation.previewReference);
+    await BillingPreviewModel.create({
+      _id: planPreviewId,
+      tenantId,
+      subscriptionId,
+      currentPackageId: new Types.ObjectId(),
+      currentPackageVersionId,
+      currentPackageVersion: 1,
+      currentBillingInterval: "monthly",
+      targetPackageId: new Types.ObjectId(),
+      targetPackageVersionId,
+      targetPackageVersion: 2,
+      targetBillingInterval: "annual",
+      currency: "USD",
+      amountDueMinor: 1000,
+      amountCreditMinor: 0,
+      effectiveAt: new Date(),
+      nextBillingDate: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      subscriptionRevision: 1,
+      provider: "fake",
+      entitlementImpact: [],
+      createdBy: actorId,
+    });
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(plan.operation._id),
+      providerEventId: "evt-plan-unrelated",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: new Date("2026-08-01T00:00:00.000Z"),
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(plan.operation._id))?.status).toBe("REQUESTED");
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(plan.operation._id),
+      providerEventId: "evt-plan-different",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: new Date("2026-08-01T00:00:00.000Z"),
+        billingInterval: "monthly",
+        packageVersionId: String(new Types.ObjectId()),
+      },
+    });
+    expect((await BillingOperationModel.findById(plan.operation._id))?.status).toBe("SUPERSEDED");
+
+    const periodEnd = new Date("2026-08-01T00:00:00.000Z");
+    const scheduled = await service.begin({
+      ...input("cancel-period-end", { cancellationType: "PERIOD_END" }, "CANCEL_PERIOD_END"),
+      effectiveAt: periodEnd,
+      cancellationType: "PERIOD_END",
+    });
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(scheduled.operation._id),
+      providerEventId: "evt-cancel-pending",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: periodEnd,
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(scheduled.operation._id))?.status).toBe("REQUESTED");
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(scheduled.operation._id),
+      providerEventId: "evt-cancel-confirm",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "CANCEL_AT_PERIOD_END",
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: periodEnd,
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(scheduled.operation._id))?.status).toBe("CONFIRMED");
+
+    const immediate = await service.begin(input("cancel-now", { cancellationType: "IMMEDIATE" }, "CANCEL_IMMEDIATELY"));
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(immediate.operation._id),
+      providerEventId: "evt-cancel-now-pending",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: periodEnd,
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(immediate.operation._id))?.status).toBe("REQUESTED");
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(immediate.operation._id),
+      providerEventId: "evt-cancel-now-confirm",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "CANCELED",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: periodEnd,
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(immediate.operation._id))?.status).toBe("CONFIRMED");
+
+    const reactivate = await service.begin(input("reactivate", { reactivate: true }, "REACTIVATE"));
+    await BillingOperationModel.updateOne({ _id: reactivate.operation._id }, { $set: { status: "PROVIDER_PENDING" } });
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(reactivate.operation._id),
+      providerEventId: "evt-reactivate-pending",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "CANCEL_AT_PERIOD_END",
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: periodEnd,
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(reactivate.operation._id))?.status).toBe("PROVIDER_PENDING");
+    await reconcileBillingOperation({
+      tenantId: String(tenantId),
+      operationReference: String(reactivate.operation._id),
+      providerEventId: "evt-reactivate-confirm",
+      outcome: "CONFIRMED",
+      authoritativeSubscription: {
+        status: "ACTIVE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: periodEnd,
+        billingInterval: "monthly",
+        packageVersionId: String(currentPackageVersionId),
+      },
+    });
+    expect((await BillingOperationModel.findById(reactivate.operation._id))?.status).toBe("CONFIRMED");
   });
 });

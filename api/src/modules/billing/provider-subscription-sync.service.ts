@@ -273,7 +273,7 @@ export async function synchronizeProviderSubscription(
     providerPriceId: input.providerSubscription.priceId,
     provider: input.provider,
     billingInterval: resolution.billingInterval,
-    status: status as SubscriptionStatus,
+    status: (input.providerSubscription.cancelAtPeriodEnd && status === "ACTIVE" ? "CANCEL_AT_PERIOD_END" : status) as SubscriptionStatus,
     paymentState: providerPaymentState(input.providerSubscription.status),
     periodStart: input.providerSubscription.currentPeriodStart,
     periodEnd: input.providerSubscription.currentPeriodEnd,

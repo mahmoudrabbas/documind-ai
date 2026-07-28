@@ -2,7 +2,7 @@
 
 > Module: `api/src/modules/billing/`  
 > Issue: 04 — Normalize Package and Subscription Domain  
-> Status: Existing package/checkout/webhook behavior plus Issue 29 Phases 1–2 billing read experience
+> Status: Existing package/checkout/webhook behavior plus Issue 29 Phases 1–3 billing foundation, billing read experience, and customer subscription mutations
 
 ## Overview
 
@@ -218,6 +218,32 @@ The deterministic fake supplies invoice pagination, current invoice reads, avail
 ### Deferred after Phase 2
 
 Phase 2 exposes no plan-change, proration, cancellation, reactivation, or refund HTTP routes/actions. Those subscription mutations remain Phase 3; refund request/confirmation routes and Super Admin refund UI remain Phase 4; broader browser E2E/full security verification remains Phase 5. Phase 1 provider mutation contracts stay disconnected from customer APIs.
+
+## Issue 29 Phase 3 customer subscription mutations
+
+Phase 3 connects the Phase 1 provider-neutral mutation contracts to authenticated tenant APIs under `/billing`:
+
+| Route | Permission | Contract |
+|---|---|---|
+| `POST /billing/subscription-change-previews` | `billing:manage` | `{ targetPackageId, billingInterval }` → provider-derived local preview with expiry, target/current package versions, proration amount/credit in minor units, next billing date, entitlement impact, and subscription revision |
+| `POST /billing/subscription-changes` | `billing:manage` | `{ previewId, idempotencyKey }` → durable `PLAN_CHANGE` operation DTO |
+| `POST /billing/cancellations` | `billing:manage` | `{ cancellationType: "PERIOD_END" \| "IMMEDIATE", idempotencyKey }` → durable cancellation operation DTO |
+| `POST /billing/reactivations` | `billing:manage` | `{ idempotencyKey }` → durable reactivation operation DTO |
+| `GET /billing/operations/:operationId` | `billing:read` | tenant-scoped safe operation status for pending polling and recovery |
+
+All routes derive tenant identity from authenticated context only. Browser input never selects a tenant, provider object ID, amount, currency, Stripe price, or return URL.
+
+Plan-change previews are provider-derived reads. The local `BillingPreview` record stores target/current package metadata, the expected subscription revision, preview expiry, normalized proration result, and entitlement deltas. Confirmation rejects expired previews, subscription revision drift, target package version drift, currency mismatches, inactive targets, and same-plan requests. A preview never changes entitlements or local subscription state.
+
+Plan changes, cancellations, and reactivations all run through `BillingOperation`. The operation intent is stored before any provider mutation, then moved to `PROVIDER_PENDING`. The UI and summary remain pending until authoritative provider confirmation arrives through webhook-triggered/current-provider reconciliation. Same key/same request replays; same key/different request conflicts; incompatible concurrent subscription mutations are rejected. `REFUND` remains separate and unexposed in tenant APIs.
+
+Lifecycle eligibility remains distinct from Issue 25 quota ownership. `ACTIVE` and `TRIALING` remain eligible, `CANCEL_AT_PERIOD_END` stays eligible until the confirmed period end, `PAST_DUE` still uses `BILLING_PAST_DUE_GRACE_DAYS`, and `PAUSED`, `UNPAID`, `CANCELED`, `EXPIRED`, and `INCOMPLETE` fail closed. Plan entitlements change only after authoritative provider state projection; the mutation response itself is not treated as confirmation.
+
+The Company Admin billing page at `/dashboard/settings/billing` now adds provider-backed Phase 3 controls for change-plan preview/confirmation, cancel at period end, cancel immediately, and reactivation before the scheduled cancellation becomes effective. Actions remain capability-driven from the sanitized billing summary, localized for English LTR and Arabic RTL, keyboard-accessible, and safe against duplicate submission. The UI polls `GET /billing/operations/:operationId` and does not present success purely because the initial mutation call returned.
+
+### Deferred after Phase 3
+
+Refund request routes, provider refund execution, refund confirmation/rejection, Super Admin refund UI, and broader Phase 5 browser/security suites remain deferred. No refund behavior is exposed through tenant routes or the Company Admin billing page in Phase 3.
 
 ## Known limitations
 

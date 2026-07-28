@@ -60,7 +60,7 @@ export interface SubscriptionStatus {
   cancellationEffectiveAt: string | null;
   providerManaged: boolean;
   providerLinked: boolean;
-  pendingOperation: { type: string; status: string; requestedAt: string } | null;
+  pendingOperation: { id: string; type: string; status: string; requestedAt: string; failureCode?: string | null; effectiveAt?: string | null; cancellationType?: "IMMEDIATE" | "PERIOD_END" | null } | null;
   canOpenPortal: boolean;
   canUpdatePaymentMethod: boolean;
   canChangePlan: boolean;
@@ -126,6 +126,38 @@ export interface BillingPortalSessionResponse {
 }
 
 export type BillingPortalFlow = "general" | "payment_method_update";
+export interface BillingEntitlementImpact {
+  field: string;
+  current: number;
+  target: number;
+  delta: number;
+}
+export interface BillingChangePreview {
+  id: string;
+  currentPackage: { id: string; name: string; code: string; version: number };
+  targetPackage: { id: string; name: string; code: string; version: number };
+  billingInterval: "monthly" | "annual";
+  currency: string;
+  amountDueMinor: number;
+  amountCreditMinor: number;
+  effectiveAt: string | null;
+  nextBillingDate: string | null;
+  entitlementImpact: BillingEntitlementImpact[];
+  expiresAt: string;
+  subscriptionRevision: number;
+}
+export interface BillingOperationStatus {
+  id: string;
+  type: string;
+  status: "REQUESTED" | "PROVIDER_PENDING" | "CONFIRMED" | "FAILED" | "RETRY_PENDING" | "SUPERSEDED";
+  requestedAt: string;
+  confirmedAt: string | null;
+  failedAt: string | null;
+  retryCount: number;
+  failureCode: string | null;
+  effectiveAt: string | null;
+  cancellationType: "IMMEDIATE" | "PERIOD_END" | null;
+}
 export type InvoiceStatus = "draft" | "open" | "paid" | "void" | "uncollectible";
 export interface BillingInvoice {
   id: string;
