@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { SubscriptionWidget } from "../SubscriptionWidget";
 
 /* ── Module mocks (hoisted by vitest) ───────────────────────────────── */

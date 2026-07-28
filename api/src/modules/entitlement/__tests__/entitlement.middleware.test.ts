@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createEntitlementGuard, createEntitlementCheckGuard } from "../middlewares/entitlement.middleware.js";
-import type { EntitlementGuardOptions, EntitlementCheckGuardOptions } from "../middlewares/entitlement.middleware.js";
+import type { EntitlementGuardOptions } from "../middlewares/entitlement.middleware.js";
 import { FakeEntitlementService } from "../ports/fakes/fake-entitlement-service.js";
 import type { FakeQuotaCounter } from "../ports/fakes/fake-quota-counter.js";
 import { AppError } from "../../../common/errors/AppError.js";
@@ -21,7 +21,7 @@ function currentPeriodKey(): string {
 
 function createMocks() {
   const headers = new Map<string, string>();
-  const req: Record<string, any> = {
+  const req: Record<string, unknown> = {
     tenantId: "test-tenant",
     traceId: "test-trace-id",
     body: {},
@@ -29,7 +29,7 @@ function createMocks() {
     log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
     quotaWarning: undefined,
   };
-  const res: Record<string, any> = {
+  const res: Record<string, unknown> = {
     setHeader: vi.fn((key: string, value: string) => {
       headers.set(key, value);
     }),
@@ -39,10 +39,10 @@ function createMocks() {
 }
 
 async function callGuard(
-  middleware: (req: any, res: any, next: any) => Promise<void>,
-  req: any,
-  res: any,
-  next: any,
+  middleware: (req: Record<string, unknown>, res: Record<string, unknown>, next: unknown) => Promise<void>,
+  req: Record<string, unknown>,
+  res: Record<string, unknown>,
+  next: unknown,
 ): Promise<void> {
   await middleware(req, res, next);
 }
@@ -320,7 +320,7 @@ describe("EntitlementGuard middleware", () => {
       expectNextCalledSuccess(next);
 
       // Counter must still be 5, not 10
-      const key = currentPeriodKey();
+      const _key = currentPeriodKey();
       const usage = await service.getUsage("test-tenant");
       expect(usage.documents).toBe(5);
     });
@@ -388,7 +388,7 @@ describe("EntitlementGuard middleware", () => {
       expectNextCalledSuccess(next);
 
       // Should have consumed exactly 7
-      const key = currentPeriodKey();
+      const _key = currentPeriodKey();
       const usage = await service.getUsage("test-tenant");
       expect(usage.ocrPagesPerMonth).toBe(7);
     });
@@ -537,9 +537,9 @@ describe("EntitlementGuard middleware", () => {
 
       // Chain guards like Express would
       await new Promise<void>((resolve) => {
-        guardDocs(req as any, res as any, (err?: unknown) => {
+        guardDocs(req as Record<string, unknown>, res as Record<string, unknown>, (err?: unknown) => {
           if (err) { next(err); resolve(); return; }
-          guardQueries(req as any, res as any, (err2?: unknown) => {
+          guardQueries(req as Record<string, unknown>, res as Record<string, unknown>, (err2?: unknown) => {
             if (err2) { next(err2); resolve(); return; }
             next();
             resolve();
@@ -627,7 +627,7 @@ describe("EntitlementGuard middleware", () => {
       expectNextCalledSuccess(next);
 
       // Counter exists but value is 0
-      const key = currentPeriodKey();
+      const _key = currentPeriodKey();
       const usage = await service.getUsage("test-tenant");
       expect(usage.documents).toBe(0);
     });

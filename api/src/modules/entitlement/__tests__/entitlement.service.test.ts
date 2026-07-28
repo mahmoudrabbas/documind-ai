@@ -69,7 +69,6 @@ class FakeEntitlementProvider implements EntitlementProviderPort {
 const TENANT_A = "tenant-alpha";
 const TENANT_B = "tenant-beta";
 const DIM_DOCUMENTS: EntitlementDimension = "documents";
-const DIM_QUERIES: EntitlementDimension = "queriesPerMonth";
 
 // ── Suite ────────────────────────────────────────────────────────────────────
 

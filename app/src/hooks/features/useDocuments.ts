@@ -102,6 +102,7 @@ export function useDocuments() {
           return updated ?? prev;
         });
       } catch (err) {
+        // eslint-disable-next-line no-console
         console.error("Auto-polling document status failed:", err);
       }
     }, 3000);
@@ -145,7 +146,8 @@ export function useDocuments() {
       setSelectedDocument(null);
       fetchDocuments(page);
     } catch (err) {
-      console.error("Failed to soft-delete document:", err);
+        // eslint-disable-next-line no-console
+        console.error("Failed to soft-delete document:", err);
     }
   }
 
@@ -155,7 +157,8 @@ export function useDocuments() {
       setSelectedDocument(null);
       fetchDocuments(page);
     } catch (err) {
-      console.error("Failed to permanently delete document:", err);
+        // eslint-disable-next-line no-console
+        console.error("Failed to permanently delete document:", err);
     }
   }
 
@@ -165,7 +168,8 @@ export function useDocuments() {
       setSelectedDocument(null);
       fetchDocuments(page, filters);
     } catch (err) {
-      console.error("Failed to archive document:", err);
+        // eslint-disable-next-line no-console
+        console.error("Failed to archive document:", err);
     }
   }
 
@@ -175,7 +179,8 @@ export function useDocuments() {
       setSelectedDocument(null);
       fetchDocuments(page, filters);
     } catch (err) {
-      console.error("Failed to restore document:", err);
+        // eslint-disable-next-line no-console
+        console.error("Failed to restore document:", err);
     }
   }
 
@@ -185,7 +190,8 @@ export function useDocuments() {
       loadVersions(id);
       fetchDocuments(page, filters);
     } catch (err) {
-      console.error("Failed to replace document:", err);
+        // eslint-disable-next-line no-console
+        console.error("Failed to replace document:", err);
     }
   }
 

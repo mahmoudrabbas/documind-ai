@@ -11,7 +11,6 @@ const PERIOD_FEB = "2026-02";
 const DIM_QUERIES: EntitlementDimension = "queriesPerMonth";
 const DIM_DOCUMENTS: EntitlementDimension = "documents";
 const DIM_STORAGE: EntitlementDimension = "storageMb";
-const DIM_TOKENS: EntitlementDimension = "tokensPerMonth";
 
 // ── Suite ────────────────────────────────────────────────────────────────────
 

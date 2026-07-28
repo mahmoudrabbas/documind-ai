@@ -46,7 +46,7 @@ function humanizeDimension(key: string): string {
  *
  * Renders a prompt when `current / limit` exceeds `warningThreshold` (default 80%).
  * Shows a CTA button only when `hasBillingPermission` is `true`; without permission
- * it displays a muted hint to contact an admin. At ≥ 95% usage the prompt uses
+ * it displays a muted hint to contact an admin. At ≥ 95% usage the prompt uses
  * error-styled colours.
  *
  * Renders nothing when usage is below the threshold.

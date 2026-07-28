@@ -109,7 +109,7 @@ export class EntitlementService {
     tenantId: string,
     dimension: EntitlementDimension,
     amount: number,
-    ttlSeconds: number,
+    _ttlSeconds: number,
   ): Promise<{ reservationId: string } | null> {
     const result = await this.consume(tenantId, dimension, amount);
     if (result.committed) {

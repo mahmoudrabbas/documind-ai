@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../../common/errors/AppError.js";
 import { ENTITLEMENT_EXCEEDED } from "../../../common/errors/errorCodes.js";
 import type { EntitlementService } from "../entitlement.service.js";
-import type { CheckResult, EntitlementDimension, FailMode } from "../entitlement.types.js";
+import type { EntitlementDimension, FailMode } from "../entitlement.types.js";
 
 // ── Express type augmentation ──────────────────────────────────────────────────
 //
@@ -11,6 +11,7 @@ import type { CheckResult, EntitlementDimension, FailMode } from "../entitlement
 // (e.g. response-logger) to annotate the response.
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       quotaWarning?: boolean;
