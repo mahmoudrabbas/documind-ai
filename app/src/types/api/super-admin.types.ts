@@ -51,6 +51,8 @@ export interface PackageVersionSnapshot {
   description: string;
   monthlyPrice: number;
   annualPrice: number;
+  monthlyPriceCents?: number;
+  annualPriceCents?: number;
   currency: string;
   trialDays: number;
   visibility: PackageVisibility;
@@ -78,6 +80,8 @@ export interface PlatformPackage {
   version: number;
   monthlyPrice: number;
   annualPrice: number;
+  monthlyPriceCents?: number;
+  annualPriceCents?: number;
   currency: string;
   trialDays: number;
   visibility: PackageVisibility;

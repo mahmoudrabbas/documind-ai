@@ -64,7 +64,8 @@ export type GlobalSettingsPatch = z.infer<typeof globalSettingsPatchSchema>;
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid identifier");
 const boundedInteger = (minimum = 0) =>
   z.number().int().min(minimum).max(1_000_000_000);
-const price = z.number().min(0).max(100_000_000);
+// Canonical monetary values are integer minor units (for example, USD cents).
+const price = z.number().int().min(0).max(100_000_000);
 const paging = {
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),

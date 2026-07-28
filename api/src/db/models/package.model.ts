@@ -41,6 +41,7 @@ export interface PackageDocument extends mongoose.Document {
   stripePriceId: string;
   stripeAnnualPriceId: string;
   versions: Array<{
+    _id: mongoose.Types.ObjectId;
     version: number;
     name: string;
     code: string;
@@ -92,10 +93,10 @@ const packageSchema = new Schema<PackageDocument>(
     description: { type: String, trim: true, maxlength: 500, default: "" },
     active: { type: Boolean, default: true, index: true },
     version: { type: Number, required: true, min: 1, default: 1 },
-    monthlyPrice: { type: Number, required: true, min: 0 },
+    monthlyPrice: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
     currency: { type: String, trim: true, uppercase: true, default: "USD" },
     entitlements: { type: entitlementsSchema, required: true },
-    annualPrice: { type: Number, min: 0, default: 0 },
+    annualPrice: { type: Number, min: 0, default: 0, validate: Number.isSafeInteger },
     trialDays: { type: Number, min: 0, default: 30 },
     visibility: {
       type: String,
@@ -125,9 +126,9 @@ const packageSchema = new Schema<PackageDocument>(
             name: { type: String, trim: true, maxlength: 80, default: "" },
             code: { type: String, lowercase: true, trim: true, maxlength: 50, default: "" },
             description: { type: String, trim: true, maxlength: 500, default: "" },
-            monthlyPrice: { type: Number, required: true },
+            monthlyPrice: { type: Number, required: true, validate: Number.isSafeInteger },
             entitlements: { type: entitlementsSchema, required: true },
-            annualPrice: { type: Number, min: 0, default: 0 },
+            annualPrice: { type: Number, min: 0, default: 0, validate: Number.isSafeInteger },
             currency: { type: String, trim: true, uppercase: true, default: "USD" },
             trialDays: { type: Number, min: 0, default: 30 },
             visibility: {
@@ -152,7 +153,7 @@ const packageSchema = new Schema<PackageDocument>(
             stripeAnnualPriceId: { type: String, trim: true, default: "" },
             createdAt: { type: Date, required: true },
           },
-          { _id: false },
+          { _id: true },
         ),
       ],
       default: [],

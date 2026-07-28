@@ -17,7 +17,7 @@ export interface PaymentEventDocument extends mongoose.Document {
 
 const paymentEventSchema = new Schema<PaymentEventDocument>(
   {
-    eventId: { type: String, required: true, unique: true },
+    eventId: { type: String, required: true },
     eventType: { type: String, required: true, index: true },
     provider: { type: String, required: true, default: "stripe" },
     status: {
@@ -37,6 +37,10 @@ const paymentEventSchema = new Schema<PaymentEventDocument>(
 );
 
 paymentEventSchema.index({ eventId: 1, status: 1 }, { name: "idx_event_id_status" });
+paymentEventSchema.index(
+  { provider: 1, eventId: 1 },
+  { unique: true, name: "uq_provider_event_id" },
+);
 
 const PaymentEventModel = mongoose.model<PaymentEventDocument>(
   "PaymentEvent",

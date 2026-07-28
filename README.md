@@ -91,6 +91,27 @@ For the next runs:
 docker compose up
 ```
 
+## Local Stripe checkout testing
+
+Keep the Stripe CLI webhook forwarder running whenever you test Checkout locally:
+
+```bash
+npm run stripe:listen
+```
+
+The command forwards Stripe events to `http://localhost:5000/webhooks/stripe`.
+Copy the `whsec_...` signing secret printed by `stripe listen` into the local
+`secrets/stripe_webhook_secret.txt` file. After changing that Docker secret,
+recreate or restart the API container so it reads the new value:
+
+```bash
+docker compose up -d --force-recreate api
+```
+
+`STRIPE_SUCCESS_URL` and `STRIPE_CANCEL_URL` are passed explicitly to the API
+container and default to the local frontend. Never commit Stripe secret keys or
+webhook signing secrets.
+
 Stop the project:
 
 ```bash

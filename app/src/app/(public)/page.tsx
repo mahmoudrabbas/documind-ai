@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
+import { formatMoneyMinor } from "@/lib/money";
 
 type PackageData = {
   id: string;
@@ -13,6 +14,8 @@ type PackageData = {
   description: string;
   monthlyPrice: number;
   annualPrice?: number;
+  monthlyPriceCents?: number;
+  annualPriceCents?: number;
   trialDays?: number;
   currency: string;
   entitlements: {
@@ -239,8 +242,7 @@ function UseCasesSection() {
 }
 
 function formatCurrency(amount: number, currency: string): string {
-  if (currency === "USD") return `$${amount}`;
-  return `${currency} ${amount}`;
+  return formatMoneyMinor(amount, currency);
 }
 
 function formatEntitlementLabel(key: string, value: number): string {
