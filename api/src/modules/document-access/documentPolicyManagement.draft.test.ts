@@ -24,6 +24,25 @@ test("rejects unsupported and duplicate actions", () => {
   assert.throws(() => normalizePolicyDraft({ rules: [{ ruleId: "x", effect: "allow", subject: { type: "owner" }, actions: ["share"] }] }), AppError);
 });
 
+test("accepts every backend subject type without coercing rules to owner", () => {
+  const role = "64a000000000000000000002"; const department = "64a000000000000000000003";
+  const normalized = normalizePolicyDraft({ rules: [
+    { ruleId: "owner", effect: "allow", subject: { type: "owner" }, actions: ["read"] },
+    { ruleId: "user", effect: "allow", subject: { type: "user", id: user }, actions: ["read"] },
+    { ruleId: "role", effect: "allow", subject: { type: "custom_role", id: role }, actions: ["read"] },
+    { ruleId: "department", effect: "allow", subject: { type: "department", id: department }, actions: ["read"] },
+    { ruleId: "tenant", effect: "allow", subject: { type: "tenant_member" }, actions: ["read"] },
+  ] });
+  assert.deepEqual(new Set(normalized.rules.map((rule) => rule.subject.type)), new Set(["owner", "user", "custom_role", "department", "tenant_member"]));
+});
+
+test("requires subjectId only for identified subject types", () => {
+  for (const type of ["user", "custom_role", "department"]) {
+    assert.throws(() => normalizePolicyDraft({ rules: [{ ruleId: type, effect: "allow", subject: { type }, actions: ["read"] }] }), AppError);
+  }
+  assert.doesNotThrow(() => normalizePolicyDraft({ rules: [{ ruleId: "tenant", effect: "allow", subject: { type: "tenant_member" }, actions: ["read"] }] }));
+});
+
 test("rejects duplicate rule IDs and semantic duplicates", () => {
   const rule = { ruleId: "x", effect: "allow", subject: { type: "owner" }, actions: ["read"] };
   assert.throws(() => normalizePolicyDraft({ rules: [rule, { ...rule }] }), AppError);

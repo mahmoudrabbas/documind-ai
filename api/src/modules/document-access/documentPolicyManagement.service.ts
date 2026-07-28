@@ -268,6 +268,7 @@ export class DocumentPolicyManagementService {
     const draftOwnerRules = draft.rules.filter((rule) => rule.subject.type === "owner");
     if (currentOwnerRule && draftOwnerRules.length === 0) ownerRuleProtected();
     if (draftOwnerRules.length > 1) ownerRuleInvalid("Only one owner rule is permitted");
+    if (currentOwnerRule && draftOwnerRules[0]?.ruleId !== currentOwnerRule.ruleId) ownerRuleProtected();
     for (const ownerRule of draftOwnerRules) {
       const missing = OWNER_MINIMUM_ACTIONS.filter((action) => !ownerRule.actions.includes(action));
       if (missing.length > 0) ownerRuleInvalid(`Owner rule must include minimum actions: ${missing.join(", ")}`);

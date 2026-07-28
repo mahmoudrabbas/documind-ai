@@ -61,6 +61,21 @@ describe("document policy API", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ previewToken: "opaque-token", taxonomy });
   });
 
+  it("serializes USER and ROLE subject IDs unchanged for preview and apply", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(json({ success: true, data: {} }))); vi.stubGlobal("fetch", fetchMock);
+    const policyDraft: PolicyDraft = { ...draft, rules: [
+      { ruleId: "owner", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+      { ruleId: "omar", effect: "allow", subject: { type: "user", id: "64a000000000000000000001" }, actions: ["read"] },
+      { ruleId: "role", effect: "allow", subject: { type: "custom_role", id: "64a000000000000000000002" }, actions: ["read"] },
+    ] };
+    await previewPolicy("d1", "p1", 3, policyDraft);
+    await applyPolicy("d1", "opaque-token", policyDraft, "subject-key");
+    const previewBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const applyBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(previewBody.draft.rules).toEqual(policyDraft.rules);
+    expect(applyBody.draft.rules).toEqual(policyDraft.rules);
+  });
+
   it("sends only the supported backend taxonomy create fields", async () => {
     const fetchMock = vi.fn().mockResolvedValue(json({ success: true, message: "created", data: {} }));
     vi.stubGlobal("fetch", fetchMock);

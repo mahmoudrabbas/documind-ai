@@ -7,6 +7,7 @@ const editor = read("PolicyEditor.tsx");
 const panel = read("DocumentPolicyPanel.tsx");
 const batch = read("BatchPolicyDialog.tsx");
 const policyService = read("../../services/document-policy.service.ts");
+const editorState = read("../../lib/document-policy-editor.ts");
 
 describe("Phase 8 safety source contracts", () => {
   it("uses all four backend classification levels", () => expect(taxonomy).toContain('"highly_confidential"'));
@@ -16,10 +17,10 @@ describe("Phase 8 safety source contracts", () => {
   it("supports bounded taxonomy pagination", () => { expect(taxonomy).toContain("pageSize: 20"); expect(taxonomy).toContain("totalPages"); });
 
   it("lists all independent policy actions", () => expect(editor).toContain("DOCUMENT_ACCESS_ACTIONS"));
-  it("keeps owner rules free of a subject ID", () => expect(editor).toContain('subject: { type: "owner" }'));
-  it("requires authoritative subject selection for identified subjects", () => expect(editor).toContain('includes(rule.subject.type) && !rule.subject.id'));
-  it("rejects duplicate semantic rules before preview", () => expect(editor).toContain("semantics.has(semantic)"));
-  it("rejects duplicate actions", () => expect(editor).toContain("new Set(rule.actions).size"));
+  it("keeps owner rules free of a subject ID", () => expect(editorState).toContain('rule.subject.type === "owner"'));
+  it("requires authoritative subject selection for identified subjects", () => expect(editorState).toContain("IDENTIFIED_POLICY_SUBJECT_TYPES.has(rule.subject.type) && !rule.subject.id"));
+  it("rejects duplicate semantic rules before preview", () => expect(editorState).toContain("semantics.has(semantic)"));
+  it("rejects duplicate actions", () => expect(editorState).toContain("new Set(rule.actions).size"));
   it("enforces the backend rule bound", () => expect(editor).toContain("draft.rules.length > 200"));
   it("validates effective intervals", () => expect(editor).toContain("Date.parse(draft.effectiveUntil) <= Date.parse(draft.effectiveFrom)"));
   it("invalidates preview and idempotency context after edits", () => { expect(editor).toContain("setPreview(null)"); expect(editor).toContain("setIdempotencyKey(null)"); });
@@ -36,7 +37,7 @@ describe("Phase 8 safety source contracts", () => {
   it("protects owner rules for non-owner users", () => { expect(editor).toContain("ownerReadOnly"); expect(editor).toContain("Protected owner rule"); expect(editor).toContain("Protected owner rule — only the document owner can modify it."); });
   it("compares current user with document owner for owner-rule read-only", () => { expect(editor).toContain("currentUserId === documentOwnerId"); });
   it("enforces minimum actions for owner rules owned by the document owner", () => { expect(editor).toContain("isOwnerRule && OWNER_MINIMUM_ACTIONS.has(action)"); expect(editor).toContain("(required)"); });
-  it("prevents subject type change for owner rules", () => { expect(editor).toContain("ownerReadOnly || isOwnerRule"); });
+  it("prevents subject type change only for the immutable owner rule", () => { expect(editor).toContain("disabled={isOwnerRule}"); expect(editor).toContain("rule.ruleId === ownerRuleId"); });
   it("protects taxonomy for delegated non-owner managers", () => { expect(editor).toContain("taxonomyEditable"); expect(editor).toContain("Document taxonomy can only be changed by the document owner or a Company Admin."); });
   it("disables taxonomy controls when not editable", () => { expect(editor).toContain("disabled={!taxonomyEditable}"); });
   it("shows owner-rule-protected error message", () => { expect(editor).toContain("owner_rule_protected"); expect(editor).toContain("Only the document owner may modify the owner rule."); });
