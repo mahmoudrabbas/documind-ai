@@ -132,6 +132,16 @@ const STATUS_WORD_MAP: Record<string, BadgeStatus> = {
   read_only: "neutral",
   "read only": "neutral",
   stale: "neutral",
+
+  /* Subscription-specific statuses */
+  trialing: "info",
+  incomplete: "warning",
+  past_due: "error",
+  paused: "neutral",
+  cancel_at_period_end: "warning",
+  canceled: "error",
+  expired: "neutral",
+  unpaid: "error",
 };
 
 /**

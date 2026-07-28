@@ -27,9 +27,20 @@ import {
   updateSubscriptionController,
   usageController,
 } from "./platform.controller.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
 router.use(authenticate, requirePlatformTenant);
+
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const modelSelectionGuard = createEntitlementGuard(getEntitlementService(), {
+  dimension: "allowedModels",
+  amount: 1,
+  failMode: "fail-closed",
+});
+
 router.get("/overview", requirePermission(Permission.AUDIT_READ), overviewController);
 router.get("/packages", requirePermission(Permission.BILLING_READ), packagesController);
 router.post("/packages", requirePermission(Permission.BILLING_MANAGE), createPackageController);
@@ -50,7 +61,7 @@ router.get("/jobs", requirePermission(Permission.DOCUMENTS_READ), jobsController
 router.get("/system-health", requirePermission(Permission.COMPANY_SETTINGS_READ), healthController);
 router.get("/audit", requirePermission(Permission.AUDIT_READ), auditController);
 router.get("/ai-configuration", requirePermission(Permission.COMPANY_SETTINGS_READ), aiConfigurationController);
-router.patch("/ai-configuration", requirePermission(Permission.COMPANY_SETTINGS_UPDATE), updateAiConfigurationController);
+router.patch("/ai-configuration", requirePermission(Permission.COMPANY_SETTINGS_UPDATE), modelSelectionGuard, updateAiConfigurationController);
 router.get("/settings", requirePermission(Permission.COMPANY_SETTINGS_READ), settingsController);
 router.patch("/settings", requirePermission(Permission.COMPANY_SETTINGS_UPDATE), updateSettingsController);
 export default router;

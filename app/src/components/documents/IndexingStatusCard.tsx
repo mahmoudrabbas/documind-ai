@@ -8,7 +8,6 @@ import { getIndexStatus, retryIndexing, reindexDocument } from "@/services/proce
 import type {
   IndexGenerationView,
   GenerationStatus,
-  DocumentSearchStatus,
 } from "@/types/api/processing.types";
 
 const GENERATION_STATUS_MAP: Record<GenerationStatus, string> = {
@@ -18,14 +17,6 @@ const GENERATION_STATUS_MAP: Record<GenerationStatus, string> = {
   ACTIVE: "success",
   FAILED: "error",
   RETIRED: "neutral",
-};
-
-const SEARCH_STATUS_MAP: Record<DocumentSearchStatus, string> = {
-  NOT_INDEXED: "neutral",
-  INDEXING: "warning",
-  READY: "success",
-  FAILED: "error",
-  STALE: "warning",
 };
 
 interface IndexingStatusCardProps {

@@ -5,6 +5,8 @@ import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   downloadTemplate,
   uploadAndPreview,
@@ -39,6 +41,22 @@ const upload = multer({
 
 const router = Router();
 
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const svc = getEntitlementService();
+
+const employeeGuard = createEntitlementGuard(svc, {
+  dimension: "employees",
+  amount: (req) => req.body.employeeCount || 1,
+  failMode: "fail-closed",
+});
+
+const exportGuard = createEntitlementGuard(svc, {
+  dimension: "documents",
+  amount: 1,
+  failMode: "fail-open",
+});
+
 // ── Static routes (MUST come before /:batchId) ──────────────────────────────
 
 router.get(
@@ -53,6 +71,7 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.IMPORTS_CREATE),
+  employeeGuard,
   upload.single("file"),
   uploadAndPreview,
 );
@@ -80,6 +99,7 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.IMPORTS_CREATE),
+  employeeGuard,
   confirmImport,
 );
 
@@ -112,6 +132,7 @@ router.get(
   authenticate,
   tenantScoping,
   requirePermission(Permission.IMPORTS_READ),
+  exportGuard,
   exportResults,
 );
 

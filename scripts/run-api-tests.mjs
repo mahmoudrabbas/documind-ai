@@ -44,6 +44,13 @@ const importsPortsVitestTestsDir = resolve(
   "ports",
   "__tests__",
 ).replace(/\\/g, "/");
+const agentsTokenChargeTestsDir = resolve(
+  apiRoot,
+  "src",
+  "modules",
+  "agents",
+  "__tests__",
+).replace(/\\/g, "/");
 const processingProgressVitestTestsDir = resolve(
   apiRoot,
   "src",
@@ -64,6 +71,7 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${importsVitestTestsDir}/`)
     || normalized.startsWith(`${importsServicesVitestTestsDir}/`)
     || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
+    || normalized.startsWith(`${agentsTokenChargeTestsDir}/`)
     || normalized.startsWith(`${processingProgressVitestTestsDir}/`)
   ) {
     return true;

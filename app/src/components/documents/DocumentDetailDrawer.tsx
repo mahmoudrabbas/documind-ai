@@ -21,12 +21,7 @@ import { ProcessingTimeline } from "./ProcessingTimeline";
 import { ProcessingStatusBadge } from "./ProcessingStatusBadge";
 import { RetryConfirmDialog, ReprocessConfirmDialog, CancelConfirmDialog } from "./ProcessingConfirmDialogs";
 
-const CLASSIFICATION_BADGE_MAP: Record<string, string> = {
-  public: "success",
-  internal: "info",
-  confidential: "warning",
-  restricted: "error",
-};
+
 
 const SCAN_RESULT_MAP: Record<string, string> = {
   clean: "success",

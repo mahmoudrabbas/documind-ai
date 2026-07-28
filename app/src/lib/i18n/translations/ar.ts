@@ -425,6 +425,23 @@ const ar: TranslationDictionary = {
   "billing.noSessionId": "لم يتم توفير معرف الجلسة. يرجى الاتصال بالدعم.",
   "billing.verifyError": "تعذر التحقق من حالة الاشتراك. يرجى الاتصال بالدعم.",
 
+  /* ── usage (company usage page) ────────────────────────── */
+  "usage.pageTitle": "الاستخدام والحدود",
+  "usage.pageDescription": "تتبع استخدام صلاحيات مؤسستك عبر جميع الأبعاد.",
+  "usage.fetchError": "فشل في تحميل بيانات الاستخدام.",
+  "usage.emptyTitle": "لا توجد بيانات استخدام بعد",
+  "usage.emptyDescription": "ستظهر معلومات الاستخدام هنا بمجرد أن تبدأ مؤسستك في استخدام DocuMind AI.",
+  "usage.readOnlyNote": "أنت تشاهد بيانات الاستخدام في وضع القراءة فقط.",
+  "usage.resetsOn": "إعادة التعيين في",
+  "usage.dimension.employees": "الموظفون",
+  "usage.dimension.admins": "المسؤولون",
+  "usage.dimension.documents": "المستندات",
+  "usage.dimension.storageMb": "سعة التخزين",
+  "usage.dimension.fileSizeMb": "الحد الأقصى لحجم الملف",
+  "usage.dimension.queriesPerMonth": "الاستعلامات / الشهر",
+  "usage.dimension.tokensPerMonth": "الرموز / الشهر",
+  "usage.dimension.ocrPagesPerMonth": "صفحات OCR / الشهر",
+
   /* ── audit ─────────────────────────────────────────────── */
   "audit.title": "سجل التدقيق",
   "audit.description": "مراجعة الإجراءات الإدارية الحساسة عبر المنصة.",

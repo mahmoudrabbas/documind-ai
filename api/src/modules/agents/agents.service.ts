@@ -7,6 +7,7 @@ import { createRetrievalTool } from "./tools/retrievalTool.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
 import { createDefaultGuardrails } from "./guardrails.js";
 import { getModelAdapter } from "../../providers/llm/index.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   createRun,
   startRun,
@@ -464,7 +465,21 @@ export async function startAgentRun(input: {
     run.id,
     input.toolVersionSnapshot ?? "1.0.0",
   );
-  return getRun(input.tenantId, run.id);
+
+  const completedRun = await getRun(input.tenantId, run.id);
+  if (completedRun?.totalTokensUsed != null && completedRun.totalTokensUsed > 0) {
+    try {
+      await getEntitlementService().consume(
+        input.tenantId,
+        "tokensPerMonth",
+        completedRun.totalTokensUsed,
+        input.requestId,
+      );
+    } catch (err) {
+      console.error(`[startAgentRun] Post-hoc token charge failed for run ${run.id}:`, err);
+    }
+  }
+  return completedRun;
 }
 
 export async function resumeAgentRun(
