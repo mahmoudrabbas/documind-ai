@@ -35,6 +35,16 @@ export interface SubscriptionStatus {
     monthlyPriceCents: number;
     annualPriceCents: number;
     currency: string;
+    entitlements: {
+      employees: number;
+      admins: number;
+      documents: number;
+      storageMb: number;
+      fileSizeMb: number;
+      queriesPerMonth: number;
+      tokensPerMonth: number;
+      ocrPagesPerMonth: number;
+    };
   };
   packageVersion: number;
   packageVersionId: string | null;
@@ -53,6 +63,7 @@ export interface SubscriptionStatus {
   providerSubscriptionId: string;
   providerPriceId: string;
   paymentState: string;
+  cancelAtPeriodEnd: boolean;
   lastProviderEventId: string;
 }
 

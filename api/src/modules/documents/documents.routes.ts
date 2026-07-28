@@ -5,6 +5,8 @@ import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadDocumentController,
   listDocumentsController,
@@ -50,7 +52,23 @@ import {
 const router = Router();
 const requirePolicyManagement = requirePermission(Permission.DOCUMENTS_MANAGE_ACCESS, { allowScoped: true, resourceType: "Document" });
 
-router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), uploadDocumentController);
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const svc = getEntitlementService();
+
+const documentCountGuard = createEntitlementGuard(svc, {
+  dimension: "documents",
+  amount: 1,
+  failMode: "fail-closed",
+});
+
+const storageMbGuard = createEntitlementGuard(svc, {
+  dimension: "storageMb",
+  amount: (req) => Math.ceil((req.file?.size || 0) / (1024 * 1024)),
+  failMode: "fail-closed",
+});
+
+router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
 

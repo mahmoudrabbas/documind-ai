@@ -14,13 +14,28 @@ import {
   listRunsAdminController,
   getRunAdminController,
 } from "./agents.controller.js";
+import { createEntitlementGuard, createEntitlementCheckGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
 
 router.use(authenticate);
 router.use(tenantScoping);
 
-router.post("/runs", requirePermission(Permission.CHAT_CREATE), startRunController);
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const queryGuard = createEntitlementGuard(getEntitlementService(), {
+  dimension: "queriesPerMonth",
+  amount: 1,
+  failMode: "fail-open",
+});
+
+const tokenCheckGuard = createEntitlementCheckGuard(getEntitlementService(), {
+  dimension: "tokensPerMonth",
+  failMode: "fail-closed",
+});
+
+router.post("/runs", queryGuard, tokenCheckGuard, requirePermission(Permission.CHAT_CREATE), startRunController);
 router.get("/runs", requirePermission(Permission.CHAT_READ), listRunsController);
 router.get("/runs/:runId", requirePermission(Permission.CHAT_READ), getRunController);
 router.post(

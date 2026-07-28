@@ -19,6 +19,7 @@ export interface SecurityScanner {
   scan(buffer: Buffer, filename: string): Promise<ScanResult>;
 }
 
+/** @deprecated Use modules/entitlement middleware instead */
 export interface EntitlementChecker {
   checkUploadAllowed(tenantId: string, fileSize: number): Promise<void>;
   checkOcrPageQuota(tenantId: string, pageCount: number): Promise<void>;

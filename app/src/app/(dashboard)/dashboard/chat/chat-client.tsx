@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
+import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
 import {
   sendMessage,
   listConversations,
@@ -195,7 +196,7 @@ export function ChatClient() {
 
       const actualConvId = response.conversationId;
       const aiMsg: Message = {
-        id: `a-${++msgIdCounter.current}`,
+        id: response.messageId,
         role: "assistant",
         content: response.answer,
         sources: response.sources,
@@ -421,6 +422,12 @@ export function ChatClient() {
                             </button>
                           ))}
                       </div>
+                    )}
+                    {msg.role === "assistant" && activeConversation && (
+                      <FeedbackWidget
+                        messageId={msg.id}
+                        conversationId={activeConversation}
+                      />
                     )}
                   </div>
                   {msg.role === "user" && (

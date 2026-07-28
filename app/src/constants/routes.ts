@@ -92,6 +92,13 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
     requiredPermissions: [Permission.CHAT_READ],
   },
   {
+    label: "Knowledge Gaps",
+    href: "/dashboard/knowledge-gaps",
+    icon: "search_insights",
+    context: "tenant",
+    requiredPermissions: [Permission.KNOWLEDGE_GAPS_READ],
+  },
+  {
     label: "Failed Processing",
     href: "/dashboard/processing-failed",
     icon: "error",

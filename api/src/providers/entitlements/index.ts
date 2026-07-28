@@ -2,6 +2,7 @@ import type { EntitlementChecker, OcrUsageRecorder } from "../storage/types.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { OCR_QUOTA_EXCEEDED, ENTITLEMENT_EXCEEDED } from "../../common/errors/errorCodes.js";
 import { getOcrUsageCount, createOcrUsageRecord } from "../../modules/processing/processing.repository.js";
+import { CompatEntitlementChecker } from "./compatAdapter.js";
 
 const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_OCR_PAGE_LIMIT = 10_000;
@@ -114,6 +115,8 @@ export function getEntitlementChecker(): EntitlementChecker {
     const providerType = process.env.ENTITLEMENT_PROVIDER || "fake";
     if (providerType === "db") {
       entitlementSingleton = new DbEntitlementChecker();
+    } else if (providerType === "new-domain") {
+      entitlementSingleton = new CompatEntitlementChecker();
     } else {
       entitlementSingleton = new FakeEntitlementChecker();
     }

@@ -32,7 +32,9 @@ import { mapLlmProviderError } from "../../providers/llm/providerError.js";
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
 const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
 
-export function insufficientAuthorizedEvidenceResponse(conversationId: string): ChatResponse {
+export function insufficientAuthorizedEvidenceResponse(
+  conversationId: string,
+): Omit<ChatResponse, "messageId"> {
   return { answer: INSUFFICIENT_AUTHORIZED_EVIDENCE, sources: [], conversationId };
 }
 
@@ -135,14 +137,19 @@ export class ChatService {
           intentResult.language === "ar"
             ? "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
             : "This request cannot be processed due to safety policies.";
-        await chatRepo.addMessage(
+        const msgDoc = await chatRepo.addMessage(
           tenantIdStr,
           conversationId,
           "assistant",
           unsafeAnswer,
           currentCount + 1,
         );
-        return { answer: unsafeAnswer, sources: [], conversationId };
+        return {
+          messageId: msgDoc._id.toString(),
+          answer: unsafeAnswer,
+          sources: [],
+          conversationId,
+        };
       }
 
       if (
@@ -156,14 +163,19 @@ export class ChatService {
             ? intentResult.clarification.messageAr
             : intentResult.clarification.messageEn;
         const answer = clarifyMsg ?? "Could you please clarify your question?";
-        await chatRepo.addMessage(
+        const msgDoc = await chatRepo.addMessage(
           tenantIdStr,
           conversationId,
           "assistant",
           answer,
           currentCount + 1,
         );
-        return { answer, sources: [], conversationId };
+        return {
+          messageId: msgDoc._id.toString(),
+          answer,
+          sources: [],
+          conversationId,
+        };
       }
     } catch (err) {
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
@@ -220,7 +232,14 @@ export class ChatService {
     }
 
     if (sources.length === 0) {
-      await chatRepo.addMessage(tenantIdStr, conversationId, "assistant", INSUFFICIENT_AUTHORIZED_EVIDENCE, currentCount + 1, []);
+      const assistantDoc = await chatRepo.addMessage(
+        tenantIdStr,
+        conversationId,
+        "assistant",
+        INSUFFICIENT_AUTHORIZED_EVIDENCE,
+        currentCount + 1,
+        [],
+      );
       await getAuditWriter().write({
         action: "RETRIEVAL_DENIAL",
         resourceType: "Retrieval",
@@ -232,7 +251,10 @@ export class ChatService {
         actorRole: actor.actorRole,
         metadata: { traceId: context.traceId, userId: userIdStr, tenantId: tenantIdStr, requiredAction: "use_in_ai", authorizationResult: "denied", reasonCode: "NO_AUTHORIZED_EVIDENCE", sourceCount: 0, latencyMs: Date.now() - start },
       });
-      return insufficientAuthorizedEvidenceResponse(conversationId);
+      return {
+        messageId: assistantDoc._id.toString(),
+        ...insufficientAuthorizedEvidenceResponse(conversationId),
+      };
     }
 
     // 8. Build RAG prompt and generate answer
@@ -297,7 +319,7 @@ export class ChatService {
     const answer = response.choices[0]?.message?.content ?? "";
 
     // 10. Save assistant response
-    await chatRepo.addMessage(
+    const assistantDoc = await chatRepo.addMessage(
       tenantIdStr,
       conversationId,
       "assistant",
@@ -329,7 +351,12 @@ export class ChatService {
       },
     });
 
-    return { answer, sources, conversationId };
+    return {
+      messageId: assistantDoc._id.toString(),
+      answer,
+      sources,
+      conversationId,
+    };
   }
 
   async listConversations(

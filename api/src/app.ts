@@ -58,9 +58,16 @@ import { ChatService } from "./modules/chat/chat.service.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter } from "./providers/llm/index.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
+import knowledgeGapsRoutes from "./modules/knowledge-gaps/knowledge-gaps.routes.js";
+import feedbackRoutes from "./modules/feedback/feedback.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 import { getDocumentAccessAuthorizationService } from "./modules/document-access/documentAccess.authorization.service.js";
+import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
+import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
+import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
+import { MongoQuotaCounter } from "./modules/entitlement/adapters/mongo-quota-counter.js";
+import { MongoEntitlementProvider } from "./modules/entitlement/adapters/mongo-entitlement-provider.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -178,6 +185,29 @@ app.use("/documents", processingRoutes);
 app.use("/documents", processingProgressRoutes);
 app.use("/intent-query", intentQueryRoutes);
 app.use("/document-taxonomy", documentTaxonomyRoutes);
+app.use("/knowledge-gaps", knowledgeGapsRoutes);
+app.use("/feedback", feedbackRoutes);
+app.use("/entitlement", entitlementRoutes);
+app.use("/super-admin/entitlement", entitlementAdminRoutes);
+
+// ── EntitlementService singleton ─────────────────────────────────────────────
+//
+// Lazy-initialised singleton. Consumers import getEntitlementService() when
+// they need to check quota or entitlement limits at runtime.
+//
+// Reuses the same pattern as getAuditWriter().
+
+let entitlementServiceInstance: EntitlementService | null = null;
+
+export function getEntitlementService(): EntitlementService {
+  if (!entitlementServiceInstance) {
+    entitlementServiceInstance = new EntitlementService(
+      new MongoQuotaCounter(),
+      new MongoEntitlementProvider(),
+    );
+  }
+  return entitlementServiceInstance;
+}
 
 const filterCompiler: FilterCompiler = {
   compileAccessFilters,

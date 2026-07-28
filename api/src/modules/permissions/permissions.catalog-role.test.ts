@@ -58,11 +58,11 @@ test("tenant catalog exposes exactly active tenant-grantable permissions", () =>
   assert.ok(!PERMISSION_CATALOG.some((permission) => permission.id === ("audit:platform-read" as never)));
 });
 
-test("catalog identifiers are normalized, unique, versioned, and cover all ten groups", () => {
+test("catalog identifiers are normalized, unique, versioned, and cover all eleven groups", () => {
   const ids = PERMISSION_CATALOG.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(ids.every((id) => id === id.trim().toLowerCase()));
-  assert.deepEqual([...new Set(PERMISSION_CATALOG.map((item) => item.group))].sort(), ["analytics", "audit", "billing", "chat", "company-settings", "documents", "imports", "knowledge-gaps", "roles", "users"]);
+  assert.deepEqual([...new Set(PERMISSION_CATALOG.map((item) => item.group))].sort(), ["analytics", "audit", "billing", "chat", "company-settings", "documents", "feedback", "imports", "knowledge-gaps", "roles", "users"]);
   assert.ok(PERMISSION_CATALOG.every((item) =>
     item.label &&
     item.description &&
