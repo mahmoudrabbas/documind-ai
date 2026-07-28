@@ -10,6 +10,7 @@ import {
   type StripeProduct,
   type CreatePriceParams,
   type StripePrice,
+  type ProviderSubscription,
 } from "../payment-provider.port.js";
 
 interface StoredCustomer {
@@ -26,6 +27,8 @@ interface StoredSession {
   successUrl: string;
   cancelUrl: string;
   metadata: Record<string, string>;
+  subscriptionMetadata: Record<string, string>;
+  clientReferenceId: string;
   status: "open" | "complete" | "expired";
 }
 
@@ -56,6 +59,7 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly sessions: StoredSession[] = [];
   readonly products: StoredProduct[] = [];
   readonly prices: StoredPrice[] = [];
+  readonly subscriptions: ProviderSubscription[] = [];
   shouldFailNextCreateCustomer = false;
   shouldFailNextCreateSession = false;
   shouldFailNextCreateProduct = false;
@@ -67,6 +71,7 @@ export class FakePaymentProvider implements PaymentProvider {
     this.sessions.length = 0;
     this.products.length = 0;
     this.prices.length = 0;
+    this.subscriptions.length = 0;
     this.shouldFailNextCreateCustomer = false;
     this.shouldFailNextCreateSession = false;
     this.shouldFailNextCreateProduct = false;
@@ -105,6 +110,8 @@ export class FakePaymentProvider implements PaymentProvider {
       successUrl: params.successUrl,
       cancelUrl: params.cancelUrl,
       metadata: { ...params.metadata },
+      subscriptionMetadata: { ...(params.subscriptionMetadata ?? params.metadata) },
+      clientReferenceId: params.clientReferenceId ?? "",
       status: "open",
     };
     this.sessions.push(session);
@@ -115,6 +122,18 @@ export class FakePaymentProvider implements PaymentProvider {
       customerId: session.customerId,
       metadata: session.metadata,
     };
+  }
+
+  async retrieveSubscription(subscriptionId: string): Promise<ProviderSubscription> {
+    const subscription = this.subscriptions.find((item) => item.id === subscriptionId);
+    if (!subscription) throw new Error(`Fake provider: subscription ${subscriptionId} not found`);
+    return { ...subscription, metadata: { ...subscription.metadata } };
+  }
+
+  async listCustomerSubscriptions(customerId: string): Promise<ProviderSubscription[]> {
+    return this.subscriptions
+      .filter((item) => item.customerId === customerId)
+      .map((item) => ({ ...item, metadata: { ...item.metadata } }));
   }
 
   async retrieveCheckoutSession(

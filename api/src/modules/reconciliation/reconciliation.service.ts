@@ -7,6 +7,16 @@ import {
   authorizePlatformOperation,
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
+import { Types } from "mongoose";
+import type { PaymentProvider, ProviderSubscription } from "../billing/ports/payment-provider.port.js";
+import {
+  providerPaymentState,
+  providerSubscriptionStatus,
+  resolveProviderSubscription,
+} from "../billing/provider-subscription-sync.service.js";
+import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
+import { AppError } from "../../common/errors/AppError.js";
+import { NOT_FOUND } from "../../common/errors/errorCodes.js";
 
 export interface ReconciliationResult {
   totalSubscriptions: number;
@@ -94,5 +104,112 @@ export async function reconcileSubscriptions(
   return {
     totalSubscriptions: subscriptions.length,
     mismatched,
+  };
+}
+
+function chooseProviderSubscription(
+  subscriptions: ProviderSubscription[],
+): ProviderSubscription {
+  const live = subscriptions.filter(
+    (subscription) => !["canceled", "incomplete_expired"].includes(subscription.status),
+  );
+  const candidates = live.length > 0 ? live : subscriptions;
+  if (candidates.length !== 1) {
+    throw new Error(
+      `Stripe customer subscription mapping is ${candidates.length === 0 ? "missing" : "ambiguous"}`,
+    );
+  }
+  return candidates[0];
+}
+
+export async function syncTenantSubscriptionFromProvider(
+  tenantId: string,
+  context: OperationAuthorizationContext,
+  injectedProvider?: PaymentProvider,
+) {
+  const actor = await authorizePlatformOperation(
+    context,
+    Permission.BILLING_MANAGE,
+  );
+  if (!Types.ObjectId.isValid(tenantId)) {
+    throw new AppError(404, NOT_FOUND, "Subscription not found");
+  }
+  const subscription = await SubscriptionModel.findOne({ tenantId }).exec();
+  if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
+
+  const provider = injectedProvider ?? (await getPaymentProvider());
+  let providerSubscription: ProviderSubscription;
+  if (subscription.providerSubscriptionId) {
+    if (!provider.retrieveSubscription) throw new Error("Payment provider cannot retrieve subscriptions");
+    providerSubscription = await provider.retrieveSubscription(
+      subscription.providerSubscriptionId,
+    );
+  } else if (subscription.providerCustomerId) {
+    if (!provider.listCustomerSubscriptions) throw new Error("Payment provider cannot list customer subscriptions");
+    providerSubscription = chooseProviderSubscription(
+      await provider.listCustomerSubscriptions(subscription.providerCustomerId),
+    );
+  } else {
+    throw new Error("Local subscription has no Stripe customer or subscription linkage");
+  }
+
+  const resolution = await resolveProviderSubscription(providerSubscription, tenantId);
+  if (resolution.tenantId !== tenantId) {
+    throw new Error("Stripe subscription belongs to a different tenant");
+  }
+  const status = providerSubscriptionStatus(providerSubscription.status);
+  if (!status) throw new Error(`Unsupported Stripe subscription status: ${providerSubscription.status}`);
+
+  const previous = {
+    packageId: String(subscription.packageId),
+    packageVersionId: subscription.packageVersionId?.toString() ?? null,
+    packageVersion: subscription.packageVersion,
+    providerCustomerId: subscription.providerCustomerId,
+    providerSubscriptionId: subscription.providerSubscriptionId,
+    status: subscription.status,
+    paymentState: subscription.paymentState,
+  };
+  const update = {
+    packageId: new Types.ObjectId(resolution.packageId),
+    packageVersionId: new Types.ObjectId(resolution.packageVersionId),
+    packageVersion: resolution.packageVersion,
+    billingInterval: resolution.billingInterval,
+    providerCustomerId: providerSubscription.customerId,
+    providerSubscriptionId: providerSubscription.id,
+    providerPriceId: providerSubscription.priceId,
+    provider: "stripe",
+    status,
+    paymentState: providerPaymentState(providerSubscription.status),
+    periodStart: providerSubscription.currentPeriodStart,
+    periodEnd: providerSubscription.currentPeriodEnd,
+    currentPeriodStart: providerSubscription.currentPeriodStart,
+    currentPeriodEnd: providerSubscription.currentPeriodEnd,
+    cancelAtPeriodEnd: providerSubscription.cancelAtPeriodEnd,
+  };
+  await SubscriptionModel.updateOne({ _id: subscription._id }, { $set: update });
+
+  await getAuditWriter().write({
+    tenantId,
+    action: "SUBSCRIPTION_RECONCILED",
+    resourceType: "Subscription",
+    resourceId: String(subscription._id),
+    actorId: actor.actorId,
+    actorEmail: actor.actorEmail,
+    actorRole: actor.actorRole,
+    actorKind: actor.actorKind,
+    changes: { source: "stripe", previous, current: update },
+    metadata: { traceId: actor.traceId, requestId: actor.requestId },
+  });
+
+  return {
+    tenantId,
+    source: "stripe" as const,
+    providerSubscriptionId: providerSubscription.id,
+    packageId: resolution.packageId,
+    packageVersionId: resolution.packageVersionId,
+    packageVersion: resolution.packageVersion,
+    billingInterval: resolution.billingInterval,
+    status,
+    paymentState: update.paymentState,
   };
 }

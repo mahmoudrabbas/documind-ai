@@ -31,4 +31,12 @@ test("reconciliation route requires platform billing authorization", async () =>
     source.includes("/reconciliation/subscriptions"),
     "POST route exists",
   );
+  assert.ok(
+    source.includes("/reconciliation/subscriptions/:tenantId/sync-provider"),
+    "Provider-backed Stripe synchronization route exists",
+  );
+  assert.ok(
+    source.includes("requirePermission(Permission.BILLING_MANAGE)"),
+    "Provider synchronization requires billing manage permission",
+  );
 });

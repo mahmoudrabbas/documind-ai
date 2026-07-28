@@ -11,6 +11,8 @@ function mapToPublicDTO(pkg: any): PublicPackageDTO {
     description: pkg.description,
     monthlyPrice: pkg.monthlyPrice,
     annualPrice: pkg.annualPrice,
+    monthlyPriceCents: pkg.monthlyPrice,
+    annualPriceCents: pkg.annualPrice,
     currency: pkg.currency,
     trialDays: pkg.trialDays,
     entitlements: {

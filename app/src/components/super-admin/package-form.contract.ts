@@ -5,7 +5,7 @@ export function validatePackageInput(input: PackageCreateInput | PackageVersionI
   if ("code" in input && !/^[a-z0-9-]+$/.test(input.code.trim().toLowerCase()))
     return "Code may contain lowercase letters, numbers, and hyphens only.";
   for (const [label, value] of [["Monthly price", input.monthlyPrice], ["Annual price", input.annualPrice]] as const)
-    if (!Number.isFinite(value) || value < 0) return `${label} must be a non-negative number.`;
+    if (!Number.isSafeInteger(value) || value < 0) return `${label} must be non-negative integer minor units.`;
   for (const [label, value, minimum] of [
     ["Employees", input.entitlements.employees, 1], ["Admins", input.entitlements.admins, 0],
     ["Documents", input.entitlements.documents, 0], ["Storage", input.entitlements.storageMb, 0],

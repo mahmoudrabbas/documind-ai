@@ -32,7 +32,7 @@ export async function webhookHandlerController(
 
   try {
     const event = provider.parseWebhookEvent(payload);
-    await handlePaymentEvent(event, rawBody, signature);
+    await handlePaymentEvent(event, rawBody, signature, undefined, provider);
     res.status(200).json({ received: true });
   } catch (error) {
     logger.error({ err: error }, "Failed to process webhook event");

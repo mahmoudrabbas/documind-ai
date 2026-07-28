@@ -10,6 +10,8 @@ export interface CreateCheckoutSessionParams {
   successUrl: string;
   cancelUrl: string;
   metadata: Record<string, string>;
+  subscriptionMetadata?: Record<string, string>;
+  clientReferenceId?: string;
 }
 
 export interface CheckoutSession {
@@ -18,6 +20,18 @@ export interface CheckoutSession {
   status: "open" | "complete" | "expired";
   customerId: string;
   metadata: Record<string, string>;
+  subscriptionId?: string;
+}
+
+export interface ProviderSubscription {
+  id: string;
+  customerId: string;
+  status: string;
+  metadata: Record<string, string>;
+  priceId: string;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
 }
 
 export interface PaymentProviderEvent {
@@ -68,6 +82,8 @@ export interface PaymentProvider {
   createCustomer(params: CreateCustomerParams): Promise<string>;
   createCheckoutSession(params: CreateCheckoutSessionParams): Promise<CheckoutSession>;
   retrieveCheckoutSession(sessionId: string): Promise<CheckoutSession>;
+  retrieveSubscription?(subscriptionId: string): Promise<ProviderSubscription>;
+  listCustomerSubscriptions?(customerId: string): Promise<ProviderSubscription[]>;
   createBillingPortalSession(params: CreateBillingPortalSessionParams): Promise<BillingPortalSession>;
   verifyWebhookSignature(body: string, signature: string): boolean;
   parseWebhookEvent(body: Record<string, unknown>): PaymentProviderEvent;

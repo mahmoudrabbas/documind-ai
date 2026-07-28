@@ -8,6 +8,7 @@ import { getSubscriptionDetail, listPackages, listSubscriptions } from "@/servic
 import { listTenants } from "@/services/platform.service";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
+import { syncSubscriptionFromStripe } from "@/services/billing.service";
 import type { PlatformSubscription, PlatformSubscriptionDetail, SubscriptionOperationAction } from "@/types/api/super-admin.types";
 
 const loadData = async (signal?: AbortSignal) => {
@@ -31,6 +32,8 @@ export default function SubscriptionsPage() {
   const [operation, setOperation] = useState<SubscriptionOperationAction | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [syncingProvider, setSyncingProvider] = useState(false);
+  const [syncNotice, setSyncNotice] = useState("");
   const [page, setPage] = useState(1);
   const existing = detail?.subscription ?? null;
 
@@ -58,6 +61,19 @@ export default function SubscriptionsPage() {
   const totalPages = Math.max(1, Math.ceil(filteredSubscriptions.length / pageSize));
   const visibleSubscriptions = filteredSubscriptions.slice((page - 1) * pageSize, page * pageSize);
   const reload = async () => { await state.reload(); if (tenantId) setDetail((await getSubscriptionDetail(tenantId)).data); };
+  const syncFromStripe = async () => {
+    if (!tenantId || !existing?.providerManaged) return;
+    setSyncingProvider(true); setSyncNotice("");
+    try {
+      await syncSubscriptionFromStripe(tenantId);
+      await reload();
+      setSyncNotice("Subscription synchronized from Stripe.");
+    } catch (caught) {
+      setSyncNotice(caught instanceof Error ? caught.message : "Stripe synchronization failed.");
+    } finally {
+      setSyncingProvider(false);
+    }
+  };
 
   if (permissions.status === "ready" && !canRead) return <DashboardPage><DashboardPageHeader title="Subscriptions" description="Platform subscription operations." /><DashboardPanel><p role="alert">You do not have permission to view subscriptions.</p></DashboardPanel></DashboardPage>;
 
@@ -94,9 +110,11 @@ export default function SubscriptionsPage() {
             </select>
           </label>
           <div className="mt-4 flex flex-wrap gap-3">
+            {existing.providerManaged ? <button type="button" disabled={syncingProvider} onClick={() => void syncFromStripe()} className="rounded-lg border border-primary px-4 py-2 font-bold text-primary disabled:opacity-50">{syncingProvider ? "Synchronizing…" : "Sync from Stripe"}</button> : null}
             <button type="button" disabled={!packageId || packageId === existing.packageId._id} onClick={() => { setTargetStatus(""); setOperation("update"); }} className="rounded-lg bg-primary px-4 py-2 font-bold text-on-primary disabled:opacity-50">Change Package</button>
             <button type="button" disabled={!targetStatus} onClick={() => { setPackageId(""); setOperation("update"); }} className="rounded-lg bg-secondary px-4 py-2 font-bold text-on-secondary disabled:opacity-50">Change Status</button>
           </div>
+          {syncNotice ? <p className="mt-3 text-sm" aria-live="polite">{syncNotice}</p> : null}
         </> : <>
           <p>This company has no subscription.</p>
           <button type="button" disabled={!packageId} onClick={() => { setTargetStatus((selectedPackage?.trialDays ?? 0) > 0 ? "trialing" : "active"); setOperation("provision"); }} className="mt-3 rounded-lg bg-primary px-4 py-2 font-bold text-on-primary disabled:opacity-50">Provision Subscription</button>

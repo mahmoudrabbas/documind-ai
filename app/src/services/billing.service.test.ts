@@ -1,5 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { triggerReconciliation } from "./billing.service";
+import {
+  syncSubscriptionFromStripe,
+  triggerReconciliation,
+} from "./billing.service";
 
 const mockApiClient = vi.fn();
 vi.mock("@/lib/api-client", () => ({
@@ -8,6 +11,17 @@ vi.mock("@/lib/api-client", () => ({
 
 beforeEach(() => {
   mockApiClient.mockReset();
+});
+
+describe("billing.service syncSubscriptionFromStripe", () => {
+  it("calls the provider-backed Super Admin endpoint for one tenant", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: {} });
+    await syncSubscriptionFromStripe("tenant/id");
+    expect(mockApiClient).toHaveBeenCalledWith(
+      "/super-admin/reconciliation/subscriptions/tenant%2Fid/sync-provider",
+      { method: "POST" },
+    );
+  });
 });
 
 describe("billing.service triggerReconciliation", () => {

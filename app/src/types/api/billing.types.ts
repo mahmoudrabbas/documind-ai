@@ -10,6 +10,7 @@ export interface CheckoutSession {
   packageId: string;
   packageVersion: number;
   billingInterval: "monthly" | "annual";
+  packageVersionId: string;
   providerSessionId: string;
   providerCustomerId: string;
   status: "pending" | "completed" | "expired" | "failed";
@@ -31,12 +32,19 @@ export interface SubscriptionStatus {
     version: number;
     monthlyPrice: number;
     annualPrice: number;
+    monthlyPriceCents: number;
+    annualPriceCents: number;
     currency: string;
   };
   packageVersion: number;
+  packageVersionId: string | null;
+  billingInterval: "monthly" | "annual" | null;
+  provider: string;
   status: string;
   periodStart: string | null;
   periodEnd: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
   trialStart: string | null;
   trialEnd: string | null;
   cancelledAt: string | null;
@@ -75,6 +83,8 @@ export interface PublicPackage {
   description: string;
   monthlyPrice: number;
   annualPrice: number;
+  monthlyPriceCents: number;
+  annualPriceCents: number;
   currency: string;
   trialDays: number;
   entitlements: {

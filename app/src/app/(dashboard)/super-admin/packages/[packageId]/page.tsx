@@ -16,6 +16,7 @@ import { getPackage } from "@/services/super-admin.service";
 import { PackageLifecycleDialog } from "@/components/super-admin/package-lifecycle-dialog";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
+import { formatMoneyMinor } from "@/lib/money";
 import type { PackageLifecycleAction } from "@/types/api/super-admin.types";
 import { resolvePackageEntitlement } from "@/components/super-admin/package-display.contract";
 
@@ -96,13 +97,13 @@ export default function PackageDetailPage() {
               <DetailSection title="Pricing">
                 <DetailRow
                   label="Monthly price"
-                  value={`${state.data.currency} ${state.data.monthlyPrice.toFixed(2)}`}
+                  value={formatMoneyMinor(state.data.monthlyPriceCents ?? state.data.monthlyPrice, state.data.currency)}
                 />
                 <DetailRow
                   label="Annual price"
                   value={
                     state.data.annualPrice > 0
-                      ? `${state.data.currency} ${state.data.annualPrice.toFixed(2)}`
+                      ? formatMoneyMinor(state.data.annualPriceCents ?? state.data.annualPrice, state.data.currency)
                       : "Not set"
                   }
                 />
@@ -255,11 +256,11 @@ export default function PackageDetailPage() {
                           : null}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
-                        {version.currency ?? state.data!.currency} {version.monthlyPrice.toFixed(2)}
+                        {formatMoneyMinor(version.monthlyPriceCents ?? version.monthlyPrice, version.currency ?? state.data!.currency)}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
                         {version.annualPrice > 0
-                          ? `${version.currency ?? state.data!.currency} ${version.annualPrice.toFixed(2)}`
+                          ? formatMoneyMinor(version.annualPriceCents ?? version.annualPrice, version.currency ?? state.data!.currency)
                           : "—"}
                       </td>
                       <td className="px-3 py-3">

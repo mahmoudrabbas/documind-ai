@@ -198,24 +198,24 @@ export function PackageForm({ existing, onSaved }: {
           </legend>
           <div className="grid min-w-0 gap-4 md:grid-cols-4">
             <label className={labelClass}>
-              Monthly price
+              Monthly price (minor units)
               <input
                 name="monthlyPrice"
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 required
                 defaultValue={existing?.monthlyPrice ?? 0}
                 className={input}
               />
             </label>
             <label className={labelClass}>
-              Annual price
+              Annual price (minor units)
               <input
                 name="annualPrice"
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 defaultValue={existing?.annualPrice ?? 0}
                 className={input}
               />

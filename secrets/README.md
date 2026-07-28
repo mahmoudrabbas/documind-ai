@@ -17,6 +17,8 @@ cp secrets/api_email_verification_secret.txt.example secrets/api_email_verificat
 cp secrets/api_password_reset_secret.txt.example secrets/api_password_reset_secret.txt
 cp secrets/api_smtp_pass.txt.example secrets/api_smtp_pass.txt
 cp secrets/api_super_admin_bootstrap_key.txt.example secrets/api_super_admin_bootstrap_key.txt
+cp secrets/stripe_secret_key.txt.example secrets/stripe_secret_key.txt
+cp secrets/stripe_webhook_secret.txt.example secrets/stripe_webhook_secret.txt
 cp secrets/worker_mongodb_uri.txt.example secrets/worker_mongodb_uri.txt
 cp secrets/worker_redis_url.txt.example secrets/worker_redis_url.txt
 ```
@@ -80,6 +82,12 @@ Everything else can remain unchanged.
 ```bash
 docker compose up --build -d
 ```
+
+For local Stripe Checkout tests, run `npm run stripe:listen` in another terminal.
+The `whsec_...` value printed by the Stripe CLI must exactly match
+`secrets/stripe_webhook_secret.txt`. Recreate the API container after changing
+the secret with `docker compose up -d --force-recreate api`. Do not commit real
+Stripe keys or webhook secrets.
 
 ### Automatic Replica Set Initialization
 
