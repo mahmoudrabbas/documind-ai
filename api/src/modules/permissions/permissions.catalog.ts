@@ -34,6 +34,8 @@ export const Permission = {
   ANALYTICS_EXPORT: "analytics:export",
   KNOWLEDGE_GAPS_READ: "knowledge-gaps:read",
   KNOWLEDGE_GAPS_UPDATE: "knowledge-gaps:update",
+  FEEDBACK_CREATE: "feedback:create",
+  FEEDBACK_READ: "feedback:read",
   COMPANY_SETTINGS_READ: "company-settings:read",
   COMPANY_SETTINGS_UPDATE: "company-settings:update",
   BILLING_READ: "billing:read",
@@ -53,6 +55,7 @@ export type PermissionGroup =
   | "chat"
   | "analytics"
   | "knowledge-gaps"
+  | "feedback"
   | "company-settings"
   | "billing"
   | "imports"
@@ -119,6 +122,8 @@ const definitions: readonly PermissionDefinitionSource[] = [
   { id: Permission.ANALYTICS_EXPORT, group: "analytics", label: "Export Analytics", description: "Export tenant analytics", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds"] },
   { id: Permission.KNOWLEDGE_GAPS_READ, group: "knowledge-gaps", label: "View Knowledge Gaps", description: "View tenant knowledge gaps", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds", "documentCategories", "documentClassifications"] },
   { id: Permission.KNOWLEDGE_GAPS_UPDATE, group: "knowledge-gaps", label: "Resolve Knowledge Gaps", description: "Update tenant knowledge gaps", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ["departmentIds", "documentCategories", "documentClassifications"] },
+  { id: Permission.FEEDBACK_CREATE, group: "feedback", label: "Submit Feedback", description: "Submit feedback on AI responses", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
+  { id: Permission.FEEDBACK_READ, group: "feedback", label: "View Feedback", description: "View submitted feedback", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
   { id: Permission.COMPANY_SETTINGS_READ, group: "company-settings", label: "View Company Settings", description: "View tenant settings", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
   { id: Permission.COMPANY_SETTINGS_UPDATE, group: "company-settings", label: "Edit Company Settings", description: "Edit tenant settings", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: false, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
   { id: Permission.BILLING_READ, group: "billing", label: "View Billing", description: "View tenant billing", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
@@ -160,6 +165,7 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   chat: "Chat",
   analytics: "Analytics",
   "knowledge-gaps": "Knowledge Gaps",
+  feedback: "Feedback",
   "company-settings": "Company Settings",
   billing: "Billing",
   imports: "Imports",

@@ -24,6 +24,8 @@ export const Permission = {
   ANALYTICS_EXPORT: "analytics:export",
   KNOWLEDGE_GAPS_READ: "knowledge-gaps:read",
   KNOWLEDGE_GAPS_UPDATE: "knowledge-gaps:update",
+  FEEDBACK_CREATE: "feedback:create",
+  FEEDBACK_READ: "feedback:read",
   COMPANY_SETTINGS_READ: "company-settings:read",
   COMPANY_SETTINGS_UPDATE: "company-settings:update",
   BILLING_READ: "billing:read",

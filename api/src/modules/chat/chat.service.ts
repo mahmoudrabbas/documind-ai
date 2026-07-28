@@ -117,14 +117,19 @@ export class ChatService {
           intentResult.language === "ar"
             ? "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
             : "This request cannot be processed due to safety policies.";
-        await chatRepo.addMessage(
+        const msgDoc = await chatRepo.addMessage(
           tenantIdStr,
           conversationId,
           "assistant",
           unsafeAnswer,
           currentCount + 1,
         );
-        return { answer: unsafeAnswer, sources: [], conversationId };
+        return {
+          messageId: msgDoc._id.toString(),
+          answer: unsafeAnswer,
+          sources: [],
+          conversationId,
+        };
       }
 
       if (
@@ -138,14 +143,19 @@ export class ChatService {
             ? intentResult.clarification.messageAr
             : intentResult.clarification.messageEn;
         const answer = clarifyMsg ?? "Could you please clarify your question?";
-        await chatRepo.addMessage(
+        const msgDoc = await chatRepo.addMessage(
           tenantIdStr,
           conversationId,
           "assistant",
           answer,
           currentCount + 1,
         );
-        return { answer, sources: [], conversationId };
+        return {
+          messageId: msgDoc._id.toString(),
+          answer,
+          sources: [],
+          conversationId,
+        };
       }
     } catch (err) {
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
@@ -241,7 +251,7 @@ export class ChatService {
       const answer = response.choices[0]?.message?.content ?? "";
 
       // 10. Save assistant response
-      await chatRepo.addMessage(
+      const assistantDoc = await chatRepo.addMessage(
         tenantIdStr,
         conversationId,
         "assistant",
@@ -273,7 +283,12 @@ export class ChatService {
         },
       });
 
-      return { answer, sources, conversationId };
+      return {
+        messageId: assistantDoc._id.toString(),
+        answer,
+        sources,
+        conversationId,
+      };
     } catch (err) {
       logger.error({ err, tenantId: tenantIdStr }, "LLM completion failed");
       throw new AppError(

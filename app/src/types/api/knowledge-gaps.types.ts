@@ -22,7 +22,7 @@ export interface GapAuditRecord {
   changes?: Record<string, unknown>;
 }
 
-export interface KnowledgeGapResponse {
+export interface KnowledgeGap {
   id: string;
   tenantId: string;
   status: GapStatus;
@@ -53,13 +53,14 @@ export interface KnowledgeGapResponse {
   updatedAt: string;
 }
 
-export interface GapOccurrenceResponse {
+export interface GapOccurrence {
   id: string;
   tenantId: string;
   gapId: string;
   question: string;
   normalizedIntent?: string | null;
   outcome: GapCandidateOutcome;
+  category?: string | null;
   confidence: number;
   evidenceSummaryIds?: string[];
   conversationId?: string | null;
@@ -70,7 +71,7 @@ export interface GapOccurrenceResponse {
   createdAt: string;
 }
 
-export interface GapReevaluationResponse {
+export interface GapReevaluation {
   id: string;
   tenantId: string;
   gapId: string;
@@ -83,12 +84,25 @@ export interface GapReevaluationResponse {
   createdAt: string;
 }
 
-export interface GapMetricsResponse {
+export interface GapMetrics {
   totalGaps: number;
   byStatus: Record<GapStatus, number>;
   bySeverity: Record<GapSeverity, number>;
   bySource: Record<GapSource, number>;
   byDepartment: Record<string, number>;
-  topUnresolved: KnowledgeGapResponse[];
+  topUnresolved: KnowledgeGap[];
   resolutionRate: number;
+}
+
+export interface ListGapsQuery {
+  page?: number;
+  pageSize?: number;
+  status?: GapStatus;
+  severity?: GapSeverity;
+  source?: GapSource;
+  department?: string;
+  assigneeId?: string;
+  search?: string;
+  sortBy?: "createdAt" | "updatedAt" | "occurrenceCount" | "severity";
+  sortOrder?: "asc" | "desc";
 }

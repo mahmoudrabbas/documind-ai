@@ -58,6 +58,8 @@ import { ChatService } from "./modules/chat/chat.service.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter } from "./providers/llm/index.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
+import knowledgeGapsRoutes from "./modules/knowledge-gaps/knowledge-gaps.routes.js";
+import feedbackRoutes from "./modules/feedback/feedback.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
@@ -182,6 +184,8 @@ app.use("/documents", processingRoutes);
 app.use("/documents", processingProgressRoutes);
 app.use("/intent-query", intentQueryRoutes);
 app.use("/document-taxonomy", documentTaxonomyRoutes);
+app.use("/knowledge-gaps", knowledgeGapsRoutes);
+app.use("/feedback", feedbackRoutes);
 app.use("/entitlement", entitlementRoutes);
 app.use("/super-admin/entitlement", entitlementAdminRoutes);
 

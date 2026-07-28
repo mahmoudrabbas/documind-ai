@@ -9,6 +9,7 @@ export interface ChatSource {
 }
 
 export interface ChatResponse {
+  messageId: string;
   answer: string;
   sources: ChatSource[];
   conversationId: string;
