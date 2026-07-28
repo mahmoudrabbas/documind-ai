@@ -37,6 +37,10 @@ test("checkout routes exist for GET sessions and subscription status", async () 
     source.includes('"/billing-portal"'),
     "POST billing-portal route exists",
   );
+  assert.ok(
+    source.includes('"/sessions/:sessionId/sync"'),
+    "Authenticated Checkout Session recovery route exists",
+  );
 });
 
 test("checkout controller creates checkout session", async () => {
@@ -56,6 +60,10 @@ test("checkout controller creates checkout session", async () => {
   assert.ok(
     source.includes("createBillingPortalSession"),
     "Controller delegates billing portal to service",
+  );
+  assert.ok(
+    source.includes("synchronizeCheckoutSession"),
+    "Controller delegates Checkout Session recovery to service",
   );
 });
 

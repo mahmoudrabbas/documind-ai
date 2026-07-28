@@ -9,20 +9,19 @@ import {
   listCheckoutSessions,
   getSubscriptionStatus,
   createBillingPortalSession,
+  synchronizeCheckoutSession,
 } from "./checkout.service.js";
 import {
   createCheckoutSchema,
   checkoutIdSchema,
   listCheckoutSchema,
+  providerSessionIdSchema,
   parse,
 } from "./checkout.validator.js";
 import { getPaymentProvider } from "./payment-provider-loader.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import { FakePaymentProvider } from "../billing/ports/fakes/fake-payment-provider.js";
-import { transitionSubscription } from "../billing/subscription.service.js";
-import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
-import SubscriptionModel from "../../db/models/subscription.model.js";
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -88,20 +87,27 @@ export const createCheckoutController = endpoint(async (req, res) => {
   );
 
   if (provider instanceof FakePaymentProvider) {
-    provider.markSessionComplete(result.providerSessionId);
-
     try {
-      const sub = await SubscriptionModel.findOne({ tenantId }).exec();
-      if (sub && ["INCOMPLETE", "TRIALING"].includes(sub.status)) {
-        await transitionSubscription(tenantId, "ACTIVE", {
-          triggeredBy: "provider_event",
-          providerEventId: `fake_${result.providerSessionId}`,
-        });
-      }
-
-      await CheckoutSessionModel.updateOne(
-        { providerSessionId: result.providerSessionId },
-        { $set: { status: "completed", completedAt: new Date() } },
+      const fakeSession = provider.sessions.find(
+        (session) => session.id === result.providerSessionId,
+      );
+      if (!fakeSession) throw new Error("Fake Checkout Session was not found");
+      const now = new Date();
+      provider.attachSubscriptionToSession(result.providerSessionId, {
+        id: `sub_fake_${result.providerSessionId}`,
+        customerId: fakeSession.customerId,
+        status: "active",
+        metadata: { ...fakeSession.subscriptionMetadata },
+        priceId: fakeSession.priceId,
+        currentPeriodStart: now,
+        currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+      });
+      await synchronizeCheckoutSession(
+        result.providerSessionId,
+        tenantId,
+        provider,
+        operationContext(req),
       );
     } catch (err) {
       logger.warn({ err }, "Failed to auto-complete fake checkout session");
@@ -115,6 +121,18 @@ export const checkoutStatusController = endpoint((req) => {
   const tenantId = tenant(req);
   const params = parse(checkoutIdSchema, req.params);
   return getCheckoutStatus(params.checkoutId, tenantId, operationContext(req));
+});
+
+export const synchronizeCheckoutSessionController = endpoint(async (req) => {
+  const tenantId = tenant(req);
+  const params = parse(providerSessionIdSchema, req.params);
+  const provider = await getPaymentProvider();
+  return synchronizeCheckoutSession(
+    params.sessionId,
+    tenantId,
+    provider,
+    operationContext(req),
+  );
 });
 
 export const listCheckoutSessionsController = endpoint((req) => {

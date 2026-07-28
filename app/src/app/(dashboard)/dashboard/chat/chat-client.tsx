@@ -10,6 +10,7 @@ import {
   deleteConversation,
 } from "@/services/chat.service";
 import type { ChatSource, ConversationListItem } from "@/types/api/chat.types";
+import { getChatErrorPresentation } from "./chat-error";
 
 type Message = {
   id: string;
@@ -42,6 +43,7 @@ export function ChatClient() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [pdfViewer, setPdfViewer] = useState<{
@@ -79,6 +81,20 @@ export function ChatClient() {
     }, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (retryAfterSeconds === null) return;
+    if (retryAfterSeconds <= 0) {
+      setRetryAfterSeconds(null);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setRetryAfterSeconds((remaining) =>
+        remaining === null ? null : remaining - 1,
+      );
+    }, 1000);
+    return () => window.clearTimeout(timeout);
+  }, [retryAfterSeconds]);
 
   const loadMessages = useCallback(async (conversationId: string) => {
     try {
@@ -138,7 +154,7 @@ export function ChatClient() {
 
   async function handleSend(text?: string) {
     const question = (text || input).trim();
-    if (!question || isTyping) return;
+    if (!question || isTyping || retryAfterSeconds !== null) return;
 
     const convId = activeConversation;
     const userMsg: Message = {
@@ -221,9 +237,11 @@ export function ChatClient() {
         );
       }
     } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to get response. Please try again.";
-      setError(errorMsg);
+      const presentation = getChatErrorPresentation(err);
+      setError(presentation.message);
+      if (presentation.retryAfterSeconds !== null) {
+        setRetryAfterSeconds(presentation.retryAfterSeconds);
+      }
       const targetId = convId || activeConversation;
       setMessages((prev) => ({
         ...prev,
@@ -232,7 +250,7 @@ export function ChatClient() {
           {
             id: `e-${++msgIdCounter.current}`,
             role: "assistant",
-            content: `Sorry, something went wrong: ${errorMsg}`,
+            content: presentation.message,
           },
         ],
       }));
@@ -328,6 +346,7 @@ export function ChatClient() {
                   <button
                     key={q}
                     onClick={() => handleSend(q)}
+                    disabled={isTyping || retryAfterSeconds !== null}
                     className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
                   >
                     {q}
@@ -445,6 +464,7 @@ export function ChatClient() {
         {error && (
           <div className="border-t border-error/20 bg-error/5 px-4 py-2 text-center text-xs text-error">
             {error}
+            {retryAfterSeconds !== null && ` Retry in ${retryAfterSeconds}s.`}
           </div>
         )}
 
@@ -461,13 +481,14 @@ export function ChatClient() {
                     handleSend();
                   }
                 }}
+                disabled={retryAfterSeconds !== null}
                 placeholder="Ask about your documents..."
                 rows={1}
                 className="max-h-32 min-h-[24px] flex-1 resize-none bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/50"
               />
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || isTyping}
+                disabled={!input.trim() || isTyping || retryAfterSeconds !== null}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <span className="material-symbols-outlined text-[20px]">

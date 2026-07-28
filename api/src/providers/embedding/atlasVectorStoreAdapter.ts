@@ -6,6 +6,14 @@ import { logger } from "../../common/logger/logger.js";
 const ATLAS_INDEX_NAME = "vidx_chunk_embeddings_v1";
 const COLLECTION_NAME = "chunkembeddings";
 
+export function buildAtlasVectorFilter(filter: AdapterFilter): Document {
+  const atlasFilter: Document = { tenantId: new ObjectId(filter.tenantId) };
+  if (filter.classification) atlasFilter.classification = { $in: filter.classification.$in };
+  if (filter.department) atlasFilter.department = { $in: filter.department.$in };
+  if (filter.documentIds?.length) atlasFilter.documentId = { $in: filter.documentIds.map((id) => new ObjectId(id)) };
+  return atlasFilter;
+}
+
 export class AtlasVectorStoreAdapter implements VectorStoreAdapter {
   readonly providerKey = "atlas-vector-search";
 
@@ -20,19 +28,7 @@ export class AtlasVectorStoreAdapter implements VectorStoreAdapter {
     const db = await this.getDb();
     const collection = db.collection(COLLECTION_NAME);
 
-    const atlasFilter: Document = {
-      tenantId: new ObjectId(query.filter.tenantId),
-    };
-
-    if (query.filter.classification) {
-      atlasFilter.classification = { $in: query.filter.classification.$in };
-    }
-    if (query.filter.department) {
-      atlasFilter.department = { $in: query.filter.department.$in };
-    }
-    if (query.filter.documentIds && query.filter.documentIds.length > 0) {
-      atlasFilter.documentId = { $in: query.filter.documentIds.map((id) => new ObjectId(id)) };
-    }
+    const atlasFilter = buildAtlasVectorFilter(query.filter);
 
     const pipeline: Document[] = [
       {

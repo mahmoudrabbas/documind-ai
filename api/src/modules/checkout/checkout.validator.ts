@@ -17,6 +17,12 @@ export const checkoutIdSchema = z
   })
   .strict();
 
+export const providerSessionIdSchema = z
+  .object({
+    sessionId: z.string().regex(/^cs_(?:test_|live_)?[A-Za-z0-9_]+$/, "Invalid Checkout Session identifier"),
+  })
+  .strict();
+
 export const listCheckoutSchema = z
   .object({
     page: z.coerce.number().int().positive().default(1),

@@ -271,6 +271,8 @@ async function main() {
     fusionEngine,
     filterCompiler,
     repository,
+    resolveAccessContext: async (context) => ({ ...context, requiredAction: "use_in_ai" }),
+    authorizeDocumentForAi: async () => {},
   });
   console.log("  ✓ Service wired with fake adapters\n");
 

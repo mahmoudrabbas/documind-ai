@@ -6,6 +6,25 @@ import { logger } from "../../common/logger/logger.js";
 const ATLAS_TEXT_INDEX_NAME = "kidx_chunk_text_v1";
 const COLLECTION_NAME = "documentchunks";
 
+export function buildAtlasKeywordCompoundFilter(filter: AdapterFilter): Document[] {
+  const compoundFilter: Document[] = [{ in: { path: "tenantId", value: [new ObjectId(filter.tenantId)] } }];
+  if (filter.documentIds?.length) compoundFilter.push({ in: { path: "documentId", value: filter.documentIds.map((id) => new ObjectId(id)) } });
+  if (filter.classification) compoundFilter.push({ in: { path: "classification", value: filter.classification.$in } });
+  if (filter.department) compoundFilter.push({ in: { path: "department", value: filter.department.$in } });
+  if (filter.category) compoundFilter.push({ in: { path: "category", value: filter.category.$in } });
+  return compoundFilter;
+}
+
+export function buildAtlasKeywordSearchStage(queryText: string, filter: AdapterFilter): Document {
+  return {
+    index: ATLAS_TEXT_INDEX_NAME,
+    compound: {
+      must: [{ text: { query: queryText, path: "text" } }],
+      filter: buildAtlasKeywordCompoundFilter(filter),
+    },
+  };
+}
+
 export class AtlasKeywordSearchAdapter implements KeywordAdapter {
   readonly providerKey = "atlas-search";
 
@@ -20,67 +39,9 @@ export class AtlasKeywordSearchAdapter implements KeywordAdapter {
     const db = await this.getDb();
     const collection = db.collection(COLLECTION_NAME);
 
-    const compoundFilter: Document[] = [
-      { in: { path: "tenantId", value: [new ObjectId(query.filter.tenantId)] } },
-    ];
-
-    if (query.filter.documentIds && query.filter.documentIds.length > 0) {
-      compoundFilter.push({
-        in: {
-          path: "documentId",
-          value: query.filter.documentIds.map((id) => new ObjectId(id)),
-        },
-      });
-    }
-
-    if (query.filter.classification) {
-      compoundFilter.push({
-        in: {
-          path: "classification",
-          value: query.filter.classification.$in,
-        },
-      });
-    }
-
-    if (query.filter.department) {
-      compoundFilter.push({
-        in: {
-          path: "department",
-          value: query.filter.department.$in,
-        },
-      });
-    }
-
-    if (query.filter.category) {
-      compoundFilter.push({
-        in: {
-          path: "category",
-          value: query.filter.category.$in,
-        },
-      });
-    }
-
-    if (query.filter.allowAiUse === false) {
-      compoundFilter.push({
-        equals: {
-          path: "allowAiUse",
-          value: false,
-        },
-      });
-    }
-
     const pipeline: Document[] = [
       {
-        $search: {
-          index: ATLAS_TEXT_INDEX_NAME,
-          text: {
-            query: query.queryText,
-            path: "text",
-          },
-          compound: {
-            filter: compoundFilter,
-          },
-        },
+        $search: buildAtlasKeywordSearchStage(query.queryText, query.filter),
       },
       { $limit: query.topK },
       {

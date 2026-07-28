@@ -267,6 +267,16 @@ test("only one owner rule is permitted", async () => {
   );
 });
 
+test("the original owner rule cannot be replaced by a new owner rule", async () => {
+  await classification(currentClassificationId, "Internal", "restricted");
+  const current = ownerPolicy();
+  const draft = { rules: [{ ...current.rules[0]!, ruleId: "replacement-owner" }] } as { rules: DocumentAccessPolicy["rules"] };
+  await assert.rejects(
+    serviceWithState(current, currentClassificationId).preview(documentId.toString(), previewInput(current, undefined, draft), { tenantId: tenantId.toString(), actorId: ownerId.toString() }),
+    (error: unknown) => error instanceof AppError && error.code === "DOCUMENT_POLICY_OWNER_RULE_PROTECTED",
+  );
+});
+
 test("delegated non-owner manager cannot change taxonomy", async () => {
   await classification(currentClassificationId, "Internal", "restricted");
   const newCls = await DocumentClassificationModel.create({ tenantId, name: "New", normalizedName: "new", level: "confidential" as const, status: "active", createdBy: ownerId, updatedBy: ownerId });

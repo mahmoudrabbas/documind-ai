@@ -112,6 +112,14 @@ docker compose up -d --force-recreate api
 container and default to the local frontend. Never commit Stripe secret keys or
 webhook signing secrets.
 
+The Checkout success page performs a read-only, tenant-verified synchronization
+using the returned `session_id`. This recovers the initial subscription when a
+local webhook was missed; it never creates a charge, PaymentIntent, Checkout
+Session, or subscription. Stripe CLI must still remain running while testing
+asynchronous lifecycle events such as renewals, payment failures, cancellation,
+and subscription updates. API startup does not launch or depend on Stripe CLI,
+and webhook signature verification remains enabled.
+
 Stop the project:
 
 ```bash

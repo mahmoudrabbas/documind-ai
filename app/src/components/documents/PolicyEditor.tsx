@@ -10,10 +10,7 @@ import { DOCUMENT_ACCESS_ACTIONS, type ActivePolicy, type PolicyDraft, type Poli
 import * as policyApi from "@/services/document-policy.service";
 import type { PolicyEditorSubject, PolicyEditorClassification } from "@/types/api/document-policy.types";
 import { useAuth } from "@/providers/auth-provider";
-
-function draftFrom(policy: ActivePolicy): PolicyDraft {
-  return { rules: policy.rules.map((rule) => ({ ...rule, actions: [...rule.actions], subject: { ...rule.subject } })), inherits: policy.inherits ?? null, effectiveFrom: policy.effectiveFrom, effectiveUntil: policy.effectiveUntil ?? null, reason: policy.provenance.reason ?? null };
-}
+import { createEditablePolicyRule, draftFromPolicy, EDITABLE_POLICY_SUBJECT_TYPES, IDENTIFIED_POLICY_SUBJECT_TYPES, immutableOwnerRuleId, OWNER_MINIMUM_ACTIONS, policyRulesInvalid } from "@/lib/document-policy-editor";
 function ruleId() { const value = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`; return `rule-${value}`.slice(0, 120); }
 
 const ACTION_GROUPS = [
@@ -37,10 +34,18 @@ const ACTION_LABELS: Record<string, string> = {
   manage_access: "Manage access",
 };
 
+const SUBJECT_LABELS: Record<PolicySubjectType, string> = {
+  user: "User",
+  custom_role: "Role",
+  department: "Department",
+  owner: "Owner",
+  tenant_member: "All tenant users",
+};
+
 export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, onApplied, onClose }: { documentId: string; active: ActivePolicy; taxonomy: PolicyTaxonomySummary; onApplied: () => Promise<void>; onClose: () => void }) {
   const auth = useAuth();
   const currentUserId = auth.status === "authenticated" ? auth.user.id : null;
-  const [draft, setDraft] = useState<PolicyDraft>(() => draftFrom(active));
+  const [draft, setDraft] = useState<PolicyDraft>(() => draftFromPolicy(active));
   const [taxonomy, setTaxonomy] = useState<PolicyTaxonomySelection>(() => ({ classificationId: currentTaxonomy.classificationId, categoryId: currentTaxonomy.categoryId, departmentId: currentTaxonomy.departmentId }));
   const [pointer, setPointer] = useState({ policyId: active.policyId, policyVersion: active.policyVersion });
   const [preview, setPreview] = useState<PolicyPreview | null>(null);
@@ -60,6 +65,7 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
   const [optionsError, setOptionsError] = useState(false);
   const [optionsReload, setOptionsReload] = useState(0);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const ownerRuleId = useMemo(() => immutableOwnerRuleId(active), [active]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -80,20 +86,11 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
   }, [documentId, optionsReload]);
 
   const isOwner = currentUserId != null && documentOwnerId != null && currentUserId === documentOwnerId;
-  const OWNER_MINIMUM_ACTIONS = useMemo(() => new Set(["discover", "read", "download"]), []);
-
   const invalid = useMemo(() => {
     if (!taxonomy.classificationId || optionsLoading || optionsError || draft.rules.length > 200 || draft.reason && draft.reason.length > 500) return true;
     if (draft.effectiveFrom && draft.effectiveUntil && Date.parse(draft.effectiveUntil) <= Date.parse(draft.effectiveFrom)) return true;
-    const semantics = new Set<string>();
-    for (const rule of draft.rules) {
-      if (!rule.actions.length || new Set(rule.actions).size !== rule.actions.length) return true;
-      if (["user", "custom_role", "department"].includes(rule.subject.type) && !rule.subject.id) return true;
-      const semantic = JSON.stringify([rule.effect, rule.subject.type, rule.subject.id ?? null, [...rule.actions].sort()]);
-      if (semantics.has(semantic)) return true; semantics.add(semantic);
-    }
-    return false;
-  }, [draft, taxonomy.classificationId, optionsError, optionsLoading]);
+    return policyRulesInvalid(draft, ownerRuleId);
+  }, [draft, ownerRuleId, taxonomy.classificationId, optionsError, optionsLoading]);
 
   function edit(next: PolicyDraft) { setDraft(next); setPreview(null); setIdempotencyKey(null); setError(null); setAcknowledged(false); }
   function editTaxonomy(next: PolicyTaxonomySelection) { setTaxonomy(next); setPreview(null); setIdempotencyKey(null); setError(null); setAcknowledged(false); }
@@ -182,8 +179,8 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
           <div className="space-y-4">
             <h3 className="text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">Access rules</h3>
             {draft.rules.map((rule, index) => {
-              const ownerReadOnly = !isOwner && rule.subject.type === "owner";
-              const isOwnerRule = rule.subject.type === "owner";
+              const isOwnerRule = rule.ruleId === ownerRuleId;
+              const ownerReadOnly = !isOwner && isOwnerRule;
               return (
                 <fieldset key={rule.ruleId} className={`rounded-xl border p-4 sm:p-5 ${ownerReadOnly ? "border-primary/20 bg-primary/[0.03]" : "border-outline-variant/40"}`}>
                   <legend className="px-2 text-label-md font-semibold text-on-surface">
@@ -202,11 +199,11 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
 
                   <div className="grid gap-3 sm:grid-cols-3">
                     <Select label="Effect" value={rule.effect} disabled={ownerReadOnly} onChange={(event) => updateRule(index, { effect: event.target.value as "allow" | "deny" })} options={ownerReadOnly ? [{ value: rule.effect, label: rule.effect === "allow" ? "Allow" : "Deny" }] : [{ value: "allow", label: "Allow" }, { value: "deny", label: "Deny" }]} />
-                    <Select label="Subject" value={rule.subject.type} disabled={ownerReadOnly || isOwnerRule} onChange={(event) => { const type = event.target.value as PolicySubjectType; updateRule(index, { subject: { type } }); }} options={(ownerReadOnly || isOwnerRule) ? [{ value: rule.subject.type, label: rule.subject.type === "owner" ? "Owner" : rule.subject.type.replaceAll("_", " ") }] : (["user", "custom_role", "department", "owner", "tenant_member"] as const).map((type) => ({ value: type, label: type.replaceAll("_", " ") }))} />
+                    <Select label="Subject" value={rule.subject.type} disabled={isOwnerRule} onChange={(event) => { const type = event.target.value as PolicySubjectType; updateRule(index, { subject: { type } }); }} options={isOwnerRule ? [{ value: "owner", label: "Owner" }] : EDITABLE_POLICY_SUBJECT_TYPES.map((type) => ({ value: type, label: SUBJECT_LABELS[type] }))} />
                     {ownerReadOnly ? (
                       <div className="flex items-center text-body-sm text-on-surface-variant">Protected owner rule — only the document owner can modify it.</div>
-                    ) : ["user", "custom_role", "department"].includes(rule.subject.type) ? (
-                      <Select label="Subject record" value={rule.subject.id ?? ""} onChange={(event) => updateRule(index, { subject: { ...rule.subject, id: event.target.value || undefined } })} options={[{ value: "", label: "Select…" }, ...subjectOptions(rule.subject.type).map((option) => ({ value: option.id, label: option.name }))]} />
+                    ) : IDENTIFIED_POLICY_SUBJECT_TYPES.has(rule.subject.type) ? (
+                      <SearchableSubjectSelect ruleId={rule.ruleId} type={rule.subject.type} value={rule.subject.id ?? ""} options={subjectOptions(rule.subject.type)} onChange={(id) => updateRule(index, { subject: { ...rule.subject, id: id || undefined } })} />
                     ) : (
                       <div className="flex items-center text-body-sm text-on-surface-variant">No subject ID required.</div>
                     )}
@@ -253,7 +250,7 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
             })}
           </div>
 
-          <Button variant="outline" disabled={draft.rules.length >= 200} onClick={() => edit({ ...draft, rules: [...draft.rules, { ruleId: ruleId(), effect: "allow", subject: { type: "owner" }, actions: ["read"] }] })}>
+          <Button variant="outline" disabled={draft.rules.length >= 200} onClick={() => edit({ ...draft, rules: [...draft.rules, createEditablePolicyRule(ruleId())] })}>
             <span className="material-symbols-outlined me-1 text-[16px]" aria-hidden="true">add_circle_outline</span>
             Add rule
           </Button>
@@ -324,6 +321,23 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SearchableSubjectSelect({ ruleId: id, type, value, options, onChange }: { ruleId: string; type: PolicySubjectType; value: string; options: PolicyEditorSubject[]; onChange: (value: string) => void }) {
+  const [query, setQuery] = useState("");
+  const label = SUBJECT_LABELS[type].toLowerCase();
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filtered = normalizedQuery ? options.filter((option) => option.name.toLocaleLowerCase().includes(normalizedQuery)) : options;
+
+  return (
+    <div className="space-y-2">
+      <label className="flex flex-col gap-1.5" htmlFor={`${id}-subject-search`}>
+        <span className="text-label-md text-on-surface-variant">Search {label}</span>
+        <input id={`${id}-subject-search`} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search tenant ${label}s…`} className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface placeholder:text-outline focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      </label>
+      <Select label={`Selected ${label}`} value={value} errorMessage={!value ? `Select a ${label}.` : undefined} onChange={(event) => onChange(event.target.value)} options={[{ value: "", label: "Select…" }, ...filtered.map((option) => ({ value: option.id, label: option.name }))]} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ export default defineConfig({
     include: [
       "src/modules/billing/**/*.test.ts",
       "src/modules/checkout/__tests__/checkout.service.test.ts",
+      "src/modules/checkout/__tests__/checkout-session-sync.service.test.ts",
       "src/modules/reconciliation/__tests__/provider-reconciliation.service.test.ts",
       "src/modules/auth/__tests__/*.test.ts",
       "src/db/__tests__/*.test.ts",

@@ -40,6 +40,8 @@ export interface RetrievalServiceDeps {
     actorId: string,
     documentIds: string[],
   ) => Promise<string[]>;
+  resolveAccessContext: (context: AccessContext) => Promise<AccessContext>;
+  authorizeDocumentForAi: (context: AccessContext, documentId: string) => Promise<void>;
 }
 
 export interface HybridRetrievalService {
@@ -180,9 +182,6 @@ async function revalidateAndHydrate(
     const chunk = chunkMap.get(candidate.chunkId);
     if (!chunk) continue;
 
-    // Re-validate: allowAiUse must be true
-    if (chunk.allowAiUse === false) continue;
-
     // Re-validate: classification must be in the mandatory filter's allowed set
     if (mandatoryFilter.classification) {
       const allowedSet = mandatoryFilter.classification.$in;
@@ -220,6 +219,45 @@ async function revalidateAndHydrate(
   }
 
   return hydrated;
+}
+
+async function authorizeCandidateIds(
+  deps: RetrievalServiceDeps,
+  context: AccessContext,
+  candidates: readonly { chunkId: string }[],
+  traceId: string,
+): Promise<Set<string>> {
+  if (candidates.length === 0) return new Set();
+  const chunks = await deps.repository.findChunksByIds(context.tenantId, [...new Set(candidates.map((candidate) => candidate.chunkId))]);
+  const chunksByDocument = new Map<string, string[]>();
+  for (const chunk of chunks) {
+    const documentId = chunk.documentId.toString();
+    const chunkIds = chunksByDocument.get(documentId) ?? [];
+    chunkIds.push(chunk._id.toString());
+    chunksByDocument.set(documentId, chunkIds);
+  }
+
+  const authorizedChunkIds = new Set<string>();
+  await Promise.all([...chunksByDocument].map(async ([documentId, chunkIds]) => {
+    try {
+      await deps.authorizeDocumentForAi(context, documentId);
+      for (const chunkId of chunkIds) authorizedChunkIds.add(chunkId);
+      logger.info({ traceId, userId: context.actorId, tenantId: context.tenantId, documentId, requiredAction: "use_in_ai", authorizationResult: "allowed", reasonCode: "ACCESS_ALLOWED" }, "RAG document authorization");
+    } catch (error) {
+      const reasonCode = error instanceof AppError ? error.code : "AUTHORIZATION_FAILED";
+      logger.info({ traceId, userId: context.actorId, tenantId: context.tenantId, documentId, requiredAction: "use_in_ai", authorizationResult: "denied", reasonCode }, "RAG document authorization");
+    }
+  }));
+  return authorizedChunkIds;
+}
+
+function retainAuthorized<T extends { chunkId: string }>(candidates: T[], authorizedChunkIds: Set<string>): T[] {
+  return candidates.filter((candidate) => authorizedChunkIds.has(candidate.chunkId));
+}
+
+async function resolveAuthorizationContext(deps: RetrievalServiceDeps, context: AccessContext): Promise<AccessContext> {
+  const resolved = await deps.resolveAccessContext(context);
+  return { ...resolved, requiredAction: "use_in_ai" };
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +370,9 @@ export function createRetrievalService(
       const totalStartTime = Date.now();
 
       validateQuery(query);
+      const authorizationContext = await resolveAuthorizationContext(deps, context);
       const vector = await resolveQueryEmbedding(deps, query);
-      const { mandatory, merged } = await compileFilters(deps, query, context);
+      const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
       // Run vector + keyword search in parallel with individual timing
       const vectorStartTime = Date.now();
@@ -394,6 +433,15 @@ export function createRetrievalService(
         );
       }
 
+      const authorizedChunkIds = await authorizeCandidateIds(
+        deps,
+        authorizationContext,
+        [...vectorResults, ...keywordResults],
+        traceId,
+      );
+      vectorResults = retainAuthorized(vectorResults, authorizedChunkIds);
+      keywordResults = retainAuthorized(keywordResults, authorizedChunkIds);
+
       // Fuse available results
       const fusionStartTime = Date.now();
       const resultsMap = new Map<
@@ -409,14 +457,14 @@ export function createRetrievalService(
       // Re-validate and hydrate
       const hydrated = await revalidateAndHydrate(
         deps,
-        context.tenantId,
+        authorizationContext.tenantId,
         fused,
         mandatory,
-        context,
+        authorizationContext,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
-      const filterSummary = buildFilterSummary(context, query.filter);
+      const filterSummary = buildFilterSummary(authorizationContext, query.filter);
       const diagnostics = buildDiagnostics({
         traceId,
         vectorLatencyMs,
@@ -431,7 +479,7 @@ export function createRetrievalService(
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
-        context,
+        context: authorizationContext,
         traceId,
         method: "hybrid",
         candidateCount: hydrated.length,
@@ -457,8 +505,9 @@ export function createRetrievalService(
       const totalStartTime = Date.now();
 
       validateQuery(query);
+      const authorizationContext = await resolveAuthorizationContext(deps, context);
       const vector = await resolveQueryEmbedding(deps, query);
-      const { mandatory, merged } = await compileFilters(deps, query, context);
+      const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
       // Run vector search only
       const vectorStartTime = Date.now();
@@ -478,6 +527,8 @@ export function createRetrievalService(
         );
       }
       const vectorLatencyMs = Date.now() - vectorStartTime;
+      const authorizedChunkIds = await authorizeCandidateIds(deps, authorizationContext, vectorResults, traceId);
+      vectorResults = retainAuthorized(vectorResults, authorizedChunkIds);
 
       // Passthrough via fusion engine (single-strategy fast path)
       const fusionStartTime = Date.now();
@@ -492,14 +543,14 @@ export function createRetrievalService(
       // Re-validate and hydrate
       const hydrated = await revalidateAndHydrate(
         deps,
-        context.tenantId,
+        authorizationContext.tenantId,
         fused,
         mandatory,
-        context,
+        authorizationContext,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
-      const filterSummary = buildFilterSummary(context, query.filter);
+      const filterSummary = buildFilterSummary(authorizationContext, query.filter);
       const diagnostics = buildDiagnostics({
         traceId,
         vectorLatencyMs,
@@ -513,7 +564,7 @@ export function createRetrievalService(
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
-        context,
+        context: authorizationContext,
         traceId,
         method: "vector",
         candidateCount: hydrated.length,
@@ -537,7 +588,8 @@ export function createRetrievalService(
       const totalStartTime = Date.now();
 
       validateQuery(query);
-      const { mandatory, merged } = await compileFilters(deps, query, context);
+      const authorizationContext = await resolveAuthorizationContext(deps, context);
+      const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
       // Run keyword search only
       const keywordStartTime = Date.now();
@@ -557,6 +609,8 @@ export function createRetrievalService(
         );
       }
       const keywordLatencyMs = Date.now() - keywordStartTime;
+      const authorizedChunkIds = await authorizeCandidateIds(deps, authorizationContext, keywordResults, traceId);
+      keywordResults = retainAuthorized(keywordResults, authorizedChunkIds);
 
       // Passthrough via fusion engine (single-strategy fast path)
       const fusionStartTime = Date.now();
@@ -571,14 +625,14 @@ export function createRetrievalService(
       // Re-validate and hydrate
       const hydrated = await revalidateAndHydrate(
         deps,
-        context.tenantId,
+        authorizationContext.tenantId,
         fused,
         mandatory,
-        context,
+        authorizationContext,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
-      const filterSummary = buildFilterSummary(context, query.filter);
+      const filterSummary = buildFilterSummary(authorizationContext, query.filter);
       const diagnostics = buildDiagnostics({
         traceId,
         keywordLatencyMs,
@@ -592,7 +646,7 @@ export function createRetrievalService(
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
-        context,
+        context: authorizationContext,
         traceId,
         method: "keyword",
         candidateCount: hydrated.length,

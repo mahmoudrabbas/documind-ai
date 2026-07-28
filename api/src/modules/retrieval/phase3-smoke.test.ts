@@ -18,7 +18,7 @@ describe("FilterCompiler", () => {
       };
       const filter = compileAccessFilters(ctx);
       assert.equal(filter.tenantId, "t1");
-      assert.equal(filter.allowAiUse, true);
+      assert.equal(filter.allowAiUse, undefined);
       assert.equal(filter.classification, undefined);
     });
 
@@ -133,7 +133,7 @@ describe("FilterCompiler", () => {
 
   describe("mergeFilters", () => {
     it("tenantId always from mandatory", () => {
-      const mandatory = { tenantId: "t1", allowAiUse: true };
+      const mandatory = { tenantId: "t1" };
       const query = { tenantId: "t2", documentIds: ["d1"] };
       const merged = mergeFilters(mandatory, query);
       assert.equal(merged.tenantId, "t1");
@@ -151,11 +151,11 @@ describe("FilterCompiler", () => {
       });
     });
 
-    it("documentIds unions when both present", () => {
+    it("documentIds intersect when both present", () => {
       const mandatory = { tenantId: "t1", documentIds: ["a", "b"] };
       const query = { documentIds: ["b", "c"] };
       const merged = mergeFilters(mandatory, query);
-      assert.deepEqual(merged.documentIds, ["a", "b", "c"]);
+      assert.deepEqual(merged.documentIds, ["b"]);
     });
 
     it("documentVersionId from mandatory wins", () => {
@@ -166,7 +166,7 @@ describe("FilterCompiler", () => {
     });
 
     it("falls back to query when mandatory has no value", () => {
-      const mandatory = { tenantId: "t1", allowAiUse: true };
+      const mandatory = { tenantId: "t1" };
       const query = { classification: { $in: ["public"] } };
       const merged = mergeFilters(mandatory, query);
       assert.deepEqual(merged.classification, { $in: ["public"] });

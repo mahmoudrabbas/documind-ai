@@ -282,6 +282,28 @@ describe("apiClient request and response handling", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("reads chat retry metadata from the standard nested error envelope", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: false,
+      retryAfterSeconds: 37,
+      error: {
+        code: "LLM_RATE_LIMITED",
+        message: "The AI provider is temporarily rate-limited. Please try again shortly.",
+        details: { retryAfterSeconds: 37 },
+      },
+    }), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": "37" },
+    }));
+
+    await expect(apiClient("/chat/send", { method: "POST" })).rejects.toMatchObject({
+      status: 429,
+      code: "LLM_RATE_LIMITED",
+      retryAfterSeconds: 37,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("serializes a plain object while preserving caller headers", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { id: 1 }));
 

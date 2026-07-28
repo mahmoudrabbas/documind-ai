@@ -22,10 +22,6 @@ function intersectArrays<T>(a: readonly T[], b: readonly T[]): T[] {
   return a.filter((item) => b.includes(item));
 }
 
-function unionArrays<T>(a: readonly T[], b: readonly T[]): T[] {
-  return [...new Set([...a, ...b])];
-}
-
 /**
  * Resolves the effective classification list from auth context.
  *
@@ -68,14 +64,14 @@ function mergeInField(
  *
  * These filters are ALWAYS applied and MUST NEVER be overridden by request
  * input. They enforce tenant isolation, classification visibility, department
- * and category scopes, and AI-use policy.
+ * and category scopes. Exact AI-use authorization is evaluated against the
+ * current active document policy after tenant-scoped candidate hydration.
  */
 export function compileAccessFilters(context: AccessContext): AdapterFilter {
   const classifications = resolveClassifications(context);
 
   const filter: AdapterFilter = {
     tenantId: context.tenantId,
-    allowAiUse: true,
   };
 
   // Classification restriction — undefined means no restriction (SUPER_ADMIN).
@@ -145,12 +141,11 @@ export function compileQueryFilters(
  *
  * Rules:
  * - `tenantId`          — ALWAYS from mandatory (never overridden).
- * - `allowAiUse`        — mandatory wins.
  * - `documentVersionId` — mandatory wins when present.
  * - `classification`,
  *   `department`,
  *   `category`          — INTERSECT (narrow) when both sides are present.
- * - `documentIds`       — UNION (widen) when both sides are present.
+ * - `documentIds`       — INTERSECT when both sides are present.
  */
 export function mergeFilters(
   mandatory: AdapterFilter,
@@ -158,7 +153,6 @@ export function mergeFilters(
 ): AdapterFilter {
   const merged: AdapterFilter = {
     tenantId: mandatory.tenantId,
-    allowAiUse: mandatory.allowAiUse ?? query.allowAiUse,
     documentVersionId: mandatory.documentVersionId ?? query.documentVersionId,
   };
 
@@ -166,9 +160,9 @@ export function mergeFilters(
   merged.department = mergeInField(mandatory.department, query.department);
   merged.category = mergeInField(mandatory.category, query.category);
 
-  // documentIds — union so the query can widen the set beyond mandatory scope.
+  // Explicit query filters may only narrow a mandatory document set.
   if (mandatory.documentIds !== undefined && query.documentIds !== undefined) {
-    merged.documentIds = unionArrays(mandatory.documentIds, query.documentIds);
+    merged.documentIds = intersectArrays(mandatory.documentIds, query.documentIds);
   } else if (mandatory.documentIds !== undefined) {
     merged.documentIds = mandatory.documentIds;
   } else if (query.documentIds !== undefined) {

@@ -27,6 +27,9 @@ export interface AccessContext {
   baseRole: BaseRole;
   permissionScopes?: PermissionScopes;
   customRoleId?: string | null;
+  departmentIds?: string[];
+  /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
+  requiredAction?: "use_in_ai";
 }
 
 export interface ScoreBreakdown {

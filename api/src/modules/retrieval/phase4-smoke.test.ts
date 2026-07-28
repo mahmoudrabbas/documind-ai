@@ -137,6 +137,8 @@ describe("Phase 4 — createRetrievalService", () => {
         makeChunk({ _id: "chunk3", text: "Third chunk", classification: "public" }),
       ]),
       findOwnedDocumentIds: async (_tenantId, _actorId, docIds) => docIds,
+      resolveAccessContext: async (context) => ({ ...context, requiredAction: "use_in_ai" }),
+      authorizeDocumentForAi: async () => {},
       ...overrides,
     };
   }
@@ -162,7 +164,7 @@ describe("Phase 4 — createRetrievalService", () => {
     assert.ok(first.score >= 0, "candidate has score >= 0");
   });
 
-  it("hybridSearch filters out chunks with allowAiUse=false", async () => {
+  it("stale allowAiUse=false metadata does not block an active-policy grant", async () => {
     const repo = createMockRepository([
       makeChunk({ _id: "chunk1", allowAiUse: true }),
       makeChunk({ _id: "chunk2", allowAiUse: false }),
@@ -184,7 +186,7 @@ describe("Phase 4 — createRetrievalService", () => {
 
     const result = await service.hybridSearch(makeQuery(), makeAccessContext());
     const chunkIds = result.candidates.map((c) => c.chunkId);
-    assert.ok(!chunkIds.includes("chunk2"), "chunk2 (allowAiUse=false) excluded");
+    assert.ok(chunkIds.includes("chunk2"), "active-policy authorization is authoritative");
   });
 
   it("vectorSearch works with only vector backend", async () => {
@@ -308,6 +310,21 @@ describe("Phase 4 — createRetrievalService", () => {
 
     const result = await service.hybridSearch(makeQuery(), makeAccessContext());
     assert.ok(result.candidates.length >= 1, "still has candidates from keyword");
+  });
+
+  it("hybridSearch continues with vector results when keyword fails", async () => {
+    const failingKeyword = {
+      search: async () => { throw new Error("keyword down"); },
+      indexDocuments: async () => {},
+      removeDocuments: async () => {},
+    } as unknown as KeywordAdapter;
+
+    const service = createRetrievalService(
+      buildDeps({ keywordAdapter: failingKeyword }),
+    );
+
+    const result = await service.hybridSearch(makeQuery(), makeAccessContext());
+    assert.ok(result.candidates.length >= 1, "still has candidates from vector");
   });
 
   it("keywordSearch throws when keyword backend fails", async () => {

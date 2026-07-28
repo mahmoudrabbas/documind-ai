@@ -62,6 +62,7 @@ import knowledgeGapsRoutes from "./modules/knowledge-gaps/knowledge-gaps.routes.
 import feedbackRoutes from "./modules/feedback/feedback.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
+import { getDocumentAccessAuthorizationService } from "./modules/document-access/documentAccess.authorization.service.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
 import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
 import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
@@ -226,6 +227,13 @@ const retrievalService = createRetrievalService({
   filterCompiler,
   repository: createRetrievalRepository(),
   rerankerService,
+  resolveAccessContext: async (context) => {
+    const actor = await getDocumentAccessAuthorizationService().resolveActor({ tenantId: context.tenantId, actorId: context.actorId });
+    return { ...context, baseRole: actor.baseRole, customRoleId: actor.customRoleId, departmentIds: [...(actor.departmentIds ?? [])], requiredAction: "use_in_ai" };
+  },
+  authorizeDocumentForAi: async (context, documentId) => {
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId: context.tenantId, actorId: context.actorId }, documentId, "use_in_ai");
+  },
 });
 
 registerRetrievalService(retrievalService);

@@ -63,7 +63,6 @@ async function ensureSearchIndexes(): Promise<void> {
             classification: { type: "string", analyzer: "luceneStandard" },
             department: { type: "string", analyzer: "luceneStandard" },
             category: { type: "string", analyzer: "luceneStandard" },
-            allowAiUse: { type: "boolean" },
           },
         },
       },
@@ -131,6 +130,15 @@ try {
   await connectDB();
   await connectRedis();
   await ensureSearchIndexes();
+  if (config.NODE_ENV !== "production" && config.PAYMENT_PROVIDER === "stripe") {
+    logger.warn(
+      {
+        diagnosticsCode: "LOCAL_STRIPE_WEBHOOK_FORWARDING_UNCONFIRMED",
+        listenerCommand: "npm run stripe:listen",
+      },
+      "Local Stripe webhook forwarding is not confirmed; keep Stripe CLI running for asynchronous lifecycle events",
+    );
+  }
 } catch (err) {
   logger.fatal({ err }, "API startup failed");
   process.exit(1);

@@ -9,6 +9,7 @@ import {
   listCheckoutSessionsController,
   subscriptionStatusController,
   createBillingPortalController,
+  synchronizeCheckoutSessionController,
 } from "./checkout.controller.js";
 
 const router = Router();
@@ -19,6 +20,12 @@ router.post(
   "/sessions",
   requirePermission(Permission.BILLING_MANAGE),
   createCheckoutController,
+);
+
+router.post(
+  "/sessions/:sessionId/sync",
+  requirePermission(Permission.BILLING_MANAGE),
+  synchronizeCheckoutSessionController,
 );
 
 router.get(

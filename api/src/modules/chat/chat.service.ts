@@ -27,8 +27,29 @@ import {
   ChatListConversationsQuerySchema,
 } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
+import { mapLlmProviderError } from "../../providers/llm/providerError.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
+const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
+
+export function insufficientAuthorizedEvidenceResponse(
+  conversationId: string,
+): Omit<ChatResponse, "messageId"> {
+  return { answer: INSUFFICIENT_AUTHORIZED_EVIDENCE, sources: [], conversationId };
+}
+
+export function safeHistoryForRag(messages: Array<{ role: string; content: string; sources: unknown[] }>): Array<{ role: "user" | "assistant"; content: string }> {
+  return messages
+    .filter((message) => message.role !== "assistant" || message.sources.length === 0)
+    .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
+}
+
+export function asRetrievalUnavailable(error: unknown): AppError {
+  if (error instanceof AppError && error.code === "RETRIEVAL_UNAVAILABLE") {
+    return error;
+  }
+  return new AppError(503, "RETRIEVAL_UNAVAILABLE", "Retrieval infrastructure is unavailable");
+}
 
 export class ChatService {
   constructor(
@@ -78,10 +99,9 @@ export class ChatService {
         conversationId,
         20,
       );
-      historyFromDb = dbMessages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+      // RAG answers are evidence-derived cache entries. Never replay their
+      // content without reauthorizing the original evidence.
+      historyFromDb = safeHistoryForRag(dbMessages);
     } catch (err) {
       logger.warn({ err, tenantId: tenantIdStr }, "Failed to load conversation history");
     }
@@ -207,7 +227,34 @@ export class ChatService {
         documentTitle: docTitles.get(c.documentId) ?? "Unknown Document",
       }));
     } catch (err) {
-      logger.warn({ err, tenantId: tenantIdStr }, "Retrieval search failed, proceeding without context");
+      logger.error({ err, tenantId: tenantIdStr, traceId: context.traceId }, "Retrieval search failed");
+      throw asRetrievalUnavailable(err);
+    }
+
+    if (sources.length === 0) {
+      const assistantDoc = await chatRepo.addMessage(
+        tenantIdStr,
+        conversationId,
+        "assistant",
+        INSUFFICIENT_AUTHORIZED_EVIDENCE,
+        currentCount + 1,
+        [],
+      );
+      await getAuditWriter().write({
+        action: "RETRIEVAL_DENIAL",
+        resourceType: "Retrieval",
+        resourceId: conversationId,
+        outcome: "DENIED",
+        tenantId: tenantIdStr,
+        actorId: actor.actorId,
+        actorEmail: actor.actorEmail,
+        actorRole: actor.actorRole,
+        metadata: { traceId: context.traceId, userId: userIdStr, tenantId: tenantIdStr, requiredAction: "use_in_ai", authorizationResult: "denied", reasonCode: "NO_AUTHORIZED_EVIDENCE", sourceCount: 0, latencyMs: Date.now() - start },
+      });
+      return {
+        messageId: assistantDoc._id.toString(),
+        ...insufficientAuthorizedEvidenceResponse(conversationId),
+      };
     }
 
     // 8. Build RAG prompt and generate answer
@@ -241,62 +288,75 @@ export class ChatService {
     messages.push({ role: "user", content: input.message });
 
     // 9. Call LLM
+    let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
     try {
-      const response = await this.modelAdapter.complete({
+      response = await this.modelAdapter.complete({
         messages,
         temperature: 0.3,
         maxTokens: 1500,
       });
-
-      const answer = response.choices[0]?.message?.content ?? "";
-
-      // 10. Save assistant response
-      const assistantDoc = await chatRepo.addMessage(
-        tenantIdStr,
-        conversationId,
-        "assistant",
-        answer,
-        currentCount + 1,
-        sources.map((s) => ({
-          chunkId: s.chunkId,
-          documentId: s.documentId,
-          documentTitle: s.documentTitle ?? "Unknown Document",
-          sectionTitle: s.sectionTitle,
-          pageNumber: s.pageNumber,
-          score: s.score,
-        })),
-      );
-
-      await getAuditWriter().write({
-        action: "RETRIEVAL_SEARCH",
-        resourceType: "Retrieval",
-        resourceId: conversationId,
-        outcome: "SUCCESS",
-        tenantId: tenantIdStr,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
-        actorRole: actor.actorRole,
-        metadata: {
-          conversationId,
-          sourceCount: sources.length,
-          latencyMs: Date.now() - start,
+    } catch (error) {
+      const mapped = mapLlmProviderError(error);
+      const retryAfterSeconds =
+        typeof mapped.details === "object" &&
+        mapped.details !== null &&
+        "retryAfterSeconds" in mapped.details
+          ? (mapped.details as { retryAfterSeconds?: number }).retryAfterSeconds
+          : undefined;
+      logger.warn(
+        {
+          tenantId: tenantIdStr,
+          provider: this.modelAdapter.providerKey,
+          code: mapped.code,
+          statusCode: mapped.statusCode,
+          retryAfterSeconds,
         },
-      });
-
-      return {
-        messageId: assistantDoc._id.toString(),
-        answer,
-        sources,
-        conversationId,
-      };
-    } catch (err) {
-      logger.error({ err, tenantId: tenantIdStr }, "LLM completion failed");
-      throw new AppError(
-        500,
-        "CHAT_LLM_ERROR",
-        "Failed to generate response. Please try again.",
+        "LLM completion unavailable",
       );
+      throw mapped;
     }
+
+    const answer = response.choices[0]?.message?.content ?? "";
+
+    // 10. Save assistant response
+    const assistantDoc = await chatRepo.addMessage(
+      tenantIdStr,
+      conversationId,
+      "assistant",
+      answer,
+      currentCount + 1,
+      sources.map((s) => ({
+        chunkId: s.chunkId,
+        documentId: s.documentId,
+        documentTitle: s.documentTitle ?? "Unknown Document",
+        sectionTitle: s.sectionTitle,
+        pageNumber: s.pageNumber,
+        score: s.score,
+      })),
+    );
+
+    await getAuditWriter().write({
+      action: "RETRIEVAL_SEARCH",
+      resourceType: "Retrieval",
+      resourceId: conversationId,
+      outcome: "SUCCESS",
+      tenantId: tenantIdStr,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      metadata: {
+        conversationId,
+        sourceCount: sources.length,
+        latencyMs: Date.now() - start,
+      },
+    });
+
+    return {
+      messageId: assistantDoc._id.toString(),
+      answer,
+      sources,
+      conversationId,
+    };
   }
 
   async listConversations(
