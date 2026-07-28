@@ -27,6 +27,7 @@ import {
   ChatListConversationsQuerySchema,
 } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
+import { mapLlmProviderError } from "../../providers/llm/providerError.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
 const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
@@ -265,57 +266,70 @@ export class ChatService {
     messages.push({ role: "user", content: input.message });
 
     // 9. Call LLM
+    let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
     try {
-      const response = await this.modelAdapter.complete({
+      response = await this.modelAdapter.complete({
         messages,
         temperature: 0.3,
         maxTokens: 1500,
       });
-
-      const answer = response.choices[0]?.message?.content ?? "";
-
-      // 10. Save assistant response
-      await chatRepo.addMessage(
-        tenantIdStr,
-        conversationId,
-        "assistant",
-        answer,
-        currentCount + 1,
-        sources.map((s) => ({
-          chunkId: s.chunkId,
-          documentId: s.documentId,
-          documentTitle: s.documentTitle ?? "Unknown Document",
-          sectionTitle: s.sectionTitle,
-          pageNumber: s.pageNumber,
-          score: s.score,
-        })),
-      );
-
-      await getAuditWriter().write({
-        action: "RETRIEVAL_SEARCH",
-        resourceType: "Retrieval",
-        resourceId: conversationId,
-        outcome: "SUCCESS",
-        tenantId: tenantIdStr,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
-        actorRole: actor.actorRole,
-        metadata: {
-          conversationId,
-          sourceCount: sources.length,
-          latencyMs: Date.now() - start,
+    } catch (error) {
+      const mapped = mapLlmProviderError(error);
+      const retryAfterSeconds =
+        typeof mapped.details === "object" &&
+        mapped.details !== null &&
+        "retryAfterSeconds" in mapped.details
+          ? (mapped.details as { retryAfterSeconds?: number }).retryAfterSeconds
+          : undefined;
+      logger.warn(
+        {
+          tenantId: tenantIdStr,
+          provider: this.modelAdapter.providerKey,
+          code: mapped.code,
+          statusCode: mapped.statusCode,
+          retryAfterSeconds,
         },
-      });
-
-      return { answer, sources, conversationId };
-    } catch (err) {
-      logger.error({ err, tenantId: tenantIdStr }, "LLM completion failed");
-      throw new AppError(
-        500,
-        "CHAT_LLM_ERROR",
-        "Failed to generate response. Please try again.",
+        "LLM completion unavailable",
       );
+      throw mapped;
     }
+
+    const answer = response.choices[0]?.message?.content ?? "";
+
+    // 10. Save assistant response
+    await chatRepo.addMessage(
+      tenantIdStr,
+      conversationId,
+      "assistant",
+      answer,
+      currentCount + 1,
+      sources.map((s) => ({
+        chunkId: s.chunkId,
+        documentId: s.documentId,
+        documentTitle: s.documentTitle ?? "Unknown Document",
+        sectionTitle: s.sectionTitle,
+        pageNumber: s.pageNumber,
+        score: s.score,
+      })),
+    );
+
+    await getAuditWriter().write({
+      action: "RETRIEVAL_SEARCH",
+      resourceType: "Retrieval",
+      resourceId: conversationId,
+      outcome: "SUCCESS",
+      tenantId: tenantIdStr,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      metadata: {
+        conversationId,
+        sourceCount: sources.length,
+        latencyMs: Date.now() - start,
+      },
+    });
+
+    return { answer, sources, conversationId };
   }
 
   async listConversations(

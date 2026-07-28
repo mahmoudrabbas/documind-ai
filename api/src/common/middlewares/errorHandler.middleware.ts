@@ -6,6 +6,7 @@ import { logger } from "../logger/logger.js";
 
 interface ErrorEnvelope {
   success: false;
+  retryAfterSeconds?: number;
   error: {
     code: string;
     message: string;
@@ -16,6 +17,23 @@ interface ErrorEnvelope {
     timestamp: string;
     stack?: string;
   };
+}
+
+function safeRetryAfterSeconds(details: unknown): number | undefined {
+  if (
+    typeof details !== "object" ||
+    details === null ||
+    !("retryAfterSeconds" in details)
+  ) {
+    return undefined;
+  }
+  const value = (details as { retryAfterSeconds?: unknown }).retryAfterSeconds;
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= 86_400
+    ? value
+    : undefined;
 }
 
 function isSyntaxError(error: unknown): error is SyntaxError {
@@ -117,7 +135,18 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     },
   };
 
-  if (!isProduction && err instanceof Error && err.stack) {
+  const retryAfterSeconds = safeRetryAfterSeconds(details);
+  if (retryAfterSeconds !== undefined) {
+    payload.retryAfterSeconds = retryAfterSeconds;
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+  }
+
+  if (
+    !isProduction &&
+    err instanceof Error &&
+    err.stack &&
+    !code.startsWith("LLM_")
+  ) {
     payload.error.stack = err.stack;
   }
 

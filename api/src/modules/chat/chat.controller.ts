@@ -25,12 +25,7 @@ function operationContext(req: Request): OperationAuthorizationContext {
 
 function handleChatError(error: unknown, res: Response, next: NextFunction) {
   if (error instanceof AppError) {
-    res.status(error.statusCode).json({
-      success: false,
-      message: error.message,
-      error: error.code,
-      details: error.details ?? null,
-    });
+    next(error);
     return;
   }
   if (error instanceof z.ZodError) {
