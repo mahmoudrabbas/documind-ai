@@ -21,7 +21,8 @@ function currentPeriodKey(): string {
 
 function createMocks() {
   const headers = new Map<string, string>();
-  const req: Record<string, unknown> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const req: any = {
     tenantId: "test-tenant",
     traceId: "test-trace-id",
     body: {},
@@ -29,7 +30,8 @@ function createMocks() {
     log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
     quotaWarning: undefined,
   };
-  const res: Record<string, unknown> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res: any = {
     setHeader: vi.fn((key: string, value: string) => {
       headers.set(key, value);
     }),
@@ -38,14 +40,16 @@ function createMocks() {
   return { req, res, next, headers };
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 async function callGuard(
-  middleware: (req: Record<string, unknown>, res: Record<string, unknown>, next: unknown) => Promise<void>,
-  req: Record<string, unknown>,
-  res: Record<string, unknown>,
-  next: unknown,
+  middleware: (req: any, res: any, next: any) => Promise<void>,
+  req: any,
+  res: any,
+  next: any,
 ): Promise<void> {
   await middleware(req, res, next);
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function expectNextCalledWithAppError(
   next: ReturnType<typeof vi.fn>,
@@ -537,9 +541,11 @@ describe("EntitlementGuard middleware", () => {
 
       // Chain guards like Express would
       await new Promise<void>((resolve) => {
-        guardDocs(req as Record<string, unknown>, res as Record<string, unknown>, (err?: unknown) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        guardDocs(req as any, res as any, (err?: unknown) => {
           if (err) { next(err); resolve(); return; }
-          guardQueries(req as Record<string, unknown>, res as Record<string, unknown>, (err2?: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          guardQueries(req as any, res as any, (err2?: unknown) => {
             if (err2) { next(err2); resolve(); return; }
             next();
             resolve();
