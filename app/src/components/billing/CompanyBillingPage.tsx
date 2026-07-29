@@ -9,10 +9,12 @@ import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import {
   createBillingPortalSession,
+  createRefundRequest,
   createSubscriptionChangePreview,
   getBillingOperation,
   getBillingSummary,
   getInvoiceLinks,
+  listRefundRequests,
   listInvoices,
   listPublicBillingPackages,
   requestBillingCancellation,
@@ -22,6 +24,7 @@ import {
 import type {
   BillingChangePreview,
   BillingInvoice,
+  BillingRefund,
   BillingOperationStatus,
   BillingPortalFlow,
   Pagination,
@@ -48,6 +51,7 @@ function BillingContent() {
   const [packageState, setPackageState] = useState<Loadable<PublicPackage[]>>({ kind: "loading" });
   const [page, setPage] = useState(1);
   const [refresh, setRefresh] = useState(0);
+  const [refundState, setRefundState] = useState<Loadable<{ refunds: BillingRefund[]; pagination: Pagination }>>({ kind: "loading" });
   const [portalFlow, setPortalFlow] = useState<BillingPortalFlow | null>(null);
   const [portalError, setPortalError] = useState("");
   const [announcement, setAnnouncement] = useState("");
@@ -63,6 +67,12 @@ function BillingContent() {
   const [confirmError, setConfirmError] = useState("");
   const [reactivationLoading, setReactivationLoading] = useState(false);
   const [reactivationError, setReactivationError] = useState("");
+  const [refundDialogInvoice, setRefundDialogInvoice] = useState<BillingInvoice | null>(null);
+  const [refundMode, setRefundMode] = useState<"FULL" | "PARTIAL">("FULL");
+  const [refundAmountMinor, setRefundAmountMinor] = useState("");
+  const [refundReason, setRefundReason] = useState("customer_request");
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
+  const [refundError, setRefundError] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const portalRequestRef = useRef(false);
   const previewSubmitKeyRef = useRef<string | null>(null);
@@ -71,6 +81,7 @@ function BillingContent() {
     IMMEDIATE: null,
   });
   const reactivationKeyRef = useRef<string | null>(null);
+  const refundSubmitKeyRef = useRef<string | null>(null);
 
   const currentOperationId = summary.kind === "ready" ? summary.data.pendingOperation?.id ?? null : null;
 
@@ -104,6 +115,18 @@ function BillingContent() {
       });
     return () => controller.abort();
   }, [canRead, page, refresh, t]);
+
+  useEffect(() => {
+    if (!canRead) return;
+    const controller = new AbortController();
+    setRefundState({ kind: "loading" });
+    listRefundRequests({ page: 1, pageSize: 10 }, controller.signal)
+      .then((response) => setRefundState({ kind: "ready", data: response.data }))
+      .catch((error) => {
+        if (!controller.signal.aborted) setRefundState({ kind: "error", message: safeMessage(error, t) });
+      });
+    return () => controller.abort();
+  }, [canRead, refresh, t]);
 
   useEffect(() => {
     if (!canManage || summary.kind !== "ready" || !summary.data.canChangePlan) {
@@ -155,8 +178,8 @@ function BillingContent() {
   }, [currentOperationId, refreshAll, t]);
 
   useEffect(() => {
-    if (portalError || previewError || confirmError || reactivationError) errorRef.current?.focus();
-  }, [portalError, previewError, confirmError, reactivationError]);
+    if (portalError || previewError || confirmError || reactivationError || refundError) errorRef.current?.focus();
+  }, [portalError, previewError, confirmError, reactivationError, refundError]);
 
   const launchPortal = useCallback(async (flow: BillingPortalFlow) => {
     if (portalRequestRef.current) return;
@@ -187,6 +210,42 @@ function BillingContent() {
       setAnnouncement(safeMessage(error, t));
     }
   }, [t]);
+
+  const openRefundDialog = useCallback((invoice: BillingInvoice) => {
+    refundSubmitKeyRef.current = null;
+    setRefundDialogInvoice(invoice);
+    setRefundMode("FULL");
+    setRefundAmountMinor("");
+    setRefundReason("customer_request");
+    setRefundError("");
+  }, []);
+
+  const submitRefund = useCallback(async () => {
+    if (!refundDialogInvoice) return;
+    setRefundSubmitting(true);
+    setRefundError("");
+    try {
+      const idempotencyKey = refundSubmitKeyRef.current ?? (globalThis.crypto?.randomUUID?.() ?? `refund-${Date.now()}`);
+      refundSubmitKeyRef.current = idempotencyKey;
+      const amountMinor = refundMode === "PARTIAL"
+        ? Math.round(Number(refundAmountMinor || "0") * 100)
+        : undefined;
+      await createRefundRequest({
+        invoiceId: refundDialogInvoice.id,
+        mode: refundMode,
+        amountMinor,
+        reason: refundReason,
+        idempotencyKey,
+      });
+      setRefundSubmitting(false);
+      setRefundDialogInvoice(null);
+      setAnnouncement(t("billingAdmin.refundRequested"));
+      refreshAll();
+    } catch (error) {
+      setRefundSubmitting(false);
+      setRefundError(safeMessage(error, t));
+    }
+  }, [refundAmountMinor, refundDialogInvoice, refundMode, refundReason, refreshAll, t]);
 
   const requestPreview = useCallback(async () => {
     if (!selectedPackageId) return;
@@ -275,9 +334,9 @@ function BillingContent() {
         description={t("billingAdmin.description")}
         actions={<button type="button" onClick={refreshAll} className="min-h-11 rounded-xl border border-outline px-4 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("common.retry")}</button>}
       />
-      {portalError || previewError || confirmError || reactivationError ? (
+      {portalError || previewError || confirmError || reactivationError || refundError ? (
         <div ref={errorRef} tabIndex={-1} role="alert" className="mb-4 rounded-xl border border-error/40 bg-error-container p-4 text-on-error-container">
-          {portalError || previewError || confirmError || reactivationError}
+          {portalError || previewError || confirmError || reactivationError || refundError}
         </div>
       ) : null}
       <div className="space-y-6">
@@ -331,7 +390,38 @@ function BillingContent() {
               <p className="text-sm text-on-surface-variant">{t("billingAdmin.noInvoicesDescription")}</p>
             </div>
           ) : (
-            <InvoiceHistory invoices={invoiceState.data.invoices} pagination={invoiceState.data.pagination} locale={locale} t={t} onLinks={openLinks} setPage={setPage} />
+            <InvoiceHistory
+              invoices={invoiceState.data.invoices}
+              pagination={invoiceState.data.pagination}
+              locale={locale}
+              t={t}
+              onLinks={openLinks}
+              onRefund={openRefundDialog}
+              setPage={setPage}
+              canManage={canManage && summary.kind === "ready" && summary.data.canRequestRefund}
+            />
+          )}
+        </DashboardPanel>
+
+        <DashboardPanel padding="none" aria-labelledby="refund-history-heading">
+          <div className="flex items-center justify-between border-b border-outline-variant/30 p-4 sm:p-5">
+            <div>
+              <h2 id="refund-history-heading" className="text-title-lg font-bold">{t("billingAdmin.refunds")}</h2>
+              <p className="text-sm text-on-surface-variant">{t("billingAdmin.refundDescription")}</p>
+            </div>
+          </div>
+          {refundState.kind === "loading" ? (
+            <div className="p-5"><Loading label={t("billingAdmin.loadingRefunds")} /></div>
+          ) : refundState.kind === "error" ? (
+            <div className="p-5"><ErrorState message={refundState.message} retry={refreshAll} label={t("common.retry")} /></div>
+          ) : refundState.data.refunds.length === 0 ? (
+            <div className="p-8 text-center">
+              <span aria-hidden="true" className="material-symbols-outlined text-4xl">payments</span>
+              <h3 className="mt-2 font-bold">{t("billingAdmin.noRefunds")}</h3>
+              <p className="text-sm text-on-surface-variant">{t("billingAdmin.noRefundsDescription")}</p>
+            </div>
+          ) : (
+            <RefundHistory refunds={refundState.data.refunds} locale={locale} t={t} />
           )}
         </DashboardPanel>
       </div>
@@ -415,6 +505,39 @@ function BillingContent() {
         }}
         onConfirm={() => void submitCancellation("IMMEDIATE")}
       />
+
+      <Modal
+        open={Boolean(refundDialogInvoice)}
+        onClose={() => {
+          if (!refundSubmitting) {
+            setRefundDialogInvoice(null);
+            setRefundError("");
+          }
+        }}
+        title={t("billingAdmin.requestRefund")}
+        maxWidth="max-w-xl"
+        footer={(
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setRefundDialogInvoice(null)} className="rounded-lg border px-4 py-2 font-semibold">{t("common.cancel")}</button>
+            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || (refundMode === "PARTIAL" && Number(refundAmountMinor || "0") <= 0)} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : t("billingAdmin.submitRefund")}</button>
+          </div>
+        )}
+      >
+        {refundDialogInvoice ? (
+          <RefundRequestForm
+            invoice={refundDialogInvoice}
+            locale={locale}
+            t={t}
+            mode={refundMode}
+            amount={refundAmountMinor}
+            reason={refundReason}
+            error={refundError}
+            onModeChange={setRefundMode}
+            onAmountChange={setRefundAmountMinor}
+            onReasonChange={setRefundReason}
+          />
+        ) : null}
+      </Modal>
     </DashboardPage>
   );
 }
@@ -512,19 +635,57 @@ function PreviewSummary({ preview, locale, t }: { preview: BillingChangePreview;
   );
 }
 
-function InvoiceHistory({ invoices, pagination, locale, t, onLinks, setPage }: { invoices: BillingInvoice[]; pagination: Pagination; locale: string; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void; setPage: (page: number) => void }) {
+function InvoiceHistory({ invoices, pagination, locale, t, onLinks, onRefund, setPage, canManage }: { invoices: BillingInvoice[]; pagination: Pagination; locale: string; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void; onRefund: (invoice: BillingInvoice) => void; setPage: (page: number) => void; canManage: boolean }) {
   const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
   const money = (invoice: BillingInvoice) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.amountDueMinor / 100);
   const date = (value: string) => new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(new Date(value));
   return <>
-    <div className="hidden overflow-x-auto md:block"><table className="w-full text-start"><thead className="bg-surface-container"><tr><Th>{t("billingAdmin.invoiceNumber")}</Th><Th>{t("billingAdmin.date")}</Th><Th>{t("billingAdmin.status")}</Th><Th>{t("billingAdmin.amount")}</Th><Th>{t("billingAdmin.actions")}</Th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id} className="border-t border-outline-variant/20"><Td>{invoice.invoiceNumber || "—"}</Td><Td>{date(invoice.createdAt)}</Td><Td>{t(`billingAdmin.status.${invoice.status}`)}</Td><Td>{money(invoice)}</Td><Td><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} /></Td></tr>)}</tbody></table></div>
-    <div className="space-y-3 p-4 md:hidden">{invoices.map((invoice) => <article key={invoice.id} className="rounded-2xl border border-outline-variant p-4"><h3 className="font-bold">{invoice.invoiceNumber || t("billingAdmin.invoice")}</h3><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label={t("billingAdmin.date")} value={date(invoice.createdAt)} /><Detail label={t("billingAdmin.amount")} value={money(invoice)} /><Detail label={t("billingAdmin.status")} value={t(`billingAdmin.status.${invoice.status}`)} /></dl><div className="mt-3"><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} /></div></article>)}</div>
+    <div className="hidden overflow-x-auto md:block"><table className="w-full text-start"><thead className="bg-surface-container"><tr><Th>{t("billingAdmin.invoiceNumber")}</Th><Th>{t("billingAdmin.date")}</Th><Th>{t("billingAdmin.status")}</Th><Th>{t("billingAdmin.amount")}</Th><Th>{t("billingAdmin.actions")}</Th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id} className="border-t border-outline-variant/20"><Td>{invoice.invoiceNumber || "—"}</Td><Td>{date(invoice.createdAt)}</Td><Td>{t(`billingAdmin.status.${invoice.status}`)}</Td><Td>{money(invoice)}</Td><Td><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} onRefund={onRefund} canManage={canManage} /></Td></tr>)}</tbody></table></div>
+    <div className="space-y-3 p-4 md:hidden">{invoices.map((invoice) => <article key={invoice.id} className="rounded-2xl border border-outline-variant p-4"><h3 className="font-bold">{invoice.invoiceNumber || t("billingAdmin.invoice")}</h3><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label={t("billingAdmin.date")} value={date(invoice.createdAt)} /><Detail label={t("billingAdmin.amount")} value={money(invoice)} /><Detail label={t("billingAdmin.status")} value={t(`billingAdmin.status.${invoice.status}`)} /><Detail label={t("billingAdmin.refundableRemaining")} value={new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.remainingRefundableMinor / 100)} /></dl><div className="mt-3"><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} onRefund={onRefund} canManage={canManage} /></div></article>)}</div>
     <nav aria-label={t("billingAdmin.pagination")} className="flex items-center justify-between border-t border-outline-variant/30 p-4"><button type="button" disabled={pagination.page <= 1} onClick={() => setPage(pagination.page - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">{t("billingAdmin.previous")}</button><span>{pagination.page} / {Math.max(1, pagination.totalPages)}</span><button type="button" disabled={pagination.page >= pagination.totalPages} onClick={() => setPage(pagination.page + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">{t("billingAdmin.next")}</button></nav>
   </>;
 }
 
-function InvoiceAction({ invoice, t, onLinks }: { invoice: BillingInvoice; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void }) {
-  return invoice.hostedInvoiceAvailable || invoice.invoicePdfAvailable || invoice.receiptAvailable ? <button type="button" onClick={() => onLinks(invoice)} aria-label={`${t("billingAdmin.openInvoice")} ${invoice.invoiceNumber}`} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.openInvoice")} <span className="sr-only">{t("billingAdmin.externalLink")}</span></button> : <span className="text-sm text-on-surface-variant">{t("billingAdmin.noLinks")}</span>;
+function InvoiceAction({ invoice, t, onLinks, onRefund, canManage }: { invoice: BillingInvoice; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void; onRefund: (invoice: BillingInvoice) => void; canManage: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {invoice.hostedInvoiceAvailable || invoice.invoicePdfAvailable || invoice.receiptAvailable ? <button type="button" onClick={() => onLinks(invoice)} aria-label={`${t("billingAdmin.openInvoice")} ${invoice.invoiceNumber}`} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.openInvoice")} <span className="sr-only">{t("billingAdmin.externalLink")}</span></button> : <span className="text-sm text-on-surface-variant">{t("billingAdmin.noLinks")}</span>}
+      {canManage && invoice.canRequestRefund ? <button type="button" onClick={() => onRefund(invoice)} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.requestRefund")}</button> : null}
+    </div>
+  );
+}
+function RefundRequestForm({ invoice, locale, t, mode, amount, reason, error, onModeChange, onAmountChange, onReasonChange }: { invoice: BillingInvoice; locale: string; t: (key: string) => string; mode: "FULL" | "PARTIAL"; amount: string; reason: string; error: string; onModeChange: (value: "FULL" | "PARTIAL") => void; onAmountChange: (value: string) => void; onReasonChange: (value: string) => void }) {
+  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const money = new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.remainingRefundableMinor / 100);
+  return <div className="space-y-4">
+    <p className="text-sm text-on-surface-variant">{t("billingAdmin.refundConsequence")}</p>
+    <Detail label={t("billingAdmin.invoiceNumber")} value={invoice.invoiceNumber || t("billingAdmin.invoice")} />
+    <Detail label={t("billingAdmin.refundableRemaining")} value={money} />
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-semibold">{t("billingAdmin.refundMode")}</legend>
+      <div className="flex gap-3">
+        {(["FULL", "PARTIAL"] as const).map((value) => <label key={value} className="flex items-center gap-2 rounded-xl border border-outline px-3 py-2"><input type="radio" checked={mode === value} onChange={() => onModeChange(value)} /> <span>{t(`billingAdmin.refundMode.${value.toLowerCase()}`)}</span></label>)}
+      </div>
+    </fieldset>
+    {mode === "PARTIAL" ? <label className="flex flex-col gap-2"><span className="text-sm font-semibold">{t("billingAdmin.refundAmount")}</span><input inputMode="decimal" value={amount} onChange={(event) => onAmountChange(event.target.value)} className="min-h-11 rounded-xl border border-outline px-3 py-2" aria-describedby="refund-amount-help" /><span id="refund-amount-help" className="text-xs text-on-surface-variant">{invoice.currency}</span></label> : null}
+    <label className="flex flex-col gap-2">
+      <span className="text-sm font-semibold">{t("billingAdmin.refundReason")}</span>
+      <select value={reason} onChange={(event) => onReasonChange(event.target.value)} className="min-h-11 rounded-xl border border-outline px-3 py-2">
+        <option value="customer_request">{t("billingAdmin.refundReason.customer_request")}</option>
+        <option value="billing_error">{t("billingAdmin.refundReason.billing_error")}</option>
+        <option value="service_issue">{t("billingAdmin.refundReason.service_issue")}</option>
+        <option value="duplicate">{t("billingAdmin.refundReason.duplicate")}</option>
+        <option value="other">{t("billingAdmin.refundReason.other")}</option>
+      </select>
+    </label>
+    {error ? <p role="alert" className="rounded-xl border border-error/40 bg-error-container p-3 text-on-error-container">{error}</p> : null}
+  </div>;
+}
+function RefundHistory({ refunds, locale, t }: { refunds: BillingRefund[]; locale: string; t: (key: string) => string }) {
+  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const money = (amountMinor: number, currency: string) => new Intl.NumberFormat(currentLocale, { style: "currency", currency }).format(amountMinor / 100);
+  const date = (value: string) => new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return <div className="space-y-3 p-4">{refunds.map((refund) => <article key={refund.id} className="rounded-2xl border border-outline-variant p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">{refund.invoiceNumber || t("billingAdmin.refund")}</h3><p className="text-sm text-on-surface-variant">{date(refund.requestedAt)}</p></div><span className="rounded-full bg-surface-container px-3 py-1 text-xs font-semibold">{t(`billingAdmin.refundStatus.${refund.status.toLowerCase()}`)}</span></div><dl className="mt-3 grid gap-2 sm:grid-cols-2"><Detail label={t("billingAdmin.amount")} value={money(refund.amountMinor, refund.currency)} /><Detail label={t("billingAdmin.refundReason")} value={t(`billingAdmin.refundReason.${refund.reason}`)} /><Detail label={t("billingAdmin.refundableRemaining")} value={money(refund.refundableRemainingMinor, refund.currency)} /><Detail label={t("billingAdmin.requestedBy")} value={refund.requestedBy.name || refund.requestedBy.email || refund.requestedBy.id} /></dl>{refund.rejectionReason ? <p className="mt-3 rounded-xl bg-error-container/40 p-3 text-sm">{refund.rejectionReason}</p> : null}{refund.failureCode ? <p className="mt-3 text-sm text-on-surface-variant">{t("billingAdmin.refundRetryGuidance")}</p> : null}</article>)}</div>;
 }
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs text-on-surface-variant">{label}</dt><dd className="mt-1 font-semibold">{value}</dd></div>; }
 function Th({ children }: { children: React.ReactNode }) { return <th scope="col" className="px-4 py-3 text-start text-sm font-bold">{children}</th>; }
@@ -539,6 +700,8 @@ function safeMessage(error: unknown, t: (key: string) => string): string {
     if (error.code === "BILLING_PREVIEW_STALE" || error.code === "BILLING_SUBSCRIPTION_CHANGED") return t("billingAdmin.previewStale");
     if (error.code === "BILLING_OPERATION_ALREADY_PENDING" || error.code === "BILLING_OPERATION_CONFLICT") return t("billingAdmin.operationConflict");
     if (error.code === "BILLING_OPERATION_NOT_ALLOWED") return t("billingAdmin.operationNotAllowed");
+    if (error.code === "BILLING_REFUND_AMOUNT_INVALID") return t("billingAdmin.refundAmountInvalid");
+    if (error.code === "BILLING_REFUND_NOT_FOUND") return t("billingAdmin.refundNotFound");
     if (error.status === 403) return t("permissions.deniedMessage");
   }
   return t("billingAdmin.loadError");

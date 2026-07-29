@@ -90,4 +90,12 @@ describe("StripePaymentProvider Issue 29 security boundary", () => {
     const links = await new StripePaymentProvider(stripe as unknown as Stripe).getSecureInvoiceLinks({ invoiceId: "in_shared", expectedCustomerId: "cus_shared" });
     expect(links.receiptUrl).toBe("https://pay.stripe.com/receipts/shared");
   });
+  it("resolves a refund-safe payment reference from invoice payments when the invoice payload does not include one", async () => {
+    const stripe = createMockStripe();
+    stripe.invoices.retrieve.mockResolvedValue({ ...stripeInvoice(), charge: null, payment_intent: null } as never);
+    stripe.invoicePayments.list.mockResolvedValue({ data: [{ payment: { type: "charge", charge: "ch_shared" } } as Stripe.InvoicePayment] });
+    stripe.charges.retrieve.mockResolvedValue({ id: "ch_shared", customer: "cus_shared", currency: "usd", amount: 1000, amount_refunded: 0, receipt_url: null } as unknown as Stripe.Charge);
+    const invoice = await new StripePaymentProvider(stripe as unknown as Stripe).retrieveInvoice({ invoiceId: "in_shared", expectedCustomerId: "cus_shared" });
+    expect(invoice.paymentReference).toBe("ch_shared");
+  });
 });

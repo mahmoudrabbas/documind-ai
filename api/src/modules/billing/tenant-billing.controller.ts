@@ -6,8 +6,9 @@ import { config } from "../../config/index.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import { createSubscriptionChangePreview, getCompanyBillingOperation, requestCancellation, requestReactivation, requestSubscriptionChange } from "./tenant-billing-mutations.service.js";
+import { createRefundRequest, getTenantRefundRequest, listTenantRefundRequests } from "./refund.service.js";
 import { getCompanyBillingSummary, createCompanyPortalSession, getCompanyInvoice, getCompanyInvoiceLinks, listCompanyInvoices } from "./tenant-billing.service.js";
-import { cancellationSchema, invoiceIdSchema, invoiceListSchema, operationIdSchema, parseBilling, portalSessionSchema, reactivationSchema, subscriptionChangePreviewSchema, subscriptionChangeSchema } from "./tenant-billing.validator.js";
+import { cancellationSchema, invoiceIdSchema, invoiceListSchema, operationIdSchema, parseBilling, portalSessionSchema, reactivationSchema, refundIdSchema, refundListSchema, refundRequestSchema, subscriptionChangePreviewSchema, subscriptionChangeSchema } from "./tenant-billing.validator.js";
 
 type Handler = (request: Request, response: Response) => Promise<unknown>;
 const endpoint = (handler: Handler) => async (req: Request, res: Response, next: NextFunction) => {
@@ -59,4 +60,16 @@ export const reactivationController = endpoint(async (req) => {
 export const billingOperationController = endpoint(async (req) => {
   const params = parseBilling(operationIdSchema, req.params);
   return getCompanyBillingOperation({ operationId: params.operationId, tenantId: tenant(req), context: context(req) });
+});
+export const refundRequestController = endpoint(async (req) => {
+  const body = parseBilling(refundRequestSchema, req.body);
+  return createRefundRequest({ tenantId: tenant(req), invoiceId: body.invoiceId, mode: body.mode, amountMinor: body.amountMinor, reason: body.reason, idempotencyKey: body.idempotencyKey, context: context(req) });
+});
+export const refundListController = endpoint(async (req) => {
+  const query = parseBilling(refundListSchema, req.query);
+  return listTenantRefundRequests({ tenantId: tenant(req), ...query, context: context(req) });
+});
+export const refundDetailController = endpoint(async (req) => {
+  const params = parseBilling(refundIdSchema, req.params);
+  return getTenantRefundRequest({ tenantId: tenant(req), refundId: params.refundId, context: context(req) });
 });

@@ -13,6 +13,8 @@ import type {
   InvoiceLinks,
   InvoiceStatus,
   PublicPackage,
+  BillingRefund,
+  RefundStatus,
 } from "@/types/api/billing.types";
 
 type Success<T> = { success: true; data: T };
@@ -144,4 +146,82 @@ export function listInvoices(params: { page?: number; pageSize?: number; status?
 
 export function getInvoiceLinks(invoiceId: string) {
   return apiClient<Success<InvoiceLinks>>(`/billing/invoices/${encodeURIComponent(invoiceId)}/links`, { cache: "no-store" });
+}
+
+export function createRefundRequest(body: {
+  invoiceId: string;
+  mode: "FULL" | "PARTIAL";
+  amountMinor?: number;
+  reason: string;
+  idempotencyKey: string;
+}) {
+  return apiClient<Success<{ refund: BillingRefund; replayed: boolean }>>(
+    "/billing/refund-requests",
+    { method: "POST", body },
+  );
+}
+
+export function listRefundRequests(
+  params: { page?: number; pageSize?: number },
+  signal?: AbortSignal,
+) {
+  const search = new URLSearchParams();
+  if (params.page) search.set("page", String(params.page));
+  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  const query = search.toString();
+  return apiClient<Success<{ refunds: BillingRefund[]; pagination: Pagination }>>(
+    `/billing/refund-requests${query ? `?${query}` : ""}`,
+    { signal, cache: "no-store" },
+  );
+}
+
+export function getRefundRequest(refundId: string, signal?: AbortSignal) {
+  return apiClient<Success<BillingRefund>>(
+    `/billing/refund-requests/${encodeURIComponent(refundId)}`,
+    { signal, cache: "no-store" },
+  );
+}
+
+export function listPlatformRefunds(
+  params: { page?: number; pageSize?: number; status?: RefundStatus; tenantId?: string },
+  signal?: AbortSignal,
+) {
+  const search = new URLSearchParams();
+  if (params.page) search.set("page", String(params.page));
+  if (params.pageSize) search.set("pageSize", String(params.pageSize));
+  if (params.status) search.set("status", params.status);
+  if (params.tenantId) search.set("tenantId", params.tenantId);
+  const query = search.toString();
+  return apiClient<Success<{ refunds: BillingRefund[]; pagination: Pagination }>>(
+    `/super-admin/refunds${query ? `?${query}` : ""}`,
+    { signal, cache: "no-store" },
+  );
+}
+
+export function getPlatformRefund(refundId: string, signal?: AbortSignal) {
+  return apiClient<Success<BillingRefund>>(
+    `/super-admin/refunds/${encodeURIComponent(refundId)}`,
+    { signal, cache: "no-store" },
+  );
+}
+
+export function confirmPlatformRefund(refundId: string) {
+  return apiClient<Success<{ refund: BillingRefund; replayed: boolean }>>(
+    `/super-admin/refunds/${encodeURIComponent(refundId)}/confirm`,
+    { method: "POST" },
+  );
+}
+
+export function rejectPlatformRefund(refundId: string, reason: string) {
+  return apiClient<Success<BillingRefund>>(
+    `/super-admin/refunds/${encodeURIComponent(refundId)}/reject`,
+    { method: "POST", body: { reason } },
+  );
+}
+
+export function retryPlatformRefund(refundId: string) {
+  return apiClient<Success<BillingRefund>>(
+    `/super-admin/refunds/${encodeURIComponent(refundId)}/retry`,
+    { method: "POST" },
+  );
 }

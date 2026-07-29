@@ -10,6 +10,7 @@ export const ISSUE29_INDEXES: readonly IndexSpec[] = [
   { collection: "invoices", name: "idx_invoice_tenant_created", key: { tenantId: 1, createdAtProvider: -1 } },
   { collection: "invoices", name: "idx_invoice_tenant_status", key: { tenantId: 1, status: 1 } },
   { collection: "invoices", name: "idx_invoice_tenant_subscription", key: { tenantId: 1, subscriptionId: 1 } },
+  { collection: "invoices", name: "idx_invoice_tenant_refund_amounts", key: { tenantId: 1, refundedAmountMinor: 1, reservedRefundAmountMinor: 1 } },
   {
     collection: "refunds",
     name: "uq_provider_refund",
@@ -19,6 +20,7 @@ export const ISSUE29_INDEXES: readonly IndexSpec[] = [
   },
   { collection: "refunds", name: "idx_refund_tenant_created", key: { tenantId: 1, createdAt: -1 } },
   { collection: "refunds", name: "idx_refund_tenant_invoice", key: { tenantId: 1, invoiceId: 1 } },
+  { collection: "refunds", name: "idx_refund_status_created", key: { status: 1, createdAt: -1 } },
   { collection: "refunds", name: "uq_refund_operation", key: { operationId: 1 }, unique: true },
   { collection: "billingpreviews", name: "idx_billing_preview_tenant_subscription", key: { tenantId: 1, subscriptionId: 1, createdAt: -1 } },
   { collection: "billingpreviews", name: "idx_billing_preview_tenant_expiry", key: { tenantId: 1, expiresAt: 1 } },

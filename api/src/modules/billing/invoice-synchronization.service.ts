@@ -178,6 +178,8 @@ export async function projectProviderInvoice(input: {
     amountDueMinor: providerInvoice.amountDueMinor,
     amountPaidMinor: providerInvoice.amountPaidMinor,
     amountRemainingMinor: providerInvoice.amountRemainingMinor,
+    refundedAmountMinor: Math.max(0, providerInvoice.refundedAmountMinor ?? 0),
+    reservedRefundAmountMinor: existing?.reservedRefundAmountMinor ?? 0,
     subtotalMinor: providerInvoice.subtotalMinor,
     taxMinor: providerInvoice.taxMinor,
     createdAtProvider: providerInvoice.createdAt,
@@ -186,6 +188,7 @@ export async function projectProviderInvoice(input: {
     periodStart: providerInvoice.periodStart,
     periodEnd: providerInvoice.periodEnd,
     synchronizedAt: new Date(),
+    paymentReference: providerInvoice.paymentReference ?? existing?.paymentReference ?? "",
     hostedInvoiceAvailable: Boolean(providerInvoice.hostedInvoiceAvailable),
     invoicePdfAvailable: Boolean(providerInvoice.invoicePdfAvailable),
     receiptAvailable: Boolean(providerInvoice.receiptAvailable),
@@ -230,7 +233,7 @@ async function findOwnedSubscription(customerId: string, subscriptionId?: string
 }
 
 function invoiceChanged(existing: Record<string, unknown>, next: Record<string, unknown>): boolean {
-  const scalarFields = ["invoiceNumber", "status", "currency", "amountDueMinor", "amountPaidMinor", "amountRemainingMinor", "subtotalMinor", "taxMinor", "hostedInvoiceAvailable", "invoicePdfAvailable", "receiptAvailable", "providerVersion"];
+  const scalarFields = ["invoiceNumber", "status", "currency", "amountDueMinor", "amountPaidMinor", "amountRemainingMinor", "refundedAmountMinor", "reservedRefundAmountMinor", "paymentReference", "subtotalMinor", "taxMinor", "hostedInvoiceAvailable", "invoicePdfAvailable", "receiptAvailable", "providerVersion"];
   if (scalarFields.some((key) => existing[key] !== next[key])) return true;
   return ["createdAtProvider", "dueAt", "paidAt", "periodStart", "periodEnd"]
     .some((key) => dateValue(existing[key]) !== dateValue(next[key]));

@@ -22,6 +22,7 @@ import { toCompanyBillingSummary } from "./company-billing-summary.js";
 import { assertBillingPortalFlowAvailable, isBillingPortalFlowAvailable } from "./portal-flow-policy.js";
 import { assertBillingPortalReturnUrl } from "./portal-url-policy.js";
 import type { PaymentProvider } from "./ports/payment-provider.port.js";
+import { refundCapabilitiesForTenant, refundInvoiceSummary } from "./refund.service.js";
 import { evaluateSubscriptionAccess } from "./subscription-access-policy.js";
 
 export async function getCompanyBillingSummary(tenantId: string, context: OperationAuthorizationContext) {
@@ -33,13 +34,14 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
     .lean().exec();
   if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
   const pendingFilter = { tenantId: new Types.ObjectId(tenantId), status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] as const } };
-  const [pending, pendingMutation, counts] = await Promise.all([
+  const [pending, pendingMutation, counts, canRequestRefund] = await Promise.all([
     BillingOperationModel.findOne(pendingFilter).select("operationType status requestedAt conflictGroup failureCode effectiveAt cancellationType").sort({ createdAt: -1 }).lean().exec(),
     BillingOperationModel.exists({ ...pendingFilter, conflictGroup: "SUBSCRIPTION_MUTATION" }),
     InvoiceModel.aggregate<{ _id: string; count: number }>([
       { $match: { tenantId: new Types.ObjectId(tenantId) } },
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]),
+    canManageBilling ? refundCapabilitiesForTenant(tenantId) : Promise.resolve(false),
   ]);
   const record = subscription as unknown as Record<string, unknown>;
   const lifecycle = evaluateSubscriptionAccess({
@@ -67,7 +69,7 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
       canChangePlan: canManageBilling && Boolean(record.providerSubscriptionId) && lifecycle.eligible && !pendingMutation,
       canCancel: canManageBilling && Boolean(record.providerSubscriptionId) && !pendingMutation && ["TRIALING", "ACTIVE", "PAST_DUE"].includes(String(record.status)) && !record.cancelAtPeriodEnd,
       canReactivate: canManageBilling && Boolean(record.providerSubscriptionId) && !pendingMutation && Boolean(record.cancelAtPeriodEnd) && lifecycle.eligible,
-      canRequestRefund: false,
+      canRequestRefund,
     },
   });
   await getAuditWriter().write({ action: "BILLING_SUMMARY_ACCESSED", resourceType: "Subscription", resourceId: summary.id, tenantId });
@@ -179,12 +181,17 @@ export async function getCompanyInvoiceLinks(input: { invoiceId: string; tenantI
 }
 
 function invoiceDto(invoice: Record<string, unknown>) {
+  const refund = refundInvoiceSummary(invoice);
   return {
     id: String(invoice._id), invoiceNumber: String(invoice.invoiceNumber || ""), status: invoice.status,
     currency: invoice.currency, amountDueMinor: invoice.amountDueMinor, amountPaidMinor: invoice.amountPaidMinor,
     amountRemainingMinor: invoice.amountRemainingMinor, subtotalMinor: invoice.subtotalMinor, taxMinor: invoice.taxMinor,
     createdAt: invoice.createdAtProvider, dueAt: invoice.dueAt, paidAt: invoice.paidAt,
     periodStart: invoice.periodStart, periodEnd: invoice.periodEnd,
+    refundedAmountMinor: refund.refundedAmountMinor,
+    reservedRefundAmountMinor: refund.reservedRefundAmountMinor,
+    remainingRefundableMinor: refund.remainingRefundableMinor,
+    canRequestRefund: refund.canRequestRefund,
     hostedInvoiceAvailable: Boolean(invoice.hostedInvoiceAvailable), invoicePdfAvailable: Boolean(invoice.invoicePdfAvailable), receiptAvailable: Boolean(invoice.receiptAvailable),
   };
 }

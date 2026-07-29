@@ -13,6 +13,8 @@ vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
 vi.mock("@/services/billing.service", () => ({
   getBillingSummary: vi.fn(),
   listInvoices: vi.fn(),
+  listRefundRequests: vi.fn(),
+  createRefundRequest: vi.fn(),
   createBillingPortalSession: vi.fn(),
   getInvoiceLinks: vi.fn(),
   listPublicBillingPackages: vi.fn(),
@@ -24,15 +26,16 @@ vi.mock("@/services/billing.service", () => ({
 }));
 
 import { usePermissions } from "@/providers/permission-provider";
-import { createBillingPortalSession, createSubscriptionChangePreview, getBillingOperation, getBillingSummary, getInvoiceLinks, listInvoices, listPublicBillingPackages, requestBillingCancellation, requestBillingReactivation, requestSubscriptionChange } from "@/services/billing.service";
+import { createBillingPortalSession, createRefundRequest, createSubscriptionChangePreview, getBillingOperation, getBillingSummary, getInvoiceLinks, listInvoices, listPublicBillingPackages, listRefundRequests, requestBillingCancellation, requestBillingReactivation, requestSubscriptionChange } from "@/services/billing.service";
 
 const summary = {
   id: "local-sub", tenantId: "local-tenant", packageId: { _id: "pkg", name: "Pro", code: "pro", version: 2, monthlyPrice: 10, annualPrice: 100, monthlyPriceCents: 1000, annualPriceCents: 10000, currency: "USD", entitlements: { employees: 1, admins: 1, documents: 1, storageMb: 1, fileSizeMb: 1, queriesPerMonth: 1, tokensPerMonth: 1, ocrPagesPerMonth: 1 } },
   packageVersion: 2, billingInterval: "monthly", status: "ACTIVE", paymentState: "paid", periodStart: "2026-07-01T00:00:00.000Z", periodEnd: "2026-08-01T00:00:00.000Z", currentPeriodStart: "2026-07-01T00:00:00.000Z", currentPeriodEnd: "2026-08-01T00:00:00.000Z", trialStart: null, trialEnd: null, cancelAtPeriodEnd: false, cancellationEffectiveAt: null,
-  providerManaged: true, providerLinked: true, pendingOperation: null, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: true, canCancel: true, canReactivate: false, canRequestRefund: false,
+  providerManaged: true, providerLinked: true, pendingOperation: null, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: true, canCancel: true, canReactivate: false, canRequestRefund: true,
   lifecycle: { eligible: true, inGracePeriod: false, accessEndsAt: null, reason: "ACTIVE" }, invoiceSummary: { total: 1, open: 0, paid: 1, pastDue: 0 },
 };
-const invoice = { id: "local-invoice", invoiceNumber: "INV-1", status: "paid", currency: "USD", amountDueMinor: 1250, amountPaidMinor: 1250, amountRemainingMinor: 0, subtotalMinor: 1250, taxMinor: null, createdAt: "2026-07-02T00:00:00.000Z", dueAt: null, paidAt: "2026-07-02T00:00:00.000Z", periodStart: null, periodEnd: null, hostedInvoiceAvailable: true, invoicePdfAvailable: true, receiptAvailable: false };
+const invoice = { id: "local-invoice", invoiceNumber: "INV-1", status: "paid", currency: "USD", amountDueMinor: 1250, amountPaidMinor: 1250, amountRemainingMinor: 0, subtotalMinor: 1250, taxMinor: null, createdAt: "2026-07-02T00:00:00.000Z", dueAt: null, paidAt: "2026-07-02T00:00:00.000Z", periodStart: null, periodEnd: null, refundedAmountMinor: 0, reservedRefundAmountMinor: 0, remainingRefundableMinor: 1250, canRequestRefund: true, hostedInvoiceAvailable: true, invoicePdfAvailable: true, receiptAvailable: false };
+const refund = { id: "refund-1", tenantId: "local-tenant", tenant: { id: "local-tenant", name: "Tenant", slug: "tenant" }, invoiceId: "local-invoice", invoiceNumber: "INV-1", subscriptionId: "local-sub", subscription: { id: "local-sub", status: "ACTIVE", packageName: "Pro", packageCode: "pro", packageVersion: 2 }, amountMinor: 500, currency: "USD", refundableRemainingMinor: 750, refundedAmountMinor: 0, reservedRefundAmountMinor: 500, reason: "customer_request", requestedBy: { id: "user-1", name: "Billing Admin", email: "billing@example.test" }, confirmedBy: null, requestedAt: "2026-07-20T00:00:00.000Z", confirmedAt: null, rejectedAt: null, rejectionReason: null, status: "REQUESTED", providerPending: false, failureCode: null, operationId: "operation-refund", previousRefundSummary: { successfulCount: 0, successfulAmountMinor: 0, pendingCount: 0, pendingAmountMinor: 0 } };
 const plan = { id: "pkg-enterprise", name: "Enterprise", code: "enterprise", description: "Enterprise package", monthlyPrice: 20000, annualPrice: 200000, monthlyPriceCents: 20000, annualPriceCents: 200000, currency: "USD", trialDays: 0, entitlements: { employees: 5, documents: 10, storageMb: 100, queriesPerMonth: 1000 }, supportedModels: ["basic"], analyticsLevel: "advanced", retentionDays: 90, supportLevel: "priority" };
 const preview = {
   id: "preview-1",
@@ -74,6 +77,8 @@ describe("CompanyBillingPage", () => {
     (usePermissions as Mock).mockReturnValue({ status: "ready", can: vi.fn().mockReturnValue(true), refreshPermissions: vi.fn() });
     (getBillingSummary as Mock).mockResolvedValue({ success: true, data: summary });
     (listInvoices as Mock).mockResolvedValue({ success: true, data: { invoices: [invoice], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    (listRefundRequests as Mock).mockResolvedValue({ success: true, data: { refunds: [refund], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    (createRefundRequest as Mock).mockResolvedValue({ success: true, data: { refund, replayed: false } });
     (listPublicBillingPackages as Mock).mockResolvedValue({ success: true, data: [plan] });
     (createSubscriptionChangePreview as Mock).mockResolvedValue({ success: true, data: preview });
     (requestSubscriptionChange as Mock).mockResolvedValue({ success: true, data: { operation, replayed: false } });
@@ -97,6 +102,18 @@ describe("CompanyBillingPage", () => {
     const { container } = await render();
     expect(container.querySelector("table")).toBeTruthy(); expect(container.querySelectorAll("th")).toHaveLength(5);
     expect(container.textContent).toContain("$12.50"); expect(container.textContent).not.toMatch(/provider|cus_|sub_|in_/i);
+  });
+
+  it("submits a refund request from a local invoice without exposing provider identifiers", async () => {
+    const { container } = await render();
+    const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.requestRefund")!;
+    await act(async () => { button.click(); });
+    await settle();
+    const submit = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.submitRefund")!;
+    await act(async () => { submit.click(); });
+    await settle();
+    expect(createRefundRequest).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: "local-invoice", mode: "FULL" }));
+    expect(container.textContent).not.toMatch(/cus_|sub_|re_/i);
   });
 
   it("shows denied state for direct access without billing:read", async () => {

@@ -31,6 +31,7 @@ import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.ro
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import tenantBillingRoutes from "./modules/billing/tenant-billing.routes.js";
+import refundAdminRoutes from "./modules/billing/refund-admin.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
 import processingProgressRoutes from "./modules/processing-progress/processingProgress.routes.js";
@@ -180,6 +181,7 @@ app.use("/super-admin/agents", agentsAdminRoutes);
 app.use("/webhooks/payment", paymentWebhookRoutes);
 app.use("/super-admin", paymentWebhookAdminRoutes);
 app.use("/super-admin", reconciliationRoutes);
+app.use("/super-admin", refundAdminRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/billing", tenantBillingRoutes);
 app.use("/imports", importsRoutes);

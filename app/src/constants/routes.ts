@@ -122,6 +122,7 @@ export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
   { label: "Security & Audit", href: "/super-admin/audit", icon: "policy", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
   { label: "Global Settings", href: "/super-admin/settings", icon: "settings", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "Payment Diagnostics", href: "/super-admin/payments", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
+  { label: "Refund Reviews", href: "/super-admin/refunds", icon: "currency_exchange", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
 ];
 
 export const TENANT_TOPBAR_LINKS = TENANT_SIDEBAR_LINKS.slice(0, 3);

@@ -7,11 +7,11 @@ const context = (key = "key-1", fingerprint = "fp-1"): ProviderOperationContext 
 
 describe("FakePaymentProvider Issue 29 contract", () => {
   let fake: FakePaymentProvider;
-  beforeEach(() => { fake = new FakePaymentProvider(); fake.seedSubscription(subscription); fake.seedInvoice({ id: "in_1", customerId: "cus_1", subscriptionId: "sub_1", number: "INV-1", status: "paid", currency: "USD", amountDueMinor: 1000, amountPaidMinor: 1000, amountRemainingMinor: 0, subtotalMinor: 1000, taxMinor: 0, createdAt: new Date("2026-01-02"), dueAt: null, paidAt: new Date("2026-01-02"), periodStart: new Date("2026-01-01"), periodEnd: new Date("2026-02-01"), providerVersion: "v1" }, { hostedInvoiceUrl: "https://invoice.stripe.com/i/1", invoicePdfUrl: "https://pay.stripe.com/i/1.pdf", receiptUrl: null }); });
+  beforeEach(() => { fake = new FakePaymentProvider(); fake.seedSubscription(subscription); fake.seedInvoice({ id: "in_1", customerId: "cus_1", subscriptionId: "sub_1", paymentReference: "ch_1", number: "INV-1", status: "paid", currency: "USD", amountDueMinor: 1000, amountPaidMinor: 1000, amountRemainingMinor: 0, refundedAmountMinor: 0, subtotalMinor: 1000, taxMinor: 0, createdAt: new Date("2026-01-02"), dueAt: null, paidAt: new Date("2026-01-02"), periodStart: new Date("2026-01-01"), periodEnd: new Date("2026-02-01"), providerVersion: "v1" }, { hostedInvoiceUrl: "https://invoice.stripe.com/i/1", invoicePdfUrl: "https://pay.stripe.com/i/1.pdf", receiptUrl: null }); });
 
   it("paginates and ownership-checks invoices and links", async () => {
     const page = await fake.listInvoices({ customerId: "cus_1", limit: 1 }); expect(page.invoices[0]?.id).toBe("in_1");
-    expect(await fake.retrieveInvoice({ invoiceId: "in_1", expectedCustomerId: "cus_1" })).toMatchObject({ amountPaidMinor: 1000, currency: "USD" });
+    expect(await fake.retrieveInvoice({ invoiceId: "in_1", expectedCustomerId: "cus_1" })).toMatchObject({ amountPaidMinor: 1000, currency: "USD", paymentReference: "ch_1" });
     expect((await fake.getSecureInvoiceLinks({ invoiceId: "in_1", expectedCustomerId: "cus_1" })).invoicePdfUrl).toContain("stripe.com");
     await expect(fake.retrieveInvoice({ invoiceId: "in_1", expectedCustomerId: "cus_other" })).rejects.toThrow(/ownership/);
   });
@@ -36,6 +36,7 @@ describe("FakePaymentProvider Issue 29 contract", () => {
     const first = await fake.createRefund({ chargeId: "ch_1", expectedCustomerId: "cus_1", amountMinor: 400, currency: "usd", reason: "requested", operationContext: context("refund-1") });
     const second = await fake.createRefund({ chargeId: "ch_1", expectedCustomerId: "cus_1", amountMinor: 600, currency: "USD", reason: "requested", operationContext: context("refund-2") });
     expect(fake.refunds).toHaveLength(2); expect(await fake.retrieveRefund({ refundId: first.refund.id, expectedCustomerId: "cus_1" })).toMatchObject({ amountMinor: 400 }); expect(second.refund.amountMinor).toBe(600);
+    expect(await fake.retrieveInvoice({ invoiceId: "in_1", expectedCustomerId: "cus_1" })).toMatchObject({ refundedAmountMinor: 1000 });
     fake.shouldTimeoutNextOperation = true;
     await expect(fake.cancelImmediately({ subscriptionId: "sub_1", expectedCustomerId: "cus_1", operationContext: context("timeout") })).rejects.toThrow(/timeout/);
   });

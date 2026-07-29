@@ -26,5 +26,26 @@ export const cancellationSchema = z.object({
 export const reactivationSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(255),
 }).strict();
+export const refundRequestSchema = z.object({
+  invoiceId: z.string().regex(/^[a-f0-9]{24}$/i),
+  mode: z.enum(["FULL", "PARTIAL"]),
+  amountMinor: z.coerce.number().int().positive().optional(),
+  reason: z.string().trim().min(3).max(100),
+  idempotencyKey: z.string().trim().min(8).max(255),
+}).strict().refine((value) => value.mode === "FULL" || value.amountMinor !== undefined, { message: "amountMinor is required for partial refunds" });
+export const refundIdSchema = z.object({ refundId: z.string().regex(/^[a-f0-9]{24}$/i) });
+export const refundListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+}).strict();
+export const refundRejectSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+}).strict();
+export const platformRefundListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  status: z.enum(["REQUESTED", "PROVIDER_PENDING", "SUCCEEDED", "FAILED", "REJECTED", "RETRY_PENDING"]).optional(),
+  tenantId: z.string().regex(/^[a-f0-9]{24}$/i).optional(),
+}).strict();
 
 export function parseBilling<T>(schema: z.ZodType<T>, value: unknown): T { return schema.parse(value); }

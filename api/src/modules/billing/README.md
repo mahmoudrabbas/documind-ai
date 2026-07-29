@@ -241,9 +241,32 @@ Lifecycle eligibility remains distinct from Issue 25 quota ownership. `ACTIVE` a
 
 The Company Admin billing page at `/dashboard/settings/billing` now adds provider-backed Phase 3 controls for change-plan preview/confirmation, cancel at period end, cancel immediately, and reactivation before the scheduled cancellation becomes effective. Actions remain capability-driven from the sanitized billing summary, localized for English LTR and Arabic RTL, keyboard-accessible, and safe against duplicate submission. The UI polls `GET /billing/operations/:operationId` and does not present success purely because the initial mutation call returned.
 
-### Deferred after Phase 3
+## Issue 29 Phase 4 refund requests and platform confirmation
 
-Refund request routes, provider refund execution, refund confirmation/rejection, Super Admin refund UI, and broader Phase 5 browser/security suites remain deferred. No refund behavior is exposed through tenant routes or the Company Admin billing page in Phase 3.
+Phase 4 adds the refund workflow on top of the existing invoice projection and `BillingOperation` foundation:
+
+| Route | Permission | Contract |
+|---|---|---|
+| `POST /billing/refund-requests` | `billing:manage` | `{ invoiceId, mode: "FULL" \| "PARTIAL", amountMinor?, reason, idempotencyKey }` → tenant-scoped local refund request DTO |
+| `GET /billing/refund-requests` | `billing:read` | tenant-scoped paginated refund request history |
+| `GET /billing/refund-requests/:refundId` | `billing:read` | tenant-scoped safe refund detail |
+| `GET /super-admin/refunds` | `billing:read` | platform refund review list with safe tenant/invoice/package metadata |
+| `GET /super-admin/refunds/:refundId` | `billing:read` | platform refund review detail |
+| `POST /super-admin/refunds/:refundId/confirm` | `billing:refund-confirm` | durable provider refund execution request |
+| `POST /super-admin/refunds/:refundId/reject` | `billing:refund-confirm` | terminal rejection without provider mutation |
+| `POST /super-admin/refunds/:refundId/retry` | `billing:refund-confirm` | retryable provider refund execution replay using the original durable operation context |
+
+Tenant routes accept only local invoice/refund identifiers. They never accept tenant IDs, provider invoice/payment/refund IDs, arbitrary currencies, or refund status from the browser. Server-side validation recalculates refundable balance from confirmed paid amount minus confirmed successful refunds and reserved pending refunds; multiple partial refunds are allowed only within that balance.
+
+`Refund` is the permanent business record with states `REQUESTED`, `PROVIDER_PENDING`, `SUCCEEDED`, `FAILED`, `REJECTED`, and `RETRY_PENDING`. Technical retry/idempotency/provider-correlation state remains in `BillingOperation`. The requester and confirmer must be different actors, and provider confirmation remains platform-only through `billing:refund-confirm`.
+
+Provider execution stays authoritative. The confirm route persists or replays the durable refund operation before calling the provider. Local invoice aggregates (`refundedAmountMinor`, `reservedRefundAmountMinor`, `remainingRefundableMinor`) update only after authoritative provider refund synchronization. Refund-related webhook events are triggers for `retrieveRefund`-based reconciliation; they are not treated as final truth on their own.
+
+The Company Admin billing page at `/dashboard/settings/billing` now exposes refund requests only for eligible local invoices and displays refund history/status without any provider IDs or card data. The Super Admin page at `/super-admin/refunds` adds the review/confirm/reject/retry surface using the same safe local DTOs. Both UIs remain localized, accessible, and explicit about pending provider confirmation.
+
+### Deferred after Phase 4
+
+Broader Phase 5 browser E2E, deployment, and extended security-suite work remain deferred.
 
 ## Known limitations
 

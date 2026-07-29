@@ -59,12 +59,14 @@ export interface ProviderInvoice {
   id: string;
   customerId: string;
   subscriptionId: string | null;
+  paymentReference?: string | null;
   number: string | null;
   status: ProviderInvoiceStatus;
   currency: IsoCurrencyCode;
   amountDueMinor: number;
   amountPaidMinor: number;
   amountRemainingMinor: number;
+  refundedAmountMinor?: number;
   subtotalMinor: number;
   taxMinor: number | null;
   createdAt: Date;

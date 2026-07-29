@@ -174,6 +174,10 @@ export interface BillingInvoice {
   paidAt: string | null;
   periodStart: string | null;
   periodEnd: string | null;
+  refundedAmountMinor: number;
+  reservedRefundAmountMinor: number;
+  remainingRefundableMinor: number;
+  canRequestRefund: boolean;
   hostedInvoiceAvailable: boolean;
   invoicePdfAvailable: boolean;
   receiptAvailable: boolean;
@@ -182,4 +186,50 @@ export interface InvoiceLinks {
   hostedInvoiceUrl: string | null;
   invoicePdfUrl: string | null;
   receiptUrl: string | null;
+}
+
+export type RefundStatus =
+  | "REQUESTED"
+  | "PROVIDER_PENDING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "REJECTED"
+  | "RETRY_PENDING";
+
+export interface BillingRefund {
+  id: string;
+  tenantId: string;
+  tenant: { id: string; name: string | null; slug: string | null };
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  subscriptionId: string | null;
+  subscription: {
+    id: string;
+    status: string | null;
+    packageName: string | null;
+    packageCode: string | null;
+    packageVersion: number | null;
+  } | null;
+  amountMinor: number;
+  currency: string;
+  refundableRemainingMinor: number;
+  refundedAmountMinor: number;
+  reservedRefundAmountMinor: number;
+  reason: string;
+  requestedBy: { id: string; name: string | null; email: string | null };
+  confirmedBy: { id: string; name: string | null; email: string | null } | null;
+  requestedAt: string;
+  confirmedAt: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+  status: RefundStatus;
+  providerPending: boolean;
+  failureCode: string | null;
+  operationId: string;
+  previousRefundSummary: {
+    successfulCount: number;
+    successfulAmountMinor: number;
+    pendingCount: number;
+    pendingAmountMinor: number;
+  };
 }

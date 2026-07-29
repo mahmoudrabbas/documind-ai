@@ -416,12 +416,28 @@ export class FakePaymentProvider implements PaymentProvider {
     if (!Number.isInteger(params.amountMinor) || params.amountMinor <= 0) throw new Error("Fake provider: invalid refund amount");
     return this.idempotentMutation("refund", params.operationContext, async () => {
       await this.maybeFail();
+      const invoice = this.invoices.find((item) => item.paymentReference === params.chargeId);
+      if (invoice) {
+        this.assertOwnership(invoice.customerId, params.expectedCustomerId);
+        if (invoice.currency.toUpperCase() !== params.currency.toUpperCase()) {
+          throw new Error("Fake provider: refund currency mismatch");
+        }
+        const alreadyRefunded = this.refunds
+          .filter((item) => item.chargeId === params.chargeId && item.status === "succeeded")
+          .reduce((sum, item) => sum + item.amountMinor, 0);
+        if (params.amountMinor > Math.max(0, invoice.amountPaidMinor - alreadyRefunded)) {
+          throw new Error("Fake provider: refund amount exceeds refundable balance");
+        }
+      }
       const refund: ProviderRefund = {
         id: this.generateId("re"), chargeId: params.chargeId, customerId: params.expectedCustomerId,
         amountMinor: params.amountMinor, currency: params.currency.toUpperCase(), status: "succeeded",
         reason: params.reason, createdAt: new Date(this.now),
       };
       this.refunds.push(refund);
+      if (invoice) {
+        invoice.refundedAmountMinor = Math.max(0, invoice.refundedAmountMinor ?? 0) + params.amountMinor;
+      }
       return { refund, idempotentReplay: false };
     });
   }

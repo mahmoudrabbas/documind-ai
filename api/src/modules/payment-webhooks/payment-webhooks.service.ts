@@ -20,7 +20,11 @@ import {
 } from "../billing/provider-subscription-sync.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { BILLING_PROVIDER_UNAVAILABLE, NOT_FOUND } from "../../common/errors/errorCodes.js";
+import {
+  BILLING_PROVIDER_UNAVAILABLE,
+  BILLING_REFUND_NOT_FOUND,
+  NOT_FOUND,
+} from "../../common/errors/errorCodes.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   authorizePlatformOperation,
@@ -33,6 +37,7 @@ import {
   RetryableInvoiceSynchronizationError,
   synchronizeInvoiceFromReference,
 } from "../billing/invoice-synchronization.service.js";
+import { synchronizeRefundFromProvider } from "../billing/refund.service.js";
 
 const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
   "checkout.session.completed",
@@ -44,11 +49,24 @@ const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
   "customer.subscription.deleted",
 ]);
 
+const REFUND_WEBHOOK_EVENTS = new Set([
+  "refund.created",
+  "refund.updated",
+  "charge.refunded",
+  "charge.refund.updated",
+]);
+
 class ProviderStateReadUnavailableError extends Error {
   readonly code = BILLING_PROVIDER_UNAVAILABLE;
 }
 
 class RetryableInvoiceStateError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+class RetryableRefundStateError extends Error {
   constructor(readonly code: string) {
     super(code);
   }
@@ -186,6 +204,30 @@ export async function handlePaymentEvent(
   try {
     eventRecord.status = "verified";
 
+    if (REFUND_WEBHOOK_EVENTS.has(event.type) && provider) {
+      const refunds = extractRefundReferencesFromEvent(event);
+      if (refunds.length === 0) {
+        throw new ProviderStateReadUnavailableError("Current provider refund reference is unavailable");
+      }
+      for (const refund of refunds) {
+        try {
+          await synchronizeRefundFromProvider({
+            provider,
+            providerRefundId: refund.providerRefundId,
+            operationReference: refund.operationReference,
+            sourceEventId: event.id,
+            tenantIdHint: extractTenantFromEvent(event)?.toString(),
+          });
+        } catch (error) {
+          throw retryableRefundError(error);
+        }
+      }
+      eventRecord.status = "processed";
+      eventRecord.processedAt = new Date();
+      await eventRecord.save();
+      return;
+    }
+
     const providerSubscription = await retrieveProviderSubscription(event, provider);
     const packageMapping = await resolveEventPackageMapping(event, providerSubscription);
 
@@ -309,12 +351,18 @@ export async function handlePaymentEvent(
       ? error.code
       : error instanceof RetryableInvoiceStateError
       ? error.code
+      : error instanceof RetryableRefundStateError
+      ? error.code
       : error instanceof AppError
         ? error.code
         : error instanceof Error
           ? error.message
           : "PAYMENT_EVENT_PROCESSING_FAILED";
-    if (error instanceof ProviderStateReadUnavailableError || error instanceof RetryableInvoiceStateError) {
+    if (
+      error instanceof ProviderStateReadUnavailableError
+      || error instanceof RetryableInvoiceStateError
+      || error instanceof RetryableRefundStateError
+    ) {
       logger.error({ errorCode: safeFailureCode, eventId: event.id }, "Failed to retrieve current provider state");
       const tenantId = extractTenantFromEvent(event)?.toString();
       if (tenantId) {
@@ -345,6 +393,16 @@ function retryableInvoiceError(error: unknown): Error {
     return new RetryableInvoiceStateError(BILLING_SUBSCRIPTION_NOT_READY);
   }
   return error instanceof Error ? error : new Error(BILLING_SUBSCRIPTION_NOT_READY);
+}
+
+function retryableRefundError(error: unknown): Error {
+  if (error instanceof AppError && error.code === BILLING_REFUND_NOT_FOUND) {
+    return new RetryableRefundStateError(BILLING_REFUND_NOT_FOUND);
+  }
+  if (error instanceof AppError && error.code === BILLING_PROVIDER_UNAVAILABLE) {
+    return new RetryableRefundStateError(BILLING_PROVIDER_UNAVAILABLE);
+  }
+  return error instanceof Error ? error : new Error(BILLING_PROVIDER_UNAVAILABLE);
 }
 
 // ── Static mapping handler (checkout, invoice, subscription.deleted) ─────────
@@ -917,6 +975,35 @@ function extractStripeSubscriptionIdFromEvent(
 function extractInvoiceIdFromEvent(event: PaymentProviderEvent): string | undefined {
   const obj = extractRawObject(event);
   return typeof obj?.id === "string" ? obj.id : undefined;
+}
+
+function extractRefundReferencesFromEvent(event: PaymentProviderEvent): Array<{
+  providerRefundId: string;
+  operationReference?: string;
+}> {
+  const obj = extractRawObject(event);
+  if (!obj) return [];
+  if (typeof obj.id === "string" && obj.id.startsWith("re_")) {
+    return [{
+      providerRefundId: obj.id,
+      operationReference: extractRefundOperationReference(obj),
+    }];
+  }
+  const refunds = obj.refunds as { data?: Array<Record<string, unknown>> } | undefined;
+  if (!Array.isArray(refunds?.data)) return [];
+  return refunds.data
+    .map((item) => ({
+      providerRefundId: typeof item.id === "string" ? item.id : "",
+      operationReference: extractRefundOperationReference(item),
+    }))
+    .filter((item) => item.providerRefundId);
+}
+
+function extractRefundOperationReference(raw: Record<string, unknown>): string | undefined {
+  const metadata = raw.metadata as Record<string, unknown> | undefined;
+  return typeof metadata?.operationReference === "string"
+    ? metadata.operationReference
+    : undefined;
 }
 
 function extractPriceIdFromEvent(event: PaymentProviderEvent): string | undefined {

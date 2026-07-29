@@ -275,7 +275,18 @@ export class StripePaymentProvider implements PaymentProvider {
     const stripe = await this.client();
     const invoice = await stripe.invoices.retrieve(params.invoiceId);
     assertProviderOwnership(customerId(invoice.customer), params.expectedCustomerId);
-    return this.mapInvoice(invoice);
+    const mapped = this.mapInvoice(invoice);
+    if (mapped.paymentReference || mapped.status !== "paid") {
+      return mapped;
+    }
+    return {
+      ...mapped,
+      paymentReference: await this.invoiceChargeReference(
+        stripe,
+        invoice.id,
+        params.expectedCustomerId,
+      ),
+    };
   }
 
   async getSecureInvoiceLinks(params: InvoiceRetrieveParams): Promise<ProviderInvoiceLinks> {
@@ -392,12 +403,19 @@ export class StripePaymentProvider implements PaymentProvider {
     const raw = invoice as unknown as Record<string, unknown>;
     const parent = raw.parent as { subscription_details?: { subscription?: string | { id?: string } } } | undefined;
     const subscription = parent?.subscription_details?.subscription;
+    const paymentIntent = raw.payment_intent as string | { id?: string } | null | undefined;
+    const invoiceCharge = raw.charge as string | { id?: string } | null | undefined;
     return {
       id: invoice.id, customerId: customerId(invoice.customer),
       subscriptionId: typeof subscription === "string" ? subscription : subscription?.id ?? null,
+      paymentReference: typeof invoiceCharge === "string"
+        ? invoiceCharge
+        : invoiceCharge?.id
+          ?? (typeof paymentIntent === "string" ? paymentIntent : paymentIntent?.id ?? null),
       number: invoice.number, status: invoice.status ?? "draft", currency: invoice.currency.toUpperCase(),
       amountDueMinor: invoice.amount_due, amountPaidMinor: invoice.amount_paid,
       amountRemainingMinor: invoice.amount_remaining, subtotalMinor: invoice.subtotal,
+      refundedAmountMinor: Number(raw.amount_refunded ?? 0),
       taxMinor: invoice.total_taxes?.reduce((sum, tax) => sum + tax.amount, 0) ?? null,
       createdAt: new Date(invoice.created * 1000), dueAt: unixDate(invoice.due_date),
       paidAt: unixDate(invoice.status_transitions?.paid_at), periodStart: unixDate(invoice.period_start),
@@ -407,6 +425,34 @@ export class StripePaymentProvider implements PaymentProvider {
       invoicePdfAvailable: Boolean(invoice.invoice_pdf),
       receiptAvailable: invoice.status === "paid",
     };
+  }
+
+  private async invoiceChargeReference(stripe: Stripe, invoiceId: string, expectedCustomerId: string): Promise<string | null> {
+    const payments = await stripe.invoicePayments.list({ invoice: invoiceId, status: "paid", limit: 10 });
+    for (const payment of payments.data) {
+      const chargeReference = payment.payment.charge;
+      if (chargeReference) {
+        const charge = typeof chargeReference === "string"
+          ? await stripe.charges.retrieve(chargeReference)
+          : chargeReference;
+        assertProviderOwnership(customerId(charge.customer), expectedCustomerId);
+        return charge.id;
+      }
+      const intentReference = payment.payment.payment_intent;
+      if (!intentReference) continue;
+      const intent = typeof intentReference === "string"
+        ? await stripe.paymentIntents.retrieve(intentReference)
+        : intentReference;
+      assertProviderOwnership(customerId(intent.customer), expectedCustomerId);
+      const latestCharge = intent.latest_charge;
+      if (!latestCharge) continue;
+      const charge = typeof latestCharge === "string"
+        ? await stripe.charges.retrieve(latestCharge)
+        : latestCharge;
+      assertProviderOwnership(customerId(charge.customer), expectedCustomerId);
+      return charge.id;
+    }
+    return null;
   }
 
   private async invoiceReceiptUrl(stripe: Stripe, invoiceId: string, expectedCustomerId: string): Promise<string | null> {
