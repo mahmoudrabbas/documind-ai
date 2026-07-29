@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { AppError } from "../../common/errors/AppError.js";
+import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 
 export const portalSessionSchema = z.object({ flow: z.enum(["general", "payment_method_update"]) }).strict();
 export const invoiceIdSchema = z.object({ invoiceId: z.string().regex(/^[a-f0-9]{24}$/i) });
@@ -48,4 +50,19 @@ export const platformRefundListSchema = z.object({
   tenantId: z.string().regex(/^[a-f0-9]{24}$/i).optional(),
 }).strict();
 
-export function parseBilling<T>(schema: z.ZodType<T>, value: unknown): T { return schema.parse(value); }
+export function parseBilling<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+
+  if (!result.success) {
+    throw new AppError(400, VALIDATION_ERROR, "Validation failed", groupValidationIssues(result.error.issues));
+  }
+
+  return result.data;
+}
+
+function groupValidationIssues(issues: z.core.$ZodIssue[]) {
+  return issues.map((issue) => ({
+    field: issue.path.join(".") || "body",
+    message: issue.message,
+  }));
+}

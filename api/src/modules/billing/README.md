@@ -273,3 +273,63 @@ Broader Phase 5 browser E2E, deployment, and extended security-suite work remain
 - Tenant `plan` string remains deprecated for backward compatibility.
 - Phase 1 plan/cancel/reactivate/refund adapter methods remain deliberately disconnected from customer-facing routes.
 - Invoice reconciliation is bounded and operator-triggered; normal invoice page reads remain local and do not perform unbounded provider backfills.
+
+## Issue 29 Phase 5 finalization
+
+Phase 5 adds final integration evidence rather than new billing features.
+
+### HTTP integration coverage
+
+Route-level integration tests now run through the real Express app/router stack with disposable MongoDB state. The suite covers:
+
+- tenant billing summary, portal session, invoice list/detail/links
+- tenant plan preview/change, cancellation, reactivation, operation status
+- tenant refund request/list/detail
+- platform invoice reconciliation
+- platform refund list/detail/confirm/reject/retry
+
+The suite verifies authentication, tenant isolation, hidden `404` semantics, permission boundaries, request validation, idempotent replay, and DTO sanitization. It specifically rejects provider/customer/subscription/invoice/refund identifier leakage in tenant and platform HTTP responses.
+
+### Browser E2E expectations
+
+The repository’s official browser framework is Playwright (`playwright.config.ts`). Billing E2E uses the existing application routes and must run only with local fixtures, the fake provider or mocked provider reads, and a disposable/local development database. It must not perform real Stripe financial mutations.
+
+For local execution, the environment must provide:
+
+- `PAYMENT_PROVIDER=fake` or an equivalent mocked provider setup
+- a seeded Super Admin credential pair for platform flows
+- running app/api services reachable at the Playwright base URLs
+
+If those prerequisites are absent, browser E2E should be reported as blocked rather than bypassed with production credentials or real provider state.
+
+### Migration and rollback evidence
+
+Phase 5 verification must continue using the dry-run-first Issue 29 migration:
+
+```sh
+npm run migrate:billing:issue29
+npm run migrate:billing:issue29:apply
+```
+
+Validation expectations:
+
+- dry run on a clean disposable database
+- apply on a clean disposable database
+- repeated apply is idempotent
+- dry run after apply reports the existing compatible indexes
+- conflicting index definitions fail safely
+- no provider calls occur
+- no subscription or entitlement state changes occur
+- no invoice, preview, operation, or refund business data is deleted automatically
+
+Rollback remains application-first. Optional index removal is an explicit operator action only after confirming no compatible application version depends on the indexes.
+
+### PR evidence checklist
+
+Before merge, capture:
+
+- the exact verification commands and their PASS/FAIL/BLOCKED status
+- git diff for the Issue 29 branch scope only
+- confirmation that no real Stripe mutation was sent
+- confirmation that no developer or production database was modified
+- confirmation that no secrets or provider URLs were printed or committed

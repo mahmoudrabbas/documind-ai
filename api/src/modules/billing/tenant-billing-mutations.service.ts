@@ -242,9 +242,11 @@ export async function requestSubscriptionChange(input: {
     previewReference: String(preview._id),
     previewExpiresAt: preview.expiresAt,
   }));
+  let responseOperation = started.operation;
   if (!started.replayed) {
     await consumePreview(String(preview._id), input.tenantId, String(started.operation._id));
     const pending = await operationService.markProviderPending(started.operation);
+    responseOperation = pending;
     try {
       const result = await input.provider.updateSubscription({
         subscriptionId: subscription.providerSubscriptionId,
@@ -277,7 +279,7 @@ export async function requestSubscriptionChange(input: {
     actorRole: actor.actorRole,
     changes: { targetPackageId: target.packageId, targetPackageVersion: target.packageVersion, billingInterval: target.billingInterval },
   });
-  return { operation: operationDto(started.operation), replayed: started.replayed };
+  return { operation: operationDto(responseOperation), replayed: started.replayed };
 }
 
 export async function requestCancellation(input: {

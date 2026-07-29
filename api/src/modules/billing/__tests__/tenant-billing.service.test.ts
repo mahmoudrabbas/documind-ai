@@ -50,7 +50,7 @@ describe("tenant billing service", () => {
 
   it("returns a tenant-safe summary with only Phase 2 capabilities", async () => {
     const result = await getCompanyBillingSummary(tenantId, context);
-    expect(result).toMatchObject({ providerLinked: true, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: true, canCancel: true, canReactivate: false, canRequestRefund: false, invoiceSummary: { total: 3, paid: 2, open: 1 } });
+    expect(result).toMatchObject({ providerLinked: true, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: true, canCancel: true, canReactivate: false, canRequestRefund: true, invoiceSummary: { total: 3, paid: 2, open: 1 } });
     expect(JSON.stringify(result)).not.toMatch(/cus_owned|sub_owned|price_private|evt_private|providerCustomerId|providerSubscriptionId|providerPriceId/);
   });
 

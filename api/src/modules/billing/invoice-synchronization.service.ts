@@ -161,7 +161,10 @@ export async function projectProviderInvoice(input: {
   if (amounts.some((amount) => amount !== null && (!Number.isSafeInteger(amount) || amount < 0)) || !/^[A-Z]{3}$/i.test(providerInvoice.currency)) {
     throw new AppError(409, BILLING_PROVIDER_OWNERSHIP_MISMATCH, "Invalid provider invoice projection");
   }
-  const existing = await InvoiceModel.findOne({ provider: input.providerName, providerInvoiceId: providerInvoice.id }).lean().exec();
+  const existing = await InvoiceModel.findOne({ provider: input.providerName, providerInvoiceId: providerInvoice.id })
+    .select("+paymentReference")
+    .lean()
+    .exec();
   if (existing && String(existing.tenantId) !== String(subscription.tenantId)) ownershipMismatch();
   const observedAt = providerInvoice.observedAt ?? new Date();
   if (existing?.providerStateObservedAt && existing.providerStateObservedAt.getTime() > observedAt.getTime()) {

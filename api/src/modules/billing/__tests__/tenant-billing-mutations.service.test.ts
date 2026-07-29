@@ -212,7 +212,7 @@ describe("tenant billing mutations service", () => {
       context: actorContext,
     });
     expect(result.replayed).toBe(false);
-    expect(result.operation).toMatchObject({ type: "PLAN_CHANGE", status: "REQUESTED" });
+    expect(result.operation).toMatchObject({ type: "PLAN_CHANGE", status: "PROVIDER_PENDING" });
     expect(provider.updateSubscription).toHaveBeenCalledOnce();
     expect(BillingPreviewModel.findOneAndUpdate).toHaveBeenCalledOnce();
   });

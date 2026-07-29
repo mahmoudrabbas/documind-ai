@@ -24,7 +24,17 @@ describe("Issue 29 billing index migration", () => {
       "idx_billing_preview_tenant_subscription",
       "idx_billing_preview_tenant_expiry",
       "idx_billing_preview_reuse",
+      "tenantId_1",
+      "subscriptionId_1",
+      "expiresAt_1",
+      "consumedByOperationId_1",
     ]);
+  });
+  it("covers invoice reconciliation lock and provider-object lookup indexes", () => {
+    expect(ISSUE29_INDEXES.filter((spec) => spec.collection === "billingoperations").map((spec) => spec.name)).toEqual(expect.arrayContaining([
+      "idx_billing_operation_tenant_provider_object",
+      "uq_billing_operation_pending_invoice_reconciliation",
+    ]));
   });
   it("reports conflicting named indexes without replacing them", async () => {
     const fixture = database({ billingoperations: [{ name: "_id_", key: { _id: 1 } }, { name: "uq_billing_operation_idempotency", key: { wrong: 1 }, unique: true }] });

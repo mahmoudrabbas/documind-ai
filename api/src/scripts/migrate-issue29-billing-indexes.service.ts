@@ -4,8 +4,10 @@ export const ISSUE29_INDEXES: readonly IndexSpec[] = [
   { collection: "billingoperations", name: "idx_billing_operation_tenant_status", key: { tenantId: 1, status: 1, createdAt: -1 } },
   { collection: "billingoperations", name: "idx_billing_operation_retry", key: { status: 1, nextRetryAt: 1 } },
   { collection: "billingoperations", name: "idx_billing_operation_subscription_type", key: { subscriptionId: 1, operationType: 1 } },
+  { collection: "billingoperations", name: "idx_billing_operation_tenant_provider_object", key: { tenantId: 1, providerObjectReference: 1 }, partialFilterExpression: { providerObjectReference: { $type: "string" } } },
   { collection: "billingoperations", name: "idx_billing_operation_trace", key: { traceId: 1 }, sparse: true },
   { collection: "billingoperations", name: "uq_billing_operation_pending_conflict_group", key: { tenantId: 1, subscriptionId: 1, conflictGroup: 1 }, unique: true, partialFilterExpression: { status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] }, subscriptionId: { $type: "objectId" }, conflictGroup: { $type: "string" } } },
+  { collection: "billingoperations", name: "uq_billing_operation_pending_invoice_reconciliation", key: { tenantId: 1, operationType: 1, providerObjectReference: 1 }, unique: true, partialFilterExpression: { status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] }, operationType: "INVOICE_SYNCHRONIZATION", providerObjectReference: "invoice-reconciliation" } },
   { collection: "invoices", name: "uq_provider_invoice", key: { provider: 1, providerInvoiceId: 1 }, unique: true },
   { collection: "invoices", name: "idx_invoice_tenant_created", key: { tenantId: 1, createdAtProvider: -1 } },
   { collection: "invoices", name: "idx_invoice_tenant_status", key: { tenantId: 1, status: 1 } },
@@ -25,6 +27,10 @@ export const ISSUE29_INDEXES: readonly IndexSpec[] = [
   { collection: "billingpreviews", name: "idx_billing_preview_tenant_subscription", key: { tenantId: 1, subscriptionId: 1, createdAt: -1 } },
   { collection: "billingpreviews", name: "idx_billing_preview_tenant_expiry", key: { tenantId: 1, expiresAt: 1 } },
   { collection: "billingpreviews", name: "idx_billing_preview_reuse", key: { tenantId: 1, subscriptionId: 1, targetPackageVersionId: 1, targetBillingInterval: 1, subscriptionRevision: 1, expiresAt: -1 } },
+  { collection: "billingpreviews", name: "tenantId_1", key: { tenantId: 1 } },
+  { collection: "billingpreviews", name: "subscriptionId_1", key: { subscriptionId: 1 } },
+  { collection: "billingpreviews", name: "expiresAt_1", key: { expiresAt: 1 } },
+  { collection: "billingpreviews", name: "consumedByOperationId_1", key: { consumedByOperationId: 1 } },
 ];
 
 export interface MigrationCollection {
