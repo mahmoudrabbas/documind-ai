@@ -4,6 +4,9 @@ import { connectDB, disconnectDB, getDb } from "./db/connection.js";
 import { connectRedis, disconnectRedis } from "./db/redis.js";
 import { config } from "./config/index.js";
 import { logger } from "./common/logger/logger.js";
+import { startEntitlementReconciliation } from "./modules/entitlement/reconciliation.scheduler.js";
+import { getReconciliationService } from "./modules/entitlement/reconciliation.service.js";
+import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
 
 dotenv.config();
 
@@ -146,6 +149,42 @@ try {
 
 const server = app.listen(config.PORT, () => {
   logger.info({ port: config.PORT }, "API server started");
+});
+
+// ── Entitlement reconciliation scheduler ─────────────────────────────────────
+//
+// Lightweight in-process daily sweep. Disabled when
+// ENTITLEMENT_RECONCILE_ENABLED=false. Non-blocking: DB failures are caught
+// inside each tick and never crash the process.
+
+if (process.env.ENTITLEMENT_RECONCILE_ENABLED !== "false") {
+  try {
+    startEntitlementReconciliation();
+    logger.info("Entitlement reconciliation scheduler started");
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      "Failed to start entitlement reconciliation scheduler",
+    );
+  }
+}
+
+// ── Plan-change → entitlement reconcile hook ─────────────────────────────────
+// Re-evaluate a tenant's entitlement counters immediately whenever its
+// subscription plan/status changes (transition, admin PATCH, provider sync).
+// Registered here — not inside the billing module — to avoid a
+// billing→entitlement import cycle. Failure-isolated: a reconcile error is
+// logged and never crashes the mutation that triggered it.
+
+registerPlanChangeHook(async (info) => {
+  try {
+    await getReconciliationService().reconcile(info.tenantId, "execute");
+  } catch (error) {
+    logger.warn(
+      { err: error, tenantId: info.tenantId },
+      "Entitlement reconcile after plan change failed (non-blocking)",
+    );
+  }
 });
 
 process.on("SIGTERM", () => {

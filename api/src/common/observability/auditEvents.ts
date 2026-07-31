@@ -140,6 +140,7 @@ export type AuditAction =
   | "QUOTA_DENIED"
   | "QUOTA_OVERRIDE"
   | "QUOTA_RECONCILED"
+  | "ENTITLEMENT_RECONCILE"
   // System
   | "SYSTEM_STARTUP"
   | "SYSTEM_HEALTH_CHECK_FAILED"
@@ -192,7 +193,8 @@ export type AuditResourceType =
   | "GapOccurrence"
   | "GapReevaluation"
   | "Feedback"
-  | "EntitlementOverride";
+  | "EntitlementOverride"
+  | "EntitlementReconciliation";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

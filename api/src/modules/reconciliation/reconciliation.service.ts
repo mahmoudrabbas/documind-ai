@@ -14,6 +14,8 @@ import {
   providerSubscriptionStatus,
   resolveProviderSubscription,
 } from "../billing/provider-subscription-sync.service.js";
+import { firePlanChangeHooks } from "../billing/subscription.service.js";
+import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { NOT_FOUND } from "../../common/errors/errorCodes.js";
@@ -188,6 +190,20 @@ export async function syncTenantSubscriptionFromProvider(
   };
   await SubscriptionModel.updateOne({ _id: subscription._id }, { $set: update });
 
+  const packageChanged =
+    previous.packageId !== String(update.packageId) ||
+    previous.packageVersion !== update.packageVersion;
+  const statusChanged = previous.status !== status;
+  if (packageChanged || statusChanged) {
+    await firePlanChangeHooks({
+      tenantId,
+      fromPackageId: previous.packageId,
+      toPackageId: String(update.packageId),
+      fromStatus: previous.status as SubscriptionStatus,
+      toStatus: status as SubscriptionStatus,
+    });
+  }
+
   await getAuditWriter().write({
     tenantId,
     action: "SUBSCRIPTION_RECONCILED",
@@ -197,7 +213,13 @@ export async function syncTenantSubscriptionFromProvider(
     actorEmail: actor.actorEmail,
     actorRole: actor.actorRole,
     actorKind: actor.actorKind,
-    changes: { source: "stripe", previous, current: update },
+    changes: {
+      source: "stripe",
+      previous,
+      current: update,
+      triggeredBy: "provider_sync",
+      reason: "Subscription state synchronized from payment provider",
+    },
     metadata: { traceId: actor.traceId, requestId: actor.requestId },
   });
 

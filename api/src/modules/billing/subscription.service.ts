@@ -45,6 +45,42 @@ export interface SubscriptionFilter {
   tenantId?: string;
 }
 
+// ── Plan-change hooks ────────────────────────────────────────────────────────
+// Registered-hook pattern so plan-affecting mutations (transitionSubscription,
+// the admin PATCH path, the provider-sync path) can notify subscribers — e.g.
+// the entitlement module's per-tenant reconcile — WITHOUT a billing→entitlement
+// import (which would create a module cycle). Hooks fire AFTER the state change
+// is persisted and are failure-isolated: a throwing hook never breaks the
+// mutation. The entitlement wiring itself lives in server.ts.
+
+export interface PlanChangeInfo {
+  tenantId: string;
+  fromPackageId?: string;
+  toPackageId?: string;
+  fromStatus: SubscriptionStatus;
+  toStatus: SubscriptionStatus;
+}
+
+export type PlanChangeHook = (info: PlanChangeInfo) => void | Promise<void>;
+
+const planChangeHooks: PlanChangeHook[] = [];
+
+export function registerPlanChangeHook(hook: PlanChangeHook): void {
+  planChangeHooks.push(hook);
+}
+
+export function getPlanChangeHooks(): readonly PlanChangeHook[] {
+  return planChangeHooks;
+}
+
+export async function firePlanChangeHooks(info: PlanChangeInfo): Promise<void> {
+  await Promise.allSettled(
+    planChangeHooks.map((hook) =>
+      Promise.resolve().then(() => hook(info)),
+    ),
+  );
+}
+
 // ── Audit helper ────────────────────────────────────────────────────────────
 
 function writeAudit(
@@ -130,6 +166,7 @@ export async function transitionSubscription(
   }
 
   const fromState = existing.status as SubscriptionStatus;
+  const fromPackageId = existing.packageId ? String(existing.packageId) : undefined;
   const legalTargets = LEGAL_TRANSITIONS[fromState];
 
   if (!legalTargets.includes(targetState)) {
@@ -171,6 +208,16 @@ export async function transitionSubscription(
 
   Object.assign(existing, update);
   await existing.save();
+
+  if (options?.packageId !== undefined || options?.packageVersion !== undefined) {
+    await firePlanChangeHooks({
+      tenantId,
+      fromPackageId,
+      toPackageId: options?.packageId ? String(options.packageId) : undefined,
+      fromStatus: fromState,
+      toStatus: targetState,
+    });
+  }
 
   const transition: SubscriptionTransition = {
     from: fromState,

@@ -3,6 +3,7 @@ import type {
   EntitlementUsageResponse,
   QuotaOverrideInput,
   QuotaOverride,
+  ReconciliationRunReport,
 } from "@/types/api/entitlement.types";
 
 type Success<T> = { success: true; data: T };
@@ -22,19 +23,21 @@ export function getCompanyLimits(signal?: AbortSignal) {
 }
 
 export function listOverrides(
-  params: { page?: number; pageSize?: number },
+  page = 1,
+  pageSize = 20,
+  tenantId?: string,
   signal?: AbortSignal,
 ) {
   const search = new URLSearchParams();
-  if (params.page) search.set("page", String(params.page));
-  if (params.pageSize) search.set("pageSize", String(params.pageSize));
-  const qs = search.toString();
+  search.set("page", String(page));
+  search.set("pageSize", String(pageSize));
+  if (tenantId) search.set("tenantId", tenantId);
   return apiClient<
     Success<{
       overrides: QuotaOverride[];
       pagination: { page: number; pageSize: number; totalPages: number; totalRecords: number };
     }>
-  >(`/super-admin/entitlement/overrides${qs ? `?${qs}` : ""}`, { signal });
+  >(`/super-admin/entitlement/overrides?${search.toString()}`, { signal });
 }
 
 export function setOverride(tenantId: string, input: QuotaOverrideInput) {
@@ -48,5 +51,27 @@ export function removeOverride(tenantId: string, dimension: string) {
   return apiClient<Success<{ removed: boolean }>>(
     `/super-admin/entitlement/overrides/${encodeURIComponent(tenantId)}/${encodeURIComponent(dimension)}`,
     { method: "DELETE" },
+  );
+}
+
+/**
+ * Run a quota reconciliation pass.
+ *
+ * `dry-run` computes discrepancies without fixing anything; `execute`
+ * applies authoritative limits to tenant counters. The backend endpoint is
+ * being added in parallel and may 404 until it lands.
+ */
+export function runReconciliation(
+  mode: "dry-run" | "execute",
+  tenantId?: string,
+  signal?: AbortSignal,
+) {
+  return apiClient<Success<ReconciliationRunReport>>(
+    "/super-admin/entitlement/reconcile",
+    {
+      method: "POST",
+      body: { mode, ...(tenantId ? { tenantId } : {}) },
+      signal,
+    },
   );
 }

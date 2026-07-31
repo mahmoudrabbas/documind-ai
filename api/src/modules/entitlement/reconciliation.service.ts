@@ -3,9 +3,14 @@ import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
 import OcrUsageRecordModel from "../../db/models/ocrUsageRecord.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
+import EntitlementReconciliationReportModel from "../../db/models/entitlementReconciliationReport.model.js";
+import { SERVICEABLE_STATUSES } from "../billing/subscription-status-policy.js";
 import type { QuotaCounterPort } from "./ports/quota-counter.port.js";
 import type { EntitlementProviderPort } from "./ports/entitlement-provider.port.js";
 import type { EntitlementDimension } from "./entitlement.types.js";
+import { MongoQuotaCounter } from "./adapters/mongo-quota-counter.js";
+import { MongoEntitlementProvider } from "./adapters/mongo-entitlement-provider.js";
 
 // ── Reconciliation types ─────────────────────────────────────────────────────
 
@@ -26,6 +31,15 @@ export interface ReconciliationReport {
   results: ReconciliationResult[];
   totalDiscrepancies: number;
   totalFixed: number;
+}
+
+export interface ReconciliationRunReport {
+  mode: "dry-run" | "execute";
+  timestamp: string;
+  totalTenants: number;
+  totalDiscrepancies: number;
+  totalFixed: number;
+  reports: ReconciliationReport[];
 }
 
 // ── Reconciliation dimension list ────────────────────────────────────────────
@@ -133,7 +147,7 @@ export class ReconciliationService {
       });
     }
 
-    return {
+    const report: ReconciliationReport = {
       tenantId,
       mode,
       timestamp: new Date().toISOString(),
@@ -143,6 +157,67 @@ export class ReconciliationService {
       totalDiscrepancies,
       totalFixed,
     };
+
+    await this.persistReport(report);
+
+    return report;
+  }
+
+  /**
+   * Reconcile every tenant with a serviceable subscription.
+   *
+   * Enumerates all tenant ids from the Subscription collection restricted to
+   * serviceable statuses (see `SERVICEABLE_STATUSES`) and runs `reconcile()`
+   * for each, aggregating the per-tenant reports. Per-tenant reports are
+   * persisted by `reconcile()` as usual; this method persists nothing extra.
+   * A run with zero tenants returns an empty aggregate.
+   */
+  async reconcileAll(mode: "dry-run" | "execute"): Promise<ReconciliationRunReport> {
+    const tenantIds = await SubscriptionModel.distinct("tenantId", {
+      status: { $in: [...SERVICEABLE_STATUSES] },
+    }).exec();
+
+    const reports: ReconciliationReport[] = [];
+    for (const tenantId of tenantIds) {
+      reports.push(await this.reconcile(String(tenantId), mode));
+    }
+
+    return {
+      mode,
+      timestamp: new Date().toISOString(),
+      totalTenants: reports.length,
+      totalDiscrepancies: reports.reduce(
+        (sum, report) => sum + report.totalDiscrepancies,
+        0,
+      ),
+      totalFixed: reports.reduce((sum, report) => sum + report.totalFixed, 0),
+      reports,
+    };
+  }
+
+  /**
+   * Persist a finished report to the EntitlementReconciliationReport
+   * collection. Best-effort: persistence failures are logged but never
+   * fail the reconciliation run itself.
+   */
+  private async persistReport(report: ReconciliationReport): Promise<void> {
+    try {
+      await EntitlementReconciliationReportModel.create({
+        tenantId: new Types.ObjectId(report.tenantId),
+        mode: report.mode,
+        timestamp: new Date(report.timestamp),
+        periodStart: report.periodStart,
+        periodEnd: report.periodEnd,
+        results: report.results,
+        totalDiscrepancies: report.totalDiscrepancies,
+        totalFixed: report.totalFixed,
+      });
+    } catch (error) {
+      console.warn(
+        `[Reconciliation] failed to persist report tenant=${report.tenantId} mode=${report.mode}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // ── Authoritative source counting ─────────────────────────────────────────
@@ -237,4 +312,18 @@ export class ReconciliationService {
       filter.createdAt = { $gte: periodStart };
     }
   }
+}
+
+// ── Singleton accessor ────────────────────────────────────────────────────
+
+let _reconciliationService: ReconciliationService | null = null;
+
+export function getReconciliationService(): ReconciliationService {
+  if (!_reconciliationService) {
+    _reconciliationService = new ReconciliationService(
+      new MongoQuotaCounter(),
+      new MongoEntitlementProvider(),
+    );
+  }
+  return _reconciliationService;
 }

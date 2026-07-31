@@ -5,14 +5,12 @@ import {
   storageProvider,
 } from "../../providers/storage/index.js";
 import { LocalFileSignatureScanner } from "../../providers/security-scanner/index.js";
-import { FakeEntitlementChecker } from "../../providers/entitlements/index.js";
 import { StubProcessingDispatcher, RealProcessingDispatcher } from "../../providers/processing/index.js";
 import { createDocumentServiceProviders } from "./documents.service.js";
 
 const service = createDocumentServiceProviders({
   storageProvider,
   securityScanner: new LocalFileSignatureScanner(),
-  entitlementChecker: new FakeEntitlementChecker(),
   processingDispatcher: process.env.NODE_ENV === "test"
     ? new StubProcessingDispatcher()
     : new RealProcessingDispatcher(),

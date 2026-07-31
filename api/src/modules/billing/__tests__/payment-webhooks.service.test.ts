@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { auditWrite } = vi.hoisted(() => ({
+  auditWrite: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../../../db/models/subscription.model.js", () => ({
   default: {
     findOne: vi.fn(),
@@ -30,7 +34,7 @@ vi.mock("../../../db/models/package.model.js", () => ({
 }));
 
 vi.mock("../../../common/observability/index.js", () => ({
-  getAuditWriter: () => ({ write: vi.fn().mockResolvedValue(undefined) }),
+  getAuditWriter: () => ({ write: auditWrite }),
 }));
 
 vi.mock("../../billing/subscription.service.js", () => ({
@@ -498,6 +502,36 @@ describe("handlePaymentEvent", () => {
         TENANT_ID,
         "EXPIRED",
         expect.anything(),
+      );
+    });
+
+    it("maps Stripe paused status to internal PAUSED", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_csu_pause_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "paused",
+          cancel_at_period_end: false,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "PAUSED",
+        expect.anything(),
+      );
+      expect(auditWrite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "SUBSCRIPTION_UPDATED",
+          resourceType: "Subscription",
+          changes: expect.objectContaining({ newStatus: "PAUSED" }),
+        }),
       );
     });
 

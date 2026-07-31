@@ -10,16 +10,16 @@ import {
   getJobStatusController,
   replayJobController,
 } from "./jobs.controller.js";
-import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { createCapabilityGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
-const retentionGuard = createEntitlementGuard(getEntitlementService(), {
-  dimension: "retentionDays",
-  amount: 1,
+const retentionGuard = createCapabilityGuard(getEntitlementService(), {
+  capability: "retentionDays",
+  value: (req) => req.body?.retentionDays ?? 90,
   failMode: "fail-open",
 });
 

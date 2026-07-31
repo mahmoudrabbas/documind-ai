@@ -14,7 +14,7 @@
     "dev:api": "npm run dev --workspace api",
     "dev:app": "npm run dev --workspace app",
     "dev:workers": "npm run dev --workspace workers",
-    "stripe:listen": "stripe listen --forward-to localhost:5000/webhooks/stripe",
+    "stripe:listen": "stripe listen --forward-to localhost:5000/webhooks/payment/stripe",
     "build": "node scripts/run-workspaces.mjs build",
     "build:api": "npm run build --workspace api",
     "build:app": "npm run build --workspace app",

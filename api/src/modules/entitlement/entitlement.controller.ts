@@ -1,7 +1,16 @@
 import type { NextFunction, Request, Response } from "express";
+import mongoose from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
-import { FORBIDDEN } from "../../common/errors/errorCodes.js";
+import {
+  FORBIDDEN,
+  SUBSCRIPTION_INACTIVE,
+} from "../../common/errors/errorCodes.js";
 import { getEntitlementService } from "./entitlement.service.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
+import {
+  isServiceablePaymentState,
+  isServiceableStatus,
+} from "../billing/subscription-status-policy.js";
 import type { CounterDimension } from "./entitlement.types.js";
 import type { EntitlementSnapshot } from "../billing/ports/entitlement-snapshot.port.js";
 
@@ -66,6 +75,43 @@ function buildLimitMap(
 // ── Controllers ──────────────────────────────────────────────────────────
 
 /**
+ * Distinguish WHY a snapshot is null: a subscription that exists but is
+ * non-serviceable (status or refunded paymentState) → 403 SUBSCRIPTION_INACTIVE;
+ * otherwise (no subscription, or package/snapshot unavailable) → null keeps the
+ * caller's empty-snapshot response.
+ */
+async function resolveSnapshot(
+  tenantId: string,
+  snapshot: EntitlementSnapshot | null,
+): Promise<EntitlementSnapshot | null> {
+  if (snapshot) {
+    return snapshot;
+  }
+
+  const subscription = await SubscriptionModel.findOne({
+    tenantId: new mongoose.Types.ObjectId(tenantId),
+  });
+
+  if (
+    subscription &&
+    (!isServiceableStatus(subscription.status) ||
+      !isServiceablePaymentState(subscription.paymentState))
+  ) {
+    throw new AppError(
+      403,
+      SUBSCRIPTION_INACTIVE,
+      "Your subscription is inactive",
+      {
+        status: subscription.status,
+        paymentState: subscription.paymentState,
+      },
+    );
+  }
+
+  return null;
+}
+
+/**
  * GET /entitlement/usage
  *
  * Returns current usage versus limits for the authenticated tenant's current
@@ -82,8 +128,12 @@ export const getUsageController = endpoint(async (req) => {
     svc.getPeriodReset(tenantId),
   ]);
 
+  const resolvedSnapshot = await resolveSnapshot(tenantId, snapshot);
+
   const usageKeys = Object.keys(usage);
-  const limit = snapshot ? buildLimitMap(snapshot, usageKeys) : {};
+  const limit = resolvedSnapshot
+    ? buildLimitMap(resolvedSnapshot, usageKeys)
+    : {};
 
   return {
     current: usage,
@@ -104,6 +154,7 @@ export const getLimitsController = endpoint(async (req) => {
   const svc = getEntitlementService();
 
   const snapshot = await svc.getEntitlementSnapshot(tenantId);
+  const resolvedSnapshot = await resolveSnapshot(tenantId, snapshot);
 
-  return snapshot ?? {};
+  return resolvedSnapshot ?? {};
 });
