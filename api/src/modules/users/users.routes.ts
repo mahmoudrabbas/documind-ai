@@ -18,12 +18,24 @@ import {
   validateListUsersInput,
   validateUpdateUserInput,
 } from "./users.validator.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
 const invitationRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 50,
   message: "Too many invitation attempts. Please try again later.",
+});
+
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const svc = getEntitlementService();
+
+const employeeInviteGuard = createEntitlementGuard(svc, {
+  dimension: "employees",
+  amount: 1,
+  failMode: "fail-closed",
 });
 const requireUserUpdate = requirePermission(Permission.USERS_UPDATE);
 const requireRoleAssignment = requirePermission(Permission.USERS_ASSIGN_ROLE);
@@ -104,6 +116,7 @@ router.post(
   requirePermission(Permission.USERS_CREATE),
   requireRoleAssignmentForAdminInvite,
   validateInvite,
+  employeeInviteGuard,
   inviteUserController,
 );
 
@@ -113,6 +126,7 @@ router.post(
   tenantScoping,
   requirePermission(Permission.USERS_CREATE),
   invitationRateLimiter,
+  employeeInviteGuard,
   resendInvitationController,
 );
 

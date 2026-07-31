@@ -1,4 +1,6 @@
 import { getRedisClient, isRedisConnected } from "../../../db/redis.js";
+import type { ReservationStorePort } from "../ports/reservation-store.port.js";
+import type { EntitlementDimension } from "../entitlement.types.js";
 
 // ── Result type ──────────────────────────────────────────────────────────────
 
@@ -9,15 +11,16 @@ export interface ReservationResult {
 // ── Adapter ───────────────────────────────────────────────────────────────────
 
 /**
- * Optional Redis-backed reservation store.
+ * Redis-backed reservation store implementing ReservationStorePort.
  *
  * Provides atomic reserve / commit / release semantics for entitlement quota
  * reservations.  Every operation degrades gracefully when Redis is unavailable
- * — callers fall back to the MongoDB-only path.
+ * — `reserve` returns `null` and `commit`/`release` return `0`, so callers
+ * fall back to the MongoDB-only direct-consume path.
  *
  * Reservations are created with a TTL so stale entries expire automatically.
  */
-export class RedisReservationStore {
+export class RedisReservationStore implements ReservationStorePort {
   private readonly enabled: boolean;
 
   constructor() {
@@ -30,7 +33,7 @@ export class RedisReservationStore {
 
   private reservationKey(
     tenantId: string,
-    dimension: string,
+    dimension: EntitlementDimension,
     reservationId: string,
   ): string {
     return `reservation:${tenantId}:${dimension}:${reservationId}`;
@@ -50,7 +53,7 @@ export class RedisReservationStore {
    */
   async reserve(
     tenantId: string,
-    dimension: string,
+    dimension: EntitlementDimension,
     amount: number,
     ttlSeconds: number,
   ): Promise<ReservationResult | null> {
@@ -95,7 +98,7 @@ export class RedisReservationStore {
    */
   async commit(
     tenantId: string,
-    dimension: string,
+    dimension: EntitlementDimension,
     reservationId: string,
   ): Promise<number> {
     if (!this.enabled || !isRedisConnected()) {
@@ -128,26 +131,41 @@ export class RedisReservationStore {
   /**
    * Release (cancel) a reservation without consuming it.
    *
-   * Simply deletes the key so the quota is never deducted.
+   * Reads the stored amount, deletes the key, and returns the amount so the
+   * caller can refund the held quota.
+   *
+   * @returns The released amount, or `0` if the reservation was not found
+   *          (already committed, released, or expired via TTL).
    */
   async release(
     tenantId: string,
-    dimension: string,
+    dimension: EntitlementDimension,
     reservationId: string,
-  ): Promise<void> {
+  ): Promise<number> {
     if (!this.enabled || !isRedisConnected()) {
-      return;
+      return 0;
     }
 
     try {
       const redis = getRedisClient();
       const key = this.reservationKey(tenantId, dimension, reservationId);
+
+      // Get amount before deleting
+      const amount = await redis.get(key);
+      if (amount === null) {
+        return 0; // Reservation not found
+      }
+
+      // Delete the reservation
       await redis.del(key);
+
+      return parseInt(amount, 10) || 0;
     } catch (error) {
       console.warn(
         "[RedisReservationStore] Redis error during release:",
         error,
       );
+      return 0;
     }
   }
 }

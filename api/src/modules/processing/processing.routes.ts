@@ -33,9 +33,17 @@ router.use(indexingRoutes);
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
-const ocrGuard = createEntitlementGuard(getEntitlementService(), {
+const svc = getEntitlementService();
+
+const ocrGuard = createEntitlementGuard(svc, {
   dimension: "ocrPagesPerMonth",
   amount: (req) => req.body.pageCount || 1,
+  failMode: "fail-closed",
+});
+
+const ocrRetryGuard = createEntitlementGuard(svc, {
+  dimension: "ocrPagesPerMonth",
+  amount: (req) => req.body?.pageCount ?? 1,
   failMode: "fail-closed",
 });
 
@@ -87,6 +95,7 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  ocrRetryGuard,
   retryOcrController,
 );
 

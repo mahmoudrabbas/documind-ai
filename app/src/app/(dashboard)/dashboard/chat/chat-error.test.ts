@@ -42,4 +42,13 @@ describe("chat provider error presentation", () => {
     expect(source).toContain("disabled={!input.trim() || isTyping || retryAfterSeconds !== null}");
     expect(source).toContain("Retry in ${retryAfterSeconds}s.");
   });
+
+  it("surfaces entitlement denials with an UpgradePrompt banner that keeps the conversation intact", async () => {
+    const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
+    expect(source).toContain("import { UpgradePrompt }");
+    expect(source).toContain("mapEntitlementError(err)");
+    expect(source).toContain("setEntitlementBanner(denial)");
+    expect(source).toContain("entitlementBanner.kind === \"subscription-inactive\"");
+    expect(source).toContain("router.push(\"/checkout\")");
+  });
 });

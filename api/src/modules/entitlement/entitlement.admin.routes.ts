@@ -7,6 +7,8 @@ import {
   listOverridesController,
   removeOverrideController,
   setOverrideController,
+  reconcileController,
+  listReconciliationReportsController,
 } from "./entitlement.admin.controller.js";
 
 const router = Router();
@@ -48,6 +50,32 @@ router.delete(
   requirePermission(Permission.BILLING_MANAGE),
   authorize("SUPER_ADMIN"),
   removeOverrideController,
+);
+
+/**
+ * POST /reconcile
+ * Run an entitlement reconciliation sweep for a single tenant or all tenants.
+ * SUPER_ADMIN only.
+ */
+router.post(
+  "/reconcile",
+  authenticate,
+  requirePermission(Permission.BILLING_MANAGE),
+  authorize("SUPER_ADMIN"),
+  reconcileController,
+);
+
+/**
+ * GET /reconcile/reports
+ * List persisted entitlement reconciliation reports.
+ * SUPER_ADMIN only.
+ */
+router.get(
+  "/reconcile/reports",
+  authenticate,
+  requirePermission(Permission.BILLING_MANAGE),
+  authorize("SUPER_ADMIN"),
+  listReconciliationReportsController,
 );
 
 export default router;

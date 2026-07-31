@@ -47,6 +47,12 @@ function writeAudit(
 }
 
 // ── Static event → status mapping (excluding customer.subscription.updated) ──
+//
+// Single source of truth: entitlements fail closed on subscription.status
+// (SERVICEABLE_STATUSES) and subscription.paymentState (refunded → fail closed),
+// both evaluated in MongoEntitlementProvider.getSnapshot(). The paymentState
+// values derived here are for reporting/audit only and may differ from the
+// entitlement gate — do NOT unify this derivation with the entitlement policy.
 
 const EVENT_STATUS_MAP: Record<
   string,
@@ -93,6 +99,7 @@ const STRIPE_STATUS_MAP: Record<string, SubscriptionStatus> = {
   incomplete: "INCOMPLETE",
   incomplete_expired: "EXPIRED",
   canceled: "CANCELED",
+  paused: "PAUSED",
 };
 
 function mapStripeStatusToInternal(
@@ -436,6 +443,11 @@ async function handleSubscriptionUpdated(
   const periodEnd = providerSubscription?.currentPeriodEnd ?? extractCurrentPeriodEnd(event);
   const cancelAt = extractCancelAt(event);
 
+  // Single source of truth: entitlements fail closed on subscription.status
+  // (SERVICEABLE_STATUSES) and subscription.paymentState (refunded → fail closed),
+  // both evaluated in MongoEntitlementProvider.getSnapshot(). The paymentState
+  // derivation below is for reporting/audit only and may differ from the
+  // entitlement gate — do NOT unify it with the entitlement policy.
   const subscriptionUpdate: Record<string, unknown> = {
     cancelAtPeriodEnd,
     paymentState: mappedStatus === "EXPIRED" || mappedStatus === "CANCELED" || mappedStatus === "PAST_DUE" || mappedStatus === "UNPAID"

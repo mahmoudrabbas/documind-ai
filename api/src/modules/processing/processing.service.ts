@@ -10,7 +10,6 @@ import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND, OCR_LANGUAGE_UNSUPPORTED, REVIEW_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { getApiJobDispatcher } from "../jobs/jobDispatcher.js";
 import { getOcrProvider } from "../../providers/ocr/index.js";
-import { getEntitlementChecker } from "../../providers/entitlements/index.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import {
   findOcrPageResults,
@@ -43,6 +42,7 @@ import {
   type ResolvedOperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
+import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
 
 const metadataAgent = new FakeMetadataAgent();
 const versionConflictAgent = new FakeVersionConflictAgent();
@@ -120,8 +120,7 @@ export async function triggerOcrProcessing(
   }
 
   const pageCount = input.pageNumbers?.length || 1;
-  const entitlementChecker = getEntitlementChecker();
-  await entitlementChecker.checkOcrPageQuota(tenantId, pageCount);
+  await checkOcrPageQuota(tenantId, pageCount);
 
   const traceId = randomUUID();
   const idempotencyKey = `ocr-${docId.toString()}-${version}-${ver.checksum}-${Date.now()}`;

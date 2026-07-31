@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { SubscriptionProvisioningPort } from "../../subscription-provisioning.port.js";
 import type { ProviderEventEnvelope } from "../../subscription-provisioning.port.js";
 import { FakeSubscriptionProvisioning } from "../fake-subscription-provisioning.js";
+import { LEGAL_TRANSITIONS as PRODUCTION_LEGAL_TRANSITIONS } from "../../../subscription.service.js";
+import { LEGAL_TRANSITIONS as FAKE_LEGAL_TRANSITIONS } from "../fake-subscription-provisioning.js";
 
 // ── Reusable test suite factory ──────────────────────────────────────────────
 // Every test in this factory must pass for BOTH the fake adapter AND any
@@ -431,3 +433,16 @@ contractTests(
     return fake;
   },
 );
+
+// ── Legal-transitions mirror drift guard ─────────────────────────────────────
+// The fake keeps a local mirror of the production state machine
+// (subscription.service.ts).  If the two ever diverge, behavior under the
+// fake silently diverges from production — e.g. an illegal transition being
+// accepted locally.  Deep-compare the FULL tables so any future drift in any
+// state is caught, not just the states exercised by the contract tests.
+
+describe("LEGAL_TRANSITIONS mirror drift guard", () => {
+  it("fake transition table deep-equals production LEGAL_TRANSITIONS", () => {
+    expect(FAKE_LEGAL_TRANSITIONS).toEqual(PRODUCTION_LEGAL_TRANSITIONS);
+  });
+});

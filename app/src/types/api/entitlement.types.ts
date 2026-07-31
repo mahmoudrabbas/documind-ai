@@ -1,12 +1,14 @@
-export interface EntitlementUsage {
-  current: number;
-  limit: number;
-  dimension: string;
-  periodReset: string;
-}
+/**
+ * Entitlement contract types.
+ *
+ * Matches the backend GET /entitlement/usage response:
+ * `{ success: true, data: { current, limit, periodStart, periodEnd } }`
+ * where `current` and `limit` are flat records keyed by counter dimension.
+ */
 
 export interface EntitlementUsageResponse {
-  usage: EntitlementUsage[];
+  current: Record<string, number>;
+  limit: Record<string, number>;
   periodStart: string;
   periodEnd: string | null;
 }
@@ -22,4 +24,25 @@ export interface QuotaOverride extends QuotaOverrideInput {
   enabled: boolean;
   createdBy: string;
   createdAt: string;
+}
+
+/**
+ * Report returned by POST /super-admin/entitlement/reconcile after
+ * running a quota reconciliation pass (dry-run or execute).
+ */
+export interface ReconciliationRunReport {
+  mode: "dry-run" | "execute";
+  timestamp: string;
+  totalTenants: number;
+  totalDiscrepancies: number;
+  totalFixed: number;
+  reports: Array<{
+    tenantId: string;
+    tenantName?: string;
+    dimension: string;
+    authoritative: number;
+    current: number;
+    discrepancy: number;
+    fixed: boolean;
+  }>;
 }

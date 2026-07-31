@@ -10,6 +10,8 @@ import { MongoMemoryReplSet } from "mongodb-memory-server";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import RoleModel from "../../db/models/role.model.js";
+import PackageModel from "../../db/models/package.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import { disconnectRedis } from "../../db/redis.js";
 import { assignRole, deleteRole, updateRole } from "./roles.service.js";
@@ -27,6 +29,88 @@ async function createTenantAndAdmin() {
     status: "active",
     plan: "free",
   });
+
+  // Seed a serviceable package + subscription so the entitlement guard on
+  // POST /users (invite) can resolve a quota snapshot instead of failing
+  // closed with 503.
+  const pkgCode = "test-free-test-corp";
+  const pkg = await PackageModel.create({
+    name: "Test Package",
+    code: pkgCode,
+    description: "Test package for integration tests",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    annualPrice: 0,
+    currency: "USD",
+    entitlements: {
+      employees: 10,
+      admins: 1,
+      documents: 100,
+      storageMb: 1024,
+      fileSizeMb: 10,
+      queriesPerMonth: 1000,
+      tokensPerMonth: 100000,
+      ocrPagesPerMonth: 100,
+    },
+    trialDays: 0,
+    visibility: "public",
+    supportedModels: ["gpt-4"],
+    analyticsLevel: "basic",
+    retentionDays: 30,
+    supportLevel: "community",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
+    versions: [
+      {
+        _id: new mongoose.Types.ObjectId(),
+        version: 1,
+        name: "Test Package v1",
+        code: `${pkgCode}-v1`,
+        description: "Version 1",
+        monthlyPrice: 0,
+        annualPrice: 0,
+        currency: "USD",
+        entitlements: {
+          employees: 10,
+          admins: 1,
+          documents: 100,
+          storageMb: 1024,
+          fileSizeMb: 10,
+          queriesPerMonth: 1000,
+          tokensPerMonth: 100000,
+          ocrPagesPerMonth: 100,
+        },
+        trialDays: 0,
+        visibility: "public",
+        supportedModels: ["gpt-4"],
+        analyticsLevel: "basic",
+        retentionDays: 30,
+        supportLevel: "community",
+        stripeProductId: "",
+        stripePriceId: "",
+        stripeAnnualPriceId: "",
+        createdAt: new Date(),
+      },
+    ],
+  });
+
+  await SubscriptionModel.create({
+    tenantId: tenant._id,
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    startedAt: new Date(),
+    periodStart: new Date("2026-01-01"),
+    periodEnd: new Date("2027-01-01"),
+    currentPeriodStart: new Date("2026-01-01"),
+    currentPeriodEnd: new Date("2027-01-01"),
+    billingInterval: "monthly",
+    provider: "test",
+    paymentState: "paid",
+  });
+
   const user = await UserModel.create({
     tenantId: tenant.id,
     name: "Admin User",
@@ -82,6 +166,8 @@ beforeEach(async () => {
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
   await RoleModel.deleteMany({});
+  await PackageModel.deleteMany({});
+  await SubscriptionModel.deleteMany({});
 });
 
 after(async () => {

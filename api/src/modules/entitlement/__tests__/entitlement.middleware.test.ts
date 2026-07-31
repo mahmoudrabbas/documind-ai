@@ -1,17 +1,39 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createEntitlementGuard, createEntitlementCheckGuard } from "../middlewares/entitlement.middleware.js";
-import type { EntitlementGuardOptions } from "../middlewares/entitlement.middleware.js";
+import type { Request } from "express";
+import {
+  createEntitlementGuard,
+  createEntitlementCheckGuard,
+  createCapabilityGuard,
+} from "../middlewares/entitlement.middleware.js";
+import type {
+  CapabilityGuardOptions,
+  EntitlementGuardOptions,
+} from "../middlewares/entitlement.middleware.js";
 import { FakeEntitlementService } from "../ports/fakes/fake-entitlement-service.js";
 import type { FakeQuotaCounter } from "../ports/fakes/fake-quota-counter.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import { ENTITLEMENT_EXCEEDED } from "../../../common/errors/errorCodes.js";
-import type { EntitlementDimension } from "../entitlement.types.js";
+import type { CapabilityKey, EntitlementDimension } from "../entitlement.types.js";
 import type { EntitlementService } from "../entitlement.service.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeGuard(service: FakeEntitlementService, options: EntitlementGuardOptions) {
   return createEntitlementGuard(service as unknown as EntitlementService, options);
+}
+
+function makeCapabilityGuard(
+  service: FakeEntitlementService,
+  options: {
+    capability: CapabilityKey;
+    value: string | number | ((req: Request) => unknown);
+    failMode: "fail-closed" | "fail-open";
+  },
+) {
+  return createCapabilityGuard(
+    service as unknown as EntitlementService,
+    options as unknown as CapabilityGuardOptions,
+  );
 }
 
 function currentPeriodKey(): string {
@@ -122,7 +144,7 @@ describe("EntitlementGuard middleware", () => {
       expect(req.quotaWarning).toBeUndefined();
     });
 
-    it("includes current, limit, dimension, and remaining in AppError details", async () => {
+    it("includes current, limit, dimension, remaining, periodReset, and canUpgrade in AppError details", async () => {
       const key = currentPeriodKey();
       counter._seed("test-tenant", "documents", key, 100);
 
@@ -141,7 +163,30 @@ describe("EntitlementGuard middleware", () => {
         limit: 100,
         dimension: "documents",
         remaining: 0,
+        canUpgrade: false,
       });
+      expect(typeof (error.details as { periodReset?: unknown }).periodReset).toBe("string");
+    });
+
+    it("reports canUpgrade=true in details when requester is a company admin", async () => {
+      const key = currentPeriodKey();
+      counter._seed("test-tenant", "documents", key, 100);
+
+      const { req, res, next } = createMocks();
+      req.auth = { role: "COMPANY_ADMIN" };
+
+      const guard = makeGuard(service, {
+        dimension: "documents",
+        amount: 1,
+        failMode: "fail-closed",
+      });
+
+      await callGuard(guard, req, res, next);
+
+      const error = next.mock.calls[0][0] as AppError;
+      expect(
+        (error.details as { canUpgrade?: boolean }).canUpgrade,
+      ).toBe(true);
     });
   });
 
@@ -691,6 +736,16 @@ describe("EntitlementCheckGuard middleware", () => {
     await callGuard(guard, req, res, next);
 
     expectNextCalledWithAppError(next, 429, ENTITLEMENT_EXCEEDED);
+
+    const error = next.mock.calls[0][0] as AppError;
+    expect(error.details).toMatchObject({
+      current: 100,
+      limit: 100,
+      dimension: "documents",
+      remaining: 0,
+      canUpgrade: false,
+    });
+    expect(typeof (error.details as { periodReset?: unknown }).periodReset).toBe("string");
   });
 
   // ── 3. Exceeded + fail-open → req.quotaWarning + next() ───────────────────
@@ -785,6 +840,217 @@ describe("EntitlementCheckGuard middleware", () => {
     );
 
     // Request should continue
+    expectNextCalledSuccess(next);
+  });
+});
+
+// ── Capability guard suite ───────────────────────────────────────────────────
+
+describe("CapabilityGuard middleware", () => {
+  let service: FakeEntitlementService;
+
+  beforeEach(() => {
+    service = new FakeEntitlementService();
+  });
+
+  // ── 1. Allowed model → next() ──────────────────────────────────────────────
+
+  it("calls next() when the requested model is in supportedModels", async () => {
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: "standard",
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledSuccess(next);
+    expect(req.quotaWarning).toBeUndefined();
+  });
+
+  // ── 2. Disallowed model → AppError(429) with enriched details ───────────────
+
+  it("denies a model not in supportedModels with 429 and enriched details", async () => {
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: "premium",
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledWithAppError(next, 429, ENTITLEMENT_EXCEEDED);
+
+    const error = next.mock.calls[0][0] as AppError;
+    expect(error.details).toMatchObject({
+      current: 0,
+      limit: 2,
+      dimension: "allowedModels",
+      remaining: 2,
+      canUpgrade: false,
+    });
+    expect(typeof (error.details as { periodReset?: unknown }).periodReset).toBe("string");
+    expect(error.message).toContain('Model "premium"');
+  });
+
+  it("resolves the model name dynamically from the request body", async () => {
+    const { req, res, next } = createMocks();
+    req.body = { modelName: "basic" };
+
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: (r) => r.body?.model ?? r.body?.modelName ?? "",
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledSuccess(next);
+  });
+
+  it("reports canUpgrade=true when the requester is a company admin", async () => {
+    const { req, res, next } = createMocks();
+    req.auth = { role: "COMPANY_ADMIN" };
+
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: "premium",
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    const error = next.mock.calls[0][0] as AppError;
+    expect(
+      (error.details as { canUpgrade?: boolean }).canUpgrade,
+    ).toBe(true);
+  });
+
+  // ── 3. retentionDays enforcement ────────────────────────────────────────────
+
+  it("allows retentionDays within the plan limit", async () => {
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "retentionDays",
+      value: 90,
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledSuccess(next);
+  });
+
+  it("denies retentionDays over the plan limit with 429", async () => {
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "retentionDays",
+      value: 120,
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledWithAppError(next, 429, ENTITLEMENT_EXCEEDED);
+
+    const error = next.mock.calls[0][0] as AppError;
+    expect(error.details).toMatchObject({
+      current: 120,
+      limit: 90,
+      dimension: "retentionDays",
+      remaining: 0,
+    });
+    expect(error.message).toContain("retention");
+  });
+
+  // ── 4. Fail-open on denial → req.quotaWarning + next() ──────────────────────
+
+  it("fail-open sets req.quotaWarning and continues when a model is denied", async () => {
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: "premium",
+      failMode: "fail-open",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expect(req.quotaWarning).toBe(true);
+    expectNextCalledSuccess(next);
+  });
+
+  it("fail-open sets req.quotaWarning when retentionDays is over the limit", async () => {
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "retentionDays",
+      value: 365,
+      failMode: "fail-open",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expect(req.quotaWarning).toBe(true);
+    expectNextCalledSuccess(next);
+  });
+
+  // ── 5. Missing tenantId → AppError(500) ────────────────────────────────────
+
+  it("throws 500 when tenantId is missing", async () => {
+    const { req, res, next } = createMocks();
+    req.tenantId = undefined;
+
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: "basic",
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledWithAppError(next, 500, "TENANT_ID_MISSING");
+  });
+
+  // ── 6. Service error: fail-closed → AppError(503) ──────────────────────────
+
+  it("handles service error: fail-closed returns 503", async () => {
+    vi.spyOn(service, "checkCapability").mockRejectedValueOnce(
+      new Error("Database connection refused"),
+    );
+
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "allowedModels",
+      value: "basic",
+      failMode: "fail-closed",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expectNextCalledWithAppError(next, 503, "ENTITLEMENT_UNAVAILABLE");
+  });
+
+  // ── 7. Service error: fail-open → warning logged, next() called ────────────
+
+  it("handles service error: fail-open logs warning and continues", async () => {
+    vi.spyOn(service, "checkCapability").mockRejectedValueOnce(
+      new Error("Database connection refused"),
+    );
+
+    const { req, res, next } = createMocks();
+    const guard = makeCapabilityGuard(service, {
+      capability: "retentionDays",
+      value: 90,
+      failMode: "fail-open",
+    });
+
+    await callGuard(guard, req, res, next);
+
+    expect(req.log.warn).toHaveBeenCalledTimes(1);
+    expect(req.log.warn.mock.calls[0][1]).toContain(
+      "[CapabilityGuard] Service error",
+    );
     expectNextCalledSuccess(next);
   });
 });

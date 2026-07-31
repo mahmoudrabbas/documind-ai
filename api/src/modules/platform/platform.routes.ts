@@ -27,7 +27,7 @@ import {
   updateSubscriptionController,
   usageController,
 } from "./platform.controller.js";
-import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { createCapabilityGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
@@ -35,9 +35,9 @@ router.use(authenticate, requirePlatformTenant);
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
-const modelSelectionGuard = createEntitlementGuard(getEntitlementService(), {
-  dimension: "allowedModels",
-  amount: 1,
+const modelSelectionGuard = createCapabilityGuard(getEntitlementService(), {
+  capability: "allowedModels",
+  value: (req) => req.body?.model ?? req.body?.modelName ?? "",
   failMode: "fail-closed",
 });
 

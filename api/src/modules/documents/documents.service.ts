@@ -13,9 +13,9 @@ import { getDocumentAccessAuthorizationService } from "../document-access/docume
 import type {
   StorageProvider,
   SecurityScanner,
-  EntitlementChecker,
   ProcessingDispatcher,
 } from "../../providers/storage/types.js";
+import { checkUploadAllowed } from "../entitlement/entitlement-checks.js";
 import {
   findDocumentByTenantAndId,
   updateDocumentByTenantAndId,
@@ -148,10 +148,9 @@ function serializeVersion(v: { _id?: unknown; id?: unknown; documentId: unknown;
 export function createDocumentServiceProviders(deps: {
   storageProvider: StorageProvider;
   securityScanner: SecurityScanner;
-  entitlementChecker: EntitlementChecker;
   processingDispatcher: ProcessingDispatcher;
 }) {
-  const { storageProvider, securityScanner, entitlementChecker, processingDispatcher } = deps;
+  const { storageProvider, securityScanner, processingDispatcher } = deps;
 
   async function uploadDocument(
     file: MulterFile,
@@ -167,7 +166,7 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, FILE_ZERO_BYTES, "File is empty (zero bytes)");
     }
 
-    await entitlementChecker.checkUploadAllowed(tenantId, file.size);
+    await checkUploadAllowed(tenantId, file.size);
 
     const metadata = validateUploadDocumentInput(metadataInput);
     const safeName = sanitizeFilename(file.originalname);
@@ -481,7 +480,7 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
     }
 
-    await entitlementChecker.checkUploadAllowed(tenantId, file.size);
+    await checkUploadAllowed(tenantId, file.size);
 
     const payload = validateReplaceDocumentInput(metadataInput);
     const safeName = sanitizeFilename(file.originalname);
