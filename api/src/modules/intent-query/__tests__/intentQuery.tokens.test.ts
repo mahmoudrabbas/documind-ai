@@ -14,7 +14,6 @@ import { disconnectRedis } from "../../../db/redis.js";
 import { logger } from "../../../common/logger/logger.js";
 
 import { IntentQueryService } from "../intentQuery.service.js";
-import { getEntitlementService } from "../../entitlement/entitlement.service.js";
 import { FakeConversationContextAdapter } from "../adapters/conversationContext.fakeAdapter.js";
 import type {
   ModelAdapter,

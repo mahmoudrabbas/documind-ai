@@ -28,7 +28,6 @@ import { ENTITLEMENT_EXCEEDED } from "../../../common/errors/errorCodes.js";
 import {
   InMemoryAuditWriter,
   MongoAuditWriter,
-  type AuditWriter,
 } from "../../../common/observability/auditWriter.js";
 import { setAuditWriter } from "../../../common/observability/index.js";
 import { logger } from "../../../common/logger/logger.js";

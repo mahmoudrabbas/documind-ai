@@ -115,9 +115,8 @@ function makeSnapshot(documentsLimit: number): EntitlementSnapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-// Valid ObjectId hex strings so QuotaOverrideModel lookups cast cleanly.
+// Valid ObjectId hex string so QuotaOverrideModel lookups cast cleanly.
 const TENANT_A = "507f1f77bcf86cd799439011";
-const TENANT_B = "507f1f77bcf86cd799439012";
 const DIM_DOCUMENTS: EntitlementDimension = "documents";
 
 // ── Race-outcome helpers ─────────────────────────────────────────────────────
