@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
+import { useTenantSettings } from "@/providers/tenant-provider";
 import {
   getAppContext,
   filterNavigationLinks,
@@ -21,6 +22,7 @@ export function TopNavBar({
 }) {
   const auth = useAuth();
   const permissions = usePermissions();
+  const tenant = useTenantSettings();
   const { user } = auth;
   const pathname = usePathname();
   const router = useRouter();
@@ -69,6 +71,7 @@ export function TopNavBar({
     candidateLinks,
     permissions.status,
     permissions.can,
+    user?.role,
   );
   const settingsHref =
     permissions.status === "ready" &&
@@ -79,6 +82,15 @@ export function TopNavBar({
           ? "/dashboard/settings"
           : undefined
       : undefined;
+
+  const companyName =
+    tenant.status === "ready" && tenant.settings.profile.companyName
+      ? tenant.settings.profile.companyName
+      : appContext === "tenant"
+        ? (auth.tenant?.name ?? null)
+        : null;
+  const logoUrl =
+    tenant.status === "ready" ? tenant.settings.profile.logoUrl : null;
 
   return (
     <header className="sticky top-0 z-30 flex min-h-16 w-full min-w-0 items-center justify-between gap-2 border-b border-outline-variant bg-surface-bright/80 px-4 shadow-sm backdrop-blur-md sm:px-5 lg:px-6">
@@ -163,15 +175,28 @@ export function TopNavBar({
             aria-expanded={menuOpen}
             className="flex min-w-0 items-center gap-2 rounded-lg py-1 pe-1 transition-colors hover:bg-surface-container-high sm:gap-3 sm:pe-2"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary-container font-bold text-on-secondary-container shadow-sm">
-              {user?.name?.charAt(0).toUpperCase() || "A"}
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary-container font-bold text-on-secondary-container shadow-sm">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={logoUrl}
+                  alt={companyName ?? "Company logo"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span>{user?.name?.charAt(0).toUpperCase() || "A"}</span>
+              )}
             </div>
             <div className="hidden min-w-0 text-start sm:block">
               <p className="max-w-32 truncate text-label-md font-bold text-on-surface xl:max-w-48">
                 {user?.name || "Admin User"}
               </p>
-              <p className="text-label-sm text-on-surface-variant">
-                {user?.role === "COMPANY_ADMIN" ? "Company Admin" : "User"}
+              <p className="max-w-32 truncate text-label-sm text-on-surface-variant xl:max-w-48">
+                {appContext === "tenant" && companyName
+                  ? companyName
+                  : user?.role === "COMPANY_ADMIN"
+                    ? "Company Admin"
+                    : "User"}
               </p>
             </div>
             <span
