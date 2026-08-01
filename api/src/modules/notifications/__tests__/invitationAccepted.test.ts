@@ -40,7 +40,6 @@ import {
 } from "../../users/users.service.js";
 import { createEmailVerificationTokenForUser } from "../../auth/auth.service.js";
 import { USER_INVITATION_PURPOSE } from "../../auth/emailVerificationToken.js";
-import type { UserDocument } from "../../../db/models/user.model.js";
 import type { OutboxTriggerPort } from "../ports/outboxTrigger.port.js";
 
 const hasMongo = Boolean(process.env.MONGODB_URI);

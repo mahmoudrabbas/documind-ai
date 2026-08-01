@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   listNotifications,
   markRead,
@@ -51,7 +51,9 @@ export function useNotificationFeed(): UseNotificationFeedResult {
 
   // Latest items, available to callbacks without stale closures.
   const itemsRef = useRef<Notification[]>([]);
-  itemsRef.current = items;
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const load = useCallback(
     async (nextPage: number, options?: NotificationFeedOptions) => {

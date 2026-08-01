@@ -21,6 +21,7 @@ let result: ReturnType<typeof useUnreadCount> | undefined;
 const mountedRoots: Array<ReturnType<typeof createRoot>> = [];
 
 function Probe() {
+  // eslint-disable-next-line react-hooks/globals -- Test harness: capture the hook result into an outer variable for assertions.
   result = useUnreadCount();
   return null;
 }

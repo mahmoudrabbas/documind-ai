@@ -87,10 +87,44 @@ describe.skipIf(!hasMongo)("Notification REST API (T7 routes)", () => {
     return doc._id.toString();
   }
 
+  /**
+   * Superset of the JSON bodies the notification API returns: success
+   * envelopes ({ success, data, meta? }) from notifications.controller.ts and
+   * error envelopes ({ success: false, error }) from errorHandler.middleware.ts.
+   * Field access mirrors exactly what the assertions below read.
+   */
+  interface NotificationTestResponseBody {
+    success: boolean;
+    data: {
+      items: Record<string, unknown>[];
+      byPriority: { critical: number; high: number; normal: number; low: number };
+      total?: number;
+      count?: number;
+      id?: string;
+      type?: string;
+      isArchived?: boolean;
+      notificationId?: string;
+      archived?: boolean;
+      deleted?: boolean;
+      matchedCount?: number;
+    };
+    meta?: { page: number; limit: number };
+    error: {
+      code: string;
+      message: string;
+      details?: unknown;
+      path?: string;
+      method?: string;
+      requestId?: string;
+      timestamp?: string;
+      stack?: string;
+    };
+  }
+
   async function request(
     path: string,
     init: { method?: string; token?: string; body?: unknown } = {},
-  ): Promise<{ status: number; body: Record<string, any> }> {
+  ): Promise<{ status: number; body: NotificationTestResponseBody }> {
     const res = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: init.method ?? "GET",
       headers: {
@@ -99,7 +133,10 @@ describe.skipIf(!hasMongo)("Notification REST API (T7 routes)", () => {
       },
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     });
-    return { status: res.status, body: (await res.json()) as Record<string, any> };
+    return {
+      status: res.status,
+      body: (await res.json()) as NotificationTestResponseBody,
+    };
   }
 
   beforeAll(async () => {

@@ -410,6 +410,15 @@ describe.skipIf(!hasMongo)("T25b role_changed triggers", () => {
     expect(
       (entries[0]!.payload as { dedupEventId?: string }).dedupEventId,
     ).toBe(employeeId);
+    // The pending user's role WAS migrated (counted in affected) but it must
+    // never receive an outbox entry.
+    expect(
+      entries.some(
+        (e) =>
+          (e.payload as { dedupEventId?: string }).dedupEventId ===
+          pendingForMigrate.id,
+      ),
+    ).toBe(false);
     expect(await NotificationModel.countDocuments({ tenantId })).toBe(0);
   });
 
