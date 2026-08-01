@@ -47,8 +47,9 @@ function closeServer(server: Server) {
 }
 
 async function createActiveTenantAdmin(
-  options: { slug?: string; companyName?: string; email?: string } = {},
+  options: { slug?: string; companyName?: string; email?: string; fileSizeMb?: number } = {},
 ) {
+  const fileSizeMb = options.fileSizeMb ?? 20;
   const tenant = await TenantModel.create({
     name: options.companyName ?? "Acme Consulting",
     slug: options.slug ?? "acme-consulting",
@@ -74,7 +75,7 @@ async function createActiveTenantAdmin(
       admins: 1,
       documents: 100,
       storageMb: 1024,
-      fileSizeMb: 20,
+      fileSizeMb,
       queriesPerMonth: 1000,
       tokensPerMonth: 100000,
       ocrPagesPerMonth: 100,
@@ -103,7 +104,7 @@ async function createActiveTenantAdmin(
           admins: 1,
           documents: 100,
           storageMb: 1024,
-          fileSizeMb: 20,
+          fileSizeMb,
           queriesPerMonth: 1000,
           tokensPerMonth: 100000,
           ocrPagesPerMonth: 100,
@@ -412,6 +413,37 @@ void test("POST /documents — upload a document successfully", async () => {
   assert.equal(doc.isArchived, false);
   assert.equal(doc.quarantineStatus, "none");
   assert.ok(doc.checksum);
+
+  await closeServer(server);
+});
+
+void test("POST /documents — returns 413 FILE_SIZE_LIMIT_EXCEEDED when file exceeds the plan's file size limit", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  await createActiveTenantAdmin({ fileSizeMb: 2 });
+  const accessToken = await login(port);
+
+  const pdfContent = Buffer.alloc(3 * 1024 * 1024, 0x41); // 3 MB > 2 MB limit
+  const { buffer, boundary } = buildMultipartBody("oversized.pdf", pdfContent, {
+    title: "Oversized",
+  });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    },
+    body: buffer,
+  });
+
+  const body = (await response.json()) as Record<string, unknown>;
+  assert.equal(response.status, 413);
+  assert.equal(body.error, "FILE_SIZE_LIMIT_EXCEEDED");
+  assert.equal(
+    body.message,
+    "File size 3.0MB exceeds the maximum allowed size of 2MB",
+  );
 
   await closeServer(server);
 });

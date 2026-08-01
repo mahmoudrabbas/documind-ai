@@ -7,6 +7,8 @@ import { requireAuthenticatedAuditActor } from "../../common/observability/audit
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { AuditOperationContext } from "../audit/audit.types.js";
 import QuotaOverrideModel from "../../db/models/quotaOverride.model.js";
+import EntitlementReconciliationReportModel from "../../db/models/entitlementReconciliationReport.model.js";
+import { getReconciliationService } from "./reconciliation.service.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -97,6 +99,27 @@ const paramsWithTenantAndDimension = z
   .object({
     tenantId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid tenantId"),
     dimension: z.enum(counterDimensions),
+  })
+  .strict();
+
+const reconcileSchema = z
+  .object({
+    mode: z.enum(["dry-run", "execute"]).default("dry-run"),
+    tenantId: z
+      .string()
+      .regex(/^[0-9a-fA-F]{24}$/, "Invalid tenantId")
+      .optional(),
+  })
+  .strict();
+
+const listReconciliationReportsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(20),
+    tenantId: z
+      .string()
+      .regex(/^[0-9a-fA-F]{24}$/, "Invalid tenantId")
+      .optional(),
   })
   .strict();
 
@@ -228,4 +251,59 @@ export const removeOverrideController = endpoint(async (req) => {
   });
 
   return { removed: true, tenantId, dimension };
+});
+
+export const reconcileController = endpoint(async (req) => {
+  const { mode, tenantId } = parse(reconcileSchema, req.body);
+  const ctx = auditContext(req);
+
+  const report = tenantId
+    ? await getReconciliationService().reconcile(tenantId, mode)
+    : await getReconciliationService().reconcileAll(mode);
+
+  await getAuditWriter().write({
+    action: "ENTITLEMENT_RECONCILE",
+    resourceType: "EntitlementReconciliation",
+    resourceId: tenantId ?? "all",
+    metadata: {
+      mode,
+      totalDiscrepancies: report.totalDiscrepancies,
+      totalFixed: report.totalFixed,
+    },
+    tenantId: ctx.tenantId,
+    actorId: ctx.actorId,
+    actorEmail: ctx.actorEmail,
+    actorRole: ctx.actorRole,
+  });
+
+  return report;
+});
+
+export const listReconciliationReportsController = endpoint(async (req) => {
+  const { page, pageSize, tenantId } = parse(
+    listReconciliationReportsQuerySchema,
+    req.query,
+  );
+  const filter: Record<string, unknown> = {};
+  if (tenantId) filter.tenantId = new mongoose.Types.ObjectId(tenantId);
+
+  const [reports, total] = await Promise.all([
+    EntitlementReconciliationReportModel.find(filter)
+      .sort({ timestamp: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .lean()
+      .exec(),
+    EntitlementReconciliationReportModel.countDocuments(filter).exec(),
+  ]);
+
+  return {
+    reports,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
 });

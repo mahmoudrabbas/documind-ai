@@ -296,11 +296,11 @@ export class FakeSubscriptionProvisioning
 
 // ── Legal transitions mirror (same as subscription.service.ts) ───────────────
 
-const LEGAL_TRANSITIONS: Record<
+export const LEGAL_TRANSITIONS: Record<
   SubscriptionStatus,
   readonly SubscriptionStatus[]
 > = {
-  TRIALING: ["ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
+  TRIALING: ["ACTIVE", "INCOMPLETE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
   INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
   ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
   PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],

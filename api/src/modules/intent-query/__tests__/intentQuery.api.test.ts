@@ -6,6 +6,8 @@ import mongoose from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
+import PackageModel from "../../../db/models/package.model.js";
+import SubscriptionModel from "../../../db/models/subscription.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import { getIntentQueryService } from "../intentQuery.factory.js";
@@ -82,6 +84,8 @@ after(async () => {
 beforeEach(async () => {
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
+  await PackageModel.deleteMany({});
+  await SubscriptionModel.deleteMany({});
 
   const tenant = await TenantModel.create({
     name: "Api Corp",
@@ -89,6 +93,88 @@ beforeEach(async () => {
     status: "active",
     plan: "free",
   });
+
+  // Seed a serviceable package + subscription so the queryGuard on
+  // POST /intent-query/analyze resolves a quota snapshot instead of
+  // failing closed with 503.
+  const pkgCode = "test-free-api-corp";
+  const pkg = await PackageModel.create({
+    name: "Test Package",
+    code: pkgCode,
+    description: "Test package for integration tests",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    annualPrice: 0,
+    currency: "USD",
+    entitlements: {
+      employees: 10,
+      admins: 1,
+      documents: 100,
+      storageMb: 1024,
+      fileSizeMb: 10,
+      queriesPerMonth: 1000,
+      tokensPerMonth: 100000,
+      ocrPagesPerMonth: 100,
+    },
+    trialDays: 0,
+    visibility: "public",
+    supportedModels: ["gpt-4"],
+    analyticsLevel: "basic",
+    retentionDays: 30,
+    supportLevel: "community",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
+    versions: [
+      {
+        _id: new mongoose.Types.ObjectId(),
+        version: 1,
+        name: "Test Package v1",
+        code: `${pkgCode}-v1`,
+        description: "Version 1",
+        monthlyPrice: 0,
+        annualPrice: 0,
+        currency: "USD",
+        entitlements: {
+          employees: 10,
+          admins: 1,
+          documents: 100,
+          storageMb: 1024,
+          fileSizeMb: 10,
+          queriesPerMonth: 1000,
+          tokensPerMonth: 100000,
+          ocrPagesPerMonth: 100,
+        },
+        trialDays: 0,
+        visibility: "public",
+        supportedModels: ["gpt-4"],
+        analyticsLevel: "basic",
+        retentionDays: 30,
+        supportLevel: "community",
+        stripeProductId: "",
+        stripePriceId: "",
+        stripeAnnualPriceId: "",
+        createdAt: new Date(),
+      },
+    ],
+  });
+
+  await SubscriptionModel.create({
+    tenantId: tenant._id,
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    startedAt: new Date(),
+    periodStart: new Date("2026-01-01"),
+    periodEnd: new Date("2027-01-01"),
+    currentPeriodStart: new Date("2026-01-01"),
+    currentPeriodEnd: new Date("2027-01-01"),
+    billingInterval: "monthly",
+    provider: "test",
+    paymentState: "paid",
+  });
+
   tenantId = tenant.id;
 
   const user = await UserModel.create({

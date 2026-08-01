@@ -174,6 +174,11 @@ export async function resolveProviderSubscription(
   };
 }
 
+// Single source of truth: entitlements fail closed on subscription.status
+// (SERVICEABLE_STATUSES) and subscription.paymentState (refunded → fail closed),
+// both evaluated in MongoEntitlementProvider.getSnapshot(). The paymentState
+// derived here is for reporting/audit only and may differ from the entitlement
+// gate — do NOT unify this derivation with the entitlement policy.
 export function providerPaymentState(status: string): "pending" | "paid" | "failed" {
   if (status === "active" || status === "trialing") return "paid";
   if (status === "incomplete") return "pending";

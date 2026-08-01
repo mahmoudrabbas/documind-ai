@@ -5,6 +5,18 @@ import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { createChatController } from "./chat.controller.js";
 import type { ChatService } from "./chat.service.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
+
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const svc = getEntitlementService();
+
+const queryGuard = createEntitlementGuard(svc, {
+  dimension: "queriesPerMonth",
+  amount: 1,
+  failMode: "fail-closed",
+});
 
 export function createChatRoutes(service: ChatService): Router {
   const router = Router();
@@ -39,6 +51,7 @@ export function createChatRoutes(service: ChatService): Router {
     authenticate,
     tenantScoping,
     requirePermission(Permission.CHAT_CREATE),
+    queryGuard,
     controller.sendMessage,
   );
 

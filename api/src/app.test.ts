@@ -27,6 +27,8 @@ import RoleModel from "./db/models/role.model.js";
 import DocumentModel from "./db/models/document.model.js";
 import UsageLogModel from "./db/models/usageLog.model.js";
 import KnowledgeGapModel from "./db/models/knowledgeGap.model.js";
+import PackageModel from "./db/models/package.model.js";
+import SubscriptionModel from "./db/models/subscription.model.js";
 import { PLATFORM_TENANT_SLUG } from "./common/auth/platformTenant.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { USER_INVITATION_PURPOSE } from "./modules/auth/emailVerificationToken.js";
@@ -85,6 +87,88 @@ async function createActiveTenantAdmin(
     status: "active",
     plan: "free",
   });
+
+  // Seed a serviceable package + subscription so entitlement guards on
+  // guarded routes (POST /users invite, resend-invitation) can resolve the
+  // tenant's quota snapshot instead of failing closed with 503.
+  const pkgCode = `test-free-${options.slug ?? "acme-consulting"}`;
+  const pkg = await PackageModel.create({
+    name: "Test Package",
+    code: pkgCode,
+    description: "Test package for integration tests",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    annualPrice: 0,
+    currency: "USD",
+    entitlements: {
+      employees: 10,
+      admins: 1,
+      documents: 100,
+      storageMb: 1024,
+      fileSizeMb: 10,
+      queriesPerMonth: 1000,
+      tokensPerMonth: 100000,
+      ocrPagesPerMonth: 100,
+    },
+    trialDays: 0,
+    visibility: "public",
+    supportedModels: ["gpt-4"],
+    analyticsLevel: "basic",
+    retentionDays: 30,
+    supportLevel: "community",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
+    versions: [
+      {
+        _id: new mongoose.Types.ObjectId(),
+        version: 1,
+        name: "Test Package v1",
+        code: `${pkgCode}-v1`,
+        description: "Version 1",
+        monthlyPrice: 0,
+        annualPrice: 0,
+        currency: "USD",
+        entitlements: {
+          employees: 10,
+          admins: 1,
+          documents: 100,
+          storageMb: 1024,
+          fileSizeMb: 10,
+          queriesPerMonth: 1000,
+          tokensPerMonth: 100000,
+          ocrPagesPerMonth: 100,
+        },
+        trialDays: 0,
+        visibility: "public",
+        supportedModels: ["gpt-4"],
+        analyticsLevel: "basic",
+        retentionDays: 30,
+        supportLevel: "community",
+        stripeProductId: "",
+        stripePriceId: "",
+        stripeAnnualPriceId: "",
+        createdAt: new Date(),
+      },
+    ],
+  });
+
+  await SubscriptionModel.create({
+    tenantId: tenant._id,
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    startedAt: new Date(),
+    periodStart: new Date("2026-01-01"),
+    periodEnd: new Date("2027-01-01"),
+    currentPeriodStart: new Date("2026-01-01"),
+    currentPeriodEnd: new Date("2027-01-01"),
+    billingInterval: "monthly",
+    provider: "test",
+    paymentState: "paid",
+  });
+
   const user = await UserModel.create({
     tenantId: tenant.id,
     name: "Sarah Ahmed",
@@ -199,6 +283,8 @@ beforeEach(async () => {
   await RoleModel.deleteMany({});
   await DocumentModel.deleteMany({});
   await UsageLogModel.deleteMany({});
+  await SubscriptionModel.deleteMany({});
+  await PackageModel.deleteMany({});
 });
 
 after(async () => {

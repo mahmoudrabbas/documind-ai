@@ -1,8 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
 import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
+import { UpgradePrompt } from "@/components/entitlement/UpgradePrompt";
+import {
+  mapEntitlementError,
+  type EntitlementDenial,
+} from "@/lib/entitlement-errors";
 import {
   sendMessage,
   listConversations,
@@ -10,6 +16,9 @@ import {
   deleteConversation,
 } from "@/services/chat.service";
 import type { ChatSource, ConversationListItem } from "@/types/api/chat.types";
+import { useI18n } from "@/providers/i18n-provider";
+import { usePermissions } from "@/providers/permission-provider";
+import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
 
 type Message = {
@@ -36,13 +45,30 @@ const SUGGESTED_QUESTIONS = [
   "What are the IT security guidelines?",
 ];
 
+function resolveDimensionLabel(
+  t: (key: string) => string,
+  dimension: string,
+): string {
+  const key = `usage.dimension.${dimension}`;
+  const label = t(key);
+  if (label !== key) return label;
+  return dimension
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^[a-z]/, (c) => c.toUpperCase());
+}
+
 export function ChatClient() {
+  const { t } = useI18n();
+  const permissions = usePermissions();
+  const router = useRouter();
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [activeConversation, setActiveConversation] = useState<string>("");
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [entitlementBanner, setEntitlementBanner] =
+    useState<EntitlementDenial | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -171,6 +197,7 @@ export function ChatClient() {
     setInput("");
     setIsTyping(true);
     setError(null);
+    setEntitlementBanner(null);
 
     // Optimistically update sidebar
     if (convId) {
@@ -237,23 +264,32 @@ export function ChatClient() {
         );
       }
     } catch (err) {
-      const presentation = getChatErrorPresentation(err);
-      setError(presentation.message);
-      if (presentation.retryAfterSeconds !== null) {
-        setRetryAfterSeconds(presentation.retryAfterSeconds);
+      const denial = mapEntitlementError(err);
+      if (denial) {
+        // Entitlement denial (429 quota exceeded / 403 subscription
+        // inactive): surface the UpgradePrompt banner in place and keep all
+        // prior conversation messages visible.
+        setEntitlementBanner(denial);
+        setRetryAfterSeconds(null);
+      } else {
+        const presentation = getChatErrorPresentation(err);
+        setError(presentation.message);
+        if (presentation.retryAfterSeconds !== null) {
+          setRetryAfterSeconds(presentation.retryAfterSeconds);
+        }
+        const targetId = convId || activeConversation;
+        setMessages((prev) => ({
+          ...prev,
+          [targetId]: [
+            ...(prev[targetId] ?? []),
+            {
+              id: `e-${++msgIdCounter.current}`,
+              role: "assistant",
+              content: presentation.message,
+            },
+          ],
+        }));
       }
-      const targetId = convId || activeConversation;
-      setMessages((prev) => ({
-        ...prev,
-        [targetId]: [
-          ...(prev[targetId] ?? []),
-          {
-            id: `e-${++msgIdCounter.current}`,
-            role: "assistant",
-            content: presentation.message,
-          },
-        ],
-      }));
     } finally {
       setIsTyping(false);
     }
@@ -465,6 +501,47 @@ export function ChatClient() {
           <div className="border-t border-error/20 bg-error/5 px-4 py-2 text-center text-xs text-error">
             {error}
             {retryAfterSeconds !== null && ` Retry in ${retryAfterSeconds}s.`}
+          </div>
+        )}
+
+        {/* Entitlement denial banner (429 quota exceeded / 403 subscription inactive) */}
+        {entitlementBanner && (
+          <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-3 sm:px-6 lg:px-10">
+            <div className="mx-auto max-w-3xl">
+              {entitlementBanner.kind === "subscription-inactive" ? (
+                <UpgradePrompt
+                  variant="subscription-inactive"
+                  dimension="subscription"
+                  onUpgradeClick={() => router.push("/checkout")}
+                  hasBillingPermission={permissions.can(Permission.BILLING_MANAGE)}
+                  title={t("entitlement.denial.subscriptionInactiveTitle")}
+                  description={t(
+                    "entitlement.denial.subscriptionInactiveDescription",
+                  )}
+                  ctaLabel={t("entitlement.denial.reactivateCta")}
+                  hintLabel={t("entitlement.denial.reactivateHint")}
+                />
+              ) : (
+                <UpgradePrompt
+                  dimension={resolveDimensionLabel(
+                    t,
+                    entitlementBanner.dimension,
+                  )}
+                  current={entitlementBanner.current}
+                  limit={entitlementBanner.limit}
+                  onUpgradeClick={() => router.push("/checkout")}
+                  hasBillingPermission={permissions.can(Permission.BILLING_MANAGE)}
+                  warningThreshold={0}
+                  title={t("entitlement.denial.quotaTitle", {
+                    dimension: resolveDimensionLabel(
+                      t,
+                      entitlementBanner.dimension,
+                    ),
+                  })}
+                  description={t("entitlement.denial.quotaDescription")}
+                />
+              )}
+            </div>
           </div>
         )}
 

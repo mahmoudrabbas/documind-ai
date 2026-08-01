@@ -224,6 +224,31 @@ export function isPermissionError(error: ApiError): boolean {
   );
 }
 
+/* ── Entitlement / quota denial helpers ──────────────────────────── */
+
+/** Backend error code returned when a tenant's entitlement counter is exhausted. */
+export const ENTITLEMENT_EXCEEDED = "ENTITLEMENT_EXCEEDED";
+
+/** Backend error code returned when the OCR page quota is exhausted. */
+export const OCR_QUOTA_EXCEEDED = "OCR_QUOTA_EXCEEDED";
+
+/** Type guard for `ENTITLEMENT_EXCEEDED` denials (HTTP 429/413). */
+export function isEntitlementExceeded(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.code === ENTITLEMENT_EXCEEDED;
+}
+
+/**
+ * Matches any quota-denial code (entitlement counter or OCR page quota).
+ * There is no warning-level code on `ApiError` — `QUOTA_EXCEEDED` warnings
+ * in import validation are data-level, so `isQuotaWarning` is not derivable.
+ */
+export function isQuotaDenied(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    (error.code === ENTITLEMENT_EXCEEDED || error.code === OCR_QUOTA_EXCEEDED)
+  );
+}
+
 export function beginExplicitLogout() {
   explicitLogout = true;
   clearAccessToken();

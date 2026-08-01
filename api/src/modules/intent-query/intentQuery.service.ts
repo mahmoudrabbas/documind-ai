@@ -17,6 +17,9 @@ import type { ConversationContextPort } from "./ports/conversationContext.port.j
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { recordIntentQueryMetrics } from "./intentQuery.metrics.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
+import { ENTITLEMENT_EXCEEDED } from "../../common/errors/errorCodes.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import { buildQuotaExceededError, resolvePeriodReset } from "../entitlement/middlewares/entitlement.middleware.js";
 
 export interface ExplicitDocumentAuthorizer {
   authorizeDocumentsAction(context: { tenantId: string; actorId: string }, documentIds: readonly string[], action: "use_in_ai"): Promise<void>;
@@ -53,6 +56,7 @@ export class IntentQueryService {
     const traceId = context.traceId ?? `iq-${Date.now()}`;
     const auditWriter = getAuditWriter();
     const metricRecorder = getMetricRecorder();
+    const entitlementService = getEntitlementService();
 
     // 1. Input Validation
     const input = validateAnalyzeQuery(rawInput);
@@ -202,6 +206,13 @@ export class IntentQueryService {
       tokensUsed = response.usage?.totalTokens ?? 0;
       estimatedCost = response.estimatedCost ?? 0;
 
+      if (!response.usage?.totalTokens) {
+        logger.warn(
+          { traceId, providerKey: this.modelAdapter.providerKey },
+          "AI provider returned no token usage — skipping tokensPerMonth accounting",
+        );
+      }
+
       // Extract JSON structure from code blocks if LLM wrapped it
       let cleanJson = content.trim();
       if (cleanJson.startsWith("```")) {
@@ -212,6 +223,97 @@ export class IntentQueryService {
     } catch (err) {
       logger.error({ err, traceId }, "LLM query analysis failed, initiating deterministic fallback");
       fallbackUsed = true;
+    }
+
+    // 6b. Enforce the tokensPerMonth quota — post-consume, because the exact
+    // token count is only known once the LLM response arrives. The
+    // deterministic fallback path leaves tokensUsed = 0, so nothing is
+    // consumed there.
+    if (tokensUsed > 0) {
+      try {
+        const consumed = await entitlementService.consume(
+          tenantIdStr,
+          "tokensPerMonth",
+          tokensUsed,
+        );
+
+        if (!consumed.committed) {
+          logger.warn(
+            {
+              traceId,
+              tenantId: tenantIdStr,
+              tokensUsed,
+              current: consumed.current,
+              limit: consumed.limit,
+            },
+            "tokensPerMonth quota exceeded — denying intent query",
+          );
+          const periodReset = await resolvePeriodReset(
+            entitlementService,
+            tenantIdStr,
+          );
+          throw buildQuotaExceededError({
+            dimension: "tokensPerMonth",
+            current: consumed.current,
+            limit: consumed.limit,
+            remaining: consumed.remaining,
+            periodReset,
+            canUpgrade:
+              actor.actorRole === "SUPER_ADMIN" ||
+              actor.actorRole === "COMPANY_ADMIN",
+          });
+        }
+      } catch (error) {
+        // Only the quota denial above becomes a 429 and takes down the
+        // request. Any other failure (DB unavailable, snapshot missing, ...)
+        // is not a quota denial — log it and keep the query's happy path
+        // intact; token accounting must not withhold a completed answer.
+        if (error instanceof AppError && error.code === ENTITLEMENT_EXCEEDED) {
+          throw error;
+        }
+
+        // The Mongo counter signals an exhausted quota by failing the
+        // guarded upsert with a duplicate-key error (E11000) instead of
+        // returning committed: false. Treat that as the same denial.
+        const mongoCode = (error as { code?: unknown }).code;
+        if (mongoCode === 11000 || mongoCode === "11000") {
+          const usage = await entitlementService.getUsage(tenantIdStr);
+          const limit = await entitlementService.getEffectiveLimit(
+            tenantIdStr,
+            "tokensPerMonth",
+          );
+          const current = usage["tokensPerMonth"] ?? 0;
+          logger.warn(
+            {
+              traceId,
+              tenantId: tenantIdStr,
+              tokensUsed,
+              current,
+              limit,
+            },
+            "tokensPerMonth quota exceeded (duplicate-key denial) — refusing intent query",
+          );
+          const periodReset = await resolvePeriodReset(
+            entitlementService,
+            tenantIdStr,
+          );
+          throw buildQuotaExceededError({
+            dimension: "tokensPerMonth",
+            current,
+            limit,
+            remaining: Math.max(0, limit - current),
+            periodReset,
+            canUpgrade:
+              actor.actorRole === "SUPER_ADMIN" ||
+              actor.actorRole === "COMPANY_ADMIN",
+          });
+        }
+
+        logger.warn(
+          { err: error, traceId, tenantId: tenantIdStr, tokensUsed },
+          "Failed to enforce tokensPerMonth quota for intent query — continuing without token accounting",
+        );
+      }
     }
 
     // 7. Deterministic validation, ownership re-scoping and exact entity rules enforcement

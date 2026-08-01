@@ -136,7 +136,7 @@ The 9-state lifecycle machine:
 
 | State | Description | Legal Transitions |
 |---|---|---|
-| TRIALING | Initial state on registration | ACTIVE, PAST_DUE, CANCEL_AT_PERIOD_END |
+| TRIALING | Initial state on registration | ACTIVE, INCOMPLETE, PAST_DUE, CANCEL_AT_PERIOD_END |
 | INCOMPLETE | Payment incomplete | ACTIVE, PAST_DUE, EXPIRED |
 | ACTIVE | Active subscription | PAST_DUE, PAUSED, CANCEL_AT_PERIOD_END, EXPIRED |
 | PAST_DUE | Payment past due | ACTIVE, PAUSED, EXPIRED, UNPAID |
