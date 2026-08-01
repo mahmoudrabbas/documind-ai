@@ -66,6 +66,7 @@ export type UserSingleRecord = {
   passwordResetTokenHash?: string | null;
   passwordResetExpiresAt?: Date | null;
   customRoleId?: mongoose.Types.ObjectId | PopulatedCustomRoleRecord | null;
+  sessionVersion?: number;
   createdAt?: Date;
 };
 

@@ -14,7 +14,8 @@ import RefreshTokenModel from "../../db/models/refreshToken.model.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import { hashPassword } from "./passwordHashing.js";
-import { signJwt } from "./jwtTokens.js";
+import { signJwt, verifyJwt } from "./jwtTokens.js";
+import { hashRefreshTokenJti } from "./refreshTokenHashing.js";
 import { config } from "../../config/index.js";
 import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 import { migrateLegacyUsersToEmployee } from "../../scripts/migrate-users-employee.service.js";
@@ -251,6 +252,111 @@ test("logout-all returns 409 without confirmation header", async () => {
   assert.equal(res.status, 409);
   const body = await res.json();
   assert.equal(body.error, "CONFIRMATION_REQUIRED");
+});
+
+// ─── Revoke Other Sessions ──────────────────────────────────────────────────
+
+test("revoke-other-sessions revokes other sessions and keeps the current one signed in", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+
+  await login("acme-consulting", "sarah@acme.com");
+  await login("acme-consulting", "sarah@acme.com");
+  const loginRes = await login("acme-consulting", "sarah@acme.com");
+  const currentCookie = getRefreshCookie(loginRes);
+  const currentRefreshToken = currentCookie.slice(
+    currentCookie.indexOf("=") + 1,
+  );
+  const currentAccessToken = extractAccessToken(await loginRes.json());
+  assert.notEqual(currentAccessToken, "");
+
+  const userId = (await UserModel.findOne({ email: "sarah@acme.com" }))!._id;
+  const tokensBefore = await RefreshTokenModel.countDocuments({
+    userId,
+    revokedAt: null,
+  });
+  assert.ok(tokensBefore >= 3, "should have multiple active tokens");
+
+  const revokeRes = await fetch(
+    `http://127.0.0.1:${port}/auth/revoke-other-sessions`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${currentAccessToken}`,
+        cookie: currentCookie,
+      },
+    },
+  );
+  assert.equal(revokeRes.status, 200);
+  const revokeBody = await revokeRes.json();
+  assert.equal(revokeBody.success, true);
+  const newAccessToken = revokeBody.data?.tokens?.accessToken ?? "";
+  assert.notEqual(newAccessToken, "", "should re-issue an access token");
+  const newClaims = verifyJwt<{ sessionVersion?: number }>(
+    newAccessToken,
+    config.JWT_SECRET,
+  );
+  assert.equal(newClaims.sessionVersion, 1, "re-issued token binds to the new version");
+
+  const tokensAfter = await RefreshTokenModel.countDocuments({
+    userId,
+    revokedAt: null,
+  });
+  assert.equal(tokensAfter, 1, "only the current session's token survives");
+
+  const currentClaims = verifyJwt<{ jti: string }>(
+    currentRefreshToken,
+    config.JWT_REFRESH_SECRET,
+  );
+  const surviving = await RefreshTokenModel.findOne({
+    userId,
+    revokedAt: null,
+  })
+    .lean()
+    .exec();
+  assert.ok(surviving);
+  assert.equal(
+    surviving.jtiHash,
+    hashRefreshTokenJti(currentClaims.jti),
+    "the surviving token is the current session's",
+  );
+
+  // The re-issued access token still works.
+  const meRes = await fetch(`http://127.0.0.1:${port}/auth/me`, {
+    headers: { authorization: `Bearer ${newAccessToken}` },
+  });
+  assert.equal(meRes.status, 200);
+
+  // A token minted before the revocation is rejected on its next request.
+  const staleRes = await fetch(`http://127.0.0.1:${port}/auth/me`, {
+    headers: { authorization: `Bearer ${currentAccessToken}` },
+  });
+  assert.equal(staleRes.status, 401);
+  const staleBody = await staleRes.json();
+  assert.equal(staleBody.error?.code, "SESSION_REVOKED");
+
+  await waitForAuditPersistence();
+  const audit = await AuditLogModel.findOne({
+    action: "AUTH_OTHER_SESSIONS_REVOKED",
+    resourceId: user.id,
+  })
+    .sort({ createdAt: -1 })
+    .lean()
+    .exec();
+  assert.ok(audit);
+  assert.equal(audit.actorKind, "USER");
+  assert.equal(audit.actorId?.toString(), user.id);
+  assert.equal(audit.tenantId.toString(), tenant.id);
+  assert.equal(audit.actorRole, "COMPANY_ADMIN");
+  assert.equal(audit.actorEmail, "sarah@acme.com");
+  assert.notEqual(audit.actorEmail, "");
+});
+
+test("revoke-other-sessions returns 401 without authentication", async () => {
+  const res = await fetch(
+    `http://127.0.0.1:${port}/auth/revoke-other-sessions`,
+    { method: "POST" },
+  );
+  assert.equal(res.status, 401);
 });
 
 // ─── Cross-Tenant Token Substitution ─────────────────────────────────────────

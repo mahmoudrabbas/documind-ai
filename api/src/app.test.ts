@@ -26,6 +26,7 @@ import RefreshTokenModel from "./db/models/refreshToken.model.js";
 import RoleModel from "./db/models/role.model.js";
 import DocumentModel from "./db/models/document.model.js";
 import UsageLogModel from "./db/models/usageLog.model.js";
+import KnowledgeGapModel from "./db/models/knowledgeGap.model.js";
 import PackageModel from "./db/models/package.model.js";
 import SubscriptionModel from "./db/models/subscription.model.js";
 import { PLATFORM_TENANT_SLUG } from "./common/auth/platformTenant.js";
@@ -3464,4 +3465,468 @@ test("Super Admin seed fails safely when the platform tenant already has the sam
     }),
     /SEED_SUPER_ADMIN_PLATFORM_CONFLICT/,
   );
+});
+
+test("GET /dashboard/summary returns tenant aggregates for a company admin", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant, user } = await createActiveTenantAdmin();
+
+    await DocumentModel.create([
+      {
+        tenantId: tenant.id,
+        fileName: "policy.pdf",
+        originalFileName: "policy.pdf",
+        fileSize: 100,
+        mimeType: "application/pdf",
+        storageKey: "k1",
+        checksum: "c1",
+        status: "processed",
+        uploadedBy: user._id,
+      },
+      {
+        tenantId: tenant.id,
+        fileName: "draft.pdf",
+        originalFileName: "draft.pdf",
+        fileSize: 200,
+        mimeType: "application/pdf",
+        storageKey: "k2",
+        checksum: "c2",
+        status: "failed",
+        uploadedBy: user._id,
+      },
+    ]);
+
+    await recordQuestionAsked({ tenantId: tenant.id });
+    await KnowledgeGapModel.create({
+      tenantId: tenant.id,
+      status: "open",
+      severity: "medium",
+      topic: "Remote work policy",
+      representativeQuestion: "What is the remote work policy?",
+      clusterKey: "remote-work-policy",
+      occurrenceCount: 1,
+      firstOccurrence: new Date(),
+      lastOccurrence: new Date(),
+    });
+
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/dashboard/summary`,
+      {
+        headers: {
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+      },
+    );
+    const body = (await response.json()) as {
+      success: boolean;
+      data: {
+        tenant: { name: string; plan: string; status: string };
+        users: { total: number; active: number; pendingInvitations: number };
+        documents: { total: number; processed: number; failed: number; processing: number };
+        usage: { questionsAsked7d: number; questionsAsked30d: number };
+        knowledgeGaps: { open: number; total: number };
+        recentActivity: Array<{ action: string; outcome: string }>;
+        generatedAt: string;
+      };
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.data.tenant.name, "Acme Consulting");
+    assert.equal(body.data.tenant.plan, "free");
+    assert.equal(body.data.tenant.status, "active");
+    assert.equal(body.data.users.total, 1);
+    assert.equal(body.data.users.active, 1);
+    assert.equal(body.data.users.pendingInvitations, 0);
+    assert.equal(body.data.documents.total, 2);
+    assert.equal(body.data.documents.processed, 1);
+    assert.equal(body.data.documents.failed, 1);
+    assert.equal(body.data.documents.processing, 0);
+    assert.equal(body.data.usage.questionsAsked7d, 1);
+    assert.equal(body.data.usage.questionsAsked30d, 1);
+    assert.equal(body.data.knowledgeGaps.open, 1);
+    assert.equal(body.data.knowledgeGaps.total, 1);
+    assert.ok(Array.isArray(body.data.recentActivity));
+    assert.equal(typeof body.data.generatedAt, "string");
+    assertNoSensitiveFields(body);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /dashboard/summary is denied for users without analytics permission", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    const employee = await UserModel.create({
+      tenantId: tenant.id,
+      name: "Alex Employee",
+      email: "alex@acme.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "EMPLOYEE",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    void employee;
+
+    const loginResponse = await postLogin(address.port, "acme-consulting", "alex@acme.com");
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/dashboard/summary`,
+      {
+        headers: {
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+      },
+    );
+
+    assert.equal(response.status, 403);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /settings returns defaults and PUT /settings persists with optimistic concurrency", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+    const authorization = { Authorization: `Bearer ${loginBody.data.tokens.accessToken}` };
+
+    const getResponse = await fetch(`http://127.0.0.1:${address.port}/settings`, {
+      headers: authorization,
+    });
+    const getBody = (await getResponse.json()) as {
+      success: boolean;
+      data: {
+        settings: {
+          defaultLanguage: string;
+          aiRuntimePreferences: { responseStyle: string; citationsEnabled: boolean };
+          notifications: { emailOnUserInvited: boolean };
+        };
+        settingsVersion: number;
+        settingsUpdatedAt: string | null;
+      };
+    };
+    assert.equal(getResponse.status, 200);
+    assert.equal(getBody.success, true);
+    assert.equal(getBody.data.settings.defaultLanguage, "en");
+    assert.equal(getBody.data.settings.aiRuntimePreferences.responseStyle, "balanced");
+    assert.equal(getBody.data.settings.aiRuntimePreferences.citationsEnabled, true);
+    assert.equal(getBody.data.settings.notifications.emailOnUserInvited, true);
+    assert.equal(getBody.data.settingsVersion, 0);
+    assert.equal(getBody.data.settingsUpdatedAt, null);
+
+    const putResponse = await fetch(`http://127.0.0.1:${address.port}/settings`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...authorization },
+      body: JSON.stringify({
+        expectedVersion: 0,
+        settings: {
+          profile: { companyName: "Acme Consulting" },
+          defaultLanguage: "ar",
+          aiRuntimePreferences: { responseStyle: "concise", citationsEnabled: false },
+          notifications: { emailOnWeeklyDigest: true },
+        },
+      }),
+    });
+    const putBody = (await putResponse.json()) as {
+      success: boolean;
+      data: {
+        settings: {
+          defaultLanguage: string;
+          profile: { companyName: string };
+          aiRuntimePreferences: { responseStyle: string; citationsEnabled: boolean };
+        };
+        settingsVersion: number;
+        settingsUpdatedAt: string | null;
+      };
+    };
+    assert.equal(putResponse.status, 200);
+    assert.equal(putBody.success, true);
+    assert.equal(putBody.data.settings.defaultLanguage, "ar");
+    assert.equal(putBody.data.settings.profile.companyName, "Acme Consulting");
+    assert.equal(putBody.data.settings.aiRuntimePreferences.responseStyle, "concise");
+    assert.equal(putBody.data.settings.aiRuntimePreferences.citationsEnabled, false);
+    assert.equal(putBody.data.settingsVersion, 1);
+    assert.ok(putBody.data.settingsUpdatedAt);
+
+    const storedTenant = await TenantModel.findById(tenant.id).lean().exec();
+    assert.equal(storedTenant?.settings?.defaultLanguage, "ar");
+    assert.equal(storedTenant?.settingsVersion, 1);
+    assert.equal(storedTenant?.name, "Acme Consulting");
+
+    const auditCount = await AuditLogModel.countDocuments({
+      tenantId: tenant._id,
+      action: "TENANT_SETTINGS_UPDATED",
+    });
+    assert.equal(auditCount, 1);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("PUT /settings rejects stale expectedVersion with a version conflict", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    await TenantModel.updateOne(
+      { _id: tenant.id },
+      { $set: { settingsVersion: 3 } },
+    ).exec();
+
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/settings`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+      },
+      body: JSON.stringify({
+        expectedVersion: 0,
+        settings: { defaultLanguage: "ar" },
+      }),
+    });
+    const body = (await response.json()) as {
+      success: boolean;
+      error: { code: string; details: Array<{ field: string }> };
+    };
+
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "SETTINGS_VERSION_CONFLICT");
+    assert.equal(body.error.details[0].field, "expectedVersion");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("PUT /settings succeeds for legacy tenants missing the settingsVersion field", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    await TenantModel.updateOne(
+      { _id: tenant.id },
+      { $unset: { settingsVersion: 1 } },
+    ).exec();
+
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+    const headers = {
+      "content-type": "application/json",
+      Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+    };
+
+    const getResponse = await fetch(
+      `http://127.0.0.1:${address.port}/settings`,
+      { headers },
+    );
+    const getBody = (await getResponse.json()) as {
+      data: { settingsVersion: number };
+    };
+    assert.equal(getResponse.status, 200);
+    assert.equal(getBody.data.settingsVersion, 0);
+
+    const putResponse = await fetch(
+      `http://127.0.0.1:${address.port}/settings`,
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          expectedVersion: 0,
+          settings: { profile: { companyName: "Acme Consulting" } },
+        }),
+      },
+    );
+    const putBody = (await putResponse.json()) as {
+      success: boolean;
+      error?: { code: string };
+      data?: {
+        settingsVersion: number;
+        settings: { profile: { companyName: string } };
+      };
+    };
+    assert.equal(putResponse.status, 200);
+    assert.equal(putBody.success, true);
+    assert.equal(putBody.data?.settingsVersion, 1);
+    assert.equal(putBody.data?.settings.profile.companyName, "Acme Consulting");
+
+    const storedTenant = await TenantModel.findById(tenant.id).lean().exec();
+    assert.equal(storedTenant?.settingsVersion, 1);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("GET /users supports search and role filters", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    await createActiveTenantAdmin();
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+    const headers = {
+      "content-type": "application/json",
+      Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+    };
+
+    for (const candidate of [
+      { name: "Zara Haddad", email: "zara@acme.com", role: "EMPLOYEE" },
+      { name: "Omar Khaled", email: "omar@acme.com", role: "EMPLOYEE" },
+      { name: "Lina Yousef", email: "lina@acme.com", role: "COMPANY_ADMIN" },
+    ]) {
+      const invite = await fetch(`http://127.0.0.1:${address.port}/users`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(candidate),
+      });
+      assert.equal(invite.status, 201);
+    }
+
+    const filtered = await fetch(
+      `http://127.0.0.1:${address.port}/users?role=EMPLOYEE&search=zara`,
+      { headers },
+    );
+    const filteredBody = (await filtered.json()) as {
+      success: boolean;
+      data: {
+        users: Array<{ name: string; email: string; role: string }>;
+        pagination: { totalRecords: number };
+      };
+    };
+    assert.equal(filtered.status, 200);
+    assert.equal(filteredBody.data.pagination.totalRecords, 1);
+    assert.equal(filteredBody.data.users[0].email, "zara@acme.com");
+    assert.equal(filteredBody.data.users[0].role, "EMPLOYEE");
+
+    const roleFiltered = await fetch(
+      `http://127.0.0.1:${address.port}/users?role=COMPANY_ADMIN`,
+      { headers },
+    );
+    const roleFilteredBody = (await roleFiltered.json()) as {
+      data: { pagination: { totalRecords: number } };
+    };
+    assert.equal(roleFilteredBody.data.pagination.totalRecords, 2);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("POST /users/:id/revoke-invitation deletes a pending invite and audits it", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+    const headers = {
+      "content-type": "application/json",
+      Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+    };
+
+    const invite = await fetch(`http://127.0.0.1:${address.port}/users`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        name: "Alex Employee",
+        email: "alex@acme.com",
+        role: "EMPLOYEE",
+      }),
+    });
+    const inviteBody = (await invite.json()) as {
+      data: { user: { id: string } };
+    };
+    assert.equal(invite.status, 201);
+    const invitedUserId = inviteBody.data.user.id;
+
+    const revoked = await fetch(
+      `http://127.0.0.1:${address.port}/users/${invitedUserId}/revoke-invitation`,
+      { method: "POST", headers },
+    );
+    const revokedBody = (await revoked.json()) as { success: boolean };
+    assert.equal(revoked.status, 200);
+    assert.equal(revokedBody.success, true);
+    assert.equal(
+      await UserModel.countDocuments({ _id: invitedUserId, tenantId: tenant.id }),
+      0,
+    );
+
+    const auditCount = await AuditLogModel.countDocuments({
+      tenantId: tenant._id,
+      action: "USER_INVITATION_REVOKED",
+    });
+    assert.equal(auditCount, 1);
+
+    const reRevoked = await fetch(
+      `http://127.0.0.1:${address.port}/users/${invitedUserId}/revoke-invitation`,
+      { method: "POST", headers },
+    );
+    assert.equal(reRevoked.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("POST /users/:id/revoke-invitation rejects users who already accepted", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/users/${user._id}/revoke-invitation`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${loginBody.data.tokens.accessToken}`,
+        },
+      },
+    );
+    const body = (await response.json()) as { error: { code: string } };
+
+    assert.equal(response.status, 409);
+    assert.equal(body.error.code, "INVITE_ALREADY_ACCEPTED");
+    assert.equal(await UserModel.countDocuments({ _id: user._id, tenantId: tenant.id }), 1);
+  } finally {
+    await closeServer(server);
+  }
 });

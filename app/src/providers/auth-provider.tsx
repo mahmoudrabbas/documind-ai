@@ -55,6 +55,7 @@ const AuthContext = createContext<
       establishSession: (accessToken: string, session: Session) => void;
       logout: () => Promise<void>;
       logoutAll: () => Promise<void>;
+      revokeOtherSessions: () => Promise<void>;
     })
   | null
 >(null);
@@ -172,9 +173,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const revokeOtherSessions = useCallback(async () => {
+    const response = await apiClient<{
+      success?: boolean;
+      data?: { tokens?: { accessToken?: string } };
+    }>("/auth/revoke-other-sessions", {
+      method: "POST",
+      credentials: "include",
+    });
+    const accessToken = response.data?.tokens?.accessToken;
+    if (accessToken) {
+      setAccessToken(accessToken);
+      setState((current) =>
+        current.status === "authenticated"
+          ? { ...current, accessToken }
+          : current,
+      );
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ ...state, establishSession, logout, logoutAll }),
-    [state, establishSession, logout, logoutAll],
+    () => ({ ...state, establishSession, logout, logoutAll, revokeOtherSessions }),
+    [state, establishSession, logout, logoutAll, revokeOtherSessions],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

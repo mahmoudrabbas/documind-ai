@@ -1,241 +1,198 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
+import { useI18n } from "@/providers/i18n-provider";
+import { isStandardUserRole } from "@/lib/role-home";
 import {
   DashboardPage as DashboardPageShell,
   DashboardPageHeader,
+  DashboardPanel,
 } from "@/components/ui/DashboardPage";
 import { SubscriptionWidget } from "@/components/billing/SubscriptionWidget";
 import MetricsCards from "@/components/dashboard/MetricsCards";
+import SummaryStats from "@/components/dashboard/SummaryStats";
+import RecentActivityFeed, {
+  RecentActivityHeader,
+} from "@/components/dashboard/RecentActivityFeed";
+import { getDashboardSummary } from "@/services/dashboard.service";
+import type { DashboardSummary } from "@/types/api/dashboard.types";
+
+type SummaryViewState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "success"; summary: DashboardSummary };
 
 export default function DashboardPage() {
   const auth = useAuth();
+  const { t } = useI18n();
+  const router = useRouter();
+  const [view, setView] = useState<SummaryViewState>({ status: "loading" });
+  const [retryCount, setRetryCount] = useState(0);
+
+  const fetchSummary = useCallback(async (signal: AbortSignal) => {
+    setView({ status: "loading" });
+    try {
+      const response = await getDashboardSummary(signal);
+      setView({ status: "success", summary: response.data });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setView({
+        status: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Failed to load dashboard summary",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (auth.status !== "authenticated") return;
+    if (isStandardUserRole(auth.user.role)) {
+      router.replace("/chat");
+    }
+  }, [auth, router]);
+
+  useEffect(() => {
+    if (auth.status !== "authenticated") return;
+    if (isStandardUserRole(auth.user.role)) return;
+    const ctrl = new AbortController();
+    void fetchSummary(ctrl.signal);
+    return () => ctrl.abort();
+  }, [fetchSummary, retryCount, auth]);
 
   if (auth.status !== "authenticated") return null;
+  if (isStandardUserRole(auth.user.role)) return null;
+
+  const summary = view.status === "success" ? view.summary : null;
+  const hasOpenGaps = (summary?.knowledgeGaps.open ?? 0) > 0;
 
   return (
     <DashboardPageShell>
       <DashboardPageHeader
-        title="System Overview"
-        description="Real-time performance and repository metrics for DocuMind AI."
+        title={t("dashboard.title")}
+        description={t("dashboard.description")}
         actions={
-          <div className="grid w-full grid-cols-1 gap-sm min-[390px]:grid-cols-2 sm:flex sm:w-auto sm:flex-wrap">
-            <button className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-outline px-4 py-2 text-label-md font-bold transition-colors hover:bg-surface-container-high">
-              <span className="material-symbols-outlined text-[18px]">
-                calendar_today
+          <div className="flex w-full flex-wrap gap-3 sm:w-auto">
+            {summary ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-label-sm text-on-surface-variant">
+                <span className="material-symbols-outlined text-[16px]">
+                  schedule
+                </span>
+                Updated {new Date(summary.generatedAt).toLocaleTimeString()}
               </span>
-              Last 24 Hours
-            </button>
-            <button className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-secondary-container px-4 py-2 text-label-md font-bold text-on-secondary-container transition-opacity hover:opacity-90">
+            ) : null}
+            <Link
+              href="/dashboard/audit"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-outline px-4 py-2 text-label-md font-bold transition-colors hover:bg-surface-container-high"
+            >
               <span className="material-symbols-outlined text-[18px]">
-                download
+                policy
               </span>
-              Export PDF
+              {t("audit.title")}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setRetryCount((count) => count + 1)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-secondary-container px-4 py-2 text-label-md font-bold text-on-secondary-container transition-opacity hover:opacity-90"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                refresh
+              </span>
+              {t("dashboard.refresh")}
             </button>
           </div>
         }
       />
 
-      {/* Bento Grid Metrics */}
+      {/* Bento Grid: usage metrics + subscription */}
       <div className="grid min-w-0 auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 xl:gap-5">
-        {/* Live metric cards */}
         <MetricsCards />
-
-        {/* Subscription */}
         <SubscriptionWidget />
-
-        {/* System Health Widget */}
-        <div className="col-span-1 min-h-0 min-w-0 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm sm:col-span-2 lg:p-5">
-          <div className="mb-4 flex min-w-0 flex-col gap-3 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between">
-            <h2 className="flex min-w-0 items-center gap-2 text-title-lg font-bold text-primary">
-              <span className="material-symbols-outlined">
-                health_and_safety
-              </span>
-              System Health
-            </h2>
-            <span className="flex w-fit items-center gap-1 rounded-full bg-tertiary-container/30 px-3 py-1 text-label-sm font-bold text-tertiary-fixed-dim">
-              <span className="w-2 h-2 bg-tertiary-fixed-dim rounded-full animate-pulse" />
-              All Systems Operational
-            </span>
-          </div>
-          <div className="grid auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2">
-            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="material-symbols-outlined text-primary-container">
-                  api
-                </span>
-                <span className="min-w-0 break-words text-body-md font-medium">
-                  API Endpoint
-                </span>
-              </div>
-              <span className="text-label-md text-tertiary-fixed-dim font-bold">
-                Online
-              </span>
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="material-symbols-outlined text-primary-container">
-                  database
-                </span>
-                <span className="text-body-md font-medium">MongoDB Atlas</span>
-              </div>
-              <span className="text-label-md text-tertiary-fixed-dim font-bold">
-                Connected
-              </span>
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="material-symbols-outlined text-primary-container">
-                  hub
-                </span>
-                <span className="text-body-md font-medium">Vector DB</span>
-              </div>
-              <span className="text-label-md text-tertiary-fixed-dim font-bold">
-                Connected
-              </span>
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="material-symbols-outlined text-primary-container">
-                  psychology_alt
-                </span>
-                <span className="text-body-md font-medium">LLM Provider</span>
-              </div>
-              <span className="text-label-md text-tertiary-fixed-dim font-bold">
-                Active
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Activity Feed */}
-        <div className="col-span-1 flex min-h-0 min-w-0 flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm sm:col-span-2 lg:p-5">
-          <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
-            <h4 className="text-title-lg font-bold text-primary flex items-center gap-2">
-              <span className="material-symbols-outlined">history</span>
-              Recent Activity
-            </h4>
-            <button className="text-on-primary-container text-label-md hover:underline">
-              View All
-            </button>
-          </div>
-          <div className="space-y-2">
-            <div className="flex gap-4 p-3 hover:bg-surface-container-low rounded-xl transition-colors cursor-pointer">
-              <div className="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-on-secondary-container text-[20px]">
-                  upload_file
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-body-sm text-on-surface leading-relaxed">
-                  <span className="font-bold">Sarah Jenkins</span> uploaded{" "}
-                  <span className="text-primary font-medium underline">
-                    Q4_Financial_Report.pdf
-                  </span>
-                </p>
-                <p className="text-[12px] text-on-surface-variant mt-0.5">
-                  8 minutes ago • 14.2 MB • Processing
-                </p>
-              </div>
-              <span className="w-2 h-2 bg-secondary-fixed-dim rounded-full self-center shrink-0" />
-            </div>
-
-            <div className="flex gap-4 p-3 hover:bg-surface-container-low rounded-xl transition-colors cursor-pointer">
-              <div className="w-10 h-10 rounded-full bg-tertiary-container flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-on-tertiary-container text-[20px]">
-                  question_answer
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-body-sm text-on-surface leading-relaxed">
-                  <span className="font-bold">Mark Thompson</span> asked: What
-                  are our compliance protocols for GDPR?
-                </p>
-                <p className="text-[12px] text-on-surface-variant mt-0.5">
-                  22 minutes ago • Source: Compliance_Manual_v2.pdf
-                </p>
-              </div>
-              <span className="w-2 h-2 bg-tertiary-fixed-dim rounded-full self-center shrink-0" />
-            </div>
-
-            <div className="flex gap-4 p-3 hover:bg-surface-container-low rounded-xl transition-colors cursor-pointer">
-              <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-on-primary-container text-[20px]">
-                  person_add
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-body-sm text-on-surface leading-relaxed">
-                  <span className="font-bold">System Admin</span> added{" "}
-                  <span className="font-medium">Jessica Wu</span> to the
-                  Engineering group.
-                </p>
-                <p className="text-[12px] text-on-surface-variant mt-0.5">
-                  1 hour ago
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* AI Insight Section */}
-      <section className="relative mt-6 min-w-0 overflow-hidden rounded-3xl bg-primary-container p-4 text-on-primary sm:p-lg lg:mt-8 lg:p-xl">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-lg w-full">
-          <div className="flex min-w-0 flex-1 items-start gap-4">
-            <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-tertiary text-on-tertiary sm:flex">
-              <span
-                className="material-symbols-outlined"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                auto_awesome
-              </span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="inline-block bg-tertiary text-on-tertiary px-3 py-1 rounded-full text-label-sm font-bold mb-3">
-                AI SUGGESTION
-              </span>
-              <h3 className="text-headline-md font-bold mb-2">
-                Knowledge Gaps Detected
-              </h3>
-              <p className="text-body-md leading-relaxed text-on-primary-container max-w-2xl">
-                Users are frequently asking about Project Phoenix, which has 0
-                relevant documents. Consider uploading the project charter to
-                improve response accuracy.
-              </p>
-            </div>
-          </div>
-          <button className="w-full shrink-0 bg-surface text-primary px-8 py-4 rounded-2xl text-label-md font-bold shadow-xl hover:bg-secondary-container transition-all hover:scale-105 md:w-auto">
-            Address Gaps Now
+      {/* Bento Grid: live tenant summary */}
+      <div className="mt-3 grid min-w-0 auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 xl:gap-5">
+        <SummaryStats summary={summary} />
+      </div>
+
+      {view.status === "error" ? (
+        <DashboardPanel className="mt-6 flex flex-col items-center justify-center px-4 py-10 text-center">
+          <span className="material-symbols-outlined text-4xl text-error">
+            error_outline
+          </span>
+          <p className="mt-2 text-label-md text-on-surface-variant">
+            {view.message || "Failed to load dashboard summary"}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-3 cursor-pointer text-primary underline-offset-2 hover:underline"
+          >
+            {t("common.retry")}
           </button>
-        </div>
-      </section>
+        </DashboardPanel>
+      ) : null}
+
+      {view.status === "success" ? (
+        <>
+          {/* Recent Activity Feed */}
+          <DashboardPanel className="mt-6">
+            <RecentActivityHeader href="/dashboard/audit" />
+            <RecentActivityFeed items={view.summary.recentActivity} />
+          </DashboardPanel>
+
+          {/* AI Insight Section */}
+          {hasOpenGaps ? (
+            <section className="relative mt-6 min-w-0 overflow-hidden rounded-3xl bg-primary-container p-4 text-on-primary sm:p-lg lg:mt-8 lg:p-xl">
+              <div className="relative z-10 flex w-full flex-col gap-lg md:flex-row md:items-center">
+                <div className="flex min-w-0 flex-1 items-start gap-4">
+                  <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-tertiary text-on-tertiary sm:flex">
+                    <span
+                      className="material-symbols-outlined"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      auto_awesome
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="mb-3 inline-block rounded-full bg-tertiary px-3 py-1 text-label-sm font-bold text-on-tertiary">
+                      AI SUGGESTION
+                    </span>
+                    <h3 className="mb-2 text-headline-md font-bold">
+                      Knowledge Gaps Detected
+                    </h3>
+                    <p className="max-w-2xl text-body-md leading-relaxed text-on-primary-container">
+                      {view.summary.knowledgeGaps.open} of your{" "}
+                      {view.summary.knowledgeGaps.total} tracked knowledge gaps
+                      are still open. Adding documents to cover those topics can
+                      improve response accuracy.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/dashboard/knowledge-gaps"
+                  className="w-full shrink-0 rounded-2xl bg-surface px-8 py-4 text-center text-label-md font-bold text-primary shadow-xl transition-all hover:scale-105 hover:bg-secondary-container md:w-auto"
+                >
+                  Review Gaps
+                </Link>
+              </div>
+            </section>
+          ) : null}
+        </>
+      ) : null}
 
       <footer className="mt-8 flex min-w-0 flex-col items-center justify-between gap-4 border-t border-outline-variant/30 px-0 py-6 text-center text-on-surface-variant sm:flex-row sm:text-start">
         <p className="text-label-sm">
           © {new Date().getFullYear()} DocuMind AI Enterprise. All rights
           reserved.
         </p>
-        <div className="flex flex-wrap justify-center gap-x-lg gap-y-2 sm:justify-end">
-          <a
-            href="#"
-            className="text-label-sm hover:text-primary transition-colors"
-          >
-            Privacy Policy
-          </a>
-          <a
-            href="#"
-            className="text-label-sm hover:text-primary transition-colors"
-          >
-            Terms of Service
-          </a>
-          <a
-            href="#"
-            className="text-label-sm hover:text-primary transition-colors"
-          >
-            Support
-          </a>
-        </div>
+        <p className="text-label-sm">
+          {summary ? `${summary.tenant.name} · ${summary.tenant.plan} plan` : "System overview"}
+        </p>
       </footer>
     </DashboardPageShell>
   );

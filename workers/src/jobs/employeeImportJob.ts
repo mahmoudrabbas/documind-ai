@@ -5,6 +5,8 @@ import { Queue } from "bullmq";
 import { getMongoClient } from "../db/mongo.js";
 import { getRedisClient, isRedisConnected } from "../db/redis.js";
 import { logger } from "../logger.js";
+import { config } from "../config/index.js";
+import { createUserInvitationToken } from "./userInvitationToken.js";
 import type { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import {
@@ -26,7 +28,6 @@ type EmployeeImportPayload = z.infer<typeof employeeImportPayloadSchema>;
 // ─── Constants ───────────────────────────────────────────────────────────────────
 
 const QUEUE_NAME = "documind-jobs";
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 // Plan → employee limit mapping (mirrors the billing configuration).
 // These values should ideally come from the tenant's plan document.
@@ -59,6 +60,16 @@ function collections(db: Db) {
     emails: db.collection("emailmessages"),
     tenants: db.collection("tenants"),
   };
+}
+
+// ─── Invitation link builder (mirrors the API's buildVerificationUrl) ──────────
+
+function buildInvitationUrl(token: string) {
+  const url = new URL("/set-password-from-invite", config.APP_FRONTEND_URL);
+
+  url.searchParams.set("token", token);
+
+  return url.toString();
 }
 
 // ─── Row state helpers ───────────────────────────────────────────────────────────
@@ -318,7 +329,15 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
           .update(crypto.randomBytes(32).toString("hex"))
           .digest("hex");
 
+        const newUserId = new ObjectId();
+        const invitation = createUserInvitationToken({
+          userId: newUserId.toString(),
+          tenantId: payload.tenantId,
+          email: rowEmail,
+        });
+
         const userDoc = {
+          _id: newUserId,
           tenantId,
           name: userName,
           email: rowEmail,
@@ -327,8 +346,8 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
           status: "pending_email_verification",
           emailVerified: false,
           emailVerifiedAt: null,
-          emailVerificationTokenHash: null,
-          emailVerificationExpiresAt: null,
+          emailVerificationTokenHash: invitation.tokenHash,
+          emailVerificationExpiresAt: invitation.expiresAt,
           passwordResetTokenHash: null,
           passwordResetExpiresAt: null,
           customRoleId: null,
@@ -344,10 +363,8 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
         };
 
         // ── 5f. Insert user (with duplicate-key fallback) ────────────────────
-        let newUserId: ObjectId;
         try {
-          const result = await users.insertOne(userDoc);
-          newUserId = result.insertedId;
+          await users.insertOne(userDoc);
         } catch (insertErr: unknown) {
           const mongoErr = insertErr as { code?: number };
           if (mongoErr.code === 11000) {
@@ -387,10 +404,10 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
           templateVersion: "1.0.0",
           language: preferredLang,
           variables: {
-            name: userName,
-            invitationLink: `${FRONTEND_URL}/auth/set-password?email=${encodeURIComponent(rowEmail)}`,
-            companyName: "DocuMind",
-            expiresIn: "7 days",
+            companyName: (tenant?.name as string) || "DocuMind",
+            role: "EMPLOYEE",
+            invitationUrl: buildInvitationUrl(invitation.token),
+            expiryDate: invitation.expiresAt.toUTCString(),
           },
           subject: `Welcome to DocuMind, ${userName}`,
           state: "PENDING",

@@ -13,6 +13,7 @@ import {
   REGISTRATION_DISABLED,
   REGISTRATION_FAILED,
   SESSION_EXPIRED,
+  SESSION_REVOKED,
   TENANT_NOT_ACTIVE,
   TENANT_ALREADY_EXISTS,
   UNAUTHORIZED,
@@ -27,6 +28,7 @@ import type {
   RefreshTokenContext,
   RegisterResult,
   RegisterInput,
+  RevokeOtherSessionsResult,
   VerifyEmailResult,
   AuthIdentity,
   ForgotPasswordResult,
@@ -72,6 +74,7 @@ import {
   findUserByTenantAndIdWithPasswordResetToken,
   consumePasswordResetTokenAndUpdatePassword,
 } from "./auth.repository.js";
+import { revokeOtherRefreshSessionsForTenantUser } from "./sessionRevocation.repository.js";
 import type { UserCreateInput } from "./auth.repository.js";
 import {
   validateRegisterInput,
@@ -184,6 +187,7 @@ type CreatedUserRecord = {
   status: string;
   emailVerified: boolean;
   emailVerifiedAt: Date | null;
+  sessionVersion?: number;
   createdAt?: Date;
 };
 
@@ -760,6 +764,7 @@ function assertAccountCanSignIn(
 function createAccessToken(
   user: CreatedUserRecord,
   tenant: CreatedTenantRecord,
+  sessionVersionOverride?: number,
 ) {
   return signJwt(
     {
@@ -767,6 +772,7 @@ function createAccessToken(
       tenantId: tenant.id ?? tenant._id.toString(),
       role: user.role,
       email: user.email,
+      sessionVersion: sessionVersionOverride ?? user.sessionVersion ?? 0,
       type: "access",
     },
     config.JWT_SECRET,
@@ -1313,6 +1319,69 @@ export async function logoutAll(
   });
 
   return { success: true, message: "All sessions revoked" };
+}
+
+/**
+ * Revokes every active refresh session except the current device and bumps the
+ * user's session version so other sessions' access tokens are rejected on
+ * their next request. The current session is re-issued an access token bound
+ * to the new version, keeping this device signed in.
+ *
+ * @param currentRefreshJti - `jti` claim from the current device's refresh
+ * token (read from the httpOnly cookie). When absent, every active refresh
+ * token is revoked; the current access-token session still survives because a
+ * fresh token is returned.
+ */
+export async function revokeOtherSessions(
+  identity: AuthIdentity,
+  context: RefreshTokenContext = {},
+  currentRefreshJti?: string,
+): Promise<RevokeOtherSessionsResult> {
+  const [user, tenant] = await Promise.all([
+    findUserByTenantAndId(identity.tenantId, identity.userId),
+    findTenantById(identity.tenantId),
+  ]);
+
+  if (!user || !tenant) {
+    throw new AppError(401, SESSION_REVOKED, "Account no longer exists");
+  }
+
+  const nextVersion = (user.sessionVersion ?? 0) + 1;
+
+  const excludeJtiHash = currentRefreshJti
+    ? hashRefreshTokenJti(currentRefreshJti)
+    : undefined;
+
+  await revokeOtherRefreshSessionsForTenantUser(
+    identity.userId,
+    identity.tenantId,
+    excludeJtiHash,
+    nextVersion,
+    new Date(),
+  );
+
+  safeAuditLog({
+    tenantId: identity.tenantId,
+    resourceType: "Session",
+    resourceId: identity.userId,
+    action: "AUTH_OTHER_SESSIONS_REVOKED",
+    actorId: user.id ?? user._id.toString(),
+    actorEmail: user.email.trim().toLowerCase(),
+    actorKind: "USER",
+    actorRole: user.role,
+    changes: { sessionVersion: nextVersion, ip: context.ip },
+    metadata: { userId: identity.userId },
+  });
+
+  return {
+    success: true,
+    message: "Other sessions revoked. This session remains signed in.",
+    tokens: {
+      accessToken: createAccessToken(user, tenant, nextVersion),
+      tokenType: "Bearer",
+      expiresIn: config.JWT_EXPIRES_IN,
+    },
+  };
 }
 
 export async function revokeAllRefreshTokensForUser(

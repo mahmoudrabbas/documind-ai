@@ -5,6 +5,7 @@ import {
   superAdminLogin,
   logout,
   logoutAll,
+  revokeOtherSessions,
   refreshAccessToken,
   registerTenantAndAdmin,
   resendVerificationEmail,
@@ -15,8 +16,9 @@ import {
   completeTrial,
   createTestVerificationToken,
 } from "./auth.service.js";
+import type { AuthTokenClaims } from "./auth.types.js";
 import { config } from "../../config/index.js";
-import { durationToMilliseconds } from "./jwtTokens.js";
+import { durationToMilliseconds, verifyJwt } from "./jwtTokens.js";
 
 const REFRESH_COOKIE_NAME = "documind_refresh_token";
 
@@ -263,6 +265,49 @@ export async function logoutAllController(
     const result = await logoutAll(req.auth, { ip: req.ip });
     clearRefreshCookie(res);
     res.status(200).json({ success: true, message: result.message });
+  } catch (error) {
+    handleAuthError(error, res, next);
+  }
+}
+
+export async function revokeOtherSessionsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.auth) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    }
+
+    let currentRefreshJti: string | undefined;
+    const refreshToken = readCookie(req, REFRESH_COOKIE_NAME);
+
+    if (refreshToken) {
+      try {
+        const claims = verifyJwt<AuthTokenClaims>(
+          refreshToken,
+          config.JWT_REFRESH_SECRET,
+        );
+        if (claims.type === "refresh" && typeof claims.jti === "string") {
+          currentRefreshJti = claims.jti;
+        }
+      } catch {
+        // Malformed or expired cookie: fall through and revoke all other tokens.
+      }
+    }
+
+    const result = await revokeOtherSessions(
+      req.auth,
+      { ip: req.ip },
+      currentRefreshJti,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: { tokens: result.tokens },
+    });
   } catch (error) {
     handleAuthError(error, res, next);
   }

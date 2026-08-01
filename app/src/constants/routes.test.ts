@@ -26,7 +26,11 @@ describe("permission-driven navigation", () => {
     const links = filterNavigationLinks(
       TENANT_SIDEBAR_LINKS,
       "ready",
-      withPermissions(Permission.DOCUMENTS_READ, Permission.AUDIT_READ),
+      withPermissions(
+        Permission.ANALYTICS_READ,
+        Permission.DOCUMENTS_READ,
+        Permission.AUDIT_READ,
+      ),
     );
     expect(links.map((link) => link.href)).toEqual([
       "/dashboard",
@@ -34,6 +38,35 @@ describe("permission-driven navigation", () => {
       "/dashboard/audit",
     ]);
     expect(links.every((link) => link.context === "tenant")).toBe(true);
+  });
+
+  it("hides the System Overview link without analytics permission", () => {
+    const links = filterNavigationLinks(
+      TENANT_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(Permission.DOCUMENTS_READ, Permission.AUDIT_READ),
+    );
+    expect(links.map((link) => link.href)).not.toContain("/dashboard");
+  });
+
+  it("hides the System Overview link for standard employees even with analytics access", () => {
+    const links = filterNavigationLinks(
+      TENANT_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(Permission.ANALYTICS_READ, Permission.DOCUMENTS_READ),
+      "EMPLOYEE",
+    );
+    expect(links.map((link) => link.href)).toEqual(["/dashboard/documents"]);
+  });
+
+  it("keeps the System Overview link for company admins with analytics access", () => {
+    const links = filterNavigationLinks(
+      TENANT_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(Permission.ANALYTICS_READ, Permission.DOCUMENTS_READ),
+      "COMPANY_ADMIN",
+    );
+    expect(links.map((link) => link.href)).toContain("/dashboard");
   });
 
   it("keeps platform and tenant destinations isolated", () => {

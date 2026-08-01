@@ -7,6 +7,7 @@ import {
   updateUser,
   deleteUser,
   resendInvitation,
+  revokeInvitation,
   setPasswordFromInvite,
   getInviteDetails,
   type UserOperationContext,
@@ -109,6 +110,30 @@ export async function resendInvitationController(
       success: true,
       message: "Invitation email resent successfully.",
       data: result,
+    });
+  } catch (error) {
+    handleUserError(error, res, next);
+  }
+}
+
+export async function revokeInvitationController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const targetUserId = Array.isArray(req.params.id)
+      ? req.params.id[0]
+      : req.params.id;
+    if (!targetUserId) {
+      throw new AppError(400, "BAD_REQUEST", "Missing user id parameter");
+    }
+
+    const result = await revokeInvitation(context(req), targetUserId);
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
     });
   } catch (error) {
     handleUserError(error, res, next);
