@@ -20,6 +20,7 @@ import publicRoutes from "./modules/public/public.routes.js";
 import auditRoutes from "./modules/audit/audit.routes.js";
 import emailRoutes from "./modules/email/email.routes.js";
 import emailWebhooks from "./modules/email/email.webhooks.js";
+import notificationsRoutes from "./modules/notifications/notifications.routes.js";
 import permissionsRoutes from "./modules/permissions/permissions.routes.js";
 import jobsRoutes from "./modules/jobs/jobs.routes.js";
 import {
@@ -172,6 +173,7 @@ app.use("/public", publicRoutes);
 app.use("/audit", auditRoutes);
 app.use("/emails", emailRoutes);
 app.use("/webhooks/email", emailWebhooks);
+app.use("/notifications", notificationsRoutes);
 app.use("/permissions", permissionsRoutes);
 app.use("/", jobsRoutes);
 app.use("/agents", agentsRoutes);

@@ -63,6 +63,10 @@ import type { UserDocument } from "../../db/models/user.model.js";
 import { config } from "../../config/index.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { isSystemPlatformTenant } from "../../common/auth/platformTenant.js";
+import { NotificationService } from "../notifications/notifications.service.js";
+import { MongoNotificationRepository } from "../notifications/repositories/mongo/notification.repository.js";
+import { MongoUserNotificationStateRepository } from "../notifications/repositories/mongo/userNotificationState.repository.js";
+import { RecipientResolver } from "../notifications/recipientResolver.js";
 
 export interface UserOperationContext {
   tenantId: string;
@@ -599,6 +603,16 @@ async function updateUserSecurityStateTransaction(
   }
 }
 
+// Shared NotificationService for the user-data purge hook below: soft-deletes a
+// user's notifications AND their notification-state doc inside the CALLER's
+// transaction session (ONE session, atomic with the user deletion). Constructed
+// here (not in server.ts) so both deletion paths can share it.
+const notificationService = new NotificationService(
+  new MongoNotificationRepository(),
+  new MongoUserNotificationStateRepository(),
+  new RecipientResolver(),
+);
+
 async function deleteWithLastAdminTransaction(tenantId: string, targetUserId: string) {
   const session = await mongoose.startSession();
   try {
@@ -617,6 +631,7 @@ async function deleteWithLastAdminTransaction(tenantId: string, targetUserId: st
         new Date(),
         session,
       );
+      await notificationService.purgeUserNotifications(tenantId, targetUserId, session);
     });
   } finally {
     await session.endSession();
@@ -645,6 +660,7 @@ async function deleteUserWithSessionRevocation(
         new Date(),
         session,
       );
+      await notificationService.purgeUserNotifications(tenantId, targetUserId, session);
     });
   } finally {
     await session.endSession();

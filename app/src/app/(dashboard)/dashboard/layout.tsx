@@ -41,6 +41,10 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
     prefix: "/dashboard/processing-failed",
     permissions: [Permission.COMPANY_SETTINGS_READ],
   },
+  {
+    prefix: "/dashboard/notifications",
+    permissions: [Permission.NOTIFICATIONS_READ],
+  },
 ];
 const TENANT_SHELL_ROLES = ["COMPANY_ADMIN", "EMPLOYEE"] as const;
 

@@ -515,6 +515,31 @@ const en: TranslationDictionary = {
   "audit.exportError": "Failed to export audit logs",
   "audit.exporting": "Exporting...",
   "audit.export": "Export CSV (30 days)",
+
+  /* ── notifications ─────────────────────────────────────── */
+  "notifications.title": "Notifications",
+  "notifications.pageDescription":
+    "Review notifications across your workspace.",
+  "notifications.viewAll": "View all",
+  "notifications.empty": "No notifications",
+  "notifications.emptyHint": "You're all caught up.",
+  "notifications.loadError": "Failed to load notifications.",
+  "notifications.unreadCount": "{{count}} unread",
+  "notifications.markAllRead": "Mark all as read",
+  "notifications.archive": "Archive",
+  "notifications.clear": "Clear",
+  "notifications.markRead": "Mark as read",
+  "notifications.previous": "Previous",
+  "notifications.next": "Next",
+  "notifications.pageInfo": "Page {{page}} of {{total}}",
+  "notifications.category.all": "All",
+  "notifications.category.system": "System",
+  "notifications.category.billing": "Billing",
+  "notifications.category.security": "Security",
+  "notifications.category.documents": "Documents",
+  "notifications.category.knowledge": "Knowledge",
+  "notifications.category.workflow": "Workflow",
+  "notifications.category.admin": "Admin",
 };
 
 export default en;

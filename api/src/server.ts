@@ -7,6 +7,12 @@ import { logger } from "./common/logger/logger.js";
 import { startEntitlementReconciliation } from "./modules/entitlement/reconciliation.scheduler.js";
 import { getReconciliationService } from "./modules/entitlement/reconciliation.service.js";
 import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
+import { startNotificationOutboxScheduler } from "./modules/notifications/outbox/notificationOutbox.scheduler.js";
+import { NotificationService } from "./modules/notifications/notifications.service.js";
+import { MongoNotificationRepository } from "./modules/notifications/repositories/mongo/notification.repository.js";
+import { MongoUserNotificationStateRepository } from "./modules/notifications/repositories/mongo/userNotificationState.repository.js";
+import { RecipientResolver } from "./modules/notifications/recipientResolver.js";
+import { setNotificationCreatePort } from "./modules/notifications/outbox/notificationOutbox.dispatcher.js";
 
 dotenv.config();
 
@@ -165,6 +171,41 @@ if (process.env.ENTITLEMENT_RECONCILE_ENABLED !== "false") {
     logger.warn(
       { err: error },
       "Failed to start entitlement reconciliation scheduler",
+    );
+  }
+}
+
+// ── Notification create port (T6) ───────────────────────────────────────────
+// Wire the real NotificationService into the outbox dispatcher BEFORE the
+// scheduler below starts — getNotificationOutboxDispatcher() throws unless
+// setNotificationCreatePort() was called. Registration is object construction
+// only (no DB/Redis access), so it cannot fail at startup.
+
+const notificationService = new NotificationService(
+  new MongoNotificationRepository(),
+  new MongoUserNotificationStateRepository(),
+  new RecipientResolver(),
+);
+setNotificationCreatePort({
+  create: (tenantId, draft, recipientUserIds) =>
+    notificationService.create(tenantId, draft, recipientUserIds),
+});
+
+// ── Notification outbox scheduler ────────────────────────────────────────────
+//
+// Phase-1 in-process 5s poller that advances the outbox (factory → create →
+// enqueue). Failure-isolated: if the notification create port is not wired yet
+// (T6, Wave 3) or a sweep fails, this logs and never crashes startup. Disabled
+// when NOTIFICATIONS_OUTBOX_ENABLED=false.
+
+if (process.env.NOTIFICATIONS_OUTBOX_ENABLED !== "false") {
+  try {
+    startNotificationOutboxScheduler();
+    logger.info("Notification outbox scheduler started");
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      "Failed to start notification outbox scheduler",
     );
   }
 }

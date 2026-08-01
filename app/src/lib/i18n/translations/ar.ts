@@ -515,6 +515,31 @@ const ar: TranslationDictionary = {
   "audit.exportError": "فشل في تصدير سجلات التدقيق",
   "audit.exporting": "جارٍ التصدير...",
   "audit.export": "تصدير CSV (30 يومًا)",
+
+  /* ── notifications ─────────────────────────────────────── */
+  "notifications.title": "الإشعارات",
+  "notifications.pageDescription":
+    "استعرض الإشعارات عبر مساحة عمل شركتك.",
+  "notifications.viewAll": "عرض الكل",
+  "notifications.empty": "لا توجد إشعارات",
+  "notifications.emptyHint": "لا يوجد شيء جديد.",
+  "notifications.loadError": "تعذّر تحميل الإشعارات.",
+  "notifications.unreadCount": "{{count}} غير مقروء",
+  "notifications.markAllRead": "تحديد الكل كمقروء",
+  "notifications.archive": "أرشفة",
+  "notifications.clear": "مسح",
+  "notifications.markRead": "تحديد كمقروء",
+  "notifications.previous": "السابق",
+  "notifications.next": "التالي",
+  "notifications.pageInfo": "صفحة {{page}} من {{total}}",
+  "notifications.category.all": "الكل",
+  "notifications.category.system": "النظام",
+  "notifications.category.billing": "الفوترة",
+  "notifications.category.security": "الأمان",
+  "notifications.category.documents": "المستندات",
+  "notifications.category.knowledge": "المعرفة",
+  "notifications.category.workflow": "سير العمل",
+  "notifications.category.admin": "الإدارة",
 };
 
 export default ar;

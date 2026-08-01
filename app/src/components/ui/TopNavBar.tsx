@@ -13,6 +13,7 @@ import {
   TENANT_TOPBAR_LINKS,
 } from "@/constants/routes";
 import { Permission } from "@/types/api/permissions.types";
+import { NotificationsBell } from "./NotificationsBell";
 
 export function TopNavBar({
   onNavigationOpen,
@@ -127,18 +128,7 @@ export function TopNavBar({
 
       <div className="flex min-w-0 items-center gap-1 sm:gap-md">
         <div className="hidden items-center gap-xs sm:flex lg:me-md">
-          <button
-            aria-label="Notifications"
-            className="relative rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
-          >
-            <span
-              className="material-symbols-outlined"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              notifications
-            </span>
-            <span className="absolute end-2 top-2 h-2 w-2 rounded-full bg-error" />
-          </button>
+          <NotificationsBell />
 
           {settingsHref && (
             <Link
