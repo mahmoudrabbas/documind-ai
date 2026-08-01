@@ -67,6 +67,8 @@ import { NotificationService } from "../notifications/notifications.service.js";
 import { MongoNotificationRepository } from "../notifications/repositories/mongo/notification.repository.js";
 import { MongoUserNotificationStateRepository } from "../notifications/repositories/mongo/userNotificationState.repository.js";
 import { RecipientResolver } from "../notifications/recipientResolver.js";
+import { getNotificationOutboxDispatcher } from "../notifications/outbox/notificationOutbox.dispatcher.js";
+import { publishInvitationAcceptedTriggers } from "../notifications/triggers/invitationAccepted.trigger.js";
 
 export interface UserOperationContext {
   tenantId: string;
@@ -786,6 +788,21 @@ export async function setPasswordFromInvite(
 
     if (!user) {
       throw invalidTokenError;
+    }
+
+    // T25a — fire invitation_accepted (→ tenant admins) + welcome (→ invitee)
+    // ONLY after the status flip to active succeeded. Best-effort: a
+    // notification outbox failure must never fail the completed invite flow —
+    // the outbox scheduler retries pending entries asynchronously.
+    try {
+      await publishInvitationAcceptedTriggers(getNotificationOutboxDispatcher(), {
+        tenantId: user.tenantId.toString(),
+        inviteeUserId: user._id.toString(),
+        inviteeName: user.name,
+        companyName: tenant?.name ?? "",
+      });
+    } catch (triggerError) {
+      console.error("[users-set-password-from-invite:triggers]", triggerError);
     }
 
     await getAuditWriter().write({
