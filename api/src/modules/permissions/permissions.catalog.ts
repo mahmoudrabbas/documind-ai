@@ -43,6 +43,10 @@ export const Permission = {
   AUDIT_READ: "audit:read",
   DOCUMENTS_OCR_PROCESS: "documents:ocr-process",
   DOCUMENTS_QUALITY_REVIEW: "documents:quality-review",
+
+  COPILOT_USE: "copilot:use",
+  COPILOT_GUIDED: "copilot:guided",
+  COPILOT_ACTION: "copilot:action",
 } as const;
 
 export type PermissionValue = (typeof Permission)[keyof typeof Permission];
@@ -57,7 +61,8 @@ export type PermissionGroup =
   | "billing"
   | "imports"
   | "audit"
-  | "processing";
+  | "processing"
+  | "copilot";
 export type PermissionScopeType =
   | "departmentIds"
   | "documentCategories"
@@ -128,6 +133,9 @@ const definitions: readonly PermissionDefinitionSource[] = [
   { id: Permission.AUDIT_READ, group: "audit", label: "View Audit Logs", description: "View tenant audit logs", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: false, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
   { id: Permission.DOCUMENTS_OCR_PROCESS, group: "documents", label: "Process OCR", description: "Trigger OCR processing on documents", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.DOCUMENTS_QUALITY_REVIEW, group: "documents", label: "Review Document Quality", description: "Review and approve/reject low-confidence OCR results", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
+  { id: Permission.COPILOT_USE, group: "copilot", label: "Use Copilot", description: "Use the AI copilot (guide and action modes)", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
+  { id: Permission.COPILOT_GUIDED, group: "copilot", label: "Guided Mode", description: "Use copilot guided walkthrough mode", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
+  { id: Permission.COPILOT_ACTION, group: "copilot", label: "Action Mode", description: "Use copilot action execution mode", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
 ];
 
 export const PERMISSION_CATALOG: readonly PermissionDefinition[] =
@@ -165,6 +173,7 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   imports: "Imports",
   audit: "Audit",
   processing: "Processing",
+  copilot: "Copilot",
 };
 
 export const TENANT_PERMISSION_CATALOG_GROUPS = Array.from(

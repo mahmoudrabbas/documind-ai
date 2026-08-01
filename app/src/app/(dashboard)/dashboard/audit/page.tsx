@@ -31,7 +31,7 @@ export default function TenantAuditPage() {
   }, [loadLogs]);
 
   return (
-    <DashboardPage>
+    <DashboardPage id="audit-page">
       <DashboardPageHeader
         title={t("audit.title")}
         description={t("audit.description")}

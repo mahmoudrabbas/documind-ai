@@ -844,7 +844,7 @@ export default function RolesPage() {
   }
 
   return (
-    <DashboardPage>
+    <DashboardPage id="roles-page">
       <DashboardPageHeader
         title="Custom Roles"
         description="Define tenant roles using the authoritative permission catalog and delegated scopes."

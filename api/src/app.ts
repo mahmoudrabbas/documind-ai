@@ -31,6 +31,8 @@ import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.ro
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
 import importsRoutes from "./modules/imports/index.js";
+import { copilotRoutes } from "./modules/copilot/index.js";
+import { setCopilotRetrievalService } from "./modules/copilot/knowledge/retrievalAccess.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
 import processingProgressRoutes from "./modules/processing-progress/processingProgress.routes.js";
 import { createRetrievalRoutes } from "./modules/retrieval/retrieval.routes.js";
@@ -60,6 +62,7 @@ import { getModelAdapter } from "./providers/llm/index.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
+import { getMetricRegistry } from "./common/observability/prometheusRegistry.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
 import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
 import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
@@ -178,6 +181,7 @@ app.use("/super-admin", paymentWebhookAdminRoutes);
 app.use("/super-admin", reconciliationRoutes);
 app.use("/checkout", checkoutRoutes);
 app.use("/imports", importsRoutes);
+app.use("/copilot", await copilotRoutes());
 app.use("/documents", processingRoutes);
 app.use("/documents", processingProgressRoutes);
 app.use("/intent-query", intentQueryRoutes);
@@ -225,12 +229,24 @@ const retrievalService = createRetrievalService({
 });
 
 registerRetrievalService(retrievalService);
+setCopilotRetrievalService(retrievalService);
 
 await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
 
 const chatService = new ChatService(retrievalService, getModelAdapter());
 app.use("/chat", createChatRoutes(chatService));
+
+// ── Prometheus metrics ──────────────────────────────────────────────────────
+// Exposes all registered metrics (app + copilot) in Prometheus text format.
+app.get("/metrics", async (_req, res) => {
+  try {
+    res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    res.status(200).send(await getMetricRegistry().metrics());
+  } catch (err) {
+    res.status(500).json({ success: false, error: "METRICS_ERROR", message: "Failed to collect metrics" });
+  }
+});
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

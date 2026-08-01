@@ -8,7 +8,7 @@ import Link from "next/link";
 
 export default function SettingsPage() {
   return (
-    <DashboardPage>
+    <DashboardPage id="settings-page">
       <DashboardPageHeader
         title="Settings"
         description="Manage your account settings and security."

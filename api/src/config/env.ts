@@ -181,6 +181,12 @@ const envSchema = z
     BEDROCK_EMBEDDING_MODELS: z.string().default("amazon.titan-embed-text-v2:0,us.cohere.embed-v4:0"),
     BEDROCK_IMAGE_MODEL: z.string().default("amazon.nova-canvas-v1:0"),
     BEDROCK_AUDIO_MODEL: z.string().default("amazon.nova-sonic-v1:0"),
+
+    COPILOT_PLAN_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+    COPILOT_TOOL_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+    COPILOT_TOOL_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+    COPILOT_EVENT_REPLAY_MAX: z.coerce.number().int().positive().default(200),
+    COPILOT_CONFIRMATION_TTL_MS: z.coerce.number().int().positive().default(600000),
   })
   .superRefine((env, context) => {
     const controlledEnvironment = env.NODE_ENV === "production" || env.NODE_ENV === "test";

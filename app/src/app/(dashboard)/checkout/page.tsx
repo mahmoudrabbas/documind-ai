@@ -170,7 +170,7 @@ export default function CheckoutPage() {
 
   if (loading) {
     return (
-      <DashboardPage>
+      <DashboardPage id="billing-page">
         <DashboardPageHeader
           title="Billing & Plans"
           description="Manage your subscription and explore available plans."
@@ -192,7 +192,7 @@ export default function CheckoutPage() {
 
   if (error) {
     return (
-      <DashboardPage>
+      <DashboardPage id="billing-page">
         <DashboardPageHeader
           title="Billing & Plans"
           description="Manage your subscription and explore available plans."
@@ -218,7 +218,7 @@ export default function CheckoutPage() {
 
   if (!packages.length) {
     return (
-      <DashboardPage>
+      <DashboardPage id="billing-page">
         <DashboardPageHeader
           title="Billing & Plans"
           description="Manage your subscription and explore available plans."
@@ -238,7 +238,7 @@ export default function CheckoutPage() {
   /* ── Main render ─────────────────────────────────────────────────────── */
 
   return (
-    <DashboardPage>
+    <DashboardPage id="billing-page">
       {/* Back to Dashboard */}
       <button
         type="button"

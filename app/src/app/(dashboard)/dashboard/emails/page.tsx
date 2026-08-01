@@ -92,7 +92,7 @@ export default function CompanyEmailsPage() {
   };
 
   return (
-    <DashboardPage>
+    <DashboardPage id="emails-page">
       <DashboardPageHeader
         title="Email Delivery Log"
         description="Monitor outgoing emails sent from your organization."

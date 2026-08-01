@@ -14,7 +14,7 @@ export default function DashboardPage() {
   if (auth.status !== "authenticated") return null;
 
   return (
-    <DashboardPageShell>
+    <DashboardPageShell id="dashboard-page">
       <DashboardPageHeader
         title="System Overview"
         description="Real-time performance and repository metrics for DocuMind AI."

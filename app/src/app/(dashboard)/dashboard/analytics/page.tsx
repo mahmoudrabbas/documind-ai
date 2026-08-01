@@ -6,7 +6,7 @@ import {
 
 export default function AnalyticsPage() {
   return (
-    <DashboardPage>
+    <DashboardPage id="analytics-page">
       <DashboardPageHeader
         title="Performance Analytics"
         description="Real-time insights across your knowledge ecosystem."

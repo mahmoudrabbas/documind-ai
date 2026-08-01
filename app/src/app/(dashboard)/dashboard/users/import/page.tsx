@@ -635,7 +635,7 @@ export default function ImportPage() {
   }
 
   return (
-    <>
+    <div id="users-page">
       <DashboardPageHeader
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
@@ -681,6 +681,6 @@ export default function ImportPage() {
       {phase === "processing" && renderProcessingPhase()}
       {phase === "done" && renderDonePhase()}
       {phase === "error" && renderErrorPhase()}
-    </>
+    </div>
   );
 }

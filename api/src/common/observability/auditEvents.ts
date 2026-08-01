@@ -147,7 +147,12 @@ export type AuditAction =
   | "PROCESSING_RUN_INITIATED"
   | "PROCESSING_STAGE_RETRIED"
   | "DOCUMENT_REPROCESSED"
-  | "PROCESSING_CANCELED";
+  | "PROCESSING_CANCELED"
+  // Copilot
+  | "COPILOT_PLAN_CREATED"
+  | "COPILOT_PLAN_CANCELLED"
+  | "COPILOT_STEP_EXECUTED"
+  | "COPILOT_STEP_ROLLED_BACK";
 
 export type AuditResourceType =
   | "User"
@@ -176,7 +181,8 @@ export type AuditResourceType =
   | "DocumentPolicy"
   | "DocumentPolicyPropagation"
   | "DocumentPolicyGeneration"
-  | "EntitlementOverride";
+  | "EntitlementOverride"
+  | "CopilotPlan";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

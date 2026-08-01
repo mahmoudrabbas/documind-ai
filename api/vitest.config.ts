@@ -16,6 +16,7 @@ export default defineConfig({
       "src/modules/imports/services/__tests__/*.test.ts",
       "src/__tests__/*.test.ts",
       "src/modules/agents/__tests__/*.test.ts",
+      "src/modules/copilot/__tests__/*.test.ts",
       "src/modules/entitlement/__tests__/*.test.ts",
       "src/modules/entitlement/ports/fakes/__tests__/*.test.ts",
       "src/modules/processing/chunking/__tests__/*.test.ts",
