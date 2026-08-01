@@ -69,6 +69,7 @@ import { MongoUserNotificationStateRepository } from "../notifications/repositor
 import { RecipientResolver } from "../notifications/recipientResolver.js";
 import { getNotificationOutboxDispatcher } from "../notifications/outbox/notificationOutbox.dispatcher.js";
 import { publishInvitationAcceptedTriggers } from "../notifications/triggers/invitationAccepted.trigger.js";
+import { publishRoleChangedTrigger } from "../notifications/triggers/roleChanged.trigger.js";
 
 export interface UserOperationContext {
   tenantId: string;
@@ -359,6 +360,30 @@ export async function updateUser(
       (updatedUser as UserDocument)._id.toString(),
       changes,
     );
+
+    // T25b — role_changed when the BASE role actually changed and the update
+    // persisted. Best-effort: a notification outbox failure must never fail
+    // the completed user update. Only targets whose post-update status is
+    // "active" are ever notified (NEVER pending_email_verification invitees).
+    if (changes.role !== undefined) {
+      try {
+        const newBaseRole = (updatedUser as UserDocument).role;
+        await publishRoleChangedTrigger(getNotificationOutboxDispatcher(), {
+          tenantId,
+          targetUserId,
+          actorId: context.actorId,
+          roleType: "base",
+          action: "changed",
+          roleName: newBaseRole,
+          beforeRole: existingUser.role,
+          afterRole: newBaseRole,
+          roleId: newBaseRole,
+          targetStatus: (updatedUser as UserDocument).status,
+        });
+      } catch (triggerError) {
+        console.error("[users-update:role-changed-trigger]", triggerError);
+      }
+    }
 
     return {
       user: serializeUser(updatedUser),
