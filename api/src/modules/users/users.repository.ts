@@ -20,16 +20,22 @@ export {
   findUserByTenantAndId,
 };
 
-export function countUsersByTenant(tenantId: string) {
-  return tenantScopedFind(UserModel, tenantId, {}).countDocuments().exec();
+export function countUsersByTenant(
+  tenantId: string,
+  filter: ListUsersFilter = {},
+) {
+  return tenantScopedFind(UserModel, tenantId, buildListFilter(filter))
+    .countDocuments()
+    .exec();
 }
 
 export function findUsersByTenant(
   tenantId: string,
   page: number,
   pageSize: number,
+  filter: ListUsersFilter = {},
 ): Promise<UserSingleRecord[]> {
-  return tenantScopedFind(UserModel, tenantId, {})
+  return tenantScopedFind(UserModel, tenantId, buildListFilter(filter))
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
@@ -39,6 +45,24 @@ export function findUsersByTenant(
     )
     .lean<UserSingleRecord[]>()
     .exec();
+}
+
+export interface ListUsersFilter {
+  search?: string;
+  role?: "COMPANY_ADMIN" | "EMPLOYEE";
+}
+
+function buildListFilter(filter: ListUsersFilter): Record<string, unknown> {
+  const query: Record<string, unknown> = {};
+  if (filter.role) query.role = filter.role;
+  if (filter.search) {
+    const escaped = filter.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.$or = [
+      { name: { $regex: escaped, $options: "i" } },
+      { email: { $regex: escaped, $options: "i" } },
+    ];
+  }
+  return query;
 }
 
 export function countActiveCompanyAdminsByTenant(tenantId: string) {

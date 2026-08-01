@@ -1,10 +1,11 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/AppError.js";
-import { UNAUTHORIZED } from "../errors/errorCodes.js";
+import { SESSION_REVOKED, UNAUTHORIZED } from "../errors/errorCodes.js";
 import { config } from "../../config/index.js";
 import { verifyJwt } from "../../modules/auth/jwtTokens.js";
 import type { AuthTokenClaims } from "../../modules/auth/auth.types.js";
 import { isBaseRole } from "../auth/baseRoles.js";
+import UserModel from "../../db/models/user.model.js";
 
 /**
  * Extracts the bearer token from the Authorization header.
@@ -29,8 +30,19 @@ function extractBearerToken(authorization: string | undefined): string {
  *
  * On failure it throws an `AppError` (401) which is handled by the
  * centralized error handler.
+ *
+ * When the token carries a `sessionVersion` claim (all tokens minted since the
+ * "revoke other sessions" feature), the middleware verifies it against the
+ * user's current `sessionVersion`. A stale claim means the session was revoked
+ * and the request is rejected with `SESSION_REVOKED`. Tokens without the claim
+ * (minted before the feature shipped) are accepted for backwards
+ * compatibility.
  */
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+export async function authenticate(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
   try {
     const token = extractBearerToken(req.headers.authorization);
 
@@ -48,6 +60,25 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
     if (claims.type !== "access" || !claims.sub || !claims.tenantId || !isBaseRole(claims.role)) {
       throw new AppError(401, UNAUTHORIZED, "Invalid access token claims");
+    }
+
+    if (typeof claims.sessionVersion === "number") {
+      const user = await UserModel.findById(claims.sub)
+        .select("sessionVersion")
+        .lean()
+        .exec();
+
+      if (!user) {
+        throw new AppError(401, UNAUTHORIZED, "Account no longer exists");
+      }
+
+      if ((user.sessionVersion ?? 0) !== claims.sessionVersion) {
+        throw new AppError(
+          401,
+          SESSION_REVOKED,
+          "Session has been revoked. Please sign in again.",
+        );
+      }
     }
 
     req.auth = {

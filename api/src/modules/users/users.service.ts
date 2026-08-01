@@ -55,6 +55,7 @@ import {
 import type {
   InviteUserResult,
   ListUsersResult,
+  RevokeInvitationResult,
   UpdateUserResult,
   SetPasswordFromInviteResult,
 } from "./users.types.js";
@@ -485,6 +486,66 @@ export async function resendInvitation(
   };
 }
 
+export async function revokeInvitation(
+  inputContext: UserOperationContext,
+  targetUserId: string,
+): Promise<RevokeInvitationResult> {
+  const context = await resolveUserOperationContext(inputContext);
+  await authorizeUserOperation(context, Permission.USERS_DELETE);
+  const tenantId = context.tenantId;
+  assertObjectId(targetUserId);
+
+  const tenant = await findTenantById(tenantId);
+  if (!tenant) {
+    throw new AppError(404, NOT_FOUND, "Tenant not found");
+  }
+  assertCustomerTenantForUserManagement(tenant);
+
+  const invitedUser = await UserModel.findOne({
+    _id: targetUserId,
+    tenantId,
+    status: "pending_email_verification",
+    emailVerified: false,
+  }).exec();
+
+  if (!invitedUser) {
+    const existingUser = await findUserByTenantAndId(tenantId, targetUserId);
+    if (!existingUser) {
+      await auditUserOperation(
+        context,
+        "USER_INVITATION_REVOKED",
+        targetUserId,
+        { reason: "USER_NOT_FOUND_OR_TENANT_MISMATCH" },
+        "DENIED",
+      );
+      throw new AppError(404, NOT_FOUND, "User not found");
+    }
+    throw new AppError(
+      409,
+      "INVITE_ALREADY_ACCEPTED",
+      "Invitation has already been accepted",
+    );
+  }
+
+  await deleteUserWithSessionRevocation(tenantId, targetUserId);
+
+  await auditUserOperation(
+    context,
+    "USER_INVITATION_REVOKED",
+    invitedUser._id.toString(),
+    {
+      revoked: true,
+      previousStatus: invitedUser.status,
+      invitedEmail: invitedUser.email,
+    },
+  );
+
+  return {
+    success: true,
+    message: "Invitation revoked successfully.",
+  };
+}
+
 async function resolveUserOperationContext(
   context: UserOperationContext,
 ): Promise<ResolvedUserOperationContext> {
@@ -693,8 +754,8 @@ export async function listUsers(
   assertCustomerTenantForUserManagement(tenant);
 
   const [totalRecords, users] = await Promise.all([
-    countUsersByTenant(tenantId),
-    findUsersByTenant(tenantId, payload.page, payload.pageSize),
+    countUsersByTenant(tenantId, payload),
+    findUsersByTenant(tenantId, payload.page, payload.pageSize, payload),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(totalRecords / payload.pageSize));

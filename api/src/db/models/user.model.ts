@@ -20,6 +20,14 @@ export interface UserDocument extends mongoose.Document {
   permissionBaseline: "standard" | "legacy-none";
   roleMigrationState: "complete" | "pending-session-revocation";
   sessionGuardVersion: number;
+  /**
+   * Bumped only when the user revokes their other sessions (or a role
+   * migration must invalidate every session). Access tokens embed the value
+   * at sign-in; `authenticate` rejects any token whose claim is stale.
+   * Unlike sessionGuardVersion, this is NOT incremented on every login, so
+   * multiple concurrent sessions remain valid until the user revokes them.
+   */
+  sessionVersion: number;
   employeeProfile?: {
     employeeId?: string;
     department?: string;
@@ -111,6 +119,7 @@ const userSchema = new Schema<UserDocument>(
       default: "complete",
     },
     sessionGuardVersion: { type: Number, default: 0, min: 0 },
+    sessionVersion: { type: Number, default: 0, min: 0 },
     employeeProfile: { type: EmployeeProfileSchema, required: false },
     status: {
       type: String,

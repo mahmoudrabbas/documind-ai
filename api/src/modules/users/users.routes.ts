@@ -12,6 +12,7 @@ import {
   setPasswordFromInviteController,
   getInviteDetailsController,
   resendInvitationController,
+  revokeInvitationController,
 } from "./users.controller.js";
 import {
   validateInviteUserInput,
@@ -114,6 +115,14 @@ router.post(
   requirePermission(Permission.USERS_CREATE),
   invitationRateLimiter,
   resendInvitationController,
+);
+
+router.post(
+  "/:id/revoke-invitation",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.USERS_DELETE),
+  revokeInvitationController,
 );
 
 router.delete(

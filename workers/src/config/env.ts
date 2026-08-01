@@ -78,6 +78,20 @@ const envSchema = z
 
     SMTP_SECURE: booleanFromEnv,
 
+    APP_FRONTEND_URL: z
+      .string()
+      .url()
+      .default("http://localhost:3000"),
+
+    EMAIL_VERIFICATION_JWT_SECRET: z
+      .string()
+      .min(1)
+      .optional(),
+
+    EMAIL_VERIFICATION_JWT_EXPIRES_IN: z
+      .string()
+      .default("24h"),
+
     UPLOAD_DIR: z
       .string()
       .default("../api/uploads"),
@@ -127,6 +141,18 @@ const envSchema = z
           code: "custom",
           path: ["REDIS_URL"],
           message: "must be explicitly configured",
+        });
+      }
+
+      if (
+        !env.EMAIL_VERIFICATION_JWT_SECRET ||
+        env.EMAIL_VERIFICATION_JWT_SECRET.trim() === ""
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["EMAIL_VERIFICATION_JWT_SECRET"],
+          message:
+            "is required (must match the API's secret used to sign invitation tokens)",
         });
       }
     }
@@ -240,6 +266,12 @@ export function parseEnv(
     SMTP_PASS: getSecretValue(
       "SMTP_PASS",
       env.SMTP_PASS,
+      env,
+    ),
+
+    EMAIL_VERIFICATION_JWT_SECRET: getSecretValue(
+      "EMAIL_VERIFICATION_JWT_SECRET",
+      env.EMAIL_VERIFICATION_JWT_SECRET,
       env,
     ),
   };
