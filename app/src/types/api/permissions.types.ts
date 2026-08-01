@@ -35,6 +35,9 @@ export const Permission = {
   AUDIT_READ: "audit:read",
   DOCUMENTS_OCR_PROCESS: "documents:ocr-process",
   DOCUMENTS_QUALITY_REVIEW: "documents:quality-review",
+  NOTIFICATIONS_READ: "notifications:read",
+  NOTIFICATIONS_UPDATE: "notifications:update",
+  NOTIFICATIONS_TEST: "notifications:test",
 } as const;
 
 export type PermissionValue = (typeof Permission)[keyof typeof Permission];
