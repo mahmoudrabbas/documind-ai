@@ -15,6 +15,7 @@ vi.mock("@/services/billing.service", () => ({
   listInvoices: vi.fn(),
   listRefundRequests: vi.fn(),
   createRefundRequest: vi.fn(),
+  createRefundEligibilityPreview: vi.fn(),
   createBillingPortalSession: vi.fn(),
   getInvoiceLinks: vi.fn(),
   listPublicBillingPackages: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock("@/services/billing.service", () => ({
 }));
 
 import { usePermissions } from "@/providers/permission-provider";
-import { createBillingPortalSession, createRefundRequest, createSubscriptionChangePreview, getBillingOperation, getBillingSummary, getInvoiceLinks, listInvoices, listPublicBillingPackages, listRefundRequests, requestBillingCancellation, requestBillingReactivation, requestSubscriptionChange } from "@/services/billing.service";
+import { createBillingPortalSession, createRefundEligibilityPreview, createRefundRequest, createSubscriptionChangePreview, getBillingOperation, getBillingSummary, getInvoiceLinks, listInvoices, listPublicBillingPackages, listRefundRequests, requestBillingCancellation, requestBillingReactivation, requestSubscriptionChange } from "@/services/billing.service";
 
 const summary = {
   id: "local-sub", tenantId: "local-tenant", packageId: { _id: "pkg", name: "Pro", code: "pro", version: 2, monthlyPrice: 10, annualPrice: 100, monthlyPriceCents: 1000, annualPriceCents: 10000, currency: "USD", entitlements: { employees: 1, admins: 1, documents: 1, storageMb: 1, fileSizeMb: 1, queriesPerMonth: 1, tokensPerMonth: 1, ocrPagesPerMonth: 1 } },
@@ -79,6 +80,7 @@ describe("CompanyBillingPage", () => {
     (listInvoices as Mock).mockResolvedValue({ success: true, data: { invoices: [invoice], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
     (listRefundRequests as Mock).mockResolvedValue({ success: true, data: { refunds: [refund], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
     (createRefundRequest as Mock).mockResolvedValue({ success: true, data: { refund, replayed: false } });
+    (createRefundEligibilityPreview as Mock).mockResolvedValue({ success: true, data: { id: "eligibility-1", invoiceId: "local-invoice", invoiceAmountMinor: 1250, currency: "USD", periodElapsedPercent: 20, usage: [{ dimension: "queriesPerMonth", percent: 40 }], maximumEligibleRefundMinor: 750, reason: "VOLUNTARY_CANCELLATION", subscriptionImpact: "CANCEL_IMMEDIATELY_AFTER_REFUND", expiresAt: "2026-07-20T00:15:00.000Z", reviewRequired: false, decisionReason: "USAGE_PROPORTIONAL" } });
     (listPublicBillingPackages as Mock).mockResolvedValue({ success: true, data: [plan] });
     (createSubscriptionChangePreview as Mock).mockResolvedValue({ success: true, data: preview });
     (requestSubscriptionChange as Mock).mockResolvedValue({ success: true, data: { operation, replayed: false } });
@@ -112,7 +114,7 @@ describe("CompanyBillingPage", () => {
     const submit = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.submitRefund")!;
     await act(async () => { submit.click(); });
     await settle();
-    expect(createRefundRequest).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: "local-invoice", mode: "FULL" }));
+    expect(createRefundRequest).toHaveBeenCalledWith(expect.objectContaining({ previewId: "eligibility-1", mode: "PARTIAL", amountMinor: 750 }));
     expect(container.textContent).not.toMatch(/cus_|sub_|re_/i);
   });
 

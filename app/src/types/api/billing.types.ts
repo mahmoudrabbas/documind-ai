@@ -216,6 +216,10 @@ export interface BillingRefund {
   refundedAmountMinor: number;
   reservedRefundAmountMinor: number;
   reason: string;
+  reasonCode?: RefundReason;
+  maximumEligibleRefundMinor?: number;
+  subscriptionImpact?: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND";
+  subscriptionImpactStatus?: "NOT_REQUIRED" | "PENDING" | "SUCCEEDED" | "RETRY_PENDING" | "FAILED";
   requestedBy: { id: string; name: string | null; email: string | null };
   confirmedBy: { id: string; name: string | null; email: string | null } | null;
   requestedAt: string;
@@ -232,4 +236,12 @@ export interface BillingRefund {
     pendingCount: number;
     pendingAmountMinor: number;
   };
+}
+export type RefundReason = "DUPLICATE_CHARGE" | "SERVICE_NOT_DELIVERED" | "VOLUNTARY_CANCELLATION" | "BILLING_ERROR";
+export interface RefundEligibilityPreview {
+  id: string; invoiceId: string; invoiceAmountMinor: number; currency: string;
+  periodElapsedPercent: number; usage: Array<{ dimension: string; percent: number }>;
+  maximumEligibleRefundMinor: number; reason: RefundReason;
+  subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND";
+  expiresAt: string; reviewRequired: boolean; decisionReason: string;
 }

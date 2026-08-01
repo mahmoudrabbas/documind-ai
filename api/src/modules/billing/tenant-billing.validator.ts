@@ -29,12 +29,16 @@ export const reactivationSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(255),
 }).strict();
 export const refundRequestSchema = z.object({
-  invoiceId: z.string().regex(/^[a-f0-9]{24}$/i),
+  previewId: z.string().regex(/^[a-f0-9]{24}$/i),
   mode: z.enum(["FULL", "PARTIAL"]),
   amountMinor: z.coerce.number().int().positive().optional(),
-  reason: z.string().trim().min(3).max(100),
   idempotencyKey: z.string().trim().min(8).max(255),
 }).strict().refine((value) => value.mode === "FULL" || value.amountMinor !== undefined, { message: "amountMinor is required for partial refunds" });
+export const refundEligibilityPreviewSchema = z.object({
+  invoiceId: z.string().regex(/^[a-f0-9]{24}$/i),
+  reason: z.enum(["DUPLICATE_CHARGE", "SERVICE_NOT_DELIVERED", "VOLUNTARY_CANCELLATION", "BILLING_ERROR"]),
+  explanation: z.string().trim().max(500).optional(),
+}).strict();
 export const refundIdSchema = z.object({ refundId: z.string().regex(/^[a-f0-9]{24}$/i) });
 export const refundListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

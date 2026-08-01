@@ -372,6 +372,31 @@ refundPersistence("refund service persistence", () => {
     expect(invoice?.refundedAmountMinor).toBe(250);
   });
 
+  it("creates one durable cancellation impact under concurrent webhook and reconciliation", async () => {
+    const provider = seededProvider();
+    const requested = await createRefundRequest({
+      tenantId: String(tenantId), invoiceId: String(invoiceId), mode: "PARTIAL", amountMinor: 200,
+      reason: "service_issue", idempotencyKey: "refund-impact-concurrency", context: tenantContext,
+    });
+    await RefundModel.updateOne({ _id: requested.refund.id }, {
+      $set: { subscriptionImpact: "CANCEL_IMMEDIATELY_AFTER_REFUND", subscriptionImpactStatus: "PENDING" },
+    });
+    await confirmRefundRequest({ refundId: requested.refund.id, provider, context: platformContext });
+    const pending = await RefundModel.findById(requested.refund.id).lean();
+
+    await Promise.all([
+      synchronizeRefundFromProvider({ provider, providerRefundId: String(pending?.providerRefundId), operationReference: String(pending?.operationId), sourceEventId: "evt-impact-webhook" }),
+      synchronizeRefundFromProvider({ provider, providerRefundId: String(pending?.providerRefundId), operationReference: String(pending?.operationId), sourceEventId: "manual-impact-reconcile" }),
+    ]);
+
+    const refund = await RefundModel.findById(requested.refund.id).lean();
+    const invoice = await InvoiceModel.findById(invoiceId).lean();
+    expect(refund).toMatchObject({ status: "SUCCEEDED", subscriptionImpactStatus: "PENDING" });
+    expect(invoice).toMatchObject({ refundedAmountMinor: 200, reservedRefundAmountMinor: 0 });
+    expect(await BillingOperationModel.countDocuments({ tenantId, operationType: "CANCEL_IMMEDIATELY" })).toBe(1);
+    expect(provider.mutationCalls.filter((call) => call === "cancel-now")).toHaveLength(1);
+  });
+
   it("preserves a pending refund when provider confirmation returns a mismatched amount", async () => {
     const provider = seededProvider();
     const requested = await createRefundRequest({

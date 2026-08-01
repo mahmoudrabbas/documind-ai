@@ -13,6 +13,7 @@ import BillingPreviewModel from "../../../db/models/billingPreview.model.js";
 import InvoiceModel from "../../../db/models/invoice.model.js";
 import PackageModel from "../../../db/models/package.model.js";
 import RefundModel from "../../../db/models/refund.model.js";
+import RefundEligibilityPreviewModel from "../../../db/models/refundEligibilityPreview.model.js";
 import RoleModel from "../../../db/models/role.model.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import TenantModel from "../../../db/models/tenant.model.js";
@@ -65,6 +66,7 @@ beforeAll(async () => {
     BillingOperationModel.syncIndexes(),
     InvoiceModel.syncIndexes(),
     RefundModel.syncIndexes(),
+    RefundEligibilityPreviewModel.syncIndexes(),
   ]);
   setAuditWriter({ write: async () => true });
   setMetricRecorder({ increment() {}, histogram() {}, gauge() {} });
@@ -83,6 +85,7 @@ beforeEach(async () => {
     BillingOperationModel.deleteMany({}),
     BillingPreviewModel.deleteMany({}),
     RefundModel.deleteMany({}),
+    RefundEligibilityPreviewModel.deleteMany({}),
     InvoiceModel.deleteMany({}),
     SubscriptionModel.deleteMany({}),
     PackageModel.deleteMany({}),
@@ -110,6 +113,7 @@ afterAll(async () => {
     BillingOperationModel.deleteMany({}),
     BillingPreviewModel.deleteMany({}),
     RefundModel.deleteMany({}),
+    RefundEligibilityPreviewModel.deleteMany({}),
     InvoiceModel.deleteMany({}),
     SubscriptionModel.deleteMany({}),
     PackageModel.deleteMany({}),
@@ -189,11 +193,11 @@ describe("billing route integration", () => {
     expect(operation.status).toBe(200);
     expect((await operation.json()).data).toMatchObject({ id: operationId, status: "PROVIDER_PENDING" });
 
+    const refundEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
     const refund = await api("POST", "/billing/refund-requests", admin.token, {
-      invoiceId: String(ids.invoiceA),
+      previewId: refundEligibilityId,
       mode: "PARTIAL",
       amountMinor: 200,
-      reason: "customer_request",
       idempotencyKey: "refund-idem-001",
     });
     expect(refund.status).toBe(200);
@@ -203,10 +207,9 @@ describe("billing route integration", () => {
     expect(JSON.stringify(refundBody)).not.toMatch(/paymentReference|providerRefundId|cus_|re_/i);
 
     const refundReplay = await api("POST", "/billing/refund-requests", admin.token, {
-      invoiceId: String(ids.invoiceA),
+      previewId: refundEligibilityId,
       mode: "PARTIAL",
       amountMinor: 200,
-      reason: "customer_request",
       idempotencyKey: "refund-idem-001",
     });
     expect(refundReplay.status).toBe(200);
@@ -312,11 +315,12 @@ describe("billing route integration", () => {
     });
     expect(foreignChange.status).toBe(404);
 
-    const refund = await api("POST", "/billing/refund-requests", identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN").token, {
-      invoiceId: String(ids.invoiceA),
+    const adminToken = identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN").token;
+    const refundEligibilityId = await createRefundEligibility(adminToken, ids.invoiceA);
+    const refund = await api("POST", "/billing/refund-requests", adminToken, {
+      previewId: refundEligibilityId,
       mode: "PARTIAL",
       amountMinor: 100,
-      reason: "customer_request",
       idempotencyKey: "refund-foreign-001",
     });
     const refundId = String((await refund.json()).data.refund.id);
@@ -328,11 +332,11 @@ describe("billing route integration", () => {
     const superAdmin = identity(ids.superAdminA, ids.platformTenant, "SUPER_ADMIN");
     const admin = identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN");
 
+    const firstEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
     const requested = await api("POST", "/billing/refund-requests", admin.token, {
-      invoiceId: String(ids.invoiceA),
+      previewId: firstEligibilityId,
       mode: "PARTIAL",
       amountMinor: 150,
-      reason: "customer_request",
       idempotencyKey: "refund-platform-list-001",
     });
     const refundId = String((await requested.json()).data.refund.id);
@@ -350,11 +354,11 @@ describe("billing route integration", () => {
     expect(confirm.status).toBe(200);
     expect((await confirm.json()).data.refund.status).toBe("PROVIDER_PENDING");
 
+    const rejectedEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
     const rejectedRequest = await api("POST", "/billing/refund-requests", admin.token, {
-      invoiceId: String(ids.invoiceA),
+      previewId: rejectedEligibilityId,
       mode: "PARTIAL",
       amountMinor: 50,
-      reason: "customer_request",
       idempotencyKey: "refund-platform-reject-001",
     });
     const rejectedRefundId = String((await rejectedRequest.json()).data.refund.id);
@@ -706,4 +710,12 @@ async function api(method: string, path: string, token?: string, body?: Record<s
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+}
+
+async function createRefundEligibility(token: string, invoiceId: Types.ObjectId): Promise<string> {
+  const response = await api("POST", "/billing/refund-eligibility-previews", token, {
+    invoiceId: String(invoiceId), reason: "SERVICE_NOT_DELIVERED",
+  });
+  expect(response.status).toBe(200);
+  return String((await response.json()).data.id);
 }

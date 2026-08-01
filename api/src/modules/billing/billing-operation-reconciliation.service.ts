@@ -8,6 +8,7 @@ import {
 import { getAuditWriter } from "../../common/observability/index.js";
 import BillingOperationModel, { type BillingOperationDocument } from "../../db/models/billingOperation.model.js";
 import BillingPreviewModel from "../../db/models/billingPreview.model.js";
+import RefundModel from "../../db/models/refund.model.js";
 import { BillingOperationService } from "./billing-operation.service.js";
 
 type ReconciliationOutcome = "CONFIRMED" | "FAILED" | "RETRY_PENDING";
@@ -67,6 +68,12 @@ export async function reconcileBillingOperation(
     const decision = await confirmationDecision(operation, input.authoritativeSubscription ?? null);
     if (decision.action === "CONFIRM") {
       await service.confirm(String(operation._id), input.tenantId, input.providerEventId);
+      if (operation.operationType === "CANCEL_IMMEDIATELY") {
+        await RefundModel.updateMany(
+          { tenantId: operation.tenantId, subscriptionImpactOperationId: operation._id, status: "SUCCEEDED" },
+          { $set: { subscriptionImpactStatus: "SUCCEEDED" } },
+        );
+      }
       await writeSpecificAudit(operation, "CONFIRMED");
     } else if (decision.action === "FAIL") {
       await service.fail(String(operation._id), input.tenantId, decision.failureCode);
@@ -81,8 +88,14 @@ export async function reconcileBillingOperation(
       input.failureCode ?? "BILLING_PROVIDER_UNAVAILABLE",
       new Date(Date.now() + 60_000),
     );
+    if (operation.operationType === "CANCEL_IMMEDIATELY") {
+      await RefundModel.updateMany({ subscriptionImpactOperationId: operation._id }, { $set: { subscriptionImpactStatus: "RETRY_PENDING" } });
+    }
   } else {
     await service.fail(String(operation._id), input.tenantId, input.failureCode ?? "BILLING_PROVIDER_UNAVAILABLE");
+    if (operation.operationType === "CANCEL_IMMEDIATELY") {
+      await RefundModel.updateMany({ subscriptionImpactOperationId: operation._id }, { $set: { subscriptionImpactStatus: "FAILED" } });
+    }
     await writeSpecificAudit(operation, "FAILED", input.failureCode ?? "BILLING_PROVIDER_UNAVAILABLE");
   }
 

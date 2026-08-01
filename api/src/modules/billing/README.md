@@ -247,7 +247,8 @@ Phase 4 adds the refund workflow on top of the existing invoice projection and `
 
 | Route | Permission | Contract |
 |---|---|---|
-| `POST /billing/refund-requests` | `billing:manage` | `{ invoiceId, mode: "FULL" \| "PARTIAL", amountMinor?, reason, idempotencyKey }` → tenant-scoped local refund request DTO |
+| `POST /billing/refund-eligibility-previews` | `billing:manage` | `{ invoiceId, reason, explanation? }` → expiring server-calculated eligibility preview |
+| `POST /billing/refund-requests` | `billing:manage` | `{ previewId, mode: "FULL" \| "PARTIAL", amountMinor?, idempotencyKey }` → tenant-scoped local refund request DTO |
 | `GET /billing/refund-requests` | `billing:read` | tenant-scoped paginated refund request history |
 | `GET /billing/refund-requests/:refundId` | `billing:read` | tenant-scoped safe refund detail |
 | `GET /super-admin/refunds` | `billing:read` | platform refund review list with safe tenant/invoice/package metadata |
@@ -263,6 +264,26 @@ Tenant routes accept only local invoice/refund identifiers. They never accept te
 Provider execution stays authoritative. The confirm route persists or replays the durable refund operation before calling the provider. Local invoice aggregates (`refundedAmountMinor`, `reservedRefundAmountMinor`, `remainingRefundableMinor`) update only after authoritative provider refund synchronization. Refund-related webhook events are triggers for `retrieveRefund`-based reconciliation; they are not treated as final truth on their own.
 
 The Company Admin billing page at `/dashboard/settings/billing` now exposes refund requests only for eligible local invoices and displays refund history/status without any provider IDs or card data. The Super Admin page at `/super-admin/refunds` adds the review/confirm/reject/retry surface using the same safe local DTOs. Both UIs remain localized, accessible, and explicit about pending provider confirmation.
+
+### Usage-aware refund eligibility
+
+Tenant refund requests now begin with `POST /billing/refund-eligibility-previews`. The server persists an expiring, tenant/invoice/subscription-scoped snapshot under policy version `2026-07-usage-v1`; `POST /billing/refund-requests` accepts that local preview ID and never accepts usage, currency, provider references, or a client-selected subscription impact.
+
+The automatic voluntary-cancellation calculation includes queries, tokens, and OCR pages. Issue 25 counter keys are formatted `YYYY-MM`, but the key labels the month containing the subscription-period start; it is not a calendar-month event bucket. Refund snapshots canonicalize that key in UTC and also detect the historical process-local key at UTC month boundaries without treating it as another usage bucket. Refund eligibility therefore does not sum adjacent month-labelled rows. It counts query and OCR ledger records over the exact half-open invoice period (`createdAt >= periodStart && createdAt < periodEnd`) and reconciles those counts with the matching Issue 25 counter so direct reservations are not ignored. A counter surplus or duplicate legacy/canonical value that cannot be assigned to a non-calendar-aligned exact period fails closed. Tokens currently have no exact timestamped ledger: an absent counter is authoritative zero under the adapter's upsert-on-first-consume contract, while non-zero token usage for a non-calendar-aligned period requires review. Database failures, malformed counters, and missing quota definitions also require review. Disabled zero-limit dimensions, seats, documents, storage, and file-size limits are excluded. Existing USD cost fields are estimates or are not an immutable invoice-period minor-unit ledger, so direct provider cost is not used and live pricing is never fetched or inferred.
+
+Ratios are stored as integer basis points. The consumed ratio is the greater of elapsed-period and included-usage ratios. Money is calculated in integer minor units using ceiling division; confirmed refunds and pending refund reservations cap the result. Confirmation recalculates against current usage and rejects a decreased maximum instead of silently reducing the amount.
+
+Normalized reasons determine policy and subscription impact: duplicate charges require deterministic duplicate-payment evidence and do not cancel; service-not-delivered and billing errors require platform review; voluntary cancellation uses the usage calculation and requires immediate cancellation after confirmed refund; goodwill credit is platform-only and is not exposed by tenant routes. Cancellation is a separate durable `CANCEL_IMMEDIATELY` operation created only after provider-authoritative refund success, so a pending cancellation does not change the successful refund state or entitlements early.
+
+`BILLING_GOODWILL_REFUND_CAP_MINOR` is the non-negative platform policy cap for a discretionary goodwill credit. It defaults to `0` (disabled), is interpreted in invoice minor units, and does not grant tenants access to the platform-only reason.
+
+Refund reconciliation first retrieves current provider state and validates ownership, amount, and currency. A successful manual provider read is idempotent and triggers any required subscription-impact operation. Webhook signature verification remains mandatory. For local Stripe testing:
+
+```sh
+stripe listen --forward-to http://localhost:5000/webhooks/payment/stripe
+```
+
+The Stripe CLI signing secret must match `STRIPE_WEBHOOK_SECRET`; never commit the value.
 
 ### Deferred after Phase 4
 

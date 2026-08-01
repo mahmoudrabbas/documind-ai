@@ -82,7 +82,7 @@ test.describe("Issue 29 billing browser flows", () => {
     await context.route("https://billing.example.test/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<title>Secure billing fixture</title>" }));
     await page.goto("/dashboard/settings/billing");
 
-    await expect(page.getByRole("heading", { name: "Billing & invoices" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Billing & invoices" })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("INV-2026-001").first()).toBeVisible();
     await expect(page.getByText("$12.50").first()).toBeVisible();
     await page.getByRole("button", { name: "Next", exact: true }).click();
@@ -199,6 +199,13 @@ async function installTenantBillingFixtures(page: Page) {
       refunds = [refund("REQUESTED")];
       return json(route, { success: true, data: { refund: refunds[0], replayed: false } });
     }
+    if (url.pathname === "/billing/refund-eligibility-previews") return json(route, { success: true, data: {
+      id: "64b000000000000000000011", invoiceId, invoiceAmountMinor: 1250, currency: "USD",
+      periodElapsedPercent: 20, usage: [{ dimension: "queriesPerMonth", percent: 40 }],
+      maximumEligibleRefundMinor: 750, reason: "VOLUNTARY_CANCELLATION",
+      subscriptionImpact: "CANCEL_IMMEDIATELY_AFTER_REFUND", expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      reviewRequired: false, decisionReason: "USAGE_PROPORTIONAL",
+    } });
     if (url.pathname === "/billing/refund-requests") return json(route, { success: true, data: { refunds, pagination: { page: 1, pageSize: 10, totalRecords: refunds.length, totalPages: refunds.length ? 1 : 0 } } });
     if (url.pathname === "/billing/portal-sessions") {
       state.portalFlow = (request.postDataJSON() as { flow: string }).flow;

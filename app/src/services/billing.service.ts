@@ -149,15 +149,20 @@ export function getInvoiceLinks(invoiceId: string) {
 }
 
 export function createRefundRequest(body: {
-  invoiceId: string;
+  previewId: string;
   mode: "FULL" | "PARTIAL";
   amountMinor?: number;
-  reason: string;
   idempotencyKey: string;
 }) {
   return apiClient<Success<{ refund: BillingRefund; replayed: boolean }>>(
     "/billing/refund-requests",
     { method: "POST", body },
+  );
+}
+
+export function createRefundEligibilityPreview(body: { invoiceId: string; reason: import("@/types/api/billing.types").RefundReason; explanation?: string }) {
+  return apiClient<Success<import("@/types/api/billing.types").RefundEligibilityPreview>>(
+    "/billing/refund-eligibility-previews", { method: "POST", body },
   );
 }
 

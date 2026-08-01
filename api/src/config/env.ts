@@ -160,6 +160,7 @@ const envSchema = z
     STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: z.string().default(""),
     BILLING_PORTAL_ALLOWED_ORIGIN: z.string().url().default("http://localhost:3000"),
     BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(90).default(7),
+    BILLING_GOODWILL_REFUND_CAP_MINOR: z.coerce.number().int().min(0).default(0),
 
     OPENAI_API_KEY: z.string().default(""),
     OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),

@@ -150,6 +150,10 @@ export type AuditAction =
   | "BILLING_REFUND_RETRY_SCHEDULED"
   | "BILLING_REFUND_RETRY_EXECUTED"
   | "BILLING_REFUND_VIEWED"
+  | "BILLING_REFUND_ELIGIBILITY_PREVIEWED"
+  | "BILLING_REFUND_ELIGIBILITY_CHANGED"
+  | "BILLING_REFUND_REVIEW_REQUIRED"
+  | "BILLING_REFUND_SUBSCRIPTION_IMPACT_REQUESTED"
   | "BILLING_AUTHORIZATION_DENIED"
   | "JOB_REPLAYED"
   // Intent Query
@@ -206,6 +210,7 @@ export type AuditResourceType =
   | "BillingOperation"
   | "Invoice"
   | "Refund"
+  | "RefundEligibilityPreview"
   | "EmailMessage"
   | "PaymentEvent"
   | "PlatformSetting"

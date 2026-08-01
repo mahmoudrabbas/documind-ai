@@ -3,7 +3,7 @@ import { authenticate } from "../../common/middlewares/authenticate.middleware.j
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
-import { billingOperationController, billingSummaryController, cancellationController, invoiceDetailController, invoiceLinksController, invoiceListController, portalSessionController, reactivationController, refundDetailController, refundListController, refundRequestController, subscriptionChangeController, subscriptionChangePreviewController } from "./tenant-billing.controller.js";
+import { billingOperationController, billingSummaryController, cancellationController, invoiceDetailController, invoiceLinksController, invoiceListController, portalSessionController, reactivationController, refundDetailController, refundEligibilityPreviewController, refundListController, refundRequestController, subscriptionChangeController, subscriptionChangePreviewController } from "./tenant-billing.controller.js";
 
 const router = Router();
 router.use(authenticate, tenantScoping);
@@ -15,6 +15,7 @@ router.post("/subscription-changes", requirePermission(Permission.BILLING_MANAGE
 router.post("/cancellations", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), cancellationController);
 router.post("/reactivations", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), reactivationController);
 router.get("/operations/:operationId", requirePermission(Permission.BILLING_READ, billingDenialAudit), billingOperationController);
+router.post("/refund-eligibility-previews", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), refundEligibilityPreviewController);
 router.post("/refund-requests", requirePermission(Permission.BILLING_MANAGE, billingDenialAudit), refundRequestController);
 router.get("/refund-requests", requirePermission(Permission.BILLING_READ, billingDenialAudit), refundListController);
 router.get("/refund-requests/:refundId", requirePermission(Permission.BILLING_READ, billingDenialAudit), refundDetailController);
