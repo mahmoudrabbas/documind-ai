@@ -59,7 +59,7 @@ export default function TenantDashboardLayout({
     const isOverviewPath =
       pathname === "/dashboard" || pathname === "/dashboard/";
     if (isOverviewPath && isStandardUserRole(auth.user.role)) {
-      router.replace("/chat");
+      router.replace("/dashboard/chat");
     }
   }, [auth, pathname, router]);
 

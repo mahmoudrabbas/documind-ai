@@ -6,8 +6,8 @@ describe("getRoleHome", () => {
     expect(getRoleHome("SUPER_ADMIN")).toBe("/super-admin"));
   it("routes company admins to the System Overview dashboard", () =>
     expect(getRoleHome("COMPANY_ADMIN")).toBe("/dashboard"));
-  it.each(["EMPLOYEE", "USER"])("routes %s to chat", (role) =>
-    expect(getRoleHome(role)).toBe("/chat"),
+  it.each(["EMPLOYEE", "USER"])("routes %s to dashboard chat", (role) =>
+    expect(getRoleHome(role)).toBe("/dashboard/chat"),
   );
 });
 

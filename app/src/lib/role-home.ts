@@ -7,5 +7,5 @@ export function isStandardUserRole(role: string): boolean {
 export function getRoleHome(role: string): string {
   if (role === "SUPER_ADMIN") return "/super-admin";
   if (role === "COMPANY_ADMIN") return "/dashboard";
-  return "/chat";
+  return "/dashboard/chat";
 }

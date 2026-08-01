@@ -52,7 +52,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (auth.status !== "authenticated") return;
     if (isStandardUserRole(auth.user.role)) {
-      router.replace("/chat");
+      router.replace("/dashboard/chat");
     }
   }, [auth, router]);
 
