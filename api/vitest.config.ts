@@ -22,6 +22,7 @@ export default defineConfig({
       "src/modules/processing/chunking/__tests__/*.test.ts",
       "src/modules/processing/indexing/__tests__/*.test.ts",
       "src/modules/processing-progress/__tests__/*.test.ts",
+      "src/modules/notifications/__tests__/*.test.ts",
       "src/modules/retrieval/ports/__tests__/*.test.ts",
       "src/providers/bedrock/__tests__/*.test.ts",
       "src/providers/embedding/__tests__/*.test.ts",
