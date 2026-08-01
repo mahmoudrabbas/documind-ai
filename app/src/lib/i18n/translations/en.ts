@@ -442,6 +442,31 @@ const en: TranslationDictionary = {
   "usage.dimension.tokensPerMonth": "Tokens / Month",
   "usage.dimension.ocrPagesPerMonth": "OCR Pages / Month",
 
+  /* ── dashboard (system overview) ─────────────────────── */
+  "dashboard.title": "System Overview",
+  "dashboard.description": "Real-time performance and repository metrics for DocuMind AI.",
+  "dashboard.totalDocuments": "Total Documents",
+  "dashboard.totalQuestions": "Total Questions",
+  "dashboard.storageUsed": "Storage Used",
+  "dashboard.activeUsers": "Active Users",
+  "dashboard.documentsProcessed": "Documents Processed",
+  "dashboard.questionsAsked": "Questions Asked",
+  "dashboard.knowledgeGaps": "Knowledge Gaps",
+  "dashboard.recentActivity": "Recent Activity",
+  "dashboard.refresh": "Refresh",
+  "dashboard.viewAll": "View All",
+  "dashboard.justNow": "just now",
+  "dashboard.minutesAgo": "{{count}}m ago",
+  "dashboard.hoursAgo": "{{count}}h ago",
+  "dashboard.daysAgo": "{{count}}d ago",
+  "dashboard.noRecentActivity":
+    "No recent activity yet. Events will appear here as your team uses DocuMind AI.",
+  "dashboard.system": "System",
+  "dashboard.pendingInvitations": "{{count}} pending invitations",
+  "dashboard.documentsState": "{{processing}} processing · {{failed}} failed",
+  "dashboard.questionsLast7d": "{{count}} in the last 7 days",
+  "dashboard.openGaps": "{{count}} open gaps",
+
   /* ── audit ─────────────────────────────────────────────── */
   "audit.title": "Audit Log",
   "audit.description": "Review sensitive administrative actions across the platform.",

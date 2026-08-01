@@ -442,6 +442,31 @@ const ar: TranslationDictionary = {
   "usage.dimension.tokensPerMonth": "الرموز / الشهر",
   "usage.dimension.ocrPagesPerMonth": "صفحات OCR / الشهر",
 
+  /* ── dashboard (system overview) ─────────────────────── */
+  "dashboard.title": "نظرة عامة على النظام",
+  "dashboard.description": "مؤشرات الأداء ومستودع البيانات المباشرة لـ DocuMind AI.",
+  "dashboard.totalDocuments": "إجمالي المستندات",
+  "dashboard.totalQuestions": "إجمالي الأسئلة",
+  "dashboard.storageUsed": "المساحة المستخدمة",
+  "dashboard.activeUsers": "المستخدمين النشطين",
+  "dashboard.documentsProcessed": "المستندات المعالجة",
+  "dashboard.questionsAsked": "الأسئلة المطروحة",
+  "dashboard.knowledgeGaps": "الفجوات المعرفية",
+  "dashboard.recentActivity": "النشاط الأخير",
+  "dashboard.refresh": "تحديث",
+  "dashboard.viewAll": "عرض الكل",
+  "dashboard.justNow": "الآن",
+  "dashboard.minutesAgo": "منذ {{count}} دقيقة",
+  "dashboard.hoursAgo": "منذ {{count}} ساعة",
+  "dashboard.daysAgo": "منذ {{count}} يوم",
+  "dashboard.noRecentActivity":
+    "لا يوجد نشاط حديث بعد. ستظهر الأحداث هنا عندما يستخدم فريقك DocuMind AI.",
+  "dashboard.system": "النظام",
+  "dashboard.pendingInvitations": "{{count}} دعوة معلقة",
+  "dashboard.documentsState": "{{processing}} قيد المعالجة · {{failed}} فاشلة",
+  "dashboard.questionsLast7d": "{{count}} خلال آخر 7 أيام",
+  "dashboard.openGaps": "{{count}} فجوة مفتوحة",
+
   /* ── audit ─────────────────────────────────────────────── */
   "audit.title": "سجل التدقيق",
   "audit.description": "مراجعة الإجراءات الإدارية الحساسة عبر المنصة.",
