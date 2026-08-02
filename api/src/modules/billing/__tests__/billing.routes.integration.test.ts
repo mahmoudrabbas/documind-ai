@@ -325,6 +325,14 @@ describe("billing route integration", () => {
   it("serves platform refund and invoice reconciliation routes with platform-only enforcement and sanitized DTOs", async () => {
     const superAdmin = identity(ids.superAdminA, ids.platformTenant, "SUPER_ADMIN");
     const admin = identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN");
+    const freePackage = packageDoc(new Types.ObjectId(), "Free", "free", 1, "", "");
+    freePackage.monthlyPrice = 0;
+    freePackage.annualPrice = 0;
+    freePackage.stripeProductId = "";
+    freePackage.versions[0].monthlyPrice = 0;
+    freePackage.versions[0].annualPrice = 0;
+    freePackage.versions[0].stripeProductId = "";
+    await PackageModel.create(freePackage);
 
     const firstEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
     const requested = await api("POST", "/billing/refund-requests", admin.token, {

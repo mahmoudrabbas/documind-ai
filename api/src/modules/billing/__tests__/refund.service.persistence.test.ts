@@ -391,7 +391,7 @@ refundPersistence("refund service persistence", () => {
 
     const refund = await RefundModel.findById(requested.refund.id).lean();
     const invoice = await InvoiceModel.findById(invoiceId).lean();
-    expect(refund).toMatchObject({ status: "SUCCEEDED", subscriptionImpactStatus: "PENDING" });
+    expect(refund).toMatchObject({ status: "SUCCEEDED", subscriptionImpactStatus: "SUCCEEDED" });
     expect(invoice).toMatchObject({ refundedAmountMinor: 200, reservedRefundAmountMinor: 0 });
     expect(await BillingOperationModel.countDocuments({ tenantId, operationType: "CANCEL_IMMEDIATELY" })).toBe(1);
     expect(provider.mutationCalls.filter((call) => call === "cancel-now")).toHaveLength(1);
