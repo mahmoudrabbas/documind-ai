@@ -4,9 +4,9 @@
  * Boots a resilient queue runtime: validates environment, connects Redis and
  * MongoDB, registers typed job handlers, starts the queue consumer, and
  * serves dependency-aware liveness/readiness probes. Shuts down gracefully on
- * SIGTERM/SIGINT, waiting for in-flight jobs to drain.
  */
 
+import "./bootstrap/canvasShim.js";
 import dotenv from "dotenv";
 import { config } from "./config/index.js";
 import { logger } from "./logger.js";
