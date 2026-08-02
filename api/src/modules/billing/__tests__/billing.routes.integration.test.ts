@@ -196,8 +196,6 @@ describe("billing route integration", () => {
     const refundEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
     const refund = await api("POST", "/billing/refund-requests", admin.token, {
       previewId: refundEligibilityId,
-      mode: "PARTIAL",
-      amountMinor: 200,
       idempotencyKey: "refund-idem-001",
     });
     expect(refund.status).toBe(200);
@@ -208,8 +206,6 @@ describe("billing route integration", () => {
 
     const refundReplay = await api("POST", "/billing/refund-requests", admin.token, {
       previewId: refundEligibilityId,
-      mode: "PARTIAL",
-      amountMinor: 200,
       idempotencyKey: "refund-idem-001",
     });
     expect(refundReplay.status).toBe(200);
@@ -319,8 +315,6 @@ describe("billing route integration", () => {
     const refundEligibilityId = await createRefundEligibility(adminToken, ids.invoiceA);
     const refund = await api("POST", "/billing/refund-requests", adminToken, {
       previewId: refundEligibilityId,
-      mode: "PARTIAL",
-      amountMinor: 100,
       idempotencyKey: "refund-foreign-001",
     });
     const refundId = String((await refund.json()).data.refund.id);
@@ -335,8 +329,6 @@ describe("billing route integration", () => {
     const firstEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
     const requested = await api("POST", "/billing/refund-requests", admin.token, {
       previewId: firstEligibilityId,
-      mode: "PARTIAL",
-      amountMinor: 150,
       idempotencyKey: "refund-platform-list-001",
     });
     const refundId = String((await requested.json()).data.refund.id);
@@ -354,14 +346,9 @@ describe("billing route integration", () => {
     expect(confirm.status).toBe(200);
     expect((await confirm.json()).data.refund.status).toBe("PROVIDER_PENDING");
 
-    const rejectedEligibilityId = await createRefundEligibility(admin.token, ids.invoiceA);
-    const rejectedRequest = await api("POST", "/billing/refund-requests", admin.token, {
-      previewId: rejectedEligibilityId,
-      mode: "PARTIAL",
-      amountMinor: 50,
-      idempotencyKey: "refund-platform-reject-001",
-    });
-    const rejectedRefundId = String((await rejectedRequest.json()).data.refund.id);
+    // Historical requested refunds remain reviewable even though new customer
+    // requests reserve the invoice's entire system-calculated balance.
+    const rejectedRefundId = await seedRequestedRefund(String(ids.companyAdminA));
     const reject = await api("POST", `/super-admin/refunds/${rejectedRefundId}/reject`, superAdmin.token, { reason: "policy decision" });
     expect(reject.status).toBe(200);
     expect((await reject.json()).data.status).toBe("REJECTED");
@@ -381,6 +368,21 @@ describe("billing route integration", () => {
       updated: expect.any(Number),
       unchanged: expect.any(Number),
       failed: expect.any(Number),
+    });
+
+    const diagnostics = await api("POST", "/super-admin/reconciliation/subscriptions", superAdmin.token, {});
+    expect(diagnostics.status).toBe(200);
+    expect((await diagnostics.json()).data).toMatchObject({
+      subscriptions: { examined: expect.any(Number), mismatched: expect.any(Array) },
+      invoices: { examined: expect.any(Number), created: expect.any(Number), updated: expect.any(Number), failed: expect.any(Number) },
+      refundSettlements: {
+        examined: expect.any(Number),
+        eligibleForTransitionRepair: expect.any(Number),
+        transitionsCompleted: expect.any(Number),
+        transitionsRetryable: expect.any(Number),
+        failed: expect.any(Number),
+      },
+      providerCancellations: { created: expect.any(Number), confirmed: expect.any(Number), retryable: expect.any(Number) },
     });
     expect(JSON.stringify(reconcileBody)).not.toMatch(/providerInvoiceId|providerCustomerId|cus_|in_/i);
   });
@@ -466,9 +468,9 @@ async function seedBaseState() {
     status: "ACTIVE",
     startedAt: new Date("2026-07-01T00:00:00.000Z"),
     periodStart: new Date("2026-07-01T00:00:00.000Z"),
-    periodEnd: new Date("2026-08-01T00:00:00.000Z"),
+    periodEnd: new Date("2099-08-01T00:00:00.000Z"),
     currentPeriodStart: new Date("2026-07-01T00:00:00.000Z"),
-    currentPeriodEnd: new Date("2026-08-01T00:00:00.000Z"),
+    currentPeriodEnd: new Date("2099-08-01T00:00:00.000Z"),
     cancelAtPeriodEnd: false,
     providerCustomerId: "cus_tenant_a",
     providerSubscriptionId: "sub_tenant_a",
@@ -500,7 +502,7 @@ async function seedBaseState() {
     dueAt: null,
     paidAt: new Date("2026-07-02T00:00:00.000Z"),
     periodStart: new Date("2026-07-01T00:00:00.000Z"),
-    periodEnd: new Date("2026-08-01T00:00:00.000Z"),
+    periodEnd: new Date("2099-08-01T00:00:00.000Z"),
     synchronizedAt: new Date("2026-07-02T00:00:00.000Z"),
     hostedInvoiceUrl: "https://invoice.stripe.com/i/test_a",
     invoicePdfUrl: "https://pay.stripe.com/invoice/test_a.pdf",
@@ -523,7 +525,7 @@ async function seedBaseState() {
     },
     priceId: "price_basic_monthly",
     currentPeriodStart: new Date("2026-07-01T00:00:00.000Z"),
-    currentPeriodEnd: new Date("2026-08-01T00:00:00.000Z"),
+    currentPeriodEnd: new Date("2099-08-01T00:00:00.000Z"),
     cancelAtPeriodEnd: false,
   });
   fakeProvider.seedInvoice({
@@ -544,7 +546,7 @@ async function seedBaseState() {
     dueAt: null,
     paidAt: new Date("2026-07-02T00:00:00.000Z"),
     periodStart: new Date("2026-07-01T00:00:00.000Z"),
-    periodEnd: new Date("2026-08-01T00:00:00.000Z"),
+    periodEnd: new Date("2099-08-01T00:00:00.000Z"),
     providerVersion: "v1",
   }, {
     hostedInvoiceUrl: "https://invoice.stripe.com/i/test_a",
@@ -634,6 +636,52 @@ function packageDoc(id: Types.ObjectId, name: string, code: string, version: num
 }
 
 async function seedRetryableRefund(): Promise<string> {
+  const retryInvoiceId = new Types.ObjectId();
+  await InvoiceModel.create({
+    _id: retryInvoiceId,
+    tenantId: ids.tenantA,
+    subscriptionId: ids.subscriptionA,
+    provider: "fake",
+    providerInvoiceId: "in_retry_fixture",
+    paymentReference: "ch_retry_fixture",
+    invoiceNumber: "INV-RETRY-1",
+    status: "paid",
+    currency: "USD",
+    amountDueMinor: 500,
+    amountPaidMinor: 500,
+    amountRemainingMinor: 0,
+    refundedAmountMinor: 0,
+    reservedRefundAmountMinor: 75,
+    subtotalMinor: 500,
+    taxMinor: 0,
+    createdAtProvider: new Date("2026-07-02T00:00:00.000Z"),
+    paidAt: new Date("2026-07-02T00:00:00.000Z"),
+    periodStart: new Date("2026-07-01T00:00:00.000Z"),
+    periodEnd: new Date("2099-08-01T00:00:00.000Z"),
+    synchronizedAt: new Date("2026-07-02T00:00:00.000Z"),
+    providerVersion: "v1",
+  });
+  fakeProvider.seedInvoice({
+    id: "in_retry_fixture",
+    customerId: "cus_tenant_a",
+    subscriptionId: "sub_tenant_a",
+    paymentReference: "ch_retry_fixture",
+    number: "INV-RETRY-1",
+    status: "paid",
+    currency: "USD",
+    amountDueMinor: 500,
+    amountPaidMinor: 500,
+    amountRemainingMinor: 0,
+    refundedAmountMinor: 0,
+    subtotalMinor: 500,
+    taxMinor: 0,
+    createdAt: new Date("2026-07-02T00:00:00.000Z"),
+    dueAt: null,
+    paidAt: new Date("2026-07-02T00:00:00.000Z"),
+    periodStart: new Date("2026-07-01T00:00:00.000Z"),
+    periodEnd: new Date("2099-08-01T00:00:00.000Z"),
+    providerVersion: "v1",
+  });
   const operationId = new Types.ObjectId();
   await BillingOperationModel.create({
     _id: operationId,
@@ -652,8 +700,8 @@ async function seedRetryableRefund(): Promise<string> {
   });
   const refund = await RefundModel.create({
     tenantId: ids.tenantA,
-    invoiceId: ids.invoiceA,
-    paymentReference: "ch_tenant_a_1",
+    invoiceId: retryInvoiceId,
+    paymentReference: "ch_retry_fixture",
     subscriptionId: ids.subscriptionA,
     operationId,
     amountMinor: 75,
@@ -672,11 +720,12 @@ async function seedRetryableRefund(): Promise<string> {
 
 async function seedRequestedRefund(requestedBy: string): Promise<string> {
   const operationId = new Types.ObjectId();
+  const actorRole = requestedBy === String(ids.superAdminA) ? "SUPER_ADMIN" : "COMPANY_ADMIN";
   await BillingOperationModel.create({
     _id: operationId,
     tenantId: ids.tenantA,
     actorId: new Types.ObjectId(requestedBy),
-    actorRole: "SUPER_ADMIN",
+    actorRole,
     operationType: "REFUND",
     status: "REQUESTED",
     subscriptionId: ids.subscriptionA,
@@ -714,7 +763,7 @@ async function api(method: string, path: string, token?: string, body?: Record<s
 
 async function createRefundEligibility(token: string, invoiceId: Types.ObjectId): Promise<string> {
   const response = await api("POST", "/billing/refund-eligibility-previews", token, {
-    invoiceId: String(invoiceId), reason: "SERVICE_NOT_DELIVERED",
+    invoiceId: String(invoiceId),
   });
   expect(response.status).toBe(200);
   return String((await response.json()).data.id);

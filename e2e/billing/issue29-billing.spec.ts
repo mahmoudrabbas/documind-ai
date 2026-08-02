@@ -65,6 +65,7 @@ const invoice = {
   periodEnd: "2026-08-01T00:00:00.000Z",
   refundedAmountMinor: 0,
   reservedRefundAmountMinor: 0,
+  retainedConsumedMinor: 0,
   remainingRefundableMinor: 1250,
   canRequestRefund: true,
   hostedInvoiceAvailable: true,
@@ -115,17 +116,24 @@ test.describe("Issue 29 billing browser flows", () => {
     expect(state.planChangeSubmissions).toBe(1);
   });
 
-  test("submits a refund request for review without optimistic provider success", async ({ page }) => {
+  test("submits only the system-calculated remaining balance without legacy customer controls", async ({ page }) => {
     const state = await installTenantBillingFixtures(page);
     await page.goto("/dashboard/settings/billing");
     await page.getByRole("button", { name: "Request refund" }).first().click();
-    await expect(page.getByText(/reviewed by a platform operator/i)).toBeVisible();
-    await page.getByRole("button", { name: "Submit refund request" }).click();
+    const dialog = page.getByRole("dialog", { name: "Request refund" });
+    await expect(dialog.getByText("Remaining refundable balance")).toBeVisible();
+    await expect(dialog.getByText("$7.50", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("Refund reason")).toHaveCount(0);
+    await expect(dialog.getByText("Full refund")).toHaveCount(0);
+    await expect(dialog.getByText("Partial refund")).toHaveCount(0);
+    await expect(dialog.getByLabel("Refund amount")).toHaveCount(0);
+    await dialog.getByRole("button", { name: /Refund and move to Free.*\$7\.50/ }).click();
 
     await expect(page.getByText(/submitted for review/i)).toBeAttached();
     await expect(page.getByText("Requested").first()).toBeVisible();
     expect(state.refundSubmissions).toBe(1);
     expect(state.refundStatus).toBe("REQUESTED");
+    expect(state.refundPayloadKeys).toEqual(["idempotencyKey", "previewId"]);
   });
 
   test("renders the tenant billing experience in Arabic RTL", async ({ page }) => {
@@ -159,6 +167,7 @@ async function installTenantBillingFixtures(page: Page) {
     operationReads: 0,
     refundSubmissions: 0,
     refundStatus: "",
+    refundPayloadKeys: [] as string[],
   };
   let refunds: unknown[] = [];
   let pendingOperation = false;
@@ -196,14 +205,16 @@ async function installTenantBillingFixtures(page: Page) {
     if (url.pathname === "/billing/refund-requests" && request.method() === "POST") {
       state.refundSubmissions += 1;
       state.refundStatus = "REQUESTED";
+      state.refundPayloadKeys = Object.keys(request.postDataJSON() as Record<string, unknown>).sort();
       refunds = [refund("REQUESTED")];
       return json(route, { success: true, data: { refund: refunds[0], replayed: false } });
     }
     if (url.pathname === "/billing/refund-eligibility-previews") return json(route, { success: true, data: {
       id: "64b000000000000000000011", invoiceId, invoiceAmountMinor: 1250, currency: "USD",
       periodElapsedPercent: 20, usage: [{ dimension: "queriesPerMonth", percent: 40 }],
-      maximumEligibleRefundMinor: 750, reason: "VOLUNTARY_CANCELLATION",
-      subscriptionImpact: "CANCEL_IMMEDIATELY_AFTER_REFUND", expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      maximumEligibleRefundMinor: 750, consumedValueMinor: 500, reason: "SYSTEM_REMAINING_BALANCE_REFUND",
+      periodStart: "2026-07-01T00:00:00.000Z", periodEnd: "2026-08-01T00:00:00.000Z",
+      targetPlan: { code: "free", name: "Free" }, subscriptionImpact: "CANCEL_AND_MOVE_TO_FREE", expiresAt: new Date(Date.now() + 600_000).toISOString(),
       reviewRequired: false, decisionReason: "USAGE_PROPORTIONAL",
     } });
     if (url.pathname === "/billing/refund-requests") return json(route, { success: true, data: { refunds, pagination: { page: 1, pageSize: 10, totalRecords: refunds.length, totalPages: refunds.length ? 1 : 0 } } });

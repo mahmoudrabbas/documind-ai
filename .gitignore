@@ -49,3 +49,4 @@ test-results/
 
 # Runtime uploads directory
 api/uploads/
+api/.test-uploads/

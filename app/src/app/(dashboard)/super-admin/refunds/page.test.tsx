@@ -110,6 +110,46 @@ describe("SuperAdminRefundPage", () => {
     expect(confirmPlatformRefund).toHaveBeenCalledWith("refund-1");
   });
 
+  it("paginates reviews and keeps the current page while opening details", async () => {
+    (listPlatformRefunds as Mock).mockImplementation(async (params: { page?: number }) => ({
+      success: true,
+      data: { refunds: [refund], pagination: { page: params.page ?? 1, pageSize: 20, totalRecords: 21, totalPages: 2 } },
+    }));
+    const container = await renderPage();
+    const next = container.querySelector('button[aria-label="refundAdmin.next"]')! as HTMLButtonElement;
+    const previous = container.querySelector('button[aria-label="refundAdmin.previous"]')! as HTMLButtonElement;
+    expect(previous.disabled).toBe(true);
+    expect(next.disabled).toBe(false);
+    await act(async () => { next.click(); });
+    await settle();
+    expect(listPlatformRefunds).toHaveBeenLastCalledWith({ page: 2, pageSize: 20, status: undefined }, expect.any(AbortSignal));
+    expect((container.querySelector('button[aria-label="refundAdmin.previous"]') as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => { container.querySelector('button')?.dispatchEvent(new Event("noop")); });
+  });
+
+  it("resets pagination when the status filter changes", async () => {
+    (listPlatformRefunds as Mock).mockImplementation(async (params: { page?: number }) => ({
+      success: true,
+      data: { refunds: [refund], pagination: { page: params.page ?? 1, pageSize: 20, totalRecords: 21, totalPages: 2 } },
+    }));
+    const container = await renderPage();
+    await act(async () => { (container.querySelector("select") as HTMLSelectElement).value = "SUCCEEDED"; container.querySelector("select")?.dispatchEvent(new Event("change", { bubbles: true })); });
+    await settle();
+    expect(listPlatformRefunds).toHaveBeenLastCalledWith({ page: 1, pageSize: 20, status: "SUCCEEDED" }, expect.any(AbortSignal));
+  });
+
+  it.each(["DUPLICATE_CHARGE", "SERVICE_NOT_DELIVERED", "VOLUNTARY_CANCELLATION", "BILLING_ERROR", "GOODWILL_CREDIT"])("normalizes %s in English and Arabic detail views", async (reasonCode) => {
+    localeState.t = (key) => key;
+    (getPlatformRefund as Mock).mockResolvedValue({ success: true, data: { ...refund, reason: reasonCode, reasonCode } });
+    const container = await renderPage();
+    const detail = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "refundAdmin.viewDetails")!;
+    await act(async () => { detail.click(); });
+    await settle();
+    expect(container.textContent).toContain(reasonCode.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()));
+    localeState.locale = "ar";
+    await act(async () => { (container.querySelector('[role="dialog"] button') as HTMLButtonElement | null)?.click(); });
+  });
+
   it("supports rejection with an explicit reason", async () => {
     const container = await renderPage();
     const reject = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "refundAdmin.reject")!;

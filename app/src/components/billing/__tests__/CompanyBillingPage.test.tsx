@@ -80,7 +80,7 @@ describe("CompanyBillingPage", () => {
     (listInvoices as Mock).mockResolvedValue({ success: true, data: { invoices: [invoice], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
     (listRefundRequests as Mock).mockResolvedValue({ success: true, data: { refunds: [refund], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
     (createRefundRequest as Mock).mockResolvedValue({ success: true, data: { refund, replayed: false } });
-    (createRefundEligibilityPreview as Mock).mockResolvedValue({ success: true, data: { id: "eligibility-1", invoiceId: "local-invoice", invoiceAmountMinor: 1250, currency: "USD", periodElapsedPercent: 20, usage: [{ dimension: "queriesPerMonth", percent: 40 }], maximumEligibleRefundMinor: 750, reason: "VOLUNTARY_CANCELLATION", subscriptionImpact: "CANCEL_IMMEDIATELY_AFTER_REFUND", expiresAt: "2026-07-20T00:15:00.000Z", reviewRequired: false, decisionReason: "USAGE_PROPORTIONAL" } });
+    (createRefundEligibilityPreview as Mock).mockResolvedValue({ success: true, data: { id: "eligibility-1", invoiceId: "local-invoice", invoiceAmountMinor: 1250, currency: "USD", periodElapsedPercent: 20, usage: [{ dimension: "queriesPerMonth", percent: 40 }], consumedValueMinor: 500, maximumEligibleRefundMinor: 750, reason: "VOLUNTARY_CANCELLATION", subscriptionImpact: "CANCEL_AND_MOVE_TO_FREE", expiresAt: "2026-07-20T00:15:00.000Z", reviewRequired: false, decisionReason: "USAGE_PROPORTIONAL" } });
     (listPublicBillingPackages as Mock).mockResolvedValue({ success: true, data: [plan] });
     (createSubscriptionChangePreview as Mock).mockResolvedValue({ success: true, data: preview });
     (requestSubscriptionChange as Mock).mockResolvedValue({ success: true, data: { operation, replayed: false } });
@@ -111,10 +111,14 @@ describe("CompanyBillingPage", () => {
     const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.requestRefund")!;
     await act(async () => { button.click(); });
     await settle();
-    const submit = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.submitRefund")!;
+    expect(container.querySelector("select")).toBeNull();
+    expect(container.querySelectorAll('input[type="number"]').length).toBe(0);
+    expect(container.textContent).not.toContain("billingAdmin.fullRefund");
+    expect(container.textContent).not.toContain("billingAdmin.partialRefund");
+    const submit = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent?.includes("billingAdmin.refundRemainingAction"))!;
     await act(async () => { submit.click(); });
     await settle();
-    expect(createRefundRequest).toHaveBeenCalledWith(expect.objectContaining({ previewId: "eligibility-1", mode: "PARTIAL", amountMinor: 750 }));
+    expect(createRefundRequest).toHaveBeenCalledWith({ previewId: "eligibility-1", idempotencyKey: expect.any(String) });
     expect(container.textContent).not.toMatch(/cus_|sub_|re_/i);
   });
 
@@ -130,6 +134,176 @@ describe("CompanyBillingPage", () => {
     expect(container.textContent).not.toContain("billingAdmin.updatePayment");
     expect(container.textContent).not.toContain("billingAdmin.openPortal");
     expect(container.textContent).not.toContain("billingAdmin.changePlan");
+  });
+
+  it("shows the localized checkout entry for a local free trial", async () => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: {
+          ...summary.packageId,
+          name: "Free",
+          code: "free",
+          monthlyPrice: 0,
+          annualPrice: 0,
+          monthlyPriceCents: 0,
+          annualPriceCents: 0,
+        },
+        status: "TRIALING",
+        paymentState: "pending",
+        providerManaged: false,
+        providerLinked: false,
+        canChangePlan: false,
+        canOpenPortal: false,
+        canUpdatePaymentMethod: false,
+      },
+    });
+    const { container } = await render();
+    const choosePlan = Array.from(container.querySelectorAll("a")).find((link) => link.textContent === "billingAdmin.choosePlan");
+    expect(choosePlan).toBeTruthy();
+    expect(choosePlan?.getAttribute("href")).toBe("/checkout");
+    expect(container.textContent).toContain("billingAdmin.freeTrialDescription");
+  });
+
+  it.each([
+    ["TRIALING", "pending"],
+    ["TRIALING", "not_applicable"],
+    ["ACTIVE", "not_applicable"],
+    ["ACTIVE", "pending"],
+  ] as const)("shows checkout entry for provider-less Free %s + %s", async (status, paymentState) => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+        status,
+        paymentState,
+        transitionState: "ACTIVE",
+        providerManaged: false,
+        providerLinked: false,
+        pendingOperation: null,
+      },
+    });
+    const { container } = await render();
+    const choosePlan = Array.from(container.querySelectorAll("a")).find((link) => link.textContent === "billingAdmin.choosePlan");
+    expect(choosePlan?.getAttribute("href")).toBe("/checkout");
+  });
+
+  it("shows an active provider-less Free plan without paid billing controls", async () => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+        status: "ACTIVE", paymentState: "not_applicable", billingInterval: null,
+        periodStart: null, periodEnd: null, currentPeriodStart: null, currentPeriodEnd: null,
+        providerManaged: false, providerLinked: false, canOpenPortal: false, canUpdatePaymentMethod: false,
+        canChangePlan: false, canCancel: false, canReactivate: false, canRequestRefund: false,
+      },
+    });
+    (listInvoices as Mock).mockResolvedValueOnce({ success: true, data: { invoices: [{ ...invoice, retainedConsumedMinor: 1, refundedAmountMinor: 1249, remainingRefundableMinor: 0, settlementCompleted: true, canRequestRefund: false }], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    const { container } = await render();
+    expect(container.textContent).toContain("Free");
+    expect(container.textContent).toContain("billingAdmin.status.not_applicable");
+    expect(container.textContent).not.toContain("billingAdmin.status.paid");
+    const choosePlan = Array.from(container.querySelectorAll("a")).find((link) => link.textContent === "billingAdmin.choosePlan");
+    expect(choosePlan?.getAttribute("href")).toBe("/checkout");
+    expect(container.textContent).toContain("billingAdmin.freePlanDescription");
+    expect(container.textContent).not.toContain("billingAdmin.updatePayment");
+    expect(container.textContent).not.toContain("billingAdmin.cancelImmediately");
+    expect(container.textContent).not.toContain("billingAdmin.cancelAtPeriodEnd");
+    expect(container.textContent).not.toContain("billingAdmin.requestRefund");
+  });
+
+  it("keeps checkout entry hidden for a provider-linked paid subscription", async () => {
+    const { container } = await render();
+    expect(Array.from(container.querySelectorAll("a")).some((link) => link.textContent === "billingAdmin.choosePlan")).toBe(false);
+  });
+
+  it.each([
+    { label: "provider-linked Free record", patch: { providerManaged: true, providerLinked: true } },
+    { label: "paid ACTIVE package", patch: { packageId: { ...summary.packageId, name: "Pro", code: "pro", monthlyPrice: 10, annualPrice: 100 }, status: "ACTIVE", paymentState: "paid" } },
+    { label: "canceled Free record", patch: { status: "CANCELED", paymentState: "not_applicable" } },
+    { label: "failed Free payment state", patch: { status: "ACTIVE", paymentState: "failed" } },
+    { label: "conflicting billing operation", patch: { pendingOperation: { id: "operation", type: "PLAN_CHANGE", status: "REQUESTED", requestedAt: "2026-08-01T00:00:00.000Z" } } },
+  ])("keeps checkout entry hidden for $label", async ({ patch }) => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+        status: "ACTIVE",
+        paymentState: "not_applicable",
+        transitionState: "ACTIVE",
+        providerManaged: false,
+        providerLinked: false,
+        pendingOperation: null,
+        ...patch,
+      },
+    });
+    const { container } = await render();
+    expect(Array.from(container.querySelectorAll("a")).some((link) => link.textContent === "billingAdmin.choosePlan")).toBe(false);
+  });
+
+  it.each(["TRANSITION_PENDING", "TRANSITION_RETRYABLE", "REPAIR_REQUIRED"] as const)(
+    "keeps checkout entry hidden while the Free transition state is %s",
+    async (transitionState) => {
+      (getBillingSummary as Mock).mockResolvedValueOnce({
+        success: true,
+        data: {
+          ...summary,
+          packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+          status: "ACTIVE",
+          paymentState: "not_applicable",
+          transitionState,
+          providerManaged: false,
+          providerLinked: false,
+          pendingOperation: null,
+        },
+      });
+      const { container } = await render();
+      expect(Array.from(container.querySelectorAll("a")).some((link) => link.textContent === "billingAdmin.choosePlan")).toBe(false);
+    },
+  );
+
+  it("does not claim the account moved to Free until transition completion is authoritative", async () => {
+    const systemRefund = { ...refund, reasonCode: "SYSTEM_REMAINING_BALANCE_REFUND", retainedConsumedMinor: 1, status: "SUCCEEDED" };
+    (listRefundRequests as Mock).mockResolvedValueOnce({ success: true, data: { refunds: [{ ...systemRefund, localTransitionStatus: "RETRY_PENDING", subscriptionImpactStatus: "RETRY_PENDING" }], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    const { container } = await render();
+    expect(container.textContent).toContain("billingAdmin.refundMessage.system_syncing");
+    expect(container.textContent).not.toContain("billingAdmin.refundMessage.system_completed");
+  });
+
+  it("shows a fail-closed synchronization notice and no paid controls while Free activation is retrying", async () => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        status: "CANCELED",
+        transitionState: "TRANSITION_RETRYABLE",
+        canOpenPortal: false,
+        canUpdatePaymentMethod: false,
+        canChangePlan: false,
+        canCancel: false,
+        canReactivate: false,
+        canRequestRefund: false,
+      },
+    });
+    const { container } = await render();
+    expect(container.textContent).toContain("billingAdmin.freeTransitionRetryable");
+    expect(container.textContent).not.toContain("billingAdmin.updatePayment");
+    expect(container.textContent).not.toContain("billingAdmin.cancelImmediately");
+    expect(container.textContent).not.toContain("billingAdmin.requestRefund");
+  });
+
+  it("shows completed and intervention messages only for their authoritative impact states", async () => {
+    const systemRefund = { ...refund, reasonCode: "SYSTEM_REMAINING_BALANCE_REFUND", retainedConsumedMinor: 1, status: "SUCCEEDED" };
+    (listRefundRequests as Mock).mockResolvedValueOnce({ success: true, data: { refunds: [{ ...systemRefund, localTransitionStatus: "SUCCEEDED", subscriptionImpactStatus: "SUCCEEDED" }, { ...systemRefund, id: "refund-2", localTransitionStatus: "FAILED", subscriptionImpactStatus: "FAILED" }], pagination: { page: 1, pageSize: 10, totalRecords: 2, totalPages: 1 } } });
+    const { container } = await render();
+    expect(container.textContent).toContain("billingAdmin.refundMessage.system_completed");
+    expect(container.textContent).toContain("billingAdmin.refundMessage.system_failed");
+    expect(container.textContent).not.toContain("billingAdmin.refundMessage.succeeded_active");
   });
 
   it("renders summary/invoice errors with keyboard-accessible retry controls", async () => {

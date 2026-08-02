@@ -18,7 +18,7 @@ import {
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { LEGACY_PLATFORM_TENANT_SLUGS, PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
-import { LEGAL_TRANSITIONS } from "./subscription.service.js";
+import { firePlanChangeHooks, LEGAL_TRANSITIONS } from "./subscription.service.js";
 import type { SubscriptionStatus } from "./billing.types.js";
 import type { BillingActor } from "./package.service.js";
 
@@ -127,7 +127,7 @@ export function decideAdminSubscriptionOperation(
 async function loadTarget(tenantId: string, packageId?: string) {
   const [tenant, subscription, targetPackage] = await Promise.all([
     TenantModel.findOne({ _id: tenantId, ...targetTenantFilter }).select("name slug status").lean().exec(),
-    SubscriptionModel.findOne({ tenantId }).select("+adminOperations").lean().exec(),
+    SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).select("+adminOperations").lean().exec(),
     packageId ? PackageModel.findById(packageId).lean().exec() : Promise.resolve(null),
   ]);
   if (!tenant) throw new AppError(404, SUBSCRIPTION_PROTECTED_TENANT, "Tenant not found or protected");
@@ -282,7 +282,7 @@ export async function provisionAdminSubscription(tenantId: string, input: AdminS
     return { ...sanitizeSubscription(value), idempotentReplay: false };
   } catch (error) {
     if (!isDuplicateKey(error)) throw error;
-    const existing = await SubscriptionModel.findOne({ tenantId }).select("+adminOperations").lean().exec() as ExistingSubscription | null;
+    const existing = await SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).select("+adminOperations").lean().exec() as ExistingSubscription | null;
     if (existing) {
       const replay = replayOrConflict(existing, keyHash, payloadHash);
       if (replay) return replayResult(existing, replay);
@@ -330,6 +330,15 @@ export async function updateAdminSubscription(tenantId: string, input: AdminSubs
   }
   const action = decision.packageChanged && decision.statusChanged ? "SUBSCRIPTION_COMBINED_UPDATED" : decision.packageChanged ? "SUBSCRIPTION_PACKAGE_CHANGED" : "SUBSCRIPTION_STATUS_OVERRIDDEN";
   await writeAudit(action, updated, loaded.subscription, input.reason, keyHash, actor);
+  if (decision.packageChanged || decision.statusChanged) {
+    await firePlanChangeHooks({
+      tenantId,
+      fromPackageId: loaded.subscription.packageId ? String(loaded.subscription.packageId) : undefined,
+      toPackageId: decision.packageChanged ? String(loaded.targetPackage!._id) : undefined,
+      fromStatus: loaded.subscription.status,
+      toStatus: resultingStatus,
+    });
+  }
   return { ...sanitizeSubscription(updated), idempotentReplay: false };
 }
 

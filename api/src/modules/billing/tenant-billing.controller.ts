@@ -64,11 +64,11 @@ export const billingOperationController = endpoint(async (req) => {
 });
 export const refundRequestController = endpoint(async (req) => {
   const body = parseBilling(refundRequestSchema, req.body);
-  return createRefundRequest({ tenantId: tenant(req), previewId: body.previewId, mode: body.mode, amountMinor: body.amountMinor, idempotencyKey: body.idempotencyKey, context: context(req) });
+  return createRefundRequest({ tenantId: tenant(req), previewId: body.previewId, idempotencyKey: body.idempotencyKey, context: context(req) });
 });
 export const refundEligibilityPreviewController = endpoint(async (req) => {
   const body = parseBilling(refundEligibilityPreviewSchema, req.body);
-  return createRefundEligibilityPreview({ tenantId: tenant(req), ...body, context: context(req) });
+  return createRefundEligibilityPreview({ tenantId: tenant(req), invoiceId: body.invoiceId, context: context(req) });
 });
 export const refundListController = endpoint(async (req) => {
   const query = parseBilling(refundListSchema, req.query);

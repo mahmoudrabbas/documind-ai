@@ -6,9 +6,10 @@ export const REFUND_REASON_CODES = [
   "VOLUNTARY_CANCELLATION",
   "BILLING_ERROR",
   "GOODWILL_CREDIT",
+  "SYSTEM_REMAINING_BALANCE_REFUND",
 ] as const;
 export type RefundReasonCode = (typeof REFUND_REASON_CODES)[number];
-export type RefundSubscriptionImpact = "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND";
+export type RefundSubscriptionImpact = "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND" | "CANCEL_AND_MOVE_TO_FREE";
 
 export interface RefundEligibilityPreviewDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
@@ -27,6 +28,7 @@ export interface RefundEligibilityPreviewDocument extends mongoose.Document {
   elapsedPeriodRatioBps: number;
   includedUsageMetrics: Array<{ dimension: string; usage: number; limit: number; ratioBps: number }>;
   consumedRatioBps: number;
+  consumedValueMinor: number;
   confirmedRefundAmountMinor: number;
   pendingReservedRefundAmountMinor: number;
   maximumEligibleRefundMinor: number;
@@ -47,7 +49,7 @@ const schema = new Schema<RefundEligibilityPreviewDocument>({
   policyVersion: { type: String, required: true },
   reason: { type: String, enum: REFUND_REASON_CODES, required: true },
   explanation: { type: String, default: "", maxlength: 500 },
-  subscriptionImpact: { type: String, enum: ["NONE", "CANCEL_IMMEDIATELY_AFTER_REFUND"], required: true },
+  subscriptionImpact: { type: String, enum: ["NONE", "CANCEL_IMMEDIATELY_AFTER_REFUND", "CANCEL_AND_MOVE_TO_FREE"], required: true },
   subscriptionRevision: { type: Number, required: true, min: 0 },
   subscriptionPeriodStart: { type: Date, required: true },
   subscriptionPeriodEnd: { type: Date, required: true },
@@ -57,6 +59,7 @@ const schema = new Schema<RefundEligibilityPreviewDocument>({
   elapsedPeriodRatioBps: { type: Number, required: true, min: 0, max: 10_000 },
   includedUsageMetrics: [{ _id: false, dimension: String, usage: Number, limit: Number, ratioBps: Number }],
   consumedRatioBps: { type: Number, required: true, min: 0, max: 10_000 },
+  consumedValueMinor: { type: Number, required: true, min: 0 },
   confirmedRefundAmountMinor: { type: Number, required: true, min: 0 },
   pendingReservedRefundAmountMinor: { type: Number, required: true, min: 0 },
   maximumEligibleRefundMinor: { type: Number, required: true, min: 0 },

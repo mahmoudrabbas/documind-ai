@@ -14,6 +14,7 @@ import { getAuditWriter, getMetricRecorder } from "../../common/observability/in
 import { config } from "../../config/index.js";
 import BillingOperationModel from "../../db/models/billingOperation.model.js";
 import InvoiceModel from "../../db/models/invoice.model.js";
+import RefundModel from "../../db/models/refund.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { authorizePermission } from "../permissions/permissions.authorization.js";
@@ -29,9 +30,36 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
   const actor = await authorizeTenantOperation(context, Permission.BILLING_READ);
   assertTenant(tenantId, actor.tenantId);
   const canManageBilling = await hasBillingManage(actor);
-  const subscription = await SubscriptionModel.findOne({ tenantId: new Types.ObjectId(tenantId) })
+  let transitionState: "ACTIVE" | "TRANSITION_PENDING" | "TRANSITION_RETRYABLE" | "REPAIR_REQUIRED" = "ACTIVE";
+  const transitionRefund = await RefundModel.findOne({
+    tenantId: new Types.ObjectId(tenantId),
+    status: "SUCCEEDED",
+    subscriptionImpact: "CANCEL_AND_MOVE_TO_FREE",
+    localTransitionStatus: { $ne: "SUCCEEDED" },
+    $or: [
+      { reasonCode: "SYSTEM_REMAINING_BALANCE_REFUND" },
+      { reasonCode: "VOLUNTARY_CANCELLATION", amountMinor: { $gt: 0 }, $expr: { $eq: ["$amountMinor", "$maximumEligibleRefundMinor"] } },
+    ],
+  }).sort({ confirmedAt: -1, createdAt: -1 }).lean().exec();
+  if (transitionRefund) {
+    transitionState = transitionRefund.localTransitionStatus === "FAILED"
+      ? "REPAIR_REQUIRED"
+      : transitionRefund.localTransitionStatus === "RETRY_PENDING"
+      ? "TRANSITION_RETRYABLE"
+      : "TRANSITION_PENDING";
+  }
+  let subscription = await SubscriptionModel.findOne({ tenantId: new Types.ObjectId(tenantId), status: { $in: ["ACTIVE", "TRIALING", "CANCEL_AT_PERIOD_END", "PAST_DUE"] } })
     .populate("packageId", "name code version monthlyPrice annualPrice currency entitlements")
     .lean().exec();
+  if (!subscription) {
+    if (transitionRefund?.subscriptionId) {
+      subscription = await SubscriptionModel.findOne({
+        _id: transitionRefund.subscriptionId,
+        tenantId: new Types.ObjectId(tenantId),
+        status: "CANCELED",
+      }).populate("packageId", "name code version monthlyPrice annualPrice currency entitlements").lean().exec();
+    }
+  }
   if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
   const pendingFilter = { tenantId: new Types.ObjectId(tenantId), status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] as const } };
   const [pending, pendingMutation, counts, canRequestRefund] = await Promise.all([
@@ -72,6 +100,16 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
       canRequestRefund,
     },
   });
+  summary.transitionState = transitionState;
+  if (transitionState !== "ACTIVE") {
+    summary.canOpenPortal = false;
+    summary.canUpdatePaymentMethod = false;
+    summary.canChangePlan = false;
+    summary.canCancel = false;
+    summary.canReactivate = false;
+    summary.canRequestRefund = false;
+    summary.lifecycle = { eligible: false, inGracePeriod: false, accessEndsAt: null, reason: "REFUND_TRANSITION_PENDING" };
+  }
   await getAuditWriter().write({ action: "BILLING_SUMMARY_ACCESSED", resourceType: "Subscription", resourceId: summary.id, tenantId });
   return summary;
 }
@@ -86,7 +124,10 @@ export async function createCompanyPortalSession(input: {
   const actor = await authorizeTenantOperation(input.context, Permission.BILLING_MANAGE);
   assertTenant(input.tenantId, actor.tenantId);
   assertBillingPortalReturnUrl(input.returnUrl, config.BILLING_PORTAL_ALLOWED_ORIGIN);
-  const subscription = await SubscriptionModel.findOne({ tenantId: new Types.ObjectId(input.tenantId) }).lean().exec();
+  const subscription = await SubscriptionModel.findOne({
+    tenantId: new Types.ObjectId(input.tenantId),
+    status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] },
+  }).lean().exec();
   if (!subscription?.providerCustomerId) throw new AppError(400, BILLING_PORTAL_UNAVAILABLE, "Billing portal is unavailable");
   if (input.flow === "payment_method_update" && !subscription.providerSubscriptionId) throw new AppError(400, BILLING_PORTAL_UNAVAILABLE, "Payment method update is unavailable");
   assertBillingPortalFlowAvailable(subscription.provider, input.flow);
@@ -190,6 +231,9 @@ function invoiceDto(invoice: Record<string, unknown>) {
     periodStart: invoice.periodStart, periodEnd: invoice.periodEnd,
     refundedAmountMinor: refund.refundedAmountMinor,
     reservedRefundAmountMinor: refund.reservedRefundAmountMinor,
+    retainedConsumedMinor: refund.retainedConsumedMinor,
+    grossUnrefundedMinor: refund.grossUnrefundedMinor,
+    settlementCompleted: refund.settlementCompleted,
     remainingRefundableMinor: refund.remainingRefundableMinor,
     canRequestRefund: refund.canRequestRefund,
     hostedInvoiceAvailable: Boolean(invoice.hostedInvoiceAvailable), invoicePdfAvailable: Boolean(invoice.invoicePdfAvailable), receiptAvailable: Boolean(invoice.receiptAvailable),

@@ -69,6 +69,10 @@ export const IdempotencyGateModel: Model<IdempotencyGateDocument> =
     idempotencyGateSchema,
   );
 
+function isDuplicateKeyError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && (error as { code?: unknown }).code === 11000;
+}
+
 // ── Adapter ──────────────────────────────────────────────────────────────────
 
 export class MongoQuotaCounter implements QuotaCounterPort {
@@ -79,26 +83,47 @@ export class MongoQuotaCounter implements QuotaCounterPort {
     amount: number,
     limit: number,
   ): Promise<{ success: boolean; current: number }> {
-    // Atomic: only increment if value + amount <= limit
-    const result = await QuotaCounterModel.findOneAndUpdate(
-      {
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        dimension,
-        periodStart,
-        value: { $lte: limit - amount }, // Guard condition
-      },
-      {
-        $inc: { value: amount },
-      },
-      {
-        upsert: true,
-        new: true,
-      },
-    );
+    const key = {
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+      dimension,
+      periodStart,
+    };
 
+    if (amount > limit) {
+      return { success: false, current: await this.getUsage(tenantId, dimension, periodStart) };
+    }
+
+    // First update an existing row atomically. Do not use upsert here: when
+    // the quota predicate fails, MongoDB would attempt a duplicate insert and
+    // surface E11000 instead of returning a normal denial.
+    const result = await QuotaCounterModel.findOneAndUpdate(
+      { ...key, value: { $lte: limit - amount } },
+      { $inc: { value: amount } },
+      { new: true },
+    );
+    if (result) {
+      return { success: true, current: result.value };
+    }
+
+    // No row exists yet, so create the initial counter. A concurrent creator
+    // may win the unique-index race; retry the guarded update in that case.
+    try {
+      const created = await QuotaCounterModel.create({ ...key, value: amount });
+      return { success: true, current: created.value };
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) {
+        throw error;
+      }
+    }
+
+    const retried = await QuotaCounterModel.findOneAndUpdate(
+      { ...key, value: { $lte: limit - amount } },
+      { $inc: { value: amount } },
+      { new: true },
+    );
     return {
-      success: result !== null,
-      current: result?.value ?? 0,
+      success: retried !== null,
+      current: retried?.value ?? await this.getUsage(tenantId, dimension, periodStart),
     };
   }
 

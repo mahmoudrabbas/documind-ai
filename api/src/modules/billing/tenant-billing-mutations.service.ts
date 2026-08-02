@@ -394,7 +394,10 @@ export async function getCompanyBillingOperation(input: {
 }
 
 async function loadSubscription(tenantId: string): Promise<SubscriptionContext> {
-  const subscription = await SubscriptionModel.findOne({ tenantId: new Types.ObjectId(tenantId) })
+  const subscription = await SubscriptionModel.findOne({
+    tenantId: new Types.ObjectId(tenantId),
+    status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] },
+  })
     .populate("packageId", "name code version currency entitlements")
     .lean()
     .exec() as Record<string, unknown> | null;

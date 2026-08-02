@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../config/index.js", () => ({ config: { NODE_ENV: "test", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example.test", BILLING_PAST_DUE_GRACE_DAYS: 7, STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "" } }));
 vi.mock("../../../db/models/subscription.model.js", () => ({ default: { findOne: vi.fn() } }));
+vi.mock("../../../db/models/refund.model.js", () => ({ default: { findOne: vi.fn() } }));
 vi.mock("../../../db/models/invoice.model.js", () => ({ default: { findOne: vi.fn(), find: vi.fn(), countDocuments: vi.fn(), aggregate: vi.fn() } }));
 vi.mock("../../../db/models/billingOperation.model.js", () => ({ default: { findOne: vi.fn(), exists: vi.fn() } }));
 vi.mock("../../../common/observability/index.js", () => ({
@@ -12,6 +13,7 @@ vi.mock("../../permissions/permissions.operation.js", () => ({ authorizeTenantOp
 vi.mock("../../permissions/permissions.authorization.js", () => ({ authorizePermission: vi.fn().mockResolvedValue({ allowed: true }) }));
 
 import SubscriptionModel from "../../../db/models/subscription.model.js";
+import RefundModel from "../../../db/models/refund.model.js";
 import InvoiceModel from "../../../db/models/invoice.model.js";
 import BillingOperationModel from "../../../db/models/billingOperation.model.js";
 import { authorizePermission } from "../../permissions/permissions.authorization.js";
@@ -41,17 +43,46 @@ const subscription = {
 describe("tenant billing service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ now: new Date("2026-07-31T12:00:00.000Z") });
     vi.mocked(SubscriptionModel.findOne).mockReturnValue(chain(subscription) as never);
+    vi.mocked(RefundModel.findOne).mockReturnValue(chain(null) as never);
     vi.mocked(BillingOperationModel.findOne).mockReturnValue(chain(null) as never);
     vi.mocked(BillingOperationModel.exists).mockResolvedValue(null);
     vi.mocked(InvoiceModel.aggregate).mockResolvedValue([{ _id: "paid", count: 2 }, { _id: "open", count: 1 }]);
     vi.mocked(InvoiceModel.countDocuments).mockResolvedValue(1);
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it("returns a tenant-safe summary with only Phase 2 capabilities", async () => {
     const result = await getCompanyBillingSummary(tenantId, context);
     expect(result).toMatchObject({ providerLinked: true, canOpenPortal: true, canUpdatePaymentMethod: true, canViewInvoices: true, canChangePlan: true, canCancel: true, canReactivate: false, canRequestRefund: true, invoiceSummary: { total: 3, paid: 2, open: 1 } });
     expect(JSON.stringify(result)).not.toMatch(/cus_owned|sub_owned|price_private|evt_private|providerCustomerId|providerSubscriptionId|providerPriceId/);
+  });
+
+  it("returns a fail-closed transition summary instead of 404 when a confirmed settlement is awaiting Free activation", async () => {
+    vi.mocked(SubscriptionModel.findOne)
+      .mockReturnValueOnce(chain(null) as never)
+      .mockReturnValueOnce(chain({ ...subscription, status: "CANCELED" }) as never);
+    vi.mocked(RefundModel.findOne).mockReturnValue(chain({
+      subscriptionId,
+      localTransitionStatus: "RETRY_PENDING",
+      subscriptionImpactStatus: "RETRY_PENDING",
+    }) as never);
+
+    const result = await getCompanyBillingSummary(tenantId, context);
+
+    expect(result).toMatchObject({
+      status: "CANCELED",
+      transitionState: "TRANSITION_RETRYABLE",
+      canOpenPortal: false,
+      canUpdatePaymentMethod: false,
+      canChangePlan: false,
+      canCancel: false,
+      canReactivate: false,
+      canRequestRefund: false,
+      lifecycle: { eligible: false, reason: "REFUND_TRANSITION_PENDING" },
+    });
   });
 
   it("keeps read-only billing summaries non-actionable for callers without billing:manage", async () => {

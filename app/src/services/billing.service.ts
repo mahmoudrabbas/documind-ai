@@ -73,7 +73,17 @@ export function reprocessPaymentEvent(eventId: string) {
 }
 
 export function triggerReconciliation() {
-  return apiClient<Success<{ totalSubscriptions: number; mismatched: Array<Record<string, unknown>> }>>(
+  return apiClient<Success<{
+    subscriptions: { examined: number; mismatched: Array<Record<string, unknown>> };
+    invoices: {
+      examined: number; created: number; updated: number; failed: number;
+      failures?: Array<{ code: string; count: number; classification: "EXPECTED_HISTORICAL_PROVIDER_UNAVAILABLE" | "RETRYABLE_PROVIDER_FAILURE" | "LOCAL_DATA_INCONSISTENCY" | "IMPLEMENTATION_BUG"; retryable: boolean }>;
+      retry?: { status: "NONE" | "RETRY_PENDING"; retryableFailureCount: number };
+    };
+    refundSettlements: { indexInvariant: { status: "READY" | "MIGRATION_REQUIRED"; issues: string[]; effectiveDuplicateTenantCount: number }; examined: number; eligibleForTransitionRepair: number; transitionOperationsCreated: number; transitionsCompleted: number; transitionsRetryable: number; failed: number };
+    subscriptionIndex: { status: "READY" | "MIGRATION_REQUIRED"; issues: string[]; effectiveDuplicateTenantCount: number };
+    providerCancellations: { created: number; confirmed: number; retryable: number };
+  }>>(
     "/super-admin/reconciliation/subscriptions",
     { method: "POST" },
   );
@@ -148,19 +158,14 @@ export function getInvoiceLinks(invoiceId: string) {
   return apiClient<Success<InvoiceLinks>>(`/billing/invoices/${encodeURIComponent(invoiceId)}/links`, { cache: "no-store" });
 }
 
-export function createRefundRequest(body: {
-  previewId: string;
-  mode: "FULL" | "PARTIAL";
-  amountMinor?: number;
-  idempotencyKey: string;
-}) {
+export function createRefundRequest(body: { previewId: string; idempotencyKey: string }) {
   return apiClient<Success<{ refund: BillingRefund; replayed: boolean }>>(
     "/billing/refund-requests",
     { method: "POST", body },
   );
 }
 
-export function createRefundEligibilityPreview(body: { invoiceId: string; reason: import("@/types/api/billing.types").RefundReason; explanation?: string }) {
+export function createRefundEligibilityPreview(body: { invoiceId: string }) {
   return apiClient<Success<import("@/types/api/billing.types").RefundEligibilityPreview>>(
     "/billing/refund-eligibility-previews", { method: "POST", body },
   );

@@ -1,8 +1,14 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../../common/errors/AppError.js";
 import { ENTITLEMENT_EXCEEDED } from "../../../common/errors/errorCodes.js";
+import { logEntitlementDenial } from "../entitlement-audit.js";
 import type { EntitlementService } from "../entitlement.service.js";
-import type { EntitlementDimension, FailMode } from "../entitlement.types.js";
+import type {
+  CapabilityKey,
+  CheckResult,
+  EntitlementDimension,
+  FailMode,
+} from "../entitlement.types.js";
 
 // ── Express type augmentation ──────────────────────────────────────────────────
 //
@@ -23,6 +29,173 @@ declare global {
 
 const ENTITLEMENT_UNAVAILABLE = "ENTITLEMENT_UNAVAILABLE";
 const TENANT_ID_MISSING = "TENANT_ID_MISSING";
+
+function safeEntitlementErrorContext(error: unknown): Record<string, string> {
+  if (!(error instanceof Error)) {
+    return { errorType: typeof error };
+  }
+
+  const context: Record<string, string> = { errorName: error.name };
+  if ("code" in error && (typeof error.code === "string" || typeof error.code === "number")) {
+    context.errorCode = String(error.code);
+  }
+  return context;
+}
+
+function classifyEntitlementFailure(error: unknown): string {
+  const name = error instanceof Error ? error.name : "";
+  if (/Mongo|Mongoose|Redis|Connection|Network|ServerSelection/i.test(name)) {
+    return "DEPENDENCY_UNAVAILABLE";
+  }
+  if (/BSON|Cast/i.test(name)) {
+    return "INVALID_TENANT_CONTEXT";
+  }
+  return "INTERNAL_FAILURE";
+}
+
+// ── Shared denial-payload helpers ────────────────────────────────────────────
+
+/**
+ * Resolve the quota reset timestamp for a tenant, defaulting to `null` when the
+ * provider is unavailable. The reset is informational only — a guard must never
+ * fail the request just because the reset time could not be resolved.
+ */
+export async function resolvePeriodReset(
+  service: EntitlementService,
+  tenantId: string,
+): Promise<string | null> {
+  try {
+    return await service.getPeriodReset(tenantId);
+  } catch {
+    return null;
+  }
+}
+
+// ── Shared quota-denial error builder ────────────────────────────────────────
+//
+// Every fail-closed quota denial (guards and service-layer consumers such as
+// post-AI-query token accounting) carries the same upgrade-aware AppError
+// payload: current/limit usage, the dimension, remaining quota, the period
+// reset timestamp, and whether the requester may upgrade their plan.
+
+export interface QuotaExceededErrorInput {
+  dimension: EntitlementDimension;
+  current: number;
+  limit: number;
+  remaining: number;
+  periodReset: string | null;
+  canUpgrade: boolean;
+}
+
+/**
+ * Build the fail-closed 429 denial error for an exhausted quota dimension.
+ */
+export function buildQuotaExceededError(
+  input: QuotaExceededErrorInput,
+): AppError {
+  const { dimension, current, limit, remaining, periodReset, canUpgrade } =
+    input;
+  return new AppError(
+    429,
+    ENTITLEMENT_EXCEEDED,
+    `Quota exceeded for ${dimension}: ${current}/${limit}`,
+    {
+      current,
+      limit,
+      dimension,
+      remaining,
+      periodReset,
+      canUpgrade,
+    },
+  );
+}
+
+/**
+ * Whether the requesting user personally holds billing permission to upgrade.
+ *
+ * Issue rule: never surface an upgrade action (e.g. a plan-change CTA) that the
+ * current user lacks permission to take. Only SUPER_ADMIN (platform) and
+ * COMPANY_ADMIN (tenant) roles may manage the plan; EMPLOYEE sees no upgrade
+ * affordance even when quota is exhausted.
+ */
+function resolveCanUpgrade(req: Request): boolean {
+  return (
+    req.auth?.role === "SUPER_ADMIN" || req.auth?.role === "COMPANY_ADMIN"
+  );
+}
+
+/**
+ * Human-readable denial message for a capability check, telling the caller what
+ * was requested and what the plan actually permits.
+ */
+function buildCapabilityMessage(
+  capability: CapabilityKey,
+  value: unknown,
+  result: CheckResult,
+): string {
+  if (capability === "allowedModels") {
+    const model = typeof value === "string" ? value : String(value);
+    return `Model "${model}" is not included in your current plan (${result.current}/${result.limit} models available)`;
+  }
+  const days = typeof value === "number" ? value : 0;
+  return `Requested retention of ${days} days exceeds your plan limit of ${result.limit} days`;
+}
+
+// ── Denial audit helpers ──────────────────────────────────────────────────────
+
+/** Copies the quota fields from an AppError denial payload (unknown shape). */
+function extractDenialDetails(
+  details: unknown,
+): {
+  current?: number;
+  limit?: number;
+  remaining?: number;
+  canUpgrade?: boolean;
+  periodReset?: string | null;
+} {
+  if (typeof details !== "object" || details === null) return {};
+  const record = details as Record<string, unknown>;
+  const result: {
+    current?: number;
+    limit?: number;
+    remaining?: number;
+    canUpgrade?: boolean;
+    periodReset?: string | null;
+  } = {};
+  if (typeof record.current === "number") result.current = record.current;
+  if (typeof record.limit === "number") result.limit = record.limit;
+  if (typeof record.remaining === "number") result.remaining = record.remaining;
+  if (typeof record.canUpgrade === "boolean") {
+    result.canUpgrade = record.canUpgrade;
+  }
+  if (typeof record.periodReset === "string") {
+    result.periodReset = record.periodReset;
+  }
+  return result;
+}
+
+/**
+ * Fire-and-forget audit of an entitlement denial (429 quota exceeded or 503
+ * unavailable). Never blocks the response — `logEntitlementDenial` swallows
+ * all audit-write failures internally.
+ */
+function auditDenial(
+  req: Request,
+  dimension: string,
+  denialType: 429 | 503,
+  details: ReturnType<typeof extractDenialDetails> = {},
+): void {
+  logEntitlementDenial({
+    dimension,
+    denialType,
+    tenantId: req.tenantId,
+    actorId: req.auth?.userId,
+    actorEmail: req.auth?.email ?? null,
+    actorRole: req.auth?.role ?? null,
+    traceId: req.traceId,
+    ...details,
+  });
+}
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -59,6 +232,25 @@ export interface EntitlementCheckGuardOptions {
   /** The counter dimension to check quota against. */
   dimension: EntitlementDimension;
   /** Behaviour when quota is denied */
+  failMode: FailMode;
+}
+
+export interface CapabilityGuardOptions {
+  /** The capability key to check against the tenant snapshot. */
+  capability: CapabilityKey;
+
+  /**
+   * Value to validate against the capability.
+   * - Static: a fixed string
+   * - Dynamic: a function that receives the Express request and returns unknown
+   */
+  value: string | ((req: Request) => unknown);
+
+  /**
+   * Behaviour when the capability is denied:
+   * - "fail-closed" → throw AppError (HTTP 429)
+   * - "fail-open"   → set `req.quotaWarning = true` and continue
+   */
   failMode: FailMode;
 }
 
@@ -142,17 +334,18 @@ export function createEntitlementGuard(
       // 5. Handle denial
       if (!result.committed) {
         if (failMode === "fail-closed") {
-          throw new AppError(
-            429,
-            ENTITLEMENT_EXCEEDED,
-            `Quota exceeded for ${dimension}: ${result.current}/${result.limit}`,
-            {
-              current: result.current,
-              limit: result.limit,
-              dimension,
-              remaining: result.remaining,
-            },
+          const periodReset = await resolvePeriodReset(
+            entitlementService,
+            req.tenantId,
           );
+          throw buildQuotaExceededError({
+            dimension,
+            current: result.current,
+            limit: result.limit,
+            remaining: result.remaining,
+            periodReset,
+            canUpgrade: resolveCanUpgrade(req),
+          });
         }
 
         // fail-open: allow with warning flag
@@ -170,17 +363,37 @@ export function createEntitlementGuard(
     } catch (error) {
       // Already an AppError — forward to Express error handler
       if (error instanceof AppError) {
+        // 429 (quota exceeded) / 503 (unavailable) are denials: audit them
+        // fire-and-forget. Other AppErrors (e.g. TENANT_ID_MISSING) are not.
+        if (error.statusCode === 429 && error.code === ENTITLEMENT_EXCEEDED) {
+          auditDenial(req, dimension, 429, extractDenialDetails(error.details));
+        } else if (
+          error.statusCode === 503 &&
+          error.code === ENTITLEMENT_UNAVAILABLE
+        ) {
+          auditDenial(req, dimension, 503);
+        }
         next(error);
         return;
       }
 
       // Unexpected service error
       if (failMode === "fail-closed") {
+        req.log?.error?.(
+          {
+            ...safeEntitlementErrorContext(error),
+            dimension,
+            requestId: req.requestId,
+          },
+          "[EntitlementGuard] Service error — denying request fail-closed",
+        );
+        auditDenial(req, dimension, 503);
         next(
           new AppError(
             503,
             ENTITLEMENT_UNAVAILABLE,
             "Entitlement service is temporarily unavailable",
+            { failureClass: classifyEntitlementFailure(error) },
           ),
         );
       } else {
@@ -243,17 +456,18 @@ export function createEntitlementCheckGuard(
       // 3. Handle denial
       if (!result.allowed) {
         if (failMode === "fail-closed") {
-          throw new AppError(
-            429,
-            ENTITLEMENT_EXCEEDED,
-            `Quota exceeded for ${dimension}: ${result.current}/${result.limit}`,
-            {
-              current: result.current,
-              limit: result.limit,
-              dimension,
-              remaining: 0,
-            },
+          const periodReset = await resolvePeriodReset(
+            entitlementService,
+            req.tenantId,
           );
+          throw buildQuotaExceededError({
+            dimension,
+            current: result.current,
+            limit: result.limit,
+            remaining: 0,
+            periodReset,
+            canUpgrade: resolveCanUpgrade(req),
+          });
         }
 
         // fail-open: allow with warning flag
@@ -271,12 +485,23 @@ export function createEntitlementCheckGuard(
     } catch (error) {
       // Already an AppError — forward to Express error handler
       if (error instanceof AppError) {
+        // 429 (quota exceeded) / 503 (unavailable) are denials: audit them
+        // fire-and-forget. Other AppErrors (e.g. TENANT_ID_MISSING) are not.
+        if (error.statusCode === 429 && error.code === ENTITLEMENT_EXCEEDED) {
+          auditDenial(req, dimension, 429, extractDenialDetails(error.details));
+        } else if (
+          error.statusCode === 503 &&
+          error.code === ENTITLEMENT_UNAVAILABLE
+        ) {
+          auditDenial(req, dimension, 503);
+        }
         next(error);
         return;
       }
 
       // Unexpected service error
       if (failMode === "fail-closed") {
+        auditDenial(req, dimension, 503);
         next(
           new AppError(
             503,
@@ -289,6 +514,135 @@ export function createEntitlementCheckGuard(
         req.log?.warn?.(
           { err: error, dimension, failMode },
           "[EntitlementCheckGuard] Service error — allowing request in fail-open mode",
+        );
+        next();
+      }
+    }
+  };
+}
+
+// ── Capability guard factory ─────────────────────────────────────────────────
+
+/**
+ * Creates an Express middleware that enforces a capability gate from the
+ * tenant's entitlement snapshot (e.g. allowed models, retention days).
+ *
+ * Unlike `createEntitlementGuard` / `createEntitlementCheckGuard`, capability
+ * keys are NOT counted resources — they are enforced directly from snapshot
+ * metadata via `entitlementService.checkCapability()`. When the capability is
+ * denied the configured fail-mode determines whether the request is blocked or
+ * allowed with a warning.
+ *
+ * @param entitlementService - Injected EntitlementService instance.
+ * @param options            - Guard configuration (capability, value, failMode).
+ *
+ * @example
+ * ```typescript
+ * const modelGuard = createCapabilityGuard(entitlementService, {
+ *   capability: "allowedModels",
+ *   value: (req) => req.body?.model ?? "",
+ *   failMode: "fail-closed",
+ * });
+ * router.patch("/ai-configuration", authenticate, tenantScoping, modelGuard, controller);
+ * ```
+ */
+export function createCapabilityGuard(
+  entitlementService: EntitlementService,
+  options: CapabilityGuardOptions,
+) {
+  const { capability, value, failMode } = options;
+
+  return async function capabilityGuard(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      // 1. Extract tenantId (set by tenant-scoping middleware)
+      if (!req.tenantId) {
+        throw new AppError(
+          500,
+          TENANT_ID_MISSING,
+          "Tenant ID not found on request — is tenant-scoping middleware in place?",
+        );
+      }
+
+      // 2. Resolve value (static or dynamic from request)
+      const resolvedValue = typeof value === "function" ? value(req) : value;
+
+      // 3. Check the capability against the tenant snapshot
+      const result = await entitlementService.checkCapability(
+        req.tenantId,
+        capability,
+        resolvedValue,
+      );
+
+      // 4. Handle denial
+      if (!result.allowed) {
+        if (failMode === "fail-closed") {
+          const periodReset = await resolvePeriodReset(
+            entitlementService,
+            req.tenantId,
+          );
+          throw new AppError(
+            429,
+            ENTITLEMENT_EXCEEDED,
+            buildCapabilityMessage(capability, resolvedValue, result),
+            {
+              current: result.current,
+              limit: result.limit,
+              dimension: capability,
+              remaining: Math.max(0, result.limit - result.current),
+              periodReset,
+              canUpgrade: resolveCanUpgrade(req),
+            },
+          );
+        }
+
+        // fail-open: allow with warning flag
+        req.quotaWarning = true;
+        next();
+        return;
+      }
+
+      // 5. Soft warning at >80% threshold
+      if (result.limit > 0 && result.current / result.limit > 0.8) {
+        res.setHeader("X-Quota-Warning", "true");
+      }
+
+      next();
+    } catch (error) {
+      // Already an AppError — forward to Express error handler
+      if (error instanceof AppError) {
+        // 429 (quota exceeded) / 503 (unavailable) are denials: audit them
+        // fire-and-forget. Other AppErrors (e.g. TENANT_ID_MISSING) are not.
+        if (error.statusCode === 429 && error.code === ENTITLEMENT_EXCEEDED) {
+          auditDenial(req, capability, 429, extractDenialDetails(error.details));
+        } else if (
+          error.statusCode === 503 &&
+          error.code === ENTITLEMENT_UNAVAILABLE
+        ) {
+          auditDenial(req, capability, 503);
+        }
+        next(error);
+        return;
+      }
+
+      // Unexpected service error
+      if (failMode === "fail-closed") {
+        auditDenial(req, capability, 503);
+        next(
+          new AppError(
+            503,
+            ENTITLEMENT_UNAVAILABLE,
+            "Entitlement service is temporarily unavailable",
+          ),
+        );
+      } else {
+        // fail-open on service error: log and continue
+        req.log?.warn?.(
+          { err: error, capability, failMode },
+          "[CapabilityGuard] Service error — allowing request in fail-open mode",
         );
         next();
       }

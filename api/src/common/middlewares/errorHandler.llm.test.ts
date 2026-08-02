@@ -49,3 +49,20 @@ test("serializes rate-limit retry metadata without provider details or stack", (
   });
   assert.ok(!JSON.stringify(payload).includes("stack"));
 });
+
+test("never exposes application stacks in client error responses", () => {
+  let payload: unknown;
+  const response = {
+    setHeader: () => response,
+    status: () => response,
+    json: (value: unknown) => { payload = value; return response; },
+  };
+  errorHandlerMiddleware(
+    new AppError(409, "BILLING_OPERATION_NOT_ALLOWED", "Refund eligibility requires a valid billing period"),
+    { requestId: "request-2", originalUrl: "/billing/refund-eligibility-previews", method: "POST", log: { error: () => undefined } } as never,
+    response as never,
+    (() => undefined) as never,
+  );
+  assert.ok(!JSON.stringify(payload).includes("stack"));
+  assert.ok(!JSON.stringify(payload).includes("errorHandler.middleware"));
+});

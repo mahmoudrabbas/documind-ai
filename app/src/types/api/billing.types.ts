@@ -75,6 +75,7 @@ export interface SubscriptionStatus {
     reason: string;
   };
   invoiceSummary: { total: number; open: number; paid: number; pastDue: number };
+  transitionState?: "ACTIVE" | "TRANSITION_PENDING" | "TRANSITION_RETRYABLE" | "REPAIR_REQUIRED";
 }
 
 export interface PaymentEvent {
@@ -176,6 +177,9 @@ export interface BillingInvoice {
   periodEnd: string | null;
   refundedAmountMinor: number;
   reservedRefundAmountMinor: number;
+  retainedConsumedMinor: number;
+  grossUnrefundedMinor: number;
+  settlementCompleted: boolean;
   remainingRefundableMinor: number;
   canRequestRefund: boolean;
   hostedInvoiceAvailable: boolean;
@@ -215,11 +219,14 @@ export interface BillingRefund {
   refundableRemainingMinor: number;
   refundedAmountMinor: number;
   reservedRefundAmountMinor: number;
+  retainedConsumedMinor?: number;
+  settlementCompleted?: boolean;
   reason: string;
   reasonCode?: RefundReason;
   maximumEligibleRefundMinor?: number;
-  subscriptionImpact?: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND";
+  subscriptionImpact?: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND" | "CANCEL_AND_MOVE_TO_FREE";
   subscriptionImpactStatus?: "NOT_REQUIRED" | "PENDING" | "SUCCEEDED" | "RETRY_PENDING" | "FAILED";
+  localTransitionStatus?: "PENDING" | "SUCCEEDED" | "RETRY_PENDING" | "FAILED";
   requestedBy: { id: string; name: string | null; email: string | null };
   confirmedBy: { id: string; name: string | null; email: string | null } | null;
   requestedAt: string;
@@ -237,11 +244,15 @@ export interface BillingRefund {
     pendingAmountMinor: number;
   };
 }
-export type RefundReason = "DUPLICATE_CHARGE" | "SERVICE_NOT_DELIVERED" | "VOLUNTARY_CANCELLATION" | "BILLING_ERROR";
+export type RefundReason = "DUPLICATE_CHARGE" | "SERVICE_NOT_DELIVERED" | "VOLUNTARY_CANCELLATION" | "BILLING_ERROR" | "GOODWILL_CREDIT" | "SYSTEM_REMAINING_BALANCE_REFUND";
 export interface RefundEligibilityPreview {
   id: string; invoiceId: string; invoiceAmountMinor: number; currency: string;
   periodElapsedPercent: number; usage: Array<{ dimension: string; percent: number }>;
   maximumEligibleRefundMinor: number; reason: RefundReason;
-  subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND";
+  consumedValueMinor: number;
+  periodStart: string;
+  periodEnd: string;
+  targetPlan: { code: "free"; name: "Free" } | null;
+  subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND" | "CANCEL_AND_MOVE_TO_FREE";
   expiresAt: string; reviewRequired: boolean; decisionReason: string;
 }

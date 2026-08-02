@@ -67,10 +67,82 @@ describe("invoice synchronization persistence", () => {
 
   it("performs a bounded reconciliation and preserves local history on provider failure", async () => {
     const fake = new FakePaymentProvider(); fake.seedInvoice(baseInvoice);
-    expect(await reconcileTenantInvoices({ tenantId: String(tenantId), provider: fake, maxRecords: 1 })).toEqual({ examined: 1, created: 1, updated: 0, unchanged: 0, failed: 0 });
+    expect(await reconcileTenantInvoices({ tenantId: String(tenantId), provider: fake, maxRecords: 1 })).toEqual({ examined: 1, created: 1, updated: 0, unchanged: 0, failed: 0, failures: [], retry: { status: "NONE", retryableFailureCount: 0 } });
     fake.shouldFailNextInvoiceRead = true;
-    expect(await reconcileTenantInvoices({ tenantId: String(tenantId), provider: fake, maxRecords: 1 })).toEqual({ examined: 0, created: 0, updated: 0, unchanged: 0, failed: 1 });
+    expect(await reconcileTenantInvoices({ tenantId: String(tenantId), provider: fake, maxRecords: 1 })).toMatchObject({ examined: 0, created: 0, updated: 0, unchanged: 0, failed: 1, failures: [{ code: "BILLING_INVOICE_PROVIDER_UNAVAILABLE", count: 1, classification: "RETRYABLE_PROVIDER_FAILURE", retryable: true }], retry: { status: "NONE", retryableFailureCount: 1 } });
     expect(await InvoiceModel.countDocuments({ tenantId })).toBe(1);
+  });
+
+  it("repairs a missing invoice period from the matching subscription period", async () => {
+    await mongoose.connection.collection("subscriptions").updateOne(
+      { _id: subscriptionId },
+      {
+        $set: {
+          currentPeriodStart: new Date("2026-08-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2026-09-01T00:00:00.000Z"),
+          periodStart: new Date("2026-08-01T00:00:00.000Z"),
+          periodEnd: new Date("2026-09-01T00:00:00.000Z"),
+        },
+      },
+    );
+    const invoiceWithoutPeriod = { ...baseInvoice, periodStart: null, periodEnd: null };
+    const fake = new FakePaymentProvider();
+    fake.seedInvoice(invoiceWithoutPeriod);
+
+    await expect(synchronizeInvoiceFromReference({
+      provider: fake,
+      providerName: "fake",
+      providerInvoiceId: invoiceWithoutPeriod.id,
+      providerCustomerId: invoiceWithoutPeriod.customerId,
+      providerSubscriptionId: invoiceWithoutPeriod.subscriptionId,
+      sourceEventId: "evt-repair-period",
+    })).resolves.toMatchObject({ outcome: "created" });
+
+    expect(await InvoiceModel.findOne({ tenantId }).lean()).toMatchObject({
+      periodStart: new Date("2026-08-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-09-01T00:00:00.000Z"),
+    });
+  });
+
+  it("repairs a zero-length existing invoice in place and remains idempotent", async () => {
+    const periodStart = new Date("2026-08-01T15:08:38.000Z");
+    const periodEnd = new Date("2026-09-01T15:08:38.000Z");
+    await mongoose.connection.collection("subscriptions").updateOne(
+      { _id: subscriptionId },
+      { $set: { currentPeriodStart: periodStart, currentPeriodEnd: periodEnd, periodStart, periodEnd, status: "ACTIVE", paymentState: "paid" } },
+    );
+    await InvoiceModel.create({
+      tenantId,
+      subscriptionId,
+      provider: "fake",
+      providerInvoiceId: "in_zero_length",
+      invoiceNumber: "INV-ZERO",
+      status: "paid",
+      currency: "USD",
+      amountDueMinor: 200,
+      amountPaidMinor: 200,
+      amountRemainingMinor: 0,
+      refundedAmountMinor: 0,
+      reservedRefundAmountMinor: 0,
+      subtotalMinor: 200,
+      taxMinor: 0,
+      createdAtProvider: periodStart,
+      paidAt: periodStart,
+      periodStart,
+      periodEnd: periodStart,
+      synchronizedAt: periodStart,
+    });
+    const fake = new FakePaymentProvider();
+    fake.seedInvoice({ ...baseInvoice, id: "in_zero_length", customerId: "cus_phase2", subscriptionId: "sub_phase2", amountDueMinor: 200, amountPaidMinor: 200, amountRemainingMinor: 0, subtotalMinor: 200, periodStart: null, periodEnd: null });
+
+    const first = await reconcileTenantInvoices({ tenantId: String(tenantId), provider: fake, maxRecords: 1 });
+    expect(first).toMatchObject({ examined: 1, updated: 1, failed: 0 });
+    expect(await InvoiceModel.countDocuments({ tenantId, providerInvoiceId: "in_zero_length" })).toBe(1);
+    expect(await InvoiceModel.findOne({ tenantId, providerInvoiceId: "in_zero_length" }).lean()).toMatchObject({ periodStart, periodEnd });
+
+    const second = await reconcileTenantInvoices({ tenantId: String(tenantId), provider: fake, maxRecords: 1 });
+    expect(second).toMatchObject({ examined: 1, updated: 0, unchanged: 1, failed: 0 });
+    expect(await InvoiceModel.countDocuments({ tenantId, providerInvoiceId: "in_zero_length" })).toBe(1);
   });
 
   it("retries invoice-before-subscription delivery and projects exactly once after subscription recovery", async () => {

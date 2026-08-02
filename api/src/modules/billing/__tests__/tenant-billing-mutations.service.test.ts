@@ -79,6 +79,17 @@ const targetPackage = {
     stripeAnnualPriceId: "price_enterprise_annual",
   }],
 };
+const downgradePackage = {
+  _id: "507f1f77bcf86cd799439025",
+  name: "Basic",
+  code: "basic",
+  version: 3,
+  active: true,
+  visibility: "public",
+  currency: "USD",
+  entitlements: { employees: 1, documents: 10, storageMb: 100, queriesPerMonth: 1000 },
+  versions: [{ _id: "507f1f77bcf86cd799439026", version: 3, name: "Basic", code: "basic", currency: "USD", entitlements: { employees: 1, documents: 10, storageMb: 100, queriesPerMonth: 1000 }, stripePriceId: "price_basic_monthly", stripeAnnualPriceId: "price_basic_annual" }],
+};
 
 describe("tenant billing mutations service", () => {
   beforeEach(() => {
@@ -150,7 +161,7 @@ describe("tenant billing mutations service", () => {
         expiresAt: new Date("2026-07-20T00:15:00.000Z"),
         providerStateObservedAt: new Date("2026-07-20T00:00:00.000Z"),
       }),
-    } as never;
+    } as unknown as PaymentProvider;
     const preview = await createSubscriptionChangePreview({
       tenantId,
       targetPackageId: String(targetPackage._id),
@@ -181,6 +192,34 @@ describe("tenant billing mutations service", () => {
       provider: {} as never,
       context: actorContext,
     })).rejects.toMatchObject({ code: "BILLING_OPERATION_NOT_ALLOWED" });
+  });
+
+  it("previews a monthly downgrade with provider credit and preserves currency", async () => {
+    vi.mocked(PackageModel.findById).mockReturnValue(chain(downgradePackage) as never);
+    const previewSubscriptionChange = vi.fn().mockResolvedValue({
+        id: "preview_downgrade", subscriptionId: "subscription", customerId: "customer",
+        currentPriceReference: "price_pro_monthly", targetPriceReference: "price_basic_monthly",
+        currency: "USD", amountDueMinor: -700, effectiveAt: new Date("2026-08-01"), expiresAt: new Date("2026-07-20T00:15:00.000Z"), providerStateObservedAt: new Date("2026-07-20"),
+    });
+    const provider = { previewSubscriptionChange } as unknown as PaymentProvider;
+    const preview = await createSubscriptionChangePreview({ tenantId, targetPackageId: downgradePackage._id, billingInterval: "monthly", provider, context: actorContext });
+    expect(preview).toMatchObject({ targetPackage: { code: "basic", version: 3 }, amountDueMinor: 0, amountCreditMinor: 700, currency: "USD" });
+    expect(previewSubscriptionChange).toHaveBeenCalledOnce();
+  });
+
+  it("confirms a stored downgrade preview through the durable provider mutation path", async () => {
+    vi.mocked(PackageModel.findById).mockReturnValue(chain(downgradePackage) as never);
+    vi.mocked(BillingPreviewModel.findOne).mockReturnValue(chain({
+      _id: "507f1f77bcf86cd799439050", tenantId, subscriptionId: subscription._id,
+      targetPackageId: downgradePackage._id, targetPackageVersionId: downgradePackage.versions[0]._id, targetPackageVersion: 3,
+      targetBillingInterval: "monthly", currency: "USD", amountDueMinor: 0, amountCreditMinor: 700,
+      expiresAt: new Date("2099-08-20"), subscriptionRevision: 3, providerPreviewReference: "preview_downgrade",
+    }) as never);
+    vi.mocked(BillingPreviewModel.findOneAndUpdate).mockReturnValue({ exec: vi.fn().mockResolvedValue({ _id: "507f1f77bcf86cd799439050", consumedByOperationId: "507f1f77bcf86cd799439040" }) } as never);
+    const provider = { updateSubscription: vi.fn().mockResolvedValue({ operationReference: "provider-op-downgrade", state: { id: "sub_owned" } }) } as unknown as PaymentProvider;
+    const result = await requestSubscriptionChange({ tenantId, previewId: "507f1f77bcf86cd799439050", idempotencyKey: "phase3-downgrade-key", provider, context: actorContext });
+    expect(result.operation).toMatchObject({ type: "PLAN_CHANGE", status: "PROVIDER_PENDING" });
+    expect(provider.updateSubscription).toHaveBeenCalledOnce();
   });
 
   it("requests a durable plan change from a stored preview", async () => {

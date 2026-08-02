@@ -93,6 +93,12 @@ function writeAudit(
 }
 
 // ── Static event → status mapping (excluding customer.subscription.updated) ──
+//
+// Single source of truth: entitlements fail closed on subscription.status
+// (SERVICEABLE_STATUSES) and subscription.paymentState (refunded → fail closed),
+// both evaluated in MongoEntitlementProvider.getSnapshot(). The paymentState
+// values derived here are for reporting/audit only and may differ from the
+// entitlement gate — do NOT unify this derivation with the entitlement policy.
 
 const EVENT_STATUS_MAP: Record<
   string,
@@ -123,8 +129,8 @@ const EVENT_STATUS_MAP: Record<
     fromStatuses: ["ACTIVE", "INCOMPLETE"],
   },
   "customer.subscription.deleted": {
-    toStatus: "EXPIRED",
-    paymentState: "failed",
+    toStatus: "CANCELED",
+    paymentState: "paid",
     fromStatuses: ["ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"],
   },
 };
@@ -139,6 +145,7 @@ const STRIPE_STATUS_MAP: Record<string, SubscriptionStatus> = {
   incomplete: "INCOMPLETE",
   incomplete_expired: "EXPIRED",
   canceled: "CANCELED",
+  paused: "PAUSED",
 };
 
 function mapStripeStatusToInternal(
@@ -434,6 +441,7 @@ async function handleStaticMappingEvent(
   const currentStatus = sub.status as SubscriptionStatus;
 
   const transitionOptions: Record<string, unknown> = {
+    subscriptionId: String(sub._id),
     triggeredBy: "provider_event",
     providerEventId: event.id,
   };
@@ -459,7 +467,9 @@ async function handleStaticMappingEvent(
   }
 
   const subscriptionUpdate: Record<string, unknown> = {
-    paymentState: mapping.paymentState,
+    paymentState: event.type === "customer.subscription.deleted" && sub.paymentState === "refunded"
+      ? "refunded"
+      : mapping.paymentState,
     lastProviderEventId: event.id,
     providerSubscriptionId:
       extractStripeSubscriptionIdFromEvent(event) ??
@@ -493,7 +503,7 @@ async function handleStaticMappingEvent(
   }
 
   await SubscriptionModel.updateOne(
-    { tenantId },
+    { _id: sub._id, tenantId },
     { $set: subscriptionUpdate },
   );
 
@@ -516,7 +526,7 @@ async function handleStaticMappingEvent(
     {
       eventType: event.type,
       newStatus: mapping.toStatus,
-      paymentState: mapping.paymentState,
+      paymentState: event.type === "customer.subscription.deleted" && sub.paymentState === "refunded" ? "refunded" : mapping.paymentState,
       providerEventId: event.id,
     },
     String(tenantId),
@@ -567,6 +577,7 @@ async function handleSubscriptionUpdated(
     }
 
     const transitionOptions: Record<string, unknown> = {
+      subscriptionId: String(sub._id),
       triggeredBy: "provider_event",
       providerEventId: event.id,
     };
@@ -592,11 +603,18 @@ async function handleSubscriptionUpdated(
   const periodEnd = providerSubscription?.currentPeriodEnd ?? extractCurrentPeriodEnd(event);
   const cancelAt = extractCancelAt(event);
 
+  // Single source of truth: entitlements fail closed on subscription.status
+  // (SERVICEABLE_STATUSES) and subscription.paymentState (refunded → fail closed),
+  // both evaluated in MongoEntitlementProvider.getSnapshot(). The paymentState
+  // derivation below is for reporting/audit only and may differ from the
+  // entitlement gate — do NOT unify it with the entitlement policy.
   const subscriptionUpdate: Record<string, unknown> = {
     cancelAtPeriodEnd,
-    paymentState: mappedStatus === "EXPIRED" || mappedStatus === "CANCELED" || mappedStatus === "PAST_DUE" || mappedStatus === "UNPAID"
-      ? "failed"
-      : "paid",
+    paymentState: sub.paymentState === "refunded"
+      ? "refunded"
+      : mappedStatus === "EXPIRED" || mappedStatus === "PAST_DUE" || mappedStatus === "UNPAID"
+        ? "failed"
+        : "paid",
     lastProviderEventId: event.id,
     providerSubscriptionId:
       extractStripeSubscriptionIdFromEvent(event) ??
@@ -635,7 +653,7 @@ async function handleSubscriptionUpdated(
   subscriptionUpdate.lastProviderEventTimestamp = event.timestamp;
 
   await SubscriptionModel.updateOne(
-    { tenantId },
+    { _id: sub._id, tenantId },
     { $set: subscriptionUpdate },
   );
 
@@ -844,6 +862,7 @@ interface ResolvedSubscription {
     packageId: Types.ObjectId;
     providerSubscriptionId: string;
     providerCustomerId: string;
+    paymentState: "pending" | "paid" | "failed" | "refunded";
   };
   tenantId: Types.ObjectId;
 }
@@ -857,8 +876,17 @@ async function resolveSubscriptionFromEvent(
     (providerTenantId && Types.ObjectId.isValid(providerTenantId)
       ? new Types.ObjectId(providerTenantId)
       : null);
+  const stripeSubId = providerSubscription?.id ?? extractStripeSubscriptionIdFromEvent(event);
   if (tenantId) {
-    const sub = await SubscriptionModel.findOne({ tenantId }).exec();
+    const sub = await SubscriptionModel.findOne({
+      tenantId,
+      ...(stripeSubId
+        ? { providerSubscriptionId: stripeSubId }
+        : {
+            providerSubscriptionId: { $nin: ["", null] },
+            status: { $in: ["ACTIVE", "TRIALING", "CANCEL_AT_PERIOD_END", "PAST_DUE"] },
+          }),
+    }).sort({ createdAt: -1 }).exec();
     if (sub) return { subscription: sub, tenantId };
   }
 
@@ -870,7 +898,6 @@ async function resolveSubscriptionFromEvent(
     if (sub) return { subscription: sub, tenantId: sub.tenantId };
   }
 
-  const stripeSubId = providerSubscription?.id ?? extractStripeSubscriptionIdFromEvent(event);
   if (stripeSubId) {
     const sub = await SubscriptionModel.findOne({
       providerSubscriptionId: stripeSubId,

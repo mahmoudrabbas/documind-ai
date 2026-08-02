@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { PermissionBoundary } from "@/components/auth/permission-boundary";
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
@@ -29,13 +30,11 @@ import type {
   BillingOperationStatus,
   BillingPortalFlow,
   RefundEligibilityPreview,
-  RefundReason,
   Pagination,
   PublicPackage,
   SubscriptionStatus,
 } from "@/types/api/billing.types";
 import { Permission } from "@/types/api/permissions.types";
-import { parseRefundAmountMinor } from "./refund-money";
 
 type Loadable<T> = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: T };
 type Interval = "monthly" | "annual";
@@ -72,9 +71,6 @@ function BillingContent() {
   const [reactivationLoading, setReactivationLoading] = useState(false);
   const [reactivationError, setReactivationError] = useState("");
   const [refundDialogInvoice, setRefundDialogInvoice] = useState<BillingInvoice | null>(null);
-  const [refundMode, setRefundMode] = useState<"FULL" | "PARTIAL">("FULL");
-  const [refundAmountMinor, setRefundAmountMinor] = useState("");
-  const [refundReason, setRefundReason] = useState<RefundReason>("VOLUNTARY_CANCELLATION");
   const [refundEligibility, setRefundEligibility] = useState<Loadable<RefundEligibilityPreview> | null>(null);
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState("");
@@ -216,13 +212,11 @@ function BillingContent() {
     }
   }, [t]);
 
-  const loadRefundEligibility = useCallback(async (invoice: BillingInvoice, reason: RefundReason) => {
+  const loadRefundEligibility = useCallback(async (invoice: BillingInvoice) => {
     setRefundEligibility({ kind: "loading" });
     try {
-      const response = await createRefundEligibilityPreview({ invoiceId: invoice.id, reason });
+      const response = await createRefundEligibilityPreview({ invoiceId: invoice.id });
       setRefundEligibility({ kind: "ready", data: response.data });
-      setRefundMode(response.data.maximumEligibleRefundMinor === invoice.remainingRefundableMinor ? "FULL" : "PARTIAL");
-      setRefundAmountMinor((response.data.maximumEligibleRefundMinor / 100).toFixed(2));
     } catch (error) {
       setRefundEligibility({ kind: "error", message: safeMessage(error, t) });
     }
@@ -231,11 +225,8 @@ function BillingContent() {
   const openRefundDialog = useCallback((invoice: BillingInvoice) => {
     refundSubmitKeyRef.current = null;
     setRefundDialogInvoice(invoice);
-    setRefundMode("PARTIAL");
-    setRefundAmountMinor("");
-    setRefundReason("VOLUNTARY_CANCELLATION");
     setRefundError("");
-    void loadRefundEligibility(invoice, "VOLUNTARY_CANCELLATION");
+    void loadRefundEligibility(invoice);
   }, [loadRefundEligibility]);
 
   const submitRefund = useCallback(async () => {
@@ -245,13 +236,7 @@ function BillingContent() {
     try {
       const idempotencyKey = refundSubmitKeyRef.current ?? (globalThis.crypto?.randomUUID?.() ?? `refund-${Date.now()}`);
       refundSubmitKeyRef.current = idempotencyKey;
-      const amountMinor = refundMode === "PARTIAL" ? parseRefundAmountMinor(refundAmountMinor, locale) ?? undefined : undefined;
-      await createRefundRequest({
-        previewId: refundEligibility.data.id,
-        mode: refundMode,
-        amountMinor,
-        idempotencyKey,
-      });
+      await createRefundRequest({ previewId: refundEligibility.data.id, idempotencyKey });
       setRefundSubmitting(false);
       setRefundDialogInvoice(null);
       setAnnouncement(t("billingAdmin.refundRequested"));
@@ -260,7 +245,7 @@ function BillingContent() {
       setRefundSubmitting(false);
       setRefundError(safeMessage(error, t));
     }
-  }, [locale, refundAmountMinor, refundDialogInvoice, refundEligibility, refundMode, refreshAll, t]);
+  }, [refundDialogInvoice, refundEligibility, refreshAll, t]);
 
   const requestPreview = useCallback(async () => {
     if (!selectedPackageId) return;
@@ -359,6 +344,15 @@ function BillingContent() {
       <div className="space-y-6">
         <DashboardPanel aria-labelledby="current-subscription-heading">
           <h2 id="current-subscription-heading" className="text-title-lg font-bold">{t("billingAdmin.currentSubscription")}</h2>
+          {summary.kind === "ready" && summary.data.transitionState && summary.data.transitionState !== "ACTIVE" ? (
+            <div role="status" className="mt-4 rounded-xl border border-warning/40 bg-warning-container p-4 text-on-warning-container">
+              {summary.data.transitionState === "REPAIR_REQUIRED"
+                ? t("billingAdmin.freeTransitionReview")
+                : summary.data.transitionState === "TRANSITION_RETRYABLE"
+                ? t("billingAdmin.freeTransitionRetryable")
+                : t("billingAdmin.freeTransitionSyncing")}
+            </div>
+          ) : null}
           {summary.kind === "loading" ? (
             <Loading label={t("billingAdmin.loadingSummary")} />
           ) : summary.kind === "error" ? (
@@ -388,6 +382,25 @@ function BillingContent() {
             />
           )}
         </DashboardPanel>
+
+        {summary.kind === "ready" && canManage && canStartPaidCheckout(summary.data) ? (
+          <DashboardPanel aria-labelledby="choose-plan-heading">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 id="choose-plan-heading" className="text-title-lg font-bold">{t("billingAdmin.choosePlan")}</h2>
+                <p className="mt-1 max-w-2xl text-sm text-on-surface-variant">
+                  {t(summary.data.status === "TRIALING" ? "billingAdmin.freeTrialDescription" : "billingAdmin.freePlanDescription")}
+                </p>
+              </div>
+              <Link
+                href="/checkout"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 font-semibold text-on-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                {t("billingAdmin.choosePlan")}
+              </Link>
+            </div>
+          </DashboardPanel>
+        ) : null}
 
         <DashboardPanel padding="none" aria-labelledby="invoice-history-heading">
           <div className="flex items-center justify-between border-b border-outline-variant/30 p-4 sm:p-5">
@@ -536,7 +549,7 @@ function BillingContent() {
         footer={(
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setRefundDialogInvoice(null)} className="rounded-lg border px-4 py-2 font-semibold">{t("common.cancel")}</button>
-            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || refundEligibility?.kind !== "ready" || (refundMode === "PARTIAL" && parseRefundAmountMinor(refundAmountMinor, locale) === null)} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : t("billingAdmin.submitRefund")}</button>
+            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || refundEligibility?.kind !== "ready" || refundEligibility.data.maximumEligibleRefundMinor <= 0} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : refundEligibility?.kind === "ready" ? `${t("billingAdmin.refundRemainingAction")} ${new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en-US", { style: "currency", currency: refundEligibility.data.currency }).format(refundEligibility.data.maximumEligibleRefundMinor / 100)}` : t("billingAdmin.submitRefund")}</button>
           </div>
         )}
       >
@@ -545,18 +558,8 @@ function BillingContent() {
             invoice={refundDialogInvoice}
             locale={locale}
             t={t}
-            mode={refundMode}
-            amount={refundAmountMinor}
-            reason={refundReason}
             eligibility={refundEligibility}
             error={refundError}
-            onModeChange={(mode) => { setRefundMode(mode); refundSubmitKeyRef.current = null; }}
-            onAmountChange={(amount) => { setRefundAmountMinor(amount); refundSubmitKeyRef.current = null; }}
-            onReasonChange={(reason) => {
-              setRefundReason(reason);
-              refundSubmitKeyRef.current = null;
-              void loadRefundEligibility(refundDialogInvoice, reason);
-            }}
           />
         ) : null}
       </Modal>
@@ -661,10 +664,10 @@ function InvoiceHistory({ invoices, pagination, locale, t, onLinks, onRefund, se
   const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
   const money = (invoice: BillingInvoice) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.amountPaidMinor / 100);
   const date = (value: string) => new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(new Date(value));
-  const refundLabel = (invoice: BillingInvoice) => invoice.reservedRefundAmountMinor > 0 ? t("billingAdmin.invoicePaidRefundPending") : invoice.refundedAmountMinor <= 0 ? t("billingAdmin.status.paid") : invoice.refundedAmountMinor >= invoice.amountPaidMinor ? t("billingAdmin.invoiceFullyRefunded") : t("billingAdmin.invoicePartiallyRefunded");
+const refundLabel = (invoice: BillingInvoice) => invoice.reservedRefundAmountMinor > 0 ? t("billingAdmin.invoicePaidRefundPending") : invoice.refundedAmountMinor <= 0 ? t("billingAdmin.status.paid") : invoice.refundedAmountMinor >= invoice.amountPaidMinor ? t("billingAdmin.invoiceFullyRefunded") : t("billingAdmin.invoicePartiallyRefunded");
   return <>
-    <div className="hidden overflow-x-auto md:block"><table className="w-full text-start"><thead className="bg-surface-container"><tr><Th>{t("billingAdmin.invoiceNumber")}</Th><Th>{t("billingAdmin.date")}</Th><Th>{t("billingAdmin.status")}</Th><Th>{t("billingAdmin.amount")}</Th><Th>{t("billingAdmin.actions")}</Th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id} className="border-t border-outline-variant/20"><Td>{invoice.invoiceNumber || "—"}</Td><Td>{date(invoice.createdAt)}</Td><Td>{invoice.status === "paid" ? refundLabel(invoice) : t(`billingAdmin.status.${invoice.status}`)}</Td><Td><div>{money(invoice)}</div><div className="text-xs text-on-surface-variant">{t("billingAdmin.confirmedRefunded")}: {new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.refundedAmountMinor / 100)}</div><div className="text-xs text-on-surface-variant">{t("billingAdmin.pendingReserved")}: {new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.reservedRefundAmountMinor / 100)}</div></Td><Td><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} onRefund={onRefund} canManage={canManage} /></Td></tr>)}</tbody></table></div>
-    <div className="space-y-3 p-4 md:hidden">{invoices.map((invoice) => <article key={invoice.id} className="rounded-2xl border border-outline-variant p-4"><h3 className="font-bold">{invoice.invoiceNumber || t("billingAdmin.invoice")}</h3><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label={t("billingAdmin.date")} value={date(invoice.createdAt)} /><Detail label={t("billingAdmin.amount")} value={money(invoice)} /><Detail label={t("billingAdmin.status")} value={invoice.status === "paid" ? refundLabel(invoice) : t(`billingAdmin.status.${invoice.status}`)} /><Detail label={t("billingAdmin.refundableRemaining")} value={new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.remainingRefundableMinor / 100)} /></dl><div className="mt-3"><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} onRefund={onRefund} canManage={canManage} /></div></article>)}</div>
+    <div className="hidden overflow-x-auto md:block"><table className="w-full text-start"><thead className="bg-surface-container"><tr><Th>{t("billingAdmin.invoiceNumber")}</Th><Th>{t("billingAdmin.date")}</Th><Th>{t("billingAdmin.status")}</Th><Th>{t("billingAdmin.amount")}</Th><Th>{t("billingAdmin.actions")}</Th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id} className="border-t border-outline-variant/20"><Td>{invoice.invoiceNumber || "—"}</Td><Td>{date(invoice.createdAt)}</Td><Td><div>{invoice.status === "paid" ? refundLabel(invoice) : t(`billingAdmin.status.${invoice.status}`)}</div>{invoice.remainingRefundableMinor === 0 && invoice.retainedConsumedMinor > 0 ? <div className="text-xs text-on-surface-variant">{t("billingAdmin.settledUnderPolicy")}</div> : null}</Td><Td><div>{money(invoice)}</div><div className="text-xs text-on-surface-variant">{t("billingAdmin.confirmedRefunded")}: {new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.refundedAmountMinor / 100)}</div><div className="text-xs text-on-surface-variant">{t("billingAdmin.retainedConsumed")}: {new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.retainedConsumedMinor / 100)}</div><div className="text-xs text-on-surface-variant">{t("billingAdmin.pendingReserved")}: {new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.reservedRefundAmountMinor / 100)}</div></Td><Td><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} onRefund={onRefund} canManage={canManage} /></Td></tr>)}</tbody></table></div>
+    <div className="space-y-3 p-4 md:hidden">{invoices.map((invoice) => <article key={invoice.id} className="rounded-2xl border border-outline-variant p-4"><h3 className="font-bold">{invoice.invoiceNumber || t("billingAdmin.invoice")}</h3><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label={t("billingAdmin.date")} value={date(invoice.createdAt)} /><Detail label={t("billingAdmin.amount")} value={money(invoice)} /><Detail label={t("billingAdmin.status")} value={invoice.status === "paid" ? refundLabel(invoice) : t(`billingAdmin.status.${invoice.status}`)} /><Detail label={t("billingAdmin.retainedConsumed")} value={new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.retainedConsumedMinor / 100)} /><Detail label={t("billingAdmin.refundableRemaining")} value={new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.remainingRefundableMinor / 100)} /></dl>{invoice.remainingRefundableMinor === 0 && invoice.retainedConsumedMinor > 0 ? <p className="mt-2 text-xs text-on-surface-variant">{t("billingAdmin.settledUnderPolicy")}</p> : null}<div className="mt-3"><InvoiceAction invoice={invoice} t={t} onLinks={onLinks} onRefund={onRefund} canManage={canManage} /></div></article>)}</div>
     <nav aria-label={t("billingAdmin.pagination")} className="flex items-center justify-between border-t border-outline-variant/30 p-4"><button type="button" disabled={pagination.page <= 1} onClick={() => setPage(pagination.page - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">{t("billingAdmin.previous")}</button><span>{pagination.page} / {Math.max(1, pagination.totalPages)}</span><button type="button" disabled={pagination.page >= pagination.totalPages} onClick={() => setPage(pagination.page + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-50">{t("billingAdmin.next")}</button></nav>
   </>;
 }
@@ -677,32 +680,21 @@ function InvoiceAction({ invoice, t, onLinks, onRefund, canManage }: { invoice: 
     </div>
   );
 }
-function RefundRequestForm({ invoice, locale, t, mode, amount, reason, eligibility, error, onModeChange, onAmountChange, onReasonChange }: { invoice: BillingInvoice; locale: string; t: (key: string) => string; mode: "FULL" | "PARTIAL"; amount: string; reason: RefundReason; eligibility: Loadable<RefundEligibilityPreview> | null; error: string; onModeChange: (value: "FULL" | "PARTIAL") => void; onAmountChange: (value: string) => void; onReasonChange: (value: RefundReason) => void }) {
+function RefundRequestForm({ invoice, locale, t, eligibility, error }: { invoice: BillingInvoice; locale: string; t: (key: string) => string; eligibility: Loadable<RefundEligibilityPreview> | null; error: string }) {
   const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
-  const money = new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.remainingRefundableMinor / 100);
+  const money = (minor: number) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(minor / 100);
   return <div className="space-y-4">
-    <p className="text-sm text-on-surface-variant">{t("billingAdmin.refundConsequence")}</p>
     <Detail label={t("billingAdmin.invoiceNumber")} value={invoice.invoiceNumber || t("billingAdmin.invoice")} />
-    <Detail label={t("billingAdmin.refundableRemaining")} value={money} />
     {eligibility?.kind === "loading" ? <p role="status">{t("billingAdmin.refundEligibilityLoading")}</p> : null}
     {eligibility?.kind === "error" ? <p role="alert">{eligibility.message}</p> : null}
-    {eligibility?.kind === "ready" ? <div className="rounded-xl bg-surface-container p-3"><Detail label={t("billingAdmin.maximumEligible")} value={new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(eligibility.data.maximumEligibleRefundMinor / 100)} /><p className="mt-2 text-sm">{t("billingAdmin.periodElapsed")}: {eligibility.data.periodElapsedPercent}%</p>{eligibility.data.usage.map((metric) => <p key={metric.dimension} className="text-sm">{t(`billingAdmin.entitlement.${metric.dimension}`)}: {metric.percent}%</p>)}</div> : null}
-    <fieldset className="space-y-2">
-      <legend className="text-sm font-semibold">{t("billingAdmin.refundMode")}</legend>
-      <div className="flex gap-3">
-        {(["FULL", "PARTIAL"] as const).map((value) => <label key={value} className="flex items-center gap-2 rounded-xl border border-outline px-3 py-2"><input type="radio" checked={mode === value} disabled={value === "FULL" && eligibility?.kind === "ready" && eligibility.data.maximumEligibleRefundMinor !== invoice.remainingRefundableMinor} onChange={() => onModeChange(value)} /> <span>{t(`billingAdmin.refundMode.${value.toLowerCase()}`)}</span></label>)}
-      </div>
-    </fieldset>
-    {mode === "PARTIAL" ? <label className="flex flex-col gap-2"><span className="text-sm font-semibold">{t("billingAdmin.refundAmount")}</span><input inputMode="decimal" value={amount} onChange={(event) => onAmountChange(event.target.value)} className="min-h-11 rounded-xl border border-outline px-3 py-2" aria-describedby="refund-amount-help" /><span id="refund-amount-help" className="text-xs text-on-surface-variant">{invoice.currency}</span></label> : null}
-    <label className="flex flex-col gap-2">
-      <span className="text-sm font-semibold">{t("billingAdmin.refundReason")}</span>
-      <select value={reason} onChange={(event) => onReasonChange(event.target.value as RefundReason)} className="min-h-11 rounded-xl border border-outline px-3 py-2">
-        <option value="VOLUNTARY_CANCELLATION">{t("billingAdmin.refundReason.voluntary_cancellation")}</option>
-        <option value="SERVICE_NOT_DELIVERED">{t("billingAdmin.refundReason.service_not_delivered")}</option>
-        <option value="DUPLICATE_CHARGE">{t("billingAdmin.refundReason.duplicate_charge")}</option>
-        <option value="BILLING_ERROR">{t("billingAdmin.refundReason.billing_error")}</option>
-      </select>
-    </label>
+    {eligibility?.kind === "ready" ? <div className="space-y-3 rounded-xl bg-surface-container p-3">
+      <Detail label={t("billingAdmin.originalPaidAmount")} value={money(eligibility.data.invoiceAmountMinor)} />
+      <Detail label={t("billingAdmin.consumedValue")} value={money(eligibility.data.consumedValueMinor)} />
+      <Detail label={t("billingAdmin.refundableRemaining")} value={money(eligibility.data.maximumEligibleRefundMinor)} />
+      <p className="text-sm">{t("billingAdmin.periodElapsed")}: {eligibility.data.periodElapsedPercent}%</p>
+      {eligibility.data.usage.map((metric) => <p key={metric.dimension} className="text-sm">{t(`billingAdmin.entitlement.${metric.dimension}`)}: {metric.percent}%</p>)}
+      {eligibility.data.maximumEligibleRefundMinor > 0 ? <p role="note" className="rounded-xl bg-warning-container p-3 text-sm text-on-warning-container">{t("billingAdmin.systemRefundWarning")}</p> : <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.noRefundableBalance")}</p>}
+    </div> : null}
     {error ? <p role="alert" className="rounded-xl border border-error/40 bg-error-container p-3 text-on-error-container">{error}</p> : null}
   </div>;
 }
@@ -710,8 +702,17 @@ function RefundHistory({ refunds, locale, t }: { refunds: BillingRefund[]; local
   const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
   const money = (amountMinor: number, currency: string) => new Intl.NumberFormat(currentLocale, { style: "currency", currency }).format(amountMinor / 100);
   const date = (value: string) => new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-  const message = (refund: BillingRefund) => refund.status === "SUCCEEDED" && refund.subscriptionImpactStatus === "PENDING" ? t("billingAdmin.refundMessage.succeeded_cancel_pending") : refund.status === "SUCCEEDED" && refund.subscriptionImpactStatus === "SUCCEEDED" ? t("billingAdmin.refundMessage.succeeded_canceled") : refund.status === "SUCCEEDED" ? t("billingAdmin.refundMessage.succeeded_active") : t(`billingAdmin.refundMessage.${refund.status.toLowerCase()}`);
-  return <div className="space-y-3 p-4">{refunds.map((refund) => <article key={refund.id} className="rounded-2xl border border-outline-variant p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">{refund.invoiceNumber || t("billingAdmin.refund")}</h3><p className="text-sm text-on-surface-variant">{date(refund.requestedAt)}</p></div><span className="rounded-full bg-surface-container px-3 py-1 text-xs font-semibold">{t(`billingAdmin.refundStatus.${refund.status.toLowerCase()}`)}</span></div><p role="status" className="mt-2 text-sm">{message(refund)}</p><dl className="mt-3 grid gap-2 sm:grid-cols-2"><Detail label={t("billingAdmin.amount")} value={money(refund.amountMinor, refund.currency)} /><Detail label={t("billingAdmin.refundReason")} value={t(`billingAdmin.refundReason.${(refund.reasonCode ?? refund.reason).toLowerCase()}`)} /><Detail label={t("billingAdmin.refundableRemaining")} value={money(refund.refundableRemainingMinor, refund.currency)} /><Detail label={t("billingAdmin.requestedBy")} value={refund.requestedBy.name || refund.requestedBy.email || refund.requestedBy.id} /></dl>{refund.rejectionReason ? <p className="mt-3 rounded-xl bg-error-container/40 p-3 text-sm">{refund.rejectionReason}</p> : null}{refund.failureCode ? <p className="mt-3 text-sm text-on-surface-variant">{t("billingAdmin.refundRetryGuidance")}</p> : null}</article>)}</div>;
+  const message = (refund: BillingRefund) => {
+    if (refund.status === "SUCCEEDED" && refund.reasonCode === "SYSTEM_REMAINING_BALANCE_REFUND") {
+      if (refund.localTransitionStatus === "SUCCEEDED") {
+        return t("billingAdmin.refundMessage.system_completed").replace("{amount}", money(refund.retainedConsumedMinor ?? 0, refund.currency));
+      }
+      if (refund.localTransitionStatus === "FAILED") return t("billingAdmin.refundMessage.system_failed");
+      return t("billingAdmin.refundMessage.system_syncing");
+    }
+    return refund.status === "SUCCEEDED" && refund.subscriptionImpactStatus === "PENDING" ? t("billingAdmin.refundMessage.succeeded_cancel_pending") : refund.status === "SUCCEEDED" && refund.subscriptionImpactStatus === "SUCCEEDED" ? t("billingAdmin.refundMessage.succeeded_canceled") : refund.status === "SUCCEEDED" ? t("billingAdmin.refundMessage.succeeded_active") : t(`billingAdmin.refundMessage.${refund.status.toLowerCase()}`);
+  };
+  return <div className="space-y-3 p-4">{refunds.map((refund) => <article key={refund.id} className="rounded-2xl border border-outline-variant p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">{refund.invoiceNumber || t("billingAdmin.refund")}</h3><p className="text-sm text-on-surface-variant">{date(refund.requestedAt)}</p></div><span className="rounded-full bg-surface-container px-3 py-1 text-xs font-semibold">{t(`billingAdmin.refundStatus.${refund.status.toLowerCase()}`)}</span></div><p role="status" className="mt-2 text-sm">{message(refund)}</p><dl className="mt-3 grid gap-2 sm:grid-cols-2"><Detail label={t("billingAdmin.amount")} value={money(refund.amountMinor, refund.currency)} />{refund.reasonCode === "SYSTEM_REMAINING_BALANCE_REFUND" && refund.retainedConsumedMinor ? <Detail label={t("billingAdmin.retainedConsumed")} value={money(refund.retainedConsumedMinor, refund.currency)} /> : null}<Detail label={t("billingAdmin.refundableRemaining")} value={money(refund.refundableRemainingMinor, refund.currency)} /><Detail label={t("billingAdmin.requestedBy")} value={refund.requestedBy.name || refund.requestedBy.email || refund.requestedBy.id} /></dl>{refund.rejectionReason ? <p className="mt-3 rounded-xl bg-error-container/40 p-3 text-sm">{refund.rejectionReason}</p> : null}{refund.failureCode ? <p className="mt-3 text-sm text-on-surface-variant">{t("billingAdmin.refundRetryGuidance")}</p> : null}</article>)}</div>;
 }
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs text-on-surface-variant">{label}</dt><dd className="mt-1 font-semibold">{value}</dd></div>; }
 function Th({ children }: { children: React.ReactNode }) { return <th scope="col" className="px-4 py-3 text-start text-sm font-bold">{children}</th>; }
@@ -731,4 +732,19 @@ function safeMessage(error: unknown, t: (key: string) => string): string {
     if (error.status === 403) return t("permissions.deniedMessage");
   }
   return t("billingAdmin.loadError");
+}
+
+function canStartPaidCheckout(summary: SubscriptionStatus): boolean {
+  const eligibleState = ["TRIALING", "ACTIVE"].includes(summary.status)
+    && ["pending", "not_applicable"].includes(summary.paymentState);
+  return (
+    eligibleState &&
+    (summary.transitionState === undefined || summary.transitionState === "ACTIVE") &&
+    !summary.providerLinked &&
+    !summary.providerManaged &&
+    !summary.pendingOperation &&
+    summary.packageId.code === "free" &&
+    summary.packageId.monthlyPrice <= 0 &&
+    summary.packageId.annualPrice <= 0
+  );
 }

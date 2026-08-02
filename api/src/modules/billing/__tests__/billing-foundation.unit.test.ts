@@ -41,6 +41,13 @@ describe("Issue 29 billing foundation", () => {
     expect(json).not.toMatch(/cus_secret|sub_secret|price_secret|price_leak|evt_secret|providerMetadata|providerCustomerId|providerSubscriptionId|providerPriceId/);
   });
 
+  it("presents provider-less Free payment as not applicable without changing paid history", () => {
+    const free = toCompanyBillingSummary({ _id: "free-sub", tenantId: "tenant", packageId: { _id: "free-pkg", name: "Free", code: "free", version: 1 }, packageVersion: 1, status: "ACTIVE", paymentState: "paid", providerCustomerId: "", providerSubscriptionId: "", cancelAtPeriodEnd: false });
+    const historicalPaid = toCompanyBillingSummary({ _id: "paid-sub", tenantId: "tenant", packageId: { _id: "paid-pkg", name: "Pro", code: "pro", version: 1 }, packageVersion: 1, status: "CANCELED", paymentState: "paid", providerCustomerId: "customer", providerSubscriptionId: "subscription", cancelAtPeriodEnd: false });
+    expect(free.paymentState).toBe("not_applicable");
+    expect(historicalPaid.paymentState).toBe("paid");
+  });
+
   it("does not let an unrelated refund disable subscription lifecycle capabilities", () => {
     const subscription = { _id: "sub-local", tenantId: "tenant", packageId: { _id: "pkg" }, packageVersion: 1, status: "ACTIVE", paymentState: "paid", providerCustomerId: "customer", providerSubscriptionId: "subscription", cancelAtPeriodEnd: false };
     const refundPending = toCompanyBillingSummary(subscription, { operationType: "REFUND", status: "REQUESTED", requestedAt: new Date(), conflictGroup: null }, false);

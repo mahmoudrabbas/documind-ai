@@ -26,10 +26,13 @@ import {
   getSubscription,
   listSubscriptions,
   getLegalTransitions,
+  registerPlanChangeHook,
+  getPlanChangeHooks,
 } from "../subscription.service.js";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for future test expansion
 import { AppError } from "../../../common/errors/AppError.js";
 import type { SubscriptionStatus } from "../billing.types.js";
+import type { PlanChangeHook } from "../subscription.service.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -54,9 +57,9 @@ const ALL_STATUSES: SubscriptionStatus[] = [
 const LEGAL: Record<SubscriptionStatus, readonly SubscriptionStatus[]> = {
   TRIALING: ["ACTIVE", "INCOMPLETE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
   INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
-  ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
-  PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],
-  PAUSED: ["ACTIVE", "EXPIRED"],
+  ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "CANCELED", "EXPIRED"],
+  PAST_DUE: ["ACTIVE", "PAUSED", "CANCELED", "EXPIRED", "UNPAID"],
+  PAUSED: ["ACTIVE", "CANCELED", "EXPIRED"],
   "CANCEL_AT_PERIOD_END": ["ACTIVE", "CANCELED", "EXPIRED"],
   CANCELED: [],
   EXPIRED: ["ACTIVE", "UNPAID"],
@@ -399,6 +402,90 @@ describe("SubscriptionService", () => {
         const targets = getLegalTransitions(status);
         expect(targets).toEqual(LEGAL[status]);
       }
+    });
+  });
+
+  // ── plan-change hooks ───────────────────────────────────────────────────
+
+  describe("plan-change hook registry", () => {
+    function resetHooks() {
+      // The registry has no unregister API; the returned array IS the
+      // module-level array, so truncating it keeps tests isolated.
+      (getPlanChangeHooks() as PlanChangeHook[]).length = 0;
+    }
+
+    beforeEach(() => {
+      resetHooks();
+    });
+
+    it("exposes registered hooks via getPlanChangeHooks", () => {
+      const hook = vi.fn();
+      registerPlanChangeHook(hook);
+
+      expect(getPlanChangeHooks()).toContain(hook);
+      expect(getPlanChangeHooks()).toHaveLength(1);
+    });
+
+    it("fires every registered hook when a package change is applied", async () => {
+      const newPkgId = "507f1f77bcf86cd799439099";
+      const sub = makeSubscription({
+        status: "ACTIVE",
+        packageId: PACKAGE_ID,
+        packageVersion: 1,
+      });
+      mockSubscriptionModel.findOne.mockReturnValue(queryChainExec(sub));
+
+      const first = vi.fn().mockResolvedValue(undefined);
+      const second = vi.fn().mockResolvedValue(undefined);
+      registerPlanChangeHook(first);
+      registerPlanChangeHook(second);
+
+      await transitionSubscription(TENANT_ID, "EXPIRED" as SubscriptionStatus, {
+        packageId: newPkgId,
+        packageVersion: 2,
+      });
+
+      const expected = {
+        tenantId: TENANT_ID,
+        fromPackageId: PACKAGE_ID,
+        toPackageId: newPkgId,
+        fromStatus: "ACTIVE",
+        toStatus: "EXPIRED",
+      };
+      expect(first).toHaveBeenCalledWith(expected);
+      expect(second).toHaveBeenCalledWith(expected);
+    });
+
+    it("does not fire hooks when no package option is applied", async () => {
+      const sub = makeSubscription({ status: "ACTIVE" });
+      mockSubscriptionModel.findOne.mockReturnValue(queryChainExec(sub));
+      const hook = vi.fn();
+      registerPlanChangeHook(hook);
+
+      await transitionSubscription(TENANT_ID, "PAST_DUE" as SubscriptionStatus);
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it("does not break the transition when a hook throws", async () => {
+      const newPkgId = "507f1f77bcf86cd799439099";
+      const sub = makeSubscription({
+        status: "ACTIVE",
+        packageId: PACKAGE_ID,
+        packageVersion: 1,
+      });
+      mockSubscriptionModel.findOne.mockReturnValue(queryChainExec(sub));
+      registerPlanChangeHook(() => {
+        throw new Error("hook boom");
+      });
+
+      const result = await transitionSubscription(TENANT_ID, "EXPIRED" as SubscriptionStatus, {
+        packageId: newPkgId,
+        packageVersion: 2,
+      });
+
+      expect(result.status).toBe("EXPIRED");
+      expect(sub.save).toHaveBeenCalledOnce();
     });
   });
 });

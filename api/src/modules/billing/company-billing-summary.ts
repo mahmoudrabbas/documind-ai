@@ -13,6 +13,7 @@ export interface CompanyBillingSummary {
   canViewInvoices: boolean;
   lifecycle: { eligible: boolean; inGracePeriod: boolean; accessEndsAt: Date | null; reason: string };
   invoiceSummary: { total: number; open: number; paid: number; pastDue: number };
+  transitionState: "ACTIVE" | "TRANSITION_PENDING" | "TRANSITION_RETRYABLE" | "REPAIR_REQUIRED";
 }
 
 export function toCompanyBillingSummary(
@@ -29,10 +30,13 @@ export function toCompanyBillingSummary(
   const providerManaged = Boolean(subscription.providerCustomerId || subscription.providerSubscriptionId);
   const providerLinked = Boolean(subscription.providerSubscriptionId);
   const pkg = sanitizePackage(subscription.packageId);
+  const paymentState = !providerManaged && pkg?.code === "free"
+    ? "not_applicable"
+    : String(subscription.paymentState ?? "pending");
   const active = ["TRIALING", "ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"].includes(status);
   return {
     id: String(subscription._id), tenantId: String(subscription.tenantId), status,
-    paymentState: String(subscription.paymentState ?? "pending"), packageId: pkg,
+    paymentState, packageId: pkg,
     packageVersion: Number(subscription.packageVersion),
     billingInterval: subscription.billingInterval === "monthly" || subscription.billingInterval === "annual" ? subscription.billingInterval : null,
     periodStart: dateOrNull(subscription.periodStart), periodEnd: dateOrNull(subscription.periodEnd),
@@ -59,6 +63,7 @@ export function toCompanyBillingSummary(
     canRequestRefund: extras.capabilities?.canRequestRefund ?? false,
     lifecycle: extras.lifecycle ?? { eligible: active, inGracePeriod: false, accessEndsAt: null, reason: status },
     invoiceSummary: extras.invoiceSummary ?? { total: 0, open: 0, paid: 0, pastDue: 0 },
+    transitionState: "ACTIVE",
   };
 }
 

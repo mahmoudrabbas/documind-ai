@@ -7,6 +7,8 @@ import {
   analyzeQueryController,
   getQueryPlanDebugController,
 } from "./intentQuery.controller.js";
+import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
 
@@ -14,10 +16,21 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantScoping);
 
+// ── Entitlement guards ─────────────────────────────────────────────────────
+
+const svc = getEntitlementService();
+
+const queryGuard = createEntitlementGuard(svc, {
+  dimension: "queriesPerMonth",
+  amount: 1,
+  failMode: "fail-closed",
+});
+
 // POST /intent-query/analyze — requires chat:create permission
 router.post(
   "/analyze",
   requirePermission(Permission.CHAT_CREATE),
+  queryGuard,
   analyzeQueryController
 );
 

@@ -15,7 +15,6 @@ interface ErrorEnvelope {
     method: string;
     requestId: string;
     timestamp: string;
-    stack?: string;
   };
 }
 
@@ -139,15 +138,6 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
   if (retryAfterSeconds !== undefined) {
     payload.retryAfterSeconds = retryAfterSeconds;
     res.setHeader("Retry-After", String(retryAfterSeconds));
-  }
-
-  if (
-    !isProduction &&
-    err instanceof Error &&
-    err.stack &&
-    !code.startsWith("LLM_")
-  ) {
-    payload.error.stack = err.stack;
   }
 
   res.status(statusCode).json(payload);

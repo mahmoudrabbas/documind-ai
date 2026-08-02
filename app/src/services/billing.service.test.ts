@@ -49,7 +49,7 @@ describe("billing.service triggerReconciliation", () => {
   it("calls /super-admin/reconciliation/subscriptions", async () => {
     mockApiClient.mockResolvedValue({
       success: true,
-      data: { totalSubscriptions: 0, mismatched: [] },
+      data: { subscriptions: { examined: 0, mismatched: [] }, invoices: { examined: 0, created: 0, updated: 0, failed: 0 }, refundSettlements: { examined: 0, eligibleForTransitionRepair: 0, transitionOperationsCreated: 0, transitionsCompleted: 0, transitionsRetryable: 0, failed: 0 }, providerCancellations: { created: 0, confirmed: 0, retryable: 0 } },
     });
     await triggerReconciliation();
     expect(mockApiClient).toHaveBeenCalledWith(
@@ -61,7 +61,7 @@ describe("billing.service triggerReconciliation", () => {
   it("does not call the old /reconciliation/subscriptions endpoint", async () => {
     mockApiClient.mockResolvedValue({
       success: true,
-      data: { totalSubscriptions: 0, mismatched: [] },
+      data: { subscriptions: { examined: 0, mismatched: [] }, invoices: { examined: 0, created: 0, updated: 0, failed: 0 }, refundSettlements: { examined: 0, eligibleForTransitionRepair: 0, transitionOperationsCreated: 0, transitionsCompleted: 0, transitionsRetryable: 0, failed: 0 }, providerCancellations: { created: 0, confirmed: 0, retryable: 0 } },
     });
     await triggerReconciliation();
     const calledUrl = mockApiClient.mock.calls[0][0];
@@ -70,8 +70,10 @@ describe("billing.service triggerReconciliation", () => {
 
   it("returns typed reconciliation result", async () => {
     const mockResult = {
-      totalSubscriptions: 5,
-      mismatched: [{ subscriptionId: "sub_123", status: "active" }],
+      subscriptions: { examined: 5, mismatched: [{ status: "active" }] },
+      invoices: { examined: 0, created: 0, updated: 0, failed: 0 },
+      refundSettlements: { examined: 1, eligibleForTransitionRepair: 1, transitionOperationsCreated: 1, transitionsCompleted: 1, transitionsRetryable: 0, failed: 0 },
+      providerCancellations: { created: 1, confirmed: 1, retryable: 0 },
     };
     mockApiClient.mockResolvedValue({ success: true, data: mockResult });
     const result = await triggerReconciliation();

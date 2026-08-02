@@ -74,6 +74,8 @@ export interface ProviderInvoice {
   paidAt: Date | null;
   periodStart: Date | null;
   periodEnd: Date | null;
+  servicePeriodStart?: Date | null;
+  servicePeriodEnd?: Date | null;
   providerVersion: string | null;
   observedAt?: Date;
   hostedInvoiceAvailable?: boolean;

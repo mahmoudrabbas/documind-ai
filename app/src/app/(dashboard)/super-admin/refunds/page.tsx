@@ -30,6 +30,8 @@ function RefundReviewContent() {
   const permissions = usePermissions();
   const canConfirm = permissions.can(Permission.BILLING_REFUND_CONFIRM);
   const [status, setStatus] = useState<RefundStatus | "">("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [refunds, setRefunds] = useState<BillingRefund[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -41,12 +43,13 @@ function RefundReviewContent() {
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async (requestedPage: number, signal?: AbortSignal) => {
     setLoading(true);
     setError("");
     try {
-      const response = await listPlatformRefunds({ page: 1, pageSize: 20, status: status || undefined }, signal);
+      const response = await listPlatformRefunds({ page: requestedPage, pageSize: 20, status: status || undefined }, signal);
       setRefunds(response.data.refunds);
+      setTotalPages(Math.max(1, response.data.pagination.totalPages));
     } catch {
       if (!signal?.aborted) setError(t("billingAdmin.loadError"));
     } finally {
@@ -56,9 +59,9 @@ function RefundReviewContent() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
+    void load(page, controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, page]);
 
   const pendingReviewCount = useMemo(
     () => refunds.filter((refund) => refund.status === "REQUESTED").length,
@@ -93,7 +96,7 @@ function RefundReviewContent() {
         setRejectReason("");
       }
       setNotice(t("refundAdmin.actionSuccess"));
-      await load();
+      await load(page);
       if (selectedRefund?.id === target.id) {
         const response = await getPlatformRefund(target.id);
         setSelectedRefund(response.data);
@@ -132,7 +135,7 @@ function RefundReviewContent() {
             <span className="text-sm font-semibold">{t("refundAdmin.statusFilter")}</span>
             <select
               value={status}
-              onChange={(event) => setStatus(event.target.value as RefundStatus | "")}
+              onChange={(event) => { setStatus(event.target.value as RefundStatus | ""); setPage(1); }}
               className="min-h-11 rounded-xl border border-outline px-3 py-2"
             >
               <option value="">{t("refundAdmin.statusAll")}</option>
@@ -146,13 +149,14 @@ function RefundReviewContent() {
         {notice ? <p className="mt-3 text-sm" aria-live="polite">{notice}</p> : null}
       </DashboardPanel>
 
-      <PlatformState loading={loading} error={error} onRetry={() => void load()} />
+      <PlatformState loading={loading} error={error} onRetry={() => void load(page)} />
 
       {!loading && !error && refunds.length === 0 ? (
         <DashboardPanel><p>{t("refundAdmin.noRefunds")}</p></DashboardPanel>
       ) : null}
 
       {!loading && !error && refunds.length > 0 ? (
+        <>
         <PlatformTable
           headers={[
             t("refundAdmin.company"),
@@ -184,6 +188,16 @@ function RefundReviewContent() {
             </tr>
           ))}
         </PlatformTable>
+        <div className={`mt-4 flex items-center gap-3 ${dir === "rtl" ? "flex-row-reverse justify-end" : "justify-end"}`}>
+          <button type="button" aria-label={t("refundAdmin.previous")} disabled={loading || page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="min-h-11 rounded-xl border px-4 font-semibold disabled:opacity-50">
+            {t("refundAdmin.previous")}
+          </button>
+          <span aria-live="polite" className="text-sm text-on-surface-variant">{t("refundAdmin.page")} {page} / {totalPages}</span>
+          <button type="button" aria-label={t("refundAdmin.next")} disabled={loading || page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="min-h-11 rounded-xl border px-4 font-semibold disabled:opacity-50">
+            {t("refundAdmin.next")}
+          </button>
+        </div>
+        </>
       ) : null}
 
       <Modal open={Boolean(selectedRefund)} onClose={() => setSelectedRefund(null)} title={t("refundAdmin.detailTitle")} maxWidth="max-w-2xl">
@@ -195,7 +209,7 @@ function RefundReviewContent() {
             <Detail label={t("refundAdmin.amount")} value={formatMoney(selectedRefund.amountMinor, selectedRefund.currency)} />
             <Detail label={t("refundAdmin.remaining")} value={formatMoney(selectedRefund.refundableRemainingMinor, selectedRefund.currency)} />
             <Detail label={t("refundAdmin.requester")} value={selectedRefund.requestedBy.name ?? selectedRefund.requestedBy.email ?? selectedRefund.requestedBy.id} />
-            <Detail label={t("refundAdmin.reason")} value={t(`billingAdmin.refundReason.${selectedRefund.reason}`)} />
+            <Detail label={t("refundAdmin.reason")} value={refundReasonLabel(t, selectedRefund.reasonCode ?? selectedRefund.reason)} />
             <Detail label={t("refundAdmin.status")} value={t(`billingAdmin.refundStatus.${selectedRefund.status.toLowerCase()}`)} />
             {selectedRefund.failureCode ? <Detail label={t("refundAdmin.failureCode")} value={selectedRefund.failureCode} /> : null}
             {selectedRefund.rejectionReason ? <Detail label={t("refundAdmin.rejectionReason")} value={selectedRefund.rejectionReason} /> : null}
@@ -257,4 +271,12 @@ function Detail({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 font-semibold">{value}</dd>
     </div>
   );
+}
+
+function refundReasonLabel(t: (key: string) => string, reason: string): string {
+  const normalized = reason.trim().toLowerCase();
+  const key = `billingAdmin.refundReason.${normalized}`;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  return normalized.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Refund reason unavailable";
 }

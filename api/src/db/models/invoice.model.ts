@@ -5,7 +5,7 @@ export interface InvoiceDocument extends mongoose.Document {
   provider: string; providerInvoiceId: string; invoiceNumber: string;
   status: "draft" | "open" | "paid" | "void" | "uncollectible";
   currency: string; amountDueMinor: number; amountPaidMinor: number; amountRemainingMinor: number;
-  refundedAmountMinor: number; reservedRefundAmountMinor: number;
+  refundedAmountMinor: number; reservedRefundAmountMinor: number; retainedConsumedMinor: number;
   subtotalMinor: number; taxMinor: number | null; createdAtProvider: Date; dueAt: Date | null;
   paidAt: Date | null; periodStart: Date | null; periodEnd: Date | null; synchronizedAt: Date;
   paymentReference: string;
@@ -25,6 +25,7 @@ const schema = new Schema<InvoiceDocument>({
   amountDueMinor: { type: Number, required: true, min: 0 }, amountPaidMinor: { type: Number, required: true, min: 0 },
   refundedAmountMinor: { type: Number, required: true, min: 0, default: 0 },
   reservedRefundAmountMinor: { type: Number, required: true, min: 0, default: 0 },
+  retainedConsumedMinor: { type: Number, required: true, min: 0, default: 0 },
   amountRemainingMinor: { type: Number, required: true, min: 0 }, subtotalMinor: { type: Number, required: true, min: 0 },
   taxMinor: { type: Number, default: null, min: 0 }, createdAtProvider: { type: Date, required: true },
   dueAt: { type: Date, default: null }, paidAt: { type: Date, default: null }, periodStart: { type: Date, default: null }, periodEnd: { type: Date, default: null },

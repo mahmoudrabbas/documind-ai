@@ -136,7 +136,7 @@ The 9-state lifecycle machine:
 
 | State | Description | Legal Transitions |
 |---|---|---|
-| TRIALING | Initial state on registration | ACTIVE, PAST_DUE, CANCEL_AT_PERIOD_END |
+| TRIALING | Initial state on registration | ACTIVE, INCOMPLETE, PAST_DUE, CANCEL_AT_PERIOD_END |
 | INCOMPLETE | Payment incomplete | ACTIVE, PAST_DUE, EXPIRED |
 | ACTIVE | Active subscription | PAST_DUE, PAUSED, CANCEL_AT_PERIOD_END, EXPIRED |
 | PAST_DUE | Payment past due | ACTIVE, PAUSED, EXPIRED, UNPAID |
@@ -203,7 +203,7 @@ Portal return URLs are configured by `STRIPE_BILLING_PORTAL_RETURN_URL`, must ma
 
 `InvoiceSynchronizationService` treats `invoice.created`, `invoice.finalized`, `invoice.updated`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, and `invoice.marked_uncollectible` as verified synchronization triggers. It retrieves normalized current provider state, validates customer/subscription ownership, and idempotently projects by `(provider, providerInvoiceId)`. Provider observation time—not lexical event ID order—guards stale writes. Failures retain local history, mark the durable webhook event failed for replay, emit a stable `BILLING_PROVIDER_UNAVAILABLE` code, and never project the unverified webhook payload.
 
-The existing Super Admin reconciliation architecture also exposes bounded `POST /super-admin/reconciliation/invoices/:tenantId` with platform isolation and `billing:manage`. It scans at most 200 invoices per invocation using provider cursors, continues across per-invoice projection errors, reports examined/created/updated/unchanged/failed counts, and never deletes invoices or changes subscriptions, entitlements, provider subscriptions, or refunds.
+The existing Super Admin reconciliation architecture also exposes bounded `POST /super-admin/reconciliation/invoices/:tenantId` with platform isolation and `billing:manage`. It scans at most 200 invoices per invocation using provider cursors, continues across per-invoice projection errors, reports examined/created/updated/unchanged/failed counts plus a bounded sanitized aggregation of stable failure codes, and never deletes invoices or changes subscriptions, entitlements, provider subscriptions, or refunds.
 
 The Company Admin page is `/dashboard/settings/billing`. Navigation and direct access require `billing:read`; portal actions additionally require `billing:manage`. It has independent summary/invoice loading and recovery states, a no-provider state, pending/grace messages, responsive table/cards, pagination, secure external invoice actions, duplicate portal-click protection, semantic headings/table headers/live regions/focusable errors, and localized English LTR/Arabic RTL dates, money, labels, and statuses. The dashboard `SubscriptionWidget` remains a compact summary and links to this page.
 
@@ -247,8 +247,8 @@ Phase 4 adds the refund workflow on top of the existing invoice projection and `
 
 | Route | Permission | Contract |
 |---|---|---|
-| `POST /billing/refund-eligibility-previews` | `billing:manage` | `{ invoiceId, reason, explanation? }` → expiring server-calculated eligibility preview |
-| `POST /billing/refund-requests` | `billing:manage` | `{ previewId, mode: "FULL" \| "PARTIAL", amountMinor?, idempotencyKey }` → tenant-scoped local refund request DTO |
+| `POST /billing/refund-eligibility-previews` | `billing:manage` | `{ invoiceId }` → expiring server-calculated remaining-balance preview |
+| `POST /billing/refund-requests` | `billing:manage` | `{ previewId, idempotencyKey }` → tenant-scoped local refund request DTO |
 | `GET /billing/refund-requests` | `billing:read` | tenant-scoped paginated refund request history |
 | `GET /billing/refund-requests/:refundId` | `billing:read` | tenant-scoped safe refund detail |
 | `GET /super-admin/refunds` | `billing:read` | platform refund review list with safe tenant/invoice/package metadata |
@@ -257,13 +257,13 @@ Phase 4 adds the refund workflow on top of the existing invoice projection and `
 | `POST /super-admin/refunds/:refundId/reject` | `billing:refund-confirm` | terminal rejection without provider mutation |
 | `POST /super-admin/refunds/:refundId/retry` | `billing:refund-confirm` | retryable provider refund execution replay using the original durable operation context |
 
-Tenant routes accept only local invoice/refund identifiers. They never accept tenant IDs, provider invoice/payment/refund IDs, arbitrary currencies, or refund status from the browser. Server-side validation recalculates refundable balance from confirmed paid amount minus confirmed successful refunds and reserved pending refunds; multiple partial refunds are allowed only within that balance.
+Tenant routes accept only local invoice/refund identifiers. They never accept tenant IDs, provider invoice/payment/refund IDs, arbitrary currencies, refund status, reason, mode, amount, or subscription impact from the browser. The server calculates one remaining refundable balance from authoritative usage and elapsed subscription time, then reserves exactly that amount; a zero balance cannot create a provider refund.
 
 `Refund` is the permanent business record with states `REQUESTED`, `PROVIDER_PENDING`, `SUCCEEDED`, `FAILED`, `REJECTED`, and `RETRY_PENDING`. Technical retry/idempotency/provider-correlation state remains in `BillingOperation`. The requester and confirmer must be different actors, and provider confirmation remains platform-only through `billing:refund-confirm`.
 
 Provider execution stays authoritative. The confirm route persists or replays the durable refund operation before calling the provider. Local invoice aggregates (`refundedAmountMinor`, `reservedRefundAmountMinor`, `remainingRefundableMinor`) update only after authoritative provider refund synchronization. Refund-related webhook events are triggers for `retrieveRefund`-based reconciliation; they are not treated as final truth on their own.
 
-The Company Admin billing page at `/dashboard/settings/billing` now exposes refund requests only for eligible local invoices and displays refund history/status without any provider IDs or card data. The Super Admin page at `/super-admin/refunds` adds the review/confirm/reject/retry surface using the same safe local DTOs. Both UIs remain localized, accessible, and explicit about pending provider confirmation.
+The Company Admin billing page at `/dashboard/settings/billing` exposes one refund action for eligible local invoices: it displays the immutable calculation breakdown and the exact remaining balance, with no reason selector, full/partial mode, or editable amount. After authoritative success the paid subscription is canceled and the tenant moves to the canonical Free plan. Historical refund reasons remain readable for audit. The Super Admin page at `/super-admin/refunds` provides approve/reject/retry using read-only amount, calculation, and impact data. Both UIs remain localized, accessible, and explicit about pending provider confirmation.
 
 ### Usage-aware refund eligibility
 
@@ -273,7 +273,7 @@ The automatic voluntary-cancellation calculation includes queries, tokens, and O
 
 Ratios are stored as integer basis points. The consumed ratio is the greater of elapsed-period and included-usage ratios. Money is calculated in integer minor units using ceiling division; confirmed refunds and pending refund reservations cap the result. Confirmation recalculates against current usage and rejects a decreased maximum instead of silently reducing the amount.
 
-Normalized reasons determine policy and subscription impact: duplicate charges require deterministic duplicate-payment evidence and do not cancel; service-not-delivered and billing errors require platform review; voluntary cancellation uses the usage calculation and requires immediate cancellation after confirmed refund; goodwill credit is platform-only and is not exposed by tenant routes. Cancellation is a separate durable `CANCEL_IMMEDIATELY` operation created only after provider-authoritative refund success, so a pending cancellation does not change the successful refund state or entitlements early.
+New tenant requests use the canonical `SYSTEM_REMAINING_BALANCE_REFUND` policy only: the server calculates the unused balance, mandates `CANCEL_AND_MOVE_TO_FREE`, and rejects legacy reason, mode, amount, and impact fields. Historical reason-coded refunds remain readable and their platform review behavior remains supported for audit compatibility. Local paid access is disabled only after provider-authoritative refund success, then a separate durable cancellation operation is created; pending cancellation never restores paid access.
 
 `BILLING_GOODWILL_REFUND_CAP_MINOR` is the non-negative platform policy cap for a discretionary goodwill credit. It defaults to `0` (disabled), is interpreted in invoice minor units, and does not grant tenants access to the platform-only reason.
 
@@ -314,6 +314,8 @@ The suite verifies authentication, tenant isolation, hidden `404` semantics, per
 ### Browser E2E expectations
 
 The repository’s official browser framework is Playwright (`playwright.config.ts`). Billing E2E uses the existing application routes and must run only with local fixtures, the fake provider or mocked provider reads, and a disposable/local development database. It must not perform real Stripe financial mutations.
+
+The current browser fixture explicitly covers upgrade behavior. Downgrade preview/confirmation is covered by deterministic fake-provider tests; a downgrade-specific browser fixture remains manual UAT until the fixture exposes a lower public package without changing the upgrade scenario.
 
 For local execution, the environment must provide:
 

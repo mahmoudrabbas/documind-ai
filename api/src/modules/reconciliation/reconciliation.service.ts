@@ -14,6 +14,8 @@ import {
   providerSubscriptionStatus,
   resolveProviderSubscription,
 } from "../billing/provider-subscription-sync.service.js";
+import { firePlanChangeHooks } from "../billing/subscription.service.js";
+import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { NOT_FOUND } from "../../common/errors/errorCodes.js";
@@ -24,7 +26,6 @@ export interface ReconciliationResult {
     tenantId: string;
     localStatus: string;
     localPaymentState: string;
-    lastProviderEventId: string;
     issues: string[];
   }>;
 }
@@ -75,7 +76,6 @@ export async function reconcileSubscriptions(
         tenantId,
         localStatus: sub.status,
         localPaymentState: sub.paymentState,
-        lastProviderEventId: sub.lastProviderEventId,
         issues,
       });
     }
@@ -134,8 +134,20 @@ export async function syncTenantSubscriptionFromProvider(
   if (!Types.ObjectId.isValid(tenantId)) {
     throw new AppError(404, NOT_FOUND, "Subscription not found");
   }
-  const subscription = await SubscriptionModel.findOne({ tenantId }).exec();
-  if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
+  const linkedSubscriptions = await SubscriptionModel.find({
+    tenantId: new Types.ObjectId(tenantId),
+    providerSubscriptionId: { $nin: ["", null] },
+  }).sort({ createdAt: -1 }).limit(3).exec();
+  const effective = linkedSubscriptions.filter((candidate) =>
+    ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"].includes(candidate.status));
+  const subscription = effective.length === 1
+    ? effective[0]
+    : effective.length === 0 && linkedSubscriptions.length === 1
+      ? linkedSubscriptions[0]
+      : null;
+  if (!subscription) {
+    throw new AppError(linkedSubscriptions.length > 1 ? 409 : 404, NOT_FOUND, "Provider-linked subscription mapping is unavailable");
+  }
 
   const provider = injectedProvider ?? (await getPaymentProvider());
   let providerSubscription: ProviderSubscription;
@@ -188,6 +200,20 @@ export async function syncTenantSubscriptionFromProvider(
   };
   await SubscriptionModel.updateOne({ _id: subscription._id }, { $set: update });
 
+  const packageChanged =
+    previous.packageId !== String(update.packageId) ||
+    previous.packageVersion !== update.packageVersion;
+  const statusChanged = previous.status !== status;
+  if (packageChanged || statusChanged) {
+    await firePlanChangeHooks({
+      tenantId,
+      fromPackageId: previous.packageId,
+      toPackageId: String(update.packageId),
+      fromStatus: previous.status as SubscriptionStatus,
+      toStatus: status as SubscriptionStatus,
+    });
+  }
+
   await getAuditWriter().write({
     tenantId,
     action: "SUBSCRIPTION_RECONCILED",
@@ -197,14 +223,19 @@ export async function syncTenantSubscriptionFromProvider(
     actorEmail: actor.actorEmail,
     actorRole: actor.actorRole,
     actorKind: actor.actorKind,
-    changes: { source: "stripe", previous, current: update },
+    changes: {
+      source: "stripe",
+      previous: { packageId: previous.packageId, packageVersion: previous.packageVersion, status: previous.status, paymentState: previous.paymentState },
+      current: { packageId: String(update.packageId), packageVersion: update.packageVersion, status: update.status, paymentState: update.paymentState },
+      triggeredBy: "provider_sync",
+      reason: "Subscription state synchronized from payment provider",
+    },
     metadata: { traceId: actor.traceId, requestId: actor.requestId },
   });
 
   return {
     tenantId,
     source: "stripe" as const,
-    providerSubscriptionId: providerSubscription.id,
     packageId: resolution.packageId,
     packageVersionId: resolution.packageVersionId,
     packageVersion: resolution.packageVersion,

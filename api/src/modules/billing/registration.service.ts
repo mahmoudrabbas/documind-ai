@@ -47,7 +47,7 @@ export async function provisionSubscription(
   actor?: BillingActor,
 ): Promise<SubscriptionDocument> {
   // Idempotency check
-  const existing = await SubscriptionModel.findOne({ tenantId }).lean().exec();
+  const existing = await SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).lean().exec();
   if (existing) {
     return existing;
   }

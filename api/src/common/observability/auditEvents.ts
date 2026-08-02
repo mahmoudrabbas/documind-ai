@@ -154,6 +154,7 @@ export type AuditAction =
   | "BILLING_REFUND_ELIGIBILITY_CHANGED"
   | "BILLING_REFUND_REVIEW_REQUIRED"
   | "BILLING_REFUND_SUBSCRIPTION_IMPACT_REQUESTED"
+  | "BILLING_FREE_PLAN_ACTIVATED"
   | "BILLING_AUTHORIZATION_DENIED"
   | "JOB_REPLAYED"
   // Intent Query
@@ -175,6 +176,7 @@ export type AuditAction =
   | "QUOTA_DENIED"
   | "QUOTA_OVERRIDE"
   | "QUOTA_RECONCILED"
+  | "ENTITLEMENT_RECONCILE"
   // System
   | "SYSTEM_STARTUP"
   | "SYSTEM_HEALTH_CHECK_FAILED"
@@ -231,7 +233,8 @@ export type AuditResourceType =
   | "GapOccurrence"
   | "GapReevaluation"
   | "Feedback"
-  | "EntitlementOverride";
+  | "EntitlementOverride"
+  | "EntitlementReconciliation";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

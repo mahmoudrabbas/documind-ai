@@ -11,12 +11,18 @@ interface MetricData {
   dimension: string;
   current: number;
   limit: number;
+  showLimit?: boolean;
 }
 
 /** Actual backend shape: { current: Record<dimension, number>, limit: Record<dimension, number>, periodStart, periodEnd } */
 interface UsageApiResponse {
   current: Record<string, number>;
   limit: Record<string, number>;
+  actual?: {
+    documents: number;
+    storageBytes: number;
+    questions: number;
+  };
   periodStart: string;
   periodEnd: string | null;
 }
@@ -98,15 +104,31 @@ export default function MetricsCards() {
       if (!response.success) {
         throw new Error("Failed to fetch usage data");
       }
-      /* Backend returns { current: {dim: number}, limit: {dim: number} } — map to MetricData[] */
+      /* Plan limits and actual dashboard totals are separate concepts. */
       const raw = response.data as unknown as UsageApiResponse;
-      const metrics: MetricData[] = Object.entries(raw.current).map(
-        ([dimension, current]) => ({
-          dimension,
-          current,
-          limit: raw.limit[dimension] ?? 0,
-        }),
-      );
+      const actual = raw.actual;
+      const metrics: MetricData[] = [
+        {
+          dimension: "documents",
+          current: actual?.documents ?? raw.current.documents ?? 0,
+          limit: raw.limit.documents ?? 0,
+        },
+        {
+          dimension: "queriesPerMonth",
+          current: actual?.questions ?? raw.current.queriesPerMonth ?? 0,
+          // This is an all-time total; do not compare it with a monthly plan
+          // limit or present a misleading `total / per-month` progress bar.
+          limit: 0,
+          showLimit: false,
+        },
+        {
+          dimension: "storageMb",
+          current: actual
+            ? actual.storageBytes / (1024 * 1024)
+            : raw.current.storageMb ?? 0,
+          limit: raw.limit.storageMb ?? 0,
+        },
+      ];
       setView({ status: "success", metrics });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -181,7 +203,7 @@ export default function MetricsCards() {
         const hasData = match !== undefined;
         const current = match?.current ?? 0;
         const limit = match?.limit ?? 0;
-        const isUnlimited = limit === 0;
+        const showLimit = match?.showLimit !== false && limit > 0;
         const pct = usagePercent(current, limit);
 
         const displayValue = hasData
@@ -216,7 +238,7 @@ export default function MetricsCards() {
             </h3>
 
             {/* Status bar (hidden when unlimited) */}
-            {hasData && !isUnlimited && (
+            {hasData && showLimit && (
               <>
                 <div className="mt-3 h-1.5 w-full rounded-full bg-surface-container">
                   <div
@@ -235,7 +257,7 @@ export default function MetricsCards() {
             )}
 
             {/* Unlimited label */}
-            {hasData && isUnlimited && (
+            {hasData && !showLimit && (
               <p className="mt-1 text-label-sm text-on-surface-variant">
                 {current.toLocaleString()} used
               </p>

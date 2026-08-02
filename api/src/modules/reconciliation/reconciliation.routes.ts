@@ -13,10 +13,11 @@ const router = Router();
 router.use(
   authenticate,
   requirePlatformTenant,
+  requirePermission(Permission.BILLING_READ),
 );
 router.post(
   "/reconciliation/subscriptions",
-  requirePermission(Permission.BILLING_READ),
+  requirePermission(Permission.BILLING_MANAGE),
   reconciliationController,
 );
 router.post(

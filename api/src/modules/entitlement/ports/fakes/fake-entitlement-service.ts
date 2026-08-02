@@ -1,6 +1,7 @@
-import type { EntitlementDimension, CheckResult, ConsumeResult } from "../../entitlement.types.js";
+import type { CapabilityKey, EntitlementDimension, CheckResult, ConsumeResult } from "../../entitlement.types.js";
 import type { EntitlementSnapshot } from "../../../billing/ports/entitlement-snapshot.port.js";
 import { FakeQuotaCounter } from "./fake-quota-counter.js";
+import { FakeReservationStore } from "./fake-reservation-store.js";
 
 /**
  * In-memory fake implementation of the entitlement service for tests.
@@ -10,7 +11,9 @@ import { FakeQuotaCounter } from "./fake-quota-counter.js";
  * Call `reset()` in `beforeEach` / `afterEach` for test isolation.
  *
  * Capability keys (`allowedModels`, `retentionDays`) always return a large
- * limit (Number.MAX_SAFE_INTEGER) — the fake assumes these are always enabled.
+ * limit (Number.MAX_SAFE_INTEGER) for `check`/`consume` — the fake assumes
+ * these are always enabled as counters. `checkCapability` enforces the same
+ * snapshot semantics as the real service (model membership / retention cap).
  *
  * @example
  * ```ts
@@ -39,11 +42,13 @@ import { FakeQuotaCounter } from "./fake-quota-counter.js";
  */
 export class FakeEntitlementService {
   private readonly counter: FakeQuotaCounter;
+  private readonly reservationStore: FakeReservationStore;
   private readonly snapshots = new Map<string, EntitlementSnapshot>();
   private readonly defaultSnapshot: EntitlementSnapshot;
 
   constructor(defaultSnapshot?: EntitlementSnapshot) {
     this.counter = new FakeQuotaCounter();
+    this.reservationStore = new FakeReservationStore();
     this.defaultSnapshot = defaultSnapshot ?? {
       employees: 10,
       admins: 2,
@@ -65,6 +70,7 @@ export class FakeEntitlementService {
   /** Reset all internal state. Call in beforeEach / afterEach. */
   reset(): void {
     this.counter.reset();
+    this.reservationStore.reset();
     this.snapshots.clear();
   }
 
@@ -82,6 +88,14 @@ export class FakeEntitlementService {
    */
   getCounter(): FakeQuotaCounter {
     return this.counter;
+  }
+
+  /**
+   * Expose the underlying FakeReservationStore for test assertions
+   * (dumping outstanding reservations).
+   */
+  getReservationStore(): FakeReservationStore {
+    return this.reservationStore;
   }
 
   // ── Internal helpers ────────────────────────────────────────────────────
@@ -172,6 +186,159 @@ export class FakeEntitlementService {
     };
   }
 
+  /**
+   * Reserve quota atomically (reserve-then-commit pattern).
+   *
+   * Mirrors the real service's store-backed path: claims the amount in the
+   * reservation store, then consumes it from the counter. On success returns
+   * `{ reservationId }`; when the limit would be exceeded the claim is rolled
+   * back and `null` is returned.
+   */
+  async reserve(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    amount: number,
+    ttlSeconds: number,
+  ): Promise<{ reservationId: string } | null> {
+    const snapshot = this.getSnapshot(tenantId);
+    const limit = this.getLimit(snapshot, dimension);
+    const periodStart = this.getCurrentPeriodStart();
+
+    const reservation = await this.reservationStore.reserve(
+      tenantId,
+      dimension,
+      amount,
+      ttlSeconds,
+    );
+
+    if (reservation) {
+      const result = await this.counter.checkAndConsume(
+        tenantId,
+        dimension,
+        periodStart,
+        amount,
+        limit,
+      );
+
+      if (result.success) {
+        return { reservationId: reservation.reservationId };
+      }
+
+      // Over limit — roll back the claim so no quota is left dangling.
+      await this.reservationStore.release(
+        tenantId,
+        dimension,
+        reservation.reservationId,
+      );
+    }
+
+    return null;
+  }
+
+  /**
+   * Commit a reservation (finalize with the real amount).
+   *
+   * Mirrors the real service: settles the store claim and adjusts the held
+   * quota to `realAmount` (defaults to the reserved amount) — a shortfall is
+   * consumed, a surplus is refunded. Idempotent on `requestId` when provided.
+   */
+  async commit(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    reservationId: string,
+    realAmount?: number,
+    requestId?: string,
+  ): Promise<ConsumeResult> {
+    const snapshot = this.getSnapshot(tenantId);
+    const limit = this.getLimit(snapshot, dimension);
+    const periodStart = this.getCurrentPeriodStart();
+
+    const reserved = await this.reservationStore.commit(
+      tenantId,
+      dimension,
+      reservationId,
+    );
+
+    if (reserved <= 0) {
+      // Reservation not found (already settled/expired) — return current state.
+      const current = await this.counter.getUsage(
+        tenantId,
+        dimension,
+        periodStart,
+      );
+      return {
+        committed: true,
+        current,
+        limit,
+        remaining: Math.max(0, limit - current),
+      };
+    }
+
+    const delta = (realAmount ?? reserved) - reserved;
+
+    if (delta > 0) {
+      const result = await this.counter.checkAndConsume(
+        tenantId,
+        dimension,
+        periodStart,
+        delta,
+        limit,
+      );
+      if (requestId && result.success) {
+        await this.counter.createIdempotencyGate(
+          tenantId,
+          dimension,
+          requestId,
+        );
+      }
+      return {
+        committed: result.success,
+        current: result.current,
+        limit,
+        remaining: Math.max(0, limit - result.current),
+      };
+    }
+
+    if (delta < 0) {
+      await this.counter.release(tenantId, dimension, periodStart, -delta);
+    }
+
+    const current = await this.counter.getUsage(
+      tenantId,
+      dimension,
+      periodStart,
+    );
+    return {
+      committed: true,
+      current,
+      limit,
+      remaining: Math.max(0, limit - current),
+    };
+  }
+
+  /**
+   * Release a reservation (refund the held quota).
+   *
+   * Mirrors the real service: settles the store claim and refunds the reserved
+   * amount to the counter.
+   */
+  async release(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    reservationId: string,
+  ): Promise<void> {
+    const reserved = await this.reservationStore.release(
+      tenantId,
+      dimension,
+      reservationId,
+    );
+
+    if (reserved > 0) {
+      const periodStart = this.getCurrentPeriodStart();
+      await this.counter.release(tenantId, dimension, periodStart, reserved);
+    }
+  }
+
   async getUsage(
     tenantId: string,
   ): Promise<Record<EntitlementDimension, number>> {
@@ -207,6 +374,36 @@ export class FakeEntitlementService {
       59,
     );
     return endOfMonth.toISOString();
+  }
+
+  async checkCapability(
+    tenantId: string,
+    capability: CapabilityKey,
+    value: unknown,
+  ): Promise<CheckResult> {
+    const snapshot = this.getSnapshot(tenantId);
+
+    if (capability === "allowedModels") {
+      const allowed =
+        typeof value === "string" && snapshot.supportedModels.includes(value);
+      return {
+        allowed,
+        current: 0,
+        limit: snapshot.supportedModels.length,
+        warning: false,
+      };
+    }
+
+    // capability === "retentionDays"
+    const requested = typeof value === "number" ? value : 0;
+    const allowed =
+      typeof value === "number" && requested <= snapshot.retentionDays;
+    return {
+      allowed,
+      current: requested,
+      limit: snapshot.retentionDays,
+      warning: false,
+    };
   }
 
   private getLimit(

@@ -12,14 +12,16 @@ import InvoiceModel from "../../db/models/invoice.model.js";
 import OcrUsageRecordModel from "../../db/models/ocrUsageRecord.model.js";
 import PackageModel from "../../db/models/package.model.js";
 import RefundEligibilityPreviewModel, { REFUND_REASON_CODES, type RefundReasonCode } from "../../db/models/refundEligibilityPreview.model.js";
+import RefundModel from "../../db/models/refund.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
 import { QuotaCounterModel } from "../entitlement/adapters/mongo-quota-counter.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { authorizeTenantOperation, type OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import { evaluateRefundEligibility, REFUND_PREVIEW_TTL_MS, REFUND_USAGE_DIMENSIONS, refundEligibilitySnapshotHash } from "./refund-eligibility.policy.js";
+import { resolveCanonicalBillingPeriod } from "./billing-period.js";
 
-const TENANT_REASONS: readonly RefundReasonCode[] = ["DUPLICATE_CHARGE", "SERVICE_NOT_DELIVERED", "VOLUNTARY_CANCELLATION", "BILLING_ERROR"];
+export const SYSTEM_REFUND_REASON: RefundReasonCode = "SYSTEM_REMAINING_BALANCE_REFUND";
 type RefundUsageDimension = (typeof REFUND_USAGE_DIMENSIONS)[number];
 type CounterObservation = { tenantId: string; dimension: string; periodStart: string; value: unknown };
 
@@ -103,8 +105,12 @@ export interface RefundEligibilityPreviewDto {
   periodElapsedPercent: number;
   usage: Array<{ dimension: string; percent: number }>;
   maximumEligibleRefundMinor: number;
+  consumedValueMinor: number;
+  periodStart: Date;
+  periodEnd: Date;
+  targetPlan: { code: "free"; name: "Free" };
   reason: RefundReasonCode;
-  subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND";
+  subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND" | "CANCEL_AND_MOVE_TO_FREE";
   expiresAt: Date;
   reviewRequired: boolean;
   decisionReason: string;
@@ -122,11 +128,18 @@ export async function calculateRefundEligibilitySnapshot(input: {
   if (!invoice?.subscriptionId) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
   const subscription = await SubscriptionModel.findOne({ _id: invoice.subscriptionId, tenantId: invoice.tenantId }).lean().exec();
   if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
-  const periodStart = invoice.periodStart ?? subscription.currentPeriodStart ?? subscription.periodStart;
-  const periodEnd = invoice.periodEnd ?? subscription.currentPeriodEnd ?? subscription.periodEnd;
-  if (!periodStart || !periodEnd || periodEnd <= periodStart) {
+  const period = resolveCanonicalBillingPeriod({
+    existingPeriodStart: invoice.periodStart,
+    existingPeriodEnd: invoice.periodEnd,
+    subscriptionCurrentPeriodStart: subscription.currentPeriodStart,
+    subscriptionCurrentPeriodEnd: subscription.currentPeriodEnd,
+    subscriptionPeriodStart: subscription.periodStart,
+    subscriptionPeriodEnd: subscription.periodEnd,
+  });
+  if (!period) {
     throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund eligibility requires a valid billing period");
   }
+  const { start: periodStart, end: periodEnd } = period;
   const pkg = await PackageModel.findById(subscription.packageId).lean().exec();
   const version = pkg?.versions?.find((candidate) => candidate.version === subscription.packageVersion);
   if (!version?.entitlements) throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund eligibility requires package entitlements");
@@ -153,16 +166,23 @@ export async function calculateRefundEligibilitySnapshot(input: {
     counters, exactSourceUsage, readFailed: usageReadFailed,
   });
   const measuredAt = input.measuredAt ?? new Date();
+  let retainedConsumedMinor = Number(invoice.retainedConsumedMinor ?? 0);
+  if (input.reason === SYSTEM_REFUND_REASON && retainedConsumedMinor === 0) {
+    const settledSystemRefund = await RefundModel.findOne({ tenantId: invoice.tenantId, invoiceId: invoice._id, reasonCode: SYSTEM_REFUND_REASON, status: "SUCCEEDED" })
+      .sort({ confirmedAt: -1, createdAt: -1 }).select("amountMinor retainedConsumedMinor").lean().exec();
+    retainedConsumedMinor = Math.max(Number(settledSystemRefund?.retainedConsumedMinor ?? 0), settledSystemRefund ? Math.max(0, invoice.amountPaidMinor - invoice.refundedAmountMinor - Number(settledSystemRefund.amountMinor ?? 0)) : 0);
+  }
   const duplicatePaymentProven = input.reason === "DUPLICATE_CHARGE" && Boolean(await InvoiceModel.exists({
     _id: { $ne: invoice._id }, tenantId: invoice.tenantId, subscriptionId: invoice.subscriptionId,
     status: "paid", currency: invoice.currency, amountPaidMinor: invoice.amountPaidMinor,
     periodStart, periodEnd,
   }));
   const decision = evaluateRefundEligibility({
-    reason: input.reason,
+    reason: input.reason ?? SYSTEM_REFUND_REASON,
     amountPaidMinor: invoice.amountPaidMinor,
     confirmedRefundAmountMinor: invoice.refundedAmountMinor,
     pendingReservedRefundAmountMinor: Math.max(0, invoice.reservedRefundAmountMinor - (input.reservationExclusionMinor ?? 0)),
+    retainedConsumedMinor,
     periodStart,
     periodEnd,
     measuredAt,
@@ -176,6 +196,7 @@ export async function calculateRefundEligibilitySnapshot(input: {
     measuredAt, amountPaidMinor: invoice.amountPaidMinor, currency: invoice.currency,
     confirmedRefundAmountMinor: invoice.refundedAmountMinor,
     pendingReservedRefundAmountMinor: Math.max(0, invoice.reservedRefundAmountMinor - (input.reservationExclusionMinor ?? 0)),
+    retainedConsumedMinor,
     ...decision,
   };
   return { ...snapshot, snapshotHash: refundEligibilitySnapshotHash(snapshot) };
@@ -184,32 +205,35 @@ export async function calculateRefundEligibilitySnapshot(input: {
 export async function createRefundEligibilityPreview(input: {
   tenantId: string;
   invoiceId: string;
-  reason: RefundReasonCode;
+  reason?: RefundReasonCode;
   explanation?: string;
   context: OperationAuthorizationContext;
 }): Promise<RefundEligibilityPreviewDto> {
   const actor = await authorizeTenantOperation(input.context, Permission.BILLING_MANAGE);
   if (actor.tenantId !== input.tenantId) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
-  if (!TENANT_REASONS.includes(input.reason) || !REFUND_REASON_CODES.includes(input.reason)) {
+  const reason = input.reason ?? SYSTEM_REFUND_REASON;
+  if (!REFUND_REASON_CODES.includes(reason)) {
     throw new AppError(409, BILLING_REFUND_REASON_NOT_ALLOWED, "Refund reason is not allowed");
   }
-  const snapshot = await calculateRefundEligibilitySnapshot(input);
+  const snapshot = await calculateRefundEligibilitySnapshot({ ...input, reason });
   const expiresAt = new Date(snapshot.measuredAt.getTime() + REFUND_PREVIEW_TTL_MS);
-  const preview = await RefundEligibilityPreviewModel.create({ ...snapshot, reason: input.reason, explanation: input.explanation?.trim() ?? "", expiresAt });
+  const preview = await RefundEligibilityPreviewModel.create({ ...snapshot, reason, explanation: input.explanation?.trim() ?? "", expiresAt });
   await getAuditWriter().write({
     action: "BILLING_REFUND_ELIGIBILITY_PREVIEWED", resourceType: "RefundEligibilityPreview", resourceId: String(preview._id), tenantId: input.tenantId,
     actorId: actor.actorId, actorEmail: actor.actorEmail, actorRole: actor.actorRole,
-    changes: { policyVersion: snapshot.policyVersion, reason: input.reason, reviewRequired: snapshot.reviewRequired, subscriptionImpact: snapshot.subscriptionImpact,
+    changes: { policyVersion: snapshot.policyVersion, reason, reviewRequired: snapshot.reviewRequired, subscriptionImpact: snapshot.subscriptionImpact,
       usageRatios: snapshot.includedUsageMetrics.map((metric) => ({ dimension: metric.dimension, ratioBps: metric.ratioBps })) },
   });
   return toPreviewDto(preview);
 }
 
-export function toPreviewDto(preview: { _id: unknown; invoiceId: unknown; amountPaidMinor: number; currency: string; elapsedPeriodRatioBps: number; includedUsageMetrics: Array<{ dimension: string; ratioBps: number }>; maximumEligibleRefundMinor: number; reason: RefundReasonCode; subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND"; expiresAt: Date; reviewRequired: boolean; decisionReason: string }): RefundEligibilityPreviewDto {
+export function toPreviewDto(preview: { _id: unknown; invoiceId: unknown; amountPaidMinor: number; currency: string; elapsedPeriodRatioBps: number; includedUsageMetrics: Array<{ dimension: string; ratioBps: number }>; consumedValueMinor: number; subscriptionPeriodStart: Date; subscriptionPeriodEnd: Date; maximumEligibleRefundMinor: number; reason: RefundReasonCode; subscriptionImpact: "NONE" | "CANCEL_IMMEDIATELY_AFTER_REFUND" | "CANCEL_AND_MOVE_TO_FREE"; expiresAt: Date; reviewRequired: boolean; decisionReason: string }): RefundEligibilityPreviewDto {
   return {
     id: String(preview._id), invoiceId: String(preview.invoiceId), invoiceAmountMinor: preview.amountPaidMinor, currency: preview.currency,
     periodElapsedPercent: preview.elapsedPeriodRatioBps / 100,
     usage: preview.includedUsageMetrics.map((metric) => ({ dimension: metric.dimension, percent: metric.ratioBps / 100 })),
+    consumedValueMinor: preview.consumedValueMinor, periodStart: preview.subscriptionPeriodStart, periodEnd: preview.subscriptionPeriodEnd,
+    targetPlan: { code: "free", name: "Free" },
     maximumEligibleRefundMinor: preview.maximumEligibleRefundMinor, reason: preview.reason, subscriptionImpact: preview.subscriptionImpact,
     expiresAt: preview.expiresAt, reviewRequired: preview.reviewRequired, decisionReason: preview.decisionReason,
   };

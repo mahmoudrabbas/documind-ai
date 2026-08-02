@@ -8,7 +8,9 @@ export interface RefundDocument extends mongoose.Document {
   amountMinor: number; currency: string; reason: string; requestedBy: mongoose.Types.ObjectId;
   reasonCode: RefundReasonCode; explanation: string; eligibilityPreviewId: mongoose.Types.ObjectId | null;
   eligibilityPolicyVersion: string; eligibilitySnapshotHash: string; maximumEligibleRefundMinor: number;
+  retainedConsumedMinor: number;
   confirmationEligibilitySnapshotHash: string; subscriptionImpact: RefundSubscriptionImpact;
+  localTransitionStatus: "PENDING" | "SUCCEEDED" | "RETRY_PENDING" | "FAILED";
   subscriptionImpactStatus: "NOT_REQUIRED" | "PENDING" | "SUCCEEDED" | "RETRY_PENDING" | "FAILED";
   subscriptionImpactOperationId: mongoose.Types.ObjectId | null;
   confirmedBy: mongoose.Types.ObjectId | null; requestedAt: Date; confirmedAt: Date | null; rejectedAt: Date | null;
@@ -23,12 +25,14 @@ const schema = new Schema<RefundDocument>({
   operationId: { type: Schema.Types.ObjectId, ref: "BillingOperation", required: true },
   amountMinor: { type: Number, required: true, min: 1 }, currency: { type: String, required: true, uppercase: true, minlength: 3, maxlength: 3 },
   reason: { type: String, required: true, maxlength: 500 }, requestedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  reasonCode: { type: String, enum: ["DUPLICATE_CHARGE", "SERVICE_NOT_DELIVERED", "VOLUNTARY_CANCELLATION", "BILLING_ERROR", "GOODWILL_CREDIT"], default: "BILLING_ERROR" },
+  reasonCode: { type: String, enum: ["DUPLICATE_CHARGE", "SERVICE_NOT_DELIVERED", "VOLUNTARY_CANCELLATION", "BILLING_ERROR", "GOODWILL_CREDIT", "SYSTEM_REMAINING_BALANCE_REFUND"], default: "BILLING_ERROR" },
   explanation: { type: String, default: "", maxlength: 500 },
   eligibilityPreviewId: { type: Schema.Types.ObjectId, ref: "RefundEligibilityPreview", default: null },
   eligibilityPolicyVersion: { type: String, default: "" }, eligibilitySnapshotHash: { type: String, default: "" },
   maximumEligibleRefundMinor: { type: Number, min: 0, default: 0 }, confirmationEligibilitySnapshotHash: { type: String, default: "" },
-  subscriptionImpact: { type: String, enum: ["NONE", "CANCEL_IMMEDIATELY_AFTER_REFUND"], default: "NONE" },
+  retainedConsumedMinor: { type: Number, min: 0, default: 0 },
+  subscriptionImpact: { type: String, enum: ["NONE", "CANCEL_IMMEDIATELY_AFTER_REFUND", "CANCEL_AND_MOVE_TO_FREE"], default: "NONE" },
+  localTransitionStatus: { type: String, enum: ["PENDING", "SUCCEEDED", "RETRY_PENDING", "FAILED"], default: "PENDING" },
   subscriptionImpactStatus: { type: String, enum: ["NOT_REQUIRED", "PENDING", "SUCCEEDED", "RETRY_PENDING", "FAILED"], default: "NOT_REQUIRED" },
   subscriptionImpactOperationId: { type: Schema.Types.ObjectId, ref: "BillingOperation", default: null },
   confirmedBy: { type: Schema.Types.ObjectId, ref: "User", default: null }, requestedAt: { type: Date, required: true, default: Date.now },

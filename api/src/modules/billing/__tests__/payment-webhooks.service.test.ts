@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { auditWrite } = vi.hoisted(() => ({
+  auditWrite: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../../../db/models/subscription.model.js", () => ({
   default: {
     findOne: vi.fn(),
@@ -30,7 +34,7 @@ vi.mock("../../../db/models/package.model.js", () => ({
 }));
 
 vi.mock("../../../common/observability/index.js", () => ({
-  getAuditWriter: () => ({ write: vi.fn().mockResolvedValue(undefined) }),
+  getAuditWriter: () => ({ write: auditWrite }),
 }));
 
 vi.mock("../../billing/subscription.service.js", () => ({
@@ -38,9 +42,9 @@ vi.mock("../../billing/subscription.service.js", () => ({
   LEGAL_TRANSITIONS: {
     TRIALING: ["ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
     INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
-    ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
-    PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],
-    PAUSED: ["ACTIVE", "EXPIRED"],
+    ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "CANCELED", "EXPIRED"],
+    PAST_DUE: ["ACTIVE", "PAUSED", "CANCELED", "EXPIRED", "UNPAID"],
+    PAUSED: ["ACTIVE", "CANCELED", "EXPIRED"],
     "CANCEL_AT_PERIOD_END": ["ACTIVE", "CANCELED", "EXPIRED"],
     CANCELED: [],
     EXPIRED: ["ACTIVE", "UNPAID"],
@@ -199,9 +203,9 @@ describe("handlePaymentEvent", () => {
       });
       await handlePaymentEvent(event, "{}", "sig");
 
-      expect(SubscriptionModel.findOne).toHaveBeenCalledWith({
+      expect(SubscriptionModel.findOne).toHaveBeenCalledWith(expect.objectContaining({
         tenantId: expect.anything(),
-      });
+      }));
       expect(transitionSubscription).toHaveBeenCalledWith(
         TENANT_ID,
         "ACTIVE",
@@ -353,7 +357,7 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).not.toHaveBeenCalled();
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[0]).toEqual({ _id: expect.anything(), tenantId: expect.anything() });
       expect(updateArgs[1].$set).toMatchObject({ paymentState: "paid" });
     });
   });
@@ -501,6 +505,36 @@ describe("handlePaymentEvent", () => {
       );
     });
 
+    it("maps Stripe paused status to internal PAUSED", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "ACTIVE" })),
+      );
+
+      const event = makeEvent({
+        id: "evt_csu_pause_1",
+        type: "customer.subscription.updated",
+        rawObject: {
+          metadata: { tenantId: TENANT_ID },
+          status: "paused",
+          cancel_at_period_end: false,
+        },
+      });
+      await handlePaymentEvent(event, "{}", "sig");
+
+      expect(transitionSubscription).toHaveBeenCalledWith(
+        TENANT_ID,
+        "PAUSED",
+        expect.anything(),
+      );
+      expect(auditWrite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "SUBSCRIPTION_UPDATED",
+          resourceType: "Subscription",
+          changes: expect.objectContaining({ newStatus: "PAUSED" }),
+        }),
+      );
+    });
+
     it("skips transition when mapped status is not legal from current status", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
         mockQueryChain(makeSub({ status: "CANCELED" })),
@@ -540,7 +574,7 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).not.toHaveBeenCalled();
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[0]).toEqual({ _id: expect.anything(), tenantId: expect.anything() });
       expect(updateArgs[1].$set).toMatchObject({ cancelAtPeriodEnd: true });
     });
 
@@ -567,7 +601,7 @@ describe("handlePaymentEvent", () => {
       );
       expect(transitionSubscription).not.toHaveBeenCalledWith(
         TENANT_ID,
-        "EXPIRED",
+        "CANCELED",
         expect.anything(),
       );
     });
@@ -590,7 +624,7 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).not.toHaveBeenCalled();
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[0]).toEqual({ _id: expect.anything(), tenantId: expect.anything() });
       expect(updateArgs[1].$set).toMatchObject({ cancelAtPeriodEnd: false });
     });
 
@@ -1576,7 +1610,7 @@ describe("handlePaymentEvent", () => {
   });
 
   describe("customer.subscription.deleted", () => {
-    it("transitions to EXPIRED with paymentState failed", async () => {
+    it("transitions to CANCELED while preserving paid payment state", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
         mockQueryChain(makeSub({ status: "ACTIVE" })),
       );
@@ -1592,7 +1626,7 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).toHaveBeenCalledWith(
         TENANT_ID,
-        "EXPIRED",
+        "CANCELED",
         expect.anything(),
       );
     });
@@ -1624,7 +1658,7 @@ describe("handlePaymentEvent", () => {
         expect.anything(),
       );
       expect(SubscriptionModel.updateOne).toHaveBeenCalledWith(
-        { tenantId: TENANT_ID },
+        { _id: expect.anything(), tenantId: TENANT_ID },
         expect.anything(),
       );
     });
@@ -1654,7 +1688,7 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).not.toHaveBeenCalled();
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[0]).toEqual({ _id: expect.anything(), tenantId: expect.anything() });
       expect(updateArgs[1].$set).toMatchObject({
         cancelAtPeriodEnd: true,
         cancelledAt: new Date(cancelAtTs * 1000),
@@ -1696,7 +1730,7 @@ describe("handlePaymentEvent", () => {
   });
 
   describe("TEST 3: customer.subscription.deleted expires subscription", () => {
-    it("transitions ACTIVE → EXPIRED with paymentState failed", async () => {
+    it("transitions ACTIVE → CANCELED with paymentState paid", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
         mockQueryChain(makeSub({ status: "ACTIVE" })),
       );
@@ -1714,14 +1748,14 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).toHaveBeenCalledWith(
         TENANT_ID,
-        "EXPIRED",
+        "CANCELED",
         expect.objectContaining({ triggeredBy: "provider_event" }),
       );
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(updateArgs[1].$set).toMatchObject({ paymentState: "failed" });
+      expect(updateArgs[1].$set).toMatchObject({ paymentState: "paid" });
     });
 
-    it("transitions CANCEL_AT_PERIOD_END → EXPIRED when period ends", async () => {
+    it("transitions CANCEL_AT_PERIOD_END → CANCELED when provider deletes it", async () => {
       (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
         mockQueryChain(makeSub({ status: "CANCEL_AT_PERIOD_END" })),
       );
@@ -1739,9 +1773,22 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).toHaveBeenCalledWith(
         TENANT_ID,
-        "EXPIRED",
+        "CANCELED",
         expect.anything(),
       );
+    });
+
+    it("preserves refunded payment state after a full refund cancellation", async () => {
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain(makeSub({ status: "CANCELED", paymentState: "refunded" })),
+      );
+      await handlePaymentEvent(makeEvent({
+        id: "evt_delete_refunded",
+        type: "customer.subscription.deleted",
+        rawObject: { metadata: { tenantId: TENANT_ID }, id: STRIPE_SUB_ID, customer: CUSTOMER_ID },
+      }), "{}", "sig");
+      const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(updateArgs[1].$set).toMatchObject({ paymentState: "refunded" });
     });
   });
 
@@ -1820,7 +1867,7 @@ describe("handlePaymentEvent", () => {
 
       expect(transitionSubscription).not.toHaveBeenCalled();
       const updateArgs = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(updateArgs[0]).toEqual({ tenantId: expect.anything() });
+      expect(updateArgs[0]).toEqual({ _id: expect.anything(), tenantId: expect.anything() });
       expect(updateArgs[1].$set).toMatchObject({
         cancelAtPeriodEnd: true,
         paymentState: "paid",

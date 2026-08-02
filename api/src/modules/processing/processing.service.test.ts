@@ -11,6 +11,9 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
 import DocumentAccessPolicyModel from "../../db/models/documentAccessPolicy.model.js";
+import PackageModel from "../../db/models/package.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
+import QuotaOverrideModel from "../../db/models/quotaOverride.model.js";
 import {
   getOcrPageResults,
   getDocumentQuality,
@@ -18,8 +21,10 @@ import {
   reviewDocumentQuality,
   retryOcrPages,
   getOcrUsageSummary,
+  triggerOcrProcessing,
 } from "./processing.service.js";
 import type { DocumentAccessAction } from "../document-access/documentAccess.actions.js";
+import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
 
 let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
@@ -58,6 +63,9 @@ afterEach(async () => {
   await TenantModel.deleteMany({});
   await DocumentClassificationModel.deleteMany({});
   await DocumentAccessPolicyModel.deleteMany({});
+  await PackageModel.deleteMany({});
+  await SubscriptionModel.deleteMany({});
+  await QuotaOverrideModel.deleteMany({});
 });
 
 beforeEach(async () => {
@@ -90,6 +98,56 @@ beforeEach(async () => {
     { upsert: true },
   );
 });
+
+async function seedActiveSubscription() {
+  const pkg = await PackageModel.create({
+    code: `test-ocr-pkg-${new mongoose.Types.ObjectId().toString()}`,
+    name: "Test OCR Package",
+    description: "Test package for OCR quota tests",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    currency: "USD",
+    entitlements: {
+      employees: 10,
+      admins: 2,
+      documents: 1000,
+      storageMb: 1024,
+      fileSizeMb: 100,
+      queriesPerMonth: 1000,
+      tokensPerMonth: 100000,
+      ocrPagesPerMonth: 100,
+    },
+    versions: [
+      {
+        version: 1,
+        monthlyPrice: 0,
+        entitlements: {
+          employees: 10,
+          admins: 2,
+          documents: 1000,
+          storageMb: 1024,
+          fileSizeMb: 100,
+          queriesPerMonth: 1000,
+          tokensPerMonth: 100000,
+          ocrPagesPerMonth: 100,
+        },
+        createdAt: new Date(),
+      },
+    ],
+  });
+  await SubscriptionModel.create({
+    tenantId: new mongoose.Types.ObjectId(TENANT_ID),
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    paymentState: "paid",
+    currentPeriodStart: new Date(),
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    billingInterval: "monthly",
+  });
+  return pkg;
+}
 
 async function createTestDocument(version = 1, actions: DocumentAccessAction[] = ["read", "update", "reprocess"]) {
   const actorId = new mongoose.Types.ObjectId(ACTOR_ID);
@@ -658,4 +716,42 @@ test("processing.service", async (t) => {
       },
     );
   });
+
+  await t.test(
+    "checkOcrPageQuota allows page counts within the monthly quota",
+    async () => {
+      await seedActiveSubscription();
+      await assert.doesNotReject(checkOcrPageQuota(TENANT_ID, 10));
+    },
+  );
+
+  await t.test(
+    "triggerOcrProcessing rejects with 429 OCR_QUOTA_EXCEEDED when the page count exceeds the monthly quota",
+    async () => {
+      await seedActiveSubscription();
+      const doc = await createTestDocument();
+      const docId = doc._id.toString();
+
+      await assert.rejects(
+        () =>
+          triggerOcrProcessing(
+            TENANT_ID,
+            {
+              documentId: docId,
+              pageNumbers: Array.from({ length: 150 }, (_, i) => i + 1),
+            },
+            TEST_CONTEXT,
+          ),
+        (err: Error & { statusCode?: number; code?: string; message: string }) => {
+          assert.equal(err.statusCode, 429);
+          assert.equal(err.code, "OCR_QUOTA_EXCEEDED");
+          assert.equal(
+            err.message,
+            "OCR quota exceeded. Used 0 of 100 pages this month. Requested 150, only 100 remaining.",
+          );
+          return true;
+        },
+      );
+    },
+  );
 });

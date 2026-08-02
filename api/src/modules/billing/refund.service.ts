@@ -23,6 +23,8 @@ import InvoiceModel from "../../db/models/invoice.model.js";
 import RefundModel, { type RefundDocument } from "../../db/models/refund.model.js";
 import RefundEligibilityPreviewModel from "../../db/models/refundEligibilityPreview.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
+import PackageModel from "../../db/models/package.model.js";
+import { inspectSubscriptionIndexInvariant } from "../../db/subscription-index-invariant.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { Permission } from "../permissions/permissions.catalog.js";
@@ -34,7 +36,9 @@ import {
 import { BillingOperationService, fingerprintBillingRequest, hashIdempotencyKey, mapBillingProviderError } from "./billing-operation.service.js";
 import type { PaymentProvider } from "./ports/payment-provider.port.js";
 import { authorizeRefundConfirmation } from "./refund-authorization.policy.js";
-import { calculateRefundEligibilitySnapshot } from "./refund-eligibility.service.js";
+import { calculateRefundEligibilitySnapshot, SYSTEM_REFUND_REASON } from "./refund-eligibility.service.js";
+import { assertSystemRefundTransitionReady, completeVoluntaryCancellationLocally, isSystemSettlementRefund } from "./voluntary-cancellation-transition.service.js";
+import { calculateRemainingRefundableMinor, remainingRefundableMinorExpression } from "./refund-balances.js";
 
 const TENANT_PENDING_REFUND_STATUSES = ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] as const;
 const REFUND_REASONS = ["duplicate", "fraudulent", "customer_request", "service_issue", "billing_error", "other"] as const;
@@ -53,6 +57,7 @@ interface InvoiceContext {
   amountPaidMinor: number;
   refundedAmountMinor: number;
   reservedRefundAmountMinor: number;
+  retainedConsumedMinor: number;
   status: string;
 }
 
@@ -81,10 +86,13 @@ interface RefundDto {
   failureCode: string | null;
   operationId: string;
   previousRefundSummary: { successfulCount: number; successfulAmountMinor: number; pendingCount: number; pendingAmountMinor: number };
+  settlementCompleted: boolean;
   reasonCode: string;
   maximumEligibleRefundMinor: number;
   subscriptionImpact: string;
   subscriptionImpactStatus: string;
+  localTransitionStatus: string;
+  retainedConsumedMinor: number;
 }
 
 function normalizeReason(reason: string): RefundReason {
@@ -105,8 +113,8 @@ function amountFromInput(input: { mode: "FULL" | "PARTIAL"; amountMinor?: number
   return input.amountMinor!;
 }
 
-function refundableRemaining(invoice: Pick<InvoiceContext, "amountPaidMinor" | "refundedAmountMinor" | "reservedRefundAmountMinor">): number {
-  return Math.max(0, invoice.amountPaidMinor - invoice.refundedAmountMinor - invoice.reservedRefundAmountMinor);
+function refundableRemaining(invoice: Pick<InvoiceContext, "amountPaidMinor" | "retainedConsumedMinor" | "refundedAmountMinor" | "reservedRefundAmountMinor">): number {
+  return calculateRemainingRefundableMinor({ amountPaidMinor: invoice.amountPaidMinor, retainedConsumedMinor: invoice.retainedConsumedMinor, confirmedRefundedMinor: invoice.refundedAmountMinor, pendingReservedMinor: invoice.reservedRefundAmountMinor });
 }
 
 async function loadTenantInvoice(invoiceId: string, tenantId: string): Promise<InvoiceContext> {
@@ -128,6 +136,7 @@ async function loadTenantInvoice(invoiceId: string, tenantId: string): Promise<I
     amountPaidMinor: Number(invoice.amountPaidMinor ?? 0),
     refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0),
     reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0),
+    retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0),
     status: String(invoice.status || ""),
   };
 }
@@ -186,6 +195,8 @@ async function invoiceForRefundDto(refund: RefundDocument) {
       refundableRemainingMinor: 0,
       refundedAmountMinor: 0,
       reservedRefundAmountMinor: 0,
+      retainedConsumedMinor: 0,
+      settlementCompleted: false,
       previousRefundSummary: {
         successfulCount: 0,
         successfulAmountMinor: 0,
@@ -196,7 +207,7 @@ async function invoiceForRefundDto(refund: RefundDocument) {
   }
   const [invoice, refunds] = await Promise.all([
     InvoiceModel.findById(refund.invoiceId)
-      .select("invoiceNumber amountPaidMinor refundedAmountMinor reservedRefundAmountMinor")
+      .select("invoiceNumber amountPaidMinor refundedAmountMinor reservedRefundAmountMinor retainedConsumedMinor")
       .lean()
       .exec(),
     RefundModel.find({ invoiceId: refund.invoiceId, _id: { $ne: refund._id } })
@@ -210,6 +221,8 @@ async function invoiceForRefundDto(refund: RefundDocument) {
       refundableRemainingMinor: 0,
       refundedAmountMinor: 0,
       reservedRefundAmountMinor: 0,
+      retainedConsumedMinor: 0,
+      settlementCompleted: false,
       previousRefundSummary: {
         successfulCount: 0,
         successfulAmountMinor: 0,
@@ -242,9 +255,12 @@ async function invoiceForRefundDto(refund: RefundDocument) {
       amountPaidMinor: Number(invoice.amountPaidMinor ?? 0),
       refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0),
       reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0),
+      retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0),
     }),
     refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0),
     reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0),
+    retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0),
+    settlementCompleted: refundableRemaining({ amountPaidMinor: Number(invoice.amountPaidMinor ?? 0), refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0), reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0), retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0) }) === 0 && Number(invoice.retainedConsumedMinor ?? 0) > 0,
     previousRefundSummary,
   };
 }
@@ -291,8 +307,11 @@ async function toRefundDto(refund: RefundDocument): Promise<RefundDto> {
     reason: refund.reason,
     reasonCode: refund.reasonCode,
     maximumEligibleRefundMinor: refund.maximumEligibleRefundMinor,
+    retainedConsumedMinor: invoice.retainedConsumedMinor,
+    settlementCompleted: invoice.settlementCompleted,
     subscriptionImpact: refund.subscriptionImpact,
     subscriptionImpactStatus: refund.subscriptionImpactStatus,
+    localTransitionStatus: refund.localTransitionStatus,
     requestedBy: actors.requestedBy,
     confirmedBy: actors.confirmedBy,
     requestedAt: refund.requestedAt,
@@ -391,23 +410,43 @@ async function releaseReservedRefundAmountInSession(
   ).exec();
 }
 
-async function applySuccessfulRefundAmount(invoiceId: Types.ObjectId | null, tenantId: Types.ObjectId, amountMinor: number, session?: mongoose.ClientSession): Promise<void> {
+export async function reconcileInvoiceRefundProjection(
+  invoiceId: Types.ObjectId | null,
+  tenantId: Types.ObjectId,
+  session?: mongoose.ClientSession,
+): Promise<void> {
   if (!invoiceId) return;
+  const query = RefundModel.find({ invoiceId, tenantId })
+    .select("status amountMinor retainedConsumedMinor reasonCode subscriptionImpact maximumEligibleRefundMinor");
+  if (session) query.session(session);
+  const refunds = await query.lean().exec();
+  let confirmedRefundedMinor = 0;
+  let pendingReservedMinor = 0;
+  let retainedConsumedMinor = 0;
+  for (const item of refunds) {
+    const amountMinor = Number(item.amountMinor ?? 0);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) continue;
+    if (item.status === "SUCCEEDED") {
+      confirmedRefundedMinor += amountMinor;
+      if (isSystemSettlementRefund(item as Pick<RefundDocument, "reasonCode" | "subscriptionImpact" | "amountMinor" | "maximumEligibleRefundMinor">)) {
+        retainedConsumedMinor = Math.max(retainedConsumedMinor, Number(item.retainedConsumedMinor ?? 0));
+      }
+    } else if (TENANT_PENDING_REFUND_STATUSES.includes(item.status as (typeof TENANT_PENDING_REFUND_STATUSES)[number])) {
+      pendingReservedMinor += amountMinor;
+    }
+  }
+  const invoiceQuery = InvoiceModel.findOne({ _id: invoiceId, tenantId }).select("amountPaidMinor");
+  if (session) invoiceQuery.session(session);
+  const invoice = await invoiceQuery.lean().exec();
+  if (!invoice) return;
+  const amountPaidMinor = Math.max(0, Number(invoice.amountPaidMinor ?? 0));
+  confirmedRefundedMinor = Math.min(amountPaidMinor, confirmedRefundedMinor);
+  pendingReservedMinor = Math.min(Math.max(0, amountPaidMinor - confirmedRefundedMinor), pendingReservedMinor);
+  retainedConsumedMinor = Math.min(Math.max(0, amountPaidMinor - confirmedRefundedMinor - pendingReservedMinor), Math.max(0, retainedConsumedMinor));
   await InvoiceModel.updateOne(
     { _id: invoiceId, tenantId },
-    [
-      {
-        $set: {
-          reservedRefundAmountMinor: {
-            $max: [0, { $subtract: ["$reservedRefundAmountMinor", amountMinor] }],
-          },
-          refundedAmountMinor: {
-            $add: ["$refundedAmountMinor", amountMinor],
-          },
-        },
-      },
-    ],
-    { updatePipeline: true, session },
+    { $set: { refundedAmountMinor: confirmedRefundedMinor, reservedRefundAmountMinor: pendingReservedMinor, retainedConsumedMinor } },
+    { session },
   ).exec();
 }
 
@@ -436,7 +475,7 @@ export async function createRefundRequest(input: {
   previewId?: string;
   /** @deprecated Internal compatibility only. HTTP callers must use previewId. */
   invoiceId?: string;
-  mode: "FULL" | "PARTIAL";
+  mode?: "FULL" | "PARTIAL";
   amountMinor?: number;
   /** @deprecated Internal compatibility only. */
   reason?: string;
@@ -454,6 +493,13 @@ export async function createRefundRequest(input: {
   if (!invoiceId) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
   const invoice = await loadTenantInvoice(invoiceId, input.tenantId);
   const reason = preview?.reason ?? normalizeReason(input.reason ?? "billing_error");
+  const systemBalanceRefund = reason === SYSTEM_REFUND_REASON;
+  if (systemBalanceRefund && (input.amountMinor !== undefined || input.mode !== undefined || input.reason !== undefined)) {
+    throw new AppError(400, BILLING_REFUND_AMOUNT_INVALID, "Refund amount, type, reason, and impact are calculated by the server");
+  }
+  if (!systemBalanceRefund && !input.mode) {
+    throw new AppError(400, BILLING_REFUND_AMOUNT_INVALID, "Refund mode is required");
+  }
   let maximumEligibleRefundMinor = refundableRemaining(invoice);
   if (preview && !preview.consumedAt) {
     const current = await calculateRefundEligibilitySnapshot({ tenantId: input.tenantId, invoiceId: invoice.id, reason: preview.reason });
@@ -461,7 +507,7 @@ export async function createRefundRequest(input: {
     if (current.subscriptionRevision !== preview.subscriptionRevision || current.amountPaidMinor !== preview.amountPaidMinor || current.currency !== preview.currency || current.maximumEligibleRefundMinor !== preview.maximumEligibleRefundMinor || usageChanged) {
       throw new AppError(409, BILLING_REFUND_ELIGIBILITY_CHANGED, "Refund eligibility changed", { maximumEligibleRefundMinor: current.maximumEligibleRefundMinor });
     }
-    if (current.decisionReason === "USAGE_DATA_UNAVAILABLE") throw new AppError(409, BILLING_REFUND_USAGE_DATA_UNAVAILABLE, "Authoritative usage data is unavailable");
+    if (current.reviewRequired) throw new AppError(409, BILLING_REFUND_USAGE_DATA_UNAVAILABLE, "Authoritative usage data is unavailable");
     if (current.decisionReason === "DUPLICATE_PAYMENT_NOT_PROVEN") throw new AppError(409, BILLING_REFUND_DUPLICATE_PAYMENT_NOT_PROVEN, "Duplicate payment was not proven");
     maximumEligibleRefundMinor = current.maximumEligibleRefundMinor;
   } else if (preview) {
@@ -480,12 +526,14 @@ export async function createRefundRequest(input: {
     if (!existingRefund) {
       throw new AppError(409, BILLING_OPERATION_ALREADY_PENDING, "Refund request replay is incomplete");
     }
-    const replayAmountMinor = input.mode === "FULL"
+    const replayAmountMinor = systemBalanceRefund
+      ? existingRefund.amountMinor
+      : input.mode === "FULL"
       ? existingRefund.amountMinor
       : input.amountMinor;
     const replayFingerprint = fingerprintBillingRequest({
       invoiceId: invoice.id,
-      mode: input.mode,
+      mode: systemBalanceRefund ? "CALCULATED" : input.mode,
       amountMinor: replayAmountMinor,
       currency: invoice.currency,
       reason,
@@ -499,9 +547,11 @@ export async function createRefundRequest(input: {
 
   await ensureRefundableInvoice(invoice);
   const financialRemaining = refundableRemaining(invoice);
-  const amountMinor = input.mode === "FULL"
+  const amountMinor = systemBalanceRefund
     ? maximumEligibleRefundMinor
-    : amountFromInput({ mode: input.mode, amountMinor: input.amountMinor }, invoice);
+    : input.mode === "FULL"
+    ? maximumEligibleRefundMinor
+    : amountFromInput({ mode: input.mode!, amountMinor: input.amountMinor }, invoice);
   if (amountMinor <= 0 || amountMinor > refundableRemaining(invoice)) {
     throw new AppError(409, BILLING_REFUND_AMOUNT_INVALID, "Refund amount is invalid");
   }
@@ -511,7 +561,7 @@ export async function createRefundRequest(input: {
 
   const normalizedRequest = {
     invoiceId: invoice.id,
-    mode: input.mode,
+    mode: systemBalanceRefund ? "CALCULATED" : input.mode,
     amountMinor,
     currency: invoice.currency,
     reason,
@@ -545,9 +595,9 @@ export async function createRefundRequest(input: {
 
       const duplicatePending = await RefundModel.exists({
         tenantId: new Types.ObjectId(input.tenantId),
-        invoiceId: new Types.ObjectId(invoice.id),
-        amountMinor,
-        reason,
+        ...(systemBalanceRefund
+          ? { subscriptionId: invoice.subscriptionId ? new Types.ObjectId(invoice.subscriptionId) : null, reasonCode: SYSTEM_REFUND_REASON }
+          : { invoiceId: new Types.ObjectId(invoice.id), amountMinor, reason }),
         status: { $in: TENANT_PENDING_REFUND_STATUSES },
       }).session(session);
       if (duplicatePending) {
@@ -569,8 +619,9 @@ export async function createRefundRequest(input: {
         eligibilityPolicyVersion: preview?.policyVersion ?? "legacy",
         eligibilitySnapshotHash: preview?.snapshotHash ?? "",
         maximumEligibleRefundMinor,
+        retainedConsumedMinor: systemBalanceRefund ? Math.max(0, preview?.consumedValueMinor ?? 0) : 0,
         subscriptionImpact: preview?.subscriptionImpact ?? "NONE",
-        subscriptionImpactStatus: preview?.subscriptionImpact === "CANCEL_IMMEDIATELY_AFTER_REFUND" ? "PENDING" : "NOT_REQUIRED",
+        subscriptionImpactStatus: preview?.subscriptionImpact === "CANCEL_IMMEDIATELY_AFTER_REFUND" || preview?.subscriptionImpact === "CANCEL_AND_MOVE_TO_FREE" ? "PENDING" : "NOT_REQUIRED",
         requestedBy: new Types.ObjectId(actor.actorId),
         provider: invoice.provider,
         status: "REQUESTED",
@@ -732,10 +783,14 @@ export async function rejectRefundRequest(input: {
 }
 
 async function loadRefundExecutionContext(refund: RefundDocument) {
-  const invoice = refund.invoiceId ? await InvoiceModel.findById(refund.invoiceId).select("+paymentReference").lean().exec() as Record<string, unknown> | null : null;
+  const invoice = refund.invoiceId ? await InvoiceModel.findOne({
+    _id: refund.invoiceId,
+    tenantId: refund.tenantId,
+    ...(refund.subscriptionId ? { subscriptionId: refund.subscriptionId } : {}),
+  }).select("+paymentReference").lean().exec() as Record<string, unknown> | null : null;
   if (!invoice) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
   const subscription = refund.subscriptionId
-    ? await SubscriptionModel.findById(refund.subscriptionId).select("providerCustomerId providerSubscriptionId provider").lean().exec() as Record<string, unknown> | null
+    ? await SubscriptionModel.findOne({ _id: refund.subscriptionId, tenantId: refund.tenantId }).select("providerCustomerId providerSubscriptionId provider").lean().exec() as Record<string, unknown> | null
     : null;
   if (!subscription?.providerCustomerId) throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund cannot be executed for this invoice");
   return {
@@ -751,6 +806,7 @@ async function loadRefundExecutionContext(refund: RefundDocument) {
       amountPaidMinor: Number(invoice.amountPaidMinor ?? 0),
       refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0),
       reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0),
+      retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0),
       status: String(invoice.status || ""),
     } satisfies InvoiceContext,
     expectedCustomerId: String(subscription.providerCustomerId),
@@ -758,7 +814,7 @@ async function loadRefundExecutionContext(refund: RefundDocument) {
 }
 
 async function ensureRefundSubscriptionImpact(refund: RefundDocument, provider: PaymentProvider): Promise<void> {
-  if (refund.subscriptionImpact !== "CANCEL_IMMEDIATELY_AFTER_REFUND" || refund.subscriptionImpactStatus === "SUCCEEDED") return;
+  if (!["CANCEL_IMMEDIATELY_AFTER_REFUND", "CANCEL_AND_MOVE_TO_FREE"].includes(refund.subscriptionImpact) || refund.subscriptionImpactStatus === "SUCCEEDED") return;
   if (!refund.subscriptionId) {
     refund.subscriptionImpactStatus = "FAILED";
     await refund.save();
@@ -774,22 +830,56 @@ async function ensureRefundSubscriptionImpact(refund: RefundDocument, provider: 
   }
   const idempotencyKey = `refund-impact:${String(refund._id)}`;
   const normalizedRequest = { refundId: String(refund._id), subscriptionId: String(subscription._id), cancellationType: "IMMEDIATE" };
+  const invokeCancellation = (operation: { _id: unknown }) => provider.cancelImmediately({
+    subscriptionId: subscription.providerSubscriptionId,
+    expectedCustomerId: subscription.providerCustomerId,
+    operationContext: {
+      idempotencyKey,
+      requestFingerprint: fingerprintBillingRequest(normalizedRequest),
+      tenantReference: String(refund.tenantId), operationReference: String(operation._id), traceId: "refund-impact",
+    },
+  });
   try {
-    const started = await new BillingOperationService().execute({
+    const operationService = new BillingOperationService();
+    if (refund.subscriptionImpactOperationId) {
+      const existing = await BillingOperationModel.findOne({
+        _id: refund.subscriptionImpactOperationId,
+        tenantId: refund.tenantId,
+        operationType: "CANCEL_IMMEDIATELY",
+      }).exec();
+      if (!existing) throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund transition operation is unavailable");
+      if (existing.status === "CONFIRMED") {
+        refund.subscriptionImpactStatus = "SUCCEEDED";
+        await refund.save();
+        return;
+      }
+      if (existing.status === "RETRY_PENDING") {
+        const resumed = await operationService.resume(String(existing._id), String(refund.tenantId), invokeCancellation);
+        refund.subscriptionImpactStatus = resumed.operation.status === "RETRY_PENDING" ? "RETRY_PENDING" : "PENDING";
+        await refund.save();
+        return;
+      }
+      if (existing.status === "PROVIDER_PENDING" && provider.retrieveCurrentSubscriptionState) {
+        const state = await provider.retrieveCurrentSubscriptionState({
+          subscriptionId: subscription.providerSubscriptionId,
+          expectedCustomerId: subscription.providerCustomerId,
+        });
+        if (state.status === "canceled") {
+          await operationService.confirm(String(existing._id), String(refund.tenantId), `refund-impact-reconciliation:${String(refund._id)}`);
+          refund.subscriptionImpactStatus = "SUCCEEDED";
+          await refund.save();
+        }
+        return;
+      }
+      return;
+    }
+    const started = await operationService.execute({
       tenantId: String(refund.tenantId),
       actor: { tenantId: String(refund.tenantId), actorId: String(refund.confirmedBy ?? refund.requestedBy), actorEmail: "", actorRole: "SUPER_ADMIN" },
       operationType: "CANCEL_IMMEDIATELY", idempotencyKey, normalizedRequest,
       subscriptionId: String(subscription._id), provider: subscription.provider,
       expectedSubscriptionRevision: subscription.revision, cancellationType: "IMMEDIATE",
-    }, (operation) => provider.cancelImmediately({
-      subscriptionId: subscription.providerSubscriptionId,
-      expectedCustomerId: subscription.providerCustomerId,
-      operationContext: {
-        idempotencyKey,
-        requestFingerprint: fingerprintBillingRequest(normalizedRequest),
-        tenantReference: String(refund.tenantId), operationReference: String(operation._id), traceId: "refund-impact",
-      },
-    }));
+    }, invokeCancellation);
     refund.subscriptionImpactOperationId = started.operation._id;
     refund.subscriptionImpactStatus = started.operation.status === "RETRY_PENDING" ? "RETRY_PENDING" : "PENDING";
   } catch (error) {
@@ -832,6 +922,13 @@ export async function confirmRefundRequest(input: {
   );
   if (refund.currency !== refreshedInvoice.currency || refund.amountMinor > availableForConfirmation) {
     throw new AppError(409, BILLING_REFUND_AMOUNT_INVALID, "Refund amount is invalid");
+  }
+  if (isSystemSettlementRefund(refund)) {
+    if (!refund.subscriptionId) throw new AppError(503, BILLING_OPERATION_NOT_ALLOWED, "Refund transition is temporarily unavailable");
+    await assertSystemRefundTransitionReady({
+      tenantId: String(refund.tenantId),
+      subscriptionId: String(refund.subscriptionId),
+    });
   }
   const operation = await BillingOperationModel.findOne({ _id: refund.operationId, tenantId: refund.tenantId }).select("+requestFingerprint").exec();
   if (!operation) throw new AppError(404, BILLING_REFUND_NOT_FOUND, "Refund operation not found");
@@ -950,6 +1047,13 @@ export async function retryRefundRequest(input: {
   }
   const { invoice, expectedCustomerId } = await loadRefundExecutionContext(refund);
   const refreshedInvoice = await ensureInvoicePaymentReference(invoice, expectedCustomerId, input.provider);
+  if (isSystemSettlementRefund(refund)) {
+    if (!refund.subscriptionId) throw new AppError(503, BILLING_OPERATION_NOT_ALLOWED, "Refund transition is temporarily unavailable");
+    await assertSystemRefundTransitionReady({
+      tenantId: String(refund.tenantId),
+      subscriptionId: String(refund.subscriptionId),
+    });
+  }
   try {
     const resumed = await new BillingOperationService().resume(String(operation._id), String(refund.tenantId), async () => input.provider.createRefund({
       chargeId: refreshedInvoice.paymentReference,
@@ -1029,10 +1133,13 @@ export async function synchronizeRefundFromProvider(input: {
           { $set: { status: "SUCCEEDED", failureCode: "", providerRefundId: providerRefund.id, providerStatus: providerRefund.status } },
           { returnDocument: "after", session },
         ).exec();
-        if (!claimed) return;
-        await applySuccessfulRefundAmount(claimed.invoiceId, claimed.tenantId, claimed.amountMinor, session);
-        await new BillingOperationService().confirm(String(claimed.operationId), String(claimed.tenantId), input.sourceEventId, { session });
-        transitioned = true;
+        const authoritativeRefund = claimed ?? await RefundModel.findById(refund!._id).session(session).exec();
+        if (!authoritativeRefund || authoritativeRefund.status !== "SUCCEEDED") return;
+        await reconcileInvoiceRefundProjection(authoritativeRefund.invoiceId, authoritativeRefund.tenantId, session);
+        if (claimed) {
+          await new BillingOperationService().confirm(String(claimed.operationId), String(claimed.tenantId), input.sourceEventId, { session });
+          transitioned = true;
+        }
       });
     } finally {
       await session.endSession();
@@ -1054,20 +1161,124 @@ export async function synchronizeRefundFromProvider(input: {
     refund.status = "PROVIDER_PENDING";
   }
   if (providerRefund.status !== "succeeded") await refund.save();
-  if (refund.status === "SUCCEEDED") await ensureRefundSubscriptionImpact(refund, input.provider);
+  let systemSettlementComplete = true;
+  if (refund.status === "SUCCEEDED" && isSystemSettlementRefund(refund)) {
+    let localTransitionReady = true;
+    try {
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => { systemSettlementComplete = await completeVoluntaryCancellationLocally(refund!, session); });
+      } finally {
+        await session.endSession();
+      }
+    } catch {
+      localTransitionReady = false;
+      // The transaction rolled back. Preserve the effective paid record, mark
+      // the transition retryable, and let entitlement reads fail closed from
+      // this durable state until reconciliation succeeds.
+      refund.localTransitionStatus = "RETRY_PENDING";
+      refund.subscriptionImpactStatus = "RETRY_PENDING";
+      await refund.save();
+    }
+    if (!localTransitionReady || !systemSettlementComplete) return { refundId: String(refund._id), status: refund.status };
+  }
+  if (refund.status === "SUCCEEDED" && systemSettlementComplete) await ensureRefundSubscriptionImpact(refund, input.provider);
   getMetricRecorder().increment("billing.refund.synchronized", { status: refund.status });
   return { refundId: String(refund._id), status: refund.status };
+}
+
+export interface RefundSettlementReconciliationResult {
+  indexInvariant: { status: "READY" | "MIGRATION_REQUIRED"; issues: string[]; effectiveDuplicateTenantCount: number };
+  examined: number;
+  eligibleForTransitionRepair: number;
+  transitionOperationsCreated: number;
+  transitionsCompleted: number;
+  transitionsRetryable: number;
+  providerCancellationsCreated: number;
+  providerCancellationsConfirmed: number;
+  providerCancellationsRetryable: number;
+  failed: number;
+}
+
+/**
+ * Replays authoritative provider reads for succeeded system settlements. This
+ * never creates a refund; it only repairs the local settlement transition and
+ * lets the existing durable cancellation operation converge.
+ */
+export async function reconcileSucceededSystemRefundSettlements(input: {
+  provider: PaymentProvider;
+  maxRecords?: number;
+}): Promise<RefundSettlementReconciliationResult> {
+  const maxRecords = Math.min(200, Math.max(1, Math.trunc(input.maxRecords ?? 200)));
+  const invariant = await inspectSubscriptionIndexInvariant(SubscriptionModel.collection);
+  const invariantSummary = {
+    status: invariant.valid ? "READY" as const : "MIGRATION_REQUIRED" as const,
+    issues: invariant.issues,
+    effectiveDuplicateTenantCount: invariant.effectiveDuplicateTenantCount,
+  };
+  if (!invariant.valid) {
+    return {
+      indexInvariant: invariantSummary,
+      examined: 0, eligibleForTransitionRepair: 0, transitionOperationsCreated: 0,
+      transitionsCompleted: 0, transitionsRetryable: 0, providerCancellationsCreated: 0,
+      providerCancellationsConfirmed: 0, providerCancellationsRetryable: 0, failed: 0,
+    };
+  }
+  const candidates = await RefundModel.find({
+    status: "SUCCEEDED",
+    providerRefundId: { $type: "string" },
+    $or: [
+      { reasonCode: SYSTEM_REFUND_REASON },
+      { reasonCode: "VOLUNTARY_CANCELLATION", subscriptionImpact: "CANCEL_AND_MOVE_TO_FREE" },
+    ],
+  }).sort({ confirmedAt: 1, createdAt: 1 }).limit(maxRecords).exec();
+  const result: RefundSettlementReconciliationResult = {
+    indexInvariant: invariantSummary,
+    examined: 0, eligibleForTransitionRepair: 0, transitionOperationsCreated: 0,
+    transitionsCompleted: 0, transitionsRetryable: 0, providerCancellationsCreated: 0,
+    providerCancellationsConfirmed: 0, providerCancellationsRetryable: 0, failed: 0,
+  };
+  for (const candidate of candidates) {
+    result.examined += 1;
+    const invoice = candidate.invoiceId ? await InvoiceModel.findOne({
+      _id: candidate.invoiceId,
+      tenantId: candidate.tenantId,
+      ...(candidate.subscriptionId ? { subscriptionId: candidate.subscriptionId } : {}),
+    }).lean().exec() : null;
+    // Do not trust the derived invoice totals as a discovery predicate: those
+    // are exactly what this reconciliation repairs. Provider retrieval below
+    // revalidates the authoritative amount, currency and ownership before any
+    // local transition is attempted.
+    if (!invoice || !isSystemSettlementRefund(candidate)) continue;
+    result.eligibleForTransitionRepair += 1;
+    const beforeOperation = candidate.subscriptionImpactOperationId ? String(candidate.subscriptionImpactOperationId) : null;
+    try {
+      await synchronizeRefundFromProvider({ provider: input.provider, providerRefundId: candidate.providerRefundId!, operationReference: String(candidate.operationId), sourceEventId: `refund-settlement-reconciliation:${String(candidate._id)}` });
+      const repaired = await RefundModel.findById(candidate._id).lean().exec();
+      const afterOperation = repaired?.subscriptionImpactOperationId ? String(repaired.subscriptionImpactOperationId) : null;
+      if (!beforeOperation && afterOperation) result.transitionOperationsCreated += 1;
+      if (repaired?.subscriptionImpactStatus === "RETRY_PENDING" || repaired?.subscriptionImpactStatus === "FAILED") result.transitionsRetryable += repaired.subscriptionImpactStatus === "RETRY_PENDING" ? 1 : 0;
+      if (repaired?.subscriptionImpactStatus === "SUCCEEDED") result.providerCancellationsConfirmed += 1;
+      if (repaired?.subscriptionImpactStatus === "RETRY_PENDING") result.providerCancellationsRetryable += 1;
+      const paid = repaired?.subscriptionId ? await SubscriptionModel.findOne({ _id: repaired.subscriptionId, tenantId: repaired.tenantId }).lean().exec() : null;
+      const free = await PackageModel.findOne({ code: "free", active: true, visibility: "public" }).select("_id").lean().exec();
+      const freeSubscription = free ? await SubscriptionModel.findOne({ tenantId: repaired?.tenantId, packageId: free._id, status: "ACTIVE" }).lean().exec() : null;
+      if (paid?.status === "CANCELED" && freeSubscription) result.transitionsCompleted += 1;
+      if (!beforeOperation && afterOperation) result.providerCancellationsCreated += 1;
+    } catch {
+      result.failed += 1;
+    }
+  }
+  return result;
 }
 
 export async function refundCapabilitiesForTenant(tenantId: string): Promise<boolean> {
   const count = await InvoiceModel.countDocuments({
     tenantId: new Types.ObjectId(tenantId),
     amountPaidMinor: { $gt: 0 },
+    status: { $in: ["paid", "open", "uncollectible"] },
     $expr: {
-      $gt: [
-        { $subtract: ["$amountPaidMinor", { $add: ["$refundedAmountMinor", "$reservedRefundAmountMinor"] }] },
-        0,
-      ],
+      $gt: [remainingRefundableMinorExpression(), 0],
     },
   });
   return count > 0;
@@ -1077,10 +1288,15 @@ export function refundInvoiceSummary(invoice: Record<string, unknown>) {
   const amountPaidMinor = Number(invoice.amountPaidMinor ?? 0);
   const refundedAmountMinor = Number(invoice.refundedAmountMinor ?? 0);
   const reservedRefundAmountMinor = Number(invoice.reservedRefundAmountMinor ?? 0);
-  const remainingRefundableMinor = Math.max(0, amountPaidMinor - refundedAmountMinor - reservedRefundAmountMinor);
+  const retainedConsumedMinor = Number(invoice.retainedConsumedMinor ?? 0);
+  const grossUnrefundedMinor = Math.max(0, amountPaidMinor - refundedAmountMinor - reservedRefundAmountMinor);
+  const remainingRefundableMinor = calculateRemainingRefundableMinor({ amountPaidMinor, retainedConsumedMinor, confirmedRefundedMinor: refundedAmountMinor, pendingReservedMinor: reservedRefundAmountMinor });
   return {
     refundedAmountMinor,
     reservedRefundAmountMinor,
+    retainedConsumedMinor,
+    grossUnrefundedMinor,
+    settlementCompleted: remainingRefundableMinor === 0 && retainedConsumedMinor > 0 && refundedAmountMinor > 0,
     remainingRefundableMinor,
     canRequestRefund: remainingRefundableMinor > 0 && ["paid", "open", "uncollectible"].includes(String(invoice.status || "")),
   };

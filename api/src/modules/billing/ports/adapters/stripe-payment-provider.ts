@@ -401,6 +401,11 @@ export class StripePaymentProvider implements PaymentProvider {
 
   private mapInvoice(invoice: Stripe.Invoice): ProviderInvoice {
     const raw = invoice as unknown as Record<string, unknown>;
+    const lineData = (raw.lines as { data?: unknown[] } | undefined)?.data ?? [];
+    const serviceLine = lineData.find((entry) => {
+      const period = (entry as { period?: { start?: unknown; end?: unknown } } | null)?.period;
+      return period?.start != null || period?.end != null;
+    }) as { period?: { start?: number; end?: number } } | undefined;
     const parent = raw.parent as { subscription_details?: { subscription?: string | { id?: string } } } | undefined;
     const subscription = parent?.subscription_details?.subscription;
     const paymentIntent = raw.payment_intent as string | { id?: string } | null | undefined;
@@ -420,6 +425,8 @@ export class StripePaymentProvider implements PaymentProvider {
       createdAt: new Date(invoice.created * 1000), dueAt: unixDate(invoice.due_date),
       paidAt: unixDate(invoice.status_transitions?.paid_at), periodStart: unixDate(invoice.period_start),
       periodEnd: unixDate(invoice.period_end), providerVersion: null,
+      servicePeriodStart: unixDate(serviceLine?.period?.start),
+      servicePeriodEnd: unixDate(serviceLine?.period?.end),
       observedAt: new Date(),
       hostedInvoiceAvailable: Boolean(invoice.hosted_invoice_url),
       invoicePdfAvailable: Boolean(invoice.invoice_pdf),

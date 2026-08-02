@@ -5,6 +5,14 @@ import {
   BILLING_OPERATION_ALREADY_PENDING,
   BILLING_PROVIDER_OWNERSHIP_MISMATCH,
   BILLING_PROVIDER_UNAVAILABLE,
+  BILLING_INVOICE_INVALID_CURRENCY,
+  BILLING_INVOICE_INVALID_MONEY,
+  BILLING_INVOICE_OWNERSHIP_MISMATCH,
+  BILLING_INVOICE_PERSISTENCE_FAILED,
+  BILLING_INVOICE_PROVIDER_UNAVAILABLE,
+  BILLING_INVOICE_STALE_PROVIDER_STATE,
+  BILLING_INVOICE_SUBSCRIPTION_NOT_READY,
+  BILLING_INVOICE_UNSUPPORTED_HISTORICAL_DATA,
   NOT_FOUND,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
@@ -15,6 +23,7 @@ import TenantModel from "../../db/models/tenant.model.js";
 import type { PaymentProvider, ProviderInvoice } from "./ports/payment-provider.port.js";
 import { isSystemPlatformTenant } from "../../common/auth/platformTenant.js";
 import { Permission } from "../permissions/permissions.catalog.js";
+import { resolveCanonicalBillingPeriod } from "./billing-period.js";
 import { authorizePlatformOperation, type OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 
 export const INVOICE_WEBHOOK_EVENTS = new Set([
@@ -28,6 +37,23 @@ export const INVOICE_WEBHOOK_EVENTS = new Set([
 ]);
 
 export const BILLING_SUBSCRIPTION_NOT_READY = "BILLING_SUBSCRIPTION_NOT_READY";
+
+export type InvoiceReconciliationFailureClassification =
+  | "EXPECTED_HISTORICAL_PROVIDER_UNAVAILABLE"
+  | "RETRYABLE_PROVIDER_FAILURE"
+  | "LOCAL_DATA_INCONSISTENCY"
+  | "IMPLEMENTATION_BUG";
+export interface InvoiceReconciliationFailure {
+  code: string;
+  count: number;
+  classification: InvoiceReconciliationFailureClassification;
+  retryable: boolean;
+}
+export interface InvoiceReconciliationResult {
+  examined: number; created: number; updated: number; unchanged: number; failed: number;
+  failures: InvoiceReconciliationFailure[];
+  retry: { status: "NONE" | "RETRY_PENDING"; retryableFailureCount: number };
+}
 
 export class RetryableInvoiceSynchronizationError extends Error {
   constructor(readonly code: string) {
@@ -47,6 +73,11 @@ interface OwnedSubscription {
   provider: string;
   providerCustomerId: string;
   providerSubscriptionId: string;
+  status?: string;
+  currentPeriodStart?: Date | null;
+  currentPeriodEnd?: Date | null;
+  periodStart?: Date | null;
+  periodEnd?: Date | null;
 }
 
 export async function synchronizeInvoiceFromReference(input: {
@@ -72,7 +103,7 @@ export async function synchronizeInvoiceFromReference(input: {
       resourceId: String(subscription._id),
       tenantId: String(subscription.tenantId),
       outcome: "FAILURE",
-      changes: { failureCode: BILLING_PROVIDER_UNAVAILABLE },
+      changes: { failureCode: BILLING_INVOICE_PROVIDER_UNAVAILABLE },
     }).catch(() => false);
     throw mapInvoiceProviderError(error);
   }
@@ -89,7 +120,7 @@ export async function reconcileTenantInvoices(input: {
   provider: PaymentProvider;
   maxRecords?: number;
   context?: OperationAuthorizationContext;
-}): Promise<{ examined: number; created: number; updated: number; unchanged: number; failed: number }> {
+}): Promise<InvoiceReconciliationResult> {
   if (!Types.ObjectId.isValid(input.tenantId)) throw new AppError(404, NOT_FOUND, "Tenant subscription not found");
   const actor = input.context ? await authorizePlatformOperation(input.context, Permission.BILLING_MANAGE) : null;
   const tenant = await TenantModel.findById(input.tenantId).select("slug status isSystemTenant").lean().exec();
@@ -109,10 +140,11 @@ export async function reconcileTenantInvoices(input: {
     if (!locked) throw new AppError(409, BILLING_OPERATION_ALREADY_PENDING, "Invoice reconciliation is already pending for this tenant");
   }
 
+  let keepRetryState = false;
   try {
     const startedAt = Date.now();
-    const result = { examined: 0, created: 0, updated: 0, unchanged: 0, failed: 0 };
-    const maximum = Math.min(500, Math.max(1, input.maxRecords ?? 200));
+    const result = emptyReconciliationResult();
+    const maximum = Math.min(200, Math.max(1, input.maxRecords ?? 200));
 
     for (const subscription of subscriptions) {
       if (result.examined >= maximum) break;
@@ -123,9 +155,19 @@ export async function reconcileTenantInvoices(input: {
         result.updated += consumed.updated;
         result.unchanged += consumed.unchanged;
         result.failed += consumed.failed;
-      } catch {
+      } catch (error) {
         result.failed += 1;
+        addFailure(result, invoiceFailureDiagnostic(error, subscription.status));
       }
+    }
+
+    result.retry.retryableFailureCount = result.failures
+      .filter((failure) => failure.retryable)
+      .reduce((count, failure) => count + failure.count, 0);
+    if (locked && result.retry.retryableFailureCount > 0) {
+      keepRetryState = true;
+      await markInvoiceReconciliationRetry(input.tenantId, result);
+      result.retry.status = "RETRY_PENDING";
     }
 
     getMetricRecorder().histogram("billing.invoice.reconciliation_duration_ms", Date.now() - startedAt, { tenantId: input.tenantId });
@@ -137,12 +179,54 @@ export async function reconcileTenantInvoices(input: {
       resourceType: "Tenant",
       resourceId: input.tenantId,
       tenantId: input.tenantId,
-      changes: result,
+      changes: { ...result, failures: result.failures.map((failure) => ({ ...failure })) },
     });
     return result;
   } finally {
-    if (locked) await releaseInvoiceReconciliationLock(input.tenantId);
+    if (locked && !keepRetryState) await releaseInvoiceReconciliationLock(input.tenantId);
   }
+}
+
+export async function reconcilePlatformInvoices(input: {
+  provider: PaymentProvider;
+  maxRecords?: number;
+  maxTenants?: number;
+  context: OperationAuthorizationContext;
+}): Promise<InvoiceReconciliationResult> {
+  await authorizePlatformOperation(input.context, Permission.BILLING_MANAGE);
+  const maximum = Math.min(200, Math.max(1, Math.trunc(input.maxRecords ?? 200)));
+  const maxTenants = Math.min(50, Math.max(1, Math.trunc(input.maxTenants ?? 50)));
+  const tenants = await SubscriptionModel.aggregate<{ _id: Types.ObjectId }>([
+    { $match: { providerCustomerId: { $nin: ["", null] }, providerSubscriptionId: { $nin: ["", null] } } },
+    { $group: { _id: "$tenantId" } },
+    { $limit: maxTenants },
+  ]).exec();
+  const aggregate = emptyReconciliationResult();
+  for (const tenant of tenants) {
+    if (aggregate.examined >= maximum) break;
+    try {
+      const result = await reconcileTenantInvoices({
+        tenantId: String(tenant._id), provider: input.provider,
+        maxRecords: maximum - aggregate.examined, context: input.context,
+      });
+      aggregate.examined += result.examined;
+      aggregate.created += result.created;
+      aggregate.updated += result.updated;
+      aggregate.unchanged += result.unchanged;
+      aggregate.failed += result.failed;
+      for (const failure of result.failures) {
+        for (let count = 0; count < failure.count; count += 1) addFailure(aggregate, failure);
+      }
+    } catch (error) {
+      aggregate.failed += 1;
+      addFailure(aggregate, invoiceFailureDiagnostic(error));
+    }
+  }
+  aggregate.retry.retryableFailureCount = aggregate.failures
+    .filter((failure) => failure.retryable)
+    .reduce((count, failure) => count + failure.count, 0);
+  aggregate.retry.status = aggregate.retry.retryableFailureCount > 0 ? "RETRY_PENDING" : "NONE";
+  return aggregate;
 }
 
 export async function projectProviderInvoice(input: {
@@ -155,11 +239,14 @@ export async function projectProviderInvoice(input: {
   if (providerInvoice.customerId !== subscription.providerCustomerId) ownershipMismatch();
   if (providerInvoice.subscriptionId && providerInvoice.subscriptionId !== subscription.providerSubscriptionId) ownershipMismatch();
   if (!Number.isInteger(providerInvoice.amountDueMinor) || !Number.isInteger(providerInvoice.amountPaidMinor) || !Number.isInteger(providerInvoice.amountRemainingMinor) || !Number.isInteger(providerInvoice.subtotalMinor)) {
-    throw new AppError(409, BILLING_PROVIDER_OWNERSHIP_MISMATCH, "Invalid provider invoice projection");
+    throw new AppError(409, BILLING_INVOICE_INVALID_MONEY, "Invalid provider invoice money");
   }
   const amounts = [providerInvoice.amountDueMinor, providerInvoice.amountPaidMinor, providerInvoice.amountRemainingMinor, providerInvoice.subtotalMinor, providerInvoice.taxMinor];
-  if (amounts.some((amount) => amount !== null && (!Number.isSafeInteger(amount) || amount < 0)) || !/^[A-Z]{3}$/i.test(providerInvoice.currency)) {
-    throw new AppError(409, BILLING_PROVIDER_OWNERSHIP_MISMATCH, "Invalid provider invoice projection");
+  if (amounts.some((amount) => amount !== null && (!Number.isSafeInteger(amount) || amount < 0))) {
+    throw new AppError(409, BILLING_INVOICE_INVALID_MONEY, "Invalid provider invoice money");
+  }
+  if (!/^[A-Z]{3}$/i.test(providerInvoice.currency)) {
+    throw new AppError(409, BILLING_INVOICE_INVALID_CURRENCY, "Invalid provider invoice currency");
   }
   const existing = await InvoiceModel.findOne({ provider: input.providerName, providerInvoiceId: providerInvoice.id })
     .select("+paymentReference")
@@ -170,6 +257,16 @@ export async function projectProviderInvoice(input: {
   if (existing?.providerStateObservedAt && existing.providerStateObservedAt.getTime() > observedAt.getTime()) {
     return { outcome: "unchanged", invoiceId: String(existing._id) };
   }
+  const period = resolveCanonicalBillingPeriod({
+    providerServicePeriodStart: providerInvoice.servicePeriodStart,
+    providerServicePeriodEnd: providerInvoice.servicePeriodEnd,
+    existingPeriodStart: existing?.periodStart,
+    existingPeriodEnd: existing?.periodEnd,
+    subscriptionCurrentPeriodStart: subscription.currentPeriodStart,
+    subscriptionCurrentPeriodEnd: subscription.currentPeriodEnd,
+    subscriptionPeriodStart: subscription.periodStart,
+    subscriptionPeriodEnd: subscription.periodEnd,
+  });
   const projection = {
     tenantId: subscription.tenantId,
     subscriptionId: subscription._id,
@@ -183,13 +280,14 @@ export async function projectProviderInvoice(input: {
     amountRemainingMinor: providerInvoice.amountRemainingMinor,
     refundedAmountMinor: Math.max(0, providerInvoice.refundedAmountMinor ?? 0),
     reservedRefundAmountMinor: existing?.reservedRefundAmountMinor ?? 0,
+    retainedConsumedMinor: existing?.retainedConsumedMinor ?? 0,
     subtotalMinor: providerInvoice.subtotalMinor,
     taxMinor: providerInvoice.taxMinor,
     createdAtProvider: providerInvoice.createdAt,
     dueAt: providerInvoice.dueAt,
     paidAt: providerInvoice.paidAt,
-    periodStart: providerInvoice.periodStart,
-    periodEnd: providerInvoice.periodEnd,
+    periodStart: period?.start ?? null,
+    periodEnd: period?.end ?? null,
     synchronizedAt: new Date(),
     paymentReference: providerInvoice.paymentReference ?? existing?.paymentReference ?? "",
     hostedInvoiceAvailable: Boolean(providerInvoice.hostedInvoiceAvailable),
@@ -236,7 +334,7 @@ async function findOwnedSubscription(customerId: string, subscriptionId?: string
 }
 
 function invoiceChanged(existing: Record<string, unknown>, next: Record<string, unknown>): boolean {
-  const scalarFields = ["invoiceNumber", "status", "currency", "amountDueMinor", "amountPaidMinor", "amountRemainingMinor", "refundedAmountMinor", "reservedRefundAmountMinor", "paymentReference", "subtotalMinor", "taxMinor", "hostedInvoiceAvailable", "invoicePdfAvailable", "receiptAvailable", "providerVersion"];
+  const scalarFields = ["invoiceNumber", "status", "currency", "amountDueMinor", "amountPaidMinor", "amountRemainingMinor", "refundedAmountMinor", "reservedRefundAmountMinor", "retainedConsumedMinor", "paymentReference", "subtotalMinor", "taxMinor", "hostedInvoiceAvailable", "invoicePdfAvailable", "receiptAvailable", "providerVersion"];
   if (scalarFields.some((key) => existing[key] !== next[key])) return true;
   return ["createdAtProvider", "dueAt", "paidAt", "periodStart", "periodEnd"]
     .some((key) => dateValue(existing[key]) !== dateValue(next[key]));
@@ -264,12 +362,55 @@ function mapInvoiceProviderError(_error: unknown): AppError {
   return new AppError(503, BILLING_PROVIDER_UNAVAILABLE, "Billing provider is temporarily unavailable");
 }
 
+function emptyReconciliationResult(): InvoiceReconciliationResult {
+  return {
+    examined: 0, created: 0, updated: 0, unchanged: 0, failed: 0, failures: [],
+    retry: { status: "NONE", retryableFailureCount: 0 },
+  };
+}
+
+function addFailure(result: InvoiceReconciliationResult, diagnostic: Omit<InvoiceReconciliationFailure, "count">): void {
+  const existing = result.failures.find((failure) =>
+    failure.code === diagnostic.code && failure.classification === diagnostic.classification && failure.retryable === diagnostic.retryable,
+  );
+  if (existing) existing.count += 1;
+  else if (result.failures.length < 25) result.failures.push({ ...diagnostic, count: 1 });
+}
+
+function invoiceFailureCode(error: unknown): string {
+  const code = error instanceof AppError || error instanceof RetryableInvoiceSynchronizationError ? error.code : "";
+  if (code === BILLING_PROVIDER_OWNERSHIP_MISMATCH) return BILLING_INVOICE_OWNERSHIP_MISMATCH;
+  if (code === BILLING_SUBSCRIPTION_NOT_READY) return BILLING_INVOICE_SUBSCRIPTION_NOT_READY;
+  if (code === BILLING_PROVIDER_UNAVAILABLE) return BILLING_INVOICE_PROVIDER_UNAVAILABLE;
+  if ([BILLING_INVOICE_OWNERSHIP_MISMATCH, BILLING_INVOICE_SUBSCRIPTION_NOT_READY, BILLING_INVOICE_INVALID_MONEY, BILLING_INVOICE_INVALID_CURRENCY, BILLING_INVOICE_STALE_PROVIDER_STATE, BILLING_INVOICE_PROVIDER_UNAVAILABLE, BILLING_INVOICE_UNSUPPORTED_HISTORICAL_DATA].includes(code)) return code;
+  return BILLING_INVOICE_PERSISTENCE_FAILED;
+}
+
+function invoiceFailureDiagnostic(error: unknown, subscriptionStatus?: string): Omit<InvoiceReconciliationFailure, "count"> {
+  const code = invoiceFailureCode(error);
+  if (code === BILLING_INVOICE_PROVIDER_UNAVAILABLE) {
+    const historical = subscriptionStatus === "CANCELED" || subscriptionStatus === "EXPIRED";
+    return {
+      code,
+      classification: historical ? "EXPECTED_HISTORICAL_PROVIDER_UNAVAILABLE" : "RETRYABLE_PROVIDER_FAILURE",
+      retryable: !historical,
+    };
+  }
+  if (code === BILLING_INVOICE_UNSUPPORTED_HISTORICAL_DATA) {
+    return { code, classification: "EXPECTED_HISTORICAL_PROVIDER_UNAVAILABLE", retryable: false };
+  }
+  if ([BILLING_INVOICE_OWNERSHIP_MISMATCH, BILLING_INVOICE_SUBSCRIPTION_NOT_READY, BILLING_INVOICE_INVALID_MONEY, BILLING_INVOICE_INVALID_CURRENCY, BILLING_INVOICE_STALE_PROVIDER_STATE].includes(code)) {
+    return { code, classification: "LOCAL_DATA_INCONSISTENCY", retryable: false };
+  }
+  return { code, classification: "IMPLEMENTATION_BUG", retryable: false };
+}
+
 async function reconcileSubscriptionInvoices(
   subscription: OwnedSubscription,
   provider: PaymentProvider,
   tenantId: string,
   maximum: number,
-  total: { examined: number; created: number; updated: number; unchanged: number; failed: number },
+  total: InvoiceReconciliationResult,
 ): Promise<{ examined: number; created: number; updated: number; unchanged: number; failed: number }> {
   const result = { examined: 0, created: 0, updated: 0, unchanged: 0, failed: 0 };
   let cursor: string | undefined;
@@ -286,7 +427,7 @@ async function reconcileSubscriptionInvoices(
         resourceId: String(subscription._id),
         tenantId,
         outcome: "FAILURE",
-        changes: { failureCode: BILLING_PROVIDER_UNAVAILABLE },
+        changes: { failureCode: BILLING_INVOICE_PROVIDER_UNAVAILABLE },
       }).catch(() => false);
       throw mapInvoiceProviderError(error);
     }
@@ -296,8 +437,9 @@ async function reconcileSubscriptionInvoices(
       try {
         const projected = await projectProviderInvoice({ subscription, providerName: subscription.provider || "stripe", providerInvoice: invoice, sourceEventId: "reconciliation" });
         result[projected.outcome] += 1;
-      } catch {
+      } catch (error) {
         result.failed += 1;
+        addFailure(total, invoiceFailureDiagnostic(error, subscription.status));
       }
     }
     if (!page.hasMore || result.examined >= maximum || !page.nextCursor || seenCursors.has(page.nextCursor)) {
@@ -311,6 +453,20 @@ async function reconcileSubscriptionInvoices(
 }
 
 async function acquireInvoiceReconciliationLock(tenantId: string, actorId: string, actorRole: string): Promise<boolean> {
+  const resumed = await BillingOperationModel.updateOne(
+    {
+      tenantId: new Types.ObjectId(tenantId),
+      operationType: "INVOICE_SYNCHRONIZATION",
+      provider: "internal-reconciliation",
+      status: "RETRY_PENDING",
+      providerObjectReference: "invoice-reconciliation",
+    },
+    {
+      $set: { status: "REQUESTED", failureCode: "", nextRetryAt: null, safeFailureMetadata: {} },
+      $inc: { revision: 1 },
+    },
+  );
+  if (resumed.modifiedCount === 1) return true;
   const operation = await BillingOperationModel.findOneAndUpdate(
     {
       tenantId: new Types.ObjectId(tenantId),
@@ -339,6 +495,33 @@ async function acquireInvoiceReconciliationLock(tenantId: string, actorId: strin
     { upsert: true, new: false, rawResult: true },
   ) as unknown as { lastErrorObject?: { updatedExisting?: boolean } } | null;
   return !(operation?.lastErrorObject?.updatedExisting);
+}
+
+async function markInvoiceReconciliationRetry(tenantId: string, result: InvoiceReconciliationResult): Promise<void> {
+  const update = await BillingOperationModel.updateOne(
+    {
+      tenantId: new Types.ObjectId(tenantId),
+      operationType: "INVOICE_SYNCHRONIZATION",
+      provider: "internal-reconciliation",
+      status: "REQUESTED",
+      providerObjectReference: "invoice-reconciliation",
+    },
+    {
+      $set: {
+        status: "RETRY_PENDING",
+        failureCode: BILLING_INVOICE_PROVIDER_UNAVAILABLE,
+        nextRetryAt: new Date(Date.now() + 60_000),
+        safeFailureMetadata: {
+          retryableFailureCount: result.retry.retryableFailureCount,
+          failures: result.failures.filter((failure) => failure.retryable).map(({ code, count, classification }) => ({ code, count, classification })),
+        },
+      },
+      $inc: { retryCount: 1, revision: 1 },
+    },
+  );
+  if (update.modifiedCount !== 1) {
+    throw new AppError(500, BILLING_INVOICE_PERSISTENCE_FAILED, "Invoice reconciliation retry state could not be persisted");
+  }
 }
 
 async function releaseInvoiceReconciliationLock(tenantId: string): Promise<void> {

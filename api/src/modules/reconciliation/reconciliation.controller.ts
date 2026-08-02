@@ -6,7 +6,8 @@ import {
 import { AppError } from "../../common/errors/AppError.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
-import { reconcileTenantInvoices } from "../billing/invoice-synchronization.service.js";
+import { reconcilePlatformInvoices, reconcileTenantInvoices } from "../billing/invoice-synchronization.service.js";
+import { reconcileSucceededSystemRefundSettlements } from "../billing/refund.service.js";
 import { authorizePlatformOperation } from "../permissions/permissions.operation.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 
@@ -33,7 +34,28 @@ export async function reconciliationController(
       traceId: req.traceId,
       requestId: req.requestId,
     });
-    res.json({ success: true, data: result });
+    await authorizePlatformOperation({
+      tenantId: actor.tenantId,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      traceId: req.traceId,
+      requestId: req.requestId,
+    }, Permission.BILLING_MANAGE);
+    const provider = await getPaymentProvider();
+    const invoices = await reconcilePlatformInvoices({ provider, maxRecords: 200, context: actor });
+    const refundSettlements = await reconcileSucceededSystemRefundSettlements({ provider, maxRecords: 200 });
+    res.json({ success: true, data: {
+      subscriptions: { examined: result.totalSubscriptions, mismatched: result.mismatched },
+      invoices: { examined: invoices.examined, created: invoices.created, updated: invoices.updated, failed: invoices.failed, failures: invoices.failures, retry: invoices.retry },
+      refundSettlements,
+      subscriptionIndex: refundSettlements.indexInvariant,
+      providerCancellations: {
+        created: refundSettlements.providerCancellationsCreated,
+        confirmed: refundSettlements.providerCancellationsConfirmed,
+        retryable: refundSettlements.providerCancellationsRetryable,
+      },
+    } });
   } catch (error) {
     next(error);
   }

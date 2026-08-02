@@ -198,6 +198,38 @@ describe("CheckoutService", () => {
       expect(fakeProvider.sessions).toHaveLength(0);
     });
 
+    it("rejects an internal package even when the browser supplies its local id", async () => {
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockQueryChain({
+          _id: PACKAGE_ID,
+          active: true,
+          visibility: "internal",
+          version: 1,
+          code: "internal",
+          name: "Internal",
+          monthlyPrice: 100,
+          annualPrice: 1000,
+          stripePriceId: "price_internal_monthly",
+          stripeAnnualPriceId: "price_internal_annual",
+        }),
+      );
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(null));
+
+      await expect(
+        createCheckoutSession(
+          TENANT_ID,
+          PACKAGE_ID,
+          "monthly",
+          fakeProvider,
+          "https://example.com/success",
+          "https://example.com/cancel",
+          TEST_ACTOR,
+        ),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(fakeProvider.sessions).toHaveLength(0);
+      expect(CheckoutSessionModel.create).not.toHaveBeenCalled();
+    });
+
     it("expires stale pending checkout sessions and does not let them block a new checkout", async () => {
       const staleSession = {
         _id: "checkout_stale",
@@ -690,7 +722,7 @@ describe("CheckoutService", () => {
         expect(checkoutCall.customerId).toBe("cus_real_fresh");
       });
 
-      it("does not double-persist when sub is null (new tenant)", async () => {
+      it("does not persist customer linkage when no local subscription exists", async () => {
         const provider = makeMockProvider();
         (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
           mockQueryChain(mockPkg),
@@ -708,7 +740,7 @@ describe("CheckoutService", () => {
         );
 
         expect(provider.createCustomer).toHaveBeenCalledOnce();
-        expect(SubscriptionModel.updateOne).toHaveBeenCalledOnce();
+        expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
       });
     });
   });

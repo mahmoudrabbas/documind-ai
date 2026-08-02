@@ -23,6 +23,11 @@ vi.mock("../../checkout/payment-provider-loader.js", () => ({
 import PackageModel from "../../../db/models/package.model.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import { FakePaymentProvider } from "../../billing/ports/fakes/fake-payment-provider.js";
+import {
+  getPlanChangeHooks,
+  registerPlanChangeHook,
+} from "../../billing/subscription.service.js";
+import type { PlanChangeHook } from "../../billing/subscription.service.js";
 import { syncTenantSubscriptionFromProvider } from "../reconciliation.service.js";
 
 const TENANT_ID = "507f1f77bcf86cd799439011";
@@ -32,6 +37,8 @@ const VERSION_ID = "507f1f77bcf86cd799439099";
 function query<T>(result: T) {
   return {
     select: vi.fn().mockReturnThis(),
+    sort: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
     lean: vi.fn().mockReturnThis(),
     exec: vi.fn().mockResolvedValue(result),
   };
@@ -41,8 +48,7 @@ describe("provider-backed subscription reconciliation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     auditWrite.mockResolvedValue(undefined);
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
-      query({
+    const localSubscription = {
         _id: "507f1f77bcf86cd799439014",
         tenantId: TENANT_ID,
         packageId: "507f1f77bcf86cd799439055",
@@ -52,10 +58,10 @@ describe("provider-backed subscription reconciliation", () => {
         providerSubscriptionId: "sub_reconcile",
         status: "ACTIVE",
         paymentState: "paid",
-      }),
-    );
+      };
+    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(query(localSubscription));
     (SubscriptionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
-      query([{ tenantId: TENANT_ID }]),
+      query([localSubscription]),
     );
     (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 1 });
     (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -108,5 +114,52 @@ describe("provider-backed subscription reconciliation", () => {
     expect(provider.customers).toHaveLength(0);
     expect(provider.sessions).toHaveLength(0);
     expect(auditWrite).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires plan-change hooks and records triggeredBy when the package changes", async () => {
+    (getPlanChangeHooks() as PlanChangeHook[]).length = 0;
+    const hook = vi.fn().mockResolvedValue(undefined);
+    registerPlanChangeHook(hook);
+
+    const provider = new FakePaymentProvider();
+    provider.subscriptions.push({
+      id: "sub_reconcile",
+      customerId: "cus_reconcile",
+      status: "active",
+      metadata: {
+        tenantId: TENANT_ID,
+        packageId: PACKAGE_ID,
+        packageVersionId: VERSION_ID,
+        packageVersion: "2",
+        billingInterval: "monthly",
+      },
+      priceId: "price_pro",
+      currentPeriodStart: new Date("2026-07-01T00:00:00Z"),
+      currentPeriodEnd: new Date("2026-08-01T00:00:00Z"),
+      cancelAtPeriodEnd: false,
+    });
+
+    const result = await syncTenantSubscriptionFromProvider(
+      TENANT_ID,
+      {
+        tenantId: "507f1f77bcf86cd799439088",
+        actorId: "507f1f77bcf86cd799439087",
+        actorEmail: "admin@example.com",
+        actorRole: "SUPER_ADMIN",
+      },
+      provider,
+    );
+
+    expect(result.status).toBe("ACTIVE");
+    expect(hook).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      fromPackageId: "507f1f77bcf86cd799439055",
+      toPackageId: PACKAGE_ID,
+      fromStatus: "ACTIVE",
+      toStatus: "ACTIVE",
+    });
+    const auditPayload = auditWrite.mock.calls[0][0];
+    expect(auditPayload.changes.triggeredBy).toBe("provider_sync");
+    expect(auditPayload.changes.reason).toContain("synchronized");
   });
 });

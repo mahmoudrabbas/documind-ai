@@ -57,6 +57,13 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
     requiredPermissions: [Permission.BILLING_READ],
   },
   {
+    label: "Usage & Limits",
+    href: "/company/usage",
+    icon: "speed",
+    context: "tenant",
+    requiredPermissions: [Permission.BILLING_READ],
+  },
+  {
     label: "Settings",
     href: "/dashboard/settings",
     icon: "settings",
@@ -123,6 +130,7 @@ export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
   { label: "Global Settings", href: "/super-admin/settings", icon: "settings", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "Payment Diagnostics", href: "/super-admin/payments", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
   { label: "Refund Reviews", href: "/super-admin/refunds", icon: "currency_exchange", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
+  { label: "Quota Overrides", href: "/super-admin/entitlement", icon: "tune", context: "platform", requiredPermissions: [Permission.BILLING_MANAGE] },
 ];
 
 export const TENANT_TOPBAR_LINKS = TENANT_SIDEBAR_LINKS.slice(0, 3);

@@ -1,4 +1,9 @@
 import mongoose, { Schema } from "mongoose";
+import {
+  EFFECTIVE_SUBSCRIPTION_INDEX_FILTER,
+  EFFECTIVE_SUBSCRIPTION_INDEX_KEY,
+  EFFECTIVE_SUBSCRIPTION_INDEX_NAME,
+} from "../subscription-index-invariant.js";
 
 export type SubscriptionStatus =
   | "TRIALING"
@@ -61,7 +66,6 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
       type: Schema.Types.ObjectId,
       ref: "Tenant",
       required: true,
-      unique: true,
     },
     packageId: {
       type: Schema.Types.ObjectId,
@@ -133,6 +137,14 @@ const subscriptionSchema = new Schema<SubscriptionDocument>(
 );
 
 subscriptionSchema.index({ status: 1, tenantId: 1 }, { name: "idx_status_tenant" });
+subscriptionSchema.index(
+  EFFECTIVE_SUBSCRIPTION_INDEX_KEY,
+  {
+    unique: true,
+    name: EFFECTIVE_SUBSCRIPTION_INDEX_NAME,
+    partialFilterExpression: EFFECTIVE_SUBSCRIPTION_INDEX_FILTER,
+  },
+);
 
 subscriptionSchema.pre("save", function () {
   this.revision = (this.revision ?? 0) + 1;

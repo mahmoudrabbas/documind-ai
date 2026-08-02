@@ -5,7 +5,7 @@ import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
-import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { createEntitlementGuard, createEntitlementCheckGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadDocumentController,
@@ -68,6 +68,11 @@ const storageMbGuard = createEntitlementGuard(svc, {
   failMode: "fail-closed",
 });
 
+const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
+  dimension: "ocrPagesPerMonth",
+  failMode: "fail-closed",
+});
+
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
@@ -85,7 +90,7 @@ router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePoli
 
 router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
 
-router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), retriggerDocumentExtractionController);
+router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
 
 router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
 
@@ -112,7 +117,7 @@ router.get(
 
 router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
 
-router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), replaceDocumentController);
+router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
 
 router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), updateDocumentMetadataController);
 

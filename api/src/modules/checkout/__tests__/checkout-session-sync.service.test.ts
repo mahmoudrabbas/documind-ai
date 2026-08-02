@@ -24,11 +24,15 @@ vi.mock("../../permissions/permissions.operation.js", () => ({
 vi.mock("../../billing/provider-subscription-sync.service.js", () => ({
   synchronizeProviderSubscription: vi.fn(),
 }));
+vi.mock("../../billing/invoice-synchronization.service.js", () => ({
+  projectProviderInvoice: vi.fn().mockResolvedValue({ outcome: "created", invoiceId: "local-invoice" }),
+}));
 
 import CheckoutSessionModel from "../../../db/models/checkoutSession.model.js";
 import PaymentEventModel from "../../../db/models/paymentEvent.model.js";
 import { FakePaymentProvider } from "../../billing/ports/fakes/fake-payment-provider.js";
 import { synchronizeProviderSubscription } from "../../billing/provider-subscription-sync.service.js";
+import { projectProviderInvoice } from "../../billing/invoice-synchronization.service.js";
 import { synchronizeCheckoutSession } from "../checkout.service.js";
 
 const TENANT_ID = "507f1f77bcf86cd799439011";
@@ -98,6 +102,7 @@ describe("Checkout Session recovery synchronization", () => {
     (synchronizeProviderSubscription as ReturnType<typeof vi.fn>).mockResolvedValue({
       changed: true,
       subscription: {
+        _id: "507f1f77bcf86cd799439015",
         packageId: PACKAGE_ID,
         packageVersionId: PACKAGE_VERSION_ID,
         providerCustomerId: "cus_test",
@@ -131,6 +136,38 @@ describe("Checkout Session recovery synchronization", () => {
       eventId: `checkout-session-sync:${sessionId}`,
       eventType: "checkout.session.synchronized",
       status: "processed",
+    }));
+  });
+
+  it("projects an invoice during checkout recovery when the provider already exposes it", async () => {
+    const sessionId = await completedProviderSession(provider);
+    const session = provider.sessions.find((item) => item.id === sessionId);
+    if (!session) throw new Error("Checkout session missing");
+    provider.seedInvoice({
+      id: "invoice_checkout_recovery",
+      customerId: session.customerId,
+      subscriptionId: "sub_test_sync",
+      number: "INV-RECOVERY",
+      status: "paid",
+      currency: "USD",
+      amountDueMinor: 1000,
+      amountPaidMinor: 1000,
+      amountRemainingMinor: 0,
+      subtotalMinor: 1000,
+      taxMinor: 0,
+      createdAt: new Date("2026-08-01T00:00:00Z"),
+      dueAt: null,
+      paidAt: new Date("2026-08-01T00:00:00Z"),
+      periodStart: new Date("2026-08-01T00:00:00Z"),
+      periodEnd: new Date("2026-09-01T00:00:00Z"),
+      providerVersion: "1",
+    });
+
+    await synchronizeCheckoutSession(sessionId, TENANT_ID, provider, ACTOR);
+
+    expect(projectProviderInvoice).toHaveBeenCalledWith(expect.objectContaining({
+      providerInvoice: expect.objectContaining({ id: "invoice_checkout_recovery" }),
+      sourceEventId: `checkout-session-sync:${sessionId}`,
     }));
   });
 

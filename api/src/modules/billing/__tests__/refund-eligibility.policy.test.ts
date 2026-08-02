@@ -20,6 +20,18 @@ describe("RefundEligibilityPolicy", () => {
     expect(decision({ usageMetrics: metrics(60) })).toMatchObject({ consumedRatioBps: 6000, maximumEligibleRefundMinor: 80 });
     expect(decision({ measuredAt: new Date("2026-01-06T00:00:00.000Z") })).toMatchObject({ consumedRatioBps: 5000, maximumEligibleRefundMinor: 100 });
   });
+  it("calculates voluntary cancellation as the unused value and mandates Free transition", () => {
+    const result = decision({ measuredAt: new Date("2026-01-01T01:00:00.000Z") });
+    expect(result).toMatchObject({
+      consumedRatioBps: 42,
+      consumedValueMinor: 1,
+      maximumEligibleRefundMinor: 199,
+      subscriptionImpact: "CANCEL_AND_MOVE_TO_FREE",
+    });
+  });
+  it("does not expose retained consumed value as refundable after settlement", () => {
+    expect(decision({ amountPaidMinor: 1000, confirmedRefundAmountMinor: 999, retainedConsumedMinor: 1 })).toMatchObject({ maximumEligibleRefundMinor: 0, subscriptionImpact: "CANCEL_AND_MOVE_TO_FREE" });
+  });
   it("uses OCR above elapsed time and produces zero at quota", () => {
     expect(decision({ usageMetrics: metrics(0, 0, 70) }).maximumEligibleRefundMinor).toBe(60);
     expect(decision({ usageMetrics: metrics(100) }).maximumEligibleRefundMinor).toBe(0);
