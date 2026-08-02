@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Permission } from "@/types/api/permissions.types";
 
-const routeState = vi.hoisted(() => ({ pathname: "/dashboard/settings/billing" }));
+const routeState = vi.hoisted(() => ({
+  pathname: "/dashboard/settings/billing",
+  router: { replace: vi.fn(), push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() },
+}));
 
-vi.mock("next/navigation", () => ({ usePathname: () => routeState.pathname }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => routeState.pathname,
+  useRouter: () => routeState.router,
+}));
+vi.mock("@/providers/auth-provider", () => ({
+  useAuth: () => ({ status: "authenticated", user: { role: "COMPANY_ADMIN" } }),
+}));
 vi.mock("@/components/auth/auth-guard", () => ({
   RoleGuard: ({ children }: { children: React.ReactNode }) => children,
 }));
