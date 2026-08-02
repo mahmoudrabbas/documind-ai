@@ -110,7 +110,7 @@ Create or edit `workers/.env`:
 NODE_ENV=development
 
 # ─── Database ────────────────────────────────────────────
-MONGODB_URI=mongodb://mongodb:27017/docsai
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority
 
 # ─── Cache ───────────────────────────────────────────────
 REDIS_URL=redis://redis:6379

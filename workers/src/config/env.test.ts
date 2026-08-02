@@ -7,13 +7,26 @@ test("worker requires explicit dependencies outside development", () => {
     () => parseEnv({ NODE_ENV: "production" }),
     (error: unknown) => {
       assert(error instanceof EnvironmentValidationError);
-      assert.deepEqual(error.keys, ["MONGODB_URI", "REDIS_URL"]);
+      assert.deepEqual(error.keys, ["MONGODB_URI"]);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseEnv({
+        NODE_ENV: "production",
+        MONGODB_URI: "mongodb+srv://test:test@mongo.test.invalid/documind-test",
+      }),
+    (error: unknown) => {
+      assert(error instanceof EnvironmentValidationError);
+      assert.deepEqual(error.keys, ["REDIS_URL"]);
       return true;
     },
   );
 });
 
 test("worker accepts explicit test dependencies", () => {
-  const env = parseEnv({ NODE_ENV: "test", MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test", REDIS_URL: "redis://127.0.0.1:6379/1" });
+  const env = parseEnv({ NODE_ENV: "test", MONGODB_URI: "mongodb+srv://test:test@mongo.test.invalid/documind-test", REDIS_URL: "redis://127.0.0.1:6379/1" });
   assert.equal(env.NODE_ENV, "test");
 });

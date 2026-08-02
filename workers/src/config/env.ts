@@ -45,8 +45,7 @@ const envSchema = z
 
     MONGODB_URI: z
       .string()
-      .url()
-      .default("mongodb://mongodb:27017/docsai"),
+      .url(),
 
     REDIS_URL: z
       .string()
@@ -114,14 +113,6 @@ const envSchema = z
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
-      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai") {
-        context.addIssue({
-          code: "custom",
-          path: ["MONGODB_URI"],
-          message: "must be explicitly configured",
-        });
-      }
-
       if (env.REDIS_URL === "redis://redis:6379") {
         context.addIssue({
           code: "custom",

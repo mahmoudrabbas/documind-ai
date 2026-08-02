@@ -40,7 +40,8 @@ openssl rand -hex 32 > secrets/api_super_admin_bootstrap_key.txt
 Configure the worker connection strings:
 
 ```bash
-echo -n "mongodb+srv://admin:admin123@documindai.jtcvgzt.mongodb.net/docsai?retryWrites=true&w=majority" > secrets/worker_mongodb_uri.txt
+echo -n "mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority" > secrets/worker_mongodb_uri.txt
+# ^ placeholder: put your real Atlas URI in the gitignored secrets/worker_mongodb_uri.txt
 echo -n "redis://redis:6379" > secrets/worker_redis_url.txt
 ```
 
@@ -138,10 +139,10 @@ Server listening...
 Use the following connection string:
 
 ```text
-mongodb://localhost:27017/docsai?directConnection=true
+mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority
 ```
 
-> **Important:** `directConnection=true` is required.
+> **Note:** The app connects to MongoDB Atlas — no local `mongodb` container is used, so `directConnection=true` does not apply.
 
 ---
 

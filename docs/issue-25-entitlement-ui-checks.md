@@ -28,7 +28,7 @@ Mongo access for the DB manipulation steps:
 docker exec -it <mongo-container> mongosh docsai
 ```
 
-(or MongoDB Compass at `mongodb://localhost:27017/docsai`)
+(or MongoDB Compass at the Atlas cluster: `mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority`)
 
 ### Collection cheat sheet
 

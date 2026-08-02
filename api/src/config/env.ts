@@ -19,7 +19,7 @@ const envSchema = z
 
     HOST: z.string().default("0.0.0.0"),
 
-    MONGODB_URI: z.string().url().default("mongodb://mongodb:27017/docsai"),
+    MONGODB_URI: z.string().url(),
     MONGODB_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
     MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
     MONGODB_RETRY_BACKOFF_FACTOR: z.coerce.number().min(1).default(2),
@@ -197,8 +197,6 @@ const envSchema = z
           context.addIssue({ code: "custom", path: [key], message: "is required and must contain at least 32 characters" });
         }
       }
-      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")
-        context.addIssue({ code: "custom", path: ["MONGODB_URI"], message: "must be explicitly configured" });
       if (env.REDIS_URL === "redis://redis:6379")
         context.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be explicitly configured" });
       if (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(env.APP_FRONTEND_URL))

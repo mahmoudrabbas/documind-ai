@@ -2,8 +2,8 @@ import mongoose from "mongoose";
 import argon2 from "argon2";
 
 const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb://mongodb:27017/docsai";
+  process.env.MONGODB_URI ??
+  "mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority";
 
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
