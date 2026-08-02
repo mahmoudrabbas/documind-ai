@@ -69,6 +69,7 @@ import { isMongoConnected } from "./db/connection.js";
 import { getDocumentAccessAuthorizationService } from "./modules/document-access/documentAccess.authorization.service.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
 import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
+import analyticsRoutes from "./modules/analytics/analytics.routes.js";
 import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
 import { MongoQuotaCounter } from "./modules/entitlement/adapters/mongo-quota-counter.js";
 import { MongoEntitlementProvider } from "./modules/entitlement/adapters/mongo-entitlement-provider.js";
@@ -197,6 +198,7 @@ app.use("/knowledge-gaps", knowledgeGapsRoutes);
 app.use("/feedback", feedbackRoutes);
 app.use("/entitlement", entitlementRoutes);
 app.use("/super-admin/entitlement", entitlementAdminRoutes);
+app.use("/analytics", analyticsRoutes);
 
 // ── EntitlementService singleton ─────────────────────────────────────────────
 //

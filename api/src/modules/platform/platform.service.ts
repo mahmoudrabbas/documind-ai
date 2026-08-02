@@ -3,6 +3,7 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
+import UsageEventModel from "../../db/models/usageEvent.model.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import PlatformSettingModel from "../../db/models/platformSetting.model.js";
@@ -54,6 +55,7 @@ export async function getOverview(context: AuditOperationContext) {
     questions,
     failedJobs,
     storage,
+    costAgg,
   ] = await Promise.all([
     TenantModel.countDocuments(tenantFilter),
     TenantModel.countDocuments({ ...tenantFilter, status: "active" }),
@@ -64,7 +66,14 @@ export async function getOverview(context: AuditOperationContext) {
     DocumentModel.aggregate<{ total: number }>([
       { $group: { _id: null, total: { $sum: "$fileSize" } } },
     ]),
+    UsageEventModel.aggregate<{ totalMinor: number }>([
+      { $group: { _id: null, totalMinor: { $sum: "$costMinorUnits" } } },
+    ]),
   ]);
+
+  const actualCostMinor = costAgg[0]?.totalMinor ?? 0;
+  const computedCost = actualCostMinor > 0 ? Number((actualCostMinor / 10000).toFixed(2)) : Number((questions * 0.002).toFixed(2));
+
   return {
     metrics: {
       companies,
@@ -74,7 +83,9 @@ export async function getOverview(context: AuditOperationContext) {
       questions,
       failedJobs,
       storageBytes: storage[0]?.total ?? 0,
-      estimatedCost: Number((questions * 0.002).toFixed(2)),
+      estimatedCost: computedCost,
+      costType: actualCostMinor > 0 ? "calculated" : "estimated",
+      dataFreshness: new Date().toISOString(),
     },
     recentAudit,
   };
@@ -502,11 +513,30 @@ export async function getUsage(context: OperationAuthorizationContext) {
       },
       { $unwind: "$tenant" },
       {
+        // Correlated sub-aggregation: sums costMinorUnits for the tenant
+        // entirely inside MongoDB, avoiding a full-collection scan per row.
+        $lookup: {
+          from: "usage_events",
+          let: { tid: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$tenantId", "$$tid"] } } },
+            { $group: { _id: null, totalMinor: { $sum: "$costMinorUnits" } } },
+          ],
+          as: "eventCostAgg",
+        },
+      },
+      {
         $project: {
           tenantId: "$_id",
           tenantName: "$tenant.name",
           questions: 1,
-          estimatedCost: { $multiply: ["$questions", 0.002] },
+          estimatedCost: {
+            $cond: [
+              { $gt: [{ $ifNull: [{ $arrayElemAt: ["$eventCostAgg.totalMinor", 0] }, 0] }, 0] },
+              { $divide: [{ $arrayElemAt: ["$eventCostAgg.totalMinor", 0] }, 10000] },
+              { $multiply: ["$questions", 0.002] },
+            ],
+          },
         },
       },
     ]),
