@@ -44,7 +44,7 @@ export class NotificationService {
   }
 
   async createFromEvent(tenantId: string, event: NotificationEvent, draft: NotificationDraft): Promise<CreateNotificationsResult> {
-    const { userIds, excludedActors } = await this.resolver.resolveRecipients(event);
+    const { userIds, excludedActors } = await this.resolver.resolveRecipients(tenantId, event);
     const excluded = new Set(excludedActors);
     const remaining = userIds.filter((id) => !excluded.has(id));
     return this.create(tenantId, draft, [...new Set(remaining)]);

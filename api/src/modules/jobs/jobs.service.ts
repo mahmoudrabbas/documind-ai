@@ -8,6 +8,7 @@ import {
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 import { getApiJobDispatcher } from "./jobDispatcher.js";
+import { listNotificationDlqs } from "./notificationDlq.repository.js";
 
 export async function enqueueCustomerJob(
   body: Record<string, unknown>,
@@ -56,6 +57,22 @@ export async function getPlatformJobStatus(
 ) {
   await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
   return getApiJobDispatcher().getJobStatus(jobId);
+}
+
+export async function listPlatformNotificationDlqs(
+  input: {
+    page: number;
+    pageSize: number;
+    status?: "pending" | "replayed";
+  },
+  context: OperationAuthorizationContext,
+) {
+  await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
+  return listNotificationDlqs(
+    { status: input.status },
+    input.page,
+    input.pageSize,
+  );
 }
 
 export async function replayPlatformJob(

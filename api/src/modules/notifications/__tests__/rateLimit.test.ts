@@ -53,9 +53,9 @@ describe("notification permission catalog (T8 4-place sync)", () => {
     expect(definition?.platformOnly).toBe(false);
   });
 
-  it("NOTIFICATIONS_UPDATE exists with exactly [COMPANY_ADMIN]", () => {
+  it("NOTIFICATIONS_UPDATE exists with exactly [EMPLOYEE, COMPANY_ADMIN]", () => {
     const definition = PERMISSION_BY_ID.get(Permission.NOTIFICATIONS_UPDATE);
-    expect(definition?.defaultBaseRoles).toEqual(["COMPANY_ADMIN"]);
+    expect(definition?.defaultBaseRoles).toEqual(["EMPLOYEE", "COMPANY_ADMIN"]);
     expect(definition?.platformOnly).toBe(false);
   });
 
@@ -195,7 +195,7 @@ describe("notification permission evaluation sanity", () => {
     expect(decision.denialCode).toBe("PERMISSION_REQUIRED");
   });
 
-  it("never grants the platform-only NOTIFICATIONS_TEST or the admin-only NOTIFICATIONS_UPDATE to an EMPLOYEE", async () => {
+  it("grants NOTIFICATIONS_UPDATE to an EMPLOYEE but never the platform-only NOTIFICATIONS_TEST", async () => {
     const evaluator = new InMemoryPermissionEvaluator();
     evaluator.addUser("employee", "tenant-a", "EMPLOYEE");
 
@@ -205,8 +205,7 @@ describe("notification permission evaluation sanity", () => {
       baseRole: "EMPLOYEE",
       permission: Permission.NOTIFICATIONS_UPDATE,
     });
-    expect(update.allowed).toBe(false);
-    expect(update.denialCode).toBe("PERMISSION_REQUIRED");
+    expect(update.allowed).toBe(true);
 
     const test = await evaluator.evaluate({
       actorId: "employee",

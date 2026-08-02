@@ -7,6 +7,7 @@ import {
   enqueueCustomerJob,
   getPlatformJobMetrics,
   getPlatformJobStatus,
+  listPlatformNotificationDlqs,
   replayPlatformJob,
 } from "./jobs.service.js";
 
@@ -51,6 +52,40 @@ export async function getJobMetricsController(
   try {
     const metrics = await getPlatformJobMetrics(operationContext(req));
     res.status(200).json({ success: true, data: metrics });
+  } catch (error) {
+    handleJobError(error, res, next);
+  }
+}
+
+/**
+ * GET /platform/jobs/notification-dlqs
+ * Paginated dead-letter queue listing. Super Admin only.
+ */
+export async function listNotificationDlqsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const page = Number(req.query.page ?? 1);
+    const pageSize = Number(req.query.pageSize ?? 20);
+    const status =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    if (
+      !Number.isInteger(page) ||
+      page < 1 ||
+      !Number.isInteger(pageSize) ||
+      pageSize < 1 ||
+      pageSize > 100 ||
+      (status !== undefined && status !== "pending" && status !== "replayed")
+    ) {
+      throw new AppError(400, BAD_REQUEST, "invalid pagination or status params");
+    }
+    const result = await listPlatformNotificationDlqs(
+      { page, pageSize, status },
+      operationContext(req),
+    );
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     handleJobError(error, res, next);
   }

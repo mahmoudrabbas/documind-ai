@@ -316,21 +316,38 @@ describe.skipIf(!hasMongo)("Notification REST API (T7 routes)", () => {
     expect(res.body.data.total).toBe(0);
   });
 
-  it("EMPLOYEE without NOTIFICATIONS_UPDATE gets 403 on state-change routes", async () => {
-    const id = await seedNotification(tenantAId, adminAId);
+  it("EMPLOYEE can mark/delete their own notification; cannot affect another user's (scoped)", async () => {
+    const ownId = await seedNotification(tenantAId, employeeAId);
+    const otherId = await seedNotification(tenantAId, adminAId, {
+      dedupEventId: "other-user",
+    });
 
-    const readRes = await request(`/notifications/${id}/read`, {
+    const readRes = await request(`/notifications/${ownId}/read`, {
       method: "POST",
       token: employeeAToken,
     });
-    expect(readRes.status).toBe(403);
-    expect(readRes.body.error.code).toBe("PERMISSION_REQUIRED");
+    expect(readRes.status).toBe(200);
+    expect(readRes.body.data.notificationId).toBe(ownId);
 
-    const delRes = await request(`/notifications/${id}`, {
+    const doc = await NotificationModel.findById(ownId).lean();
+    expect(doc?.isRead).toBe(true);
+    expect(doc?.lifecycleState).toBe("READ");
+
+    const delRes = await request(`/notifications/${ownId}`, {
       method: "DELETE",
       token: employeeAToken,
     });
-    expect(delRes.status).toBe(403);
+    expect(delRes.status).toBe(200);
+    expect(delRes.body.data).toEqual({ notificationId: ownId, deleted: true });
+
+    const otherRes = await request(`/notifications/${otherId}/read`, {
+      method: "POST",
+      token: employeeAToken,
+    });
+    expect(otherRes.status).toBe(200);
+    const otherDoc = await NotificationModel.findById(otherId).lean();
+    expect(otherDoc?.isRead).toBe(false);
+    expect(otherDoc?.lifecycleState).not.toBe("READ");
   });
 
   it("POST /notifications/:id/read marks the notification read", async () => {
