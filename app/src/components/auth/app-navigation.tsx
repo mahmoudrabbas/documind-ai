@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
+import { useTenantSettings } from "@/providers/tenant-provider";
 import {
   getAppContext,
   filterNavigationLinks,
@@ -21,6 +22,7 @@ type AppNavigationProps = {
 export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const auth = useAuth();
   const permissions = usePermissions();
+  const tenant = useTenantSettings();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -67,7 +69,15 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
     candidateLinks,
     permissions.status,
     permissions.can,
+    auth.user.role,
   );
+
+  const companyName =
+    tenant.status === "ready" && tenant.settings.profile.companyName
+      ? tenant.settings.profile.companyName
+      : appContext === "tenant"
+        ? (auth.tenant?.name ?? null)
+        : null;
 
   return (
     <>
@@ -102,7 +112,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
               DocuMind AI
             </h1>
             <p className="text-label-sm text-on-surface-variant">
-              Enterprise Knowledge
+              {companyName || "Enterprise Knowledge"}
             </p>
           </div>
           <button

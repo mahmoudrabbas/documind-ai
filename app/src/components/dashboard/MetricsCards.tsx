@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getCompanyUsage } from "@/services/entitlement.service";
+import { useI18n } from "@/providers/i18n-provider";
 
 /* ------------------------------------------------------------------ */
 /*  Types & card definitions                                          */
@@ -35,21 +36,21 @@ type ViewState =
 const CARD_DEFS = [
   {
     dimension: "documents",
-    label: "Total Documents",
+    labelKey: "dashboard.totalDocuments",
     icon: "folder_open",
     iconBg: "bg-primary-container",
     iconColor: "text-on-primary-container",
   },
   {
     dimension: "queriesPerMonth",
-    label: "Total Questions",
+    labelKey: "dashboard.totalQuestions",
     icon: "forum",
     iconBg: "bg-secondary-container",
     iconColor: "text-on-secondary-container",
   },
   {
     dimension: "storageMb",
-    label: "Storage Used",
+    labelKey: "dashboard.storageUsed",
     icon: "database",
     iconBg: "bg-tertiary-fixed",
     iconColor: "text-on-tertiary-fixed",
@@ -96,6 +97,7 @@ function formatLimit(value: number, dimension: string): string {
 export default function MetricsCards() {
   const [view, setView] = useState<ViewState>({ status: "loading" });
   const [retryCount, setRetryCount] = useState(0);
+  const { t } = useI18n();
 
   const fetchMetrics = useCallback(async (signal: AbortSignal) => {
     setView({ status: "loading" });
@@ -231,7 +233,7 @@ export default function MetricsCards() {
 
             {/* Label + value */}
             <p className="text-label-md text-on-surface-variant">
-              {def.label}
+              {t(def.labelKey)}
             </p>
             <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
               {displayValue}

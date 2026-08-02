@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { listRoles } from "@/services/roles.service";
 import {
   inviteUserWithRole,
+  resendInvitation,
   retryInvitationRoleAssignment,
+  revokeInvitation,
   updateUser,
   updateUserWithRole,
 } from "@/services/users.service";
@@ -18,6 +21,7 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
+import { ConfirmDialog } from "@/components/ui/Modal";
 
 type Pagination = {
   page: number;
@@ -35,6 +39,13 @@ type UserUpdateState = {
 
 type RowUpdates = Record<string, UserUpdateState>;
 type DeletingUserIds = Record<string, boolean>;
+type ResendingIds = Record<string, boolean>;
+type RevokingIds = Record<string, boolean>;
+
+type ConfirmAction =
+  | { type: "delete"; userId: string; userName: string }
+  | { type: "revoke"; userId: string; userName: string }
+  | null;
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -78,6 +89,9 @@ export default function UsersPage() {
   const [rowUpdates, setRowUpdates] = useState<RowUpdates>({});
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [deletingUserIds, setDeletingUserIds] = useState<DeletingUserIds>({});
+  const [resendingIds, setResendingIds] = useState<ResendingIds>({});
+  const [revokingIds, setRevokingIds] = useState<RevokingIds>({});
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
   const [page, setPage] = useState<number>(1);
   const [pagination, setPagination] = useState<Pagination>({
@@ -86,6 +100,11 @@ export default function UsersPage() {
     totalPages: 1,
     totalRecords: 0,
   });
+
+  const [search, setSearch] = useState<string>("");
+  const [roleFilter, setRoleFilter] = useState<string>("");
+  const [filtersKey, setFiltersKey] = useState<number>(0);
+  const filtersInitializedRef = useRef(false);
 
   const [customRoles, setCustomRoles] = useState<RoleView[]>([]);
 
@@ -131,48 +150,72 @@ export default function UsersPage() {
         : user.role;
   }
 
-  async function loadUsers(pageToLoad: number) {
-    setFetchError(null);
-    setLoadingUsers(true);
+  const loadUsers = useCallback(
+    async (pageToLoad: number) => {
+      setFetchError(null);
+      setLoadingUsers(true);
 
-    try {
-      const response = await apiClient<{
-        success: boolean;
-        data: { users: UserView[]; pagination: Pagination };
-      }>(`/users?page=${pageToLoad}&pageSize=${DEFAULT_PAGE_SIZE}`, {
-        method: "GET",
-      });
+      try {
+        const params = new URLSearchParams({
+          page: String(pageToLoad),
+          pageSize: String(DEFAULT_PAGE_SIZE),
+        });
+        if (search.trim()) params.set("search", search.trim());
+        if (roleFilter) params.set("role", roleFilter);
 
-      setUsers(response.data.users);
-      setPagination(response.data.pagination);
-      setRowUpdates(
-        response.data.users.reduce<RowUpdates>((acc, user) => {
-          acc[user.id] = {
-            role: user.customRoleId ? `custom:${user.customRoleId}` : user.role,
-            status: user.status,
-            isSaving: false,
-            error: null,
-          };
-          return acc;
-        }, {}),
-      );
-      setDeletingUserIds({});
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setFetchError(err.message);
-      } else {
-        setFetchError("Unable to load users. Please try again.");
+        const response = await apiClient<{
+          success: boolean;
+          data: { users: UserView[]; pagination: Pagination };
+        }>(`/users?${params.toString()}`, {
+          method: "GET",
+        });
+
+        setUsers(response.data.users);
+        setPagination(response.data.pagination);
+        setRowUpdates(
+          response.data.users.reduce<RowUpdates>((acc, user) => {
+            acc[user.id] = {
+              role: user.customRoleId
+                ? `custom:${user.customRoleId}`
+                : user.role,
+              status: user.status,
+              isSaving: false,
+              error: null,
+            };
+            return acc;
+          }, {}),
+        );
+        setDeletingUserIds({});
+      } catch (err) {
+        if (err instanceof ApiError) {
+          setFetchError(err.message);
+        } else {
+          setFetchError("Unable to load users. Please try again.");
+        }
+      } finally {
+        setLoadingUsers(false);
       }
-    } finally {
-      setLoadingUsers(false);
-    }
-  }
+    },
+    [search, roleFilter],
+  );
 
   useEffect(() => {
     (async () => {
       await loadUsers(page);
     })();
-  }, [page]);
+  }, [page, filtersKey, loadUsers]);
+
+  useEffect(() => {
+    if (!filtersInitializedRef.current) {
+      filtersInitializedRef.current = true;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setPage(1);
+      setFiltersKey((key) => key + 1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search, roleFilter]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -342,6 +385,65 @@ export default function UsersPage() {
         ...prev,
         [userId]: false,
       }));
+      setConfirmAction(null);
+    }
+  }
+
+  async function handleResendInvitation(userId: string) {
+    setResendingIds((prev: ResendingIds): ResendingIds => ({
+      ...prev,
+      [userId]: true,
+    }));
+    setFetchError(null);
+    setUpdateMessage(null);
+
+    try {
+      const response = await resendInvitation(userId);
+      const deliveryFailed =
+        response.data.emailDelivery && !response.data.emailDelivery.sent;
+      setUpdateMessage(
+        deliveryFailed
+          ? "Invitation email queued, but delivery may be delayed."
+          : response.message ?? "Invitation email resent successfully.",
+      );
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setFetchError(err.message);
+      } else {
+        setFetchError("Unable to resend invitation. Please try again.");
+      }
+    } finally {
+      setResendingIds((prev: ResendingIds): ResendingIds => ({
+        ...prev,
+        [userId]: false,
+      }));
+    }
+  }
+
+  async function handleRevokeInvitation(userId: string) {
+    setRevokingIds((prev: RevokingIds): RevokingIds => ({
+      ...prev,
+      [userId]: true,
+    }));
+    setFetchError(null);
+    setUpdateMessage(null);
+
+    try {
+      const response = await revokeInvitation(userId);
+      setUpdateMessage(response.message ?? "Invitation revoked successfully.");
+      void loadUsers(page);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setFetchError(err.message);
+      } else {
+        setFetchError("Unable to revoke invitation. Please try again.");
+      }
+    } finally {
+      setRevokingIds((prev: RevokingIds): RevokingIds => ({
+        ...prev,
+        [userId]: false,
+      }));
+      setConfirmAction(null);
     }
   }
 
@@ -537,6 +639,52 @@ export default function UsersPage() {
           </div>
         </div>
 
+        <div className="mb-4 flex flex-col gap-3 border-b border-outline-variant/30 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center">
+            <div className="relative min-[480px]:w-64">
+              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+                search
+              </span>
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by name or email"
+                className="w-full rounded-lg border border-outline-variant bg-surface py-2 pl-9 pr-3 text-sm transition-all outline-none placeholder:text-outline focus:border-transparent focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <select
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+              className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary min-[480px]:w-48"
+            >
+              <option value="">All roles</option>
+              <option value="EMPLOYEE">Employee</option>
+              <option value="COMPANY_ADMIN">Company Admin</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/dashboard/users/import"
+              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                upload_file
+              </span>
+              Bulk import
+            </Link>
+            <Link
+              href="/dashboard/users/import/history"
+              className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                history
+              </span>
+              Import history
+            </Link>
+          </div>
+        </div>
+
         {fetchError ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
             {fetchError}
@@ -599,6 +747,10 @@ export default function UsersPage() {
                       update.role !== currentRoleValue ||
                       update.status !== user.status;
                     const isDeleting = deletingUserIds[user.id] === true;
+                    const isPending =
+                      user.status === "pending_email_verification";
+                    const isResending = resendingIds[user.id] === true;
+                    const isRevoking = revokingIds[user.id] === true;
 
                     return (
                       <tr
@@ -706,12 +858,44 @@ export default function UsersPage() {
                               {update.isSaving ? "Saving..." : "Update"}
                             </button>
                             ) : null}
+                            {isPending && canCreateUsers ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-xs font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={isResending || isDeleting}
+                              onClick={() => void handleResendInvitation(user.id)}
+                            >
+                              {isResending ? "Resending..." : "Resend"}
+                            </button>
+                            ) : null}
+                            {isPending && canDeleteUsers ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-warning/40 bg-surface px-3 py-1.5 text-xs font-bold text-warning shadow-sm transition-colors hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={isRevoking || isDeleting}
+                              onClick={() =>
+                                setConfirmAction({
+                                  type: "revoke",
+                                  userId: user.id,
+                                  userName: user.name,
+                                })
+                              }
+                            >
+                              {isRevoking ? "Revoking..." : "Revoke"}
+                            </button>
+                            ) : null}
                             {canDeleteUsers ? (
                             <button
                               type="button"
                               className="inline-flex items-center justify-center rounded-md border border-error/30 bg-surface px-3 py-1.5 text-xs font-bold text-error shadow-sm transition-colors hover:bg-error-container hover:text-on-error-container disabled:cursor-not-allowed disabled:opacity-50"
                               disabled={isDeleting}
-                              onClick={() => void handleUserDelete(user.id)}
+                              onClick={() =>
+                                setConfirmAction({
+                                  type: "delete",
+                                  userId: user.id,
+                                  userName: user.name,
+                                })
+                              }
                             >
                               {isDeleting ? "Deleting..." : "Delete"}
                             </button>
@@ -732,7 +916,9 @@ export default function UsersPage() {
                       colSpan={7}
                       className="px-4 py-8 text-center text-sm text-on-surface-variant"
                     >
-                      No users found for this tenant.
+                      {search.trim() || roleFilter
+                        ? "No users match the current search or role filter."
+                        : "No users found for this tenant."}
                     </td>
                   </tr>
                 )}
@@ -775,6 +961,41 @@ export default function UsersPage() {
           </button>
         </div>
       </DashboardPanel>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={
+          confirmAction?.type === "revoke"
+            ? "Revoke invitation?"
+            : "Delete user?"
+        }
+        description={
+          confirmAction?.type === "revoke"
+            ? `${confirmAction.userName} has not accepted their invitation yet. Revoking will cancel it and remove the pending user record.`
+            : `This will permanently remove ${confirmAction?.userName ?? "this user"} from the workspace. This action cannot be undone.`
+        }
+        confirmLabel={
+          confirmAction?.type === "revoke" ? "Revoke invitation" : "Delete user"
+        }
+        variant="danger"
+        isLoading={
+          confirmAction
+            ? confirmAction.type === "delete"
+              ? deletingUserIds[confirmAction.userId] === true
+              : revokingIds[confirmAction.userId] === true
+            : false
+        }
+        error={fetchError}
+        onCancel={() => setConfirmAction(null)}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (confirmAction.type === "delete") {
+            void handleUserDelete(confirmAction.userId);
+          } else {
+            void handleRevokeInvitation(confirmAction.userId);
+          }
+        }}
+      />
     </DashboardPage>
   );
 }

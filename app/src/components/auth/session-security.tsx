@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 
 export function SessionSecurity() {
-  const { user, logoutAll } = useAuth();
+  const { user, revokeOtherSessions } = useAuth();
   const [isRevoking, setIsRevoking] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [message, setMessage] = useState<{
@@ -12,14 +12,14 @@ export function SessionSecurity() {
     text: string;
   } | null>(null);
 
-  async function handleLogoutAll() {
+  async function handleRevokeOtherSessions() {
     setIsRevoking(true);
     setMessage(null);
     try {
-      await logoutAll();
+      await revokeOtherSessions();
       setMessage({
         type: "success",
-        text: "All other sessions have been revoked. You have been signed out.",
+        text: "All other sessions have been revoked. This session stays signed in.",
       });
     } catch {
       setMessage({
@@ -38,8 +38,8 @@ export function SessionSecurity() {
         Session Security
       </h3>
       <p className="mt-2 text-body-md text-on-surface-variant">
-        Sign out of all sessions across all devices and browsers. You will be
-        signed out of this session as well.
+        Sign out all other sessions across your other devices and browsers.
+        This session will stay signed in.
       </p>
 
       {user && (
@@ -78,17 +78,17 @@ export function SessionSecurity() {
       ) : (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
           <p className="text-body-sm font-medium text-amber-800">
-            Are you sure? This will revoke all refresh tokens for your account
-            across all devices.
+            Are you sure? This will sign out every other device for your
+            account. This session will remain signed in.
           </p>
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              onClick={handleLogoutAll}
+              onClick={handleRevokeOtherSessions}
               disabled={isRevoking}
               className="rounded-lg bg-red-600 px-4 py-2 text-label-md text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isRevoking ? "Revoking..." : "Yes, revoke all"}
+              {isRevoking ? "Revoking..." : "Yes, revoke others"}
             </button>
             <button
               type="button"

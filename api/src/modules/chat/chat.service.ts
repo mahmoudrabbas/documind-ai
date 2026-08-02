@@ -12,6 +12,7 @@ import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
 import type { AccessContext } from "../retrieval/retrieval.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
+import { getTenantSettings } from "../settings/settings.service.js";
 import DocumentModel from "../../db/models/document.model.js";
 import type {
   ChatSource,
@@ -30,7 +31,55 @@ import * as chatRepo from "./chat.repository.js";
 import { mapLlmProviderError } from "../../providers/llm/providerError.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
+const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
 const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
+
+function ragContextInstruction(citationsEnabled: boolean): string {
+  return citationsEnabled
+    ? "Use the following context to answer the question. Always cite your sources."
+    : "Use the following context to answer the question. Do not mention or cite your sources, documents, or page numbers in the answer.";
+}
+
+export function buildRagMessages(options: {
+  citationsEnabled: boolean;
+  historyFromDb: Array<{ role: "user" | "assistant"; content: string }>;
+  sources: ChatSource[];
+  userMessage: string;
+}): { role: "system" | "user" | "assistant"; content: string }[] {
+  const { citationsEnabled, historyFromDb, sources, userMessage } = options;
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] =
+    [
+      {
+        role: "system",
+        content: citationsEnabled
+          ? RAG_SYSTEM_PROMPT
+          : RAG_SYSTEM_PROMPT_NO_CITATIONS,
+      },
+    ];
+
+  if (historyFromDb.length > 0) {
+    for (const msg of historyFromDb.slice(-10)) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+  }
+
+  if (sources.length > 0) {
+    const contextBlock = sources
+      .map(
+        (s, i) =>
+          `[Source ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
+      )
+      .join("\n\n");
+
+    messages.push({
+      role: "system",
+      content: `${ragContextInstruction(citationsEnabled)}\n\nContext:\n${contextBlock}`,
+    });
+  }
+
+  messages.push({ role: "user", content: userMessage });
+  return messages;
+}
 
 export function insufficientAuthorizedEvidenceResponse(
   conversationId: string,
@@ -71,7 +120,22 @@ export class ChatService {
     const tenantIdStr = actor.tenantId.toString();
     const userIdStr = actor.actorId.toString();
 
-    // 3. Create or verify conversation
+    // 3. Load tenant AI runtime preferences (citations toggle + generation limits).
+    let citationsEnabled = true;
+    let maxTokens = 1024;
+    try {
+      const tenantSettings = await getTenantSettings(tenantIdStr);
+      citationsEnabled =
+        tenantSettings.settings.aiRuntimePreferences.citationsEnabled;
+      maxTokens = tenantSettings.settings.aiRuntimePreferences.maxTokens;
+    } catch (err) {
+      logger.warn(
+        { err, tenantId: tenantIdStr },
+        "Failed to load tenant settings, defaulting citations to enabled",
+      );
+    }
+
+    // 4. Create or verify conversation
     let conversationId = input.conversationId;
     if (!conversationId) {
       const title =
@@ -87,11 +151,11 @@ export class ChatService {
       }
     }
 
-    // 4. Save user message
+    // 5. Save user message
     const currentCount = await chatRepo.countMessages(tenantIdStr, conversationId);
     await chatRepo.addMessage(tenantIdStr, conversationId, "user", input.message, currentCount);
 
-    // 5. Load conversation history from DB for LLM context
+    // 6. Load conversation history from DB for LLM context
     let historyFromDb: Array<{ role: "user" | "assistant"; content: string }> = [];
     try {
       const dbMessages = await chatRepo.getConversationHistory(
@@ -106,7 +170,7 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Failed to load conversation history");
     }
 
-    // 6. Analyze query intent via IntentQueryService
+    // 7. Analyze query intent via IntentQueryService
     let queryText = input.message;
     try {
       const intentResult = await getIntentQueryService().analyzeQuery(
@@ -181,7 +245,7 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
     }
 
-    // 7. Retrieve relevant chunks via hybrid search
+    // 8. Retrieve relevant chunks via hybrid search
     const accessContext: AccessContext = {
       tenantId: tenantIdStr,
       actorId: actor.actorId,
@@ -257,43 +321,21 @@ export class ChatService {
       };
     }
 
-    // 8. Build RAG prompt and generate answer
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: RAG_SYSTEM_PROMPT },
-    ];
+    // 9. Build RAG prompt and generate answer
+    const messages = buildRagMessages({
+      citationsEnabled,
+      historyFromDb,
+      sources,
+      userMessage: input.message,
+    });
 
-    // Add conversation history from DB
-    if (historyFromDb.length > 0) {
-      const recentHistory = historyFromDb.slice(-10);
-      for (const msg of recentHistory) {
-        messages.push({ role: msg.role, content: msg.content });
-      }
-    }
-
-    // Add retrieved context
-    if (sources.length > 0) {
-      const contextBlock = sources
-        .map(
-          (s, i) =>
-            `[Source ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
-        )
-        .join("\n\n");
-
-      messages.push({
-        role: "system",
-        content: `Use the following context to answer the question. Always cite your sources.\n\nContext:\n${contextBlock}`,
-      });
-    }
-
-    messages.push({ role: "user", content: input.message });
-
-    // 9. Call LLM
+    // 10. Call LLM
     let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
     try {
       response = await this.modelAdapter.complete({
         messages,
         temperature: 0.3,
-        maxTokens: 1500,
+        maxTokens,
       });
     } catch (error) {
       const mapped = mapLlmProviderError(error);
@@ -318,21 +360,23 @@ export class ChatService {
 
     const answer = response.choices[0]?.message?.content ?? "";
 
-    // 10. Save assistant response
+    // 11. Save assistant response (sources are stored only when citations are enabled)
     const assistantDoc = await chatRepo.addMessage(
       tenantIdStr,
       conversationId,
       "assistant",
       answer,
       currentCount + 1,
-      sources.map((s) => ({
-        chunkId: s.chunkId,
-        documentId: s.documentId,
-        documentTitle: s.documentTitle ?? "Unknown Document",
-        sectionTitle: s.sectionTitle,
-        pageNumber: s.pageNumber,
-        score: s.score,
-      })),
+      citationsEnabled
+        ? sources.map((s) => ({
+            chunkId: s.chunkId,
+            documentId: s.documentId,
+            documentTitle: s.documentTitle ?? "Unknown Document",
+            sectionTitle: s.sectionTitle,
+            pageNumber: s.pageNumber,
+            score: s.score,
+          }))
+        : [],
     );
 
     await getAuditWriter().write({
@@ -354,7 +398,7 @@ export class ChatService {
     return {
       messageId: assistantDoc._id.toString(),
       answer,
-      sources,
+      ...(citationsEnabled ? { sources } : {}),
       conversationId,
     };
   }

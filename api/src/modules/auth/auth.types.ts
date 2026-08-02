@@ -109,6 +109,7 @@ export interface AuthTokenClaims {
   type: "access" | "refresh";
   role?: BaseRole;
   email?: string;
+  sessionVersion?: number;
   jti?: string;
   familyId?: string;
 }
@@ -119,6 +120,16 @@ export interface RefreshTokenContext {
 }
 
 export interface RefreshResult {
+  tokens: {
+    accessToken: string;
+    tokenType: "Bearer";
+    expiresIn: string;
+  };
+}
+
+export interface RevokeOtherSessionsResult {
+  success: boolean;
+  message: string;
   tokens: {
     accessToken: string;
     tokenType: "Bearer";
