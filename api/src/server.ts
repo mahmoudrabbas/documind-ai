@@ -8,11 +8,13 @@ import { startEntitlementReconciliation } from "./modules/entitlement/reconcilia
 import { getReconciliationService } from "./modules/entitlement/reconciliation.service.js";
 import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
 import { startNotificationOutboxScheduler } from "./modules/notifications/outbox/notificationOutbox.scheduler.js";
+import { startNotificationSweepsScheduler } from "./modules/notifications/sweeps/notificationSweeps.scheduler.js";
 import { NotificationService } from "./modules/notifications/notifications.service.js";
 import { MongoNotificationRepository } from "./modules/notifications/repositories/mongo/notification.repository.js";
 import { MongoUserNotificationStateRepository } from "./modules/notifications/repositories/mongo/userNotificationState.repository.js";
 import { RecipientResolver } from "./modules/notifications/recipientResolver.js";
 import { setNotificationCreatePort } from "./modules/notifications/outbox/notificationOutbox.dispatcher.js";
+import { createSocketServer } from "./modules/notifications/socket/notificationSocketServer.js";
 
 dotenv.config();
 
@@ -130,6 +132,9 @@ async function gracefulShutdown(signal: string) {
     });
   });
 
+  notificationSocketServer.close();
+  logger.info("Notification socket server closed");
+
   await Promise.allSettled([disconnectRedis(), disconnectDB()]);
 
   process.exit(0);
@@ -156,6 +161,9 @@ try {
 const server = app.listen(config.PORT, () => {
   logger.info({ port: config.PORT }, "API server started");
 });
+
+const notificationSocketServer = createSocketServer(server);
+logger.info("Notification socket server attached");
 
 // ── Entitlement reconciliation scheduler ─────────────────────────────────────
 //
@@ -206,6 +214,25 @@ if (process.env.NOTIFICATIONS_OUTBOX_ENABLED !== "false") {
     logger.warn(
       { err: error },
       "Failed to start notification outbox scheduler",
+    );
+  }
+}
+
+// ── Notification sweeps scheduler (T20) ─────────────────────────────────────
+// TTL/DLQ/unread-reconcile sweeps on a fixed interval; env-gated via the T20
+// keys (NOTIFICATION_SWEEP_ENABLED=false default → start() is a no-op).
+
+if (config.NOTIFICATION_SWEEP_ENABLED) {
+  try {
+    startNotificationSweepsScheduler({
+      intervalMs: config.NOTIFICATION_SWEEP_INTERVAL_MS,
+      ttlBatch: config.NOTIFICATION_SWEEP_TTL_BATCH,
+    });
+    logger.info("Notification sweeps scheduler started");
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      "Failed to start notification sweeps scheduler",
     );
   }
 }

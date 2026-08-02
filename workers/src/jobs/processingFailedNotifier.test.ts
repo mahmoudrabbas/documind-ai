@@ -1,11 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MongoServerError, ObjectId, type MongoClient } from "mongodb";
-import { withProcessingFailedOutbox } from "./processingFailedNotifier.js";
-import { RawOutboxWriter } from "../providers/rawOutboxWriter.js";
-import { setMockClient } from "../db/mongo.js";
 import { PermanentJobError, RetryableJobError } from "../contracts/retryPolicy.js";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
+
+// The config singleton parses env eagerly, so the fake Atlas URI must be set
+// before any module that transitively imports config is evaluated.
+process.env.MONGODB_URI =
+  "mongodb+srv://test:test@mongo.test.invalid/documind-test";
+
+const { withProcessingFailedOutbox } = await import(
+  "./processingFailedNotifier.js"
+);
+const { RawOutboxWriter } = await import("../providers/rawOutboxWriter.js");
+const { setMockClient } = await import("../db/mongo.js");
 
 /**
  * T9 acceptance — processing_failed trigger wiring.

@@ -3,7 +3,16 @@ import test from "node:test";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
 import type { DocumentPolicyPropagationPayload, DerivedAccessMetadataV1 } from "../contracts/documentPolicyPropagation.js";
 import { FakeDocumentPolicyPropagationTarget } from "../providers/documentPolicyPropagationTarget.js";
-import { processDocumentPolicyPropagation, type PolicyPropagationWorkerRepository } from "./documentPolicyPropagationJob.js";
+import type { PolicyPropagationWorkerRepository } from "./documentPolicyPropagationJob.js";
+
+// The config singleton parses env eagerly, so the fake Atlas URI must be set
+// before any module that transitively imports config is evaluated.
+process.env.MONGODB_URI =
+  "mongodb+srv://test:test@mongo.test.invalid/documind-test";
+
+const { processDocumentPolicyPropagation } = await import(
+  "./documentPolicyPropagationJob.js"
+);
 
 const payload: DocumentPolicyPropagationPayload = { schemaVersion: 1, eventId: "a".repeat(64), tenantId: "1".repeat(24),
   documentId: "2".repeat(24), documentVersion: 1, policyId: "3".repeat(24), policyVersion: 2, previousPolicyVersion: 1,

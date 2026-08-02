@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/providers/auth-provider";
 import { useI18n } from "@/providers/i18n-provider";
 import { useNotificationFeed } from "@/hooks/features/useNotificationFeed";
+import { useNotificationSocket } from "@/hooks/features/useNotificationSocket";
 import { useUnreadCount } from "@/hooks/features/useUnreadCount";
 import {
   archive as archiveNotification,
@@ -42,6 +43,16 @@ export function NotificationsBell() {
   const auth = useAuth();
   const unread = useUnreadCount();
   const feed = useNotificationFeed();
+  // Phase-2 real-time refresh: socket pushes refresh the unread count and the
+  // feed instantly; the 30s poll in useUnreadCount remains as the fallback.
+  const refreshUnreadAndFeed = () => {
+    void unread.refresh();
+    void feed.refresh();
+  };
+  useNotificationSocket({
+    onNotificationCreated: refreshUnreadAndFeed,
+    onNotificationUpdated: refreshUnreadAndFeed,
+  });
   const [open, setOpen] = useState(false);
   const [removedIds, setRemovedIds] = useState<Set<string>>(
     () => new Set(),

@@ -9,6 +9,8 @@ import type { JobHandlerContext, JobHandlerResult } from "../contracts/jobDispat
 // the dynamic imports below).
 process.env.EMAIL_VERIFICATION_JWT_SECRET =
   "test-worker-email-verification-secret";
+process.env.MONGODB_URI =
+  "mongodb+srv://test:test@mongo.test.invalid/documind-test";
 
 const { employeeImportJobHandler, employeeImportPayloadSchema } = await import(
   "./employeeImportJob.js"

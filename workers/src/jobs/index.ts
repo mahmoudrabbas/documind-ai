@@ -12,9 +12,11 @@ import { createDocumentIndexingJobHandler } from "./documentIndexingJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
 import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
 import { RestDelivery } from "../providers/restDelivery.js";
+import { SocketIoDelivery } from "../providers/socketIoDelivery.js";
 import { createDocumentPolicyPropagationJobHandler } from "./documentPolicyPropagationJob.js";
 import { createNotificationDispatchJobHandler } from "./notificationDispatchJob.js";
 import { RawOutboxWriter } from "../providers/rawOutboxWriter.js";
+import { config } from "../config/index.js";
 
 /**
  * Assembles the worker's handler registry.
@@ -42,7 +44,13 @@ export function buildHandlerRegistry(): JobHandlerRegistry {
   registry.register(createDocumentIndexingJobHandler());
   registry.register(createDocumentPolicyPropagationJobHandler());
   // Adapter chosen at the composition root; the job only depends on the port (DIP).
-  registry.register(createNotificationDispatchJobHandler(new RestDelivery()));
+  // NOTIFICATION_TRANSPORT selects the delivery channel: 'socket' -> SocketIoDelivery,
+  // anything else (incl. unset) -> RestDelivery (Phase 1 default).
+  const delivery =
+    config.NOTIFICATION_TRANSPORT === "socket"
+      ? new SocketIoDelivery()
+      : new RestDelivery();
+  registry.register(createNotificationDispatchJobHandler(delivery));
 
   return registry;
 }

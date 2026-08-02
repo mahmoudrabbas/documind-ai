@@ -3,13 +3,14 @@
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 
 /* �"?�"? Module mocks (hoisted by vitest) �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"? */
 
 vi.mock("@/providers/auth-provider", () => ({ useAuth: vi.fn() }));
+vi.mock("socket.io-client", () => ({ io: vi.fn() }));
 vi.mock("@/services/notifications.service", () => ({
   getUnreadCount: vi.fn(),
   listNotifications: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@/services/notifications.service", () => ({
 /* �"?�"? Imports (resolved after hoisted mocks) �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"? */
 
 import { useAuth } from "@/providers/auth-provider";
+import { io } from "socket.io-client";
 import {
   getUnreadCount,
   listNotifications,
@@ -36,6 +38,8 @@ import { I18nProvider } from "@/providers/i18n-provider";
 import { NotificationsBell } from "../NotificationsBell";
 import { notificationsBadgeColor } from "@/lib/notification-utils";
 import type { Notification } from "@/types/api/notifications.types";
+
+const ioMock = vi.mocked(io);
 
 /* �"?�"? Helpers �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"? */
 
@@ -92,11 +96,33 @@ function renderBell() {
   );
 }
 
+/** Fake socket.io socket: records handlers locally, never touches the network. */
+function createFakeSocket() {
+  const emitHandlers = new Map<string, Array<(...args: unknown[]) => void>>();
+  const socket = {
+    on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      const list = emitHandlers.get(event) ?? [];
+      list.push(handler);
+      emitHandlers.set(event, list);
+      return socket;
+    }),
+    disconnect: vi.fn(),
+    removeAllListeners: vi.fn(),
+    emitEvent: (event: string, ...args: unknown[]) => {
+      for (const handler of emitHandlers.get(event) ?? []) {
+        handler(...args);
+      }
+    },
+  };
+  return socket;
+}
+
 /* �"?�"? Tests �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"? */
 
 describe("NotificationsBell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ioMock.mockReturnValue(createFakeSocket() as any);
     (useAuth as Mock).mockReturnValue({
       status: "authenticated",
       user: {
@@ -244,6 +270,27 @@ describe("NotificationsBell", () => {
 
     const viewAll = await screen.findByRole("link", { name: "View all" });
     expect(viewAll).toHaveAttribute("href", "/dashboard/notifications");
+  });
+
+  it("refreshes the unread count and feed when the socket pushes notification:created", async () => {
+    mockUnread(1, { normal: 1 });
+    mockFeed([]);
+    const socket = createFakeSocket();
+    ioMock.mockReturnValue(socket as any);
+
+    renderBell();
+    await screen.findByTestId("unread-badge");
+    expect(getUnreadCount).toHaveBeenCalledTimes(1);
+    expect(listNotifications).not.toHaveBeenCalled();
+
+    await act(async () => {
+      socket.emitEvent("notification:created", { id: "n9" });
+    });
+
+    await waitFor(() => expect(getUnreadCount).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(listNotifications).toHaveBeenCalledWith({ page: 1, limit: 20 }),
+    );
   });
 });
 

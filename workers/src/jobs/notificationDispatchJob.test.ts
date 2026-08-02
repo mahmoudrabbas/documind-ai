@@ -2,11 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { ObjectId, type MongoClient } from "mongodb";
-import { createNotificationDispatchJobHandler } from "./notificationDispatchJob.js";
-import { setMockClient } from "../db/mongo.js";
 import { PermanentJobError } from "../contracts/retryPolicy.js";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
 import type { NotificationTransportPort } from "../contracts/notificationTransport.js";
+
+// The config singleton parses env eagerly, so the fake Atlas URI must be set
+// before any module that transitively imports config is evaluated.
+process.env.MONGODB_URI =
+  "mongodb+srv://test:test@mongo.test.invalid/documind-test";
+
+const { createNotificationDispatchJobHandler } = await import(
+  "./notificationDispatchJob.js"
+);
+const { setMockClient } = await import("../db/mongo.js");
 
 interface MockNotificationDoc {
   _id: ObjectId;

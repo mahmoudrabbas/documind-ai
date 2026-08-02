@@ -106,6 +106,19 @@ const envSchema = z
       .string()
       .default("false")
       .transform((value) => value.toLowerCase() === "true"),
+
+    // Machine-auth secret for the notification socket server (T15). The T20
+    // sweep keys below are reserved here so todo 10 only implements the sweep.
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: z
+      .string()
+      .min(1)
+      .default("development-only-notification-socket-token"),
+    NOTIFICATION_SWEEP_ENABLED: z
+      .string()
+      .default("false")
+      .transform((value) => value.toLowerCase() === "true"),
+    NOTIFICATION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+    NOTIFICATION_SWEEP_TTL_BATCH: z.coerce.number().int().positive().default(500),
     SMTP_HOST: z.string().default(""),
     SMTP_PORT: z
       .string()
@@ -191,6 +204,7 @@ const envSchema = z
         ["EMAIL_VERIFICATION_JWT_SECRET", env.EMAIL_VERIFICATION_JWT_SECRET],
         ["PASSWORD_RESET_JWT_SECRET", env.PASSWORD_RESET_JWT_SECRET],
         ["EMAIL_WEBHOOK_SECRET", env.EMAIL_WEBHOOK_SECRET],
+        ["NOTIFICATION_SOCKET_SERVICE_TOKEN", env.NOTIFICATION_SOCKET_SERVICE_TOKEN],
       ] as const;
       for (const [key, value] of requiredSecrets) {
         if (value.length < 32 || value.startsWith("development-only-")) {
@@ -313,6 +327,11 @@ export function parseEnv(env: Record<string, string | undefined>): Env {
     EMAIL_WEBHOOK_SECRET: getSecretValue(
       "EMAIL_WEBHOOK_SECRET",
       env.EMAIL_WEBHOOK_SECRET,
+      env,
+    ),
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: getSecretValue(
+      "NOTIFICATION_SOCKET_SERVICE_TOKEN",
+      env.NOTIFICATION_SOCKET_SERVICE_TOKEN,
       env,
     ),
     STRIPE_SECRET_KEY: getSecretValue(

@@ -124,6 +124,23 @@ const envSchema = z
     OPENAI_API_KEY: z.string().default(""),
     OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
     OPENAI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
+
+    // Notification socket transport (T16): REST stays the default; 'socket'
+    // pushes via socket.io to the API. The service token is only required
+    // when the socket transport is selected in production/test (superRefine).
+    NOTIFICATION_TRANSPORT: z
+      .enum(["rest", "socket"])
+      .default("rest"),
+
+    NOTIFICATION_SOCKET_URL: z
+      .string()
+      .url()
+      .default("http://localhost:5000"),
+
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: z
+      .string()
+      .min(1)
+      .optional(),
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV === "production" || env.NODE_ENV === "test") {
@@ -207,6 +224,22 @@ const envSchema = z
         });
       }
     }
+
+    if (
+      env.NOTIFICATION_TRANSPORT === "socket" &&
+      (env.NODE_ENV === "production" || env.NODE_ENV === "test")
+    ) {
+      if (
+        !env.NOTIFICATION_SOCKET_SERVICE_TOKEN ||
+        env.NOTIFICATION_SOCKET_SERVICE_TOKEN.trim() === ""
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["NOTIFICATION_SOCKET_SERVICE_TOKEN"],
+          message: "is required when NOTIFICATION_TRANSPORT is socket",
+        });
+      }
+    }
   });
 
 export type Env = z.infer<typeof envSchema>;
@@ -263,6 +296,12 @@ export function parseEnv(
     EMAIL_VERIFICATION_JWT_SECRET: getSecretValue(
       "EMAIL_VERIFICATION_JWT_SECRET",
       env.EMAIL_VERIFICATION_JWT_SECRET,
+      env,
+    ),
+
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: getSecretValue(
+      "NOTIFICATION_SOCKET_SERVICE_TOKEN",
+      env.NOTIFICATION_SOCKET_SERVICE_TOKEN,
       env,
     ),
   };
