@@ -388,6 +388,12 @@ refundPersistence("refund service persistence", () => {
       synchronizeRefundFromProvider({ provider, providerRefundId: String(pending?.providerRefundId), operationReference: String(pending?.operationId), sourceEventId: "evt-impact-webhook" }),
       synchronizeRefundFromProvider({ provider, providerRefundId: String(pending?.providerRefundId), operationReference: String(pending?.operationId), sourceEventId: "manual-impact-reconcile" }),
     ]);
+    await synchronizeRefundFromProvider({
+      provider,
+      providerRefundId: String(pending?.providerRefundId),
+      operationReference: String(pending?.operationId),
+      sourceEventId: "manual-impact-convergence",
+    });
 
     const refund = await RefundModel.findById(requested.refund.id).lean();
     const invoice = await InvoiceModel.findById(invoiceId).lean();
