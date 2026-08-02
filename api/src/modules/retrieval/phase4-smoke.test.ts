@@ -1,9 +1,10 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createRetrievalService, type RetrievalServiceDeps } from "./retrieval.service.js";
 import { createRetrievalRepository, type RetrievalRepository } from "./retrieval.repository.js";
 import { compileAccessFilters, mergeFilters, compileQueryFilters } from "./filterCompiler.js";
 import { FusionEngine } from "./fusionEngine.js";
+import { connectDB, disconnectDB } from "../../db/connection.js";
 import type { AccessContext, RetrievalQuery } from "./retrieval.types.js";
 import type { AdapterFilter } from "../../providers/embedding/adapterFilter.types.js";
 import type { VectorStoreAdapter } from "../../providers/embedding/vectorStoreAdapter.js";
@@ -107,6 +108,14 @@ function makeQuery(overrides: Partial<RetrievalQuery> = {}): RetrievalQuery {
 // ---------------------------------------------------------------------------
 
 describe("Phase 4 — createRetrievalService", () => {
+  before(async () => {
+    await connectDB();
+  });
+
+  after(async () => {
+    await disconnectDB();
+  });
+
   function buildDeps(overrides: Partial<RetrievalServiceDeps> = {}): RetrievalServiceDeps {
     return {
       vectorAdapter: createMockVectorAdapter([
@@ -348,6 +357,65 @@ describe("Phase 4 — createRetrievalService", () => {
         return true;
       },
     );
+  });
+
+  it("hybridSearch uses the mongo fallback when both backends return nothing", async () => {
+    let fallbackCalls = 0;
+    const fallbackChunkId = "chunk_fallback";
+    const service = createRetrievalService(
+      buildDeps({
+        vectorAdapter: createMockVectorAdapter([]),
+        keywordAdapter: createMockKeywordAdapter([]),
+        repository: createMockRepository([
+          makeChunk({ _id: fallbackChunkId, text: "Remote work policy content" }),
+        ]),
+        mongoFallback: {
+          search: async () => {
+            fallbackCalls++;
+            return [{ chunkId: fallbackChunkId, score: 0.9 }];
+          },
+        },
+      }),
+    );
+
+    const result = await service.hybridSearch(makeQuery(), makeAccessContext());
+
+    assert.equal(fallbackCalls, 1, "fallback invoked exactly once");
+    assert.ok(result.candidates.length >= 1, "fallback candidate returned");
+    assert.equal(result.candidates[0].chunkId, fallbackChunkId, "fallback candidate hydrated");
+    assert.ok(result.candidates[0].text, "fallback candidate has text");
+  });
+
+  it("hybridSearch returns no candidates when backends are empty and no fallback is wired", async () => {
+    const service = createRetrievalService(
+      buildDeps({
+        vectorAdapter: createMockVectorAdapter([]),
+        keywordAdapter: createMockKeywordAdapter([]),
+      }),
+    );
+
+    const result = await service.hybridSearch(makeQuery(), makeAccessContext());
+
+    assert.equal(result.candidates.length, 0, "no candidates without fallback");
+  });
+
+  it("hybridSearch does not call the fallback when backends return results", async () => {
+    let fallbackCalls = 0;
+    const service = createRetrievalService(
+      buildDeps({
+        mongoFallback: {
+          search: async () => {
+            fallbackCalls++;
+            return [{ chunkId: "chunk1", score: 0.9 }];
+          },
+        },
+      }),
+    );
+
+    const result = await service.hybridSearch(makeQuery(), makeAccessContext());
+
+    assert.equal(fallbackCalls, 0, "fallback not invoked when backends have results");
+    assert.ok(result.candidates.length >= 1, "normal path returns candidates");
   });
 });
 

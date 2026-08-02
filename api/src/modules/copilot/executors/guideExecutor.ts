@@ -37,6 +37,16 @@ function buildStepInstructions(step: CopilotStep): GuideInstruction[] {
     const route = resolveRoute(step);
     result.push({ type: "navigate", route, params: step.parameters as Record<string, string> | undefined });
     result.push({ type: "waitForUser", message: step.description });
+
+    const elementId = resolvePageElementId(route);
+    if (elementId) {
+      result.push({ type: "scrollTo", elementId });
+      result.push({ type: "highlight", elementId, message: step.description });
+      result.push({ type: "showArrow", elementId, position: "top" });
+      result.push({ type: "showTooltip", elementId, message: step.description, position: "top" });
+      result.push({ type: "focus", elementId });
+      result.push({ type: "waitForUser", message: step.description });
+    }
     return result;
   }
 
@@ -90,4 +100,13 @@ function resolveRoute(step: CopilotStep): string {
   }
 
   return "/dashboard";
+}
+
+function resolvePageElementId(route: string): string | null {
+  const normalized = route.split("?")[0].replace(/\/+$/, "");
+  for (const guide of Object.values(ROUTE_GUIDE)) {
+    if (guide.route === normalized) return guide.elementId;
+  }
+  if (normalized === "/dashboard") return "dashboard-page";
+  return null;
 }

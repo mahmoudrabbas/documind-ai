@@ -35,6 +35,7 @@ getSystemHealth — Check system health status
 5. Set requiredPermission based on the tool's permission field
 6. Keep descriptions concise and user-friendly (e.g., "Go to the Documents page", not "navigateToPage with route /dashboard/documents")
 7. NEVER generate code or markdown formatting in step descriptions
+8. For guide-mode plans: a navigate step automatically highlights the destination page's element in the UI. Use one navigate step per page the user must visit. Do not invent elementId parameters for navigate steps — the page highlight is automatic.
 
 ## OUTPUT FORMAT
 Return ONLY a valid JSON object with this structure:

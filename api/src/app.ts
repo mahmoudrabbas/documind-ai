@@ -50,6 +50,7 @@ import {
   getKeywordAdapter,
 } from "./providers/embedding/adapterLoader.js";
 import { getEmbeddingAdapter } from "./providers/embedding/atlasEmbeddingAdapter.js";
+import { createMongoFallback } from "./modules/retrieval/mongoFallback.js";
 import { FakeRerankerAdapter } from "./modules/reranker/fakeReranker.adapter.js";
 import { createRerankerService } from "./modules/reranker/reranker.service.js";
 import { registerRetrievalService } from "./modules/agents/agents.service.js";
@@ -59,6 +60,8 @@ import { initializeIntentQueryService } from "./modules/intent-query/intentQuery
 import { ChatService } from "./modules/chat/chat.service.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter } from "./providers/llm/index.js";
+import { createAnswerPipeline } from "./modules/answer-pipeline/answerPipeline.factory.js";
+import { FakeKnowledgeGapAdapter } from "./modules/knowledge-gaps/adapters/fakeGapCandidate.adapter.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
@@ -218,14 +221,21 @@ const rerankerService = createRerankerService({
   reranker: new FakeRerankerAdapter(),
 });
 
+const vectorAdapter = await getVectorStoreAdapter();
+const keywordAdapter = await getKeywordAdapter();
+
 const retrievalService = createRetrievalService({
-  vectorAdapter: await getVectorStoreAdapter(),
-  keywordAdapter: await getKeywordAdapter(),
+  vectorAdapter,
+  keywordAdapter,
   embeddingAdapter: await getEmbeddingAdapter(),
   fusionEngine: new FusionEngine(),
   filterCompiler,
   repository: createRetrievalRepository(),
   rerankerService,
+  mongoFallback:
+    vectorAdapter.providerKey === "fake" && keywordAdapter.providerKey === "fake"
+      ? createMongoFallback()
+      : undefined,
 });
 
 registerRetrievalService(retrievalService);
@@ -234,7 +244,12 @@ setCopilotRetrievalService(retrievalService);
 await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
 
-const chatService = new ChatService(retrievalService, getModelAdapter());
+const answerPipeline = createAnswerPipeline({
+  modelAdapter: getModelAdapter(),
+  knowledgeGapPort: new FakeKnowledgeGapAdapter(),
+});
+
+const chatService = new ChatService(retrievalService, getModelAdapter(), answerPipeline);
 app.use("/chat", createChatRoutes(chatService));
 
 // ── Prometheus metrics ──────────────────────────────────────────────────────
@@ -243,7 +258,7 @@ app.get("/metrics", async (_req, res) => {
   try {
     res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
     res.status(200).send(await getMetricRegistry().metrics());
-  } catch (err) {
+  } catch {
     res.status(500).json({ success: false, error: "METRICS_ERROR", message: "Failed to collect metrics" });
   }
 });

@@ -58,6 +58,7 @@ function collections(db: Db) {
     users: db.collection("users"),
     emails: db.collection("emailmessages"),
     tenants: db.collection("tenants"),
+    campaigns: db.collection("invitationcampaigns"),
   };
 }
 
@@ -235,6 +236,28 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
         },
         "import batch finalized (no pending rows)",
       );
+
+      // Update linked campaign if this batch belongs to an invitation campaign
+      try {
+        const bs = batch.summary as { created?: number; failed?: number } | undefined;
+        const durationMs = Date.now() - processingStartTime.getTime();
+        await collections(db).campaigns.updateOne(
+          { importBatchId: batchId },
+          {
+            $set: {
+              state: "COMPLETED",
+              completedAt: new Date(),
+              "metrics.created": bs?.created ?? 0,
+              "metrics.failed": bs?.failed ?? 0,
+              "metrics.sent": bs?.created ?? 0,
+              "metrics.failedSends": bs?.failed ?? 0,
+              "metrics.durationMs": durationMs,
+            },
+          },
+        );
+      } catch {
+        // Non-critical — campaign update should not break import
+      }
 
       ctx.progress("No pending/failed rows — batch completed");
       return { summary: { rowsProcessed: 0, state: "COMPLETED" } };
@@ -519,6 +542,26 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
         },
       },
     );
+
+    // Update linked campaign if this batch belongs to an invitation campaign
+    try {
+      await collections(db).campaigns.updateOne(
+        { importBatchId: batchId },
+        {
+          $set: {
+            state: finalState,
+            completedAt: new Date(),
+            "metrics.created": (batch.summary?.created ?? 0) + createdCount,
+            "metrics.failed": (batch.summary?.failed ?? 0) + failedCount,
+            "metrics.sent": (batch.summary?.created ?? 0) + createdCount,
+            "metrics.failedSends": (batch.summary?.failed ?? 0) + failedCount,
+            "metrics.durationMs": Date.now() - processingStartTime.getTime(),
+          },
+        },
+      );
+    } catch {
+      // Non-critical — campaign update should not break import
+    }
 
     // Record row-level metrics
     if (createdCount > 0) importRowsProcessed.inc({ state: "CREATED" }, createdCount);

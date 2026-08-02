@@ -148,6 +148,11 @@ export type AuditAction =
   | "PROCESSING_STAGE_RETRIED"
   | "DOCUMENT_REPROCESSED"
   | "PROCESSING_CANCELED"
+  // Invitation Campaigns
+  | "CAMPAIGN_CREATED"
+  | "CAMPAIGN_CONFIRMED"
+  | "CAMPAIGN_CANCELLED"
+  | "CAMPAIGN_COMPLETED"
   // Copilot
   | "COPILOT_PLAN_CREATED"
   | "COPILOT_PLAN_CANCELLED"
@@ -182,6 +187,7 @@ export type AuditResourceType =
   | "DocumentPolicyPropagation"
   | "DocumentPolicyGeneration"
   | "EntitlementOverride"
+  | "InvitationCampaign"
   | "CopilotPlan";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";

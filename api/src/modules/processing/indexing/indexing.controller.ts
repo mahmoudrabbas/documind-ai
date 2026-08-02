@@ -12,6 +12,7 @@ import {
 } from "./generation.service.js";
 import { getApiJobDispatcher } from "../../jobs/jobDispatcher.js";
 import { validateStartIndexInput } from "./indexing.validator.js";
+import { startDocumentIndexing } from "./indexing.service.js";
 import { requireAuthenticatedAuditActor } from "../../../common/observability/auditActor.js";
 import { getAuditWriter } from "../../../common/observability/index.js";
 import { randomUUID } from "node:crypto";
@@ -76,98 +77,19 @@ export async function startIndexController(
     }
 
     const actor = await authorizeIndexOperation(tenantId, operationContext(req));
-    const doc = await findDocument(tenantId, documentId);
 
-    const input = validateStartIndexInput(req.body);
-
-    const generation = await startGeneration({
-      tenantId,
-      documentId: doc._id.toString(),
-      documentVersion: doc.version,
-      triggeredBy: input.triggeredBy,
-      chunkingConfig: input.chunkingConfig,
-      department: input.department,
-      classification: input.classification,
-    });
-
-    const traceId = randomUUID();
-    const dispatcher = getApiJobDispatcher();
-
-    const chunkEnvelope = {
-      jobType: "document.chunk" as const,
+    const result = await startDocumentIndexing({
       tenantId,
       actorId: actor.actorId,
-      traceId,
-      idempotencyKey: generateIdempotencyKey(doc.version, "chunk", generation._id.toString()),
-      payload: {
-        documentId: doc._id.toString(),
-        tenantId,
-        documentVersion: doc.version,
-        generationId: generation._id.toString(),
-        department: input.department ?? null,
-        classification: input.classification ?? null,
-        chunkingConfig: input.chunkingConfig,
-      },
-    };
-
-    const embedEnvelope = {
-      jobType: "document.embed" as const,
-      tenantId,
-      actorId: actor.actorId,
-      traceId,
-      idempotencyKey: generateIdempotencyKey(doc.version, "embed", generation._id.toString()),
-      payload: {
-        documentId: doc._id.toString(),
-        tenantId,
-        documentVersion: doc.version,
-        generationId: generation._id.toString(),
-      },
-    };
-
-    const indexEnvelope = {
-      jobType: "document.index" as const,
-      tenantId,
-      actorId: actor.actorId,
-      traceId,
-      idempotencyKey: generateIdempotencyKey(doc.version, "index", generation._id.toString()),
-      payload: {
-        documentId: doc._id.toString(),
-        tenantId,
-        documentVersion: doc.version,
-        generationId: generation._id.toString(),
-      },
-    };
-
-    const flowResult = await dispatcher.enqueueFlow({
-      ...indexEnvelope,
-      children: [{
-        ...embedEnvelope,
-        children: [chunkEnvelope],
-      }],
-    });
-
-    if (!flowResult.ok) {
-      throw new AppError(500, "JOB_ENQUEUE_FAILED", flowResult.error ?? "Failed to enqueue pipeline");
-    }
-
-    await getAuditWriter().write({
-      tenantId,
-      action: "INDEX_GENERATION_STARTED",
-      resourceType: "Document",
-      resourceId: doc._id.toString(),
-      metadata: {
-        generationId: generation._id.toString(),
-        generationNumber: generation.generationNumber,
-        triggeredBy: input.triggeredBy,
-        traceId,
-      },
+      documentId,
+      indexInput: req.body,
     });
 
     res.status(202).json({
       message: "Index generation started",
-      generationId: generation._id.toString(),
-      generationNumber: generation.generationNumber,
-      status: generation.status,
+      generationId: result.generationId,
+      generationNumber: result.generationNumber,
+      status: result.status,
     });
   } catch (error) {
     next(error);

@@ -20,8 +20,8 @@ import {
   getOcrUsageCount,
 } from "./processing.repository.js";
 import { analyzeDocumentQuality } from "./qualityAgent.js";
-import { FakeMetadataAgent } from "./ports/fakeMetadataAgent.js";
-import { FakeVersionConflictAgent } from "./ports/fakeVersionConflictAgent.js";
+import type { MetadataAgent } from "./ports/metadataAgent.port.js";
+import type { VersionConflictAgent } from "./ports/versionConflictAgent.port.js";
 import type {
   TriggerOcrInput,
   ReviewQualityInput,
@@ -44,8 +44,34 @@ import {
 } from "../permissions/permissions.operation.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 
-const metadataAgent = new FakeMetadataAgent();
-const versionConflictAgent = new FakeVersionConflictAgent();
+let metadataAgentInstance: MetadataAgent | null = null;
+let versionConflictAgentInstance: VersionConflictAgent | null = null;
+
+async function getMetadataAgent(): Promise<MetadataAgent> {
+  if (metadataAgentInstance) return metadataAgentInstance;
+  if (process.env.USE_REAL_AGENTS === "true") {
+    const { getModelAdapterAsync } = await import("../../providers/llm/index.js");
+    const { MetadataLLMAgent } = await import("./metadata.agent.js");
+    metadataAgentInstance = new MetadataLLMAgent(await getModelAdapterAsync());
+  } else {
+    const { FakeMetadataAgent } = await import("./ports/fakeMetadataAgent.js");
+    metadataAgentInstance = new FakeMetadataAgent();
+  }
+  return metadataAgentInstance;
+}
+
+async function getVersionConflictAgent(): Promise<VersionConflictAgent> {
+  if (versionConflictAgentInstance) return versionConflictAgentInstance;
+  if (process.env.USE_REAL_AGENTS === "true") {
+    const { getModelAdapterAsync } = await import("../../providers/llm/index.js");
+    const { VersionConflictLLMAgent } = await import("./versionConflict.agent.js");
+    versionConflictAgentInstance = new VersionConflictLLMAgent(await getModelAdapterAsync());
+  } else {
+    const { FakeVersionConflictAgent } = await import("./ports/fakeVersionConflictAgent.js");
+    versionConflictAgentInstance = new FakeVersionConflictAgent();
+  }
+  return versionConflictAgentInstance;
+}
 
 async function authorizeProcessingOperation(
   tenantId: string,
@@ -554,7 +580,7 @@ export async function triggerMetadataAnalysis(
   const extractedText = ocrPages.map((p) => p.text).join("\n\n");
   const pageCount = ocrPages.length || 1;
 
-  const extractionResult = await metadataAgent.proposeMetadata({
+  const extractionResult = await (await getMetadataAgent()).proposeMetadata({
     documentId: input.documentId,
     documentVersion: version,
     fileName: doc.fileName,
@@ -868,7 +894,7 @@ export async function triggerVersionConflictAnalysis(
     };
   }
 
-  const analysisResult = await versionConflictAgent.analyzeDocument({
+  const analysisResult = await (await getVersionConflictAgent()).analyzeDocument({
     sourceDocument: {
       id: input.documentId,
       fileName: doc.fileName,

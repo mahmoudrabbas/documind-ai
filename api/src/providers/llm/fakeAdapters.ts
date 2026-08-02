@@ -22,7 +22,13 @@ export class FakeModelAdapter implements ModelAdapter {
       (m) => m.role === "system" && (m.content.includes("intent detection") || m.content.includes("QueryPlan"))
     );
 
-    if (hasIntentSystemPrompt) {
+    const isCopilotPlanner = params.messages.some(
+      (m) => m.role === "system" && m.content.includes("platform copilot planner"),
+    );
+
+    if (isCopilotPlanner) {
+      text = this.buildCopilotPlan(rawContent);
+    } else if (hasIntentSystemPrompt) {
       const question = rawContent;
       const lowerQ = question.toLowerCase();
       
@@ -123,6 +129,75 @@ export class FakeModelAdapter implements ModelAdapter {
       latencyMs: 10,
       estimatedCost: 0,
     };
+  }
+
+  private buildCopilotPlan(userMessage: string): string {
+    const modeMatch = userMessage.match(/- Mode:\s*(\w+)/);
+    const mode = modeMatch?.[1]?.toLowerCase() === "guide" ? "guide" : "action";
+    const requestMatch = userMessage.match(/User request:\s*"([\s\S]*?)"/);
+    const request = (requestMatch?.[1] ?? userMessage).toLowerCase();
+
+    type FakeStep = {
+      action: string;
+      description: string;
+      tool: string | null;
+      parameters: Record<string, unknown>;
+      confirmationLevel: "safe" | "medium" | "high";
+      requiredPermission: string | null;
+    };
+
+    const step = (s: FakeStep) => s;
+    const guideSteps = (route: string, label: string): FakeStep[] => [
+      step({ action: "navigate", description: `Go to ${label} and follow the highlighted steps`, tool: null, parameters: { route }, confirmationLevel: "safe", requiredPermission: null }),
+    ];
+
+    let summary = `Process: ${request.slice(0, 60)}`;
+    let steps: FakeStep[];
+
+    if (mode === "guide") {
+      if (/user|invite|member|team/i.test(request)) {
+        summary = "Guide you through inviting a new team member";
+        steps = guideSteps("/dashboard/users", "the Users page");
+      } else if (/upload|add.*document/i.test(request)) {
+        summary = "Guide you through uploading a new document";
+        steps = guideSteps("/dashboard/documents", "the Documents page");
+      } else if (/search|find|look for/i.test(request)) {
+        summary = "Guide you through searching your documents";
+        steps = guideSteps("/dashboard/documents", "the Documents page");
+      } else {
+        summary = "Guide you through the requested workflow";
+        steps = guideSteps("/dashboard", "the dashboard");
+      }
+    } else if (/invite|create.*user|new.*user/i.test(request)) {
+      summary = "Invite a new employee to the workspace";
+      steps = [
+        step({ action: "listUsers", description: "Review the current team members", tool: "listUsers", parameters: { limit: 10 }, confirmationLevel: "safe", requiredPermission: "users:read" }),
+        step({ action: "inviteEmployee", description: "Send the invitation to the new employee", tool: "inviteEmployee", parameters: { email: "newhire@example.com", role: "EMPLOYEE" }, confirmationLevel: "medium", requiredPermission: "users:create" }),
+      ];
+    } else if (/delete/i.test(request)) {
+      summary = "Delete the requested document";
+      steps = [
+        step({ action: "deleteDocument", description: "Delete the document permanently", tool: "deleteDocument", parameters: { documentId: "000000000000000000000001" }, confirmationLevel: "high", requiredPermission: "documents:delete" }),
+      ];
+    } else if (/upload/i.test(request)) {
+      summary = "Upload a new document";
+      steps = [
+        step({ action: "uploadDocument", description: "Upload the document to the knowledge base", tool: "uploadDocument", parameters: { filename: "notes.md", content: "Copilot notes" }, confirmationLevel: "medium", requiredPermission: "documents:create" }),
+      ];
+    } else if (/health|status|system/i.test(request)) {
+      summary = "Check the system health";
+      steps = [
+        step({ action: "getSystemHealth", description: "Check system health status", tool: "getSystemHealth", parameters: {}, confirmationLevel: "safe", requiredPermission: null }),
+      ];
+    } else {
+      summary = "Search the knowledge base for relevant documents";
+      steps = [
+        step({ action: "searchDocuments", description: "Search for documents matching your request", tool: "searchDocuments", parameters: { query: request, limit: 5 }, confirmationLevel: "safe", requiredPermission: "documents:read" }),
+        step({ action: "answerQuestion", description: "Answer your question using the knowledge base", tool: "answerQuestion", parameters: { question: request }, confirmationLevel: "safe", requiredPermission: "documents:use-in-ai" }),
+      ];
+    }
+
+    return JSON.stringify({ summary, steps });
   }
 }
 

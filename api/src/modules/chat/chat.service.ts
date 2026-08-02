@@ -13,6 +13,9 @@ import type { AccessContext } from "../retrieval/retrieval.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
 import DocumentModel from "../../db/models/document.model.js";
+import CitationModel from "../../db/models/citation.model.js";
+import type { AnswerPipelineService } from "../answer-pipeline/answerPipeline.service.js";
+import type { AnswerLanguage } from "../answer-pipeline/answerPipeline.types.js";
 import type {
   ChatSource,
   ChatResponse,
@@ -34,6 +37,7 @@ export class ChatService {
   constructor(
     private readonly retrievalService: HybridRetrievalService,
     private readonly modelAdapter: ModelAdapter,
+    private readonly answerPipeline?: AnswerPipelineService,
   ) {}
 
   async sendMessage(
@@ -88,6 +92,7 @@ export class ChatService {
 
     // 6. Analyze query intent via IntentQueryService
     let queryText = input.message;
+    let detectedLanguage: AnswerLanguage = "en";
     try {
       const intentResult = await getIntentQueryService().analyzeQuery(
         {
@@ -111,6 +116,8 @@ export class ChatService {
       ) {
         queryText = intentResult.semanticQueries[0].text;
       }
+
+      detectedLanguage = (intentResult.language as AnswerLanguage) ?? "en";
 
       if (intentResult.detectedIntent === "unsafe") {
         const unsafeAnswer =
@@ -160,11 +167,17 @@ export class ChatService {
     };
 
     let sources: ChatSource[] = [];
+    let evidenceBundle: Awaited<
+      ReturnType<HybridRetrievalService["hybridSearch"]>
+    >["evidenceBundle"] | undefined;
+
     try {
       const retrievalResult = await this.retrievalService.hybridSearch(
-        { queryText, topK: 5 },
+        { queryText, topK: 20 },
         accessContext,
       );
+
+      evidenceBundle = retrievalResult.evidenceBundle;
 
       const docIds = [
         ...new Set(retrievalResult.candidates.map((c) => c.documentId)),
@@ -200,88 +213,153 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Retrieval search failed, proceeding without context");
     }
 
-    // 8. Build RAG prompt and generate answer
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: RAG_SYSTEM_PROMPT },
-    ];
+    // 8. Generate answer via pipeline or direct LLM
+    let answer: string;
+    let responseSources: ChatSource[] = sources;
+    let outcome: ChatResponse["outcome"];
+    let citations: ChatResponse["citations"];
+    let complianceFlags: ChatResponse["complianceFlags"];
+    let sourceClips: ChatResponse["sourceClips"];
 
-    // Add conversation history from DB
-    if (historyFromDb.length > 0) {
-      const recentHistory = historyFromDb.slice(-10);
-      for (const msg of recentHistory) {
-        messages.push({ role: msg.role, content: msg.content });
+    if (this.answerPipeline && evidenceBundle) {
+      // Use the answer pipeline for grounded generation
+      try {
+        const pipelineResult = await this.answerPipeline.process({
+          evidenceBundle,
+          question: input.message,
+          language: detectedLanguage,
+          conversationContext: historyFromDb.slice(-6),
+          tenantId: tenantIdStr,
+          actorId: userIdStr,
+          traceId: context.traceId ?? "unknown",
+          requestId: context.requestId ?? "unknown",
+        });
+
+        answer = pipelineResult.finalAnswer.answerText;
+        outcome = pipelineResult.finalAnswer.outcome;
+        citations = pipelineResult.finalAnswer.citations.map((c) => ({
+          claimId: c.claimId,
+          claimText: c.claimText,
+          status: c.status,
+          chunkId: c.chunkId,
+          documentId: c.documentId,
+          documentVersionId: c.documentVersionId,
+          pageNumber: c.pageNumber,
+          sectionTitle: c.sectionTitle,
+        }));
+        complianceFlags = pipelineResult.finalAnswer.complianceResult.flags;
+
+        const citedChunkIds = new Set(citations.map((c) => c.chunkId));
+        responseSources = sources.filter((s) => citedChunkIds.has(s.chunkId));
+
+        // Build sourceClips from evidence items matched to citations
+        const evidenceMap = new Map(evidenceBundle.items.map((item) => [item.citationAnchor.chunkId, item]));
+        const seenChunkIds = new Set<string>();
+        sourceClips = [];
+        for (const citation of citations) {
+          if (seenChunkIds.has(citation.chunkId)) continue;
+          seenChunkIds.add(citation.chunkId);
+          const evidenceItem = evidenceMap.get(citation.chunkId);
+          if (!evidenceItem) continue;
+          sourceClips.push({
+            referenceNumber: sourceClips.length + 1,
+            documentTitle: evidenceItem.candidate.documentTitle ?? "Untitled",
+            excerpt: evidenceItem.textExcerpt,
+            pageNumber: evidenceItem.citationAnchor.pageNumber,
+            sectionTitle: evidenceItem.citationAnchor.sectionTitle,
+            documentId: evidenceItem.citationAnchor.documentId,
+          });
+        }
+      } catch (err) {
+        logger.error(
+          { err, tenantId: tenantIdStr },
+          "Answer pipeline failed, falling back to direct LLM",
+        );
+        const fallback = await this.directLlmCall(
+          input.message,
+          sources,
+          historyFromDb,
+        );
+        answer = fallback;
+        outcome = "approved";
+      }
+    } else {
+      // Fallback: direct LLM call (existing behavior)
+      answer = await this.directLlmCall(
+        input.message,
+        sources,
+        historyFromDb,
+      );
+      outcome = "approved";
+    }
+
+    // 9. Save assistant response
+    const assistantMsg = await chatRepo.addMessage(
+      tenantIdStr,
+      conversationId,
+      "assistant",
+      answer,
+      currentCount + 1,
+      sources.map((s) => ({
+        chunkId: s.chunkId,
+        documentId: s.documentId,
+        documentTitle: s.documentTitle ?? "Unknown Document",
+        sectionTitle: s.sectionTitle,
+        pageNumber: s.pageNumber,
+        score: s.score,
+      })),
+    );
+
+    // Persist citations to MongoDB when pipeline produced them
+    if (citations && citations.length > 0) {
+      try {
+        await CitationModel.insertMany(
+          citations.map((c) => ({
+            tenantId: new mongoose.Types.ObjectId(tenantIdStr),
+            messageId: assistantMsg._id,
+            conversationId: new mongoose.Types.ObjectId(conversationId),
+            claimId: c.claimId,
+            claimText: c.claimText,
+            verificationStatus: c.status,
+            chunkId: c.chunkId,
+            documentId: new mongoose.Types.ObjectId(c.documentId),
+            documentVersionId: new mongoose.Types.ObjectId(c.documentVersionId),
+            pageNumber: c.pageNumber ?? null,
+            sectionTitle: c.sectionTitle ?? null,
+            traceId: context.traceId ?? "unknown",
+          })),
+        );
+      } catch (err) {
+        logger.warn({ err, tenantId: tenantIdStr }, "Failed to persist citations");
       }
     }
 
-    // Add retrieved context
-    if (sources.length > 0) {
-      const contextBlock = sources
-        .map(
-          (s, i) =>
-            `[Source ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
-        )
-        .join("\n\n");
-
-      messages.push({
-        role: "system",
-        content: `Use the following context to answer the question. Always cite your sources.\n\nContext:\n${contextBlock}`,
-      });
-    }
-
-    messages.push({ role: "user", content: input.message });
-
-    // 9. Call LLM
-    try {
-      const response = await this.modelAdapter.complete({
-        messages,
-        temperature: 0.3,
-        maxTokens: 1500,
-      });
-
-      const answer = response.choices[0]?.message?.content ?? "";
-
-      // 10. Save assistant response
-      await chatRepo.addMessage(
-        tenantIdStr,
+    await getAuditWriter().write({
+      action: "RETRIEVAL_SEARCH",
+      resourceType: "Retrieval",
+      resourceId: conversationId,
+      outcome: "SUCCESS",
+      tenantId: tenantIdStr,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      metadata: {
         conversationId,
-        "assistant",
-        answer,
-        currentCount + 1,
-        sources.map((s) => ({
-          chunkId: s.chunkId,
-          documentId: s.documentId,
-          documentTitle: s.documentTitle ?? "Unknown Document",
-          sectionTitle: s.sectionTitle,
-          pageNumber: s.pageNumber,
-          score: s.score,
-        })),
-      );
+        sourceCount: responseSources.length,
+        outcome: outcome ?? "approved",
+        latencyMs: Date.now() - start,
+      },
+    });
 
-      await getAuditWriter().write({
-        action: "RETRIEVAL_SEARCH",
-        resourceType: "Retrieval",
-        resourceId: conversationId,
-        outcome: "SUCCESS",
-        tenantId: tenantIdStr,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
-        actorRole: actor.actorRole,
-        metadata: {
-          conversationId,
-          sourceCount: sources.length,
-          latencyMs: Date.now() - start,
-        },
-      });
-
-      return { answer, sources, conversationId };
-    } catch (err) {
-      logger.error({ err, tenantId: tenantIdStr }, "LLM completion failed");
-      throw new AppError(
-        500,
-        "CHAT_LLM_ERROR",
-        "Failed to generate response. Please try again.",
-      );
-    }
+    return {
+      answer,
+      sources: responseSources,
+      sourceClips,
+      conversationId,
+      outcome,
+      citations,
+      complianceFlags,
+    };
   }
 
   async listConversations(
@@ -368,6 +446,47 @@ export class ChatService {
     if (!deleted) {
       throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
     }
+  }
+
+  private async directLlmCall(
+    message: string,
+    sources: ChatSource[],
+    historyFromDb: Array<{ role: "user" | "assistant"; content: string }>,
+  ): Promise<string> {
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      { role: "system", content: RAG_SYSTEM_PROMPT },
+    ];
+
+    if (historyFromDb.length > 0) {
+      const recentHistory = historyFromDb.slice(-10);
+      for (const msg of recentHistory) {
+        messages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    if (sources.length > 0) {
+      const contextBlock = sources
+        .map(
+          (s, i) =>
+            `[Source ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
+        )
+        .join("\n\n");
+
+      messages.push({
+        role: "system",
+        content: `Use the following context to answer the question. Always cite your sources.\n\nContext:\n${contextBlock}`,
+      });
+    }
+
+    messages.push({ role: "user", content: message });
+
+    const response = await this.modelAdapter.complete({
+      messages,
+      temperature: 0.3,
+      maxTokens: 1500,
+    });
+
+    return response.choices[0]?.message?.content ?? "";
   }
 
   private validateInput(raw: unknown): ChatSendBody {

@@ -48,3 +48,8 @@ app/stitch/
 
 # Runtime uploads directory
 api/uploads/
+
+# Next.js build artifacts (NEXT_DIST_DIR local overrides)
+app/tmp/
+*.bak
+next-env.d.ts.bak

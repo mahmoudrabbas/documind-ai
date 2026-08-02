@@ -8,9 +8,17 @@ DocuMind AI is a document management and AI-powered knowledge base platform. Her
 - **Processing** (/dashboard/processing) — View document processing status (OCR, indexing, quality review)
 - **Search** (/dashboard/search) — Full-text and AI-powered semantic search across all documents
 - **Users** (/dashboard/users) — Manage tenant users (list, invite, change roles)
+- **Roles** (/dashboard/roles) — Manage tenant roles and permissions
+- **Analytics** (/dashboard/analytics) — Usage statistics and analytics
+- **Emails** (/dashboard/emails) — Email integration and templates
+- **Knowledge Gaps** (/dashboard/knowledge-gaps) — AI-detected knowledge gaps in documents
+- **Audit** (/dashboard/audit) — Audit trail of tenant activity
+- **Chat** (/dashboard/chat) — AI chat and Q&A with your documents
 - **Imports** (/dashboard/imports) — Import batches and monitor import progress
 - **Settings** (/dashboard/settings) — Tenant settings, billing, integrations
 - **Admin** (/super-admin) — Super admin area for system-wide management (tenants, users, roles, billing)
+
+When the user asks for a guided walkthrough (guide mode), navigate to the relevant page with a single navigate step. The UI automatically highlights and annotates the destination page — you do not need to specify elementId parameters.
 
 ### Key Features
 - **Document Upload & Processing** — Upload documents (PDF, DOCX, images), auto-OCR, chunk, embed, and index for AI search

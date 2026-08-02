@@ -8,10 +8,20 @@ export interface ChatSource {
   documentTitle?: string;
 }
 
+export interface ChatSourceClip {
+  referenceNumber: number;
+  documentTitle: string;
+  excerpt: string;
+  pageNumber?: number;
+  sectionTitle?: string;
+  documentId: string;
+}
+
 export interface ChatResponse {
   answer: string;
   sources: ChatSource[];
   conversationId: string;
+  sourceClips?: ChatSourceClip[];
 }
 
 export interface ChatHistoryMessage {
@@ -31,6 +41,7 @@ export interface ConversationMessageDetail {
   id: string;
   role: "user" | "assistant";
   content: string;
+  sourceClips?: ChatSourceClip[];
   sources?: Array<{
     chunkId: string;
     documentId: string;

@@ -40,7 +40,9 @@ services:
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
-      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - OCR_PROVIDER=tesseract
+      - USE_REAL_AGENTS=true
+      - STORAGE_PROVIDER=local
       - AWS_REGION=${AWS_REGION:-eu-north-1}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -132,7 +134,8 @@ services:
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
-      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - OCR_PROVIDER=tesseract
+      - STORAGE_PROVIDER=local
       - AWS_REGION=${AWS_REGION:-eu-north-1}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}

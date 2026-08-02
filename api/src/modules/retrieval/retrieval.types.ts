@@ -44,6 +44,7 @@ export interface RetrievalCandidate {
   score: number;
   pageNumber?: number;
   sectionTitle?: string;
+  documentTitle?: string;
   classification?: string;
   retrievalMethod: RetrievalMethod;
   scoreBreakdown?: ScoreBreakdown;

@@ -12,6 +12,7 @@ import { Types } from "mongoose";
 import type { FilterCompiler } from "./filterCompiler.js";
 import type { FusionEngine } from "./fusionEngine.js";
 import type { RetrievalRepository } from "./retrieval.repository.js";
+import type { MongoFallback } from "./mongoFallback.js";
 import type { RerankerService } from "../reranker/reranker.service.js";
 import type {
   AccessContext,
@@ -40,6 +41,8 @@ export interface RetrievalServiceDeps {
     actorId: string,
     documentIds: string[],
   ) => Promise<string[]>;
+  /** Local-only fallback used when the configured adapters return no results. */
+  mongoFallback?: MongoFallback;
 }
 
 export interface HybridRetrievalService {
@@ -155,24 +158,37 @@ async function revalidateAndHydrate(
     chunkMap.set(chunk._id.toString(), chunk);
   }
 
-  // selfOnly enforcement: fetch parent documents and check ownership
-  let ownedDocumentIds: Set<string> | null = null;
-  if (context?.permissionScopes?.selfOnly) {
-    const docIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
-    if (docIds.length > 0) {
-      if (deps.findOwnedDocumentIds) {
-        const owned = await deps.findOwnedDocumentIds(tenantId, context.actorId, docIds);
-        ownedDocumentIds = new Set(owned);
-      } else {
-        const docs = await DocumentModel.find({
-          _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
-          tenantId: new Types.ObjectId(tenantId),
-          uploadedBy: new Types.ObjectId(context.actorId),
-        }, { _id: 1 }).lean().exec();
-        ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+    const allDocIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
+
+    // selfOnly enforcement: fetch parent documents and check ownership
+    let ownedDocumentIds: Set<string> | null = null;
+    if (context?.permissionScopes?.selfOnly) {
+      if (allDocIds.length > 0) {
+        if (deps.findOwnedDocumentIds) {
+          const owned = await deps.findOwnedDocumentIds(tenantId, context.actorId, allDocIds);
+          ownedDocumentIds = new Set(owned);
+        } else {
+          const docs = await DocumentModel.find({
+            _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
+            tenantId: new Types.ObjectId(tenantId),
+            uploadedBy: new Types.ObjectId(context.actorId),
+          }, { _id: 1 }).lean().exec();
+          ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+        }
       }
     }
-  }
+
+    // Bulk look up document titles for all candidates
+    const docTitleMap = new Map<string, string | null>();
+    if (allDocIds.length > 0) {
+      const docs = await DocumentModel.find(
+        { _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) }, tenantId: new Types.ObjectId(tenantId) },
+        { _id: 1, "metadata.title": 1 },
+      ).lean().exec();
+      for (const doc of docs) {
+        docTitleMap.set(doc._id.toString(), doc.metadata?.title ?? null);
+      }
+    }
 
   const hydrated: RetrievalCandidate[] = [];
 
@@ -210,11 +226,12 @@ async function revalidateAndHydrate(
     hydrated.push({
       ...candidate,
       documentId: chunk.documentId.toString(),
-      documentVersionId: chunk.documentVersionId?.toString() ?? "",
+      documentVersionId: chunk.documentVersionId?.toString() ?? "v0",
       tenantId: chunk.tenantId.toString(),
       text: chunk.text,
       pageNumber: chunk.pageNumber ?? chunk.pageStart ?? undefined,
       sectionTitle: chunk.sectionTitle ?? undefined,
+      documentTitle: docTitleMap.get(chunk.documentId.toString()) ?? undefined,
       classification: chunk.classification ?? undefined,
     });
   }
@@ -402,6 +419,29 @@ export function createRetrievalService(
       >();
       if (vectorResults.length > 0) resultsMap.set("vector", vectorResults);
       if (keywordResults.length > 0) resultsMap.set("keyword", keywordResults);
+
+      // Local-only fallback: when both backends are empty (e.g. in-memory
+      // fake adapters on a fresh process), scan persisted ACTIVE chunks in
+      // MongoDB instead of returning no candidates.
+      if (
+        resultsMap.size === 0 &&
+        deps.mongoFallback &&
+        merged.tenantId
+      ) {
+        try {
+          const fallbackResults = await deps.mongoFallback.search({
+            queryText: query.queryText,
+            vector,
+            topK: query.topK,
+            filter: merged,
+          });
+          if (fallbackResults.length > 0) {
+            resultsMap.set("keyword", fallbackResults);
+          }
+        } catch (error) {
+          logger.warn({ traceId, error }, "Mongo fallback search failed");
+        }
+      }
 
       const fused = deps.fusionEngine.fuse(resultsMap);
       const fusionLatencyMs = Date.now() - fusionStartTime;

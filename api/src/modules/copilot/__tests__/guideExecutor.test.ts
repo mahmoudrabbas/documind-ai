@@ -120,6 +120,50 @@ describe("buildGuideInstructions", () => {
     }
   });
 
+  it("emits a full coaching sequence for navigate steps with a known route", () => {
+    const plan = makePlan([
+      makeStep({ stepIndex: 0, action: "navigate", description: "Go to the users page", tool: null }),
+    ]);
+    const guide = buildGuideInstructions(plan);
+    const types = guide.instructions.map((i) => i.type);
+    expect(types).toEqual([
+      "navigate",
+      "waitForUser",
+      "scrollTo",
+      "highlight",
+      "showArrow",
+      "showTooltip",
+      "focus",
+      "waitForUser",
+      "celebrate",
+      "complete",
+    ]);
+    const highlight = guide.instructions.find((i) => i.type === "highlight");
+    if (highlight && highlight.type === "highlight") {
+      expect(highlight.elementId).toBe("users-page");
+    }
+    const arrow = guide.instructions.find((i) => i.type === "showArrow");
+    if (arrow && arrow.type === "showArrow") {
+      expect(arrow.elementId).toBe("users-page");
+    }
+  });
+
+  it("emits no element coaching for an unknown route", () => {
+    const plan = makePlan([
+      makeStep({
+        stepIndex: 0,
+        action: "navigate",
+        description: "Navigate",
+        tool: null,
+        parameters: { route: "/custom-route" },
+      }),
+    ]);
+    const guide = buildGuideInstructions(plan);
+    const types = guide.instructions.map((i) => i.type);
+    expect(types).not.toContain("highlight");
+    expect(types).not.toContain("showArrow");
+  });
+
   it("emits a full coaching sequence when the step targets an element", () => {
     const plan = makePlan([
       makeStep({

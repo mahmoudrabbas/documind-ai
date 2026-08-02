@@ -5,6 +5,7 @@ import { AppError } from "../../common/errors/AppError.js";
 import { generateEmployeeTemplate } from "./services/templateGenerator.service.js";
 import { parseEmployeeSpreadsheet, type ParsedRow } from "./services/xlsxParser.service.js";
 import { resolveColumnMappings } from "./services/mappingResolver.service.js";
+import type { ColumnMappingProposal } from "./ports/spreadsheetMappingAgent.port.js";
 import { validateBatch, type ResolvedMapping, type ValidationContext } from "./services/validationEngine.service.js";
 import { generatePreview } from "./services/previewGenerator.service.js";
 import { ImportBatchService } from "./services/importBatch.service.js";
@@ -21,6 +22,46 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolves column mappings using the LLM agent when USE_REAL_AGENTS is set,
+ * falling back to deterministic mapping resolver otherwise.
+ */
+async function resolveMappings(
+  headers: string[],
+  sampleRows: Record<string, unknown>[],
+): Promise<ColumnMappingProposal> {
+  if (process.env.USE_REAL_AGENTS !== "true") {
+    return resolveColumnMappings(headers);
+  }
+
+  try {
+    const { getModelAdapterAsync } = await import("../../providers/llm/index.js");
+    const { SpreadsheetMappingLLMAgent } = await import("./ports/spreadsheetMapping.agent.js");
+    const { EMPLOYEE_IMPORT_FIELDS } = await import("./ports/spreadsheetMappingAgent.port.js");
+
+    const agent = new SpreadsheetMappingLLMAgent(await getModelAdapterAsync());
+    const proposal = await agent.proposeMapping({
+      tenantId: "",
+      headers,
+      sampleRows,
+      availableFields: EMPLOYEE_IMPORT_FIELDS,
+      existingRoles: [],
+      existingDepartments: [],
+    });
+
+    const usableCount = proposal.columnMappings.filter(
+      (m) => m.confidence === "high" || m.confidence === "medium",
+    ).length;
+    if (proposal.columnMappings.length > 0 && usableCount >= proposal.columnMappings.length / 2) {
+      return proposal;
+    }
+  } catch {
+    // LLM mapping failed; fall through to deterministic
+  }
+
+  return resolveColumnMappings(headers);
+}
 
 function extractBatchId(params: Record<string, string | string[]>): string {
   const id = Array.isArray(params.batchId) ? params.batchId[0] : params.batchId;
@@ -106,7 +147,7 @@ export async function uploadAndPreview(
 
     const parsed = parseEmployeeSpreadsheet(file.buffer, file.originalname);
 
-    const proposal = resolveColumnMappings(parsed.headers);
+    const proposal = await resolveMappings(parsed.headers, parsed.rows.map((r) => r.rawData));
 
     const fieldMap: Record<string, string> = {};
     let mappedCount = 0;

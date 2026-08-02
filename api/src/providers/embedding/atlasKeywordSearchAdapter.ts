@@ -73,11 +73,15 @@ export class AtlasKeywordSearchAdapter implements KeywordAdapter {
       {
         $search: {
           index: ATLAS_TEXT_INDEX_NAME,
-          text: {
-            query: query.queryText,
-            path: "text",
-          },
           compound: {
+            must: [
+              {
+                text: {
+                  query: query.queryText,
+                  path: "text",
+                },
+              },
+            ],
             filter: compoundFilter,
           },
         },

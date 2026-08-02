@@ -19,6 +19,8 @@ import {
   type TokenBudgetItem,
 } from "./tokenBudget.js";
 
+const MIN_TOTAL_SCORE = 0.15;
+
 /**
  * FakeRerankerAdapter — deterministic lexical reranker for testing.
  *
@@ -131,13 +133,18 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       .filter((s) => dedupedSet.has(s.index))
       .sort((a, b) => b.totalScore - a.totalScore);
 
-    // ── Step 4: MMR diversity selection ──────────────────────────────
-    const diverseIndices = selectDiverse(dedupedScored, maxItems);
+    // ── Step 4: Filter low-scoring candidates ─────────────────────────
+    const filteredScored = dedupedScored.filter(
+      (s) => s.totalScore >= MIN_TOTAL_SCORE,
+    );
 
-    // ── Step 5: Token budget ─────────────────────────────────────────
+    // ── Step 5: MMR diversity selection ──────────────────────────────
+    const diverseIndices = selectDiverse(filteredScored, maxItems);
+
+    // ── Step 6: Token budget ─────────────────────────────────────────
     const budgetItems: (TokenBudgetItem & { originalIndex: number })[] =
       diverseIndices.map((divIdx) => {
-        const scoredItem = dedupedScored[divIdx]!;
+        const scoredItem = filteredScored[divIdx]!;
         const candidate = candidates[scoredItem.index]!;
         return {
           text: candidate.text,
@@ -151,7 +158,7 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       charsPerToken: 4,
     });
 
-    // ── Step 6: Build evidence items ─────────────────────────────────
+    // ── Step 7: Build evidence items ─────────────────────────────────
     const evidenceItems: EvidenceItem[] = budgetResult.items.map(
       (item, rank) => {
         const candidate = candidates[item.originalIndex]!;
@@ -168,10 +175,10 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       },
     );
 
-    // ── Step 7: Sufficiency assessment ───────────────────────────────
+    // ── Step 8: Sufficiency assessment ───────────────────────────────
     const sufficiency = this.assessSufficiency(evidenceItems, conflictGroups);
 
-    // ── Step 8: Score explanation ────────────────────────────────────
+    // ── Step 9: Score explanation ────────────────────────────────────
     const scoreExplanation = this.buildScoreExplanation(
       evidenceItems,
       budgetResult,

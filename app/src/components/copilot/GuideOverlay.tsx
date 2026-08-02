@@ -89,7 +89,6 @@ export function GuideOverlay({
           queryTarget(inst.elementId)?.scrollIntoView({ behavior: "smooth", block: "center" });
           refreshTarget(inst.elementId);
         }
-        advance();
         break;
       }
       case "expandSection": {
@@ -122,7 +121,6 @@ export function GuideOverlay({
       }
       case "focus": {
         queryTarget(inst.elementId)?.focus();
-        advance();
         break;
       }
       case "waitForUser": {
@@ -147,6 +145,46 @@ export function GuideOverlay({
       }
     }
   }, [current, instructions, router, advance, refreshTarget, onComplete]);
+
+  useEffect(() => {
+    if (current >= instructions.length) return;
+
+    const inst = instructions[current];
+    if (!("elementId" in inst) || !inst.elementId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    const resolve = () => {
+      if (cancelled) return;
+      const rect = getRect(inst.elementId);
+      if (rect) {
+        if (inst.type === "scrollTo") {
+          queryTarget(inst.elementId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          refreshTarget(inst.elementId);
+          advance();
+        } else if (inst.type === "focus") {
+          queryTarget(inst.elementId)?.focus();
+          advance();
+        } else {
+          refreshTarget(inst.elementId);
+        }
+        return;
+      }
+      attempts += 1;
+      if (attempts >= maxAttempts) {
+        if (inst.type === "scrollTo" || inst.type === "focus") advance();
+        return;
+      }
+      setTimeout(resolve, 100);
+    };
+
+    resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [current, instructions, advance, refreshTarget]);
 
   useEffect(() => {
     if (!target) return;

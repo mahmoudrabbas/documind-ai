@@ -1195,7 +1195,7 @@ export function createFakeAdapterData(
     const metadata: Record<string, unknown> = {
       tenantId: chunk.tenantId.toString(),
       documentId: chunk.documentId.toString(),
-      documentVersionId: chunk.documentVersionId?.toString() ?? "",
+      documentVersionId: chunk.documentVersionId?.toString() ?? "v0",
       classification: chunk.classification,
       department: chunk.department,
       category: chunk.category,

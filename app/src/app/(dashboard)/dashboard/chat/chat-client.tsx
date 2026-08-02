@@ -8,13 +8,14 @@ import {
   getConversationMessages,
   deleteConversation,
 } from "@/services/chat.service";
-import type { ChatSource, ConversationListItem } from "@/types/api/chat.types";
+import type { ChatSource, ChatSourceClip, ConversationListItem } from "@/types/api/chat.types";
 
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: ChatSource[];
+  sourceClips?: ChatSourceClip[];
 };
 
 function formatRelativeTime(iso: string): string {
@@ -26,6 +27,96 @@ function formatRelativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function InlineCitations({
+  text,
+  sourceClips,
+  onOpenPdf,
+}: {
+  text: string;
+  sourceClips?: ChatSourceClip[];
+  onOpenPdf: (clip: ChatSourceClip) => void;
+}) {
+  const parts = text.split(/(\[(\d+)\])/g);
+  if (!sourceClips || sourceClips.length === 0) return <>{text}</>;
+  const clipByRef = new Map(sourceClips.map((c) => [c.referenceNumber, c]));
+
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    const full = parts[i];
+    const num = parts[i + 1];
+    if (full && num) {
+      const ref = parseInt(num, 10);
+      const clip = clipByRef.get(ref);
+      if (clip) {
+        elements.push(
+          <button
+            key={`cite-${ref}`}
+            onClick={() => onOpenPdf(clip)}
+            title={`${clip.documentTitle}${clip.sectionTitle ? ` — ${clip.sectionTitle}` : ""}${clip.pageNumber ? ` (p.${clip.pageNumber})` : ""}`}
+            className="mx-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded bg-primary/10 px-[3px] text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20"
+          >
+            {ref}
+          </button>,
+        );
+      } else {
+        elements.push(full);
+      }
+      i += 3;
+    } else if (full) {
+      elements.push(full);
+      i += 1;
+    } else {
+      i += 1;
+    }
+  }
+
+  return <>{elements}</>;
+}
+
+function NotebookLmSources({
+  clips,
+  onOpenPdf,
+}: {
+  clips: ChatSourceClip[];
+  onOpenPdf: (clip: ChatSourceClip) => void;
+}) {
+  return (
+    <div className="mt-3 border-t border-outline-variant/20 pt-2">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
+        Sources
+      </p>
+      <div className="space-y-2">
+        {clips.map((clip) => (
+          <button
+            key={`clip-${clip.referenceNumber}`}
+            onClick={() => onOpenPdf(clip)}
+            className="flex w-full items-start gap-2 rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-2.5 text-start text-xs transition-colors hover:border-primary/30 hover:bg-primary/[0.03]"
+          >
+            <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-primary/10 text-[10px] font-semibold text-primary">
+              {clip.referenceNumber}
+            </span>
+            <div className="min-w-0 flex-1">
+              <span className="font-semibold text-on-surface">
+                {clip.documentTitle}
+              </span>
+              {clip.sectionTitle && (
+                <span className="text-outline"> — {clip.sectionTitle}</span>
+              )}
+              {clip.pageNumber && (
+                <span className="text-outline"> (p.{clip.pageNumber})</span>
+              )}
+              <div className="mt-0.5 line-clamp-2 italic text-on-surface-variant">
+                &ldquo;{clip.excerpt}&rdquo;
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -88,6 +179,7 @@ export function ChatClient() {
         role: m.role,
         content: m.content,
         sources: m.sources,
+        sourceClips: m.sourceClips,
       }));
       setMessages((prev) => ({ ...prev, [conversationId]: mapped }));
     } catch {
@@ -183,6 +275,7 @@ export function ChatClient() {
         role: "assistant",
         content: response.answer,
         sources: response.sources,
+        sourceClips: response.sourceClips,
       };
 
       // If this was a new conversation, the server created it — update state
@@ -363,45 +456,32 @@ export function ChatClient() {
                         : "bg-surface-container border border-outline-variant/30 text-on-surface"
                     }`}
                   >
-                    <p className="whitespace-pre-line">{msg.content}</p>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 border-t border-outline-variant/20 pt-2">
-                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                          Sources
-                        </p>
-                        {msg.sources.map((src) => (
-                            <button
-                              key={src.chunkId}
-                              onClick={() => setPdfViewer({
-                                documentId: src.documentId,
-                                pageNumber: src.pageNumber,
-                                highlightText: src.text,
-                                documentTitle: src.documentTitle,
-                              })}
-                              className="flex items-center gap-1 text-xs text-on-surface-variant transition-colors hover:text-primary"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">
-                                description
-                              </span>
-                              <span className="underline-offset-2 hover:underline">
-                                {src.documentTitle ?? "Document"}
-                              </span>
-                              {src.sectionTitle && (
-                                <span className="text-outline">
-                                  — {src.sectionTitle}
-                                </span>
-                              )}
-                              {src.pageNumber && (
-                                <span className="text-outline">
-                                  (p.{src.pageNumber})
-                                </span>
-                              )}
-                              <span className="ml-1 text-outline">
-                                ({(src.score * 100).toFixed(0)}%)
-                              </span>
-                            </button>
-                          ))}
+                      <div className="whitespace-pre-line text-sm leading-relaxed [&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline">
+                        <InlineCitations
+                          text={msg.content}
+                          sourceClips={msg.sourceClips}
+                          onOpenPdf={(clip) =>
+                            setPdfViewer({
+                              documentId: clip.documentId,
+                              pageNumber: clip.pageNumber,
+                              highlightText: clip.excerpt,
+                              documentTitle: clip.documentTitle,
+                            })
+                          }
+                        />
                       </div>
+                    {msg.sourceClips && msg.sourceClips.length > 0 && (
+                      <NotebookLmSources
+                        clips={msg.sourceClips}
+                        onOpenPdf={(clip) =>
+                          setPdfViewer({
+                            documentId: clip.documentId,
+                            pageNumber: clip.pageNumber,
+                            highlightText: clip.excerpt,
+                            documentTitle: clip.documentTitle,
+                          })
+                        }
+                      />
                     )}
                   </div>
                   {msg.role === "user" && (

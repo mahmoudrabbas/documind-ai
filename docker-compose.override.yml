@@ -1,7 +1,7 @@
 services:
   worker:
     environment:
-      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
+      - STORAGE_PROVIDER=local
       - AWS_REGION=${AWS_REGION:-eu-north-1}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
