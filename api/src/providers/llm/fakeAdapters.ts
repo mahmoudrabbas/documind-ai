@@ -104,6 +104,16 @@ export class FakeModelAdapter implements ModelAdapter {
       }
     }
 
+    let finishReason: string | null = "stop";
+    const CHARS_PER_TOKEN = 4;
+    if (typeof params.maxTokens === "number" && params.maxTokens > 0) {
+      const maxChars = params.maxTokens * CHARS_PER_TOKEN;
+      if (text.length > maxChars) {
+        text = text.slice(0, maxChars);
+        finishReason = "length";
+      }
+    }
+
     return {
       id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       provider: "fake",
@@ -112,7 +122,7 @@ export class FakeModelAdapter implements ModelAdapter {
         {
           index: 0,
           message: { role: "assistant", content: text },
-          finishReason: "stop",
+          finishReason,
         },
       ],
       usage: {

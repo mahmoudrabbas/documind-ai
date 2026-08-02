@@ -11,7 +11,12 @@ export interface ChatSource {
 export interface ChatResponse {
   messageId: string;
   answer: string;
-  sources: ChatSource[];
+  /**
+   * Present only when the tenant's AI runtime preferences enable citations.
+   * Omitted (not empty) when citations are disabled so clients never render
+   * a sources block or citation footnotes.
+   */
+  sources?: ChatSource[];
   conversationId: string;
 }
 

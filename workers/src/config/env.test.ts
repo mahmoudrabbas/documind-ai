@@ -20,13 +20,21 @@ test("worker requires explicit dependencies outside development", () => {
       }),
     (error: unknown) => {
       assert(error instanceof EnvironmentValidationError);
-      assert.deepEqual(error.keys, ["REDIS_URL"]);
+      assert.deepEqual(error.keys, [
+        "EMAIL_VERIFICATION_JWT_SECRET",
+        "REDIS_URL",
+      ]);
       return true;
     },
   );
 });
 
 test("worker accepts explicit test dependencies", () => {
-  const env = parseEnv({ NODE_ENV: "test", MONGODB_URI: "mongodb+srv://test:test@mongo.test.invalid/documind-test", REDIS_URL: "redis://127.0.0.1:6379/1" });
+  const env = parseEnv({
+    NODE_ENV: "test",
+    MONGODB_URI: "mongodb+srv://test:test@mongo.test.invalid/documind-test",
+    REDIS_URL: "redis://127.0.0.1:6379/1",
+    EMAIL_VERIFICATION_JWT_SECRET: "test-worker-email-verification-secret",
+  });
   assert.equal(env.NODE_ENV, "test");
 });

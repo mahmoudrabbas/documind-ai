@@ -2,8 +2,19 @@ import { apiClient } from "@/lib/api-client";
 import { assignRole } from "@/services/roles.service";
 import type { RoleView, UserView, UsersResponse } from "@/types/api/users.types";
 
-export function listUsers(page = 1, pageSize = 20, signal?: AbortSignal) {
-  return apiClient<UsersResponse>(`/users?page=${page}&pageSize=${pageSize}`, { signal });
+export function listUsers(
+  page = 1,
+  pageSize = 20,
+  signal?: AbortSignal,
+  filters?: { search?: string; role?: "COMPANY_ADMIN" | "EMPLOYEE" },
+) {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  if (filters?.search?.trim()) params.set("search", filters.search.trim());
+  if (filters?.role) params.set("role", filters.role);
+  return apiClient<UsersResponse>(`/users?${params.toString()}`, { signal });
 }
 
 export function inviteUser(input: {
@@ -100,10 +111,35 @@ export async function updateUserWithRole(input: {
   return { ...user, customRoleId: input.selectedRole.id, customRoleName: input.selectedRole.name };
 }
 
-export async function listAllUsers(signal?: AbortSignal): Promise<UserView[]> {
-  const first = await listUsers(1, 100, signal);
+export async function listAllUsers(
+  signal?: AbortSignal,
+  filters?: { search?: string; role?: "COMPANY_ADMIN" | "EMPLOYEE" },
+): Promise<UserView[]> {
+  const first = await listUsers(1, 100, signal, filters);
   const pages = first.data.pagination.totalPages;
   if (pages <= 1) return first.data.users;
-  const rest = await Promise.all(Array.from({ length: pages - 1 }, (_, index) => listUsers(index + 2, 100, signal)));
+  const rest = await Promise.all(
+    Array.from({ length: pages - 1 }, (_, index) =>
+      listUsers(index + 2, 100, signal, filters),
+    ),
+  );
   return first.data.users.concat(rest.flatMap((response) => response.data.users));
+}
+
+export function resendInvitation(userId: string) {
+  return apiClient<{
+    success: true;
+    message: string;
+    data: {
+      user: UserView;
+      emailDelivery?: { sent: boolean; error?: string };
+    };
+  }>(`/users/${userId}/resend-invitation`, { method: "POST" });
+}
+
+export function revokeInvitation(userId: string) {
+  return apiClient<{ success: true; message: string }>(
+    `/users/${userId}/revoke-invitation`,
+    { method: "POST" },
+  );
 }

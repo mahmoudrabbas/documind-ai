@@ -1,10 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ObjectId, type MongoClient } from "mongodb";
-import { employeeImportJobHandler, employeeImportPayloadSchema } from "./employeeImportJob.js";
-import { setMockClient } from "../db/mongo.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
 import type { JobHandlerContext, JobHandlerResult } from "../contracts/jobDispatcher.js";
+
+// The job signs invitation tokens with the API-shared secret; it must be set
+// before the config singleton is parsed (the config module is loaded through
+// the dynamic imports below).
+process.env.EMAIL_VERIFICATION_JWT_SECRET =
+  "test-worker-email-verification-secret";
+
+const { employeeImportJobHandler, employeeImportPayloadSchema } = await import(
+  "./employeeImportJob.js"
+);
+const { setMockClient } = await import("../db/mongo.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────────
 

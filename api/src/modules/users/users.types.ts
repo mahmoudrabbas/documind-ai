@@ -24,6 +24,13 @@ export interface UpdateUserResult {
 export interface ListUsersInput {
   page: number;
   pageSize: number;
+  search?: string;
+  role?: "COMPANY_ADMIN" | "EMPLOYEE";
+}
+
+export interface RevokeInvitationResult {
+  success: boolean;
+  message: string;
 }
 
 export interface ListUsersResult {

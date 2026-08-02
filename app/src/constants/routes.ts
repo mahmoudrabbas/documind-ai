@@ -2,6 +2,7 @@ import {
   Permission,
   type PermissionValue,
 } from "@/types/api/permissions.types";
+import { isStandardUserRole } from "@/lib/role-home";
 
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
@@ -26,7 +27,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
     href: "/dashboard",
     icon: "dashboard",
     context: "tenant",
-    requiredPermissions: [],
+    requiredPermissions: [Permission.ANALYTICS_READ],
   },
   {
     label: "Documents",
@@ -148,9 +149,12 @@ export function filterNavigationLinks(
   links: readonly NavLink[],
   permissionStatus: "loading" | "idle" | "ready" | "denied" | "error" | "maintenance",
   can: (permission: PermissionValue) => boolean,
+  role?: string,
 ): readonly NavLink[] {
   if (permissionStatus !== "ready") return [];
-  return links.filter((link) =>
-    link.requiredPermissions.every((permission) => can(permission)),
+  return links.filter(
+    (link) =>
+      link.requiredPermissions.every((permission) => can(permission)) &&
+      (!isStandardUserRole(role ?? "") || link.href !== "/dashboard"),
   );
 }

@@ -6,7 +6,6 @@ import type {
   ListUsersInput,
   UpdateUserInput,
 } from "./users.types.js";
-
 const inviteUserSchema = z
   .object({
     name: z
@@ -50,6 +49,18 @@ const listUsersSchema = z
         z.coerce.number().int().positive().max(100),
       )
       .default(20),
+    search: z
+      .preprocess(
+        (value) => (Array.isArray(value) ? value[0] : value),
+        z.string().trim().min(1).max(120),
+      )
+      .optional(),
+    role: z
+      .preprocess(
+        (value) => (Array.isArray(value) ? value[0] : value),
+        z.enum(["COMPANY_ADMIN", "EMPLOYEE"]),
+      )
+      .optional(),
   })
   .strict();
 
