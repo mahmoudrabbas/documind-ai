@@ -92,4 +92,34 @@ export function logEntitlementDenial(input: EntitlementDenialInput): void {
       "[EntitlementDenial] Audit write failed synchronously — denial response unaffected",
     );
   }
+
+  // Analytics usage event — runs independently of the audit write so that
+  // an audit failure cannot prevent denial events from being recorded, and
+  // an analytics failure cannot surface as an audit error.
+  if (input.tenantId) {
+    import("../analytics/adapters/mongo-usage-event-writer.js")
+      .then(({ MongoUsageEventWriter }) => {
+        const writer = new MongoUsageEventWriter();
+        void writer.record({
+          tenantId: input.tenantId!,
+          actorId: input.actorId,
+          eventType: "entitlement_denial",
+          units: 1,
+          success: false,
+          errorCode: `ENTITLEMENT_${input.denialType}`,
+          traceId: input.traceId,
+          metadata: {
+            dimension: input.dimension,
+            denialType: input.denialType,
+            limit: input.limit,
+            current: input.current,
+          },
+        }).catch((err) => {
+          logger.warn({ err, dimension: input.dimension }, "[EntitlementDenial] UsageEvent write failed");
+        });
+      })
+      .catch((err) => {
+        logger.warn({ err, dimension: input.dimension }, "[EntitlementDenial] UsageEvent module import failed");
+      });
+  }
 }
