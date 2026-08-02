@@ -6,6 +6,7 @@ import { getAuditWriter, getMetricRecorder } from "../../common/observability/in
 import { logger } from "../../common/logger/logger.js";
 import DocumentModel from "../../db/models/document.model.js";
 import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
+import { recordQuestionAsked } from "../usage/usage.service.js";
 
 import type { QueryPlan } from "./intentQuery.types.js";
 import { detectLanguage } from "./intentQuery.languageDetector.js";
@@ -468,6 +469,18 @@ export class IntentQueryService {
         fallbackUsed: validatedPlan.processingMetadata.fallbackUsed,
       },
     });
+
+    // Keep the tenant's historical question total in sync with successful
+    // query responses. Quota enforcement remains separate and is handled by
+    // the route guard/counter.
+    try {
+      await recordQuestionAsked({
+        tenantId: tenantIdStr,
+        requestId: context.requestId,
+      });
+    } catch (err) {
+      logger.error({ err, traceId }, "Failed to record question usage");
+    }
 
     // 9. Record Prometheus metrics
     recordIntentQueryMetrics(metricRecorder, validatedPlan, traceId);

@@ -20,6 +20,7 @@ before(async () => {
   mongo = await MongoMemoryReplSet.create({
     replSet: { count: 1 },
     binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
   });
   await mongoose.connect(mongo.getUri(), { dbName: "document-policy-repository" });
   await Promise.all([DocumentModel.init(), DocumentAccessPolicyModel.init()]);

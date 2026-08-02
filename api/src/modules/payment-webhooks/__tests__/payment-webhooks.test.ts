@@ -47,6 +47,13 @@ test("webhook and Checkout return recovery converge on the shared state applier"
   assert.ok(source.includes('sourceType: "webhook"'));
 });
 
+test("refund webhooks trigger authoritative refund synchronization before completion", async () => {
+  const source = await readFile(serviceSourceUrl, "utf8");
+  assert.ok(source.includes("REFUND_WEBHOOK_EVENTS"));
+  assert.ok(source.includes("synchronizeRefundFromProvider"));
+  assert.ok(source.includes('eventRecord.status = "processed"'));
+});
+
 test("webhook controller verifies signature", async () => {
   const source = await readFile(controllerSourceUrl, "utf8");
   assert.ok(
@@ -54,7 +61,7 @@ test("webhook controller verifies signature", async () => {
     "Verifies webhook signature",
   );
   assert.ok(
-    source.includes("Invalid signature"),
+    source.includes("BILLING_WEBHOOK_SIGNATURE_INVALID"),
     "Returns error for invalid signature",
   );
 });

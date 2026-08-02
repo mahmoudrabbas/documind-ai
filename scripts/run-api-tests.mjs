@@ -122,6 +122,7 @@ function normalizeRequestedTestFiles(args) {
 
 const testEnvironment = {
   NODE_ENV: "test",
+  DOCUMIND_DISPOSABLE_MONGO: "true",
   REDIS_URL: "redis://127.0.0.1:6379/1",
   APP_FRONTEND_URL: "https://app.test.invalid",
   UPLOAD_DIR: ".test-uploads",

@@ -52,7 +52,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Billing",
-    href: "/checkout",
+    href: "/dashboard/settings/billing",
     icon: "payments",
     context: "tenant",
     requiredPermissions: [Permission.BILLING_READ],
@@ -130,6 +130,7 @@ export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
   { label: "Security & Audit", href: "/super-admin/audit", icon: "policy", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
   { label: "Global Settings", href: "/super-admin/settings", icon: "settings", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
   { label: "Payment Diagnostics", href: "/super-admin/payments", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
+  { label: "Refund Reviews", href: "/super-admin/refunds", icon: "currency_exchange", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
   { label: "Quota Overrides", href: "/super-admin/entitlement", icon: "tune", context: "platform", requiredPermissions: [Permission.BILLING_MANAGE] },
 ];
 

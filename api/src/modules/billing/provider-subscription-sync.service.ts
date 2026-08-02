@@ -5,6 +5,7 @@ import SubscriptionModel from "../../db/models/subscription.model.js";
 import type { ProviderSubscription } from "./ports/payment-provider.port.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { SubscriptionStatus } from "./billing.types.js";
+import { providerStateFingerprint, shouldApplyProviderProjection } from "./provider-projection-policy.js";
 
 export interface ResolvedPackageVersion {
   packageId: string;
@@ -180,7 +181,7 @@ export async function resolveProviderSubscription(
 // derived here is for reporting/audit only and may differ from the entitlement
 // gate — do NOT unify this derivation with the entitlement policy.
 export function providerPaymentState(status: string): "pending" | "paid" | "failed" {
-  if (status === "active" || status === "trialing") return "paid";
+  if (status === "active" || status === "trialing" || status === "canceled") return "paid";
   if (status === "incomplete") return "pending";
   return "failed";
 }
@@ -206,6 +207,41 @@ export interface ProviderSubscriptionSyncInput {
   sourceId: string;
   sourceType: "webhook" | "checkout_session_sync";
   sourceTimestamp?: Date;
+  providerStateObservedAt?: Date;
+}
+
+const PROVIDER_BINDABLE_STATUSES = ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] as const;
+
+async function findUniqueProjectionTarget(filter: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  const candidates = await SubscriptionModel.find(filter).limit(2).lean().exec() as unknown as Record<string, unknown>[];
+  if (candidates.length > 1) throw new Error("Provider subscription local mapping is ambiguous");
+  return candidates[0] ?? null;
+}
+
+/**
+ * Provider events are identified by their provider subscription reference.
+ * A provider-less effective subscription can only be bound during first
+ * checkout when it already owns the same provider customer. This prevents a
+ * delayed event for a canceled paid subscription from mutating the new local
+ * Free subscription.
+ */
+export async function findProviderProjectionTarget(input: {
+  tenantId: string;
+  providerSubscriptionId: string;
+  providerCustomerId: string;
+}): Promise<Record<string, unknown> | null> {
+  const tenantId = new Types.ObjectId(input.tenantId);
+  const exact = await findUniqueProjectionTarget({
+    tenantId,
+    providerSubscriptionId: input.providerSubscriptionId,
+  });
+  if (exact) return exact;
+  return findUniqueProjectionTarget({
+    tenantId,
+    providerSubscriptionId: "",
+    providerCustomerId: input.providerCustomerId,
+    status: { $in: PROVIDER_BINDABLE_STATUSES },
+  });
 }
 
 function sameDate(left: unknown, right: Date | null): boolean {
@@ -276,7 +312,7 @@ export async function synchronizeProviderSubscription(
     providerPriceId: input.providerSubscription.priceId,
     provider: input.provider,
     billingInterval: resolution.billingInterval,
-    status: status as SubscriptionStatus,
+    status: (input.providerSubscription.cancelAtPeriodEnd && status === "ACTIVE" ? "CANCEL_AT_PERIOD_END" : status) as SubscriptionStatus,
     paymentState: providerPaymentState(input.providerSubscription.status),
     periodStart: input.providerSubscription.currentPeriodStart,
     periodEnd: input.providerSubscription.currentPeriodEnd,
@@ -285,18 +321,23 @@ export async function synchronizeProviderSubscription(
     cancelAtPeriodEnd: input.providerSubscription.cancelAtPeriodEnd,
     lastProviderEventId: input.sourceId,
     lastProviderEventTimestamp: input.sourceTimestamp ?? new Date(),
+    providerStateObservedAt: input.providerStateObservedAt ?? new Date(),
   };
 
   let changed = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const current = await SubscriptionModel.findOne({
-      tenantId: new Types.ObjectId(input.tenantId),
-    }).lean().exec() as unknown as Record<string, unknown> | null;
+    const current = await findProviderProjectionTarget({
+      tenantId: input.tenantId,
+      providerSubscriptionId: input.providerSubscription.id,
+      providerCustomerId: input.providerSubscription.customerId,
+    });
 
     if (!current) {
+      const tenantHasSubscription = await SubscriptionModel.exists({ tenantId: new Types.ObjectId(input.tenantId) });
+      if (tenantHasSubscription) throw new Error("Provider subscription local mapping is missing");
       try {
         const created = await SubscriptionModel.updateOne(
-          { tenantId: new Types.ObjectId(input.tenantId) },
+          { tenantId: new Types.ObjectId(input.tenantId), providerSubscriptionId: input.providerSubscription.id },
           {
             $setOnInsert: { tenantId: new Types.ObjectId(input.tenantId), startedAt: new Date() },
             $set: desired,
@@ -314,6 +355,18 @@ export async function synchronizeProviderSubscription(
       }
     }
 
+    // Provider cancellation is a lifecycle event, not a payment failure. A
+    // previously full-refunded payment also remains refunded after deletion.
+    if (status === "CANCELED") {
+      desired.paymentState = current.paymentState === "refunded" ? "refunded" : "paid";
+    }
+
+    if (!shouldApplyProviderProjection({
+      currentlyAppliedObservedAt: current.providerStateObservedAt instanceof Date ? current.providerStateObservedAt : null,
+      incomingObservedAt: desired.providerStateObservedAt as Date,
+      currentFingerprint: providerStateFingerprint(current), incomingFingerprint: providerStateFingerprint(desired),
+      readCurrentProviderState: true,
+    })) break;
     if (!hasProviderStateChanged(current, desired)) break;
     const result = await SubscriptionModel.updateOne(
       {
@@ -328,9 +381,11 @@ export async function synchronizeProviderSubscription(
     }
   }
 
-  const synchronized = await SubscriptionModel.findOne({
-    tenantId: new Types.ObjectId(input.tenantId),
-  }).lean().exec() as unknown as Record<string, unknown> | null;
+  const synchronized = await findProviderProjectionTarget({
+    tenantId: input.tenantId,
+    providerSubscriptionId: input.providerSubscription.id,
+    providerCustomerId: input.providerSubscription.customerId,
+  });
   if (!synchronized) throw new Error("Synchronized subscription was not found");
 
   if (changed) {

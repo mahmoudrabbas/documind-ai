@@ -212,14 +212,12 @@ describe("EntitlementService concurrency", () => {
       expect(usage).toBe(5);
     });
 
-    it("fresh counter upsert race — duplicate-key (E11000) is a valid denial signal alongside committed:false", async () => {
+    it("fresh counter race returns normal denial without leaking duplicate-key errors", async () => {
       provider.setSnapshot(makeSnapshot(1));
 
       // Four parallel attempts at the only available unit on a brand-new
-      // counter document: the winner commits, the losers are denied by the
-      // guard (committed: false) or by the guarded-upsert duplicate-key
-      // collision (E11000 rejection) — both are exhaustion, never a
-      // double-commit.
+      // counter document: the winner commits and the losers receive normal
+      // committed:false denials without leaking Mongo duplicate-key errors.
       const results = await Promise.allSettled(
         Array.from({ length: 4 }, () =>
           service.consume(TENANT_A, DIM_DOCUMENTS, 1),
@@ -228,7 +226,7 @@ describe("EntitlementService concurrency", () => {
 
       expect(countCommitted(results)).toBe(1);
       expect(countDenied(results)).toBe(3);
-      expectAllRejectionsAreDuplicateKey(results);
+      expect(results.every((result) => result.status === "fulfilled")).toBe(true);
 
       const usage = await counter.getUsage(
         TENANT_A,

@@ -30,6 +30,7 @@ export const Permission = {
   COMPANY_SETTINGS_UPDATE: "company-settings:update",
   BILLING_READ: "billing:read",
   BILLING_MANAGE: "billing:manage",
+  BILLING_REFUND_CONFIRM: "billing:refund-confirm",
   IMPORTS_CREATE: "imports:create",
   IMPORTS_READ: "imports:read",
   AUDIT_READ: "audit:read",

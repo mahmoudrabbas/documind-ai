@@ -25,10 +25,10 @@ export function checkoutSyncErrorPhase(code: string | null): CheckoutSyncPhase |
 }
 
 export function checkoutSyncPhase(
-  subscription: Pick<SubscriptionStatus, "status" | "paymentState" | "providerSubscriptionId">,
+  subscription: Pick<SubscriptionStatus, "status" | "paymentState" | "providerLinked">,
   elapsedMs: number,
 ): CheckoutSyncPhase {
-  const providerLinked = Boolean(subscription.providerSubscriptionId);
+  const providerLinked = subscription.providerLinked;
   if (
     providerLinked &&
     subscription.status === "ACTIVE" &&

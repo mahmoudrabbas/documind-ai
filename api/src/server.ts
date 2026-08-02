@@ -7,6 +7,8 @@ import { logger } from "./common/logger/logger.js";
 import { startEntitlementReconciliation } from "./modules/entitlement/reconciliation.scheduler.js";
 import { getReconciliationService } from "./modules/entitlement/reconciliation.service.js";
 import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
+import SubscriptionModel from "./db/models/subscription.model.js";
+import { inspectSubscriptionIndexInvariant } from "./db/subscription-index-invariant.js";
 
 dotenv.config();
 
@@ -131,6 +133,20 @@ async function gracefulShutdown(signal: string) {
 
 try {
   await connectDB();
+  try {
+    const subscriptionIndex = await inspectSubscriptionIndexInvariant(SubscriptionModel.collection);
+    if (subscriptionIndex.valid) {
+      logger.info({ diagnosticsCode: "SUBSCRIPTION_INDEX_INVARIANT_READY" }, "Subscription index invariant verified");
+    } else {
+      logger.error({
+        diagnosticsCode: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED",
+        issues: subscriptionIndex.issues,
+        effectiveDuplicateTenantCount: subscriptionIndex.effectiveDuplicateTenantCount,
+      }, "Subscription index invariant requires migration");
+    }
+  } catch (error) {
+    logger.error({ err: error, diagnosticsCode: "SUBSCRIPTION_INDEX_INVARIANT_CHECK_FAILED" }, "Subscription index invariant could not be verified");
+  }
   await connectRedis();
   await ensureSearchIndexes();
   if (config.NODE_ENV !== "production" && config.PAYMENT_PROVIDER === "stripe") {

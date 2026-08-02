@@ -43,7 +43,7 @@ function CheckoutSuccessContent() {
       try {
         const response = await getSubscriptionStatus(controller.signal);
         const subscription = response.data;
-        setManageBillingAvailable(Boolean(subscription.providerCustomerId));
+        setManageBillingAvailable(subscription.canOpenPortal);
         setPackageName(subscription.packageId?.name ?? null);
         const nextPhase = checkoutSyncPhase(subscription, Date.now() - startedAt);
         if (nextPhase !== "synchronizing") { setPhase(nextPhase); return; }

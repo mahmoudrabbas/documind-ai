@@ -4,6 +4,7 @@ import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
 import PaymentEventModel from "../../db/models/paymentEvent.model.js";
+import BillingOperationModel from "../../db/models/billingOperation.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   NOT_FOUND,
@@ -16,10 +17,16 @@ import {
   CHECKOUT_SESSION_INCOMPLETE,
   CHECKOUT_PAYMENT_INCOMPLETE,
   CHECKOUT_SYNC_PROVIDER_UNAVAILABLE,
+  BILLING_PROVIDER_UNAVAILABLE,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import type { AuditAction } from "../../common/observability/auditEvents.js";
 import type { PaymentProvider } from "../billing/ports/payment-provider.port.js";
+import type { ProviderOperationContext } from "../billing/ports/payment-provider.port.js";
 import { synchronizeProviderSubscription } from "../billing/provider-subscription-sync.service.js";
+import { projectProviderInvoice } from "../billing/invoice-synchronization.service.js";
+import { toCompanyBillingSummary } from "../billing/company-billing-summary.js";
+import { assertBillingPortalFlowAvailable } from "../billing/portal-flow-policy.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   authorizeTenantOperation,
@@ -28,7 +35,7 @@ import {
 } from "../permissions/permissions.operation.js";
 
 function writeAudit(
-  action: string,
+  action: AuditAction,
   resourceId: string,
   changes: Record<string, unknown>,
   tenantId: string,
@@ -37,8 +44,8 @@ function writeAudit(
   const writer = getAuditWriter();
   writer
     .write({
-      action: action as never,
-      resourceType: "Subscription" as never,
+      action,
+      resourceType: "Subscription",
       resourceId,
       changes,
       tenantId,
@@ -77,6 +84,20 @@ function getProviderPriceId(
     PRICE_NOT_CONFIGURED,
     `Package "${pkg.code}" has no Stripe ${billingInterval} price configured. Sync the package with Stripe first.`,
   );
+}
+
+function providerOperationContext(
+  tenantId: string,
+  operationReference: string,
+  normalizedRequest: Record<string, unknown>,
+  actor: ResolvedOperationAuthorizationContext,
+): ProviderOperationContext {
+  const requestFingerprint = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(normalizedRequest).sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
+  return {
+    idempotencyKey: createHash("sha256").update(`${tenantId}:${operationReference}:${requestFingerprint}`).digest("hex"),
+    requestFingerprint, tenantReference: tenantId, operationReference,
+    ...(actor.traceId ? { traceId: actor.traceId } : {}),
+  };
 }
 
 function legacyPackageVersionId(packageId: string, version: number): string {
@@ -253,11 +274,14 @@ export async function createCheckoutSession(
   if (!pkg) {
     throw new AppError(404, NOT_FOUND, "Package not found");
   }
-  if (!pkg.active) {
-    throw new AppError(400, BAD_REQUEST, "Package is not active");
+  if (!pkg.active || (pkg.visibility && pkg.visibility !== "public")) {
+    throw new AppError(400, BAD_REQUEST, "Package is not available for checkout");
   }
 
-  const currentSubscription = await SubscriptionModel.findOne({ tenantId })
+  const currentSubscription = await SubscriptionModel.findOne({
+    tenantId,
+    status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] },
+  })
     .populate("packageId", "name code")
     .lean()
     .exec();
@@ -296,10 +320,11 @@ export async function createCheckoutSession(
       tenantId,
       email: actor.actorEmail,
       name: actor.actorEmail,
+      operationContext: providerOperationContext(tenantId, "checkout-customer", { tenantId }, actor),
     });
     if (currentSubscription) {
       await SubscriptionModel.updateOne(
-        { tenantId },
+        { _id: currentSubscription._id, tenantId },
         { $set: { providerCustomerId } },
       );
     }
@@ -326,6 +351,7 @@ export async function createCheckoutSession(
     metadata,
     subscriptionMetadata: metadata,
     clientReferenceId: tenantId,
+    operationContext: providerOperationContext(tenantId, "checkout-session", { tenantId, packageId, packageVersionId: version.packageVersionId, billingInterval }, actor),
   });
 
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
@@ -344,9 +370,9 @@ export async function createCheckoutSession(
     expiresAt,
   });
 
-  if (providerCustomerId && !currentSubscription?.providerCustomerId) {
+  if (providerCustomerId && currentSubscription && !currentSubscription.providerCustomerId) {
     await SubscriptionModel.updateOne(
-      { tenantId },
+      { _id: currentSubscription._id, tenantId },
       { $set: { providerCustomerId } },
     );
   }
@@ -516,6 +542,36 @@ export async function synchronizeCheckoutSession(
     );
   }
 
+  // The authenticated return path can run before invoice webhooks arrive.
+  // Project invoices already visible to the provider here; webhooks remain
+  // the retry/reconciliation path when an invoice is still propagating.
+  try {
+    const synchronizedSubscription = syncResult.subscription;
+    const customerId = String(providerSubscription.customerId || providerSession.customerId || "");
+    const subscriptionId = String(providerSubscription.id || synchronizedSubscription.providerSubscriptionId || "");
+    const localSubscriptionId = synchronizedSubscription._id;
+    if (customerId && subscriptionId && localSubscriptionId) {
+      const invoicePage = await provider.listInvoices({ customerId, limit: 50 });
+      for (const invoice of invoicePage.invoices) {
+        if (invoice.subscriptionId && invoice.subscriptionId !== subscriptionId) continue;
+        await projectProviderInvoice({
+          subscription: {
+            _id: new Types.ObjectId(String(localSubscriptionId)),
+            tenantId: new Types.ObjectId(tenantId),
+            provider: String(synchronizedSubscription.provider ?? "stripe"),
+            providerCustomerId: customerId,
+            providerSubscriptionId: subscriptionId,
+          },
+          providerName: String(synchronizedSubscription.provider ?? "stripe"),
+          providerInvoice: invoice,
+          sourceEventId: sourceId,
+        });
+      }
+    }
+  } catch {
+    // Do not roll back a confirmed subscription because an invoice is delayed.
+  }
+
   await CheckoutSessionModel.updateOne(
     { providerSessionId: sessionId, tenantId: new Types.ObjectId(tenantId) },
     { $set: { status: "completed", completedAt: new Date() } },
@@ -594,19 +650,22 @@ export async function getSubscriptionStatus(
   if (tenantId !== actor.tenantId) {
     throw new AppError(404, NOT_FOUND, "Subscription not found");
   }
-  const sub = await SubscriptionModel.findOne({ tenantId })
+  const sub = await SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } })
     .populate("packageId", "name code version monthlyPrice annualPrice currency entitlements")
     .lean()
     .exec();
   if (!sub) {
     throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
   }
-  const populatedPackage = sub.packageId as unknown as Record<string, unknown>;
-  if (populatedPackage && typeof populatedPackage === "object") {
-    populatedPackage.monthlyPriceCents = populatedPackage.monthlyPrice;
-    populatedPackage.annualPriceCents = populatedPackage.annualPrice;
-  }
-  return sub;
+  const pendingFilter = {
+    tenantId: new Types.ObjectId(tenantId),
+    status: { $in: ["REQUESTED", "PROVIDER_PENDING", "RETRY_PENDING"] as const },
+  };
+  const [pendingOperation, pendingSubscriptionMutation] = await Promise.all([
+    BillingOperationModel.findOne(pendingFilter).select("operationType status requestedAt conflictGroup").sort({ createdAt: -1 }).lean().exec(),
+    BillingOperationModel.exists({ ...pendingFilter, conflictGroup: "SUBSCRIPTION_MUTATION" }),
+  ]);
+  return toCompanyBillingSummary(sub as unknown as Record<string, unknown>, pendingOperation, Boolean(pendingSubscriptionMutation));
 }
 
 export async function createBillingPortalSession(
@@ -623,7 +682,7 @@ export async function createBillingPortalSession(
     throw new AppError(404, NOT_FOUND, "Subscription not found");
   }
 
-  const sub = await SubscriptionModel.findOne({ tenantId }).lean().exec();
+  const sub = await SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).lean().exec();
   if (!sub) {
     throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
   }
@@ -635,18 +694,21 @@ export async function createBillingPortalSession(
       "No billing customer on file. Please complete a checkout first.",
     );
   }
+  assertBillingPortalFlowAvailable(sub.provider, "general");
 
-  const session = await provider.createBillingPortalSession({
-    customerId: sub.providerCustomerId,
-    returnUrl,
-  });
+  let session;
+  try {
+    session = await provider.createBillingPortalSession({ customerId: sub.providerCustomerId, returnUrl, flow: "general" });
+  } catch {
+    throw new AppError(503, BILLING_PROVIDER_UNAVAILABLE, "Billing provider is temporarily unavailable");
+  }
 
   writeAudit(
     "BILLING_PORTAL_SESSION_CREATED",
     String(sub._id),
     {
       tenantId,
-      providerCustomerId: sub.providerCustomerId,
+      portalFlow: "general",
     },
     tenantId,
     actor,

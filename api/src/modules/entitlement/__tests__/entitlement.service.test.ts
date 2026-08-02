@@ -394,7 +394,7 @@ describe("EntitlementService", () => {
 
       const now = new Date();
       const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      expect(counter.getUsage(TENANT_A, DIM_DOCUMENTS, periodKey)).resolves.toBe(10);
+      await expect(counter.getUsage(TENANT_A, DIM_DOCUMENTS, periodKey)).resolves.toBe(10);
     });
 
     it("reserve returns null when limit is exceeded", async () => {

@@ -6,7 +6,9 @@ import {
   SUBSCRIPTION_INACTIVE,
 } from "../../common/errors/errorCodes.js";
 import { getEntitlementService } from "./entitlement.service.js";
-import SubscriptionModel from "../../db/models/subscription.model.js";
+import SubscriptionModel, { type SubscriptionStatus } from "../../db/models/subscription.model.js";
+import DocumentModel from "../../db/models/document.model.js";
+import MessageModel from "../../db/models/message.model.js";
 import {
   isServiceablePaymentState,
   isServiceableStatus,
@@ -59,15 +61,12 @@ const COUNTER_DIMENSIONS: CounterDimension[] = [
  */
 function buildLimitMap(
   snapshot: EntitlementSnapshot,
-  usageKeys: readonly string[],
 ): Record<string, number> {
   const limit: Record<string, number> = {};
   const source = snapshot as unknown as Record<string, unknown>;
   for (const key of COUNTER_DIMENSIONS) {
-    if (usageKeys.includes(key)) {
-      const value = source[key];
-      limit[key] = typeof value === "number" ? value : 0;
-    }
+    const value = source[key];
+    limit[key] = typeof value === "number" ? value : 0;
   }
   return limit;
 }
@@ -88,9 +87,20 @@ async function resolveSnapshot(
     return snapshot;
   }
 
-  const subscription = await SubscriptionModel.findOne({
+  const effectiveStatuses: SubscriptionStatus[] = ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"];
+  let subscription = await SubscriptionModel.findOne({
     tenantId: new mongoose.Types.ObjectId(tenantId),
+    status: { $in: effectiveStatuses },
   });
+  // Preserve the inactive-subscription diagnostic when no current effective
+  // subscription exists, while never allowing historical paid records to win
+  // over an effective Free subscription.
+  if (!subscription) {
+    subscription = await SubscriptionModel.findOne({
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+      status: { $nin: effectiveStatuses },
+    }).sort({ updatedAt: -1, createdAt: -1 });
+  }
 
   if (
     subscription &&
@@ -130,14 +140,45 @@ export const getUsageController = endpoint(async (req) => {
 
   const resolvedSnapshot = await resolveSnapshot(tenantId, snapshot);
 
-  const usageKeys = Object.keys(usage);
   const limit = resolvedSnapshot
-    ? buildLimitMap(resolvedSnapshot, usageKeys)
+    ? buildLimitMap(resolvedSnapshot)
     : {};
+
+  // Dashboard totals are projections of tenant-owned records, not quota
+  // reservations. Quota counters are intentionally retained in `current`
+  // for enforcement and the detailed usage page.
+  const [documents, storage, questions] = await Promise.all([
+    DocumentModel.countDocuments({
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+      isArchived: false,
+      deletedAt: null,
+      status: { $nin: ["failed", "canceled"] },
+    }),
+    DocumentModel.aggregate<{ totalBytes: number }>([
+      {
+        $match: {
+          tenantId: new mongoose.Types.ObjectId(tenantId),
+          isArchived: false,
+          deletedAt: null,
+          status: { $nin: ["failed", "canceled"] },
+        },
+      },
+      { $group: { _id: null, totalBytes: { $sum: "$fileSize" } } },
+    ]),
+    MessageModel.countDocuments({
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+      role: "user",
+    }),
+  ]);
 
   return {
     current: usage,
     limit,
+    actual: {
+      documents,
+      storageBytes: storage[0]?.totalBytes ?? 0,
+      questions,
+    },
     periodStart,
     periodEnd,
   };

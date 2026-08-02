@@ -20,6 +20,7 @@ import SubscriptionModel, {
   type PaymentState,
   type SubscriptionStatus,
 } from "../../../db/models/subscription.model.js";
+import MessageModel from "../../../db/models/message.model.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import { SUBSCRIPTION_INACTIVE } from "../../../common/errors/errorCodes.js";
 import type { EntitlementSnapshot } from "../../billing/ports/entitlement-snapshot.port.js";
@@ -131,6 +132,7 @@ function createHarness(tenantId: string) {
 describe("entitlement read controllers — null-snapshot cause distinction", () => {
   beforeEach(async () => {
     await SubscriptionModel.deleteMany({});
+    await MessageModel.deleteMany({});
   });
 
   describe("existing subscription with non-serviceable status", () => {
@@ -186,7 +188,84 @@ describe("entitlement read controllers — null-snapshot cause distinction", () 
     });
   });
 
-  describe("no subscription for the tenant", () => {
+  describe("usage response shape", () => {
+    it("GET /entitlement/usage → counts tenant-owned user messages as questions", async () => {
+      const tenantId = new mongoose.Types.ObjectId().toString();
+      const otherTenantId = new mongoose.Types.ObjectId().toString();
+      await MessageModel.create([
+        {
+          tenantId,
+          conversationId: new mongoose.Types.ObjectId(),
+          role: "user",
+          content: "Question one",
+          sequenceNumber: 0,
+        },
+        {
+          tenantId,
+          conversationId: new mongoose.Types.ObjectId(),
+          role: "user",
+          content: "Question two",
+          sequenceNumber: 0,
+        },
+        {
+          tenantId,
+          conversationId: new mongoose.Types.ObjectId(),
+          role: "assistant",
+          content: "Answer",
+          sequenceNumber: 1,
+        },
+        {
+          tenantId: otherTenantId,
+          conversationId: new mongoose.Types.ObjectId(),
+          role: "user",
+          content: "Other tenant question",
+          sequenceNumber: 0,
+        },
+      ]);
+      stubService(SNAPSHOT);
+      const { req, res, next, json } = createHarness(tenantId);
+
+      await getUsageController(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          actual: expect.objectContaining({ questions: 2 }),
+        }),
+      });
+    });
+
+    it("GET /entitlement/usage → returns plan limits even when no counter rows exist", async () => {
+      const tenantId = new mongoose.Types.ObjectId().toString();
+      stubService({
+        employees: 5,
+        admins: 2,
+        documents: 100,
+        storageMb: 1024,
+        fileSizeMb: 25,
+        queriesPerMonth: 1000,
+        tokensPerMonth: 10000,
+        ocrPagesPerMonth: 50,
+        supportedModels: [],
+        analyticsLevel: "basic",
+        retentionDays: 30,
+        supportLevel: "community",
+      });
+      const { req, res, next, json } = createHarness(tenantId);
+
+      await getUsageController(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          limit: expect.objectContaining({ documents: 100, storageMb: 1024, queriesPerMonth: 1000 }),
+          actual: { documents: 0, storageBytes: 0, questions: 0 },
+        }),
+      });
+    });
+
     it("GET /entitlement/limits → 200 with empty snapshot (existing behavior)", async () => {
       const tenantId = new mongoose.Types.ObjectId().toString();
       stubService(null);
@@ -211,9 +290,10 @@ describe("entitlement read controllers — null-snapshot cause distinction", () 
       expect(json).toHaveBeenCalledWith({
         success: true,
         data: {
-          current: { documents: 3 },
-          limit: {},
-          periodStart: "2026-01-01T00:00:00.000Z",
+        current: { documents: 3 },
+        limit: {},
+        actual: { documents: 0, storageBytes: 0, questions: 0 },
+        periodStart: "2026-01-01T00:00:00.000Z",
           periodEnd: "2026-02-01T00:00:00.000Z",
         },
       });

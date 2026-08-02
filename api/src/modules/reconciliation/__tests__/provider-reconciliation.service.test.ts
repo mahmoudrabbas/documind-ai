@@ -37,6 +37,8 @@ const VERSION_ID = "507f1f77bcf86cd799439099";
 function query<T>(result: T) {
   return {
     select: vi.fn().mockReturnThis(),
+    sort: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
     lean: vi.fn().mockReturnThis(),
     exec: vi.fn().mockResolvedValue(result),
   };
@@ -46,8 +48,7 @@ describe("provider-backed subscription reconciliation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     auditWrite.mockResolvedValue(undefined);
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
-      query({
+    const localSubscription = {
         _id: "507f1f77bcf86cd799439014",
         tenantId: TENANT_ID,
         packageId: "507f1f77bcf86cd799439055",
@@ -57,10 +58,10 @@ describe("provider-backed subscription reconciliation", () => {
         providerSubscriptionId: "sub_reconcile",
         status: "ACTIVE",
         paymentState: "paid",
-      }),
-    );
+      };
+    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(query(localSubscription));
     (SubscriptionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
-      query([{ tenantId: TENANT_ID }]),
+      query([localSubscription]),
     );
     (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 1 });
     (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(

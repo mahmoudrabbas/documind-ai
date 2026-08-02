@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import { UNAUTHORIZED } from "../../common/errors/errorCodes.js";
 import { config } from "../../config/index.js";
+import { assertBillingPortalReturnUrl } from "../billing/portal-url-policy.js";
 import { logger } from "../../common/logger/logger.js";
 import {
   createCheckoutSession,
@@ -151,7 +152,8 @@ export const subscriptionStatusController = endpoint((req, res) => {
 export const createBillingPortalController = endpoint(async (req) => {
   const tenantId = tenant(req);
   const provider = await getPaymentProvider();
-  const returnUrl = config.STRIPE_BILLING_PORTAL_RETURN_URL || `${config.APP_FRONTEND_URL}/checkout`;
+  const returnUrl = config.STRIPE_BILLING_PORTAL_RETURN_URL || `${config.APP_FRONTEND_URL}/dashboard/settings/billing`;
+  assertBillingPortalReturnUrl(returnUrl, config.BILLING_PORTAL_ALLOWED_ORIGIN);
   return createBillingPortalSession(
     tenantId,
     operationContext(req),

@@ -26,7 +26,6 @@ export interface ReconciliationResult {
     tenantId: string;
     localStatus: string;
     localPaymentState: string;
-    lastProviderEventId: string;
     issues: string[];
   }>;
 }
@@ -77,7 +76,6 @@ export async function reconcileSubscriptions(
         tenantId,
         localStatus: sub.status,
         localPaymentState: sub.paymentState,
-        lastProviderEventId: sub.lastProviderEventId,
         issues,
       });
     }
@@ -136,8 +134,20 @@ export async function syncTenantSubscriptionFromProvider(
   if (!Types.ObjectId.isValid(tenantId)) {
     throw new AppError(404, NOT_FOUND, "Subscription not found");
   }
-  const subscription = await SubscriptionModel.findOne({ tenantId }).exec();
-  if (!subscription) throw new AppError(404, NOT_FOUND, "Subscription not found");
+  const linkedSubscriptions = await SubscriptionModel.find({
+    tenantId: new Types.ObjectId(tenantId),
+    providerSubscriptionId: { $nin: ["", null] },
+  }).sort({ createdAt: -1 }).limit(3).exec();
+  const effective = linkedSubscriptions.filter((candidate) =>
+    ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"].includes(candidate.status));
+  const subscription = effective.length === 1
+    ? effective[0]
+    : effective.length === 0 && linkedSubscriptions.length === 1
+      ? linkedSubscriptions[0]
+      : null;
+  if (!subscription) {
+    throw new AppError(linkedSubscriptions.length > 1 ? 409 : 404, NOT_FOUND, "Provider-linked subscription mapping is unavailable");
+  }
 
   const provider = injectedProvider ?? (await getPaymentProvider());
   let providerSubscription: ProviderSubscription;
@@ -215,8 +225,8 @@ export async function syncTenantSubscriptionFromProvider(
     actorKind: actor.actorKind,
     changes: {
       source: "stripe",
-      previous,
-      current: update,
+      previous: { packageId: previous.packageId, packageVersion: previous.packageVersion, status: previous.status, paymentState: previous.paymentState },
+      current: { packageId: String(update.packageId), packageVersion: update.packageVersion, status: update.status, paymentState: update.paymentState },
       triggeredBy: "provider_sync",
       reason: "Subscription state synchronized from payment provider",
     },
@@ -226,7 +236,6 @@ export async function syncTenantSubscriptionFromProvider(
   return {
     tenantId,
     source: "stripe" as const,
-    providerSubscriptionId: providerSubscription.id,
     packageId: resolution.packageId,
     packageVersionId: resolution.packageVersionId,
     packageVersion: resolution.packageVersion,

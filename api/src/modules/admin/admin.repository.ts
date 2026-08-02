@@ -94,7 +94,11 @@ export async function aggregateUserSummary(tenantId: string) {
 }
 
 export async function findSubscriptionForTenant(tenantId: string) {
-  return SubscriptionModel.findOne({ tenantId })
+  return SubscriptionModel.findOne({
+    tenantId,
+    status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] },
+  })
+    .sort({ createdAt: -1 })
     .populate("packageId", "name code version entitlements")
     .lean()
     .exec();
