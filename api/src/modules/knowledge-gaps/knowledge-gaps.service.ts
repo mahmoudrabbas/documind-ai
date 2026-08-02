@@ -11,6 +11,8 @@ import type { KnowledgeGapAgentPort } from "./knowledge-gaps.agent.js";
 import { FakeKnowledgeGapAgent } from "./knowledge-gaps.agent.fake.js";
 import type { KnowledgeGapReevaluationPort } from "./knowledge-gaps.reevaluation.port.js";
 import { FakeKnowledgeGapReevaluationAdapter } from "./knowledge-gaps.reevaluation.port.js";
+import type { OutboxTriggerPort } from "../notifications/ports/outboxTrigger.port.js";
+import { publishKnowledgeGapCreatedTrigger } from "../notifications/triggers/knowledgeGapCreated.trigger.js";
 import type {
   ReportGapCandidateInput,
   ListGapsQueryInput,
@@ -29,6 +31,7 @@ export class KnowledgeGapsService {
     private repo: KnowledgeGapsRepository = knowledgeGapsRepository,
     private agent: KnowledgeGapAgentPort = new FakeKnowledgeGapAgent(),
     private reevaluator: KnowledgeGapReevaluationPort = new FakeKnowledgeGapReevaluationAdapter(),
+    private triggerPort: OutboxTriggerPort | null = null,
   ) {}
 
   async reportCandidate(tenantId: string, actorId: string, input: ReportGapCandidateInput) {
@@ -144,6 +147,35 @@ export class KnowledgeGapsService {
       outcome: "SUCCESS",
       changes: { topic: newGap.topic, severity: newGap.severity, source: newGap.source },
     });
+
+    // T18 — fire the knowledge_gap_created outbox trigger ONLY after the new
+    // gap and its first occurrence are persisted. Recurrences (existing-gap
+    // branch above) never emit. Best-effort: an outbox failure must never fail
+    // the report — the outbox scheduler retries pending trigger entries. The
+    // default port is loaded lazily (never at module load) so importing this
+    // service stays env-independent for tests.
+    try {
+      const triggerPort =
+        this.triggerPort ??
+        (await import("../notifications/outbox/notificationOutbox.dispatcher.js"))
+          .getNotificationOutboxDispatcher();
+
+      await publishKnowledgeGapCreatedTrigger(triggerPort, {
+        tenantId,
+        actorId,
+        gapId: newGapIdStr,
+        topic: newGap.topic,
+        severity: newGap.severity,
+        question: input.question,
+        department: newGap.department,
+        traceId: input.traceId,
+      });
+    } catch (triggerError) {
+      console.error(
+        "[knowledge-gaps:reportCandidate:triggers] failed to publish knowledge_gap_created trigger",
+        triggerError,
+      );
+    }
 
     return newGap;
   }

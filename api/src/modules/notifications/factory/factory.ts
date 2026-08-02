@@ -29,6 +29,7 @@ import {
   assertTitleLength,
   type LocalizedSource,
 } from "./sanitize.js";
+import { processingCompleteBuilder } from "./builders/processingComplete.builder.js";
 import { processingFailedBuilder } from "./builders/processingFailed.builder.js";
 import { quotaExceededBuilder } from "./builders/quotaExceeded.builder.js";
 import { knowledgeGapBuilder } from "./builders/knowledgeGap.builder.js";
@@ -80,11 +81,11 @@ export interface NotificationBuilder {
   build(event: NotificationEvent): NotificationDraft;
 }
 
-/** The registry — data, not a switch. `processing_complete` (8th type) has no
- *  round-9 builder and maps to `undefined` (createNotificationDraft throws). */
+/** The registry — data, not a switch. Every NotificationType maps to exactly
+ *  one builder (processing_complete added in T18). */
 export const builderRegistry: Readonly<Record<NotificationType, NotificationBuilder | undefined>> =
   {
-    processing_complete: undefined,
+    processing_complete: processingCompleteBuilder,
     processing_failed: processingFailedBuilder,
     quota_exceeded: quotaExceededBuilder,
     knowledge_gap_created: knowledgeGapBuilder,

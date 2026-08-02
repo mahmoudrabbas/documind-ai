@@ -1,11 +1,11 @@
 /**
  * Typed, strict zod metadata schemas for the notification factory (T4).
  *
- * Each schema corresponds to exactly one notification type. All seven are
+ * Each schema corresponds to exactly one notification type. All eight are
  * `z.strictObject` — any unknown key is rejected with a ZodError, so the
  * factory never accepts arbitrary/free-form metadata. Field size caps mirror
  * the T1 model guardrails (title 256 / metadata 4KB) and the plan's per-type
- * field list (round-9 schemas).
+ * field list (round-9 + T18 schemas).
  *
  * PURE TYPES ONLY — no I/O, no mongoose, no express.
  */
@@ -83,9 +83,26 @@ export const documentUploadedMetadataSchema = z.strictObject({
 });
 export type DocumentUploadedMetadata = z.infer<typeof documentUploadedMetadataSchema>;
 
-/** Notification type → metadata schema. NOTE: NOT a full
- *  Record<NotificationType, …> — processing_complete (8th type) has no
- *  round-9 schema and no builder, by plan decision. */
+/** processing_complete → documents/normal (plan line 254). Fires only on
+ *  success; the default recipient is the document owner/uploader (T18). */
+export const processingCompleteMetadataSchema = z.strictObject({
+  documentId: z.string().min(1).max(128),
+  /** Document processing version (documents model `version`, min 1). */
+  version: z.number().int().positive(),
+  /** processing_complete only fires on success. */
+  outcome: z.enum(["success"]),
+  /** ISO-8601 completion timestamp (worker completedAt datetime style). */
+  completedAt: z.string().datetime({ offset: true }),
+  /** Optional default-recipient override — the document owner/uploader. */
+  recipients: z
+    .object({
+      userIds: z.array(z.string().min(1).max(128)).max(5000),
+    })
+    .optional(),
+});
+export type ProcessingCompleteMetadata = z.infer<typeof processingCompleteMetadataSchema>;
+
+/** Notification type → metadata schema. One schema per drafted type. */
 export const notificationMetadataSchemas = {
   processing_failed: processingFailedMetadataSchema,
   quota_exceeded: quotaExceededMetadataSchema,
@@ -94,6 +111,7 @@ export const notificationMetadataSchemas = {
   welcome: welcomeMetadataSchema,
   role_changed: roleChangedMetadataSchema,
   document_uploaded: documentUploadedMetadataSchema,
+  processing_complete: processingCompleteMetadataSchema,
 } as const;
 
 /** Discriminated union of all typed metadata, keyed by notification type. */
@@ -105,6 +123,7 @@ export interface NotificationMetadataMap {
   welcome: WelcomeMetadata;
   role_changed: RoleChangedMetadata;
   document_uploaded: DocumentUploadedMetadata;
+  processing_complete: ProcessingCompleteMetadata;
 }
 
 export type NotificationMetadata = NotificationMetadataMap[keyof NotificationMetadataMap];

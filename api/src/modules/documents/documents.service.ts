@@ -16,6 +16,9 @@ import type {
   ProcessingDispatcher,
 } from "../../providers/storage/types.js";
 import { checkUploadAllowed } from "../entitlement/entitlement-checks.js";
+import { getNotificationOutboxDispatcher } from "../notifications/outbox/notificationOutbox.dispatcher.js";
+import { publishDocumentUploadedTrigger } from "../notifications/triggers/documentUploaded.trigger.js";
+import type { OutboxTriggerPort } from "../notifications/ports/outboxTrigger.port.js";
 import {
   findDocumentByTenantAndId,
   updateDocumentByTenantAndId,
@@ -149,8 +152,9 @@ export function createDocumentServiceProviders(deps: {
   storageProvider: StorageProvider;
   securityScanner: SecurityScanner;
   processingDispatcher: ProcessingDispatcher;
+  triggerPort?: OutboxTriggerPort;
 }) {
-  const { storageProvider, securityScanner, processingDispatcher } = deps;
+  const { storageProvider, securityScanner, processingDispatcher, triggerPort } = deps;
 
   async function uploadDocument(
     file: MulterFile,
@@ -261,6 +265,22 @@ export function createDocumentServiceProviders(deps: {
       actor.userId,
       1,
     );
+
+    // T18 — document_uploaded trigger, ONLY after the upload succeeded.
+    // Best-effort: a notification outbox failure must never fail the completed
+    // upload — the outbox scheduler retries pending entries asynchronously.
+    try {
+      await publishDocumentUploadedTrigger(triggerPort ?? getNotificationOutboxDispatcher(), {
+        tenantId,
+        actorId: actor.userId,
+        documentId: created._id.toString(),
+        documentTitle: created.metadata?.title ?? null,
+        department: (created as unknown as { department?: string | null }).department ?? null,
+        classification: (created as unknown as { classification?: string }).classification ?? null,
+      });
+    } catch (triggerError) {
+      console.error("[documents-upload:document-uploaded-trigger]", triggerError);
+    }
 
     const duplicateWarning =
       existingDocs.length > 0

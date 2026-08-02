@@ -16,6 +16,7 @@ import {
   MAX_TITLE_LENGTH,
 } from "../factory/sanitize.js";
 import {
+  processingCompleteMetadataSchema,
   processingFailedMetadataSchema,
   quotaExceededMetadataSchema,
   knowledgeGapMetadataSchema,
@@ -33,6 +34,7 @@ const METADATA_SCHEMAS = [
   welcomeMetadataSchema,
   roleChangedMetadataSchema,
   documentUploadedMetadataSchema,
+  processingCompleteMetadataSchema,
 ];
 
 function processingFailedEvent(
@@ -298,7 +300,7 @@ describe("notification factory (T4)", () => {
   });
 
   describe("factory core — pure registry lookup (OCP)", () => {
-    it("exposes a builder for every round-9 type and none for processing_complete", () => {
+    it("exposes a builder for every notification type incl. processing_complete", () => {
       expect(builderRegistry.processing_failed).toBeDefined();
       expect(builderRegistry.quota_exceeded).toBeDefined();
       expect(builderRegistry.knowledge_gap_created).toBeDefined();
@@ -306,13 +308,13 @@ describe("notification factory (T4)", () => {
       expect(builderRegistry.welcome).toBeDefined();
       expect(builderRegistry.role_changed).toBeDefined();
       expect(builderRegistry.document_uploaded).toBeDefined();
-      expect(builderRegistry.processing_complete).toBeUndefined();
+      expect(builderRegistry.processing_complete).toBeDefined();
     });
 
     it("throws a typed UNKNOWN_TYPE error for an unregistered type", () => {
       let caught: unknown;
       try {
-        createNotificationDraft({ type: "processing_complete", metadata: {} });
+        createNotificationDraft({ type: "no_such_type", metadata: {} });
       } catch (error) {
         caught = error;
       }
@@ -352,6 +354,15 @@ describe("notification factory (T4)", () => {
           dedupEventId: "u",
         },
         { type: "document_uploaded", metadata: { documentId: "d", documentTitle: "T" } },
+        {
+          type: "processing_complete",
+          metadata: {
+            documentId: "d",
+            version: 1,
+            outcome: "success",
+            completedAt: "2026-08-01T00:00:00.000Z",
+          },
+        },
       ];
       for (const testCase of cases) {
         const draft = createNotificationDraft({
@@ -379,6 +390,12 @@ describe("notification factory (T4)", () => {
       { companyName: "Acme" },
       { roleType: "base", action: "changed", roleName: "ADMIN" },
       { documentId: "doc_1", documentTitle: "Title" },
+      {
+        documentId: "doc_1",
+        version: 1,
+        outcome: "success",
+        completedAt: "2026-08-01T00:00:00.000Z",
+      },
     ];
 
     it.each(validInputs.map((input, index) => [index, input] as const))(

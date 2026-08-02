@@ -9,6 +9,7 @@ import { parserRegistry } from "../providers/extraction/parserRegistry.js";
 import { getMongoClient } from "../db/mongo.js";
 import { reportProgressToProcessingRun } from "./progressReporter.js";
 import { withProcessingFailedOutbox } from "./processingFailedNotifier.js";
+import { withProcessingCompleteOutbox } from "./processingCompleteNotifier.js";
 import { storageProvider } from "../providers/storage/index.js";
 
 const PayloadSchema = z.object({
@@ -27,10 +28,12 @@ export function createDocumentExtractionJobHandler(
     description: "Extracts structured text and layout blocks from PDF, DOCX, and TXT files.",
     payloadSchema: PayloadSchema,
     maxAttempts: 3,
-    handle: withProcessingFailedOutbox({
+    handle: withProcessingCompleteOutbox({
       outbox,
-      stage: "extraction",
-      handle: async (payload, ctx): Promise<JobHandlerResult | void> => {
+      handle: withProcessingFailedOutbox({
+        outbox,
+        stage: "extraction",
+        handle: async (payload, ctx): Promise<JobHandlerResult | void> => {
       const db = getMongoClient()?.db();
       if (!db) {
         throw new RetryableJobError("Database connection unavailable");
@@ -434,6 +437,7 @@ export function createDocumentExtractionJobHandler(
         }
       }
     },
+    }),
     }),
   };
 }
