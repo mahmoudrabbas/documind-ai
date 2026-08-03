@@ -249,9 +249,8 @@ describe("useNotificationSocket", () => {
     const onNotificationUpdated = vi.fn();
 
     // Combined probe: the unread poll (fallback) + the socket side by side.
-    let unreadResult: ReturnType<typeof useUnreadCount> | undefined;
     function CombinedProbe() {
-      unreadResult = useUnreadCount();
+      useUnreadCount();
       // eslint-disable-next-line react-hooks/globals -- Test harness capture.
       result = useNotificationSocket({ onNotificationCreated, onNotificationUpdated });
       return null;

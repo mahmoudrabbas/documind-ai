@@ -89,7 +89,6 @@ function rawSocketRequest(
     if (options.origin !== undefined) headers.Origin = options.origin;
 
     const method = options.method ?? "GET";
-    let timer: NodeJS.Timeout;
     const req = httpRequest(
       {
         hostname: "127.0.0.1",
@@ -107,7 +106,7 @@ function rawSocketRequest(
       },
     );
 
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       req.destroy(
         new Error(
           `raw ${method} /socket.io timed out after 3s (origin=${options.origin ?? "<none>"})`,

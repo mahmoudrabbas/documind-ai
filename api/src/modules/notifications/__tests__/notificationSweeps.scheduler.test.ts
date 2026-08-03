@@ -61,7 +61,7 @@ class FakeTtlStore implements TtlSweepStore {
     private readonly pages: TtlExpiredNotification[][],
     private readonly markMatches = (ids: string[]) => ids.length,
   ) {}
-  async findExpiredNotifications(batch: number): Promise<TtlExpiredNotification[]> {
+  async findExpiredNotifications(_batch: number): Promise<TtlExpiredNotification[]> {
     this.calls.find += 1;
     return this.pages[this.calls.find - 1] ?? [];
   }

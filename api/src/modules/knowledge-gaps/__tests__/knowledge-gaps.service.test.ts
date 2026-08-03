@@ -107,7 +107,7 @@ const LONG_QUESTION =
 function buildService(
   repo: FakeGapRepository,
   port: FakeTriggerPort,
-  actorId = "user-1",
+  _actorId = "user-1",
 ): KnowledgeGapsService {
   return new KnowledgeGapsService(
     repo as unknown as KnowledgeGapsRepository,

@@ -31,8 +31,6 @@ export interface SocketIoDeliveryOptions {
   createSocket?: (url: string, token: string | undefined) => Socket;
 }
 
-/** Mirrors the zod env schema default (env.ts NOTIFICATION_SOCKET_URL). */
-const DEFAULT_SOCKET_URL = "http://localhost:5000";
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DELIVER_EVENT = "notification:deliver";
 const CONNECT_TIMEOUT_CODE = "CONNECT_TIMEOUT";
