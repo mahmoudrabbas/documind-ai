@@ -26,6 +26,7 @@ import {
   type NotificationType,
 } from "../../../db/models/notification.model.js";
 import { isBaseRole } from "../../../common/auth/baseRoles.js";
+import { resolveCorsOrigin } from "../../../common/cors/corsOrigins.js";
 import { verifyJwt } from "../../auth/jwtTokens.js";
 import type { AuthTokenClaims } from "../../auth/auth.types.js";
 
@@ -166,7 +167,12 @@ function serializeNotification(input: DeliverInput) {
 export function createSocketServer(
   httpServer: HttpServer,
 ): NotificationSocketServerHandle {
-  const io = new Server(httpServer);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: (origin, callback) => callback(null, resolveCorsOrigin(origin)),
+      credentials: true,
+    },
+  });
 
   io.use((socket, next) => {
     const token =
