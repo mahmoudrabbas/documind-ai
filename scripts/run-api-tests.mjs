@@ -134,6 +134,8 @@ const testEnvironment = {
     "test-only-password-reset-secret-at-least-32-characters",
   EMAIL_WEBHOOK_SECRET:
     "test-only-webhook-secret-at-least-32-characters",
+  NOTIFICATION_SOCKET_SERVICE_TOKEN:
+    "test-only-notification-socket-service-token-at-least-32",
 };
 
 const path = [

@@ -3,9 +3,13 @@ import { ObjectId } from "mongodb";
 import * as crypto from "node:crypto";
 import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
+import type { OutboxTriggerPort } from "../contracts/notificationOutboxPort.js";
+import { RawOutboxWriter } from "../providers/rawOutboxWriter.js";
 import { parserRegistry } from "../providers/extraction/parserRegistry.js";
 import { getMongoClient } from "../db/mongo.js";
 import { reportProgressToProcessingRun } from "./progressReporter.js";
+import { withProcessingFailedOutbox } from "./processingFailedNotifier.js";
+import { withProcessingCompleteOutbox } from "./processingCompleteNotifier.js";
 import { storageProvider } from "../providers/storage/index.js";
 
 const PayloadSchema = z.object({
@@ -16,13 +20,20 @@ const PayloadSchema = z.object({
 
 type DocumentExtractionPayload = z.infer<typeof PayloadSchema>;
 
-export function createDocumentExtractionJobHandler(): JobHandlerDefinition<DocumentExtractionPayload> {
+export function createDocumentExtractionJobHandler(
+  outbox: OutboxTriggerPort = new RawOutboxWriter(),
+): JobHandlerDefinition<DocumentExtractionPayload> {
   return {
     jobType: "document.extract",
     description: "Extracts structured text and layout blocks from PDF, DOCX, and TXT files.",
     payloadSchema: PayloadSchema,
     maxAttempts: 3,
-    handle: async (payload, ctx): Promise<JobHandlerResult | void> => {
+    handle: withProcessingCompleteOutbox({
+      outbox,
+      handle: withProcessingFailedOutbox({
+        outbox,
+        stage: "extraction",
+        handle: async (payload, ctx): Promise<JobHandlerResult | void> => {
       const db = getMongoClient()?.db();
       if (!db) {
         throw new RetryableJobError("Database connection unavailable");
@@ -426,5 +437,7 @@ export function createDocumentExtractionJobHandler(): JobHandlerDefinition<Docum
         }
       }
     },
+    }),
+    }),
   };
 }

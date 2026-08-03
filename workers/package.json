@@ -17,7 +17,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "node --import ./src/bootstrap/canvasShim.js --import tsx --test \"src/**/*.test.ts\""
+    "test": "node --import ./src/bootstrap/canvasShim.js --import tsx --import ./test/polyfills.mjs --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1096.0",
@@ -33,6 +33,7 @@
     "pdfjs-dist": "5.4.296",
     "pino": "^10.3.1",
     "prom-client": "^15.1.3",
+    "socket.io-client": "^4.8.3",
     "tesseract.js": "^5.1.1",
     "zod": "^4.4.3"
   },
@@ -41,6 +42,7 @@
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^8.0.1",
     "@types/pdf-parse": "^1.1.5",
+    "socket.io": "^4.8.3",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3"
   }

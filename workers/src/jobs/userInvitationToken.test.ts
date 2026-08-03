@@ -6,6 +6,8 @@ import crypto from "node:crypto";
 // it must be set before the module (and its config import) is evaluated.
 process.env.EMAIL_VERIFICATION_JWT_SECRET =
   "test-worker-email-verification-secret";
+process.env.MONGODB_URI =
+  "mongodb+srv://test:test@mongo.test.invalid/documind-test";
 
 const { USER_INVITATION_PURPOSE, createUserInvitationToken, hashVerificationJti } =
   await import("./userInvitationToken.js");

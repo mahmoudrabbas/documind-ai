@@ -46,6 +46,9 @@ export const Permission = {
   AUDIT_READ: "audit:read",
   DOCUMENTS_OCR_PROCESS: "documents:ocr-process",
   DOCUMENTS_QUALITY_REVIEW: "documents:quality-review",
+  NOTIFICATIONS_READ: "notifications:read",
+  NOTIFICATIONS_UPDATE: "notifications:update",
+  NOTIFICATIONS_TEST: "notifications:test",
 } as const;
 
 export type PermissionValue = (typeof Permission)[keyof typeof Permission];
@@ -61,7 +64,8 @@ export type PermissionGroup =
   | "billing"
   | "imports"
   | "audit"
-  | "processing";
+  | "processing"
+  | "notifications";
 export type PermissionScopeType =
   | "departmentIds"
   | "documentCategories"
@@ -135,6 +139,9 @@ const definitions: readonly PermissionDefinitionSource[] = [
   { id: Permission.AUDIT_READ, group: "audit", label: "View Audit Logs", description: "View tenant audit logs", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: false, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
   { id: Permission.DOCUMENTS_OCR_PROCESS, group: "documents", label: "Process OCR", description: "Trigger OCR processing on documents", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.DOCUMENTS_QUALITY_REVIEW, group: "documents", label: "Review Document Quality", description: "Review and approve/reject low-confidence OCR results", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
+  { id: Permission.NOTIFICATIONS_READ, group: "notifications", label: "View Notifications", description: "View tenant notifications", defaultBaseRoles: ["EMPLOYEE", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
+  { id: Permission.NOTIFICATIONS_UPDATE, group: "notifications", label: "Manage Notifications", description: "Update notification lifecycle state", defaultBaseRoles: ["EMPLOYEE", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: NO_SCOPES },
+  { id: Permission.NOTIFICATIONS_TEST, group: "notifications", label: "Send Test Notifications", description: "Send test notifications (platform only)", defaultBaseRoles: ["SUPER_ADMIN"], delegableByTenantAdmin: false, platformOnly: true, deprecated: false, compatibleScopes: NO_SCOPES },
 ];
 
 export const PERMISSION_CATALOG: readonly PermissionDefinition[] =
@@ -173,6 +180,7 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   imports: "Imports",
   audit: "Audit",
   processing: "Processing",
+  notifications: "Notifications",
 };
 
 export const TENANT_PERMISSION_CATALOG_GROUPS = Array.from(

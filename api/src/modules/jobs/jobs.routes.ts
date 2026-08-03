@@ -8,6 +8,7 @@ import {
   enqueueJobController,
   getJobMetricsController,
   getJobStatusController,
+  listNotificationDlqsController,
   replayJobController,
 } from "./jobs.controller.js";
 import { createCapabilityGuard } from "../entitlement/middlewares/entitlement.middleware.js";
@@ -47,6 +48,14 @@ router.get(
   requirePlatformTenant,
   requirePermission(Permission.COMPANY_SETTINGS_READ),
   getJobMetricsController,
+);
+
+router.get(
+  "/platform/jobs/notification-dlqs",
+  authenticate,
+  requirePlatformTenant,
+  requirePermission(Permission.COMPANY_SETTINGS_READ),
+  listNotificationDlqsController,
 );
 
 router.get(

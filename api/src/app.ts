@@ -1,6 +1,7 @@
 import express from "express";
 
 import cors, { type CorsOptions } from "cors";
+import { resolveCorsOrigin } from "./common/cors/corsOrigins.js";
 import { AppError } from "./common/errors/AppError.js";
 import { BAD_REQUEST } from "./common/errors/errorCodes.js";
 import { errorHandlerMiddleware } from "./common/middlewares/errorHandler.middleware.js";
@@ -22,6 +23,7 @@ import publicRoutes from "./modules/public/public.routes.js";
 import auditRoutes from "./modules/audit/audit.routes.js";
 import emailRoutes from "./modules/email/email.routes.js";
 import emailWebhooks from "./modules/email/email.webhooks.js";
+import notificationsRoutes from "./modules/notifications/notifications.routes.js";
 import permissionsRoutes from "./modules/permissions/permissions.routes.js";
 import jobsRoutes from "./modules/jobs/jobs.routes.js";
 import {
@@ -79,38 +81,10 @@ app.set("trust proxy", 1);
 const redisClient = getRedisClient();
 
 app.locals.redisClient = redisClient;
-const parseAllowedOrigins = () => {
-  const configuredOrigins = [
-    process.env.CORS_ORIGIN,
-    process.env.APP_FRONTEND_URL,
-    process.env.NODE_ENV !== "production" ? "http://localhost:3000" : "",
-  ];
-
-  return new Set(
-    configuredOrigins
-      .filter(Boolean)
-      .flatMap((origin) => String(origin).split(","))
-      .map((origin) => origin.trim().replace(/\/$/, ""))
-      .filter(Boolean),
-  );
-};
-
-const allowedOrigins = parseAllowedOrigins();
 
 const corsOptions: CorsOptions = {
   origin(origin, callback) {
-    // Allow server-to-server tools, Postman, curl, health checks
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    const normalizedOrigin = origin.replace(/\/$/, "");
-
-    if (allowedOrigins.has(normalizedOrigin)) {
-      return callback(null, true);
-    }
-
-    return callback(null, false);
+    callback(null, resolveCorsOrigin(origin));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: [
@@ -179,6 +153,7 @@ app.use("/public", publicRoutes);
 app.use("/audit", auditRoutes);
 app.use("/emails", emailRoutes);
 app.use("/webhooks/email", emailWebhooks);
+app.use("/notifications", notificationsRoutes);
 app.use("/permissions", permissionsRoutes);
 app.use("/", jobsRoutes);
 app.use("/agents", agentsRoutes);

@@ -2,11 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ObjectId, type MongoClient } from "mongodb";
 import * as path from "node:path";
-import { createDocumentExtractionJobHandler } from "./documentExtractionJob.js";
-import { setMockClient } from "../db/mongo.js";
-import { config } from "../config/index.js";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
 import { PermanentJobError } from "../contracts/retryPolicy.js";
+
+// The config singleton parses env eagerly, so the fake Atlas URI must be set
+// before any module that transitively imports config is evaluated.
+process.env.MONGODB_URI =
+  "mongodb+srv://test:test@mongo.test.invalid/documind-test";
+
+const { createDocumentExtractionJobHandler } = await import(
+  "./documentExtractionJob.js"
+);
+const { setMockClient } = await import("../db/mongo.js");
+const { config } = await import("../config/index.js");
 
 const FIXTURES_DIR = path.resolve(process.cwd(), "src/providers/extraction/__fixtures__");
 config.UPLOAD_DIR = FIXTURES_DIR; // Override upload dir for testing

@@ -4,9 +4,12 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { JobHandlerDefinition, JobHandlerResult } from "../contracts/jobDispatcher.js";
 import { RetryableJobError, PermanentJobError } from "../contracts/retryPolicy.js";
+import type { OutboxTriggerPort } from "../contracts/notificationOutboxPort.js";
+import { RawOutboxWriter } from "../providers/rawOutboxWriter.js";
 import { getMongoClient } from "../db/mongo.js";
 import { logger } from "../logger.js";
 import { reportProgressToProcessingRun } from "./progressReporter.js";
+import { withProcessingFailedOutbox } from "./processingFailedNotifier.js";
 import { storageProvider } from "../providers/storage/index.js";
 
 const require = createRequire(import.meta.url);
@@ -503,7 +506,9 @@ async function renderImagePageToBuffer(
   return Buffer.from(fileBuffer);
 }
 
-export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrPayload> {
+export function createDocumentOcrJobHandler(
+  outbox: OutboxTriggerPort = new RawOutboxWriter(),
+): JobHandlerDefinition<DocumentOcrPayload> {
   return {
     jobType: "document.ocr",
     description:
@@ -511,11 +516,14 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
     payloadSchema: PayloadSchema,
     maxAttempts: 3,
 
-    handle: async (
-      payload,
-      ctx,
-    ): Promise<JobHandlerResult | void> => {
-      const db = getMongoClient()?.db();
+    handle: withProcessingFailedOutbox<DocumentOcrPayload>({
+      outbox,
+      stage: "ocr",
+      handle: async (
+        payload,
+        ctx,
+      ): Promise<JobHandlerResult | void> => {
+        const db = getMongoClient()?.db();
 
       if (!db) {
         throw new RetryableJobError(
@@ -1070,6 +1078,7 @@ export function createDocumentOcrJobHandler(): JobHandlerDefinition<DocumentOcrP
         },
       };
     },
+    }),
   };
 }
 

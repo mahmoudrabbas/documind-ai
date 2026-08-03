@@ -19,7 +19,7 @@ const envSchema = z
 
     HOST: z.string().default("0.0.0.0"),
 
-    MONGODB_URI: z.string().url().default("mongodb://mongodb:27017/docsai"),
+    MONGODB_URI: z.string().url(),
     MONGODB_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
     MONGODB_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(1000),
     MONGODB_RETRY_BACKOFF_FACTOR: z.coerce.number().min(1).default(2),
@@ -106,6 +106,19 @@ const envSchema = z
       .string()
       .default("false")
       .transform((value) => value.toLowerCase() === "true"),
+
+    // Machine-auth secret for the notification socket server (T15). The T20
+    // sweep keys below are reserved here so todo 10 only implements the sweep.
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: z
+      .string()
+      .min(1)
+      .default("development-only-notification-socket-token"),
+    NOTIFICATION_SWEEP_ENABLED: z
+      .string()
+      .default("false")
+      .transform((value) => value.toLowerCase() === "true"),
+    NOTIFICATION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+    NOTIFICATION_SWEEP_TTL_BATCH: z.coerce.number().int().positive().default(500),
     SMTP_HOST: z.string().default(""),
     SMTP_PORT: z
       .string()
@@ -195,14 +208,13 @@ const envSchema = z
         ["EMAIL_VERIFICATION_JWT_SECRET", env.EMAIL_VERIFICATION_JWT_SECRET],
         ["PASSWORD_RESET_JWT_SECRET", env.PASSWORD_RESET_JWT_SECRET],
         ["EMAIL_WEBHOOK_SECRET", env.EMAIL_WEBHOOK_SECRET],
+        ["NOTIFICATION_SOCKET_SERVICE_TOKEN", env.NOTIFICATION_SOCKET_SERVICE_TOKEN],
       ] as const;
       for (const [key, value] of requiredSecrets) {
         if (value.length < 32 || value.startsWith("development-only-")) {
           context.addIssue({ code: "custom", path: [key], message: "is required and must contain at least 32 characters" });
         }
       }
-      if (env.MONGODB_URI === "mongodb://mongodb:27017/docsai")
-        context.addIssue({ code: "custom", path: ["MONGODB_URI"], message: "must be explicitly configured" });
       if (env.REDIS_URL === "redis://redis:6379")
         context.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be explicitly configured" });
       if (/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(env.APP_FRONTEND_URL))
@@ -327,6 +339,11 @@ export function parseEnv(env: Record<string, string | undefined>): Env {
     EMAIL_WEBHOOK_SECRET: getSecretValue(
       "EMAIL_WEBHOOK_SECRET",
       env.EMAIL_WEBHOOK_SECRET,
+      env,
+    ),
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: getSecretValue(
+      "NOTIFICATION_SOCKET_SERVICE_TOKEN",
+      env.NOTIFICATION_SOCKET_SERVICE_TOKEN,
       env,
     ),
     STRIPE_SECRET_KEY: getSecretValue(

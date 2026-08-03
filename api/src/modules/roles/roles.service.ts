@@ -22,6 +22,9 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { tenantScopedFind } from "../../db/repositories/tenantScopedRepository.js";
 import { revokeActiveRefreshSessionsForTenantUser } from "../auth/sessionRevocation.repository.js";
+import { getNotificationOutboxDispatcher } from "../notifications/outbox/notificationOutbox.dispatcher.js";
+import { publishRoleChangedTrigger, publishRoleMigratedTriggers } from "../notifications/triggers/roleChanged.trigger.js";
+import type { RoleChangeAction } from "../notifications/factory/metadata.schemas.js";
 import { PERMISSION_CONTRACT_VERSION, Permission } from "../permissions/permissions.catalog.js";
 import { assertDelegableGrants, authorizePermission } from "../permissions/permissions.authorization.js";
 import { normalizeRoleGrants } from "../permissions/permissions.grants.js";
@@ -252,10 +255,15 @@ export async function assignRole(input: unknown, inputContext: RoleOperationCont
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateAssignRoleInput(input);
   let changed = false;
+  let roleName = "";
+  let targetStatus = "";
   await withTenantRoleTransaction(context.tenantId, async (session) => {
     await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
-    changed = await assignRoleInSession(context, payload.userId, roleId, payload.roleVersion, session);
+    const assignment = await assignRoleInSession(context, payload.userId, roleId, payload.roleVersion, session);
+    changed = assignment.changed;
+    roleName = assignment.roleName;
+    targetStatus = assignment.targetStatus;
     if (changed) {
       await revokeActiveRefreshSessionsForTenantUser(
         payload.userId,
@@ -267,6 +275,13 @@ export async function assignRole(input: unknown, inputContext: RoleOperationCont
   });
   if (changed) {
     await audit(context, "ROLE_ASSIGNED", roleId, { targetUserId: payload.userId, changed: true });
+    await publishRoleChangedBestEffort(context, {
+      targetUserId: payload.userId,
+      roleId,
+      roleName,
+      action: "assigned",
+      targetStatus,
+    });
   }
   return { userId: payload.userId, roleId, changed };
 }
@@ -278,14 +293,18 @@ export async function removeRoleAssignment(input: unknown, inputContext: RoleOpe
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const payload = validateRemoveRoleAssignmentInput(input);
   let changed = false;
+  let roleName = "";
+  let targetStatus = "";
   await withTenantRoleTransaction(context.tenantId, async (session) => {
     await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
     const role = await RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec();
     if (!role) throw new AppError(404, NOT_FOUND, "Role not found");
     if (role.version !== payload.roleVersion) throw roleVersionError();
+    roleName = role.name;
     const target = await UserModel.findOne({ _id: payload.userId, tenantId: context.tenantId }).session(session).exec();
     if (!target) throw new AppError(404, NOT_FOUND, "User not found");
+    targetStatus = target.status;
     if (target.role === "SUPER_ADMIN") throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Super Admin assignments cannot be changed through tenant roles");
     if (target.customRoleId?.toString() !== roleId) return;
     target.customRoleId = null;
@@ -300,6 +319,13 @@ export async function removeRoleAssignment(input: unknown, inputContext: RoleOpe
   });
   if (changed) {
     await audit(context, "ROLE_ASSIGNMENT_REMOVED", roleId, { targetUserId: payload.userId, changed: true });
+    await publishRoleChangedBestEffort(context, {
+      targetUserId: payload.userId,
+      roleId,
+      roleName,
+      action: "removed",
+      targetStatus,
+    });
   }
   return { userId: payload.userId, roleId: null, changed };
 }
@@ -313,6 +339,8 @@ export async function migrateRoleUsers(input: unknown, inputContext: RoleOperati
   if (sourceRoleId === payload.destinationRoleId) throw new AppError(409, ROLE_NOT_ASSIGNABLE, "Source and destination roles must differ");
   let affected = 0;
   let skipped = 0;
+  let destinationRoleName = "";
+  let affectedUserIds: string[] = [];
   await withTenantRoleTransaction(context.tenantId, async (session) => {
     await authorizePermission(context, Permission.USERS_UPDATE);
     await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
@@ -321,6 +349,7 @@ export async function migrateRoleUsers(input: unknown, inputContext: RoleOperati
       RoleModel.findOne({ _id: payload.destinationRoleId, tenantId: context.tenantId }).session(session).exec(),
     ]);
     if (!source || !destination) throw new AppError(404, NOT_FOUND, "Role not found");
+    destinationRoleName = destination.name;
     if (source.version !== payload.sourceVersion || destination.version !== payload.destinationVersion) throw roleVersionError();
     await auditRoleAccessFailure(context, destination.id, async () => {
       await assertRoleIntegrity(destination, session, true);
@@ -341,6 +370,7 @@ export async function migrateRoleUsers(input: unknown, inputContext: RoleOperati
       .session(session)
       .lean()
       .exec();
+    affectedUserIds = affectedUsers.map((user) => user._id.toString());
     const result = await UserModel.updateMany(
       { tenantId: context.tenantId, customRoleId: sourceRoleId, role: source.baseRole },
       { $set: { customRoleId: destination._id } },
@@ -358,6 +388,11 @@ export async function migrateRoleUsers(input: unknown, inputContext: RoleOperati
   });
   const result = { sourceRoleId, destinationRoleId: payload.destinationRoleId, affected, skipped, conflicted: 0 };
   await audit(context, "ROLE_USERS_MIGRATED", sourceRoleId, result);
+  await publishRoleMigratedBestEffort(context, {
+    userIds: affectedUserIds,
+    roleId: payload.destinationRoleId,
+    destinationRoleName,
+  });
   return result;
 }
 
@@ -367,7 +402,7 @@ async function assignRoleInSession(
   roleId: string,
   expectedVersion: number,
   session: mongoose.ClientSession,
-): Promise<boolean> {
+): Promise<{ changed: boolean; roleName: string; targetStatus: string }> {
   await authorizePermission(context, Permission.USERS_ASSIGN_ROLE);
   const [role, target] = await Promise.all([
     RoleModel.findOne({ _id: roleId, tenantId: context.tenantId }).session(session).exec(),
@@ -383,10 +418,12 @@ async function assignRoleInSession(
   });
   if (!target) throw new AppError(404, NOT_FOUND, "User not found");
   await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, role.grants));
-  if (target.customRoleId?.toString() === roleId) return false;
+  if (target.customRoleId?.toString() === roleId) {
+    return { changed: false, roleName: role.name, targetStatus: target.status };
+  }
   target.customRoleId = role._id;
   await target.save({ session });
-  return true;
+  return { changed: true, roleName: role.name, targetStatus: target.status };
 }
 
 async function assertRoleIntegrity(
@@ -453,6 +490,57 @@ async function auditRoleAccessFailure(
       );
     }
     throw error;
+  }
+}
+
+async function publishRoleChangedBestEffort(
+  context: ResolvedRoleOperationContext,
+  args: {
+    targetUserId: string;
+    roleId: string;
+    roleName: string;
+    action: RoleChangeAction;
+    beforeRole?: string;
+    afterRole?: string;
+    targetStatus: string;
+  },
+): Promise<void> {
+  try {
+    await publishRoleChangedTrigger(getNotificationOutboxDispatcher(), {
+      tenantId: context.tenantId,
+      actorId: context.actorId,
+      targetUserId: args.targetUserId,
+      roleType: "custom",
+      action: args.action,
+      roleName: args.roleName,
+      beforeRole: args.beforeRole,
+      afterRole: args.afterRole,
+      roleId: args.roleId,
+      targetStatus: args.targetStatus,
+      traceId: context.traceId,
+      correlationId: context.requestId,
+    });
+  } catch (error) {
+    console.error("[roles:role-changed-trigger]", error);
+  }
+}
+
+async function publishRoleMigratedBestEffort(
+  context: ResolvedRoleOperationContext,
+  args: { userIds: string[]; roleId: string; destinationRoleName: string },
+): Promise<void> {
+  try {
+    await publishRoleMigratedTriggers(getNotificationOutboxDispatcher(), {
+      tenantId: context.tenantId,
+      actorId: context.actorId,
+      roleId: args.roleId,
+      destinationRoleName: args.destinationRoleName,
+      userIds: args.userIds,
+      traceId: context.traceId,
+      correlationId: context.requestId,
+    });
+  } catch (error) {
+    console.error("[roles:role-migrated-trigger]", error);
   }
 }
 

@@ -17,7 +17,7 @@ const configMocks = vi.hoisted(() => ({
     PASSWORD_RESET_JWT_SECRET: "test-password-reset-secret",
     PASSWORD_RESET_JWT_EXPIRES_IN: "15m",
     EMAIL_WEBHOOK_SECRET: "test-email-webhook-secret",
-    MONGODB_URI: "mongodb://localhost:27017/test",
+    MONGODB_URI: "mongodb+srv://test:test@mongo.test.invalid/documind-test",
     REDIS_URL: "redis://localhost:6379",
   },
 }));

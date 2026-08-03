@@ -38,7 +38,8 @@ openssl rand -hex 32 > secrets/api_super_admin_bootstrap_key.txt
 Use the Docker internal service addresses:
 
 ```bash
-echo -n "mongodb://mongodb:27017/docsai" > secrets/worker_mongodb_uri.txt
+echo -n "mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority" > secrets/worker_mongodb_uri.txt
+# ^ placeholder: put your real Atlas URI (from your team's secret manager) in the gitignored file
 echo -n "redis://redis:6379" > secrets/worker_redis_url.txt
 ```
 

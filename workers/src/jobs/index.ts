@@ -11,7 +11,12 @@ import { createDocumentEmbeddingJobHandler } from "./documentEmbeddingJob.js";
 import { createDocumentIndexingJobHandler } from "./documentIndexingJob.js";
 import { FakeEmailProvider } from "../providers/fakeEmailProvider.js";
 import { SmtpEmailProvider } from "../providers/smtpEmailProvider.js";
+import { RestDelivery } from "../providers/restDelivery.js";
+import { SocketIoDelivery } from "../providers/socketIoDelivery.js";
 import { createDocumentPolicyPropagationJobHandler } from "./documentPolicyPropagationJob.js";
+import { createNotificationDispatchJobHandler } from "./notificationDispatchJob.js";
+import { RawOutboxWriter } from "../providers/rawOutboxWriter.js";
+import { config } from "../config/index.js";
 
 /**
  * Assembles the worker's handler registry.
@@ -28,13 +33,24 @@ export function buildHandlerRegistry(): JobHandlerRegistry {
   const providerType = process.env.EMAIL_PROVIDER || "smtp";
   const emailProvider = providerType === "fake" ? new FakeEmailProvider() : new SmtpEmailProvider();
   registry.register(createEmailSendJobHandler(emailProvider));
-  registry.register(createDocumentExtractionJobHandler());
-  registry.register(createDocumentOcrJobHandler());
+  // Outbox trigger writer shared by failure-emitting jobs (T9) — injected at
+  // the composition root; the jobs depend only on the OutboxTriggerPort (DIP).
+  const outboxWriter = new RawOutboxWriter();
+  registry.register(createDocumentExtractionJobHandler(outboxWriter));
+  registry.register(createDocumentOcrJobHandler(outboxWriter));
   registry.register(dataRetentionJobHandler);
   registry.register(createDocumentChunkingJobHandler());
   registry.register(createDocumentEmbeddingJobHandler());
   registry.register(createDocumentIndexingJobHandler());
   registry.register(createDocumentPolicyPropagationJobHandler());
-  
+  // Adapter chosen at the composition root; the job only depends on the port (DIP).
+  // NOTIFICATION_TRANSPORT selects the delivery channel: 'socket' -> SocketIoDelivery,
+  // anything else (incl. unset) -> RestDelivery (Phase 1 default).
+  const delivery =
+    config.NOTIFICATION_TRANSPORT === "socket"
+      ? new SocketIoDelivery()
+      : new RestDelivery();
+  registry.register(createNotificationDispatchJobHandler(delivery));
+
   return registry;
 }

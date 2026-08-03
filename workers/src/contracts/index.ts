@@ -15,3 +15,6 @@ export { StructuralStrategy } from "./chunkingStrategies/structural.strategy.js"
 export { ParagraphStrategy } from "./chunkingStrategies/paragraph.strategy.js";
 export { TableStrategy } from "./chunkingStrategies/table.strategy.js";
 export * from "./documentPolicyPropagation.js";
+export * from "./notificationDedup.js";
+export * from "./notificationTransport.js";
+export * from "../providers/restDelivery.js";

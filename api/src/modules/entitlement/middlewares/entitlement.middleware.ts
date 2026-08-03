@@ -9,6 +9,10 @@ import type {
   EntitlementDimension,
   FailMode,
 } from "../entitlement.types.js";
+// Type-only import — erased at compile time, so the entitlement module keeps
+// no load-time runtime dependency on the notifications module (the trigger
+// producer itself is loaded lazily via dynamic import inside the guard).
+import type { OutboxTriggerPort } from "../../notifications/ports/outboxTrigger.port.js";
 
 // ── Express type augmentation ──────────────────────────────────────────────────
 //
@@ -197,6 +201,55 @@ function auditDenial(
   });
 }
 
+/**
+ * Fire-and-forget quota_exceeded outbox trigger for a fail-closed 429 denial
+ * (T18). Never throws and never blocks the response — the denial is already
+ * enforced by the time this runs, and every failure path is swallowed and
+ * logged via `req.log.warn`. Skips publishing when: no trigger port is wired,
+ * usage/limit are unavailable, or the period reset could not be resolved
+ * (the strict metadata schema requires an ISO-8601 resetAt). The trigger
+ * producer module is loaded lazily (dynamic import) so the entitlement module
+ * keeps no load-time dependency on the notifications module.
+ */
+async function publishQuotaExceededSideEffect(
+  req: Request,
+  capability: CapabilityKey,
+  error: AppError,
+  triggerPort: CapabilityGuardOptions["triggerPort"],
+): Promise<void> {
+  if (!triggerPort) return;
+  const details = extractDenialDetails(error.details);
+  if (
+    typeof details.current !== "number" ||
+    typeof details.limit !== "number" ||
+    details.periodReset === null ||
+    details.periodReset === undefined
+  ) {
+    return;
+  }
+  const port = triggerPort();
+  if (!port) return;
+  try {
+    const { publishQuotaExceededTrigger } = await import(
+      "../../notifications/triggers/quotaExceeded.trigger.js"
+    );
+    await publishQuotaExceededTrigger(port, {
+      tenantId: req.tenantId ?? "",
+      actorId: req.auth?.userId ?? "",
+      capability,
+      usage: details.current,
+      limit: details.limit,
+      resetAt: details.periodReset,
+      traceId: req.traceId,
+    });
+  } catch (err) {
+    req.log?.warn?.(
+      { err, capability },
+      "[CapabilityGuard] Failed to publish quota_exceeded trigger — denial still enforced",
+    );
+  }
+}
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface EntitlementGuardOptions {
@@ -252,6 +305,16 @@ export interface CapabilityGuardOptions {
    * - "fail-open"   → set `req.quotaWarning = true` and continue
    */
   failMode: FailMode;
+
+  /**
+   * Optional lazy accessor for the notifications outbox trigger port. When
+   * wired, a fail-closed quota denial (429 / ENTITLEMENT_EXCEEDED) fires a
+   * fire-and-forget quota_exceeded trigger as a side effect. Function
+   * indirection keeps the entitlement module free of a load-time dependency
+   * on the notifications module — the port is injected lazily, never
+   * hard-imported at module load.
+   */
+  triggerPort?: () => OutboxTriggerPort;
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -618,6 +681,14 @@ export function createCapabilityGuard(
         // fire-and-forget. Other AppErrors (e.g. TENANT_ID_MISSING) are not.
         if (error.statusCode === 429 && error.code === ENTITLEMENT_EXCEEDED) {
           auditDenial(req, capability, 429, extractDenialDetails(error.details));
+          // Side-effect quota_exceeded trigger (T18) — never throws, never
+          // affects the denial response (publish failures are logged).
+          await publishQuotaExceededSideEffect(
+            req,
+            capability,
+            error,
+            options.triggerPort,
+          );
         } else if (
           error.statusCode === 503 &&
           error.code === ENTITLEMENT_UNAVAILABLE
