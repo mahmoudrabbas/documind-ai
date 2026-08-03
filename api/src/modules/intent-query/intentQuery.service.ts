@@ -6,6 +6,7 @@ import { getAuditWriter, getMetricRecorder } from "../../common/observability/in
 import { logger } from "../../common/logger/logger.js";
 import DocumentModel from "../../db/models/document.model.js";
 import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
+import { recordQuestionAsked } from "../usage/usage.service.js";
 
 import type { QueryPlan } from "./intentQuery.types.js";
 import { detectLanguage } from "./intentQuery.languageDetector.js";
@@ -20,6 +21,8 @@ import { getDocumentAccessAuthorizationService } from "../document-access/docume
 import { ENTITLEMENT_EXCEEDED } from "../../common/errors/errorCodes.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import { buildQuotaExceededError, resolvePeriodReset } from "../entitlement/middlewares/entitlement.middleware.js";
+import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
+import { CostService } from "../analytics/cost.service.js";
 
 export interface ExplicitDocumentAuthorizer {
   authorizeDocumentsAction(context: { tenantId: string; actorId: string }, documentIds: readonly string[], action: "use_in_ai"): Promise<void>;
@@ -192,6 +195,9 @@ export class IntentQueryService {
     // 6. Call ModelAdapter (LLM) with timeout and fallback logic
     let rawOutput: Record<string, unknown> | null = null;
     let tokensUsed = 0;
+    let inputTokensUsed = 0;
+    let outputTokensUsed = 0;
+    let resolvedModelName = "unknown";
     let estimatedCost = 0;
     let fallbackUsed = false;
 
@@ -204,6 +210,9 @@ export class IntentQueryService {
 
       const content = response.choices[0]?.message?.content ?? "";
       tokensUsed = response.usage?.totalTokens ?? 0;
+      inputTokensUsed = response.usage?.promptTokens ?? Math.round(tokensUsed * 0.7);
+      outputTokensUsed = response.usage?.completionTokens ?? Math.round(tokensUsed * 0.3);
+      resolvedModelName = response.model || this.modelAdapter.providerKey;
       estimatedCost = response.estimatedCost ?? 0;
 
       if (!response.usage?.totalTokens) {
@@ -230,6 +239,40 @@ export class IntentQueryService {
     // deterministic fallback path leaves tokensUsed = 0, so nothing is
     // consumed there.
     if (tokensUsed > 0) {
+      // Fire-and-forget analytics usage event tracking
+      // traceId alone is the idempotency key — unique per request, stable across retries
+      const eventWriter = new MongoUsageEventWriter();
+      const costService = new CostService();
+      void costService
+        .calculateLlmCost(
+          this.modelAdapter.providerKey,
+          resolvedModelName,
+          inputTokensUsed,
+          outputTokensUsed
+        )
+        .then((costRes) => {
+          return eventWriter.record({
+            tenantId: tenantIdStr,
+            actorId: actor.actorId,
+            eventType: "completion",
+            provider: this.modelAdapter.providerKey,
+            model: resolvedModelName,
+            inputTokens: inputTokensUsed,
+            outputTokens: outputTokensUsed,
+            totalTokens: tokensUsed,
+            costMinorUnits: costRes.costMinorUnits,
+            costType: costRes.costType,
+            currency: costRes.currency,
+            latencyMs: Date.now() - start,
+            traceId,
+            idempotencyKey: `intent_query_${traceId}`,
+            success: !fallbackUsed,
+          });
+        })
+        .catch((err) => {
+          logger.warn({ err, traceId }, "[IntentQueryService] Failed to record usage event");
+        });
+
       try {
         const consumed = await entitlementService.consume(
           tenantIdStr,
@@ -468,6 +511,18 @@ export class IntentQueryService {
         fallbackUsed: validatedPlan.processingMetadata.fallbackUsed,
       },
     });
+
+    // Keep the tenant's historical question total in sync with successful
+    // query responses. Quota enforcement remains separate and is handled by
+    // the route guard/counter.
+    try {
+      await recordQuestionAsked({
+        tenantId: tenantIdStr,
+        requestId: context.requestId,
+      });
+    } catch (err) {
+      logger.error({ err, traceId }, "Failed to record question usage");
+    }
 
     // 9. Record Prometheus metrics
     recordIntentQueryMetrics(metricRecorder, validatedPlan, traceId);

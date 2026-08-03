@@ -34,6 +34,29 @@ declare global {
 const ENTITLEMENT_UNAVAILABLE = "ENTITLEMENT_UNAVAILABLE";
 const TENANT_ID_MISSING = "TENANT_ID_MISSING";
 
+function safeEntitlementErrorContext(error: unknown): Record<string, string> {
+  if (!(error instanceof Error)) {
+    return { errorType: typeof error };
+  }
+
+  const context: Record<string, string> = { errorName: error.name };
+  if ("code" in error && (typeof error.code === "string" || typeof error.code === "number")) {
+    context.errorCode = String(error.code);
+  }
+  return context;
+}
+
+function classifyEntitlementFailure(error: unknown): string {
+  const name = error instanceof Error ? error.name : "";
+  if (/Mongo|Mongoose|Redis|Connection|Network|ServerSelection/i.test(name)) {
+    return "DEPENDENCY_UNAVAILABLE";
+  }
+  if (/BSON|Cast/i.test(name)) {
+    return "INVALID_TENANT_CONTEXT";
+  }
+  return "INTERNAL_FAILURE";
+}
+
 // ── Shared denial-payload helpers ────────────────────────────────────────────
 
 /**
@@ -419,12 +442,21 @@ export function createEntitlementGuard(
 
       // Unexpected service error
       if (failMode === "fail-closed") {
+        req.log?.error?.(
+          {
+            ...safeEntitlementErrorContext(error),
+            dimension,
+            requestId: req.requestId,
+          },
+          "[EntitlementGuard] Service error — denying request fail-closed",
+        );
         auditDenial(req, dimension, 503);
         next(
           new AppError(
             503,
             ENTITLEMENT_UNAVAILABLE,
             "Entitlement service is temporarily unavailable",
+            { failureClass: classifyEntitlementFailure(error) },
           ),
         );
       } else {

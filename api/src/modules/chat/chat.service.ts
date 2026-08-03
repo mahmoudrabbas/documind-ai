@@ -29,6 +29,8 @@ import {
 } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
 import { mapLlmProviderError } from "../../providers/llm/providerError.js";
+import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
+import { CostService } from "../analytics/cost.service.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
 const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
@@ -378,6 +380,45 @@ export class ChatService {
           }))
         : [],
     );
+
+    // Record usage event with end-to-end latency for Analytics
+    const eventWriter = new MongoUsageEventWriter();
+    const costService = new CostService();
+    const inputTokens = response.usage?.promptTokens ?? 0;
+    const outputTokens = response.usage?.completionTokens ?? 0;
+    const totalTokens = response.usage?.totalTokens ?? (inputTokens + outputTokens);
+    const latencyMs = Date.now() - start;
+
+    void costService
+      .calculateLlmCost(
+        this.modelAdapter.providerKey,
+        response.model || this.modelAdapter.providerKey,
+        inputTokens,
+        outputTokens,
+      )
+      .then((costRes) => {
+        return eventWriter.record({
+          tenantId: tenantIdStr,
+          actorId: actor.actorId.toString(),
+          eventType: "completion",
+          provider: this.modelAdapter.providerKey,
+          model: response.model || this.modelAdapter.providerKey,
+          conversationId,
+          messageId: assistantDoc._id.toString(),
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          costMinorUnits: costRes.costMinorUnits,
+          costType: costRes.costType,
+          currency: costRes.currency,
+          latencyMs,
+          success: true,
+          evidenceIds: sources.map((s) => s.chunkId),
+        });
+      })
+      .catch((err) => {
+        logger.warn({ err, tenantId: tenantIdStr }, "Failed to record usage event for chat completion");
+      });
 
     await getAuditWriter().write({
       action: "RETRIEVAL_SEARCH",

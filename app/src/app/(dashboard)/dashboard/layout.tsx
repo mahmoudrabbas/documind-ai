@@ -28,6 +28,10 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
     permissions: [Permission.COMPANY_SETTINGS_READ],
   },
   {
+    prefix: "/dashboard/settings/billing",
+    permissions: [Permission.BILLING_READ],
+  },
+  {
     prefix: "/dashboard/settings",
     permissions: [Permission.COMPANY_SETTINGS_READ],
   },

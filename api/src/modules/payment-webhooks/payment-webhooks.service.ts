@@ -11,6 +11,7 @@ import type {
   PaymentProvider,
   PaymentProviderEvent,
   ProviderSubscription,
+  ProviderSubscriptionState,
 } from "../billing/ports/payment-provider.port.js";
 import {
   resolvePackageVersion,
@@ -19,12 +20,57 @@ import {
 } from "../billing/provider-subscription-sync.service.js";
 import type { SubscriptionStatus } from "../billing/billing.types.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { NOT_FOUND } from "../../common/errors/errorCodes.js";
+import {
+  BILLING_PROVIDER_UNAVAILABLE,
+  BILLING_REFUND_NOT_FOUND,
+  NOT_FOUND,
+} from "../../common/errors/errorCodes.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
   authorizePlatformOperation,
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
+import { reconcileBillingOperation } from "../billing/billing-operation-reconciliation.service.js";
+import {
+  BILLING_SUBSCRIPTION_NOT_READY,
+  INVOICE_WEBHOOK_EVENTS,
+  RetryableInvoiceSynchronizationError,
+  synchronizeInvoiceFromReference,
+} from "../billing/invoice-synchronization.service.js";
+import { synchronizeRefundFromProvider } from "../billing/refund.service.js";
+
+const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
+  "checkout.session.completed",
+  "invoice.paid",
+  "invoice_payment.paid",
+  "invoice.payment_failed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+]);
+
+const REFUND_WEBHOOK_EVENTS = new Set([
+  "refund.created",
+  "refund.updated",
+  "charge.refunded",
+  "charge.refund.updated",
+]);
+
+class ProviderStateReadUnavailableError extends Error {
+  readonly code = BILLING_PROVIDER_UNAVAILABLE;
+}
+
+class RetryableInvoiceStateError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+class RetryableRefundStateError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
 
 function writeAudit(
   action: string,
@@ -83,8 +129,8 @@ const EVENT_STATUS_MAP: Record<
     fromStatuses: ["ACTIVE", "INCOMPLETE"],
   },
   "customer.subscription.deleted": {
-    toStatus: "EXPIRED",
-    paymentState: "failed",
+    toStatus: "CANCELED",
+    paymentState: "paid",
     fromStatuses: ["ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"],
   },
 };
@@ -117,15 +163,25 @@ export async function handlePaymentEvent(
   existingEvent?: PaymentEventDocument,
   provider?: PaymentProvider,
 ): Promise<void> {
-  const duplicate = existingEvent
-    ? null
-    : await PaymentEventModel.findOne({ provider: event.provider, eventId: event.id }).exec();
-  if (duplicate) {
-    logger.info({ eventId: event.id }, "Duplicate webhook event — skipping");
-    return;
-  }
-
   let eventRecord = existingEvent;
+  if (eventRecord?.status === "failed") {
+    eventRecord.status = "received";
+    eventRecord.processingErrors = [];
+    eventRecord.processedAt = null;
+  }
+  if (!eventRecord) {
+    const duplicate = await PaymentEventModel.findOne({ provider: event.provider, eventId: event.id }).exec();
+    if (duplicate?.status !== "failed") {
+      if (duplicate) logger.info({ eventId: event.id }, "Duplicate webhook event — skipping");
+      if (duplicate) return;
+    }
+    if (duplicate) {
+      eventRecord = duplicate;
+      eventRecord.status = "received";
+      eventRecord.processingErrors = [];
+      eventRecord.processedAt = null;
+    }
+  }
   if (!eventRecord) {
     try {
       eventRecord = await PaymentEventModel.create({
@@ -155,8 +211,56 @@ export async function handlePaymentEvent(
   try {
     eventRecord.status = "verified";
 
+    if (REFUND_WEBHOOK_EVENTS.has(event.type) && provider) {
+      const refunds = extractRefundReferencesFromEvent(event);
+      if (refunds.length === 0) {
+        throw new ProviderStateReadUnavailableError("Current provider refund reference is unavailable");
+      }
+      for (const refund of refunds) {
+        try {
+          await synchronizeRefundFromProvider({
+            provider,
+            providerRefundId: refund.providerRefundId,
+            operationReference: refund.operationReference,
+            sourceEventId: event.id,
+            tenantIdHint: extractTenantFromEvent(event)?.toString(),
+          });
+        } catch (error) {
+          throw retryableRefundError(error);
+        }
+      }
+      eventRecord.status = "processed";
+      eventRecord.processedAt = new Date();
+      await eventRecord.save();
+      return;
+    }
+
     const providerSubscription = await retrieveProviderSubscription(event, provider);
     const packageMapping = await resolveEventPackageMapping(event, providerSubscription);
+
+    if (INVOICE_WEBHOOK_EVENTS.has(event.type) && provider) {
+      const invoiceId = extractInvoiceIdFromEvent(event);
+      const customerId = extractCustomerIdFromEvent(event);
+      if (!invoiceId || !customerId) throw new ProviderStateReadUnavailableError("Current provider invoice reference is unavailable");
+      try {
+        await synchronizeInvoiceFromReference({
+          provider,
+          providerName: event.provider,
+          providerInvoiceId: invoiceId,
+          providerCustomerId: customerId,
+          providerSubscriptionId: extractStripeSubscriptionIdFromEvent(event),
+          sourceEventId: event.id,
+        });
+      } catch (error) {
+        throw retryableInvoiceError(error);
+      }
+      if (!AUTHORITATIVE_SUBSCRIPTION_EVENTS.has(event.type)) {
+        eventRecord.status = "processed";
+        eventRecord.processedAt = new Date();
+        await eventRecord.save();
+        return;
+      }
+    }
 
     if (event.type === "payment_intent.payment_failed") {
       await handlePaymentFailure(
@@ -189,24 +293,27 @@ export async function handlePaymentEvent(
       return;
     }
 
-    const convergentSyncEvent = new Set([
-      "checkout.session.completed",
-      "invoice.paid",
-      "invoice_payment.paid",
-      "customer.subscription.created",
-      "customer.subscription.updated",
-    ]).has(event.type);
+    const convergentSyncEvent = AUTHORITATIVE_SUBSCRIPTION_EVENTS.has(event.type);
     if (convergentSyncEvent && providerSubscription) {
       const tenantHint = extractTenantFromEvent(event)?.toString() ??
         providerSubscription.metadata.tenantId;
       if (!tenantHint) throw new Error("Provider event tenant mapping is missing");
-      await synchronizeProviderSubscription({
+      const synchronized = await synchronizeProviderSubscription({
         providerSubscription,
         tenantId: tenantHint,
         provider: event.provider,
         sourceId: event.id,
         sourceType: "webhook",
         sourceTimestamp: event.timestamp,
+        providerStateObservedAt: providerSubscription.observedAt,
+      });
+      await reconcileBillingOperation({
+        tenantId: tenantHint,
+        operationReference: providerSubscription.metadata.operationReference,
+        providerObjectReference: providerSubscription.id,
+        providerEventId: event.id,
+        outcome: "CONFIRMED",
+        authoritativeSubscription: synchronized.subscription,
       });
       eventRecord.tenantId = new Types.ObjectId(tenantHint);
       const checkoutSessionId = extractCheckoutSessionId(event);
@@ -247,13 +354,62 @@ export async function handlePaymentEvent(
       await eventRecord.save();
     }
   } catch (error) {
-    logger.error({ err: error, eventId: event.id }, "Failed to process payment event");
+    const safeFailureCode = error instanceof ProviderStateReadUnavailableError
+      ? error.code
+      : error instanceof RetryableInvoiceStateError
+      ? error.code
+      : error instanceof RetryableRefundStateError
+      ? error.code
+      : error instanceof AppError
+        ? error.code
+        : error instanceof Error
+          ? error.message
+          : "PAYMENT_EVENT_PROCESSING_FAILED";
+    if (
+      error instanceof ProviderStateReadUnavailableError
+      || error instanceof RetryableInvoiceStateError
+      || error instanceof RetryableRefundStateError
+    ) {
+      logger.error({ errorCode: safeFailureCode, eventId: event.id }, "Failed to retrieve current provider state");
+      const tenantId = extractTenantFromEvent(event)?.toString();
+      if (tenantId) {
+        await reconcileBillingOperation({
+          tenantId,
+          operationReference: extractMetadataFromEvent(event).operationReference,
+          providerObjectReference: extractStripeSubscriptionIdFromEvent(event),
+          providerEventId: event.id,
+          outcome: "RETRY_PENDING",
+          failureCode: safeFailureCode,
+        }).catch(() => undefined);
+      }
+    } else {
+      logger.error({ err: error, eventId: event.id }, "Failed to process payment event");
+    }
     eventRecord.status = "failed";
-    eventRecord.processingErrors.push(
-      error instanceof Error ? error.message : "Unknown error",
-    );
+    eventRecord.processedAt = null;
+    eventRecord.processingErrors.push(safeFailureCode);
     await eventRecord.save();
   }
+}
+
+function retryableInvoiceError(error: unknown): Error {
+  if (error instanceof RetryableInvoiceSynchronizationError) {
+    return new RetryableInvoiceStateError(error.code);
+  }
+  if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === BILLING_SUBSCRIPTION_NOT_READY) {
+    return new RetryableInvoiceStateError(BILLING_SUBSCRIPTION_NOT_READY);
+  }
+  return error instanceof Error ? error : new Error(BILLING_SUBSCRIPTION_NOT_READY);
+}
+
+function retryableRefundError(error: unknown): Error {
+  if (error instanceof AppError && error.code === BILLING_REFUND_NOT_FOUND) {
+    return new RetryableRefundStateError(BILLING_REFUND_NOT_FOUND);
+  }
+  if (error instanceof AppError && error.code === BILLING_PROVIDER_UNAVAILABLE) {
+    return new RetryableRefundStateError(BILLING_PROVIDER_UNAVAILABLE);
+  }
+  return error instanceof Error ? error : new Error(BILLING_PROVIDER_UNAVAILABLE);
 }
 
 // ── Static mapping handler (checkout, invoice, subscription.deleted) ─────────
@@ -285,6 +441,7 @@ async function handleStaticMappingEvent(
   const currentStatus = sub.status as SubscriptionStatus;
 
   const transitionOptions: Record<string, unknown> = {
+    subscriptionId: String(sub._id),
     triggeredBy: "provider_event",
     providerEventId: event.id,
   };
@@ -310,7 +467,9 @@ async function handleStaticMappingEvent(
   }
 
   const subscriptionUpdate: Record<string, unknown> = {
-    paymentState: mapping.paymentState,
+    paymentState: event.type === "customer.subscription.deleted" && sub.paymentState === "refunded"
+      ? "refunded"
+      : mapping.paymentState,
     lastProviderEventId: event.id,
     providerSubscriptionId:
       extractStripeSubscriptionIdFromEvent(event) ??
@@ -344,7 +503,7 @@ async function handleStaticMappingEvent(
   }
 
   await SubscriptionModel.updateOne(
-    { tenantId },
+    { _id: sub._id, tenantId },
     { $set: subscriptionUpdate },
   );
 
@@ -367,7 +526,7 @@ async function handleStaticMappingEvent(
     {
       eventType: event.type,
       newStatus: mapping.toStatus,
-      paymentState: mapping.paymentState,
+      paymentState: event.type === "customer.subscription.deleted" && sub.paymentState === "refunded" ? "refunded" : mapping.paymentState,
       providerEventId: event.id,
     },
     String(tenantId),
@@ -418,6 +577,7 @@ async function handleSubscriptionUpdated(
     }
 
     const transitionOptions: Record<string, unknown> = {
+      subscriptionId: String(sub._id),
       triggeredBy: "provider_event",
       providerEventId: event.id,
     };
@@ -450,9 +610,11 @@ async function handleSubscriptionUpdated(
   // entitlement gate — do NOT unify it with the entitlement policy.
   const subscriptionUpdate: Record<string, unknown> = {
     cancelAtPeriodEnd,
-    paymentState: mappedStatus === "EXPIRED" || mappedStatus === "CANCELED" || mappedStatus === "PAST_DUE" || mappedStatus === "UNPAID"
-      ? "failed"
-      : "paid",
+    paymentState: sub.paymentState === "refunded"
+      ? "refunded"
+      : mappedStatus === "EXPIRED" || mappedStatus === "PAST_DUE" || mappedStatus === "UNPAID"
+        ? "failed"
+        : "paid",
     lastProviderEventId: event.id,
     providerSubscriptionId:
       extractStripeSubscriptionIdFromEvent(event) ??
@@ -491,7 +653,7 @@ async function handleSubscriptionUpdated(
   subscriptionUpdate.lastProviderEventTimestamp = event.timestamp;
 
   await SubscriptionModel.updateOne(
-    { tenantId },
+    { _id: sub._id, tenantId },
     { $set: subscriptionUpdate },
   );
 
@@ -700,6 +862,7 @@ interface ResolvedSubscription {
     packageId: Types.ObjectId;
     providerSubscriptionId: string;
     providerCustomerId: string;
+    paymentState: "pending" | "paid" | "failed" | "refunded";
   };
   tenantId: Types.ObjectId;
 }
@@ -713,8 +876,17 @@ async function resolveSubscriptionFromEvent(
     (providerTenantId && Types.ObjectId.isValid(providerTenantId)
       ? new Types.ObjectId(providerTenantId)
       : null);
+  const stripeSubId = providerSubscription?.id ?? extractStripeSubscriptionIdFromEvent(event);
   if (tenantId) {
-    const sub = await SubscriptionModel.findOne({ tenantId }).exec();
+    const sub = await SubscriptionModel.findOne({
+      tenantId,
+      ...(stripeSubId
+        ? { providerSubscriptionId: stripeSubId }
+        : {
+            providerSubscriptionId: { $nin: ["", null] },
+            status: { $in: ["ACTIVE", "TRIALING", "CANCEL_AT_PERIOD_END", "PAST_DUE"] },
+          }),
+    }).sort({ createdAt: -1 }).exec();
     if (sub) return { subscription: sub, tenantId };
   }
 
@@ -726,7 +898,6 @@ async function resolveSubscriptionFromEvent(
     if (sub) return { subscription: sub, tenantId: sub.tenantId };
   }
 
-  const stripeSubId = providerSubscription?.id ?? extractStripeSubscriptionIdFromEvent(event);
   if (stripeSubId) {
     const sub = await SubscriptionModel.findOne({
       providerSubscriptionId: stripeSubId,
@@ -740,32 +911,16 @@ async function resolveSubscriptionFromEvent(
 async function retrieveProviderSubscription(
   event: PaymentProviderEvent,
   provider?: PaymentProvider,
-): Promise<ProviderSubscription | null> {
-  if (!provider?.retrieveSubscription) return null;
+): Promise<ProviderSubscriptionState | null> {
+  if (!provider || !AUTHORITATIVE_SUBSCRIPTION_EVENTS.has(event.type)) return null;
   const subscriptionId = extractStripeSubscriptionIdFromEvent(event);
-  if (!subscriptionId) return null;
-
-  const metadata = extractMetadataFromEvent(event);
-  const priceId = extractPriceIdFromEvent(event);
-  if (
-    metadata.packageId &&
-    (metadata.packageVersionId || metadata.packageVersion) &&
-    metadata.billingInterval &&
-    priceId
-  ) {
-    return {
-      id: subscriptionId,
-      customerId: extractCustomerIdFromEvent(event) ?? "",
-      status: extractStripeSubscriptionStatus(event),
-      metadata,
-      priceId,
-      currentPeriodStart: extractCurrentPeriodStart(event),
-      currentPeriodEnd: extractCurrentPeriodEnd(event),
-      cancelAtPeriodEnd: extractCancelAtPeriodEnd(event),
-    };
+  const expectedCustomerId = extractCustomerIdFromEvent(event);
+  if (!subscriptionId || !expectedCustomerId) throw new ProviderStateReadUnavailableError("Current provider subscription reference is unavailable");
+  try {
+    return await provider.retrieveCurrentSubscriptionState({ subscriptionId, expectedCustomerId });
+  } catch {
+    throw new ProviderStateReadUnavailableError("Current provider subscription state is unavailable");
   }
-
-  return provider.retrieveSubscription(subscriptionId);
 }
 
 async function resolveEventPackageMapping(
@@ -834,10 +989,48 @@ function extractStripeSubscriptionIdFromEvent(
 ): string | undefined {
   const obj = extractRawObject(event);
   if (typeof obj?.subscription === "string") return obj.subscription;
+  const parent = obj?.parent as { subscription_details?: { subscription?: string | { id?: string } } } | undefined;
+  const parentSubscription = parent?.subscription_details?.subscription;
+  if (typeof parentSubscription === "string") return parentSubscription;
+  if (parentSubscription?.id) return parentSubscription.id;
   if (event.type.startsWith("customer.subscription.") && typeof obj?.id === "string") {
     return obj.id;
   }
   return undefined;
+}
+
+function extractInvoiceIdFromEvent(event: PaymentProviderEvent): string | undefined {
+  const obj = extractRawObject(event);
+  return typeof obj?.id === "string" ? obj.id : undefined;
+}
+
+function extractRefundReferencesFromEvent(event: PaymentProviderEvent): Array<{
+  providerRefundId: string;
+  operationReference?: string;
+}> {
+  const obj = extractRawObject(event);
+  if (!obj) return [];
+  if (typeof obj.id === "string" && obj.id.startsWith("re_")) {
+    return [{
+      providerRefundId: obj.id,
+      operationReference: extractRefundOperationReference(obj),
+    }];
+  }
+  const refunds = obj.refunds as { data?: Array<Record<string, unknown>> } | undefined;
+  if (!Array.isArray(refunds?.data)) return [];
+  return refunds.data
+    .map((item) => ({
+      providerRefundId: typeof item.id === "string" ? item.id : "",
+      operationReference: extractRefundOperationReference(item),
+    }))
+    .filter((item) => item.providerRefundId);
+}
+
+function extractRefundOperationReference(raw: Record<string, unknown>): string | undefined {
+  const metadata = raw.metadata as Record<string, unknown> | undefined;
+  return typeof metadata?.operationReference === "string"
+    ? metadata.operationReference
+    : undefined;
 }
 
 function extractPriceIdFromEvent(event: PaymentProviderEvent): string | undefined {

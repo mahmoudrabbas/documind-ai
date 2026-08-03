@@ -127,7 +127,7 @@ export function decideAdminSubscriptionOperation(
 async function loadTarget(tenantId: string, packageId?: string) {
   const [tenant, subscription, targetPackage] = await Promise.all([
     TenantModel.findOne({ _id: tenantId, ...targetTenantFilter }).select("name slug status").lean().exec(),
-    SubscriptionModel.findOne({ tenantId }).select("+adminOperations").lean().exec(),
+    SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).select("+adminOperations").lean().exec(),
     packageId ? PackageModel.findById(packageId).lean().exec() : Promise.resolve(null),
   ]);
   if (!tenant) throw new AppError(404, SUBSCRIPTION_PROTECTED_TENANT, "Tenant not found or protected");
@@ -282,7 +282,7 @@ export async function provisionAdminSubscription(tenantId: string, input: AdminS
     return { ...sanitizeSubscription(value), idempotentReplay: false };
   } catch (error) {
     if (!isDuplicateKey(error)) throw error;
-    const existing = await SubscriptionModel.findOne({ tenantId }).select("+adminOperations").lean().exec() as ExistingSubscription | null;
+    const existing = await SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).select("+adminOperations").lean().exec() as ExistingSubscription | null;
     if (existing) {
       const replay = replayOrConflict(existing, keyHash, payloadHash);
       if (replay) return replayResult(existing, replay);

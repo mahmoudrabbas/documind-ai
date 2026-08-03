@@ -198,6 +198,11 @@ describe("translation dictionaries", () => {
   const referenceLocale: Locale = "en";
   const referenceKeys = Object.keys(dictionaries[referenceLocale]).sort();
 
+  it("localizes provider-less Free payment state without a raw key", () => {
+    expect(dictionaries.en["billingAdmin.status.not_applicable"]).toBe("Not applicable");
+    expect(dictionaries.ar["billingAdmin.status.not_applicable"]).toBe("لا ينطبق");
+  });
+
   it("has a dictionary for every supported locale", () => {
     for (const locale of SUPPORTED_LOCALES) {
       expect(dictionaries[locale]).toBeDefined();

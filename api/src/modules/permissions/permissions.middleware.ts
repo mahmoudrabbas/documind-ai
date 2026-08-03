@@ -6,7 +6,7 @@ import { requireAuthenticatedAuditActor } from "../../common/observability/audit
 import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
 import type { PermissionValue } from "./permissions.catalog.js";
 import { getPermissionEvaluator } from "./permissions.evaluator.js";
-import type { AuditResourceType } from "../../common/observability/auditEvents.js";
+import type { AuditAction, AuditResourceType } from "../../common/observability/auditEvents.js";
 import type { PermissionAuthorizationContext, PermissionResourceContext } from "./permissions.types.js";
 
 export interface PermissionMiddlewareOptions {
@@ -14,6 +14,7 @@ export interface PermissionMiddlewareOptions {
   resourceType?: AuditResourceType;
   resourceId?: (request: Request) => string | undefined;
   resourceContext?: (request: Request) => PermissionResourceContext | undefined;
+  denialAuditAction?: AuditAction;
 }
 
 export function requirePermission(permission: PermissionValue, options?: PermissionMiddlewareOptions) {
@@ -53,7 +54,7 @@ export function requirePermission(permission: PermissionValue, options?: Permiss
         tenantId: auditActor.tenantId,
         resourceType: options?.resourceType ?? "Permission",
         resourceId: options?.resourceId?.(req) ?? permission,
-        action: "PERMISSION_DENIED",
+        action: options?.denialAuditAction ?? "PERMISSION_DENIED",
         outcome: "DENIED",
         actorId: auditActor.actorId,
         actorEmail: auditActor.actorEmail,

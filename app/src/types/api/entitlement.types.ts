@@ -9,6 +9,11 @@
 export interface EntitlementUsageResponse {
   current: Record<string, number>;
   limit: Record<string, number>;
+  actual?: {
+    documents: number;
+    storageBytes: number;
+    questions: number;
+  };
   periodStart: string;
   periodEnd: string | null;
 }

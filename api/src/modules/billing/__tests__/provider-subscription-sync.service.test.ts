@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { auditWrite } = vi.hoisted(() => ({ auditWrite: vi.fn() }));
 
 vi.mock("../../../db/models/subscription.model.js", () => ({
-  default: { find: vi.fn(), findOne: vi.fn(), updateOne: vi.fn() },
+  default: { find: vi.fn(), findOne: vi.fn(), exists: vi.fn(), updateOne: vi.fn() },
 }));
 vi.mock("../../../db/models/package.model.js", () => ({
   default: { findById: vi.fn(), find: vi.fn() },
@@ -27,6 +27,12 @@ function leanQuery<T>(result: T) {
 function selectQuery<T>(result: T) {
   return { select: () => ({ lean: () => ({ exec: async () => result }) }) };
 }
+
+function candidateQuery<T>(result: T) {
+  return { limit: () => ({ lean: () => ({ exec: async () => result }) }) };
+}
+
+let projectionResults: Array<Record<string, unknown>[]> = [];
 
 const providerSubscription = {
   id: "sub_sync_1",
@@ -75,14 +81,15 @@ describe("shared provider subscription synchronization", () => {
       version: 2,
       versions: [{ _id: VERSION_ID, version: 2, stripePriceId: "price_sync_1" }],
     }));
-    (SubscriptionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(selectQuery([]));
+    projectionResults = [];
+    (SubscriptionModel.find as ReturnType<typeof vi.fn>).mockImplementation((filter: Record<string, unknown>) =>
+      filter.$or ? selectQuery([]) : candidateQuery(projectionResults.shift() ?? []));
+    (SubscriptionModel.exists as ReturnType<typeof vi.fn>).mockResolvedValue(false);
   });
 
   it("persists the complete provider/package snapshot", async () => {
     const oldState = { ...synchronizedState(), providerSubscriptionId: "", paymentState: "pending", revision: 3 };
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(leanQuery(oldState))
-      .mockReturnValueOnce(leanQuery(synchronizedState()));
+    projectionResults = [[], [oldState], [synchronizedState()]];
     (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 1 });
 
     const result = await synchronizeProviderSubscription({
@@ -117,9 +124,7 @@ describe("shared provider subscription synchronization", () => {
   });
 
   it("does not duplicate updates or audits after webhook/session convergence", async () => {
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(leanQuery(synchronizedState()))
-      .mockReturnValueOnce(leanQuery(synchronizedState()));
+    projectionResults = [[synchronizedState()], [synchronizedState()]];
 
     const result = await synchronizeProviderSubscription({
       providerSubscription,
@@ -136,10 +141,7 @@ describe("shared provider subscription synchronization", () => {
 
   it("loses a concurrent race safely without a duplicate transition audit", async () => {
     const oldState = { ...synchronizedState(), status: "INCOMPLETE", revision: 3 };
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(leanQuery(oldState))
-      .mockReturnValueOnce(leanQuery(synchronizedState()))
-      .mockReturnValueOnce(leanQuery(synchronizedState()));
+    projectionResults = [[oldState], [synchronizedState()], [synchronizedState()]];
     (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 0 });
 
     const result = await synchronizeProviderSubscription({
@@ -154,10 +156,7 @@ describe("shared provider subscription synchronization", () => {
   });
 
   it("retries a tenant-unique upsert race and treats the winner as authoritative", async () => {
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(leanQuery(null))
-      .mockReturnValueOnce(leanQuery(synchronizedState()))
-      .mockReturnValueOnce(leanQuery(synchronizedState()));
+    projectionResults = [[], [], [synchronizedState()], [synchronizedState()]];
     (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockRejectedValueOnce({ code: 11000 });
 
     const result = await synchronizeProviderSubscription({
@@ -174,9 +173,7 @@ describe("shared provider subscription synchronization", () => {
   });
 
   it("keeps session sync after an already-applied webhook idempotent", async () => {
-    (SubscriptionModel.findOne as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(leanQuery(synchronizedState()))
-      .mockReturnValueOnce(leanQuery(synchronizedState()));
+    projectionResults = [[synchronizedState()], [synchronizedState()]];
 
     const result = await synchronizeProviderSubscription({
       providerSubscription,
@@ -189,5 +186,62 @@ describe("shared provider subscription synchronization", () => {
     expect(result.changed).toBe(false);
     expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
     expect(auditWrite).not.toHaveBeenCalled();
+  });
+
+  it("projects cancel-at-period-end as a lifecycle state while keeping the effective period end", async () => {
+    const oldState = { ...synchronizedState(), status: "ACTIVE", cancelAtPeriodEnd: false, revision: 3 };
+    projectionResults = [[oldState], [{ ...synchronizedState(), status: "CANCEL_AT_PERIOD_END", cancelAtPeriodEnd: true }]];
+    (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mockResolvedValue({ modifiedCount: 1 });
+
+    await synchronizeProviderSubscription({
+      providerSubscription: { ...providerSubscription, cancelAtPeriodEnd: true },
+      tenantId: TENANT_ID,
+      provider: "stripe",
+      sourceId: "evt_cancel_scheduled",
+      sourceType: "webhook",
+    });
+
+    const [, update] = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(update).toEqual({ $set: expect.objectContaining({ status: "CANCEL_AT_PERIOD_END", cancelAtPeriodEnd: true, periodEnd: providerSubscription.currentPeriodEnd, currentPeriodEnd: providerSubscription.currentPeriodEnd }) });
+  });
+
+  it("updates the exact historical provider subscription and never the provider-less Free subscription", async () => {
+    const paid = { ...synchronizedState(), _id: "507f1f77bcf86cd799439020", status: "ACTIVE", paymentState: "paid" };
+    projectionResults = [[paid], [{ ...paid, status: "CANCELED" }]];
+    await synchronizeProviderSubscription({
+      providerSubscription: { ...providerSubscription, status: "canceled" },
+      tenantId: TENANT_ID,
+      provider: "stripe",
+      sourceId: "evt_deleted_after_free",
+      sourceType: "webhook",
+    });
+    const [filter, update] = (SubscriptionModel.updateOne as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(String(filter._id)).toBe(paid._id);
+    expect(update.$set).toMatchObject({ status: "CANCELED", paymentState: "paid" });
+  });
+
+  it("fails closed instead of binding a delayed provider event to a provider-less Free subscription", async () => {
+    projectionResults = [[], []];
+    (SubscriptionModel.exists as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    await expect(synchronizeProviderSubscription({
+      providerSubscription: { ...providerSubscription, customerId: "different-customer" },
+      tenantId: TENANT_ID,
+      provider: "stripe",
+      sourceId: "evt_unlinked",
+      sourceType: "webhook",
+    })).rejects.toThrow("mapping is missing");
+    expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a provider subscription maps to multiple local records", async () => {
+    projectionResults = [[synchronizedState(), { ...synchronizedState(), _id: "507f1f77bcf86cd799439021" }]];
+    await expect(synchronizeProviderSubscription({
+      providerSubscription,
+      tenantId: TENANT_ID,
+      provider: "stripe",
+      sourceId: "evt_ambiguous",
+      sourceType: "webhook",
+    })).rejects.toThrow("mapping is ambiguous");
+    expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
   });
 });

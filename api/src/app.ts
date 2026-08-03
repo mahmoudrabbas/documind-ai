@@ -34,6 +34,8 @@ import checkoutRoutes from "./modules/checkout/checkout.routes.js";
 import paymentWebhookRoutes from "./modules/payment-webhooks/payment-webhooks.routes.js";
 import paymentWebhookAdminRoutes from "./modules/payment-webhooks/payment-webhooks.admin.js";
 import reconciliationRoutes from "./modules/reconciliation/reconciliation.routes.js";
+import tenantBillingRoutes from "./modules/billing/tenant-billing.routes.js";
+import refundAdminRoutes from "./modules/billing/refund-admin.routes.js";
 import importsRoutes from "./modules/imports/index.js";
 import processingRoutes from "./modules/processing/processing.routes.js";
 import processingProgressRoutes from "./modules/processing-progress/processingProgress.routes.js";
@@ -69,6 +71,7 @@ import { isMongoConnected } from "./db/connection.js";
 import { getDocumentAccessAuthorizationService } from "./modules/document-access/documentAccess.authorization.service.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
 import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
+import analyticsRoutes from "./modules/analytics/analytics.routes.js";
 import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
 import { MongoQuotaCounter } from "./modules/entitlement/adapters/mongo-quota-counter.js";
 import { MongoEntitlementProvider } from "./modules/entitlement/adapters/mongo-entitlement-provider.js";
@@ -158,7 +161,9 @@ app.use("/super-admin/agents", agentsAdminRoutes);
 app.use("/webhooks/payment", paymentWebhookRoutes);
 app.use("/super-admin", paymentWebhookAdminRoutes);
 app.use("/super-admin", reconciliationRoutes);
+app.use("/super-admin", refundAdminRoutes);
 app.use("/checkout", checkoutRoutes);
+app.use("/billing", tenantBillingRoutes);
 app.use("/imports", importsRoutes);
 app.use("/documents", processingRoutes);
 app.use("/documents", processingProgressRoutes);
@@ -168,6 +173,7 @@ app.use("/knowledge-gaps", knowledgeGapsRoutes);
 app.use("/feedback", feedbackRoutes);
 app.use("/entitlement", entitlementRoutes);
 app.use("/super-admin/entitlement", entitlementAdminRoutes);
+app.use("/analytics", analyticsRoutes);
 
 // ── EntitlementService singleton ─────────────────────────────────────────────
 //

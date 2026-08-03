@@ -42,9 +42,11 @@ app/stitch/
 
 # Playwright MCP test artifacts
 .playwright-mcp/
+test-results/
 
 # Project-level skill files (local agent instructions)
 .skills/
 
 # Runtime uploads directory
 api/uploads/
+api/.test-uploads/

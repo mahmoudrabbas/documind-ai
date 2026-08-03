@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { logger } from "../../common/logger/logger.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import { handlePaymentEvent } from "./payment-webhooks.service.js";
+import { BILLING_WEBHOOK_SIGNATURE_INVALID } from "../../common/errors/errorCodes.js";
 
 export async function webhookHandlerController(
   req: Request,
@@ -16,8 +17,8 @@ export async function webhookHandlerController(
   const provider = await getPaymentProvider();
 
   if (!provider.verifyWebhookSignature(rawBody, signature)) {
-    logger.warn({ signature: signature.slice(0, 8) }, "Invalid webhook signature");
-    res.status(400).json({ error: "Invalid signature" });
+    logger.warn("Invalid webhook signature");
+    res.status(400).json({ error: BILLING_WEBHOOK_SIGNATURE_INVALID });
     return;
   }
 

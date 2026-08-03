@@ -28,9 +28,17 @@ export default function PaymentDiagnosticsPage() {
   const canManage = permissions.can(Permission.BILLING_MANAGE);
   const state = usePlatformData(loadEvents);
   const [notice, setNotice] = useState("");
+  const [reconciling, setReconciling] = useState(false);
   const [reconResult, setReconResult] = useState<{
-    totalSubscriptions: number;
-    mismatched: Array<Record<string, unknown>>;
+    subscriptions: { examined: number; mismatched: Array<Record<string, unknown>> };
+    invoices: {
+      examined: number; created: number; updated: number; failed: number;
+      failures?: Array<{ code: string; count: number; classification: string; retryable: boolean }>;
+      retry?: { status: "NONE" | "RETRY_PENDING"; retryableFailureCount: number };
+    };
+    refundSettlements: { indexInvariant: { status: "READY" | "MIGRATION_REQUIRED"; issues: string[]; effectiveDuplicateTenantCount: number }; examined: number; eligibleForTransitionRepair: number; transitionOperationsCreated: number; transitionsCompleted: number; transitionsRetryable: number; failed: number };
+    subscriptionIndex: { status: "READY" | "MIGRATION_REQUIRED"; issues: string[]; effectiveDuplicateTenantCount: number };
+    providerCancellations: { created: number; confirmed: number; retryable: number };
   } | null>(null);
 
   const handleReprocess = useCallback(
@@ -49,18 +57,21 @@ export default function PaymentDiagnosticsPage() {
   );
 
   const handleReconcile = useCallback(async () => {
-    if (!canManage) return;
+    if (!canManage || reconciling) return;
     setNotice("");
+    setReconciling(true);
     try {
       const result = await triggerReconciliation();
       setReconResult(result.data);
-      setNotice(
-        `Reconciliation complete. ${result.data.mismatched.length} mismatches found.`,
-      );
+      setNotice(result.data.subscriptionIndex.status === "READY"
+        ? `Reconciliation complete. ${result.data.subscriptions.mismatched.length} subscription mismatches found; ${result.data.refundSettlements.transitionsCompleted} refund transitions completed.`
+        : "Subscription index migration is required before refund transitions can be repaired.");
     } catch {
       setNotice("Reconciliation failed.");
+    } finally {
+      setReconciling(false);
     }
-  }, [canManage]);
+  }, [canManage, reconciling]);
 
   return (
     <DashboardPage>
@@ -74,10 +85,12 @@ export default function PaymentDiagnosticsPage() {
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
+            disabled={reconciling}
+            aria-busy={reconciling}
             onClick={() => void handleReconcile()}
-            className="min-h-10 rounded-lg bg-primary px-4 font-bold text-on-primary"
+            className="min-h-10 rounded-lg bg-primary px-4 font-bold text-on-primary disabled:opacity-60"
           >
-            Run reconciliation
+            {reconciling ? "Reconciling…" : "Run reconciliation"}
           </button>
         </div>
         {notice ? (
@@ -94,12 +107,30 @@ export default function PaymentDiagnosticsPage() {
             Reconciliation results
           </h2>
           <p className="text-sm text-on-surface-variant">
-            {reconResult.totalSubscriptions} subscriptions checked,{" "}
-            {reconResult.mismatched.length} mismatches
+            {reconResult.subscriptions.examined} subscriptions checked,{" "}
+            {reconResult.subscriptions.mismatched.length} mismatches
           </p>
-          {reconResult.mismatched.length > 0 ? (
+          <p className="text-sm text-on-surface-variant">
+            Subscription index: {reconResult.subscriptionIndex.status}; effective duplicate tenants: {reconResult.subscriptionIndex.effectiveDuplicateTenantCount}
+          </p>
+          <p className="text-sm text-on-surface-variant">
+            Refund settlements examined: {reconResult.refundSettlements.examined}; eligible repairs: {reconResult.refundSettlements.eligibleForTransitionRepair}; transitions completed: {reconResult.refundSettlements.transitionsCompleted}; provider cancellations retryable: {reconResult.providerCancellations.retryable}
+          </p>
+          <p className="text-sm text-on-surface-variant">
+            Invoices examined: {reconResult.invoices.examined}; created: {reconResult.invoices.created}; updated: {reconResult.invoices.updated}; failed: {reconResult.invoices.failed}
+          </p>
+          {reconResult.invoices.failures?.length ? (
+            <ul className="mt-2 list-disc space-y-1 ps-5 text-sm text-on-surface-variant">
+              {reconResult.invoices.failures.map((failure) => (
+                <li key={`${failure.code}:${failure.classification}`}>
+                  {failure.classification}: {failure.count} ({failure.code}){failure.retryable ? " — retry pending" : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {reconResult.subscriptions.mismatched.length > 0 ? (
             <div className="mt-3 space-y-2">
-              {reconResult.mismatched.map((m, i) => (
+              {reconResult.subscriptions.mismatched.map((m, i) => (
                 <div
                   key={i}
                   className="rounded-lg border border-error/20 bg-error-container/10 p-3 text-sm"

@@ -20,9 +20,9 @@ import type { BillingActor } from "./package.service.js";
 export const LEGAL_TRANSITIONS: Record<SubscriptionStatus, readonly SubscriptionStatus[]> = {
   TRIALING: ["ACTIVE", "INCOMPLETE", "PAST_DUE", "CANCEL_AT_PERIOD_END"],
   INCOMPLETE: ["ACTIVE", "PAST_DUE", "EXPIRED"],
-  ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "EXPIRED"],
-  PAST_DUE: ["ACTIVE", "PAUSED", "EXPIRED", "UNPAID"],
-  PAUSED: ["ACTIVE", "EXPIRED"],
+  ACTIVE: ["PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END", "CANCELED", "EXPIRED"],
+  PAST_DUE: ["ACTIVE", "PAUSED", "CANCELED", "EXPIRED", "UNPAID"],
+  PAUSED: ["ACTIVE", "CANCELED", "EXPIRED"],
   "CANCEL_AT_PERIOD_END": ["ACTIVE", "CANCELED", "EXPIRED"],
   CANCELED: [],
   EXPIRED: ["ACTIVE", "UNPAID"],
@@ -32,6 +32,7 @@ export const LEGAL_TRANSITIONS: Record<SubscriptionStatus, readonly Subscription
 // ── Transition options ──────────────────────────────────────────────────────
 
 export interface TransitionOptions {
+  subscriptionId?: string;
   reason?: string;
   triggeredBy?: SubscriptionTransition["triggeredBy"];
   providerEventId?: string;
@@ -160,7 +161,12 @@ export async function transitionSubscription(
   options?: TransitionOptions,
   actor?: BillingActor,
 ): Promise<SubscriptionDocument> {
-  const existing = await SubscriptionModel.findOne({ tenantId }).exec();
+  const existing = await SubscriptionModel.findOne({
+    tenantId,
+    ...(options?.subscriptionId && Types.ObjectId.isValid(options.subscriptionId)
+      ? { _id: new Types.ObjectId(options.subscriptionId) }
+      : { status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }),
+  }).exec();
   if (!existing) {
     throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
   }
@@ -244,7 +250,7 @@ export async function transitionSubscription(
 export async function getSubscription(
   tenantId: string,
 ): Promise<SubscriptionDocument> {
-  const sub = await SubscriptionModel.findOne({ tenantId }).lean().exec();
+  const sub = await SubscriptionModel.findOne({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } }).lean().exec();
   if (!sub) {
     throw new AppError(404, NOT_FOUND, "Subscription not found for tenant");
   }

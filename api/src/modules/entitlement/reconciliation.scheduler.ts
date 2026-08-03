@@ -1,5 +1,7 @@
 import { logger } from "../../common/logger/logger.js";
 import { getReconciliationService } from "./reconciliation.service.js";
+import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
+import { reconcileSucceededSystemRefundSettlements } from "../billing/refund.service.js";
 
 export interface EntitlementReconciliationSchedulerOptions {
   intervalMs?: number;
@@ -46,8 +48,21 @@ export function startEntitlementReconciliation(
     } catch (error) {
       logger.error(
         { err: error, mode },
-        "Entitlement reconciliation sweep failed",
-      );
+      "Entitlement reconciliation sweep failed",
+    );
+    }
+    if (process.env.BILLING_REFUND_RECONCILE_ENABLED === "false") return;
+    try {
+      const settlements = await reconcileSucceededSystemRefundSettlements({ provider: await getPaymentProvider(), maxRecords: 200 });
+      logger.info({
+        examined: settlements.examined,
+        eligibleForTransitionRepair: settlements.eligibleForTransitionRepair,
+        transitionsCompleted: settlements.transitionsCompleted,
+        transitionsRetryable: settlements.transitionsRetryable,
+        failed: settlements.failed,
+      }, "Succeeded refund settlement reconciliation sweep completed");
+    } catch (error) {
+      logger.error({ err: error }, "Succeeded refund settlement reconciliation sweep failed");
     }
   };
 

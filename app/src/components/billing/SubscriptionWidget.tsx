@@ -5,12 +5,10 @@ import Link from "next/link";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
-import {
-  getSubscriptionStatus,
-  createBillingPortalSession,
-} from "@/services/billing.service";
+import { getSubscriptionStatus } from "@/services/billing.service";
 import type { SubscriptionStatus } from "@/types/api/billing.types";
 import { ApiError } from "@/lib/api-client";
+import { useI18n } from "@/providers/i18n-provider";
 import {
   formatSubscriptionStatus,
   formatPrice,
@@ -56,19 +54,15 @@ function getEntitlementRows(
 /* ── Component ─────────────────────────────────────────────────────── */
 
 export function SubscriptionWidget() {
+  const { t } = useI18n();
   const auth = useAuth();
   const permissions = usePermissions();
 
   const canReadBilling =
     auth.status === "authenticated" &&
     permissions.can(Permission.BILLING_READ);
-  const canManageBilling =
-    auth.status === "authenticated" &&
-    permissions.can(Permission.BILLING_MANAGE);
-
   const [state, setState] = useState<WidgetState>({ phase: "loading" });
   const [fetchKey, setFetchKey] = useState(0);
-  const [portalLoading, setPortalLoading] = useState(false);
 
   /* ── Fetch subscription data ──────────────────────────────────── */
 
@@ -98,22 +92,6 @@ export function SubscriptionWidget() {
 
     return () => controller.abort();
   }, [canReadBilling, fetchKey]);
-
-  /* ── Manage Billing handler ───────────────────────────────────── */
-
-  const handleManageBilling = useCallback(async () => {
-    setPortalLoading(true);
-    try {
-      const result = await createBillingPortalSession();
-      if (result.data.url) {
-        window.location.href = result.data.url;
-      }
-    } catch {
-      // Portal errors are non-critical on a dashboard widget
-    } finally {
-      setPortalLoading(false);
-    }
-  }, []);
 
   /* ── Retry handler ────────────────────────────────────────────── */
 
@@ -306,19 +284,16 @@ export function SubscriptionWidget() {
           ) : null}
         </p>
 
-        {canManageBilling && sub.providerCustomerId ? (
-          <Button
-            variant="outline"
-            size="md"
-            className="w-full justify-center"
-            isLoading={portalLoading}
-            onClick={() => void handleManageBilling()}
+        {sub.canOpenPortal ? (
+          <Link
+            href="/dashboard/settings/billing"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-outline bg-transparent px-4 py-2 font-bold text-on-surface transition-colors hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             <span className="material-symbols-outlined text-[18px]">
               account_balance
             </span>
-            Manage Billing
-          </Button>
+            {t("billingAdmin.title")}
+          </Link>
         ) : null}
       </div>
     </DashboardPanel>

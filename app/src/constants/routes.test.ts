@@ -36,6 +36,7 @@ describe("permission-driven navigation", () => {
       "/dashboard",
       "/dashboard/documents",
       "/dashboard/audit",
+      "/dashboard/analytics",
     ]);
     expect(links.every((link) => link.context === "tenant")).toBe(true);
   });
@@ -56,7 +57,7 @@ describe("permission-driven navigation", () => {
       withPermissions(Permission.ANALYTICS_READ, Permission.DOCUMENTS_READ),
       "EMPLOYEE",
     );
-    expect(links.map((link) => link.href)).toEqual(["/dashboard/documents"]);
+    expect(links.map((link) => link.href)).toEqual(["/dashboard/documents", "/dashboard/analytics"]);
   });
 
   it("keeps the System Overview link for company admins with analytics access", () => {
@@ -84,10 +85,10 @@ describe("permission-driven navigation", () => {
     ).toBe(true);
   });
 
-  it("does not advertise deferred chat or analytics pages", () => {
+  it("advertises analytics pages for tenant navigation", () => {
     const destinations = TENANT_SIDEBAR_LINKS.map((link) => link.href);
     expect(destinations).not.toContain("/chat");
-    expect(destinations).not.toContain("/dashboard/analytics");
+    expect(destinations).toContain("/dashboard/analytics");
     expect(destinations).toContain("/dashboard/knowledge-gaps");
   });
 });

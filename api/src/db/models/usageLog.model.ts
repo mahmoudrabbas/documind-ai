@@ -1,5 +1,9 @@
 import mongoose, { Schema } from "mongoose";
 
+/**
+ * @deprecated Legacy usage log model.
+ * Preserved for backward compatibility. Use `UsageEventModel` (`usageEvent.model.ts`) for comprehensive operational and AI quality analytics.
+ */
 export interface UsageLogDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   eventType: "QUESTION_ASKED" | "ASSISTANT_RESPONSE" | "SYSTEM_EVENT";

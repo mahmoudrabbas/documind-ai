@@ -15,6 +15,8 @@ import { MongoUserNotificationStateRepository } from "./modules/notifications/re
 import { RecipientResolver } from "./modules/notifications/recipientResolver.js";
 import { setNotificationCreatePort } from "./modules/notifications/outbox/notificationOutbox.dispatcher.js";
 import { createSocketServer } from "./modules/notifications/socket/notificationSocketServer.js";
+import SubscriptionModel from "./db/models/subscription.model.js";
+import { inspectSubscriptionIndexInvariant } from "./db/subscription-index-invariant.js";
 
 dotenv.config();
 
@@ -142,6 +144,20 @@ async function gracefulShutdown(signal: string) {
 
 try {
   await connectDB();
+  try {
+    const subscriptionIndex = await inspectSubscriptionIndexInvariant(SubscriptionModel.collection);
+    if (subscriptionIndex.valid) {
+      logger.info({ diagnosticsCode: "SUBSCRIPTION_INDEX_INVARIANT_READY" }, "Subscription index invariant verified");
+    } else {
+      logger.error({
+        diagnosticsCode: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED",
+        issues: subscriptionIndex.issues,
+        effectiveDuplicateTenantCount: subscriptionIndex.effectiveDuplicateTenantCount,
+      }, "Subscription index invariant requires migration");
+    }
+  } catch (error) {
+    logger.error({ err: error, diagnosticsCode: "SUBSCRIPTION_INDEX_INVARIANT_CHECK_FAILED" }, "Subscription index invariant could not be verified");
+  }
   await connectRedis();
   await ensureSearchIndexes();
   if (config.NODE_ENV !== "production" && config.PAYMENT_PROVIDER === "stripe") {

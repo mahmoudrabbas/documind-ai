@@ -255,7 +255,7 @@ export default function CheckoutPage() {
         title="Billing & Plans"
         description="Manage your subscription and explore available plans."
         actions={
-          currentSub?.providerCustomerId && canManageBilling ? (
+          currentSub?.canOpenPortal && canManageBilling ? (
             <Button
               variant="outline"
               size="md"

@@ -17,7 +17,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "node --import tsx --import ./test/polyfills.mjs --test \"src/**/*.test.ts\""
+    "test": "node --import ./src/bootstrap/canvasShim.js --import tsx --import ./test/polyfills.mjs --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1096.0",
@@ -38,6 +38,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.3",
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^8.0.1",
     "@types/pdf-parse": "^1.1.5",
