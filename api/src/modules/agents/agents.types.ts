@@ -183,6 +183,23 @@ export interface ModelCompletionResponse {
   estimatedCost: number;
 }
 
+export interface ModelStreamDelta {
+  role?: string;
+  content?: string | null;
+}
+
+export interface ModelCompletionStreamChunk {
+  id?: string;
+  model?: string;
+  provider?: string;
+  choices: Array<{
+    index?: number;
+    delta: ModelStreamDelta;
+    finish_reason?: string | null;
+  }>;
+  usage?: ModelCompletionUsage;
+}
+
 export interface ModelAdapter {
   readonly providerKey: string;
   complete(params: {
@@ -194,6 +211,15 @@ export interface ModelAdapter {
     maxTokens?: number;
     signal?: AbortSignal;
   }): Promise<ModelCompletionResponse>;
+  completeStream?(params: {
+    messages: ModelCompletionMessage[];
+    tools?: Record<string, unknown>[];
+    toolChoice?: string | Record<string, unknown>;
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    signal?: AbortSignal;
+  }): AsyncGenerator<ModelCompletionStreamChunk>;
 }
 
 export interface EmbeddingAdapter {

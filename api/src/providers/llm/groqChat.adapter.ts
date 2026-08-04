@@ -3,6 +3,7 @@ import type {
   ModelAdapter,
   ModelCompletionMessage,
   ModelCompletionResponse,
+  ModelCompletionStreamChunk,
 } from "../../modules/agents/agents.types.js";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
@@ -80,5 +81,63 @@ export class GroqChatAdapter implements ModelAdapter {
       latencyMs,
       estimatedCost: 0,
     };
+  }
+
+  async *completeStream(params: {
+    messages: ModelCompletionMessage[];
+    tools?: Record<string, unknown>[];
+    toolChoice?: string | Record<string, unknown>;
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    signal?: AbortSignal;
+  }): AsyncGenerator<ModelCompletionStreamChunk> {
+    const requestParams: OpenAI.ChatCompletionCreateParamsStreaming = {
+      model: this.model,
+      messages: params.messages.map((m) => ({
+        role: m.role as "system" | "user" | "assistant",
+        content: m.content,
+      })),
+      temperature: params.temperature ?? 0.7,
+      top_p: params.topP,
+      max_tokens: params.maxTokens,
+      stream: true,
+      stream_options: { include_usage: true },
+    };
+
+    if (params.tools && params.tools.length > 0) {
+      requestParams.tools = params.tools as unknown as OpenAI.ChatCompletionTool[];
+      if (params.toolChoice) {
+        requestParams.tool_choice = params.toolChoice as
+          | "auto"
+          | "none"
+          | "required"
+          | { type: "function"; function: { name: string } };
+      }
+    }
+
+    const stream = await this.client.chat.completions.create(requestParams, {
+      signal: params.signal,
+    });
+
+    for await (const chunk of stream) {
+      yield {
+        id: chunk.id,
+        model: chunk.model,
+        provider: this.providerKey,
+        choices: chunk.choices.map((c) => ({
+          index: c.index,
+          delta: { role: c.delta?.role, content: c.delta?.content ?? null },
+          finish_reason: c.finish_reason ?? null,
+        })),
+        usage: chunk.usage
+          ? {
+              promptTokens: chunk.usage.prompt_tokens ?? 0,
+              completionTokens: chunk.usage.completion_tokens ?? 0,
+              totalTokens: chunk.usage.total_tokens ?? 0,
+            }
+          : undefined,
+      };
+    }
   }
 }

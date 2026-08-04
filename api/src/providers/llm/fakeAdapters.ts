@@ -1,16 +1,69 @@
-import type { EmbeddingAdapter, ModelAdapter, ModelCompletionResponse } from "../../modules/agents/agents.types.js";
+import type {
+  EmbeddingAdapter,
+  ModelAdapter,
+  ModelCompletionResponse,
+  ModelCompletionStreamChunk,
+} from "../../modules/agents/agents.types.js";
+
+type CompleteParams = {
+  messages: { role: string; content: string }[];
+  tools?: Record<string, unknown>[];
+  toolChoice?: string | Record<string, unknown>;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+};
 
 export class FakeModelAdapter implements ModelAdapter {
   readonly providerKey = "fake";
-  async complete(params: {
-    messages: { role: string; content: string }[];
-    tools?: Record<string, unknown>[];
-    toolChoice?: string | Record<string, unknown>;
-    temperature?: number;
-    topP?: number;
-    maxTokens?: number;
-    signal?: AbortSignal;
-  }): Promise<ModelCompletionResponse> {
+
+  async complete(params: CompleteParams): Promise<ModelCompletionResponse> {
+    const { text, finishReason, usage } = this.derive(params);
+
+    return {
+      id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      provider: "fake",
+      model: params.tools?.length ? "fake-tool" : "fake-chat",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: text },
+          finishReason,
+        },
+      ],
+      usage,
+      latencyMs: 10,
+      estimatedCost: 0,
+    };
+  }
+
+  async *completeStream(params: CompleteParams): AsyncGenerator<ModelCompletionStreamChunk> {
+    const { text, finishReason, usage } = this.derive(params);
+    const id = `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const model = params.tools?.length ? "fake-tool" : "fake-chat";
+
+    const CHUNK_SIZE = 4;
+    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+      yield {
+        id,
+        model,
+        provider: "fake",
+        choices: [{ index: 0, delta: { content: text.slice(i, i + CHUNK_SIZE) }, finish_reason: null }],
+      };
+    }
+
+    yield {
+      choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+      usage,
+    };
+  }
+
+  private derive(params: CompleteParams): {
+    text: string;
+    finishReason: string | null;
+    usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  } {
     const lastUser = [...params.messages].reverse().find((m) => m.role === "user");
     const rawContent = lastUser?.content ?? "";
     let text = "";
@@ -115,23 +168,13 @@ export class FakeModelAdapter implements ModelAdapter {
     }
 
     return {
-      id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      provider: "fake",
-      model: params.tools?.length ? "fake-tool" : "fake-chat",
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant", content: text },
-          finishReason,
-        },
-      ],
+      text,
+      finishReason,
       usage: {
         promptTokens: rawContent.length,
         completionTokens: text.length,
         totalTokens: rawContent.length + text.length,
       },
-      latencyMs: 10,
-      estimatedCost: 0,
     };
   }
 }
