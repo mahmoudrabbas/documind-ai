@@ -10,7 +10,7 @@ import {
   type EntitlementDenial,
 } from "@/lib/entitlement-errors";
 import {
-  sendMessage,
+  streamChat,
   listConversations,
   getConversationMessages,
   deleteConversation,
@@ -26,6 +26,7 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   sources?: ChatSource[];
+  isStreamingPlaceholder?: boolean;
 };
 
 function formatRelativeTime(iso: string): string {
@@ -66,6 +67,8 @@ export function ChatClient() {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [currentStreamedResponse, setCurrentStreamedResponse] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [entitlementBanner, setEntitlementBanner] =
     useState<EntitlementDenial | null>(null);
@@ -121,6 +124,9 @@ export function ChatClient() {
     }, 1000);
     return () => window.clearTimeout(timeout);
   }, [retryAfterSeconds]);
+
+  // Abort any in-flight stream on unmount.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const loadMessages = useCallback(async (conversationId: string) => {
     try {
@@ -189,15 +195,27 @@ export function ChatClient() {
       content: question,
     };
 
+    const placeholderId = `streaming-${++msgIdCounter.current}`;
+    const placeholderMsg: Message = {
+      id: placeholderId,
+      role: "assistant",
+      content: "",
+      isStreamingPlaceholder: true,
+    };
+
+    let accumulated = "";
+    let pendingSources: ChatSource[] = [];
+
     setMessages((prev) => ({
       ...prev,
-      [convId]: [...(prev[convId] ?? []), userMsg],
+      [convId]: [...(prev[convId] ?? []), userMsg, placeholderMsg],
     }));
 
     setInput("");
     setIsTyping(true);
     setError(null);
     setEntitlementBanner(null);
+    setCurrentStreamedResponse("");
 
     // Optimistically update sidebar
     if (convId) {
@@ -215,31 +233,49 @@ export function ChatClient() {
       );
     }
 
-    try {
-      const response = await sendMessage({
-        message: question,
-        conversationId: convId || undefined,
-      });
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-      const actualConvId = response.conversationId;
+    const growPlaceholder = (content: string) => {
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: (prev[convId] ?? []).map((m) =>
+          m.id === placeholderId ? { ...m, content } : m,
+        ),
+      }));
+    };
+
+    const removePlaceholder = () => {
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: (prev[convId] ?? []).filter((m) => m.id !== placeholderId),
+      }));
+    };
+
+    const finalizeStream = (messageId: string, actualConvId: string) => {
       const aiMsg: Message = {
-        id: response.messageId,
+        id: messageId,
         role: "assistant",
-        content: response.answer,
-        sources: response.sources,
+        content: accumulated,
+        sources: pendingSources,
       };
 
       // If this was a new conversation, the server created it — update state
       if (!convId) {
         setActiveConversation(actualConvId);
-        setMessages((prev) => ({ ...prev, [actualConvId]: [userMsg, aiMsg] }));
+        setMessages((prev) => {
+          const next = { ...prev };
+          delete next[""];
+          next[actualConvId] = [userMsg, aiMsg];
+          return next;
+        });
 
         // Add to sidebar
         setConversations((prev) => [
           {
             id: actualConvId,
             title: question.length > 60 ? question.slice(0, 57) + "..." : question,
-            lastMessage: response.answer.slice(0, 100),
+            lastMessage: accumulated.slice(0, 100),
             updatedAt: new Date().toISOString(),
             messageCount: 2,
           },
@@ -248,7 +284,10 @@ export function ChatClient() {
       } else {
         setMessages((prev) => ({
           ...prev,
-          [convId]: [...(prev[convId] ?? []), aiMsg],
+          [convId]: [
+            ...(prev[convId] ?? []).filter((m) => m.id !== placeholderId),
+            aiMsg,
+          ],
         }));
 
         setConversations((prev) =>
@@ -256,14 +295,35 @@ export function ChatClient() {
             c.id === convId
               ? {
                   ...c,
-                  lastMessage: response.answer.slice(0, 100),
+                  lastMessage: accumulated.slice(0, 100),
                   updatedAt: new Date().toISOString(),
                 }
               : c,
           ),
         );
       }
+    };
+
+    try {
+      await streamChat(
+        { message: question, conversationId: convId || undefined },
+        {
+          onToken: (content) => {
+            accumulated += content;
+            setCurrentStreamedResponse(accumulated);
+            growPlaceholder(accumulated);
+          },
+          onSources: (sources) => {
+            pendingSources = sources;
+          },
+          onDone: ({ messageId, conversationId: actualConvId }) => {
+            finalizeStream(messageId, actualConvId);
+          },
+        },
+        controller.signal,
+      );
     } catch (err) {
+      removePlaceholder();
       const denial = mapEntitlementError(err);
       if (denial) {
         // Entitlement denial (429 quota exceeded / 403 subscription
@@ -292,6 +352,7 @@ export function ChatClient() {
       }
     } finally {
       setIsTyping(false);
+      abortRef.current = null;
     }
   }
 
@@ -420,7 +481,9 @@ export function ChatClient() {
                     }`}
                   >
                     <p className="whitespace-pre-line">{msg.content}</p>
-                    {msg.sources && msg.sources.length > 0 && (
+                    {!msg.isStreamingPlaceholder &&
+                      msg.sources &&
+                      msg.sources.length > 0 && (
                       <div className="mt-3 border-t border-outline-variant/20 pt-2">
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
                           Sources
@@ -459,12 +522,14 @@ export function ChatClient() {
                           ))}
                       </div>
                     )}
-                    {msg.role === "assistant" && activeConversation && (
-                      <FeedbackWidget
-                        messageId={msg.id}
-                        conversationId={activeConversation}
-                      />
-                    )}
+                    {msg.role === "assistant" &&
+                      activeConversation &&
+                      !msg.isStreamingPlaceholder && (
+                        <FeedbackWidget
+                          messageId={msg.id}
+                          conversationId={activeConversation}
+                        />
+                      )}
                   </div>
                   {msg.role === "user" && (
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-container-high">
@@ -475,19 +540,15 @@ export function ChatClient() {
                   )}
                 </div>
               ))}
-              {isTyping && (
+              {isTyping && currentStreamedResponse.length === 0 && (
                 <div className="flex gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
                     <span className="material-symbols-outlined text-[18px] text-primary">
                       smart_toy
                     </span>
                   </div>
-                  <div className="rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3">
-                    <div className="flex gap-1">
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:300ms]" />
-                    </div>
+                  <div className="animate-pulse rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3 text-sm text-on-surface-variant">
+                    {t("chat.thinking")}
                   </div>
                 </div>
               )}

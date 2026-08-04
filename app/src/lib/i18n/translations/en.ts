@@ -749,6 +749,9 @@ const en: TranslationDictionary = {
   "audit.exporting": "Exporting...",
   "audit.export": "Export CSV (30 days)",
 
+  /* ── chat ───────────────────────────────────────────────── */
+  "chat.thinking": "DocuMind is thinking...",
+
   /* ── notifications ─────────────────────────────────────── */
   "notifications.title": "Notifications",
   "notifications.pageDescription":

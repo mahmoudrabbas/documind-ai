@@ -749,6 +749,9 @@ const ar: TranslationDictionary = {
   "audit.exporting": "جارٍ التصدير...",
   "audit.export": "تصدير CSV (30 يومًا)",
 
+  /* ── chat ───────────────────────────────────────────────── */
+  "chat.thinking": "دوكمايند يفكر...",
+
   /* ── notifications ─────────────────────────────────────── */
   "notifications.title": "الإشعارات",
   "notifications.pageDescription":
