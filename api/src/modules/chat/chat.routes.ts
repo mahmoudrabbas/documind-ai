@@ -190,5 +190,14 @@ export function createChatRoutes(service: ChatService): Router {
     controller.sendMessage,
   );
 
+  router.post(
+    "/stream",
+    authenticate,
+    tenantScoping,
+    requirePermission(Permission.CHAT_CREATE),
+    queryGuard,
+    controller.streamMessage,
+  );
+
   return router;
 }

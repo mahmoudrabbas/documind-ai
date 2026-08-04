@@ -5,6 +5,39 @@ import { UNAUTHORIZED, VALIDATION_ERROR } from "../../common/errors/errorCodes.j
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import type { ChatService } from "./chat.service.js";
+import type { SseSink } from "./chat.types.js";
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  "Connection": "keep-alive",
+  "X-Accel-Buffering": "no",
+} as const;
+
+export function createSseSink(res: Response): {
+  sink: SseSink;
+  isStarted: () => boolean;
+} {
+  let started = false;
+  let ended = false;
+  const sink: SseSink = {
+    start() {
+      if (started) return;
+      started = true;
+      res.writeHead(200, SSE_HEADERS);
+      res.flushHeaders();
+    },
+    event(payload: unknown) {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    },
+    end() {
+      if (ended) return;
+      ended = true;
+      res.end();
+    },
+  };
+  return { sink, isStarted: () => started };
+}
 
 function operationContext(req: Request): OperationAuthorizationContext {
   const actor = requireAuthenticatedAuditActor({
@@ -137,10 +170,61 @@ export function createChatController(service: ChatService) {
     }
   }
 
+  async function streamMessage(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    const { sink, isStarted } = createSseSink(res);
+    const abortController = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded) abortController.abort();
+    };
+    res.on("close", onClose);
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      await service.streamMessage(
+        req.body,
+        context,
+        sink,
+        abortController.signal,
+      );
+    } catch (error) {
+      if (isStarted()) {
+        const payload =
+          error instanceof AppError
+            ? {
+                type: "error",
+                code: error.code,
+                statusCode: error.statusCode,
+                message: error.message,
+              }
+            : {
+                type: "error",
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "Unexpected stream error",
+              };
+        sink.event(payload);
+        sink.end();
+        return;
+      }
+      handleChatError(error, res, next);
+    } finally {
+      res.off("close", onClose);
+    }
+  }
+
   return {
     sendMessage,
     listConversations,
     getConversationMessages,
     deleteConversation,
+    streamMessage,
   };
 }
