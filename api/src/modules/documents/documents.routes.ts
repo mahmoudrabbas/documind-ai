@@ -73,6 +73,188 @@ const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
   failMode: "fail-closed",
 });
 
+/**
+ * @openapi
+ * /documents:
+ *   post:
+ *     summary: Upload document
+ *     description: Uploads a document as multipart/form-data. The file is
+ *       scanned, stored, and queued for extraction, chunking, embedding and
+ *       indexing.
+ *     tags: [Documents]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Document file (PDF, DOCX, etc.)
+ *               title:
+ *                 type: string
+ *                 description: Optional display title for the document
+ *               description:
+ *                 type: string
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       201:
+ *         description: Document uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Document uploaded successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     document:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         fileName:
+ *                           type: string
+ *                         originalFileName:
+ *                           type: string
+ *                         fileSize:
+ *                           type: integer
+ *                         mimeType:
+ *                           type: string
+ *                         status:
+ *                           type: string
+ *                           example: processing
+ *                         searchStatus:
+ *                           type: string
+ *                           example: STALE
+ *                     duplicateWarning:
+ *                       type: object
+ *                       properties:
+ *                         existingDocumentId:
+ *                           type: string
+ *                         existingTitle:
+ *                           type: string
+ *       400:
+ *         description: Validation error or unsupported file type
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions or entitlement limit reached
+ *       413:
+ *         description: File too large
+ *   get:
+ *     summary: List documents
+ *     description: Returns a paginated list of documents for the tenant.
+ *     tags: [Documents]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: pageSize
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by file name
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by processing status
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: classification
+ *         schema:
+ *           type: string
+ *           enum: [public, internal, confidential, restricted, highly_confidential]
+ *       - in: query
+ *         name: isArchived
+ *         schema:
+ *           type: boolean
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *     responses:
+ *       200:
+ *         description: Paginated list of documents
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     documents:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           fileName:
+ *                             type: string
+ *                           fileSize:
+ *                             type: integer
+ *                           mimeType:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           searchStatus:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         pageSize:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         totalRecords:
+ *                           type: integer
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
