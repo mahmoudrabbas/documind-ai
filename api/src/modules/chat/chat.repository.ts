@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import ConversationModel from "../../db/models/conversation.model.js";
 import MessageModel from "../../db/models/message.model.js";
-import type { MessageSource } from "../../db/models/message.model.js";
+import type { MessageAttachment, MessageSource } from "../../db/models/message.model.js";
 import { tenantScopedFindById } from "../../db/repositories/tenantScopedRepository.js";
 
 export async function createConversation(
@@ -25,6 +25,8 @@ export async function addMessage(
   content: string,
   sequenceNumber: number,
   sources?: MessageSource[],
+  attachments?: MessageAttachment[],
+  clientMessageId?: string,
 ) {
   const doc = await MessageModel.create({
     tenantId: new mongoose.Types.ObjectId(tenantId),
@@ -33,6 +35,8 @@ export async function addMessage(
     content,
     sequenceNumber,
     sources: sources ?? [],
+    attachments: attachments ?? [],
+    ...(clientMessageId ? { clientMessageId } : {}),
   });
 
   await ConversationModel.updateOne(
@@ -44,6 +48,61 @@ export async function addMessage(
   ).exec();
 
   return doc;
+}
+
+/**
+ * Finds the first user message carrying a clientMessageId idempotency key in
+ * a conversation, used to de-duplicate retried vision sends.
+ */
+export async function getUserMessageByClientMessageId(
+  tenantId: string,
+  conversationId: string,
+  clientMessageId: string,
+) {
+  return MessageModel.findOne({
+    tenantId,
+    conversationId,
+    role: "user",
+    clientMessageId,
+  })
+    .lean()
+    .exec();
+}
+
+/**
+ * Returns the first assistant message that follows a given user message
+ * (strictly greater sequenceNumber), or null.
+ */
+export async function getAssistantReplyAfter(
+  tenantId: string,
+  conversationId: string,
+  sequenceNumber: number,
+) {
+  return MessageModel.findOne({
+    tenantId,
+    conversationId,
+    role: "assistant",
+    sequenceNumber: { $gt: sequenceNumber },
+  })
+    .sort({ sequenceNumber: 1 })
+    .lean()
+    .exec();
+}
+
+/**
+ * Finds a message carrying an attachment with the given id, scoped to the
+ * tenant. Ownership of the underlying conversation is checked by callers.
+ */
+export async function findMessageByAttachmentId(
+  tenantId: string,
+  attachmentId: string,
+) {
+  return MessageModel.findOne({
+    tenantId,
+    "attachments.id": attachmentId,
+  })
+    .lean()
+    .exec();
 }
 
 export async function getConversationHistory(

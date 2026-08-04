@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
 import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
+import { AssistantMarkdown } from "@/components/domain/AssistantMarkdown";
 import { UpgradePrompt } from "@/components/entitlement/UpgradePrompt";
 import {
   mapEntitlementError,
@@ -11,22 +12,36 @@ import {
 } from "@/lib/entitlement-errors";
 import {
   sendMessage,
+  sendVisionMessage,
+  fetchChatAttachmentUrl,
   listConversations,
   getConversationMessages,
   deleteConversation,
 } from "@/services/chat.service";
-import type { ChatSource, ConversationListItem } from "@/types/api/chat.types";
+import type {
+  ChatAttachment,
+  ChatResponse,
+  ChatSource,
+  ChatVisionResponse,
+  ConversationListItem,
+} from "@/types/api/chat.types";
 import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
+import { previewText } from "./preview-text";
 
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: ChatSource[];
+  attachments?: ChatAttachment[];
+  localAttachmentUrl?: string;
 };
+
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -57,6 +72,54 @@ function resolveDimensionLabel(
     .replace(/^[a-z]/, (c) => c.toUpperCase());
 }
 
+function isVisionResponse(
+  response: ChatResponse | ChatVisionResponse,
+): response is ChatVisionResponse {
+  return "attachment" in response;
+}
+
+function AttachmentThumbnail({
+  attachment,
+  alt,
+}: {
+  attachment: ChatAttachment;
+  alt?: string;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    fetchChatAttachmentUrl(attachment.id)
+      .then((url) => {
+        if (cancelled) return;
+        objectUrl = url;
+        setSrc(url);
+      })
+      .catch(() => {
+        // Silently fail; the bubble still shows the message text.
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment.id]);
+
+  if (!src) {
+    return (
+      <div className="h-28 w-36 animate-pulse rounded-xl bg-on-surface/10" />
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt ?? attachment.fileName}
+      className="h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
+    />
+  );
+}
+
 export function ChatClient() {
   const { t } = useI18n();
   const permissions = usePermissions();
@@ -78,7 +141,11 @@ export function ChatClient() {
     highlightText?: string;
     documentTitle?: string;
   } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const clientMessageIdRef = useRef<string | null>(null);
   const msgIdCounter = useRef(0);
 
   const currentMessages = messages[activeConversation] ?? [];
@@ -131,6 +198,7 @@ export function ChatClient() {
         role: m.role,
         content: m.content,
         sources: m.sources,
+        attachments: m.attachments,
       }));
       setMessages((prev) => ({ ...prev, [conversationId]: mapped }));
     } catch {
@@ -178,15 +246,52 @@ export function ChatClient() {
     }
   }
 
+  function handleSelectImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setError(t("chat.error.unsupportedFileType"));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError(t("chat.error.fileTooLarge"));
+      return;
+    }
+
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    clientMessageIdRef.current =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `cm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setError(null);
+  }
+
+  function handleRemoveImage() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    clientMessageIdRef.current = null;
+  }
+
   async function handleSend(text?: string) {
     const question = (text || input).trim();
     if (!question || isTyping || retryAfterSeconds !== null) return;
 
     const convId = activeConversation;
+    const tempMsgId = `u-${++msgIdCounter.current}`;
     const userMsg: Message = {
-      id: `u-${++msgIdCounter.current}`,
+      id: tempMsgId,
       role: "user",
       content: question,
+      ...(selectedFile
+        ? {
+            localAttachmentUrl: previewUrl ?? undefined,
+          }
+        : {}),
     };
 
     setMessages((prev) => ({
@@ -216,10 +321,20 @@ export function ChatClient() {
     }
 
     try {
-      const response = await sendMessage({
-        message: question,
-        conversationId: convId || undefined,
-      });
+      const clientMessageId = selectedFile
+        ? (clientMessageIdRef.current ?? undefined)
+        : undefined;
+      const response = selectedFile
+        ? await sendVisionMessage({
+            question,
+            conversationId: convId || undefined,
+            clientMessageId,
+            image: selectedFile,
+          })
+        : await sendMessage({
+            message: question,
+            conversationId: convId || undefined,
+          });
 
       const actualConvId = response.conversationId;
       const aiMsg: Message = {
@@ -229,10 +344,22 @@ export function ChatClient() {
         sources: response.sources,
       };
 
+      let resolvedUserMsg: Message = userMsg;
+      if (selectedFile && isVisionResponse(response)) {
+        resolvedUserMsg = {
+          ...userMsg,
+          attachments: [response.attachment],
+          localAttachmentUrl: undefined,
+        };
+      }
+
       // If this was a new conversation, the server created it — update state
       if (!convId) {
         setActiveConversation(actualConvId);
-        setMessages((prev) => ({ ...prev, [actualConvId]: [userMsg, aiMsg] }));
+        setMessages((prev) => ({
+          ...prev,
+          [actualConvId]: [resolvedUserMsg, aiMsg],
+        }));
 
         // Add to sidebar
         setConversations((prev) => [
@@ -248,7 +375,12 @@ export function ChatClient() {
       } else {
         setMessages((prev) => ({
           ...prev,
-          [convId]: [...(prev[convId] ?? []), aiMsg],
+          [convId]: [
+            ...(prev[convId] ?? []).map((m) =>
+              m.id === tempMsgId ? resolvedUserMsg : m,
+            ),
+            aiMsg,
+          ],
         }));
 
         setConversations((prev) =>
@@ -263,6 +395,13 @@ export function ChatClient() {
           ),
         );
       }
+
+      if (selectedFile) {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        clientMessageIdRef.current = null;
+      }
     } catch (err) {
       const denial = mapEntitlementError(err);
       if (denial) {
@@ -272,23 +411,15 @@ export function ChatClient() {
         setEntitlementBanner(denial);
         setRetryAfterSeconds(null);
       } else {
-        const presentation = getChatErrorPresentation(err);
+        // Single retryable error presentation: show one error banner and keep
+        // all prior conversation messages visible. Do not inject an assistant
+        // bubble with the error text, which would duplicate the banner and
+        // look like a model answer.
+        const presentation = getChatErrorPresentation(err, t);
         setError(presentation.message);
         if (presentation.retryAfterSeconds !== null) {
           setRetryAfterSeconds(presentation.retryAfterSeconds);
         }
-        const targetId = convId || activeConversation;
-        setMessages((prev) => ({
-          ...prev,
-          [targetId]: [
-            ...(prev[targetId] ?? []),
-            {
-              id: `e-${++msgIdCounter.current}`,
-              role: "assistant",
-              content: presentation.message,
-            },
-          ],
-        }));
       }
     } finally {
       setIsTyping(false);
@@ -338,7 +469,7 @@ export function ChatClient() {
                   </button>
                 </div>
                 <span className="truncate text-xs text-on-surface-variant">
-                  {conv.lastMessage || "No messages yet"}
+                  {previewText(conv.lastMessage) || "No messages yet"}
                 </span>
                 <span className="text-[11px] text-outline">
                   {formatRelativeTime(conv.updatedAt)}
@@ -419,7 +550,28 @@ export function ChatClient() {
                         : "bg-surface-container border border-outline-variant/30 text-on-surface"
                     }`}
                   >
-                    <p className="whitespace-pre-line">{msg.content}</p>
+                    {msg.role === "user" && msg.localAttachmentUrl && (
+                      <img
+                        src={msg.localAttachmentUrl}
+                        alt={t("chat.attachmentPreview")}
+                        className="mb-2 h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
+                      />
+                    )}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {msg.attachments.map((attachment) => (
+                          <AttachmentThumbnail
+                            key={attachment.id}
+                            attachment={attachment}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {msg.role === "user" ? (
+                      <p className="whitespace-pre-line">{msg.content}</p>
+                    ) : (
+                      <AssistantMarkdown content={msg.content} />
+                    )}
                     {msg.sources && msg.sources.length > 0 && (
                       <div className="mt-3 border-t border-outline-variant/20 pt-2">
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
@@ -548,7 +700,45 @@ export function ChatClient() {
         {/* Input */}
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 sm:px-6 lg:px-10">
           <div className="mx-auto max-w-3xl">
+            {previewUrl && selectedFile && (
+              <div className="mb-2 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pr-3">
+                <img
+                  src={previewUrl}
+                  alt={t("chat.selectedImagePreview")}
+                  className="h-16 w-20 rounded-xl object-cover"
+                />
+                <span className="min-w-0 flex-1 truncate text-xs text-on-surface-variant">
+                  {selectedFile.name}
+                </span>
+                <button
+                  onClick={handleRemoveImage}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                  title={t("chat.removeImage")}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    close
+                  </span>
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-3 rounded-2xl border border-outline-variant/40 bg-surface px-4 py-3 shadow-sm transition-all focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={retryAfterSeconds !== null}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                title={t("chat.attachImage")}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  image
+                </span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handleSelectImage}
+              />
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

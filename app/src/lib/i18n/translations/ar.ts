@@ -773,6 +773,33 @@ const ar: TranslationDictionary = {
   "notifications.category.knowledge": "المعرفة",
   "notifications.category.workflow": "سير العمل",
   "notifications.category.admin": "الإدارة",
+
+  /* ── chat (conversation + image analysis) ────────────────── */
+  "chat.attachImage": "إرفاق صورة لتحليلها",
+  "chat.removeImage": "إزالة الصورة",
+  "chat.attachmentPreview": "معاينة المرفق",
+  "chat.selectedImagePreview": "معاينة الصورة المحددة",
+  "chat.error.rateLimited":
+    "مزوّد الذكاء الاصطناعي محدود مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
+  "chat.error.providerUnavailable":
+    "مزوّد الذكاء الاصطناعي غير متاح مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
+  "chat.error.timedOut":
+    "انتهت مهلة مزوّد الذكاء الاصطناعي. يرجى المحاولة مرة أخرى.",
+  "chat.error.retrievalUnavailable":
+    "البحث في المستندات غير متاح مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
+  "chat.error.visionUnavailable":
+    "تحليل الصور غير متاح مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
+  "chat.error.visionStorageFailed":
+    "تعذّر حفظ الصورة. يرجى المحاولة مرة أخرى.",
+  "chat.error.attachmentNotFound": "المرفق لم يعد متاحًا.",
+  "chat.error.unsupportedFileType": "يُدعم فقط صور JPG و PNG و WebP.",
+  "chat.error.fileTooLarge": "الصورة كبيرة جدًا. الحد الأقصى للحجم 10 ميجابايت.",
+  "chat.error.fileSignatureMismatch":
+    "محتوى الصورة لا يتطابق مع نوع الملف.",
+  "chat.error.fileZeroBytes": "ملف الصورة فارغ.",
+  "chat.error.validation":
+    "يرجى التحقق من سؤالك وصورتك ثم المحاولة مرة أخرى.",
+  "chat.error.generic": "تعذّر الحصول على رد. يرجى المحاولة مرة أخرى.",
 };
 
 export default ar;

@@ -5,6 +5,7 @@ import { UNAUTHORIZED, VALIDATION_ERROR } from "../../common/errors/errorCodes.j
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import type { ChatService } from "./chat.service.js";
+import { ChatAttachmentIdParamSchema } from "./chat.validator.js";
 
 function operationContext(req: Request): OperationAuthorizationContext {
   const actor = requireAuthenticatedAuditActor({
@@ -114,6 +115,64 @@ export function createChatController(service: ChatService) {
     }
   }
 
+  async function sendVisionMessage(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      const file = req.file as Express.Multer.File | undefined;
+      const fileInput = file
+        ? {
+            buffer: file.buffer,
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+          }
+        : undefined;
+
+      const result = await service.sendVisionMessage(req.body, fileInput, context);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
+  async function getAttachment(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      const { attachmentId } = ChatAttachmentIdParamSchema.parse(req.params);
+
+      const result = await service.getAttachment(attachmentId, context);
+
+      res.setHeader("Content-Type", result.contentType);
+      res.setHeader("Content-Length", result.sizeBytes);
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+
+      result.stream.pipe(res);
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
   async function deleteConversation(
     req: Request,
     res: Response,
@@ -139,6 +198,8 @@ export function createChatController(service: ChatService) {
 
   return {
     sendMessage,
+    sendVisionMessage,
+    getAttachment,
     listConversations,
     getConversationMessages,
     deleteConversation,
