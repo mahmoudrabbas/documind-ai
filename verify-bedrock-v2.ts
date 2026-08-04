@@ -1,16 +1,28 @@
 #!/usr/bin/env node
+/* eslint-disable no-console */
 /**
  * Standalone verification script for ITI Student Bedrock Gateway
  * Tests different base URL patterns
  */
 
-const API_KEY = "sbg_igXaDmhwU--PK8nEGI0fjpzjFDpBOZkf";
+interface GatewayTest {
+  name: string;
+  path: string;
+  body: Record<string, unknown>;
+}
+
+const API_KEY = process.env.SBG_API_KEY;
+
+if (!API_KEY) {
+  console.error("❌ SBG_API_KEY is required");
+  process.exit(1);
+}
 const BASE_URLS = [
   "https://apiaccess.iti.net.eg",
   "https://apiaccess.iti.net.eg/api/v1",
 ];
 
-const TESTS = [
+const TESTS: GatewayTest[] = [
   {
     name: "Chat",
     path: "/student/chat",
@@ -42,7 +54,7 @@ const TESTS = [
   }
 ];
 
-async function testUrl(baseUrl: string, test: any): Promise<void> {
+async function testUrl(baseUrl: string, test: GatewayTest): Promise<void> {
   const url = `${baseUrl}${test.path}`;
   const startTime = Date.now();
   
