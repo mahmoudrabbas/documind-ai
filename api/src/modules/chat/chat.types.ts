@@ -59,3 +59,16 @@ export interface ConversationMessagesResponse {
   messages: ConversationMessageDetail[];
   conversationId: string;
 }
+
+/**
+ * Contract for the controller's SSE writer. The service only calls these
+ * methods; it never touches the HTTP response itself.
+ */
+export interface SseSink {
+  /** Write the SSE response headers exactly once. */
+  start(): void;
+  /** Serialize and write a single SSE data frame. */
+  event(payload: unknown): void;
+  /** Terminate the response stream exactly once. */
+  end(): void;
+}
