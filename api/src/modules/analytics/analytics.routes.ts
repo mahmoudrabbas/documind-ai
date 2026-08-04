@@ -24,6 +24,65 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantScoping);
 
+/**
+ * @openapi
+ * /analytics/overview:
+ *   get:
+ *     summary: Dashboard stats
+ *     description: Returns aggregate analytics for the tenant's dashboard,
+ *       including query volumes, document counts, cost, and quality metrics.
+ *       Super admins may pass a tenantId query parameter to view a specific
+ *       tenant, or omit it for a platform-wide view.
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Inclusive start of the analysis window
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Inclusive end of the analysis window
+ *       - in: query
+ *         name: tenantId
+ *         schema:
+ *           type: string
+ *         description: Super admin only - target tenant id
+ *     responses:
+ *       200:
+ *         description: Dashboard overview metrics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     queries:
+ *                       type: object
+ *                     documents:
+ *                       type: object
+ *                     users:
+ *                       type: object
+ *                     cost:
+ *                       type: object
+ *                     quality:
+ *                       type: object
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
 router.get(
   "/overview",
   requirePermission(Permission.ANALYTICS_READ),

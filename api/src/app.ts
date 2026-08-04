@@ -1,5 +1,6 @@
 import express from "express";
 
+import swaggerUi from "swagger-ui-express";
 import cors, { type CorsOptions } from "cors";
 import { resolveCorsOrigin } from "./common/cors/corsOrigins.js";
 import { AppError } from "./common/errors/AppError.js";
@@ -10,6 +11,7 @@ import { requestContextMiddleware } from "./common/middlewares/requestContext.mi
 import { requestLoggerMiddleware } from "./common/middlewares/requestLogger.middleware.js";
 import { validateRequest } from "./common/middlewares/validateRequest.js";
 import { config } from "./config/index.js";
+import { swaggerSpec } from "./config/swagger.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import usersRoutes from "./modules/users/users.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
@@ -130,7 +132,7 @@ app.use((req, res, next) => {
 // ── Maintenance mode guard ───────────────────────────────────────────────
 // Blocks non-admin traffic when maintenanceMode is enabled in Global Settings.
 // Exempts: health probes, webhooks, and Super Admin users.
-const MAINTENANCE_EXEMPT_PREFIXES = ["/healthz", "/readyz", "/webhooks/", "/auth/"];
+const MAINTENANCE_EXEMPT_PREFIXES = ["/healthz", "/readyz", "/webhooks/", "/auth/", "/api-docs"];
 app.use((req, res, next) => {
   const path = req.path;
   if (MAINTENANCE_EXEMPT_PREFIXES.some((p) => path.startsWith(p))) {
@@ -174,6 +176,10 @@ app.use("/feedback", feedbackRoutes);
 app.use("/entitlement", entitlementRoutes);
 app.use("/super-admin/entitlement", entitlementAdminRoutes);
 app.use("/analytics", analyticsRoutes);
+
+// ── API documentation (Swagger UI) ─────────────────────────────────────────
+// Interactive OpenAPI docs generated from JSDoc annotations in module routes.
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ── EntitlementService singleton ─────────────────────────────────────────────
 //
