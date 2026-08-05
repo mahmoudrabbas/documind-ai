@@ -111,6 +111,70 @@ router.get(
   getTopConsumersController
 );
 
+/**
+ * @swagger
+ * /analytics/quality:
+ *   get:
+ *     summary: Get quality metrics (incl. LLM-as-a-Judge aggregates)
+ *     description: >
+ *       Quality metrics for the tenant. `judgeScores` are the average LLM-as-a-Judge
+ *       scores computed from `completed` evaluations only (0-1 each).
+ *       `judgeEvaluatedCount`, `judgeDegradedCount` and `judgeFailedCount` report
+ *       how many evaluations were completed, degraded (malformed output) and failed
+ *       (provider error) respectively.
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Quality metrics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 noEvidenceRate:
+ *                   type: number
+ *                 refusalRate:
+ *                   type: number
+ *                 citationCoverage:
+ *                   type: number
+ *                 citationPrecision:
+ *                   type: number
+ *                 feedbackPositiveRate:
+ *                   type: number
+ *                 retrievalRecall:
+ *                   type: number
+ *                 processingSuccessRate:
+ *                   type: number
+ *                 judgeScores:
+ *                   type: object
+ *                   properties:
+ *                     faithfulness:
+ *                       type: number
+ *                     relevancy:
+ *                       type: number
+ *                     coherence:
+ *                       type: number
+ *                     overall:
+ *                       type: number
+ *                 judgeEvaluatedCount:
+ *                   type: number
+ *                 judgeDegradedCount:
+ *                   type: number
+ *                 judgeFailedCount:
+ *                   type: number
+ *                 totalQueries:
+ *                   type: number
+ *                 totalFeedback:
+ *                   type: number
+ *                 totalProcessingRuns:
+ *                   type: number
+ *       '401':
+ *         description: Authentication required
+ *       '403':
+ *         description: Insufficient permissions
+ */
 router.get(
   "/quality",
   requirePermission(Permission.ANALYTICS_READ),

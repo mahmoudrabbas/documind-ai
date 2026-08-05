@@ -65,6 +65,8 @@ import { initializeIntentQueryService } from "./modules/intent-query/intentQuery
 import { ChatService } from "./modules/chat/chat.service.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter } from "./providers/llm/index.js";
+import { wireFeedbackJudge } from "./modules/feedback/feedback.service.js";
+import { getJudgeEvaluationService } from "./modules/analytics/judgeEvaluation.module.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import knowledgeGapsRoutes from "./modules/knowledge-gaps/knowledge-gaps.routes.js";
 import feedbackRoutes from "./modules/feedback/feedback.routes.js";
@@ -234,6 +236,8 @@ app.use("/retrieval", createRetrievalRoutes(retrievalService));
 
 const chatService = new ChatService(retrievalService, getModelAdapter());
 app.use("/chat", createChatRoutes(chatService));
+
+wireFeedbackJudge(getJudgeEvaluationService());
 
 app.get("/", (_, res) => {
   res.json({ message: "API is running :)" });

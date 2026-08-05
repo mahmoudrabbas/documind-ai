@@ -800,6 +800,44 @@ const ar: TranslationDictionary = {
   "chat.error.validation":
     "يرجى التحقق من سؤالك وصورتك ثم المحاولة مرة أخرى.",
   "chat.error.generic": "تعذّر الحصول على رد. يرجى المحاولة مرة أخرى.",
+
+  /* ── quality panel (analytics) ──────────────────────────── */
+  "qualityPanel.title": "مقاييس جودة الذكاء الاصطناعي والموثوقية",
+  "qualityPanel.emptyTitle": "لا توجد بيانات جودة بعد",
+  "qualityPanel.emptyBody":
+    "ستظهر مقاييس الجودة بعد تسجيل الاستعلامات أو الملاحظات أو عمليات معالجة المستندات.",
+  "qualityPanel.citationCoverage": "تغطية الاستشهادات",
+  "qualityPanel.citationCoverageDesc": "نسبة الردود المدعومة بمصادر موثوقة",
+  "qualityPanel.citationPrecision": "دقة الاستشهادات",
+  "qualityPanel.citationPrecisionDesc": "دقة صلة أجزاء المستندات المُستشهد بها",
+  "qualityPanel.feedbackPositive": "معدل الملاحظات الإيجابية",
+  "qualityPanel.feedbackPositiveDesc": "تقييم رضا المستخدم (إعجاب)",
+  "qualityPanel.processingSuccess": "نجاح معالجة المستندات",
+  "qualityPanel.processingSuccessDesc": "نسبة عمليات استخراج المستندات المكتملة",
+  "qualityPanel.noEvidence": "معدل غياب الأدلة",
+  "qualityPanel.noEvidenceDesc": "الاستعلامات التي تفتقر إلى مستندات ذات صلة (الأقل أفضل)",
+  "qualityPanel.refusal": "معدل رفض الأمان",
+  "qualityPanel.refusalDesc": "الاستعلامات المحجوبة بموجب السياسات / الحواجز الوقائية",
+  "qualityPanel.sample.queries": "استعلام",
+  "qualityPanel.sample.ratings": "تقييم",
+  "qualityPanel.sample.runs": "عملية",
+  "qualityPanel.basedOn": "بناءً على {{count}} {{label}}",
+  "qualityPanel.judgeTitle": "نتائج التقييم بواسطة الذكاء الاصطناعي",
+  "qualityPanel.judgeCounts": "{{evaluated}} مقيَّم · {{degraded}} متدهور · {{failed}} فاشل",
+  "qualityPanel.judgePending": "تقييم آلي لجودة إجابات المساعد",
+  "qualityPanel.judgePendingBody":
+    "ستظهر النتائج بعد تقييم إجابات المساعد. النتائج هي متوسط التقييمات المكتملة فقط.",
+  "qualityPanel.judgeNoCompleted": "لا توجد تقييمات مكتملة بعد",
+  "qualityPanel.judgeNoCompletedBody":
+    "النتائج هي متوسط التقييمات المكتملة فقط. تُستبعد التقييمات المتدهورة والفاشلة.",
+  "qualityPanel.faithfulness": "الدقة الوفية",
+  "qualityPanel.faithfulnessDesc": "الإجابة مستندة إلى الأدلة",
+  "qualityPanel.relevancy": "الملاءمة",
+  "qualityPanel.relevancyDesc": "الإجابة تعالج السؤال",
+  "qualityPanel.coherence": "الترابط",
+  "qualityPanel.coherenceDesc": "الإجابة واضحة ومنسقة جيدًا",
+  "qualityPanel.overall": "الدرجة الكلية",
+  "qualityPanel.overallDesc": "درجة الجودة الموزونة",
 };
 
 export default ar;
