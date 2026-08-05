@@ -1,4 +1,30 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+// Env must be set before any static import: chat.routes.ts → src/config runs
+// parseEnv at module load. vitest runs files sequentially in one worker, so
+// process.env persists across files — the pre-set snapshot is restored in
+// afterAll to keep later db suites on the runner's mongoms MONGODB_URI.
+const envSnapshot = vi.hoisted(() => {
+  const keys = [
+    "NODE_ENV", "PAYMENT_PROVIDER", "MONGODB_URI", "REDIS_URL",
+    "APP_FRONTEND_URL", "JWT_SECRET", "JWT_REFRESH_SECRET",
+    "EMAIL_VERIFICATION_JWT_SECRET", "PASSWORD_RESET_JWT_SECRET",
+    "EMAIL_WEBHOOK_SECRET", "NOTIFICATION_SOCKET_SERVICE_TOKEN",
+  ];
+  const snap = new Map(keys.map((k) => [k, process.env[k]]));
+  process.env.NODE_ENV = "test";
+  process.env.PAYMENT_PROVIDER = "fake";
+  process.env.MONGODB_URI = "mongodb://127.0.0.1:27017/documind-test";
+  process.env.REDIS_URL = "redis://127.0.0.1:6379/1";
+  process.env.APP_FRONTEND_URL = "https://app.test.invalid";
+  process.env.JWT_SECRET = "vitest-only-jwt-secret-0123456789abcdef";
+  process.env.JWT_REFRESH_SECRET = "vitest-only-refresh-secret-0123456789abcdef";
+  process.env.EMAIL_VERIFICATION_JWT_SECRET = "vitest-only-email-verification-secret-0123";
+  process.env.PASSWORD_RESET_JWT_SECRET = "vitest-only-password-reset-secret-012345";
+  process.env.EMAIL_WEBHOOK_SECRET = "vitest-only-email-webhook-secret-01234567";
+  process.env.NOTIFICATION_SOCKET_SERVICE_TOKEN = "vitest-only-notification-socket-token-0123";
+  return snap;
+});
+
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
 import {
@@ -25,6 +51,18 @@ vi.mock("../entitlement/entitlement.service.js", () => ({
     getPeriodReset: mockGetPeriodReset,
   }),
 }));
+
+// Restore the env snapshot before the next vitest file runs in this worker
+// (process.env is shared across files; only module registry is isolated).
+afterAll(() => {
+  for (const [key, value] of envSnapshot) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+});
 
 // ── Shared fakes (plan streaming-sse.md todo 3, line 127) ───────────────────
 

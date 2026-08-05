@@ -4,22 +4,6 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
-    // API modules import src/config (parseEnv at module load), which validates
-    // against NODE_ENV=test and requires a URL MONGODB_URI plus non-default
-    // secrets. Mirrors the test env base used by api/src/config/env.test.ts.
-    env: {
-      NODE_ENV: "test",
-      PAYMENT_PROVIDER: "fake",
-      MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test",
-      REDIS_URL: "redis://127.0.0.1:6379/1",
-      APP_FRONTEND_URL: "https://app.test.invalid",
-      JWT_SECRET: "vitest-only-jwt-secret-0123456789abcdef",
-      JWT_REFRESH_SECRET: "vitest-only-refresh-secret-0123456789abcdef",
-      EMAIL_VERIFICATION_JWT_SECRET: "vitest-only-email-verification-secret-0123",
-      PASSWORD_RESET_JWT_SECRET: "vitest-only-password-reset-secret-012345",
-      EMAIL_WEBHOOK_SECRET: "vitest-only-email-webhook-secret-01234567",
-      NOTIFICATION_SOCKET_SERVICE_TOKEN: "vitest-only-notification-socket-token-0123",
-    },
     // The official API runner provisions one disposable replica-set database.
     // Persistence suites reset shared collections, so files must not run in
     // parallel against that single database.
