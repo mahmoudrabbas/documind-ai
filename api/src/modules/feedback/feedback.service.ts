@@ -1,7 +1,9 @@
 import { MongoAuditWriter } from "../../common/observability/auditWriter.js";
+import { logger } from "../../common/logger/logger.js";
 import { feedbackRepository, FeedbackRepository } from "./feedback.repository.js";
 import { knowledgeGapsService, KnowledgeGapsService } from "../knowledge-gaps/knowledge-gaps.service.js";
 import type { SubmitFeedbackInput, ListFeedbackQueryInput } from "./feedback.dto.js";
+import type { JudgeEvaluationService } from "../analytics/judgeEvaluation.service.js";
 
 const auditWriter = new MongoAuditWriter();
 
@@ -9,7 +11,12 @@ export class FeedbackService {
   constructor(
     private repo: FeedbackRepository = feedbackRepository,
     private gapService: KnowledgeGapsService = knowledgeGapsService,
+    private judge?: Pick<JudgeEvaluationService, "evaluateAsync"> | null,
   ) {}
+
+  setJudge(judge: Pick<JudgeEvaluationService, "evaluateAsync"> | null): void {
+    this.judge = judge;
+  }
 
   async submitFeedback(tenantId: string, userId: string, input: SubmitFeedbackInput) {
     const feedback = await this.repo.upsertFeedback({
@@ -55,6 +62,24 @@ export class FeedbackService {
       }
     }
 
+    // Fire-and-forget LLM-as-a-Judge evaluation of the assistant reply. This
+    // is best-effort and non-blocking: the HTTP response never waits for it
+    // and judge failures are caught inside evaluateAsync.
+    if (this.judge) {
+      void this.judge
+        .evaluateAsync({
+          tenantId,
+          actorId: userId,
+          messageId: input.messageId,
+          conversationId: input.conversationId,
+        })
+        .catch((err) => {
+          // Belt-and-suspenders: evaluateAsync is designed to never reject, but
+          // never let a stray rejection surface as an unhandled rejection.
+          logger.error({ err }, "LLM judge evaluation failed after feedback submission");
+        });
+    }
+
     return feedback;
   }
 
@@ -72,3 +97,12 @@ export class FeedbackService {
 }
 
 export const feedbackService = new FeedbackService();
+
+/**
+ * Wires the LLM-as-a-Judge background evaluation into the feedback flow. Called
+ * from the server entry point so unit tests can construct FeedbackService
+ * without a judge and keep pure unit tests side-effect free.
+ */
+export function wireFeedbackJudge(judge: Pick<JudgeEvaluationService, "evaluateAsync">): void {
+  feedbackService.setJudge(judge);
+}

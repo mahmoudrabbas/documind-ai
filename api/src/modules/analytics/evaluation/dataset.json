@@ -1,0 +1,402 @@
+{
+  "schemaVersion": "1.0.0",
+  "description": "Synthetic evaluation dataset for the LLM-as-a-Judge flow. All content is fictional and generated for testing; it is NOT sourced from real company policies. Each case is self-contained with inline evidence.",
+  "cases": [
+    {
+      "id": "hr-001",
+      "question": "How many days of annual leave do full-time employees get per year?",
+      "evidenceText": "Full-time employees are entitled to 24 days of paid annual leave per calendar year.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-001-c1",
+          "documentId": "doc-annual-leave",
+          "documentTitle": "Annual Leave Policy",
+          "sectionTitle": "Entitlement",
+          "pageNumber": 1,
+          "text": "Full-time employees are entitled to 24 days of paid annual leave per calendar year."
+        }
+      ],
+      "expectedTopics": ["annual leave", "entitlement"],
+      "expectedDocuments": ["Annual Leave Policy"],
+      "groundTruthAnswer": "Full-time employees receive 24 days of paid annual leave per year."
+    },
+    {
+      "id": "hr-002",
+      "question": "Can I carry unused vacation days into the next year?",
+      "evidenceText": "Unused annual leave may be carried over for up to 10 days into the following year; days beyond 10 are forfeited unless a carryover exception is approved by HR.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-002-c1",
+          "documentId": "doc-annual-leave",
+          "documentTitle": "Annual Leave Policy",
+          "sectionTitle": "Carryover",
+          "pageNumber": 2,
+          "text": "Unused annual leave may be carried over for up to 10 days into the following year; days beyond 10 are forfeited unless a carryover exception is approved by HR."
+        }
+      ],
+      "expectedTopics": ["annual leave", "carryover", "vacation"],
+      "expectedDocuments": ["Annual Leave Policy"],
+      "groundTruthAnswer": "Up to 10 unused days can be carried into the next year; more requires an approved HR exception."
+    },
+    {
+      "id": "hr-003",
+      "question": "What is the probation period length for new hires?",
+      "evidenceText": "New hires complete a 90-day probation period during which either party may end the employment relationship with 7 days' notice.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-003-c1",
+          "documentId": "doc-probation",
+          "documentTitle": "Probation Policy",
+          "sectionTitle": "Duration",
+          "pageNumber": 1,
+          "text": "New hires complete a 90-day probation period during which either party may end the employment relationship with 7 days' notice."
+        }
+      ],
+      "expectedTopics": ["probation", "new hire"],
+      "expectedDocuments": ["Probation Policy"],
+      "groundTruthAnswer": "The probation period is 90 days."
+    },
+    {
+      "id": "hr-004",
+      "question": "Are employees allowed to work from home?",
+      "evidenceText": "Employees may request remote work for up to 3 days per week with manager approval. Fully remote arrangements require a signed remote work agreement.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-004-c1",
+          "documentId": "doc-remote-work",
+          "documentTitle": "Remote Work Policy",
+          "sectionTitle": "Remote Arrangements",
+          "pageNumber": 1,
+          "text": "Employees may request remote work for up to 3 days per week with manager approval. Fully remote arrangements require a signed remote work agreement."
+        }
+      ],
+      "expectedTopics": ["remote work", "work from home", "approval"],
+      "expectedDocuments": ["Remote Work Policy"],
+      "groundTruthAnswer": "Up to 3 remote days per week with manager approval; fully remote needs a signed agreement."
+    },
+    {
+      "id": "hr-005",
+      "question": "How do I get reimbursed for work-related travel expenses?",
+      "evidenceText": "Travel expenses such as flights, hotels and meals are reimbursed when accompanied by receipts submitted within 30 days of the trip via the expense portal.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-005-c1",
+          "documentId": "doc-travel-reimbursement",
+          "documentTitle": "Travel & Expense Policy",
+          "sectionTitle": "Reimbursement",
+          "pageNumber": 3,
+          "text": "Travel expenses such as flights, hotels and meals are reimbursed when accompanied by receipts submitted within 30 days of the trip via the expense portal."
+        }
+      ],
+      "expectedTopics": ["expenses", "travel", "reimbursement", "receipts"],
+      "expectedDocuments": ["Travel & Expense Policy"],
+      "groundTruthAnswer": "Submit receipts in the expense portal within 30 days of the trip."
+    },
+    {
+      "id": "hr-006",
+      "question": "How many sick days can I take before I need a doctor's note?",
+      "evidenceText": "Sick leave is 8 days per year. A medical certificate is required from the third consecutive day of absence.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-006-c1",
+          "documentId": "doc-sick-leave",
+          "documentTitle": "Sick Leave Policy",
+          "sectionTitle": "Documentation",
+          "pageNumber": 1,
+          "text": "Sick leave is 8 days per year. A medical certificate is required from the third consecutive day of absence."
+        }
+      ],
+      "expectedTopics": ["sick leave", "medical certificate", "absence"],
+      "expectedDocuments": ["Sick Leave Policy"],
+      "groundTruthAnswer": "8 sick days per year; a doctor's note is required from the third consecutive day."
+    },
+    {
+      "id": "hr-007",
+      "question": "What maternity leave benefits are available?",
+      "evidenceText": "Eligible employees receive 16 weeks of paid maternity leave, which may begin up to 4 weeks before the expected due date.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-007-c1",
+          "documentId": "doc-parental-leave",
+          "documentTitle": "Parental Leave Policy",
+          "sectionTitle": "Maternity",
+          "pageNumber": 2,
+          "text": "Eligible employees receive 16 weeks of paid maternity leave, which may begin up to 4 weeks before the expected due date."
+        }
+      ],
+      "expectedTopics": ["maternity leave", "parental leave"],
+      "expectedDocuments": ["Parental Leave Policy"],
+      "groundTruthAnswer": "16 weeks of paid maternity leave, starting up to 4 weeks before the due date."
+    },
+    {
+      "id": "hr-008",
+      "question": "What is the company's overtime pay rate?",
+      "evidenceText": "Hours worked beyond 44 hours per week are compensated at 1.5x the base hourly rate.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-008-c1",
+          "documentId": "doc-working-hours",
+          "documentTitle": "Working Hours Policy",
+          "sectionTitle": "Overtime",
+          "pageNumber": 1,
+          "text": "Hours worked beyond 44 hours per week are compensated at 1.5x the base hourly rate."
+        }
+      ],
+      "expectedTopics": ["overtime", "pay", "working hours"],
+      "expectedDocuments": ["Working Hours Policy"],
+      "groundTruthAnswer": "Overtime beyond 44 hours per week is paid at 1.5x the base rate."
+    },
+    {
+      "id": "hr-009",
+      "question": "Do we get company holidays off?",
+      "evidenceText": "The company observes 12 paid public holidays per year. Employees who work on a public holiday receive a day in lieu.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-009-c1",
+          "documentId": "doc-holidays",
+          "documentTitle": "Holiday Policy",
+          "sectionTitle": "Public Holidays",
+          "pageNumber": 1,
+          "text": "The company observes 12 paid public holidays per year. Employees who work on a public holiday receive a day in lieu."
+        }
+      ],
+      "expectedTopics": ["holidays", "public holiday", "day in lieu"],
+      "expectedDocuments": ["Holiday Policy"],
+      "groundTruthAnswer": "12 paid public holidays per year; working one earns a day in lieu."
+    },
+    {
+      "id": "hr-010",
+      "question": "How much notice do I need to give when resigning?",
+      "evidenceText": "Employees must give at least 30 days' written notice of resignation. Senior management must give 60 days.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-010-c1",
+          "documentId": "doc-resignation",
+          "documentTitle": "Resignation Policy",
+          "sectionTitle": "Notice Period",
+          "pageNumber": 1,
+          "text": "Employees must give at least 30 days' written notice of resignation. Senior management must give 60 days."
+        }
+      ],
+      "expectedTopics": ["resignation", "notice period"],
+      "expectedDocuments": ["Resignation Policy"],
+      "groundTruthAnswer": "30 days' written notice; 60 days for senior management."
+    },
+    {
+      "id": "hr-011",
+      "question": "Am I entitled to severance pay if my position is eliminated?",
+      "evidenceText": "Employees whose roles are eliminated in a restructuring receive severance of 2 weeks of base pay per completed year of service, capped at 12 weeks.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-011-c1",
+          "documentId": "doc-severance",
+          "documentTitle": "Severance Policy",
+          "sectionTitle": "Restructuring",
+          "pageNumber": 2,
+          "text": "Employees whose roles are eliminated in a restructuring receive severance of 2 weeks of base pay per completed year of service, capped at 12 weeks."
+        }
+      ],
+      "expectedTopics": ["severance", "layoff", "restructuring"],
+      "expectedDocuments": ["Severance Policy"],
+      "groundTruthAnswer": "2 weeks of base pay per completed year of service, capped at 12 weeks."
+    },
+    {
+      "id": "hr-012",
+      "question": "How much are meal allowances for offsite business meetings?",
+      "evidenceText": "Meal expenses for approved offsite business meetings are reimbursed up to $35 per person per meal.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-012-c1",
+          "documentId": "doc-travel-reimbursement",
+          "documentTitle": "Travel & Expense Policy",
+          "sectionTitle": "Meals",
+          "pageNumber": 4,
+          "text": "Meal expenses for approved offsite business meetings are reimbursed up to $35 per person per meal."
+        }
+      ],
+      "expectedTopics": ["meal allowance", "expenses", "reimbursement"],
+      "expectedDocuments": ["Travel & Expense Policy"],
+      "groundTruthAnswer": "Up to $35 per person per meal for approved offsite meetings."
+    },
+    {
+      "id": "hr-013",
+      "question": "What happens during a disciplinary review?",
+      "evidenceText": "A disciplinary review involves a written warning, a meeting with the employee and their manager, and a documented improvement plan.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-013-c1",
+          "documentId": "doc-discipline",
+          "documentTitle": "Disciplinary Policy",
+          "sectionTitle": "Review Process",
+          "pageNumber": 1,
+          "text": "A disciplinary review involves a written warning, a meeting with the employee and their manager, and a documented improvement plan."
+        }
+      ],
+      "expectedTopics": ["disciplinary", "warning", "improvement plan"],
+      "expectedDocuments": ["Disciplinary Policy"],
+      "groundTruthAnswer": "A written warning, a meeting with the manager, and a documented improvement plan."
+    },
+    {
+      "id": "hr-014",
+      "question": "Can I borrow company equipment for personal use?",
+      "evidenceText": "Company equipment may be used for limited personal use when it does not affect performance, but must remain on premises unless approved for off-site work.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-014-c1",
+          "documentId": "doc-equipment",
+          "documentTitle": "Equipment Policy",
+          "sectionTitle": "Personal Use",
+          "pageNumber": 1,
+          "text": "Company equipment may be used for limited personal use when it does not affect performance, but must remain on premises unless approved for off-site work."
+        }
+      ],
+      "expectedTopics": ["equipment", "personal use", "company property"],
+      "expectedDocuments": ["Equipment Policy"],
+      "groundTruthAnswer": "Limited personal use is allowed if it does not affect performance; equipment stays on premises unless approved for off-site work."
+    },
+    {
+      "id": "hr-015",
+      "question": "Is there a training budget available?",
+      "evidenceText": "Each employee receives an annual professional development budget of $1,500 for approved courses, certifications and conferences.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-015-c1",
+          "documentId": "doc-training",
+          "documentTitle": "Training & Development Policy",
+          "sectionTitle": "Budget",
+          "pageNumber": 1,
+          "text": "Each employee receives an annual professional development budget of $1,500 for approved courses, certifications and conferences."
+        }
+      ],
+      "expectedTopics": ["training", "professional development", "budget"],
+      "expectedDocuments": ["Training & Development Policy"],
+      "groundTruthAnswer": "An annual $1,500 professional development budget for approved activities."
+    },
+    {
+      "id": "hr-016",
+      "question": "How often are performance reviews conducted?",
+      "evidenceText": "Performance reviews are conducted twice per year, with a mid-year check-in and a full annual review.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-016-c1",
+          "documentId": "doc-performance",
+          "documentTitle": "Performance Review Policy",
+          "sectionTitle": "Cadence",
+          "pageNumber": 1,
+          "text": "Performance reviews are conducted twice per year, with a mid-year check-in and a full annual review."
+        }
+      ],
+      "expectedTopics": ["performance review", "appraisal", "check-in"],
+      "expectedDocuments": ["Performance Review Policy"],
+      "groundTruthAnswer": "Twice per year: a mid-year check-in and a full annual review."
+    },
+    {
+      "id": "hr-017",
+      "question": "What insurance benefits do employees receive?",
+      "evidenceText": "Employees receive medical, dental and vision insurance, plus life insurance of 2x annual salary.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-017-c1",
+          "documentId": "doc-benefits",
+          "documentTitle": "Benefits Policy",
+          "sectionTitle": "Coverage",
+          "pageNumber": 1,
+          "text": "Employees receive medical, dental and vision insurance, plus life insurance of 2x annual salary."
+        }
+      ],
+      "expectedTopics": ["benefits", "insurance", "medical", "dental"],
+      "expectedDocuments": ["Benefits Policy"],
+      "groundTruthAnswer": "Medical, dental and vision insurance plus life insurance of 2x annual salary."
+    },
+    {
+      "id": "hr-018",
+      "question": "What is the standard weekly working schedule?",
+      "evidenceText": "The standard work week is 40 hours across five days, with core hours between 9:00 AM and 3:00 PM.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-018-c1",
+          "documentId": "doc-working-hours",
+          "documentTitle": "Working Hours Policy",
+          "sectionTitle": "Standard Schedule",
+          "pageNumber": 1,
+          "text": "The standard work week is 40 hours across five days, with core hours between 9:00 AM and 3:00 PM."
+        }
+      ],
+      "expectedTopics": ["working hours", "schedule", "core hours"],
+      "expectedDocuments": ["Working Hours Policy"],
+      "groundTruthAnswer": "40 hours across five days with core hours 9:00 AM to 3:00 PM."
+    },
+    {
+      "id": "hr-019",
+      "question": "Can employees choose their own work equipment?",
+      "evidenceText": "Employees may choose from an approved equipment catalogue; items outside the catalogue require IT approval.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-019-c1",
+          "documentId": "doc-equipment",
+          "documentTitle": "Equipment Policy",
+          "sectionTitle": "Selection",
+          "pageNumber": 2,
+          "text": "Employees may choose from an approved equipment catalogue; items outside the catalogue require IT approval."
+        }
+      ],
+      "expectedTopics": ["equipment", "catalogue", "IT approval"],
+      "expectedDocuments": ["Equipment Policy"],
+      "groundTruthAnswer": "Yes, from the approved catalogue; other items need IT approval."
+    },
+    {
+      "id": "hr-020",
+      "question": "What is the retirement plan and contribution match?",
+      "evidenceText": "The company offers a 401(k)-style retirement plan with a 100% match on contributions up to 4% of salary.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-020-c1",
+          "documentId": "doc-benefits",
+          "documentTitle": "Benefits Policy",
+          "sectionTitle": "Retirement",
+          "pageNumber": 2,
+          "text": "The company offers a 401(k)-style retirement plan with a 100% match on contributions up to 4% of salary."
+        }
+      ],
+      "expectedTopics": ["retirement", "401k", "match", "contributions"],
+      "expectedDocuments": ["Benefits Policy"],
+      "groundTruthAnswer": "100% match on contributions up to 4% of salary."
+    },
+    {
+      "id": "hr-021",
+      "question": "What should I do if I disagree with my performance rating?",
+      "evidenceText": "Employees may submit a written appeal within 10 working days of receiving their rating. A panel of two senior managers reviews the appeal.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-021-c1",
+          "documentId": "doc-performance",
+          "documentTitle": "Performance Review Policy",
+          "sectionTitle": "Appeals",
+          "pageNumber": 3,
+          "text": "Employees may submit a written appeal within 10 working days of receiving their rating. A panel of two senior managers reviews the appeal."
+        }
+      ],
+      "expectedTopics": ["performance review", "appeal", "rating"],
+      "expectedDocuments": ["Performance Review Policy"],
+      "groundTruthAnswer": "Submit a written appeal within 10 working days; a two-senior-manager panel reviews it."
+    },
+    {
+      "id": "hr-022",
+      "question": "Do part-time employees get pro-rated annual leave?",
+      "evidenceText": "Part-time employees receive annual leave pro-rated to their contracted hours, calculated on a 24-day full-time equivalent basis.",
+      "evidenceChunks": [
+        {
+          "chunkId": "hr-022-c1",
+          "documentId": "doc-annual-leave",
+          "documentTitle": "Annual Leave Policy",
+          "sectionTitle": "Part-time Entitlement",
+          "pageNumber": 3,
+          "text": "Part-time employees receive annual leave pro-rated to their contracted hours, calculated on a 24-day full-time equivalent basis."
+        }
+      ],
+      "expectedTopics": ["annual leave", "part-time", "pro-rated"],
+      "expectedDocuments": ["Annual Leave Policy"],
+      "groundTruthAnswer": "Yes, pro-rated to contracted hours from a 24-day full-time equivalent."
+    }
+  ]
+}

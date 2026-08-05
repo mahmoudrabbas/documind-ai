@@ -1,5 +1,12 @@
 import mongoose, { Schema } from "mongoose";
 
+export interface QualityMetricJudgeScores {
+  faithfulness: number;
+  relevancy: number;
+  coherence: number;
+  overall: number;
+}
+
 export interface QualityMetricDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   date: string;
@@ -11,6 +18,14 @@ export interface QualityMetricDocument extends mongoose.Document {
   feedbackPositiveRate: number;
   retrievalRecall: number;
   processingSuccessRate: number;
+  /**
+   * LLM-as-a-Judge aggregate averages. Computed from `completed` evaluations
+   * only; degraded and failed fallback scores never pollute these averages.
+   */
+  judgeScores: QualityMetricJudgeScores;
+  judgeEvaluatedCount: number;
+  judgeDegradedCount: number;
+  judgeFailedCount: number;
   calculatedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -59,6 +74,24 @@ const qualityMetricSchema = new Schema<QualityMetricDocument>(
       default: 0,
     },
     processingSuccessRate: {
+      type: Number,
+      default: 0,
+    },
+    judgeScores: {
+      faithfulness: { type: Number, default: 0 },
+      relevancy: { type: Number, default: 0 },
+      coherence: { type: Number, default: 0 },
+      overall: { type: Number, default: 0 },
+    },
+    judgeEvaluatedCount: {
+      type: Number,
+      default: 0,
+    },
+    judgeDegradedCount: {
+      type: Number,
+      default: 0,
+    },
+    judgeFailedCount: {
       type: Number,
       default: 0,
     },

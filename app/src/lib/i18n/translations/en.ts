@@ -799,6 +799,44 @@ const en: TranslationDictionary = {
   "chat.error.validation":
     "Please check your question and image and try again.",
   "chat.error.generic": "Failed to get a response. Please try again.",
+
+  /* ── quality panel (analytics) ──────────────────────────── */
+  "qualityPanel.title": "AI Quality & Reliability Metrics",
+  "qualityPanel.emptyTitle": "No quality data yet",
+  "qualityPanel.emptyBody":
+    "Quality metrics will appear once queries, feedback, or document processing runs are recorded.",
+  "qualityPanel.citationCoverage": "Citation Coverage",
+  "qualityPanel.citationCoverageDesc": "% of responses with verified source evidence",
+  "qualityPanel.citationPrecision": "Citation Precision",
+  "qualityPanel.citationPrecisionDesc": "Relevance accuracy of cited document chunks",
+  "qualityPanel.feedbackPositive": "Positive Feedback Rate",
+  "qualityPanel.feedbackPositiveDesc": "User satisfaction rating (thumbs up)",
+  "qualityPanel.processingSuccess": "Document Processing Success",
+  "qualityPanel.processingSuccessDesc": "% of document extraction runs completed",
+  "qualityPanel.noEvidence": "No-Evidence Rate",
+  "qualityPanel.noEvidenceDesc": "Queries lacking relevant documentation (lower is better)",
+  "qualityPanel.refusal": "Safety Refusal Rate",
+  "qualityPanel.refusalDesc": "Queries blocked by policy / guardrails",
+  "qualityPanel.sample.queries": "queries",
+  "qualityPanel.sample.ratings": "ratings",
+  "qualityPanel.sample.runs": "runs",
+  "qualityPanel.basedOn": "Based on {{count}} {{label}}",
+  "qualityPanel.judgeTitle": "LLM-as-a-Judge Scores",
+  "qualityPanel.judgeCounts": "{{evaluated}} evaluated · {{degraded}} degraded · {{failed}} failed",
+  "qualityPanel.judgePending": "Automated quality evaluation of assistant answers",
+  "qualityPanel.judgePendingBody":
+    "Judge scores appear once assistant answers are evaluated. Scores are the average of completed evaluations only.",
+  "qualityPanel.judgeNoCompleted": "No completed evaluations yet",
+  "qualityPanel.judgeNoCompletedBody":
+    "Scores are the average of completed evaluations only. Degraded and failed evaluations are excluded.",
+  "qualityPanel.faithfulness": "Faithfulness",
+  "qualityPanel.faithfulnessDesc": "Answer is grounded in the evidence",
+  "qualityPanel.relevancy": "Relevancy",
+  "qualityPanel.relevancyDesc": "Answer addresses the question",
+  "qualityPanel.coherence": "Coherence",
+  "qualityPanel.coherenceDesc": "Answer is clear and well-structured",
+  "qualityPanel.overall": "Overall",
+  "qualityPanel.overallDesc": "Weighted quality score",
 };
 
 export default en;
