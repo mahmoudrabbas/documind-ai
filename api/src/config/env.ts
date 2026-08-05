@@ -157,6 +157,11 @@ const envSchema = z
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv",
       ),
 
+    VISION_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+    VISION_ALLOWED_MIME_TYPES: z
+      .string()
+      .default("image/jpeg,image/png,image/webp"),
+
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     LOG_PRETTY: z
       .string()
@@ -183,6 +188,7 @@ const envSchema = z
 
     GROQ_API_KEY: z.string().default(""),
     GROQ_CHAT_MODEL: z.string().default("llama-3.3-70b-versatile"),
+    GROQ_VISION_MODEL: z.string().default("qwen/qwen3.6-27b"),
 
     JINA_API_KEY: z.string().default(""),
     JINA_EMBEDDING_MODEL: z.string().default("jina-embeddings-v3"),

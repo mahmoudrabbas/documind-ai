@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable no-console */
 /**
  * Standalone verification script for ITI Student Bedrock Gateway
  * Tests: chat, embeddings, image generation
@@ -7,7 +8,9 @@
  *   SBG_API_KEY=your_key SBG_BASE_URL=https://apiaccess.iti.net.eg npx tsx verify-bedrock.ts
  */
 
-import { createHash } from "node:crypto";
+interface GatewayRequestBody extends Record<string, unknown> {
+  model_id?: string;
+}
 
 const API_KEY = process.env.SBG_API_KEY;
 const BASE_URL = process.env.SBG_BASE_URL;
@@ -22,7 +25,7 @@ if (!API_KEY || !BASE_URL) {
 // Ensure base URL doesn't have trailing slash
 const baseUrl = BASE_URL.replace(/\/+$/, "");
 
-async function makeRequest(endpoint: string, body: any, description: string): Promise<void> {
+async function makeRequest(endpoint: string, body: GatewayRequestBody, description: string): Promise<void> {
   const url = `${baseUrl}/api/v1/student${endpoint}`;
   const startTime = Date.now();
   

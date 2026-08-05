@@ -11,12 +11,31 @@ export interface MessageSource {
   score: number;
 }
 
+/**
+ * Attachment metadata persisted on user messages for the vision flow.
+ * `storageKey` is internal (tenant-scoped object key) and must never be
+ * exposed to clients; `id` is the public reference used to fetch the image.
+ */
+export interface MessageAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageKey: string;
+}
+
 export interface MessageDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   conversationId: mongoose.Types.ObjectId;
   role: MessageRole;
   content: string;
   sources: MessageSource[];
+  attachments: MessageAttachment[];
+  /**
+   * Client-generated idempotency key. When present, a retried vision send
+   * with the same key returns the existing exchange instead of duplicating it.
+   */
+  clientMessageId?: string;
   sequenceNumber: number;
   createdAt: Date;
   updatedAt: Date;
@@ -30,6 +49,17 @@ const messageSourceSchema = new Schema<MessageSource>(
     sectionTitle: { type: String },
     pageNumber: { type: Number },
     score: { type: Number, required: true },
+  },
+  { _id: false },
+);
+
+const messageAttachmentSchema = new Schema<MessageAttachment>(
+  {
+    id: { type: String, required: true },
+    fileName: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    sizeBytes: { type: Number, required: true },
+    storageKey: { type: String, required: true },
   },
   { _id: false },
 );
@@ -59,6 +89,13 @@ const messageSchema = new Schema<MessageDocument>(
     sources: {
       type: [messageSourceSchema],
       default: [],
+    },
+    attachments: {
+      type: [messageAttachmentSchema],
+      default: [],
+    },
+    clientMessageId: {
+      type: String,
     },
     sequenceNumber: {
       type: Number,

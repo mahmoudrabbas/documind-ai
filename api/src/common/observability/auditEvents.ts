@@ -175,6 +175,10 @@ export type AuditAction =
   // Retrieval
   | "RETRIEVAL_SEARCH"
   | "RETRIEVAL_DENIAL"
+  // Chat Vision
+  | "CHAT_VISION_UPLOADED"
+  | "CHAT_VISION_ANALYSIS"
+  | "CHAT_ATTACHMENT_ACCESSED"
   // Entitlement & Quota
   | "QUOTA_DENIED"
   | "QUOTA_OVERRIDE"
@@ -225,6 +229,7 @@ export type AuditResourceType =
   | "Permission"
   | "IntentQuery"
   | "Retrieval"
+  | "ChatMessage"
   | "IndexGeneration"
   | "DocumentChunk"
   | "ChunkEmbedding"

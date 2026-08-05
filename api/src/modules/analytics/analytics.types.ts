@@ -60,6 +60,13 @@ export interface TopConsumerItem {
   costUsd: number;
 }
 
+export interface QualityJudgeScores {
+  faithfulness: number;
+  relevancy: number;
+  coherence: number;
+  overall: number;
+}
+
 export interface QualityOverviewMetrics {
   noEvidenceRate: number;
   refusalRate: number;
@@ -68,6 +75,10 @@ export interface QualityOverviewMetrics {
   feedbackPositiveRate: number;
   retrievalRecall: number;
   processingSuccessRate: number;
+  judgeScores: QualityJudgeScores;
+  judgeEvaluatedCount: number;
+  judgeDegradedCount: number;
+  judgeFailedCount: number;
   totalQueries: number;
   totalFeedback: number;
   totalProcessingRuns: number;

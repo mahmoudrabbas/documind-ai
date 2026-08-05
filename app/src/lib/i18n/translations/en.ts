@@ -773,6 +773,70 @@ const en: TranslationDictionary = {
   "notifications.category.knowledge": "Knowledge",
   "notifications.category.workflow": "Workflow",
   "notifications.category.admin": "Admin",
+
+  /* ── chat (conversation + image analysis) ────────────────── */
+  "chat.attachImage": "Attach an image to analyze",
+  "chat.removeImage": "Remove image",
+  "chat.attachmentPreview": "Attachment preview",
+  "chat.selectedImagePreview": "Selected image preview",
+  "chat.error.rateLimited":
+    "The AI provider is temporarily rate-limited. Please try again shortly.",
+  "chat.error.providerUnavailable":
+    "The AI provider is temporarily unavailable. Please try again shortly.",
+  "chat.error.timedOut": "The AI provider timed out. Please try again.",
+  "chat.error.retrievalUnavailable":
+    "Document search is temporarily unavailable. Please try again shortly.",
+  "chat.error.visionUnavailable":
+    "Image analysis is temporarily unavailable. Please try again shortly.",
+  "chat.error.visionStorageFailed":
+    "Failed to save the image. Please try again.",
+  "chat.error.attachmentNotFound": "The attachment is no longer available.",
+  "chat.error.unsupportedFileType": "Only JPG, PNG and WebP images are supported.",
+  "chat.error.fileTooLarge": "The image is too large. Maximum size is 10 MB.",
+  "chat.error.fileSignatureMismatch":
+    "The image content does not match its file type.",
+  "chat.error.fileZeroBytes": "The image file is empty.",
+  "chat.error.validation":
+    "Please check your question and image and try again.",
+  "chat.error.generic": "Failed to get a response. Please try again.",
+
+  /* ── quality panel (analytics) ──────────────────────────── */
+  "qualityPanel.title": "AI Quality & Reliability Metrics",
+  "qualityPanel.emptyTitle": "No quality data yet",
+  "qualityPanel.emptyBody":
+    "Quality metrics will appear once queries, feedback, or document processing runs are recorded.",
+  "qualityPanel.citationCoverage": "Citation Coverage",
+  "qualityPanel.citationCoverageDesc": "% of responses with verified source evidence",
+  "qualityPanel.citationPrecision": "Citation Precision",
+  "qualityPanel.citationPrecisionDesc": "Relevance accuracy of cited document chunks",
+  "qualityPanel.feedbackPositive": "Positive Feedback Rate",
+  "qualityPanel.feedbackPositiveDesc": "User satisfaction rating (thumbs up)",
+  "qualityPanel.processingSuccess": "Document Processing Success",
+  "qualityPanel.processingSuccessDesc": "% of document extraction runs completed",
+  "qualityPanel.noEvidence": "No-Evidence Rate",
+  "qualityPanel.noEvidenceDesc": "Queries lacking relevant documentation (lower is better)",
+  "qualityPanel.refusal": "Safety Refusal Rate",
+  "qualityPanel.refusalDesc": "Queries blocked by policy / guardrails",
+  "qualityPanel.sample.queries": "queries",
+  "qualityPanel.sample.ratings": "ratings",
+  "qualityPanel.sample.runs": "runs",
+  "qualityPanel.basedOn": "Based on {{count}} {{label}}",
+  "qualityPanel.judgeTitle": "LLM-as-a-Judge Scores",
+  "qualityPanel.judgeCounts": "{{evaluated}} evaluated · {{degraded}} degraded · {{failed}} failed",
+  "qualityPanel.judgePending": "Automated quality evaluation of assistant answers",
+  "qualityPanel.judgePendingBody":
+    "Judge scores appear once assistant answers are evaluated. Scores are the average of completed evaluations only.",
+  "qualityPanel.judgeNoCompleted": "No completed evaluations yet",
+  "qualityPanel.judgeNoCompletedBody":
+    "Scores are the average of completed evaluations only. Degraded and failed evaluations are excluded.",
+  "qualityPanel.faithfulness": "Faithfulness",
+  "qualityPanel.faithfulnessDesc": "Answer is grounded in the evidence",
+  "qualityPanel.relevancy": "Relevancy",
+  "qualityPanel.relevancyDesc": "Answer addresses the question",
+  "qualityPanel.coherence": "Coherence",
+  "qualityPanel.coherenceDesc": "Answer is clear and well-structured",
+  "qualityPanel.overall": "Overall",
+  "qualityPanel.overallDesc": "Weighted quality score",
 };
 
 export default en;

@@ -1,6 +1,14 @@
 import mongoose from "mongoose";
+import { randomUUID } from "node:crypto";
+import type { Readable } from "node:stream";
 import { AppError } from "../../common/errors/AppError.js";
-import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
+import {
+  ATTACHMENT_NOT_FOUND,
+  LLM_PROVIDER_UNAVAILABLE,
+  VALIDATION_ERROR,
+  VISION_STORAGE_FAILED,
+  VISION_UNAVAILABLE,
+} from "../../common/errors/errorCodes.js";
 import { logger } from "../../common/logger/logger.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import {
@@ -14,9 +22,12 @@ import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
 import { getTenantSettings } from "../settings/settings.service.js";
 import DocumentModel from "../../db/models/document.model.js";
+import type { MessageAttachment } from "../../db/models/message.model.js";
 import type {
+  ChatAttachment,
   ChatSource,
   ChatResponse,
+  ChatVisionResponse,
   ConversationListItem,
   ConversationMessageDetail,
   ConversationListResponse,
@@ -26,9 +37,22 @@ import {
   ChatSendBodySchema,
   type ChatSendBody,
   ChatListConversationsQuerySchema,
+  ChatVisionBodySchema,
+  type ChatVisionBody,
 } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
 import { mapLlmProviderError } from "../../providers/llm/providerError.js";
+import {
+  sanitizeAssistantOutput,
+  hasUnclosedReasoningBlock,
+} from "../../providers/llm/outputSanitizer.js";
+import {
+  getVisionAdapter,
+  type VisionAdapter,
+} from "../../providers/llm/visionAdapter.js";
+import { storageProvider } from "../../providers/storage/index.js";
+import type { StorageProvider } from "../../providers/storage/types.js";
+import { validateVisionFile } from "./chat.vision.js";
 import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
 import { CostService } from "../analytics/cost.service.js";
 import { getLangfuse } from "../../providers/observability/langfuse.js";
@@ -93,7 +117,13 @@ export function insufficientAuthorizedEvidenceResponse(
 export function safeHistoryForRag(messages: Array<{ role: string; content: string; sources: unknown[] }>): Array<{ role: "user" | "assistant"; content: string }> {
   return messages
     .filter((message) => message.role !== "assistant" || message.sources.length === 0)
-    .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
+    .map((message) => ({
+      role: message.role as "user" | "assistant",
+      content:
+        message.role === "assistant"
+          ? sanitizeAssistantOutput(message.content)
+          : message.content,
+    }));
 }
 
 export function asRetrievalUnavailable(error: unknown): AppError {
@@ -103,10 +133,23 @@ export function asRetrievalUnavailable(error: unknown): AppError {
   return new AppError(503, "RETRIEVAL_UNAVAILABLE", "Retrieval infrastructure is unavailable");
 }
 
+export function toPublicAttachment(
+  attachment: MessageAttachment,
+): ChatAttachment {
+  return {
+    id: attachment.id,
+    fileName: attachment.fileName,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes,
+  };
+}
+
 export class ChatService {
   constructor(
     private readonly retrievalService: HybridRetrievalService,
     private readonly modelAdapter: ModelAdapter,
+    private readonly visionAdapter?: VisionAdapter,
+    private readonly storage?: StorageProvider,
   ) {}
 
   async sendMessage(
@@ -416,7 +459,16 @@ export class ChatService {
       throw mapped;
     }
 
-    const answer = response.choices[0]?.message?.content ?? "";
+    const answer = sanitizeAssistantOutput(
+      response.choices[0]?.message?.content ?? "",
+    );
+    if (!answer) {
+      throw new AppError(
+        502,
+        LLM_PROVIDER_UNAVAILABLE,
+        "The assistant produced no usable answer. Please try again.",
+      );
+    }
     const latencyMs = Date.now() - start;
     trace?.update({
       metadata: { outcome: "SUCCESS", latencyMs },
@@ -539,6 +591,330 @@ export class ChatService {
     };
   }
 
+  /**
+   * Sends a user question with an image attachment to the vision adapter,
+   * persisting the image (tenant-scoped) and the exchange to history.
+   * A retry with the same `clientMessageId` returns the existing exchange
+   * instead of analyzing the image again.
+   */
+  async sendVisionMessage(
+    rawBody: unknown,
+    file: { buffer: Buffer; originalname: string; mimetype: string } | undefined,
+    context: OperationAuthorizationContext,
+  ): Promise<ChatVisionResponse> {
+    const start = Date.now();
+    if (!file) {
+      throw new AppError(400, VALIDATION_ERROR, "An image file is required");
+    }
+    const body = this.validateVisionBody(rawBody);
+
+    // 1. Authorize tenant
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE);
+    const tenantIdStr = actor.tenantId.toString();
+    const userIdStr = actor.actorId.toString();
+
+    const visionAdapter = this.visionAdapter ?? getVisionAdapter();
+    const storage = this.storage ?? storageProvider;
+
+    // 2. Validate the image (type allowlist, size limit, magic bytes)
+    const { mimeType, sizeBytes } = validateVisionFile(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+    );
+
+    // 3. Create or verify conversation
+    let conversationId = body.conversationId;
+    if (!conversationId) {
+      const title =
+        body.question.length > 120
+          ? body.question.slice(0, 117) + "..."
+          : body.question;
+      const conv = await chatRepo.createConversation(
+        tenantIdStr,
+        userIdStr,
+        title,
+      );
+      conversationId = conv._id.toString();
+    } else {
+      const existing = await chatRepo.getConversationById(
+        tenantIdStr,
+        conversationId,
+      );
+      if (!existing || existing.userId.toString() !== userIdStr) {
+        throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+      }
+    }
+
+    // 4. De-duplicate retries: same clientMessageId returns the prior exchange
+    if (body.clientMessageId) {
+      const prior = await chatRepo.getUserMessageByClientMessageId(
+        tenantIdStr,
+        conversationId,
+        body.clientMessageId,
+      );
+      if (prior && prior.attachments && prior.attachments.length > 0) {
+        const assistantReply = await chatRepo.getAssistantReplyAfter(
+          tenantIdStr,
+          conversationId,
+          prior.sequenceNumber,
+        );
+        if (assistantReply) {
+          logger.info(
+            { tenantId: tenantIdStr, clientMessageId: body.clientMessageId },
+            "Vision send retried with same clientMessageId, returning existing exchange",
+          );
+          return {
+            messageId: assistantReply._id.toString(),
+            answer: sanitizeAssistantOutput(assistantReply.content),
+            conversationId,
+            attachment: toPublicAttachment(prior.attachments[0]),
+          };
+        }
+      }
+    }
+
+    // 5. Persist the image via the tenant-scoped storage provider
+    let storageKey: string;
+    try {
+      storageKey = await storage.saveFile(
+        file.buffer,
+        file.originalname,
+        tenantIdStr,
+      );
+    } catch (err) {
+      logger.error(
+        { err, tenantId: tenantIdStr },
+        "Failed to store chat image attachment",
+      );
+      throw new AppError(
+        503,
+        VISION_STORAGE_FAILED,
+        "Failed to store the uploaded image. Please try again.",
+      );
+    }
+
+    const attachment: MessageAttachment = {
+      id: randomUUID(),
+      fileName: file.originalname,
+      mimeType,
+      sizeBytes,
+      storageKey,
+    };
+
+    // 6. Save the user message (with attachment metadata, never raw bytes)
+    const currentCount = await chatRepo.countMessages(
+      tenantIdStr,
+      conversationId,
+    );
+    const userMsg = await chatRepo.addMessage(
+      tenantIdStr,
+      conversationId,
+      "user",
+      body.question,
+      currentCount,
+      [],
+      [attachment],
+      body.clientMessageId,
+    );
+
+    await getAuditWriter().write({
+      action: "CHAT_VISION_UPLOADED",
+      resourceType: "ChatMessage",
+      resourceId: userMsg._id.toString(),
+      outcome: "SUCCESS",
+      tenantId: tenantIdStr,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      metadata: {
+        conversationId,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        latencyMs: Date.now() - start,
+      },
+    });
+
+    // 7. Analyze the image
+    const imageBase64 = file.buffer.toString("base64");
+
+    // One provider attempt that returns only the sanitized final answer, or an
+    // empty string when the provider returned no usable final answer (e.g.
+    // only a <think>/<analysis> reasoning block). Provider hard failures are
+    // surfaced as a controlled VISION_UNAVAILABLE error.
+    const analyzeAttempt = async (): Promise<string> => {
+      try {
+        const raw = await visionAdapter.analyzeImage(
+          imageBase64,
+          body.question,
+          mimeType,
+        );
+        if (!raw || raw.trim() === "") return "";
+        // An unclosed reasoning block has no reliable boundary, so never
+        // surface any prefix of it; trigger the caller's bounded retry.
+        if (hasUnclosedReasoningBlock(raw)) return "";
+        // Strip any leaked chain-of-thought before the answer is persisted,
+        // returned, or previewed.
+        return sanitizeAssistantOutput(raw);
+      } catch (error) {
+        await getAuditWriter().write({
+          action: "CHAT_VISION_ANALYSIS",
+          resourceType: "ChatMessage",
+          resourceId: userMsg._id.toString(),
+          outcome: "FAILURE",
+          tenantId: tenantIdStr,
+          actorId: actor.actorId,
+          actorEmail: actor.actorEmail,
+          actorRole: actor.actorRole,
+          metadata: {
+            conversationId,
+            provider: visionAdapter.providerKey,
+            model: visionAdapter.model,
+            latencyMs: Date.now() - start,
+          },
+        });
+        logger.warn(
+          { err: error, tenantId: tenantIdStr, provider: visionAdapter.providerKey },
+          "Vision analysis unavailable",
+        );
+        throw new AppError(
+          502,
+          VISION_UNAVAILABLE,
+          "Image analysis is temporarily unavailable. Please try again.",
+        );
+      }
+    };
+
+    let answer = await analyzeAttempt();
+    if (!answer) {
+      // Bounded retry (at most once): the provider succeeded but returned no
+      // usable final answer, so ask again with the same validated image and
+      // question. The system instruction demands a final-answer-only reply in
+      // the user's language, which also covers non-Latin scripts. This creates
+      // no new user message, image upload, assistant message, or audit event.
+      logger.warn(
+        { tenantId: tenantIdStr, provider: visionAdapter.providerKey },
+        "Vision analysis returned no usable answer, retrying once",
+      );
+      answer = await analyzeAttempt();
+      if (!answer) {
+        throw new AppError(
+          502,
+          VISION_UNAVAILABLE,
+          "Image analysis returned no usable answer. Please try again.",
+        );
+      }
+    }
+
+    // 8. Save the assistant reply
+    const assistantDoc = await chatRepo.addMessage(
+      tenantIdStr,
+      conversationId,
+      "assistant",
+      answer,
+      currentCount + 1,
+    );
+
+    await getAuditWriter().write({
+      action: "CHAT_VISION_ANALYSIS",
+      resourceType: "ChatMessage",
+      resourceId: userMsg._id.toString(),
+      outcome: "SUCCESS",
+      tenantId: tenantIdStr,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      metadata: {
+        conversationId,
+        assistantMessageId: assistantDoc._id.toString(),
+        provider: visionAdapter.providerKey,
+        model: visionAdapter.model,
+        latencyMs: Date.now() - start,
+      },
+    });
+
+    return {
+      messageId: assistantDoc._id.toString(),
+      answer,
+      conversationId,
+      attachment: toPublicAttachment(attachment),
+    };
+  }
+
+  /**
+   * Streams an image attachment after verifying the attachment belongs to a
+   * conversation owned by the requesting user within the same tenant.
+   */
+  async getAttachment(
+    attachmentId: string,
+    context: OperationAuthorizationContext,
+  ): Promise<{
+    stream: Readable;
+    contentType: string;
+    fileName: string;
+    sizeBytes: number;
+  }> {
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ);
+    const tenantIdStr = actor.tenantId.toString();
+    const userIdStr = actor.actorId.toString();
+
+    const message = await chatRepo.findMessageByAttachmentId(
+      tenantIdStr,
+      attachmentId,
+    );
+    const attachment = message?.attachments?.find(
+      (a) => a.id === attachmentId,
+    );
+
+    if (!message || !attachment) {
+      throw new AppError(404, ATTACHMENT_NOT_FOUND, "Attachment not found");
+    }
+
+    const conversation = await chatRepo.getConversationById(
+      tenantIdStr,
+      message.conversationId.toString(),
+    );
+    if (!conversation || conversation.userId.toString() !== userIdStr) {
+      throw new AppError(404, ATTACHMENT_NOT_FOUND, "Attachment not found");
+    }
+
+    const storage = this.storage ?? storageProvider;
+    let stream: Readable;
+    try {
+      stream = await storage.getFileStream(attachment.storageKey);
+    } catch (err) {
+      logger.warn(
+        { err, tenantId: tenantIdStr, attachmentId },
+        "Failed to open chat attachment stream",
+      );
+      throw new AppError(404, ATTACHMENT_NOT_FOUND, "Attachment not found");
+    }
+
+    await getAuditWriter().write({
+      action: "CHAT_ATTACHMENT_ACCESSED",
+      resourceType: "ChatMessage",
+      resourceId: message._id.toString(),
+      outcome: "SUCCESS",
+      tenantId: tenantIdStr,
+      actorId: actor.actorId,
+      actorEmail: actor.actorEmail,
+      actorRole: actor.actorRole,
+      metadata: {
+        conversationId: message.conversationId.toString(),
+        attachmentId,
+        fileName: attachment.fileName,
+      },
+    });
+
+    return {
+      stream,
+      contentType: attachment.mimeType,
+      fileName: attachment.fileName,
+      sizeBytes: attachment.sizeBytes,
+    };
+  }
+
   async listConversations(
     rawQuery: unknown,
     context: OperationAuthorizationContext,
@@ -568,7 +944,11 @@ export class ChatService {
       const msgs = await chatRepo.getConversationHistory(tenantIdStr, conv.id, 1);
       if (msgs.length > 0) {
         const last = msgs[msgs.length - 1];
-        conv.lastMessage = last.content.slice(0, 100);
+        const preview =
+          last.role === "assistant"
+            ? sanitizeAssistantOutput(last.content)
+            : last.content;
+        conv.lastMessage = preview.slice(0, 100);
       }
     }
 
@@ -598,8 +978,13 @@ export class ChatService {
     const messages: ConversationMessageDetail[] = dbMessages.map((m) => ({
       id: m._id.toString(),
       role: m.role as "user" | "assistant",
-      content: m.content,
+      content:
+        m.role === "assistant" ? sanitizeAssistantOutput(m.content) : m.content,
       sources: m.sources?.length > 0 ? m.sources : undefined,
+      attachments:
+        m.attachments && m.attachments.length > 0
+          ? m.attachments.map(toPublicAttachment)
+          : undefined,
       createdAt: m.createdAt.toISOString(),
     }));
 
@@ -627,6 +1012,20 @@ export class ChatService {
 
   private validateInput(raw: unknown): ChatSendBody {
     const result = ChatSendBodySchema.safeParse(raw);
+    if (!result.success) {
+      throw new AppError(
+        400,
+        VALIDATION_ERROR,
+        "Validation failed: " +
+          result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", "),
+        result.error.issues,
+      );
+    }
+    return result.data;
+  }
+
+  private validateVisionBody(raw: unknown): ChatVisionBody {
+    const result = ChatVisionBodySchema.safeParse(raw);
     if (!result.success) {
       throw new AppError(
         400,

@@ -1,6 +1,7 @@
 import { apiClient } from "@/lib/api-client";
 import type {
   ChatResponse,
+  ChatVisionResponse,
   ConversationListResponse,
   ConversationMessagesResponse,
 } from "@/types/api/chat.types";
@@ -20,6 +21,55 @@ export async function sendMessage(input: ChatSendRequest): Promise<ChatResponse>
   });
 
   return response.data;
+}
+
+export interface ChatVisionSendRequest {
+  question: string;
+  conversationId?: string;
+  clientMessageId?: string;
+  image: File;
+}
+
+export async function sendVisionMessage(
+  input: ChatVisionSendRequest,
+): Promise<ChatVisionResponse> {
+  const formData = new FormData();
+  formData.append("image", input.image);
+  formData.append("question", input.question);
+  if (input.conversationId) {
+    formData.append("conversationId", input.conversationId);
+  }
+  if (input.clientMessageId) {
+    formData.append("clientMessageId", input.clientMessageId);
+  }
+
+  const response = await apiClient<{
+    success: boolean;
+    data: ChatVisionResponse;
+  }>("/chat/vision", {
+    method: "POST",
+    body: formData,
+  });
+
+  return response.data;
+}
+
+/** Fetches a chat attachment image over an authenticated blob URL. */
+export async function fetchChatAttachmentUrl(
+  attachmentId: string,
+): Promise<string> {
+  const token = (await import("@/lib/auth-tokens")).getAccessToken();
+  const baseUrl = (await import("@/constants/api")).API_BASE_URL;
+  const response = await fetch(`${baseUrl}/chat/attachments/${attachmentId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load attachment");
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }
 
 export async function listConversations(
