@@ -17,6 +17,7 @@ import { setNotificationCreatePort } from "./modules/notifications/outbox/notifi
 import { createSocketServer } from "./modules/notifications/socket/notificationSocketServer.js";
 import SubscriptionModel from "./db/models/subscription.model.js";
 import { inspectSubscriptionIndexInvariant } from "./db/subscription-index-invariant.js";
+import { shutdownLangfuse } from "./providers/observability/langfuse.js";
 
 dotenv.config();
 
@@ -137,7 +138,7 @@ async function gracefulShutdown(signal: string) {
   notificationSocketServer.close();
   logger.info("Notification socket server closed");
 
-  await Promise.allSettled([disconnectRedis(), disconnectDB()]);
+  await Promise.allSettled([disconnectRedis(), disconnectDB(), shutdownLangfuse()]);
 
   process.exit(0);
 }

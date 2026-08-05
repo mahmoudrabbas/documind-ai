@@ -198,6 +198,10 @@ const envSchema = z
     BEDROCK_EMBEDDING_MODELS: z.string().default("amazon.titan-embed-text-v2:0,us.cohere.embed-v4:0"),
     BEDROCK_IMAGE_MODEL: z.string().default("amazon.nova-canvas-v1:0"),
     BEDROCK_AUDIO_MODEL: z.string().default("amazon.nova-sonic-v1:0"),
+
+    LANGFUSE_SECRET_KEY: z.string().default(""),
+    LANGFUSE_PUBLIC_KEY: z.string().default(""),
+    LANGFUSE_BASE_URL: z.string().default("https://cloud.langfuse.com"),
   })
   .superRefine((env, context) => {
     const controlledEnvironment = env.NODE_ENV === "production" || env.NODE_ENV === "test";
