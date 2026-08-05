@@ -136,7 +136,6 @@ export class ChatService {
       sources,
       messages,
       tenantIdStr,
-      userIdStr,
       actor,
     } = prep;
 
@@ -553,7 +552,6 @@ export class ChatService {
       sources,
       messages,
       tenantIdStr,
-      userIdStr,
       actor,
     } = prep;
 
