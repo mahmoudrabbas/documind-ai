@@ -773,6 +773,32 @@ const en: TranslationDictionary = {
   "notifications.category.knowledge": "Knowledge",
   "notifications.category.workflow": "Workflow",
   "notifications.category.admin": "Admin",
+
+  /* ── chat (conversation + image analysis) ────────────────── */
+  "chat.attachImage": "Attach an image to analyze",
+  "chat.removeImage": "Remove image",
+  "chat.attachmentPreview": "Attachment preview",
+  "chat.selectedImagePreview": "Selected image preview",
+  "chat.error.rateLimited":
+    "The AI provider is temporarily rate-limited. Please try again shortly.",
+  "chat.error.providerUnavailable":
+    "The AI provider is temporarily unavailable. Please try again shortly.",
+  "chat.error.timedOut": "The AI provider timed out. Please try again.",
+  "chat.error.retrievalUnavailable":
+    "Document search is temporarily unavailable. Please try again shortly.",
+  "chat.error.visionUnavailable":
+    "Image analysis is temporarily unavailable. Please try again shortly.",
+  "chat.error.visionStorageFailed":
+    "Failed to save the image. Please try again.",
+  "chat.error.attachmentNotFound": "The attachment is no longer available.",
+  "chat.error.unsupportedFileType": "Only JPG, PNG and WebP images are supported.",
+  "chat.error.fileTooLarge": "The image is too large. Maximum size is 10 MB.",
+  "chat.error.fileSignatureMismatch":
+    "The image content does not match its file type.",
+  "chat.error.fileZeroBytes": "The image file is empty.",
+  "chat.error.validation":
+    "Please check your question and image and try again.",
+  "chat.error.generic": "Failed to get a response. Please try again.",
 };
 
 export default en;

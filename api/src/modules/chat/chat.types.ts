@@ -8,6 +8,17 @@ export interface ChatSource {
   documentTitle?: string;
 }
 
+/**
+ * Public attachment metadata returned to clients. `id` is used to fetch the
+ * image via GET /chat/attachments/:id. `storageKey` is never exposed.
+ */
+export interface ChatAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface ChatResponse {
   messageId: string;
   answer: string;
@@ -18,6 +29,11 @@ export interface ChatResponse {
    */
   sources?: ChatSource[];
   conversationId: string;
+}
+
+export interface ChatVisionResponse extends ChatResponse {
+  /** Metadata for the analyzed image so the client can render it from history. */
+  attachment: ChatAttachment;
 }
 
 export interface ChatHistoryMessage {
@@ -45,6 +61,8 @@ export interface ConversationMessageDetail {
     pageNumber?: number;
     score: number;
   }>;
+  /** Present only on user messages that carry an image attachment. */
+  attachments?: ChatAttachment[];
   createdAt: string;
 }
 

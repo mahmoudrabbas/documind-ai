@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { ApiError } from "@/lib/api-client";
+import { t as translateKey } from "@/lib/i18n/i18n.utils";
+import en from "@/lib/i18n/translations/en";
 import { getChatErrorPresentation } from "./chat-error";
+
+const translate = (key: string) => translateKey(en, key);
 
 describe("chat provider error presentation", () => {
   it("shows a recoverable rate-limit state with retry delay", () => {
@@ -10,7 +14,7 @@ describe("chat provider error presentation", () => {
       code: "LLM_RATE_LIMITED",
       message: "safe API message",
       retryAfterSeconds: 37,
-    }));
+    }), translate);
     expect(presentation).toEqual({
       message: "The AI provider is temporarily rate-limited. Please try again shortly.",
       retryAfterSeconds: 37,
@@ -22,7 +26,7 @@ describe("chat provider error presentation", () => {
     ["LLM_TIMEOUT", "The AI provider timed out. Please try again."],
     ["RETRIEVAL_UNAVAILABLE", "Document search is temporarily unavailable. Please try again shortly."],
   ])("distinguishes %s", (code, message) => {
-    expect(getChatErrorPresentation(new ApiError({ status: 503, code, message: "ignored" }))).toEqual({
+    expect(getChatErrorPresentation(new ApiError({ status: 503, code, message: "ignored" }), translate)).toEqual({
       message,
       retryAfterSeconds: null,
     });
@@ -32,7 +36,7 @@ describe("chat provider error presentation", () => {
     const presentation = getChatErrorPresentation(new ApiError({
       status: 500,
       message: "secret provider quota org_123",
-    }));
+    }), translate);
     expect(presentation.message).not.toContain("org_123");
   });
 

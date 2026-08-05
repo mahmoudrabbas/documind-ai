@@ -8,11 +8,22 @@ export interface ChatSource {
   documentTitle?: string;
 }
 
+export interface ChatAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface ChatResponse {
   messageId: string;
   answer: string;
   sources?: ChatSource[];
   conversationId: string;
+}
+
+export interface ChatVisionResponse extends ChatResponse {
+  attachment: ChatAttachment;
 }
 
 export interface ChatHistoryMessage {
@@ -40,6 +51,7 @@ export interface ConversationMessageDetail {
     pageNumber?: number;
     score: number;
   }>;
+  attachments?: ChatAttachment[];
   createdAt: string;
 }
 

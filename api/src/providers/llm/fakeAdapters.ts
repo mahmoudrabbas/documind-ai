@@ -1,4 +1,5 @@
 import type { EmbeddingAdapter, ModelAdapter, ModelCompletionResponse } from "../../modules/agents/agents.types.js";
+import type { VisionAdapter } from "./visionAdapter.js";
 
 export class FakeModelAdapter implements ModelAdapter {
   readonly providerKey = "fake";
@@ -150,5 +151,30 @@ export class FakeEmbeddingAdapter implements EmbeddingAdapter {
       vectors,
       usage: { totalTokens: params.inputs.join(" ").length },
     };
+  }
+}
+
+/**
+ * Deterministic vision adapter for development/test. Simulates a provider
+ * failure when the question requests it so failure paths stay testable
+ * without a network dependency.
+ */
+export class FakeVisionAdapter implements VisionAdapter {
+  readonly providerKey = "fake";
+  readonly model = "fake-vision";
+
+  async analyzeImage(
+    imageBase64: string,
+    question: string,
+    _mimeType?: string,
+  ): Promise<string> {
+    if (/fail|error/i.test(question)) {
+      throw new Error("Simulated vision provider failure");
+    }
+    return `[fake-vision] Analyzed image (${imageBase64.length} base64 chars) for question: "${question}".`;
+  }
+
+  async describeDocument(imageBase64: string): Promise<string> {
+    return `[fake-vision] Extracted text placeholder from document image (${imageBase64.length} base64 chars).`;
   }
 }

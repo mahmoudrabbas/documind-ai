@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
@@ -7,6 +8,10 @@ import { createChatController } from "./chat.controller.js";
 import type { ChatService } from "./chat.service.js";
 import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import {
+  getVisionMaxFileSizeBytes,
+  isAllowedVisionMimeType,
+} from "./chat.vision.js";
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
@@ -16,6 +21,23 @@ const queryGuard = createEntitlementGuard(svc, {
   dimension: "queriesPerMonth",
   amount: 1,
   failMode: "fail-closed",
+});
+
+const visionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: getVisionMaxFileSizeBytes() },
+  fileFilter: (_req, file, callback) => {
+    if (isAllowedVisionMimeType(file.mimetype)) {
+      callback(null, true);
+    } else {
+      callback(
+        Object.assign(
+          new Error(`File type ${file.mimetype} is not supported`),
+          { code: "UNSUPPORTED_FILE_TYPE" },
+        ) as Error & { code: string },
+      );
+    }
+  },
 });
 
 export function createChatRoutes(service: ChatService): Router {
@@ -188,6 +210,131 @@ export function createChatRoutes(service: ChatService): Router {
     requirePermission(Permission.CHAT_CREATE),
     queryGuard,
     controller.sendMessage,
+  );
+
+  /**
+   * @openapi
+   * /chat/vision:
+   *   post:
+   *     summary: Analyze an image with a question
+   *     description: Uploads an image (JPG, PNG or WebP, max 10MB) along with
+   *       a question and returns the AI's text analysis of the image. The
+   *       image and the exchange are persisted to conversation history.
+   *       Supports retries via an optional clientMessageId idempotency key.
+   *     tags: [Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             required: [image, question]
+   *             properties:
+   *               image:
+   *                 type: string
+   *                 format: binary
+   *                 description: Image file (image/jpeg, image/png or image/webp)
+   *               question:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 2000
+   *                 description: The question about the image
+   *               conversationId:
+   *                 type: string
+   *                 description: Existing conversation to continue, or omitted to start a new one
+   *               clientMessageId:
+   *                 type: string
+   *                 description: Client-generated idempotency key for safe retries
+   *     responses:
+   *       200:
+   *         description: AI text analysis of the image
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     messageId:
+   *                       type: string
+   *                     answer:
+   *                       type: string
+   *                     conversationId:
+   *                       type: string
+   *                     attachment:
+   *                       type: object
+   *                       properties:
+   *                         id:
+   *                           type: string
+   *                         fileName:
+   *                           type: string
+   *                         mimeType:
+   *                           type: string
+   *                         sizeBytes:
+   *                           type: integer
+   *       400:
+   *         description: Validation failed or unsupported file type/size
+   *       401:
+   *         description: Authentication required
+   *       403:
+   *         description: Insufficient permissions or entitlement limit reached
+   *       502:
+   *         description: Vision provider unavailable
+   */
+  router.post(
+    "/vision",
+    authenticate,
+    tenantScoping,
+    requirePermission(Permission.CHAT_CREATE),
+    queryGuard,
+    visionUpload.single("image"),
+    controller.sendVisionMessage,
+  );
+
+  /**
+   * @openapi
+   * /chat/attachments/{attachmentId}:
+   *   get:
+   *     summary: Fetch a chat image attachment
+   *     description: Returns the stored image bytes for an attachment in a
+   *       conversation owned by the authenticated user. The response is an
+   *       inline image stream with no-store caching.
+   *     tags: [Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: attachmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Image stream
+   *         content:
+   *           image/*:
+   *             schema:
+   *               type: string
+   *               format: binary
+   *       401:
+   *         description: Authentication required
+   *       403:
+   *         description: Insufficient permissions
+   *       404:
+   *         description: Attachment not found
+   */
+  router.get(
+    "/attachments/:attachmentId",
+    authenticate,
+    tenantScoping,
+    requirePermission(Permission.CHAT_READ),
+    controller.getAttachment,
   );
 
   return router;
