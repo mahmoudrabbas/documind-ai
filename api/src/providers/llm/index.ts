@@ -1,17 +1,19 @@
 import type { ModelAdapter } from "../../modules/agents/agents.types.js";
 import { FakeModelAdapter } from "./fakeAdapters.js";
+import { FallbackModelAdapter } from "./fallbackAdapter.js";
+import { GroqChatAdapter } from "./groqChat.adapter.js";
+import { createStudentBedrockProvider } from "../bedrock/index.js";
 
 let singleton: ModelAdapter | null = null;
 
 /**
  * Returns the configured model adapter singleton.
- * In development/test, uses FakeModelAdapter.
- * Set AI_PROVIDER=student-bedrock and SBG_API_KEY to use the Student Bedrock Gateway.
+ * Builds the provider fallback chain: Groq → Bedrock → Fake (graceful
+ * degradation). Set GROQ_API_KEY and/or SBG_API_KEY to enable real providers.
  */
 export function getModelAdapter(): ModelAdapter {
   if (singleton) return singleton;
-  const adapter = createModelAdapterSync();
-  singleton = adapter;
+  singleton = buildModelAdapterChain();
   return singleton;
 }
 
@@ -19,41 +21,40 @@ export function setModelAdapter(adapter: ModelAdapter | null): void {
   singleton = adapter;
 }
 
-function createModelAdapterSync(): ModelAdapter {
-  const aiProvider = process.env.AI_PROVIDER || "fake";
-
-  if (aiProvider === "student-bedrock") {
-    // Placeholder - will be replaced by async initialization
-    return new FakeModelAdapter();
-  }
-
-  return new FakeModelAdapter();
-}
-
-// Async version for proper initialization
+// Async version kept for callers that may await provider initialization.
 export async function getModelAdapterAsync(): Promise<ModelAdapter> {
   if (singleton) return singleton;
-  singleton = await createModelAdapter();
+  singleton = buildModelAdapterChain();
   return singleton;
 }
 
-async function createModelAdapter(): Promise<ModelAdapter> {
-  const aiProvider = process.env.AI_PROVIDER || "fake";
+/**
+ * Builds the fallback chain in priority order:
+ *  1. Groq (primary) when GROQ_API_KEY is set
+ *  2. Bedrock (secondary) when SBG_API_KEY is set
+ *  3. FakeModelAdapter (graceful degradation) as the terminal adapter
+ * When only one adapter is configured it is returned unwrapped.
+ */
+function buildModelAdapterChain(): ModelAdapter {
+  const adapters: ModelAdapter[] = [];
 
-  if (aiProvider === "student-bedrock") {
-    const { createStudentBedrockProvider } = await import("../bedrock/index.js");
-    return createStudentBedrockProvider();
+  if (process.env.GROQ_API_KEY) {
+    adapters.push(
+      new GroqChatAdapter(
+        process.env.GROQ_API_KEY,
+        process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+      ),
+    );
   }
 
-  if (aiProvider === "groq") {
-    const { GroqChatAdapter } = await import("./groqChat.adapter.js");
-    const apiKey = process.env.GROQ_API_KEY;
-    const model = process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile";
-    if (!apiKey) throw new Error("GROQ_API_KEY is required for groq provider");
-    return new GroqChatAdapter(apiKey, model);
+  if (process.env.SBG_API_KEY) {
+    adapters.push(createStudentBedrockProvider());
   }
 
-  return new FakeModelAdapter();
+  adapters.push(new FakeModelAdapter());
+
+  if (adapters.length === 1) return adapters[0];
+  return new FallbackModelAdapter(adapters);
 }
 
 export type { ModelAdapter } from "../../modules/agents/agents.types.js";
