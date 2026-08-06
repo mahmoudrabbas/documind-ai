@@ -64,7 +64,7 @@ import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
 import { initializeIntentQueryService } from "./modules/intent-query/intentQuery.factory.js";
 import { ChatService } from "./modules/chat/chat.service.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
-import { getModelAdapter } from "./providers/llm/index.js";
+import { getModelAdapter, getModelAdapterAsync } from "./providers/llm/index.js";
 import { wireFeedbackJudge } from "./modules/feedback/feedback.service.js";
 import { getJudgeEvaluationService } from "./modules/analytics/judgeEvaluation.module.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
@@ -118,6 +118,26 @@ app.get("/healthz", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+/**
+ * LLM provider health probe — reports whether the fallback chain can produce
+ * a completion. Returns 200 with the active provider when healthy, 503 when
+ * every provider in the chain is down.
+ */
+app.get("/health/llm", async (_req, res) => {
+  let adapter: Awaited<ReturnType<typeof getModelAdapterAsync>> | null = null;
+  try {
+    adapter = await getModelAdapterAsync();
+    await adapter.complete({
+      messages: [{ role: "user", content: "ping" }],
+      maxTokens: 1,
+      temperature: 0,
+    });
+    res.status(200).json({ status: "ok", provider: adapter.providerKey });
+  } catch {
+    res.status(503).json({ status: "degraded", provider: adapter?.providerKey ?? "unknown" });
+  }
+});
+
 app.use(cors(corsOptions));
 
 // Stripe webhook raw body MUST be parsed before express.json() consumes the stream.
@@ -134,7 +154,7 @@ app.use((req, res, next) => {
 // ── Maintenance mode guard ───────────────────────────────────────────────
 // Blocks non-admin traffic when maintenanceMode is enabled in Global Settings.
 // Exempts: health probes, webhooks, and Super Admin users.
-const MAINTENANCE_EXEMPT_PREFIXES = ["/healthz", "/readyz", "/webhooks/", "/auth/", "/api-docs"];
+const MAINTENANCE_EXEMPT_PREFIXES = ["/healthz", "/readyz", "/health", "/webhooks/", "/auth/", "/api-docs"];
 app.use((req, res, next) => {
   const path = req.path;
   if (MAINTENANCE_EXEMPT_PREFIXES.some((p) => path.startsWith(p))) {

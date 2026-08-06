@@ -29,26 +29,16 @@ let _instance: IntentQueryService = createIntentQueryService();
 
 /**
  * Called during app startup to swap in the real model adapter.
- * Uses the async LLM provider which respects AI_PROVIDER env var.
- * Also swaps in the real MongoDB conversation context adapter.
+ * Uses the async LLM provider which builds the fallback chain
+ * (Groq → Bedrock → Fake). Also swaps in the real MongoDB conversation
+ * context adapter.
  */
 export async function initializeIntentQueryService(): Promise<void> {
-  const { setModelAdapter } = await import("../../providers/llm/index.js");
-  const aiProvider = process.env.AI_PROVIDER || "fake";
-  let modelAdapter;
-  if (aiProvider === "student-bedrock") {
-    const { createStudentBedrockProvider } = await import("../../providers/bedrock/index.js");
-    modelAdapter = createStudentBedrockProvider();
-  } else if (aiProvider === "groq") {
-    const { GroqChatAdapter } = await import("../../providers/llm/groqChat.adapter.js");
-    modelAdapter = new GroqChatAdapter(process.env.GROQ_API_KEY || "", process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile");
-  } else {
-    const { FakeModelAdapter } = await import("../../providers/llm/fakeAdapters.js");
-    modelAdapter = new FakeModelAdapter();
-  }
+  const { getModelAdapterAsync, setModelAdapter } = await import("../../providers/llm/index.js");
+  const modelAdapter = await getModelAdapterAsync();
   setModelAdapter(modelAdapter);
   _instance = new IntentQueryService(modelAdapter, mongoConversationContextAdapter);
-  logger.info(`IntentQueryService initialized with model: ${aiProvider}, conversation context: MongoDB`);
+  logger.info(`IntentQueryService initialized with model: ${modelAdapter.providerKey}, conversation context: MongoDB`);
 }
 
 /**
