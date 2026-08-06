@@ -44,6 +44,9 @@ export interface SupervisorStepDraft {
 export interface SupervisorStepPatch {
   status: StepStatus;
   output?: Record<string, unknown> | null;
+  modelProvider?: string | null;
+  modelName?: string | null;
+  promptVersion?: string | null;
   tokensUsed?: number;
   estimatedCost?: number;
   latencyMs?: number;

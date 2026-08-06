@@ -211,7 +211,7 @@ export async function createStep(input: {
   return serializeStep(step);
 }
 
-export async function completeStep(tenantId: string, stepId: string, patch: Partial<{ status: string; output: Record<string, unknown> | null; tokensUsed: number; estimatedCost: number; latencyMs: number; error: Record<string, unknown> | null; toolCallsCount: number; approvalsCount: number; handoffToAgent: string | null; previousAgent: string | null; guardrails: StepRecord["guardrails"] }>): Promise<StepRecord | null> {
+export async function completeStep(tenantId: string, stepId: string, patch: Partial<{ status: string; output: Record<string, unknown> | null; modelProvider: string | null; modelName: string | null; promptVersion: string | null; tokensUsed: number; estimatedCost: number; latencyMs: number; error: Record<string, unknown> | null; toolCallsCount: number; approvalsCount: number; handoffToAgent: string | null; previousAgent: string | null; guardrails: StepRecord["guardrails"] }>): Promise<StepRecord | null> {
   const set: Record<string, unknown> = { ...patch };
   if (set.estimatedCost !== undefined && typeof set.estimatedCost === "number") {
     set.estimatedCost = new mongoose.Types.Decimal128(String(set.estimatedCost));

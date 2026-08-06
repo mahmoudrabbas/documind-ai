@@ -1,5 +1,6 @@
 import { AppError } from "../../common/errors/AppError.js";
 import { AGENT_EXECUTOR_NOT_FOUND, AGENT_HANDOFF_INVALID, AGENT_PROVIDER_ERROR, SUPERVISOR_DECISION_INVALID } from "../../common/errors/errorCodes.js";
+import type { AgentResultMetadata } from "./agentContract.js";
 import { AgentExecutorRegistry } from "./agentExecutorRegistry.js";
 import { normalizeAgentExecutionContext, type AgentExecutionContext, type AgentExecutionContextInput } from "./agentExecutionContext.js";
 import type { AgentRunContext } from "./agentRunContext.js";
@@ -10,7 +11,7 @@ import { validateAgentHandoff } from "./handoff.js";
 import { parseSupervisorDecision, supervisorDecisionCurrentAgent, type SupervisorDecision, type SupervisorDecisionAction } from "./supervisorDecision.js";
 import { AgentBudgetTracker, MAX_STEP_TOKENS, normalizeBudgetLimits, resolveAgentBudget, type AgentBudget, type BudgetLimits } from "./supervisorBudgets.js";
 import { createDefaultSupervisorGuardrails, OutputSchemaGuardrail, SupervisorGuardrailEvaluator, type SupervisorGuardrail, type SupervisorGuardrailContext, type SupervisorGuardrailOutcome } from "./supervisorGuardrails.js";
-import type { SupervisorPersistence } from "./supervisorPersistence.js";
+import type { SupervisorPersistence, SupervisorStepPatch } from "./supervisorPersistence.js";
 import { ToolRegistry } from "./toolRegistry.js";
 
 /**
@@ -508,6 +509,22 @@ export class SupervisorRuntime {
       );
       tracker.assertWithinDeadline();
 
+      // Trace the executor's observed LLM usage into run totals and the step
+      // record. The executor reports metadata only; prompts, raw provider
+      // output, and chain-of-thought are never part of the result.
+      if (executorResult.metadata) {
+        if (typeof executorResult.metadata.tokensUsed === "number") {
+          state.totalTokensUsed += executorResult.metadata.tokensUsed;
+        }
+        if (typeof executorResult.metadata.estimatedCost === "number") {
+          state.estimatedCost += executorResult.metadata.estimatedCost;
+        }
+      }
+      const tracingPatch = this.stepTracingPatch(
+        executorResult.metadata,
+        executorResult.latencyMs,
+      );
+
       const outputOutcome = new OutputSchemaGuardrail().evaluate({
         ...actionCtx,
         executorOutput: executorResult.ok ? executorResult.output : undefined,
@@ -546,6 +563,7 @@ export class SupervisorRuntime {
           handoffToAgent: toAgent,
           previousAgent: fromAgent,
           error: executorError,
+          ...tracingPatch,
         });
         return this.terminalFailed(executorError.code);
       }
@@ -557,6 +575,7 @@ export class SupervisorRuntime {
         output: (executorResult.output as Record<string, unknown>) ?? {},
         handoffToAgent: toAgent,
         previousAgent: fromAgent,
+        ...tracingPatch,
       });
       return this.continueRun();
     }
@@ -769,6 +788,28 @@ export class SupervisorRuntime {
     patch: Parameters<SupervisorPersistence["completeStep"]>[2],
   ): Promise<void> {
     await this.persistence.completeStep(state.context.tenantId, stepId, patch);
+  }
+
+  /**
+   * Maps executor-reported tracing metadata into the step patch. The latency
+   * of the step is the executor's wall-clock duration; provider/model/prompt
+   * and token/cost facts come from the executor's metadata when present.
+   */
+  private stepTracingPatch(
+    metadata: AgentResultMetadata | undefined,
+    latencyMs: number,
+  ): Omit<SupervisorStepPatch, "status"> {
+    if (!metadata) {
+      return { latencyMs };
+    }
+    return {
+      modelProvider: metadata.modelProvider ?? null,
+      modelName: metadata.modelName ?? null,
+      promptVersion: metadata.promptVersion ?? null,
+      tokensUsed: metadata.tokensUsed,
+      estimatedCost: metadata.estimatedCost,
+      latencyMs,
+    };
   }
 
   private baseGuardrailContext(
