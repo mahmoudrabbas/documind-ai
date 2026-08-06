@@ -233,10 +233,6 @@ beforeEach(async () => {
   // in beforeEach.
   generator = new StructuredAdapter(["handbook-chunk-1", "invented-1"]);
   // Expose the last created generator instance for debugging equality checks
-  // Expose instance for debugging; cast to any to satisfy TS in tests
-  // Expose instance for debugging; cast to any to satisfy TS in tests
-  // Expose instance for debugging; cast to any to satisfy TS in tests
-  (globalThis as any).__lastGenerator = generator as any; // eslint-disable-line @typescript-eslint/no-explicit-any
   // Suppress linter complaints about any usage in tests where mocking adapters is typical
   /* eslint-disable @typescript-eslint/no-explicit-any */
   chatService = new ChatService(retrieval, generator as any);

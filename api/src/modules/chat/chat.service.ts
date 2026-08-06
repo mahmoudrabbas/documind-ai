@@ -62,6 +62,7 @@ import type { StorageProvider } from "../../providers/storage/types.js";
 import { validateVisionFile } from "./chat.vision.js";
 import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
 import { CostService } from "../analytics/cost.service.js";
+import { getLangfuse } from "../../providers/observability/langfuse.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a concise string in the user's language. citedChunkIds must be an array of chunkId strings (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
 const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
@@ -359,6 +360,23 @@ export class ChatService {
     const currentCount = await chatRepo.countMessages(tenantIdStr, conversationId);
     await chatRepo.addMessage(tenantIdStr, conversationId, "user", input.message, currentCount);
 
+    const langfuse = getLangfuse();
+    // NOTE: We intentionally do NOT log input/output text (user questions,
+    // AI answers, or document chunks) to Langfuse. This is a multi-tenant
+    // SaaS platform — tenant data must never leave our system boundary.
+    // We only log safe operational metrics: token counts, latency, status.
+    const trace = langfuse?.trace({
+      name: "chat-message",
+      userId: userIdStr,
+      metadata: {
+        tenantId: tenantIdStr,
+        conversationId,
+        traceId: context.traceId,
+        requestId: context.requestId,
+      },
+      // No input: field — user question is private tenant data
+    });
+
     // 6. Load conversation history from DB for LLM context
     let historyFromDb: Array<{ role: "user" | "assistant"; content: string }> = [];
     try {
@@ -555,11 +573,17 @@ export class ChatService {
     // persistedSources will only be non-empty for grounded answers that are
     // explicitly authorized and validated by the reranker evidence bundle.
     let persistedSources: ChatSource[] = [];
+
     // Preserve the reranker bundle and survivor candidates for final decisioning
     // (used after generation to decide whether to persist or expose sources).
     let retrievalEvidenceBundle: EvidenceBundle | undefined;
     let survivorsForDecision: RetrievalCandidate[] = [];
-    let retrievalCandidateCount = 0;
+
+    const retrievalSpan = trace?.span({
+      name: "rag-retrieval",
+      metadata: { method: "hybrid", topK: 5 },
+      // No input: field — queryText is derived from private user message
+    });
     try {
       const retrievalResult = await this.retrievalService.hybridSearch(
         {
@@ -570,7 +594,6 @@ export class ChatService {
         accessContext,
       );
 
-      retrievalCandidateCount = retrievalResult.totalCandidates ?? retrievalResult.candidates.length ?? 0;
 
       // Preserve evidence bundle for later decision logic and auditing.
       retrievalEvidenceBundle = retrievalResult.evidenceBundle;
@@ -585,7 +608,6 @@ export class ChatService {
       // are ever persisted or exposed.
       survivorsForDecision = survivors;
 
-      logger.info({ tenantId: tenantIdStr, conversationId, survivorCount: survivorsForDecision.length }, "retrieval survivors");
       // Console logs for test visibility
 
       const docIds = [
@@ -618,7 +640,14 @@ export class ChatService {
         score: c.score,
         documentTitle: docTitles.get(c.documentId) ?? "Unknown Document",
       }));
+      retrievalSpan?.end({
+        output: { candidateCount: sources.length }, // count only, no document text
+      });
     } catch (err) {
+      retrievalSpan?.end({
+        level: "ERROR",
+        statusMessage: err instanceof Error ? err.message : String(err),
+      });
       logger.error({ err, tenantId: tenantIdStr, traceId: context.traceId }, "Retrieval search failed");
       throw asRetrievalUnavailable(err);
     }
@@ -665,6 +694,14 @@ export class ChatService {
         actorRole: actor.actorRole,
         metadata: { traceId: context.traceId, userId: userIdStr, tenantId: tenantIdStr, requiredAction: "use_in_ai", authorizationResult: "denied", reasonCode: "NO_AUTHORIZED_EVIDENCE", sourceCount: 0, latencyMs: Date.now() - start },
       });
+      trace?.update({
+        metadata: { outcome: "NO_AUTHORIZED_EVIDENCE" },
+        // No output: field — no text logged
+      });
+      // Flush trace before early return so it appears in Langfuse promptly
+      await langfuse?.flushAsync().catch((err) => {
+        logger.warn({ err }, "Failed to flush Langfuse events");
+      });
       return {
         messageId: assistantDoc._id.toString(),
         ...insufficientMessage,
@@ -683,9 +720,14 @@ export class ChatService {
     });
 
     // 10. Call LLM
-    logger.info({ tenantId: tenantIdStr, conversationId, sourcesLength: sources.length, retrievalCandidateCount, bundleItems: retrievalEvidenceBundle ? retrievalEvidenceBundle.items.length : 0 }, "CHAT pre-generation diagnostics");
 
     let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
+    const generation = trace?.generation({
+      name: "groq-chat",
+      model: this.modelAdapter.providerKey,
+      modelParameters: { temperature: 0.3, maxTokens },
+      // No input: field — messages contain private tenant document content
+    });
     try {
       logger.info({ tenantId: tenantIdStr, conversationId, provider: this.modelAdapter.providerKey }, "Invoking modelAdapter.complete");
       response = await this.modelAdapter.complete({
@@ -693,7 +735,19 @@ export class ChatService {
         temperature: 0.3,
         maxTokens,
       });
+      generation?.end({
+        // No output: field — AI answer may contain private tenant document content
+        usage: {
+          promptTokens: response.usage?.promptTokens,
+          completionTokens: response.usage?.completionTokens,
+          totalTokens: response.usage?.totalTokens,
+        },
+      });
     } catch (error) {
+      generation?.end({
+        level: "ERROR",
+        statusMessage: error instanceof Error ? error.message : String(error),
+      });
       const mapped = mapLlmProviderError(error);
       const retryAfterSeconds =
         typeof mapped.details === "object" &&
@@ -723,6 +777,42 @@ export class ChatService {
         LLM_PROVIDER_UNAVAILABLE,
         "The assistant produced no usable answer. Please try again.",
       );
+    }
+    const latencyMs = Date.now() - start;
+    trace?.update({
+      metadata: { outcome: "SUCCESS", latencyMs },
+      // No output: field — AI answer is private tenant data
+    });
+
+    // Programmatic quality scores — visible in Langfuse "Scores" column
+    // These measure operational quality, not content (no private data exposed)
+    if (trace) {
+      const outputTokens = response.usage?.completionTokens ?? 0;
+
+      // Score 1: Did retrieval find relevant documents? (1 = yes, 0 = no)
+      trace.score({
+        name: "retrieval_success",
+        value: sources.length > 0 ? 1 : 0,
+        comment: `Found ${sources.length} candidate chunk(s)`,
+      });
+
+      // Score 2: Answer richness — was the answer substantive?
+      // 1.0 = rich answer (≥150 tokens), scales down for shorter answers
+      // This catches cases where the LLM gives a one-word or empty response
+      const richnessScore = Math.min(outputTokens / 150, 1);
+      trace.score({
+        name: "answer_richness",
+        value: parseFloat(richnessScore.toFixed(2)),
+        comment: `${outputTokens} output tokens (150+ = full score)`,
+      });
+
+      // Score 3: Latency score — 1 if under 5s, scaled down above that
+      const latencyScore = Math.max(0, Math.min(1, 1 - (latencyMs - 5000) / 10000));
+      trace.score({
+        name: "latency_score",
+        value: parseFloat(latencyScore.toFixed(2)),
+        comment: `${latencyMs}ms end-to-end`,
+      });
     }
 
     // The generation model must return a strict JSON object conforming to the
@@ -1005,7 +1095,6 @@ export class ChatService {
     const inputTokens = response.usage?.promptTokens ?? 0;
     const outputTokens = response.usage?.completionTokens ?? 0;
     const totalTokens = response.usage?.totalTokens ?? (inputTokens + outputTokens);
-    const latencyMs = Date.now() - start;
 
     void costService
       .calculateLlmCost(
@@ -1070,14 +1159,28 @@ export class ChatService {
         sourceCount: persistedSources.length,
         reasonCode: "GROUNDED_RAG",
         latencyMs: Date.now() - start,
-        retrievalCandidateCount: survivorsForDecision.length > 0 ? survivorsForDecision.length : undefined,
-        evidenceBundleSufficiency: retrievalEvidenceBundle?.sufficiency?.level,
-        evidenceItemCount: retrievalEvidenceBundle ? retrievalEvidenceBundle.items.length : undefined,
-        finalAnswerDecision: persistedSources.length > 0 ? "grounded_answer" : "insufficient_evidence",
+        retrievalCandidateCount:
+          survivorsForDecision.length > 0
+            ? survivorsForDecision.length
+            : undefined,
+        evidenceBundleSufficiency:
+          retrievalEvidenceBundle?.sufficiency?.level,
+        evidenceItemCount:
+          retrievalEvidenceBundle
+            ? retrievalEvidenceBundle.items.length
+            : undefined,
+        finalAnswerDecision:
+          persistedSources.length > 0
+            ? "grounded_answer"
+            : "insufficient_evidence",
         returnedSourceCount: sources.length,
         persistedSourceCount: persistedSources.length,
       },
     );
+
+    await langfuse?.flushAsync().catch((err) => {
+      logger.warn({ err }, "Failed to flush Langfuse events");
+    });
 
     return {
       messageId: assistantDoc._id.toString(),
