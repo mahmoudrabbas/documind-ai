@@ -202,6 +202,21 @@ describe("JudgeEvaluationService.runEvaluation", () => {
     assert.equal(harness.persisted.length, 0);
   });
 
+  it("skips a source-less social/unsupported reply gracefully (no judge, no persist)", async () => {
+    // Regression for Issue #283: social / unsupported / clarification replies
+    // are persisted with empty sources, so they must never trigger a judge run.
+    const harness = makeHarness({
+      message: makeMessage({
+        content: "أهلاً بك! كيف يمكنني مساعدتك؟",
+        sources: [],
+      }),
+      evidenceCount: 0,
+    });
+    await harness.service.runEvaluation(input);
+    assert.equal(harness.fakeJudge.evaluateCalls, 0);
+    assert.equal(harness.persisted.length, 0);
+  });
+
   it("reuses an existing completed evaluation for the same judge version", async () => {
     const harness = makeHarness({ existing: { judgeStatus: "completed" } });
     await harness.service.runEvaluation(input);

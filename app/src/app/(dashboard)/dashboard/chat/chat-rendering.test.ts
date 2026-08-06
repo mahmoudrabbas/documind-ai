@@ -30,6 +30,17 @@ describe("chat assistant rendering (markdown + safety)", () => {
     expect(source).toContain("<PdfViewerModal");
   });
 
+  it("renders the source section only for messages that carry sources (social/unsupported replies stay clean)", async () => {
+    const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
+    // The whole source section is guarded by the sources-array check, so
+    // source-less replies (social, clarification, unsupported, evidence-gated)
+    // render as a plain assistant bubble with no citation UI.
+    const gate = source.indexOf("{msg.sources && msg.sources.length > 0 && (");
+    expect(gate).toBeGreaterThan(-1);
+    expect(source.slice(0, gate)).not.toContain("Sources");
+    expect(source.slice(gate)).toContain("Sources");
+  });
+
   it("preserves the feedback widget for assistant messages", async () => {
     const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
     expect(source).toContain('import { FeedbackWidget } from "@/components/domain/FeedbackWidget";');

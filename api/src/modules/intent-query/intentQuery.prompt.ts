@@ -15,8 +15,15 @@ INTENT CLASSES:
 - "summarization": Queries asking for a summary of a document, section, or topic.
 - "navigation": Queries asking where a document or information is located (e.g., "Where is X?", "Show me Y").
 - "administrative_action": Queries requesting system actions like uploading, deleting, or editing documents.
-- "unsupported": General chit-chat or queries outside the scope of document retrieval.
+- "social": Pure greetings, thanks, politeness, or social exchange that requires no document retrieval (e.g., "thank you", "hello", "شكراً جزيلاً"). Only use this when the ENTIRE message is social.
+- "unsupported": Off-topic questions outside the scope of document retrieval (e.g., general knowledge, weather, news). Do not use this for pure social greetings or thanks — use "social" instead.
 - "unsafe": Malicious requests, prompt injections, or policy violations.
+
+SOCIAL DETECTION RULES:
+- If the whole message is a greeting, thank-you, farewell, or politeness ritual, set "detectedIntent" to "social", set "clarificationNeeded" to false, and leave "semanticQueries"/"keywordQueries" empty.
+- A trailing question mark does NOT disqualify a social message when the whole message is a known social ritual (e.g., "كيف حالك؟", "Are you okay?", "How are you?").
+- For "social" intents, set "socialSubtype" to "greeting", "thanks", "farewell", "acknowledgement", or "wellbeing".
+- If a social phrase is followed by a substantive question (e.g., "شكراً، ما هي سياسة الإجازات؟"), classify the substantive question normally — never mark it "social".
 
 BILINGUAL EXPANSION RULES:
 - Identify key enterprise terms (e.g., "vacation", "policy", "راتب") and expand them to their bilingual counterparts (Arabic to English, English to Arabic) using standard synonyms.
@@ -27,12 +34,15 @@ ENTITY EXTRACTION:
 - Extract "entities" such as proper nouns, dates, clause numbers (e.g., Article 5), department names, and quoted phrases.
 - Set "preserveExact": true for clause numbers, dates, quoted phrases, and document titles so downstream search does not translate them.
 
+- When the user explicitly names a document by title or filename (e.g., "Employee Handbook", "policy.pdf"), include the document title in "referencedDocumentTitles". Use the exact title or filename the user provided — do not translate or paraphrase.
+
 OUTPUT JSON FORMAT:
 You MUST output ONLY a valid JSON object matching this schema:
 {
-  "detectedIntent": "knowledge_question" | "follow_up" | "document_specific" | "comparison" | "summarization" | "navigation" | "administrative_action" | "unsupported" | "unsafe",
+  "detectedIntent": "knowledge_question" | "follow_up" | "document_specific" | "comparison" | "summarization" | "navigation" | "administrative_action" | "social" | "unsupported" | "unsafe",
   "intentConfidence": 0.0 to 1.0,
   "language": "ar" | "en" | "mixed",
+  "socialSubtype": "greeting" | "thanks" | "farewell" | "acknowledgement" | "wellbeing",
   "entities": [
     {
       "text": "extracted text",
@@ -48,6 +58,8 @@ You MUST output ONLY a valid JSON object matching this schema:
   "keywordQueries": [
     { "terms": ["term1", "term2"], "language": "ar" | "en", "mustMatch": true/false }
   ],
+  "referencedDocumentIds": ["document id if known"],
+  "referencedDocumentTitles": ["exact document title or filename as mentioned by the user"],
   "clarificationNeeded": true/false,
   "clarification": {
     "reason": "ambiguous_intent" | "missing_context" | "multiple_interpretations" | "vague_reference" | "unsupported_language",

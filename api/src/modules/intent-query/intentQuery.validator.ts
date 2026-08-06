@@ -1,5 +1,6 @@
-import type { AnalyzeQueryInput, QueryPlan } from "./intentQuery.types.js";
+import type { AnalyzeQueryInput, IntentClassValue, QueryPlan } from "./intentQuery.types.js";
 import { AnalyzeQueryInputSchema, QueryPlanSchema } from "./intentQuery.types.js";
+import { deriveQueryRoute } from "./intentQuery.route.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { INTENT_QUERY_VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 
@@ -34,12 +35,17 @@ export function validateAndNormalizeQueryPlan(
   estimatedCost: number,
   fallbackUsed = false
 ): QueryPlan {
+  const rawObject = typeof raw === "object" && raw !== null ? raw : {};
+  const rawIntent = (rawObject as { detectedIntent?: unknown }).detectedIntent ?? "knowledge_question";
+  const rawClarification = Boolean((rawObject as { clarificationNeeded?: unknown }).clarificationNeeded);
+
   const rawWithDefaults = {
     schemaVersion: "1.0.0",
     normalizedQuestion: originalQuestion.trim(),
     originalQuestion,
     temporalConstraints: [],
     referencedDocumentIds: [],
+    referencedDocumentTitles: [],
     departments: [],
     categories: [],
     exactTerms: [],
@@ -55,7 +61,10 @@ export function validateAndNormalizeQueryPlan(
       estimatedCost,
       fallbackUsed,
     },
-    ...(typeof raw === "object" && raw !== null ? raw : {}),
+    ...rawObject,
+    // Route is derived deterministically from intent + clarification state and
+    // is never taken verbatim from model output.
+    route: deriveQueryRoute(rawIntent as IntentClassValue, rawClarification),
   };
 
   // Try to parse/validate the raw structure
@@ -67,9 +76,11 @@ export function validateAndNormalizeQueryPlan(
     return {
       ...plan,
       originalQuestion,
+      route: deriveQueryRoute(plan.detectedIntent, plan.clarificationNeeded),
       entities: plan.entities.slice(0, 50),
       temporalConstraints: plan.temporalConstraints.slice(0, 10),
       referencedDocumentIds: plan.referencedDocumentIds.slice(0, 20),
+      referencedDocumentTitles: plan.referencedDocumentTitles.slice(0, 20),
       departments: plan.departments.slice(0, 20),
       categories: plan.categories.slice(0, 20),
       exactTerms: plan.exactTerms.slice(0, 30),
@@ -97,6 +108,7 @@ export function validateAndNormalizeQueryPlan(
     entities: [],
     temporalConstraints: [],
     referencedDocumentIds: [],
+    referencedDocumentTitles: [],
     departments: [],
     categories: [],
     exactTerms: [],
@@ -115,6 +127,8 @@ export function validateAndNormalizeQueryPlan(
       messageEn: "We encountered an issue analyzing your query. Please rephrase or try again.",
       messageAr: "واجهنا مشكلة في تحليل سؤالك. يرجى إعادة الصياغة أو المحاولة مرة أخرى.",
     },
+    route: "clarification",
+    socialSubtype: "acknowledgement",
     isFollowUp: false,
     conversationContextUsed: false,
     promptVersion,

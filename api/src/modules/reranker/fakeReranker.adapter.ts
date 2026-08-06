@@ -9,6 +9,7 @@ import type {
   ConflictGroup,
   SufficiencyAssessment,
 } from "./reranker.types.js";
+import { EVIDENCE_ITEM_MIN_TOTAL_SCORE } from "./reranker.types.js";
 import { selectDiverse, areRedundant, type ScoredItem } from "./diversity.js";
 import {
   detectConflicts,
@@ -280,7 +281,7 @@ export class FakeRerankerAdapter implements RerankerAdapter {
         ],
       };
     }
-    if (avgScore >= 0.25) {
+    if (avgScore >= EVIDENCE_ITEM_MIN_TOTAL_SCORE) {
       return {
         level: "WEAK",
         reasons: [

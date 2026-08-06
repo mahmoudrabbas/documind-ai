@@ -58,3 +58,15 @@ export async function initializeIntentQueryService(): Promise<void> {
 export function getIntentQueryService(): IntentQueryService {
   return _instance;
 }
+
+/**
+ * Test-only hook: swaps the singleton's adapters so integration tests can
+ * drive chat routing through the real controller code path. Never call in
+ * production.
+ */
+export function setIntentQueryAdaptersForTests(options?: {
+  modelAdapter?: ModelAdapter;
+  conversationContextAdapter?: ConversationContextPort;
+}): void {
+  _instance = createIntentQueryService(options);
+}

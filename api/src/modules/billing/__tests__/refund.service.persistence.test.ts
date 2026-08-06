@@ -117,7 +117,12 @@ refundPersistence("refund service persistence", () => {
     await Promise.all([
       mongoose.connection.collection("tenants").deleteMany({ _id: { $in: [tenantId, platformTenantId] } }),
       mongoose.connection.collection("tenants").deleteMany({ _id: foreignTenantId }),
-      mongoose.connection.collection("users").deleteMany({ _id: { $in: [companyAdminId, superAdminId, foreignAdminId] } }),
+      mongoose.connection.collection("users").deleteMany({
+        $or: [
+          { _id: { $in: [companyAdminId, superAdminId, foreignAdminId] } },
+          { role: "SUPER_ADMIN" },
+        ],
+      }),
       mongoose.connection.collection("subscriptions").deleteMany({ _id: subscriptionId }),
       InvoiceModel.deleteMany({ _id: invoiceId }),
       RefundModel.deleteMany({ tenantId }),
@@ -206,7 +211,12 @@ refundPersistence("refund service persistence", () => {
       await Promise.all([
         mongoose.connection.collection("tenants").deleteMany({ _id: { $in: [tenantId, platformTenantId] } }),
         mongoose.connection.collection("tenants").deleteMany({ _id: foreignTenantId }),
-        mongoose.connection.collection("users").deleteMany({ _id: { $in: [companyAdminId, superAdminId, foreignAdminId] } }),
+        mongoose.connection.collection("users").deleteMany({
+        $or: [
+          { _id: { $in: [companyAdminId, superAdminId, foreignAdminId] } },
+          { role: "SUPER_ADMIN" },
+        ],
+      }),
         mongoose.connection.collection("subscriptions").deleteMany({ _id: subscriptionId }),
         InvoiceModel.deleteMany({ _id: invoiceId }),
         RefundModel.deleteMany({ tenantId }),

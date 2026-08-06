@@ -117,3 +117,28 @@ export const DEFAULT_RERANKER_CONFIG: RerankerConfig = {
   deduplicationThreshold: 0.85,
   conflictSimilarityThreshold: 0.3,
 };
+
+/**
+ * Minimum per-item `totalScore` for an evidence item to be considered
+ * supportive within a SUFFICIENT bundle.
+ *
+ * Items below this floor are weak tail matches that must never reach
+ * generation context, persistence, or citations. NaN/Infinity/non-numeric
+ * scores are never supportive.
+ *
+ * Range: [0, 1] (reranker totalScore is a weighted combination of fusion,
+ * rerank, and semantic scores, each in [0, 1]).
+ * Boundary: >= 0.25 is supportive; < 0.25 is weak/rejected.
+ */
+export const EVIDENCE_ITEM_MIN_TOTAL_SCORE = 0.25;
+
+/**
+ * Returns true when the bundle contains enough evidence to support
+ * answer generation and citations.
+ *
+ * Only SUFFICIENT bundles pass. NO_EVIDENCE, WEAK, and CONFLICTING
+ * bundles are treated as insufficient — fail closed.
+ */
+export function isSufficientBundle(bundle: EvidenceBundle): boolean {
+  return bundle.sufficiency.level === "SUFFICIENT";
+}

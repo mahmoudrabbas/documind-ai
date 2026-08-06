@@ -15,6 +15,8 @@ import MessageModel from "../../db/models/message.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import { ChatService } from "./chat.service.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
+import type { RetrievalCandidate } from "../retrieval/retrieval.types.js";
+import type { EvidenceBundle, EvidenceItem } from "../reranker/reranker.types.js";
 import type { ModelAdapter, ModelCompletionResponse } from "../agents/agents.types.js";
 import type { VisionAdapter } from "../../providers/llm/visionAdapter.js";
 import type { StorageProvider } from "../../providers/storage/types.js";
@@ -49,7 +51,14 @@ function createRecordingAdapter(answer: string): {
         choices: [
           {
             index: 0,
-            message: { role: "assistant", content: answer },
+            message: {
+              role: "assistant",
+              content: JSON.stringify({
+                decision: "grounded_answer",
+                answer,
+                citedChunkIds: ["chunk-1"],
+              }),
+            },
             finishReason: "stop",
           },
         ],
@@ -129,23 +138,61 @@ function createSequencedVisionAdapter(
   };
 }
 
-function createStubRetrieval(): HybridRetrievalService {
+function createStubRetrieval(
+  tenantId = "",
+): HybridRetrievalService {
+  const candidate: RetrievalCandidate = {
+    chunkId: "chunk-1",
+    documentId: new mongoose.Types.ObjectId().toString(),
+    documentVersionId: new mongoose.Types.ObjectId().toString(),
+    tenantId,
+    text: "The company handbook covers onboarding and travel.",
+    score: 0.9,
+    pageNumber: 2,
+    sectionTitle: "Onboarding",
+    retrievalMethod: "hybrid",
+  };
+
+  const evidenceItem: EvidenceItem = {
+    rank: 1,
+    candidate,
+    scoreBreakdown: {
+      fusionScore: candidate.score,
+      rerankScore: 0.9,
+      semanticScore: candidate.score,
+      exactTermScore: 0,
+      sourceAuthorityScore: 0,
+      versionPreferenceScore: 0,
+      totalScore: 0.9,
+    },
+    citationAnchor: {
+      chunkId: candidate.chunkId,
+      documentId: candidate.documentId,
+      documentVersionId: candidate.documentVersionId,
+      pageNumber: candidate.pageNumber,
+    },
+    textExcerpt: candidate.text,
+  };
+
+  const evidenceBundle: EvidenceBundle = {
+    items: [evidenceItem],
+    totalTokenCount: 20,
+    maxTokenCount: 4000,
+    inputCandidateCount: 1,
+    conflictGroups: [],
+    sufficiency: {
+      level: "SUFFICIENT",
+      reasons: ["Strong authorized sanitization test evidence"],
+    },
+    scoreExplanation: "Deterministic sanitization test evidence",
+    accessPolicyVersion: "test",
+    createdAt: new Date().toISOString(),
+  };
+
   return {
     async hybridSearch() {
       return {
-        candidates: [
-          {
-            chunkId: "chunk-1",
-            documentId: new mongoose.Types.ObjectId().toString(),
-            documentVersionId: "v1",
-            tenantId: "",
-            text: "The company handbook covers onboarding.",
-            score: 0.9,
-            pageNumber: 2,
-            sectionTitle: "Onboarding",
-            retrievalMethod: "hybrid" as const,
-          },
-        ],
+        candidates: [candidate],
         totalCandidates: 1,
         filterSummary: {
           tenantFilter: true,
@@ -160,6 +207,7 @@ function createStubRetrieval(): HybridRetrievalService {
           keywordCandidateCount: 1,
           traceId: "chat-sanitization-test",
         },
+        evidenceBundle,
       };
     },
     async vectorSearch() {
@@ -230,7 +278,7 @@ test("sendMessage strips reasoning from the returned and persisted assistant mes
   const { adapter } = createRecordingAdapter(
     "<think>Let me recall the handbook.</think>\n\nThe handbook says onboarding takes 3 days.",
   );
-  const service = new ChatService(createStubRetrieval(), adapter);
+  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
 
   const response = await service.sendMessage(
     { message: "What does the handbook say about onboarding?" },
@@ -263,12 +311,12 @@ test("sendMessage fails with a controlled error when only reasoning remains", as
   const { adapter } = createRecordingAdapter(
     "<think>Only chain-of-thought, no answer.</think>",
   );
-  const service = new ChatService(createStubRetrieval(), adapter);
+  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
 
   await assert.rejects(
     () =>
       service.sendMessage(
-        { message: "Hello?" },
+        { message: "What does the handbook say about travel?" },
         actorContext(tenant, user),
       ),
     (error: unknown) =>
@@ -468,7 +516,7 @@ test("listConversations preview sanitizes legacy assistant reasoning", async () 
 test("RAG replay never sends legacy assistant reasoning back to the LLM", async () => {
   const { tenant, user } = await seedTenantAdmin();
   const { adapter, calls } = createRecordingAdapter("Fresh answer.");
-  const service = new ChatService(createStubRetrieval(), adapter);
+  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
 
   const conv = await chatRepo.createConversation(
     tenant.id,

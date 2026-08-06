@@ -208,9 +208,14 @@ const filterCompiler: FilterCompiler = {
   mergeFilters,
 };
 
-const rerankerService = createRerankerService({
-  reranker: new FakeRerankerAdapter(),
-});
+import { logger } from "./common/logger/logger.js";
+
+// Use the deterministic FakeRerankerAdapter as the default runtime adapter.
+// NOTE: This is a deterministic lexical reranker intended for tests and as a
+// temporary runtime adapter. It is NOT a production-grade cross-encoder.
+// A production cross-encoder reranker should be wired here when available.
+const rerankerService = createRerankerService({ reranker: new FakeRerankerAdapter() });
+logger.info({ env: config.NODE_ENV }, "Using deterministic FakeRerankerAdapter at runtime (temporary).");
 
 const retrievalService = createRetrievalService({
   vectorAdapter: await getVectorStoreAdapter(),
