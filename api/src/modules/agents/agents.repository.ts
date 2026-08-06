@@ -60,6 +60,8 @@ function serializeStep(doc: InstanceType<typeof AgentStepModel>): StepRecord {
     approvalsCount: doc.approvalsCount,
     handoffToAgent: doc.handoffToAgent ?? null,
     previousAgent: doc.previousAgent ?? null,
+    guardrails:
+      (doc.guardrails as unknown as StepRecord["guardrails"]) ?? [],
     traceId: doc.traceId,
     requestId: doc.requestId,
     createdAt: doc.createdAt.toISOString(),
@@ -187,6 +189,7 @@ export async function createStep(input: {
   modelProvider?: string | null;
   modelName?: string | null;
   promptVersion?: string | null;
+  guardrails?: StepRecord["guardrails"];
   traceId: string;
   requestId: string;
 }): Promise<StepRecord> {
@@ -201,13 +204,14 @@ export async function createStep(input: {
     modelProvider: input.modelProvider ?? null,
     modelName: input.modelName ?? null,
     promptVersion: input.promptVersion ?? null,
+    guardrails: (input.guardrails ?? []) as unknown as Record<string, unknown>[],
     traceId: input.traceId,
     requestId: input.requestId,
   });
   return serializeStep(step);
 }
 
-export async function completeStep(tenantId: string, stepId: string, patch: Partial<{ status: string; output: Record<string, unknown> | null; tokensUsed: number; estimatedCost: number; latencyMs: number; error: Record<string, unknown> | null; toolCallsCount: number; approvalsCount: number; handoffToAgent: string | null; previousAgent: string | null }>): Promise<StepRecord | null> {
+export async function completeStep(tenantId: string, stepId: string, patch: Partial<{ status: string; output: Record<string, unknown> | null; tokensUsed: number; estimatedCost: number; latencyMs: number; error: Record<string, unknown> | null; toolCallsCount: number; approvalsCount: number; handoffToAgent: string | null; previousAgent: string | null; guardrails: StepRecord["guardrails"] }>): Promise<StepRecord | null> {
   const set: Record<string, unknown> = { ...patch };
   if (set.estimatedCost !== undefined && typeof set.estimatedCost === "number") {
     set.estimatedCost = new mongoose.Types.Decimal128(String(set.estimatedCost));
