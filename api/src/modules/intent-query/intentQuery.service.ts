@@ -4,7 +4,6 @@ import { Permission } from "../permissions/permissions.catalog.js";
 import { authorizeTenantOperation, type OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
 import { logger } from "../../common/logger/logger.js";
-import DocumentModel from "../../db/models/document.model.js";
 import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
 import { recordQuestionAsked } from "../usage/usage.service.js";
 
@@ -12,6 +11,8 @@ import type { QueryPlan } from "./intentQuery.types.js";
 import { detectLanguage } from "./intentQuery.languageDetector.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
+import { detectSocialMessage } from "./intentQuery.socialDetector.js";
+import { resolveAuthorizedDocumentHints } from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
 import { INTENT_SYSTEM_PROMPT, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
@@ -133,6 +134,148 @@ export class IntentQueryService {
 
       recordIntentQueryMetrics(metricRecorder, unsafePlan, traceId);
       return unsafePlan;
+    }
+
+    // 4b. Deterministic social fast-path — pure social exchanges never enter
+    // retrieval, so no sources are ever attached to the response. Substantive
+    // questions (including social-prefixed ones) are never classified here.
+    const social = detectSocialMessage(input.question);
+    if (social.isSocial) {
+      const socialPlan = validateAndNormalizeQueryPlan(
+        {
+          detectedIntent: "social",
+          intentConfidence: 0.95,
+          language,
+          socialSubtype: social.subtype ?? "acknowledgement",
+          entities: [],
+          temporalConstraints: [],
+          referencedDocumentIds: [],
+          referencedDocumentTitles: [],
+          departments: [],
+          categories: [],
+          exactTerms: [],
+          semanticQueries: [],
+          keywordQueries: [],
+          clarificationNeeded: false,
+          clarification: null,
+          isFollowUp: false,
+          conversationContextUsed: false,
+          normalizedQuestion: input.question.trim(),
+        },
+        input.question,
+        language,
+        INTENT_PROMPT_VERSION,
+        this.modelAdapter.providerKey,
+        Date.now() - start,
+        0,
+        0,
+        false
+      );
+
+      recordIntentQueryMetrics(metricRecorder, socialPlan, traceId);
+
+      try {
+        await IntentQueryTraceModel.create({
+          traceId,
+          tenantId: actor.tenantId,
+          queryPlan: socialPlan,
+          timing: {
+            totalMs: Date.now() - start,
+            languageDetectionMs: 2,
+            entityExtractionMs: 0,
+            llmMs: 0,
+            postProcessingMs: 1,
+          },
+          promptVersion: INTENT_PROMPT_VERSION,
+          modelVersion: this.modelAdapter.providerKey,
+          rawEntities: localEntities,
+          fallbackUsed: false,
+        });
+      } catch (err) {
+        logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+      }
+
+      return socialPlan;
+    }
+
+    // 5. Deterministic unsupported external/current-data detector
+    //
+    // Conservative rule: questions that explicitly ask about current external
+    // facts (prices now, weather today, latest news, yesterday's match score)
+    // are outside the tenant document scope and should route to 'unsupported'.
+    // Exemptions: when the user explicitly references documents or reports.
+    function isLikelyExternalCurrent(question: string): boolean {
+      const q = question.toLowerCase();
+      // Temporal markers that imply 'current' or 'latest' (no word-boundary
+      // anchors because Arabic tokens may not be matched by \b reliably).
+      const temporal = /(today|now|yesterday|latest|this (morning|evening)|الآن|اليوم|أمس|آخر)/i;
+      // Topics typically requiring live external data
+      const topics = /(gold|الذهب|dollar|دollar|weather|طقس|news|أخبار|score|نتيجة|مباراة|أسعار)/i;
+      // Phrases that indicate the user is asking about a document/report
+      const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
+
+      if (!temporal.test(q)) return false;
+      if (!topics.test(q)) return false;
+      if (docIndicators.test(q)) return false;
+      return true;
+    }
+
+    // Deterministic short-circuit: clear live external-data questions with NO
+    // explicit document context must route to 'unsupported' and skip retrieval.
+    if (isLikelyExternalCurrent(input.question)) {
+      // If the user explicitly references a document or report, do not short-circuit.
+      const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
+      if (!docIndicators.test(input.question)) {
+        const unsupportedPlan = validateAndNormalizeQueryPlan(
+          {
+            detectedIntent: "unsupported",
+            intentConfidence: 0.99,
+            language,
+            entities: localEntities,
+            exactTerms: [],
+            semanticQueries: [],
+            keywordQueries: [],
+            clarificationNeeded: false,
+            clarification: null,
+            isFollowUp: false,
+            conversationContextUsed: false,
+            normalizedQuestion: input.question.trim(),
+          },
+          input.question,
+          language,
+          INTENT_PROMPT_VERSION,
+          this.modelAdapter.providerKey,
+          Date.now() - start,
+          0,
+          0,
+          false,
+        );
+
+        recordIntentQueryMetrics(metricRecorder, unsupportedPlan, traceId);
+
+        try {
+          await IntentQueryTraceModel.create({
+            traceId,
+            tenantId: actor.tenantId,
+            queryPlan: unsupportedPlan,
+            timing: {
+              totalMs: Date.now() - start,
+              languageDetectionMs: 1,
+              entityExtractionMs: 1,
+              llmMs: 0,
+              postProcessingMs: 1,
+            },
+            promptVersion: INTENT_PROMPT_VERSION,
+            modelVersion: this.modelAdapter.providerKey,
+            rawEntities: localEntities,
+            fallbackUsed: false,
+          });
+        } catch (err) {
+          logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+        }
+
+        return unsupportedPlan;
+      }
     }
 
     // 5. Load Conversation Context with strict tenant isolation
@@ -361,34 +504,41 @@ export class IntentQueryService {
 
     // 7. Deterministic validation, ownership re-scoping and exact entity rules enforcement
     let validatedPlan: QueryPlan;
+    let titleClarificationNeeded = false;
 
     if (rawOutput && !fallbackUsed) {
-      // Re-verify that any referencedDocumentIds generated by LLM belong to the tenant
-      if (Array.isArray(rawOutput.referencedDocumentIds)) {
-        const outputDocIds = rawOutput.referencedDocumentIds.filter((id): id is string => typeof id === "string" && mongoose.Types.ObjectId.isValid(id));
-        if (outputDocIds.length > 0) {
-          const verifiedDocs = await DocumentModel.find({
-            _id: { $in: outputDocIds },
-            tenantId: actor.tenantId,
-          }).select("_id").lean().exec();
+      // Re-verify referencedDocumentIds generated by the LLM: tenant-scoped,
+      // actor/`use_in_ai` authorized, and title-resolved. Inaccessible
+      // documents are silently dropped — model-generated IDs are never trusted.
+      const mergedOutputIds = Array.isArray(rawOutput.referencedDocumentIds)
+        ? [
+            ...new Set([
+              ...(rawOutput.referencedDocumentIds as string[]),
+              ...((input.referencedDocumentIds as string[] | undefined) ?? []),
+            ]),
+          ]
+        : (input.referencedDocumentIds ?? []);
 
-          const verifiedIds = verifiedDocs.map(d => d._id.toString());
-          rawOutput.referencedDocumentIds = verifiedIds;
-        } else {
-          rawOutput.referencedDocumentIds = [];
-        }
-      } else {
-        rawOutput.referencedDocumentIds = [];
-      }
+      const llmTitleHints = Array.isArray(rawOutput.referencedDocumentTitles)
+        ? (rawOutput.referencedDocumentTitles as string[])
+        : [];
 
-      // Merge inputs' referenced doc IDs if not populated by LLM
-      if (input.referencedDocumentIds && input.referencedDocumentIds.length > 0) {
-        rawOutput.referencedDocumentIds = [
-          ...new Set([
-            ...((rawOutput.referencedDocumentIds as string[]) ?? []),
-            ...input.referencedDocumentIds,
-          ]),
-        ];
+      const hints = await resolveAuthorizedDocumentHints(mergedOutputIds, {
+        tenantId: tenantIdStr,
+        actorId: actor.actorId,
+        tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
+      }, llmTitleHints);
+      rawOutput.referencedDocumentIds = hints.referencedDocumentIds;
+      rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
+
+      // Deterministic title resolution governs explicit document references:
+      // a title hint that resolves to more than one authorized document, or to
+      // none at all, is a signal to clarify — never fabricate a match.
+      if (
+        llmTitleHints.length > 0 &&
+        (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
+      ) {
+        titleClarificationNeeded = true;
       }
 
       // If semanticQueries/keywordQueries are empty, use local bilingual expansion
@@ -484,6 +634,30 @@ export class IntentQueryService {
         0,
         true
       );
+    }
+
+    // 7b. Social subtype resolution: the deterministic detector is the
+    // authority on social subtype; an LLM-reported social route gets its
+    // subtype from the detector when available, otherwise keeps the
+    // validated subtype (never fabricate a subtype).
+    if (validatedPlan.route === "social") {
+      const social = detectSocialMessage(input.question);
+      validatedPlan.socialSubtype =
+        social.isSocial && social.subtype
+          ? social.subtype
+          : validatedPlan.socialSubtype;
+    }
+
+    // 7c. Title-hint ambiguity/unresolved references force a clarification.
+    if (titleClarificationNeeded) {
+      validatedPlan.route = "clarification";
+      validatedPlan.clarificationNeeded = true;
+      validatedPlan.clarification = {
+        reason: "multiple_interpretations",
+        suggestedQuestions: [language === "ar" ? "أي وثيقة تقصد؟" : "Which document are you referring to?"],
+        messageEn: "I couldn't identify the exact document you're referring to. Could you clarify the document name?",
+        messageAr: "لم أتمكن من تحديد الوثيقة المقصودة بدقة. هل يمكنك توضيح اسم الوثيقة؟",
+      };
     }
 
     // 8. Auditing

@@ -2,6 +2,8 @@ import type { QueryPlan, AnalyzeQueryInput, IntentClassValue } from "../intentQu
 import { detectLanguage } from "../intentQuery.languageDetector.js";
 import { extractEntities, extractTemporalConstraints } from "../intentQuery.entityExtractor.js";
 import { expandBilingual } from "../intentQuery.bilingualExpander.js";
+import { detectSocialMessage } from "../intentQuery.socialDetector.js";
+import { deriveQueryRoute } from "../intentQuery.route.js";
 
 export class FakeIntentQueryAdapter {
   private promptVersion = "1.0.0";
@@ -39,6 +41,9 @@ export class FakeIntentQueryAdapter {
         messageEn: "This request violates safety policies and cannot be processed.",
         messageAr: "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان.",
       };
+    } else if (detectSocialMessage(question).isSocial) {
+      detectedIntent = "social";
+      intentConfidence = 0.95;
     } else if (lowerQuestion.includes("compare") || lowerQuestion.includes("مقارنة") || lowerQuestion.includes("قارن")) {
       detectedIntent = "comparison";
     } else if (lowerQuestion.includes("summarize") || lowerQuestion.includes("ملخص") || lowerQuestion.includes("لخص")) {
@@ -89,14 +94,20 @@ export class FakeIntentQueryAdapter {
       language,
       detectedIntent,
       intentConfidence,
+      route: deriveQueryRoute(detectedIntent, clarificationNeeded),
+      socialSubtype:
+        detectedIntent === "social"
+          ? (detectSocialMessage(question).subtype ?? "acknowledgement")
+          : "acknowledgement",
       entities,
       temporalConstraints: extractTemporalConstraints(question),
       referencedDocumentIds: referencedDocumentIds ?? [],
+      referencedDocumentTitles: [],
       departments: [],
       categories: [],
       exactTerms,
-      semanticQueries,
-      keywordQueries,
+      semanticQueries: detectedIntent === "social" ? [] : semanticQueries,
+      keywordQueries: detectedIntent === "social" ? [] : keywordQueries,
       clarificationNeeded,
       clarification,
       isFollowUp,

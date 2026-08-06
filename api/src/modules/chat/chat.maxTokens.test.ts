@@ -14,6 +14,8 @@ import MessageModel from "../../db/models/message.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
 import { ChatService } from "./chat.service.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
+import type { RetrievalCandidate } from "../retrieval/retrieval.types.js";
+import type { EvidenceBundle, EvidenceItem } from "../reranker/reranker.types.js";
 import type { ModelAdapter, ModelCompletionResponse } from "../agents/agents.types.js";
 
 const TEST_PASSWORD = "StrongPass123!";
@@ -46,7 +48,11 @@ function createRecordingAdapter(): {
             index: 0,
             message: {
               role: "assistant",
-              content: "Mock answer from recorder.",
+              content: JSON.stringify({
+                decision: "grounded_answer",
+                answer: "Mock answer from recorder.",
+                citedChunkIds: ["chunk-1"],
+              }),
             },
             finishReason: "stop",
           },
@@ -61,23 +67,59 @@ function createRecordingAdapter(): {
   return { adapter, calls };
 }
 
-function createStubRetrieval(): HybridRetrievalService {
+function createStubRetrieval(tenantId: string): HybridRetrievalService {
+  const candidate: RetrievalCandidate = {
+    chunkId: "chunk-1",
+    documentId: new mongoose.Types.ObjectId().toString(),
+    documentVersionId: new mongoose.Types.ObjectId().toString(),
+    tenantId,
+    text: "The company handbook covers onboarding and remote work.",
+    score: 0.9,
+    pageNumber: 2,
+    sectionTitle: "Onboarding",
+    retrievalMethod: "hybrid",
+  };
+
+  const evidenceItem: EvidenceItem = {
+    rank: 1,
+    candidate,
+    scoreBreakdown: {
+      fusionScore: candidate.score,
+      rerankScore: 0.9,
+      semanticScore: candidate.score,
+      exactTermScore: 0,
+      sourceAuthorityScore: 0,
+      versionPreferenceScore: 0,
+      totalScore: 0.9,
+    },
+    citationAnchor: {
+      chunkId: candidate.chunkId,
+      documentId: candidate.documentId,
+      documentVersionId: candidate.documentVersionId,
+      pageNumber: candidate.pageNumber,
+    },
+    textExcerpt: candidate.text,
+  };
+
+  const evidenceBundle: EvidenceBundle = {
+    items: [evidenceItem],
+    totalTokenCount: 20,
+    maxTokenCount: 4000,
+    inputCandidateCount: 1,
+    conflictGroups: [],
+    sufficiency: {
+      level: "SUFFICIENT",
+      reasons: ["Strong authorized test evidence"],
+    },
+    scoreExplanation: "Deterministic maxTokens test evidence",
+    accessPolicyVersion: "test",
+    createdAt: new Date().toISOString(),
+  };
+
   return {
     async hybridSearch() {
       return {
-        candidates: [
-          {
-            chunkId: "chunk-1",
-            documentId: new mongoose.Types.ObjectId().toString(),
-            documentVersionId: "v1",
-            tenantId: "",
-            text: "The company handbook covers onboarding.",
-            score: 0.9,
-            pageNumber: 2,
-            sectionTitle: "Onboarding",
-            retrievalMethod: "hybrid" as const,
-          },
-        ],
+        candidates: [candidate],
         totalCandidates: 1,
         filterSummary: {
           tenantFilter: true,
@@ -92,6 +134,7 @@ function createStubRetrieval(): HybridRetrievalService {
           keywordCandidateCount: 1,
           traceId: "chat-max-tokens-test",
         },
+        evidenceBundle,
       };
     },
     async vectorSearch() {
@@ -148,7 +191,7 @@ beforeEach(async () => {
 test("tenant aiRuntimePreferences.maxTokens is injected into the LLM completion call", async () => {
   const { tenant, user } = await seedTenantAdmin(128);
   const { adapter, calls } = createRecordingAdapter();
-  const service = new ChatService(createStubRetrieval(), adapter);
+  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
 
   const response = await service.sendMessage(
     { message: "What does the handbook say about onboarding?" },
@@ -176,10 +219,10 @@ test("tenant aiRuntimePreferences.maxTokens is injected into the LLM completion 
 test("default maxTokens is used when tenant settings are not customized", async () => {
   const { tenant, user } = await seedTenantAdmin(1024);
   const { adapter, calls } = createRecordingAdapter();
-  const service = new ChatService(createStubRetrieval(), adapter);
+  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
 
   await service.sendMessage(
-    { message: "Hello" },
+    { message: "What is the remote work policy?" },
     {
       tenantId: tenant.id,
       actorId: user.id,

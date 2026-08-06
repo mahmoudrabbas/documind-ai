@@ -52,12 +52,20 @@ test("citations enabled uses the citing system prompt and instructs to always ci
   });
 
   assert.equal(messages[0].role, "system");
-  assert.match(messages[0].content, /mention which document it came from/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /"decision"/);
+  assert.match(messages[0].content, /"answer"/);
+  assert.match(messages[0].content, /"citedChunkIds"/);
+  assert.match(messages[0].content, /grounded_answer/);
 
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "system");
   assert.match(contextMsg.content, /Always cite your sources/);
-  assert.match(contextMsg.content, /\[Source 1: Company Handbook — Protected Values \(p\.3\)\]/);
+  assert.match(contextMsg.content, /Context:/);
+  assert.match(
+    contextMsg.content,
+    /\[Source 1: id:[^\s\]]+ doc:[^\s\]]+ title:Company Handbook — Protected Values \(p\.3\)\]/,
+  );
   assert.match(contextMsg.content, /The protected value is 42/);
 
   assert.deepEqual(messages[messages.length - 1], {

@@ -17,9 +17,16 @@ import {
 } from "../permissions/permissions.operation.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
-import type { AccessContext } from "../retrieval/retrieval.types.js";
+import type { AccessContext, RetrievalCandidate } from "../retrieval/retrieval.types.js";
+import type { EvidenceBundle } from "../reranker/reranker.types.js";
+import {
+  EVIDENCE_ITEM_MIN_TOTAL_SCORE,
+  isSufficientBundle,
+} from "../reranker/reranker.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
+import { z } from "zod";
+import type { QueryPlan } from "../intent-query/intentQuery.types.js";
 import { getTenantSettings } from "../settings/settings.service.js";
 import DocumentModel from "../../db/models/document.model.js";
 import type { MessageAttachment } from "../../db/models/message.model.js";
@@ -57,14 +64,110 @@ import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-w
 import { CostService } from "../analytics/cost.service.js";
 import { getLangfuse } from "../../providers/observability/langfuse.js";
 
-const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. When referencing information, mention which document it came from.`;
+const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a concise string in the user's language. citedChunkIds must be an array of chunkId strings (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
 const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
 const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
+const INSUFFICIENT_AUTHORIZED_EVIDENCE_AR =
+  "لا توجد أدلة كافية مصرّح بها للإجابة على هذا السؤال.";
 
 function ragContextInstruction(citationsEnabled: boolean): string {
   return citationsEnabled
     ? "Use the following context to answer the question. Always cite your sources."
     : "Use the following context to answer the question. Do not mention or cite your sources, documents, or page numbers in the answer.";
+}
+
+const SOCIAL_REPLIES: Record<
+  "ar" | "en",
+  Record<import("../intent-query/intentQuery.types.js").SocialSubtypeValue, string>
+> = {
+  ar: {
+    greeting: "مرحباً! كيف يمكنني مساعدتك اليوم؟",
+    thanks: "على الرحب والسعة! يسعدني مساعدتك.",
+    farewell: "مع السلامة! أتمنى لك يوماً سعيداً.",
+    acknowledgement: "تمام، أنا جاهز لمساعدتك.",
+    wellbeing: "أنا بخير، شكراً لسؤالك! كيف يمكنني مساعدتك؟",
+  },
+  en: {
+    greeting: "Hello! How can I help you today?",
+    thanks: "You're welcome! Happy to help.",
+    farewell: "Goodbye! Have a great day.",
+    acknowledgement: "Got it — I'm here to help.",
+    wellbeing: "I'm doing well, thanks for asking! How can I help you?",
+  },
+};
+
+function socialReplyFor(
+  language: "ar" | "en" | "mixed",
+  subtype: import("../intent-query/intentQuery.types.js").SocialSubtypeValue,
+): string {
+  return SOCIAL_REPLIES[language === "ar" ? "ar" : "en"][subtype] ??
+    (language === "ar"
+      ? "مرحباً! كيف يمكنني مساعدتك اليوم؟"
+      : "Hello! How can I help you today?");
+}
+
+function unsupportedReplyFor(language: "ar" | "en" | "mixed"): string {
+  return language === "ar"
+    ? "هذا السؤال خارج نطاق وثائق الشركة. يمكنني مساعدتك في الأسئلة المتعلقة بسياسات الشركة ووثائقها."
+    : "This question is outside the scope of company documents. I can help with questions about company policies and documents.";
+}
+
+function confidenceBucket(confidence: number): "low" | "medium" | "high" {
+  if (confidence < 0.5) return "low";
+  if (confidence < 0.8) return "medium";
+  return "high";
+}
+
+interface RoutingDecision {
+  route: string;
+  intent: string;
+  language: string;
+  confidence: number;
+  fallbackUsed: boolean;
+}
+
+// Routing observability: log only structured, privacy-safe fields — never the
+// raw question, answer, evidence, or prompts.
+function logRouteDecision(
+  decision: RoutingDecision,
+  extras: {
+    tenantId: string;
+    conversationId: string;
+    retrievalSkipped: boolean;
+    sourceCount: number;
+    reasonCode: string;
+    latencyMs: number;
+    // Optional observability fields
+    retrievalCandidateCount?: number;
+    evidenceBundleSufficiency?: string;
+    evidenceItemCount?: number;
+    finalAnswerDecision?: string;
+    returnedSourceCount?: number;
+    persistedSourceCount?: number;
+  },
+): void {
+  logger.info(
+    {
+      tenantId: extras.tenantId,
+      conversationId: extras.conversationId,
+      route: decision.route,
+      intent: decision.intent,
+      language: decision.language,
+      confidenceBucket: confidenceBucket(decision.confidence),
+      fallbackUsed: decision.fallbackUsed,
+      retrievalSkipped: extras.retrievalSkipped,
+      sourceCount: extras.sourceCount,
+      reasonCode: extras.reasonCode,
+      latencyMs: extras.latencyMs,
+      retrievalCandidateCount: extras.retrievalCandidateCount,
+      evidenceBundleSufficiency: extras.evidenceBundleSufficiency,
+      evidenceItemCount: extras.evidenceItemCount,
+      finalAnswerDecision: extras.finalAnswerDecision,
+      returnedSourceCount: extras.returnedSourceCount,
+      persistedSourceCount: extras.persistedSourceCount,
+    },
+    "chat routing decision",
+  );
 }
 
 export function buildRagMessages(options: {
@@ -94,7 +197,7 @@ export function buildRagMessages(options: {
     const contextBlock = sources
       .map(
         (s, i) =>
-          `[Source ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
+          `[Source ${i + 1}: id:${s.chunkId} doc:${s.documentId} title:${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
       )
       .join("\n\n");
 
@@ -110,8 +213,64 @@ export function buildRagMessages(options: {
 
 export function insufficientAuthorizedEvidenceResponse(
   conversationId: string,
+  language: "ar" | "en" | "mixed" = "en",
 ): Omit<ChatResponse, "messageId"> {
-  return { answer: INSUFFICIENT_AUTHORIZED_EVIDENCE, sources: [], conversationId };
+  return {
+    answer:
+      language === "ar"
+        ? INSUFFICIENT_AUTHORIZED_EVIDENCE_AR
+        : INSUFFICIENT_AUTHORIZED_EVIDENCE,
+    sources: [],
+    conversationId,
+  };
+}
+
+/**
+ * Central weak-evidence gate.
+ *
+ * When a reranker evidence bundle is available, a candidate is
+ * supportive evidence only when its per-item reranked `totalScore`
+ * reaches the weak boundary (>= EVIDENCE_ITEM_MIN_TOTAL_SCORE).
+ * Items below the floor are excluded from generation context,
+ * persistence, and citations. NaN/Infinity/non-numeric scores are
+ * never supportive.
+ *
+ * Without a bundle (no reranker configured or reranker failed),
+ * evidence is treated as insufficient — fail closed. The raw
+ * retrieval score scale has no documented and tested relevance
+ * threshold, so no raw-score acceptance is permitted.
+ *
+ * Survivor order always mirrors the input candidate order.
+ */
+export function isSufficientEvidence(score: number): boolean {
+  return Number.isFinite(score) && score >= EVIDENCE_ITEM_MIN_TOTAL_SCORE;
+}
+
+export function filterSufficientEvidence(
+  candidates: RetrievalCandidate[],
+  evidenceBundle?: EvidenceBundle | null,
+): RetrievalCandidate[] {
+  if (candidates.length === 0) return [];
+
+  if (evidenceBundle && evidenceBundle.items.length > 0) {
+    // Bundle-level sufficiency gate: only SUFFICIENT bundles
+    // may reach answer generation. NO_EVIDENCE, WEAK, and
+    // CONFLICTING bundles are treated as insufficient — fail closed.
+    if (!isSufficientBundle(evidenceBundle)) return [];
+
+    const sufficientChunkIds = new Set<string>();
+    for (const item of evidenceBundle.items) {
+      if (isSufficientEvidence(item.scoreBreakdown.totalScore)) {
+        sufficientChunkIds.add(item.candidate.chunkId);
+      }
+    }
+    return candidates.filter((candidate) =>
+      sufficientChunkIds.has(candidate.chunkId),
+    );
+  }
+
+  // Fail closed: no valid evidence bundle means no sufficient evidence.
+  return [];
 }
 
 export function safeHistoryForRag(messages: Array<{ role: string; content: string; sources: unknown[] }>): Array<{ role: "user" | "assistant"; content: string }> {
@@ -233,10 +392,11 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Failed to load conversation history");
     }
 
-    // 7. Analyze query intent via IntentQueryService
+    // 7. Analyze query intent via IntentQueryService and route the message.
     let queryText = input.message;
+    let intentResult: QueryPlan | null = null;
     try {
-      const intentResult = await getIntentQueryService().analyzeQuery(
+      intentResult = await getIntentQueryService().analyzeQuery(
         {
           question: input.message,
           conversationId,
@@ -252,6 +412,14 @@ export class ChatService {
         },
       );
 
+      const routing: RoutingDecision = {
+        route: intentResult.route,
+        intent: intentResult.detectedIntent,
+        language: intentResult.language,
+        confidence: intentResult.intentConfidence,
+        fallbackUsed: intentResult.processingMetadata?.fallbackUsed ?? false,
+      };
+
       if (
         intentResult.semanticQueries &&
         intentResult.semanticQueries.length > 0
@@ -259,50 +427,128 @@ export class ChatService {
         queryText = intentResult.semanticQueries[0].text;
       }
 
-      if (intentResult.detectedIntent === "unsafe") {
-        const unsafeAnswer =
-          intentResult.language === "ar"
-            ? "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
-            : "This request cannot be processed due to safety policies.";
-        const msgDoc = await chatRepo.addMessage(
-          tenantIdStr,
-          conversationId,
-          "assistant",
-          unsafeAnswer,
-          currentCount + 1,
-        );
-        return {
-          messageId: msgDoc._id.toString(),
-          answer: unsafeAnswer,
-          sources: [],
-          conversationId,
-        };
-      }
+      switch (intentResult.route) {
+        case "social": {
+          const answer = socialReplyFor(
+            intentResult.language,
+            intentResult.socialSubtype ?? "acknowledgement",
+          );
+          const msgDoc = await chatRepo.addMessage(
+            tenantIdStr,
+            conversationId,
+            "assistant",
+            answer,
+            currentCount + 1,
+          );
+          logRouteDecision(routing, {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: true,
+            sourceCount: 0,
+            reasonCode: "SOCIAL_INTENT",
+            latencyMs: Date.now() - start,
+          });
+          return {
+            messageId: msgDoc._id.toString(),
+            answer,
+            sources: [],
+            conversationId,
+          };
+        }
 
-      if (
-        intentResult.clarificationNeeded &&
-        intentResult.clarification &&
-        !intentResult.processingMetadata?.fallbackUsed
-      ) {
-        const lang = intentResult.language;
-        const clarifyMsg =
-          lang === "ar"
-            ? intentResult.clarification.messageAr
-            : intentResult.clarification.messageEn;
-        const answer = clarifyMsg ?? "Could you please clarify your question?";
-        const msgDoc = await chatRepo.addMessage(
-          tenantIdStr,
-          conversationId,
-          "assistant",
-          answer,
-          currentCount + 1,
-        );
-        return {
-          messageId: msgDoc._id.toString(),
-          answer,
-          sources: [],
-          conversationId,
-        };
+        case "unsafe": {
+          const unsafeAnswer =
+            intentResult.language === "ar"
+              ? "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
+              : "This request cannot be processed due to safety policies.";
+          const msgDoc = await chatRepo.addMessage(
+            tenantIdStr,
+            conversationId,
+            "assistant",
+            unsafeAnswer,
+            currentCount + 1,
+          );
+          logRouteDecision(routing, {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: true,
+            sourceCount: 0,
+            reasonCode: "UNSAFE_INTENT",
+            latencyMs: Date.now() - start,
+          });
+          return {
+            messageId: msgDoc._id.toString(),
+            answer: unsafeAnswer,
+            sources: [],
+            conversationId,
+          };
+        }
+
+        case "unsupported": {
+          const answer = unsupportedReplyFor(intentResult.language);
+          const msgDoc = await chatRepo.addMessage(
+            tenantIdStr,
+            conversationId,
+            "assistant",
+            answer,
+            currentCount + 1,
+          );
+          logRouteDecision(routing, {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: true,
+            sourceCount: 0,
+            reasonCode: "UNSUPPORTED_INTENT",
+            latencyMs: Date.now() - start,
+          });
+          return {
+            messageId: msgDoc._id.toString(),
+            answer,
+            sources: [],
+            conversationId,
+          };
+        }
+
+        case "clarification": {
+          // The deterministic LLM fallback sets clarificationNeeded + fallbackUsed;
+          // falling back must never hijack the message into a clarification.
+          if (
+            intentResult.processingMetadata?.fallbackUsed ||
+            !intentResult.clarification
+          ) {
+            break;
+          }
+          const lang = intentResult.language;
+          const clarifyMsg =
+            lang === "ar"
+              ? intentResult.clarification.messageAr
+              : intentResult.clarification.messageEn;
+          const answer = clarifyMsg ?? "Could you please clarify your question?";
+          const msgDoc = await chatRepo.addMessage(
+            tenantIdStr,
+            conversationId,
+            "assistant",
+            answer,
+            currentCount + 1,
+          );
+          logRouteDecision(routing, {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: true,
+            sourceCount: 0,
+            reasonCode: "CLARIFICATION_REQUIRED",
+            latencyMs: Date.now() - start,
+          });
+          return {
+            messageId: msgDoc._id.toString(),
+            answer,
+            sources: [],
+            conversationId,
+          };
+        }
+
+        default:
+          break;
       }
     } catch (err) {
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
@@ -316,7 +562,23 @@ export class ChatService {
       baseRole: actor.actorRole,
     };
 
+    // Route-scoped retrieval: when the router resolved specific (authorized)
+    // document hints, restrict search to those documents.
+    const routeFilter =
+      intentResult && intentResult.referencedDocumentIds.length > 0
+        ? { documentIds: intentResult.referencedDocumentIds }
+        : undefined;
+
     let sources: ChatSource[] = [];
+    // persistedSources will only be non-empty for grounded answers that are
+    // explicitly authorized and validated by the reranker evidence bundle.
+    let persistedSources: ChatSource[] = [];
+
+    // Preserve the reranker bundle and survivor candidates for final decisioning
+    // (used after generation to decide whether to persist or expose sources).
+    let retrievalEvidenceBundle: EvidenceBundle | undefined;
+    let survivorsForDecision: RetrievalCandidate[] = [];
+
     const retrievalSpan = trace?.span({
       name: "rag-retrieval",
       metadata: { method: "hybrid", topK: 5 },
@@ -324,12 +586,32 @@ export class ChatService {
     });
     try {
       const retrievalResult = await this.retrievalService.hybridSearch(
-        { queryText, topK: 5 },
+        {
+          queryText,
+          topK: 5,
+          ...(routeFilter ? { filter: routeFilter } : {}),
+        },
         accessContext,
       );
 
+
+      // Preserve evidence bundle for later decision logic and auditing.
+      retrievalEvidenceBundle = retrievalResult.evidenceBundle;
+
+      const survivors = filterSufficientEvidence(
+        retrievalResult.candidates,
+        retrievalResult.evidenceBundle,
+      );
+
+      // Keep survivors available for final decisioning — used to validate any
+      // citation IDs returned by the generator and to ensure only used chunks
+      // are ever persisted or exposed.
+      survivorsForDecision = survivors;
+
+      // Console logs for test visibility
+
       const docIds = [
-        ...new Set(retrievalResult.candidates.map((c) => c.documentId)),
+        ...new Set(survivors.map((c) => c.documentId)),
       ];
 
       const docTitles = new Map<string, string>();
@@ -349,7 +631,7 @@ export class ChatService {
         }
       }
 
-      sources = retrievalResult.candidates.map((c) => ({
+      sources = survivors.map((c) => ({
         chunkId: c.chunkId,
         documentId: c.documentId,
         text: c.text,
@@ -371,13 +653,35 @@ export class ChatService {
     }
 
     if (sources.length === 0) {
+      const insufficientLanguage = intentResult?.language ?? "en";
+      const insufficientMessage = insufficientAuthorizedEvidenceResponse(
+        conversationId,
+        insufficientLanguage,
+      );
       const assistantDoc = await chatRepo.addMessage(
         tenantIdStr,
         conversationId,
         "assistant",
-        INSUFFICIENT_AUTHORIZED_EVIDENCE,
+        insufficientMessage.answer,
         currentCount + 1,
         [],
+      );
+      logRouteDecision(
+        {
+          route: intentResult?.route ?? "rag",
+          intent: intentResult?.detectedIntent ?? "knowledge_question",
+          language: intentResult?.language ?? "en",
+          confidence: intentResult?.intentConfidence ?? 0,
+          fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+        },
+        {
+          tenantId: tenantIdStr,
+          conversationId,
+          retrievalSkipped: false,
+          sourceCount: 0,
+          reasonCode: "NO_SUFFICIENT_AUTHORIZED_EVIDENCE",
+          latencyMs: Date.now() - start,
+        },
       );
       await getAuditWriter().write({
         action: "RETRIEVAL_DENIAL",
@@ -400,11 +704,14 @@ export class ChatService {
       });
       return {
         messageId: assistantDoc._id.toString(),
-        ...insufficientAuthorizedEvidenceResponse(conversationId),
+        ...insufficientMessage,
       };
     }
 
     // 9. Build RAG prompt and generate answer
+    // Build RAG messages including the retrieval candidates as context. The
+    // generator is allowed to return a structured decision in the completion
+    // response (e.g., { decision: "insufficient_evidence", message: "...", citedChunkIds: [] }).
     const messages = buildRagMessages({
       citationsEnabled,
       historyFromDb,
@@ -413,6 +720,7 @@ export class ChatService {
     });
 
     // 10. Call LLM
+
     let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
     const generation = trace?.generation({
       name: "groq-chat",
@@ -421,6 +729,7 @@ export class ChatService {
       // No input: field — messages contain private tenant document content
     });
     try {
+      logger.info({ tenantId: tenantIdStr, conversationId, provider: this.modelAdapter.providerKey }, "Invoking modelAdapter.complete");
       response = await this.modelAdapter.complete({
         messages,
         temperature: 0.3,
@@ -459,10 +768,10 @@ export class ChatService {
       throw mapped;
     }
 
-    const answer = sanitizeAssistantOutput(
-      response.choices[0]?.message?.content ?? "",
-    );
-    if (!answer) {
+
+    const rawContent = response.choices[0]?.message?.content ?? "";
+    const answerText = sanitizeAssistantOutput(rawContent);
+    if (!answerText) {
       throw new AppError(
         502,
         LLM_PROVIDER_UNAVAILABLE,
@@ -506,15 +815,270 @@ export class ChatService {
       });
     }
 
-    // 11. Save assistant response (sources are stored only when citations are enabled)
+    // The generation model must return a strict JSON object conforming to the
+    // answer-writer schema. Fail-closed: malformed, missing, or schema-invalid
+    // outputs become 'insufficient_evidence' and return zero sources.
+    const AnswerWriterSchema = z.object({
+      decision: z.enum(["grounded_answer","insufficient_evidence","clarification","unsupported","unsafe"]),
+      answer: z.string(),
+      // citedChunkIds required (may be empty for non-grounded decisions)
+      citedChunkIds: z.array(z.string()),
+    }).strict();
+
+    // Try to locate and parse a JSON object in the model output. Strip fences
+    // if present. Any parse/validation failure downgrades to insufficient_evidence.
+    type AnswerParseResult =
+      | { success: false; error: unknown }
+      | { success: true; data: z.infer<typeof AnswerWriterSchema> };
+
+    let parsed: AnswerParseResult;
+    try {
+      let body = rawContent.trim();
+      if (body.startsWith("```")) {
+        body = body.replace(/^```json\s*/i, "").replace(/```$/g, "").trim();
+      }
+      if (!body.startsWith("{")) {
+        // Plain free-form output is unacceptable for production correctness
+        parsed = { success: false, error: new Error("No JSON object present") };
+      } else {
+        const obj = JSON.parse(body);
+        const sp = AnswerWriterSchema.safeParse(obj as unknown);
+        if (sp.success) parsed = { success: true, data: sp.data };
+        else parsed = { success: false, error: sp.error };
+      }
+    } catch (err) {
+      parsed = { success: false, error: err };
+    }
+
+    let finalDecision: string = "insufficient_evidence";
+    let finalMessage: string = answerText;
+    let citedChunkIds: string[] = [];
+
+    if (!parsed.success) {
+      // Malformed or invalid generator output: fail to insufficient_evidence
+      logger.warn({ tenantId: tenantIdStr }, "Generator output failed answer-writer schema validation");
+
+      const assistantDoc = await chatRepo.addMessage(
+        tenantIdStr,
+        conversationId,
+        "assistant",
+        finalMessage,
+        currentCount + 1,
+        [],
+      );
+
+      logRouteDecision(
+        {
+          route: intentResult?.route ?? "rag",
+          intent: intentResult?.detectedIntent ?? "knowledge_question",
+          language: intentResult?.language ?? "en",
+          confidence: intentResult?.intentConfidence ?? 0,
+          fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+        },
+        {
+          tenantId: tenantIdStr,
+          conversationId,
+          retrievalSkipped: false,
+          sourceCount: 0,
+          reasonCode: "MALFORMED_GENERATOR_OUTPUT",
+          latencyMs: Date.now() - start,
+        },
+      );
+
+      await getAuditWriter().write({
+        action: "RETRIEVAL_SEARCH",
+        resourceType: "Retrieval",
+        resourceId: conversationId,
+        outcome: "SUCCESS",
+        tenantId: tenantIdStr,
+        actorId: actor.actorId,
+        actorEmail: actor.actorEmail,
+        actorRole: actor.actorRole,
+        metadata: {
+          conversationId,
+          sourceCount: 0,
+          latencyMs: Date.now() - start,
+          finalDecision: "insufficient_evidence",
+        },
+      });
+
+      return {
+        messageId: assistantDoc._id.toString(),
+        answer: finalMessage,
+        sources: [],
+        conversationId,
+      };
+    }
+
+    // Valid JSON per schema
+    finalDecision = parsed.data.decision;
+
+    // Sanitize the structured answer field itself before persistence or return.
+    // Sanitizing rawContent above is not sufficient because rawContent is the
+    // complete JSON string, while reasoning may exist inside the answer value.
+    const structuredAnswer = parsed.data.answer;
+    const sanitizedStructuredAnswer =
+      hasUnclosedReasoningBlock(structuredAnswer)
+        ? ""
+        : sanitizeAssistantOutput(structuredAnswer);
+
+    if (!sanitizedStructuredAnswer) {
+      throw new AppError(
+        502,
+        LLM_PROVIDER_UNAVAILABLE,
+        "The assistant produced no usable answer. Please try again.",
+      );
+    }
+
+    finalMessage = sanitizedStructuredAnswer;
+    // Deduplicate citedChunkIds while preserving order
+    const seen = new Set<string>();
+    citedChunkIds = parsed.data.citedChunkIds.filter((id: unknown) => {
+      if (typeof id !== "string") return false;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    // If decision indicates no sources, enforce zero sources and return
+    const decisionNoSources = new Set(["insufficient_evidence", "unsupported", "clarification"]);
+    if (decisionNoSources.has(finalDecision)) {
+      const assistantDoc = await chatRepo.addMessage(
+        tenantIdStr,
+        conversationId,
+        "assistant",
+        finalMessage,
+        currentCount + 1,
+        [],
+      );
+
+      logRouteDecision(
+        {
+          route: intentResult?.route ?? "rag",
+          intent: intentResult?.detectedIntent ?? "knowledge_question",
+          language: intentResult?.language ?? "en",
+          confidence: intentResult?.intentConfidence ?? 0,
+          fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+        },
+        {
+          tenantId: tenantIdStr,
+          conversationId,
+          retrievalSkipped: false,
+          sourceCount: 0,
+          reasonCode: "GENERATION_DECISION_NO_SOURCES",
+          latencyMs: Date.now() - start,
+        },
+      );
+
+      await getAuditWriter().write({
+        action: "RETRIEVAL_SEARCH",
+        resourceType: "Retrieval",
+        resourceId: conversationId,
+        outcome: "SUCCESS",
+        tenantId: tenantIdStr,
+        actorId: actor.actorId,
+        actorEmail: actor.actorEmail,
+        actorRole: actor.actorRole,
+        metadata: {
+          conversationId,
+          sourceCount: 0,
+          latencyMs: Date.now() - start,
+          finalDecision,
+        },
+      });
+
+      return {
+        messageId: assistantDoc._id.toString(),
+        answer: finalMessage,
+        sources: [],
+        conversationId,
+      };
+    }
+
+    // For grounded_answer, citedChunkIds MUST be present and non-empty.
+    if (finalDecision === "grounded_answer") {
+      if (!Array.isArray(citedChunkIds) || citedChunkIds.length === 0) {
+        // Missing citations for grounded answer: downgrade to insufficient_evidence
+        logger.warn({ tenantId: tenantIdStr }, "Grounded decision missing citedChunkIds; downgrading to insufficient_evidence");
+        const assistantDoc = await chatRepo.addMessage(
+          tenantIdStr,
+          conversationId,
+          "assistant",
+          finalMessage,
+          currentCount + 1,
+          [],
+        );
+        await getAuditWriter().write({
+          action: "RETRIEVAL_SEARCH",
+          resourceType: "Retrieval",
+          resourceId: conversationId,
+          outcome: "SUCCESS",
+          tenantId: tenantIdStr,
+          actorId: actor.actorId,
+          actorEmail: actor.actorEmail,
+          actorRole: actor.actorRole,
+          metadata: {
+            conversationId,
+            sourceCount: 0,
+            latencyMs: Date.now() - start,
+            finalDecision: "insufficient_evidence",
+          },
+        });
+
+        logRouteDecision(
+          {
+            route: intentResult?.route ?? "rag",
+            intent: intentResult?.detectedIntent ?? "knowledge_question",
+            language: intentResult?.language ?? "en",
+            confidence: intentResult?.intentConfidence ?? 0,
+            fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+          },
+          {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: false,
+            sourceCount: 0,
+            reasonCode: "MISSING_CITATIONS_FOR_GROUNDED",
+            latencyMs: Date.now() - start,
+          },
+        );
+
+        return {
+          messageId: assistantDoc._id.toString(),
+          answer: finalMessage,
+          sources: [],
+          conversationId,
+        };
+      }
+    }
+
+    // Validate citedChunkIds against survivorsForDecision and the reranker bundle.
+    if (Array.isArray(citedChunkIds) && citedChunkIds.length > 0 && retrievalEvidenceBundle) {
+      const approvedIds = new Set(survivorsForDecision.map((s) => s.chunkId));
+      const validatedCitations = citedChunkIds.filter((id) => approvedIds.has(id));
+      const orderedValidated: string[] = [];
+      for (const s of survivorsForDecision) {
+        if (validatedCitations.includes(s.chunkId)) orderedValidated.push(s.chunkId);
+      }
+      citedChunkIds = orderedValidated;
+
+      // Build persistedSources only from validated citedChunkIds
+      persistedSources = sources.filter((s) => citedChunkIds.includes(s.chunkId));
+    } else {
+      // No validated citations -> no persisted sources
+      persistedSources = [];
+    }
+
+    // Persist assistant message including only validated sources when citations
+    // are enabled.
     const assistantDoc = await chatRepo.addMessage(
       tenantIdStr,
       conversationId,
       "assistant",
-      answer,
+      finalMessage,
       currentCount + 1,
       citationsEnabled
-        ? sources.map((s) => ({
+        ? persistedSources.map((s) => ({
             chunkId: s.chunkId,
             documentId: s.documentId,
             documentTitle: s.documentTitle ?? "Unknown Document",
@@ -556,7 +1120,7 @@ export class ChatService {
           currency: costRes.currency,
           latencyMs,
           success: true,
-          evidenceIds: sources.map((s) => s.chunkId),
+          evidenceIds: persistedSources.map((s) => s.chunkId),
         });
       })
       .catch((err) => {
@@ -574,10 +1138,45 @@ export class ChatService {
       actorRole: actor.actorRole,
       metadata: {
         conversationId,
-        sourceCount: sources.length,
+        sourceCount: persistedSources.length,
         latencyMs: Date.now() - start,
+        finalDecision,
       },
     });
+
+    logRouteDecision(
+      {
+        route: intentResult?.route ?? "rag",
+        intent: intentResult?.detectedIntent ?? "knowledge_question",
+        language: intentResult?.language ?? "en",
+        confidence: intentResult?.intentConfidence ?? 0,
+        fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+      },
+      {
+        tenantId: tenantIdStr,
+        conversationId,
+        retrievalSkipped: false,
+        sourceCount: persistedSources.length,
+        reasonCode: "GROUNDED_RAG",
+        latencyMs: Date.now() - start,
+        retrievalCandidateCount:
+          survivorsForDecision.length > 0
+            ? survivorsForDecision.length
+            : undefined,
+        evidenceBundleSufficiency:
+          retrievalEvidenceBundle?.sufficiency?.level,
+        evidenceItemCount:
+          retrievalEvidenceBundle
+            ? retrievalEvidenceBundle.items.length
+            : undefined,
+        finalAnswerDecision:
+          persistedSources.length > 0
+            ? "grounded_answer"
+            : "insufficient_evidence",
+        returnedSourceCount: sources.length,
+        persistedSourceCount: persistedSources.length,
+      },
+    );
 
     await langfuse?.flushAsync().catch((err) => {
       logger.warn({ err }, "Failed to flush Langfuse events");
@@ -585,8 +1184,8 @@ export class ChatService {
 
     return {
       messageId: assistantDoc._id.toString(),
-      answer,
-      ...(citationsEnabled ? { sources } : {}),
+      answer: finalMessage,
+      ...(citationsEnabled ? { sources: persistedSources } : {}),
       conversationId,
     };
   }

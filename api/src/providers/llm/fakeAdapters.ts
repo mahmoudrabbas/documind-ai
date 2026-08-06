@@ -1,5 +1,6 @@
 import type { EmbeddingAdapter, ModelAdapter, ModelCompletionResponse } from "../../modules/agents/agents.types.js";
 import type { VisionAdapter } from "./visionAdapter.js";
+import { detectSocialMessage } from "../../modules/intent-query/intentQuery.socialDetector.js";
 
 export class FakeModelAdapter implements ModelAdapter {
   readonly providerKey = "fake";
@@ -15,13 +16,121 @@ export class FakeModelAdapter implements ModelAdapter {
     const lastUser = [...params.messages].reverse().find((m) => m.role === "user");
     const rawContent = lastUser?.content ?? "";
     let text = "";
-    const toolCall = params.tools?.length
-      ? `[tool:${(params.tools[0] as Record<string, unknown>).function ? String((params.tools[0] as Record<string, unknown>).function) : "unknown"}(${JSON.stringify({ ok: true })})]`
-      : "";
+    // Intentionally ignore toolCall for this fake adapter
+    // toolCall intentionally unused in this fake adapter
+    const _toolCall = params.tools?.length ? "tool-used" : undefined;
 
     const hasIntentSystemPrompt = params.messages.some(
       (m) => m.role === "system" && (m.content.includes("intent detection") || m.content.includes("QueryPlan"))
     );
+
+    // Supervisor deterministic prompt handling: produce short plan text based on user message
+    const isSupervisor = params.messages.some(
+      (m) =>
+        (m.role === "system" && m.content.includes("deterministic supervisor")) ||
+        (m.content && typeof m.content === "string" && (m.content.includes("You are the supervisor") || m.content.includes("Choose plan, tool call, or handoff")))
+    );
+
+    if (isSupervisor) {
+      const userMsg = params.messages.find((m) => m.role === "user")?.content ?? "";
+      // Try to robustly extract the input JSON when Supervisor passes a prompt like:
+      // "... Input: {"agentName":"a","note":"handoff to billing" }"
+      let noteText = userMsg;
+      try {
+        const inputMatch = userMsg.match(/Input:\s*(\{[\s\S]*\})/i);
+        if (inputMatch) {
+          const parsed = JSON.parse(inputMatch[1]);
+          if (parsed && typeof parsed.note === "string") {
+            noteText = parsed.note;
+          }
+        }
+      } catch (_e) {
+        // fall back to raw userMsg
+      }
+
+      const lower = (noteText || "").toLowerCase();
+      if (
+          lower.includes("approval") ||
+          lower.includes("approve") ||
+          lower.includes("موافقة")
+        ) {
+          return {
+            id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            provider: "fake",
+            model: "fake-supervisor",
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: "handoff to approval-agent",
+                },
+                finishReason: "stop",
+              },
+            ],
+            usage: {
+              promptTokens: rawContent.length,
+              completionTokens: 4,
+              totalTokens: rawContent.length + 4,
+            },
+            latencyMs: 5,
+            estimatedCost: 0,
+          };
+        }
+      if (lower.includes("handoff")) {
+        const match = noteText.match(/handoff to ([A-Za-z0-9_-]+)/i);
+        const target = match?.[1] ?? "handoff-agent";
+        return {
+          id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          provider: "fake",
+          model: "fake-supervisor",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: `handoff to ${target}` },
+              finishReason: "stop",
+            },
+          ],
+          usage: { promptTokens: rawContent.length, completionTokens: 5, totalTokens: rawContent.length + 5 },
+          latencyMs: 5,
+          estimatedCost: 0,
+        };
+      }
+      if (lower.includes("call") || lower.includes("tool")) {
+        // respond with a tool call plan
+        return {
+          id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          provider: "fake",
+          model: "fake-supervisor",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: `tool: echo` },
+              finishReason: "stop",
+            },
+          ],
+          usage: { promptTokens: rawContent.length, completionTokens: 3, totalTokens: rawContent.length + 3 },
+          latencyMs: 5,
+          estimatedCost: 0,
+        };
+      }
+      // default plan
+      return {
+        id: `fake-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        provider: "fake",
+        model: "fake-supervisor",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: `plan: do something` },
+            finishReason: "stop",
+          },
+        ],
+        usage: { promptTokens: rawContent.length, completionTokens: 3, totalTokens: rawContent.length + 3 },
+        latencyMs: 5,
+        estimatedCost: 0,
+      };
+    }
 
     if (hasIntentSystemPrompt) {
       const question = rawContent;
@@ -42,6 +151,8 @@ export class FakeModelAdapter implements ModelAdapter {
           messageEn: "This request violates safety policies and cannot be processed.",
           messageAr: "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان."
         };
+      } else if (detectSocialMessage(question).isSocial) {
+        detectedIntent = "social";
       } else if (lowerQ.includes("compare") || lowerQ.includes("مقارنة")) {
         detectedIntent = "comparison";
       } else if (lowerQ.includes("summarize") || lowerQ.includes("ملخص")) {
@@ -54,6 +165,7 @@ export class FakeModelAdapter implements ModelAdapter {
 
       const isArabic = /[\u0600-\u06FF]/.test(question);
       const language = isArabic ? "ar" : "en";
+      const social = detectSocialMessage(question);
 
       const simulatedPlan = {
         schemaVersion: "1.0.0",
@@ -62,13 +174,18 @@ export class FakeModelAdapter implements ModelAdapter {
         language,
         detectedIntent,
         intentConfidence,
+        socialSubtype:
+          detectedIntent === "social"
+            ? (social.subtype ?? "acknowledgement")
+            : "acknowledgement",
         entities: [],
         temporalConstraints: [],
         referencedDocumentIds: [],
+        referencedDocumentTitles: [],
         departments: [],
         categories: [],
         exactTerms: [],
-        semanticQueries: [
+        semanticQueries: detectedIntent === "social" ? [] : [
           { text: question, language, weight: 1.0 }
         ],
         keywordQueries: [],
@@ -88,20 +205,33 @@ export class FakeModelAdapter implements ModelAdapter {
 
       text = JSON.stringify(simulatedPlan);
     } else {
-      const inputMatch = rawContent.match(/Input:\s*(\{.*?\})\s*\./s);
-      const inputJson = inputMatch ? inputMatch[1] : rawContent;
-      const lower = inputJson.toLowerCase();
-
-      if (/handoff\s+to/i.test(lower)) {
-        text = `Handoff requested. ${toolCall ? toolCall + " " : ""}Transferred to specialized agent.`;
-      } else if (/\bapproval\b/i.test(lower)) {
-        text = `Handoff to approval-agent for human approval.`;
-      } else if (/\bfail\b/i.test(lower)) {
-        text = `Simulated failure.`;
-      } else if (/\btool\b|\bcall\b/i.test(lower)) {
-        text = `Use tool: echo.`;
+      // For RAG/chat generation contexts, produce a strict JSON answer when
+      // the prompt contains a Context block with source ids. Otherwise, emit
+      // a structured insufficient_evidence JSON.
+      const hasContext = params.messages.some((m) => m.content && m.content.includes("Context:"));
+      if (hasContext) {
+        // extract chunk ids embedded as 'id:chunkId' inside the context
+        const combined = params.messages.map((m) => m.content).join("\n");
+        const idRegex = /id:([^\s\]]+)/g;
+        const ids: string[] = [];
+        let match: RegExpExecArray | null;
+        while ((match = idRegex.exec(combined))) {
+          if (!ids.includes(match[1])) ids.push(match[1]);
+        }
+        const cited = ids.slice(0, 5);
+        const json = {
+          decision: cited.length > 0 ? "grounded_answer" : "insufficient_evidence",
+          answer: cited.length > 0 ? "Simulated grounded answer." : "I could not find sufficient information in the provided documents.",
+          citedChunkIds: cited,
+        };
+        text = JSON.stringify(json);
       } else {
-        text = `Plan: continue with default agent.`;
+        const json = {
+          decision: "insufficient_evidence",
+          answer: "Insufficient evidence.",
+          citedChunkIds: [],
+        };
+        text = JSON.stringify(json);
       }
     }
 

@@ -9,11 +9,34 @@ export const IntentClass = z.enum([
   "summarization",          // Summarize a document or section
   "navigation",             // "Where do I find…" / "Show me…"
   "administrative_action",  // Requests an action (e.g., "upload X")
+  "social",                 // Social/ritual greeting, thanks, politeness (no docs)
   "unsupported",            // General/off-topic question
   "unsafe",                 // Prompt injection / policy violation
 ]);
 
 export type IntentClassValue = z.infer<typeof IntentClass>;
+
+// ── Query routes ──
+export const QueryRoute = z.enum([
+  "social",                 // Pure social exchange → no retrieval, no sources
+  "rag",                    // Retrieval-augmented generation with citations
+  "clarification",          // Request more details from the user
+  "unsupported",            // Off-topic → polite refusal, no retrieval
+  "unsafe",                 // Prompt injection / policy violation → hard refusal
+]);
+
+export type QueryRouteValue = z.infer<typeof QueryRoute>;
+
+// ── Social subtypes (populated only when route === "social") ──
+export const SocialSubtype = z.enum([
+  "greeting",          // "hello", "مرحبا"
+  "thanks",            // "thank you", "شكراً جزيلاً"
+  "farewell",          // "bye", "مع السلامة"
+  "acknowledgement",   // "ok", "تمام" — neutral confirmation/emoji reaction
+  "wellbeing",         // "how are you", "كيف حالك؟"
+]);
+
+export type SocialSubtypeValue = z.infer<typeof SocialSubtype>;
 
 // ── Language ──
 export const QueryLanguage = z.enum(["ar", "en", "mixed"]);
@@ -80,9 +103,12 @@ export const QueryPlanSchema = z.object({
   language: QueryLanguage,
   detectedIntent: IntentClass,
   intentConfidence: z.number().min(0).max(1),
+  route: QueryRoute,
+  socialSubtype: SocialSubtype.default("acknowledgement"),
   entities: z.array(DetectedEntity).max(50),
   temporalConstraints: z.array(TemporalConstraint).max(10),
   referencedDocumentIds: z.array(z.string().max(100)).max(20),
+  referencedDocumentTitles: z.array(z.string().max(500)).max(20),
   departments: z.array(z.string().max(200)).max(20),
   categories: z.array(z.string().max(200)).max(20),
   exactTerms: z.array(z.string().max(500)).max(30),
