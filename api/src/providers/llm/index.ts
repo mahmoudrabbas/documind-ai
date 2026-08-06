@@ -1,4 +1,6 @@
 import type { ModelAdapter } from "../../modules/agents/agents.types.js";
+import { AppError } from "../../common/errors/AppError.js";
+import { LLM_PROVIDER_UNAVAILABLE } from "../../common/errors/errorCodes.js";
 import { FakeModelAdapter } from "./fakeAdapters.js";
 import { FallbackModelAdapter } from "./fallbackAdapter.js";
 import { GroqChatAdapter } from "./groqChat.adapter.js";
@@ -8,8 +10,9 @@ let singleton: ModelAdapter | null = null;
 
 /**
  * Returns the configured model adapter singleton.
- * Builds the provider fallback chain: Groq → Bedrock → Fake (graceful
- * degradation). Set GROQ_API_KEY and/or SBG_API_KEY to enable real providers.
+ * Builds the real provider fallback chain: Groq → Bedrock. Set GROQ_API_KEY
+ * and/or SBG_API_KEY to enable real providers. Never enables FakeModelAdapter
+ * outside automated tests.
  */
 export function getModelAdapter(): ModelAdapter {
   if (singleton) return singleton;
@@ -29,11 +32,20 @@ export async function getModelAdapterAsync(): Promise<ModelAdapter> {
 }
 
 /**
- * Builds the fallback chain in priority order:
+ * Builds the runtime fallback chain in priority order:
  *  1. Groq (primary) when GROQ_API_KEY is set
  *  2. Bedrock (secondary) when SBG_API_KEY is set
- *  3. FakeModelAdapter (graceful degradation) as the terminal adapter
- * When only one adapter is configured it is returned unwrapped.
+ *
+ * FakeModelAdapter is a test double that simulates completions. It must never
+ * be part of the runtime chain: real users must never receive simulated
+ * answers or simulated sources. Tests inject it explicitly (setModelAdapter,
+ * ChatService/IntentQueryService constructors, setIntentQueryAdaptersForTests).
+ * Under NODE_ENV=test a FakeModelAdapter is allowed as a terminal adapter so
+ * un-injected test paths degrade deterministically.
+ *
+ * When no real provider is configured outside NODE_ENV=test, this throws a
+ * controlled LLM_PROVIDER_UNAVAILABLE configuration error instead of silently
+ * serving simulated responses.
  */
 function buildModelAdapterChain(): ModelAdapter {
   const adapters: ModelAdapter[] = [];
@@ -51,7 +63,18 @@ function buildModelAdapterChain(): ModelAdapter {
     adapters.push(createStudentBedrockProvider());
   }
 
-  adapters.push(new FakeModelAdapter());
+  if (adapters.length === 0 && process.env.NODE_ENV === "test") {
+    adapters.push(new FakeModelAdapter());
+  }
+
+  if (adapters.length === 0) {
+    throw new AppError(
+      503,
+      LLM_PROVIDER_UNAVAILABLE,
+      "No AI model provider is configured. Set GROQ_API_KEY or SBG_API_KEY before starting the server.",
+      { configuredProviders: ["groq", "student-bedrock"] },
+    );
+  }
 
   if (adapters.length === 1) return adapters[0];
   return new FallbackModelAdapter(adapters);
