@@ -30,6 +30,20 @@ describe("AssistantMarkdown", () => {
     expect(html).toContain("Hello from the assistant.");
   });
 
+  it("preserves single-line soft breaks inside paragraphs (summary lines)", () => {
+    const html = render("1- a\n2- b\n3- c");
+    expect(html).toContain('class="whitespace-pre-line"');
+    expect(html).toContain("1- a\n2- b\n3- c");
+  });
+
+  it("keeps soft breaks in paragraphs without breaking real lists", () => {
+    const html = render("1- a\n2- b\n\n- one\n- two");
+    expect(html).toContain("1- a\n2- b");
+    expect(html).toContain("<ul");
+    expect(html).toContain(">one</li>");
+    expect(html).toContain(">two</li>");
+  });
+
   it("does not execute script tags in raw HTML", () => {
     const html = render('<script>alert("xss")</script>\n\nSafe.');
     expect(html).not.toContain("<script");

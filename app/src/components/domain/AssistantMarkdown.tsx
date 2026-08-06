@@ -40,6 +40,9 @@ function IgnoredImage(): null {
 const components: Components = {
   a: MarkdownLink,
   img: IgnoredImage,
+  p: ({ node: _node, ...props }) => (
+    <p className="whitespace-pre-line" {...props} />
+  ),
   h1: ({ node: _node, ...props }) => (
     <h1 className="mt-3 text-base font-bold text-on-surface" {...props} />
   ),
