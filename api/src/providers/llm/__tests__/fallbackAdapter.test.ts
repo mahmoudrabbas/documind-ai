@@ -36,6 +36,26 @@ class MockAdapter implements ModelAdapter {
   }
 }
 
+class RateLimitMockAdapter implements ModelAdapter {
+  readonly providerKey: string;
+  calls = 0;
+
+  constructor(providerKey: string) {
+    this.providerKey = providerKey;
+  }
+
+  async complete(): Promise<ModelCompletionResponse> {
+    this.calls += 1;
+    const error = new Error(`mock ${this.providerKey} rate limit`) as Error & {
+      status?: number;
+      headers?: Headers;
+    };
+    error.status = 429;
+    error.headers = new Headers({ "retry-after": "120" });
+    throw error;
+  }
+}
+
 test("primary succeeds → returns result without falling back", async () => {
   const primary = new MockAdapter("groq");
   const secondary = new MockAdapter("bedrock");
@@ -133,4 +153,37 @@ test("providerKey reports the chain composition", () => {
 
 test("constructor rejects an empty chain", () => {
   assert.throws(() => new FallbackModelAdapter([]), /at least one/);
+});
+
+test("rate-limited provider with a long retry-after is not retried in-request and propagates the controlled 429", async () => {
+  const primary = new RateLimitMockAdapter("groq");
+  const adapter = new FallbackModelAdapter([primary], { maxRetries: 3, retryDelayMs: 1 });
+
+  await assert.rejects(
+    adapter.complete({ messages: [{ role: "user", content: "hi" }] }),
+    (err: unknown) => {
+      const error = err as {
+        statusCode?: number;
+        code?: string;
+        details?: { retryAfterSeconds?: number };
+      };
+      assert.equal(primary.calls, 1, "rate-limited provider must not be retried in-request");
+      assert.equal(error.statusCode, 429);
+      assert.equal(error.code, "LLM_RATE_LIMITED");
+      assert.equal(error.details?.retryAfterSeconds, 120);
+      return true;
+    },
+  );
+});
+
+test("rate-limited provider falls straight to the next real provider", async () => {
+  const primary = new RateLimitMockAdapter("groq");
+  const secondary = new MockAdapter("bedrock");
+  const adapter = new FallbackModelAdapter([primary, secondary], { maxRetries: 3, retryDelayMs: 1 });
+
+  const response = await adapter.complete({ messages: [{ role: "user", content: "hi" }] });
+
+  assert.equal(response.provider, "bedrock");
+  assert.equal(primary.calls, 1, "rate-limited provider must not be retried in-request");
+  assert.equal(secondary.calls, 1);
 });

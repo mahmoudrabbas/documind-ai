@@ -1,4 +1,6 @@
 import { logger } from "../../common/logger/logger.js";
+import { LLM_RATE_LIMITED } from "../../common/errors/errorCodes.js";
+import { mapLlmProviderError } from "./providerError.js";
 import type {
   ModelAdapter,
   ModelCompletionMessage,
@@ -46,6 +48,12 @@ const DEFAULT_CIRCUIT_BREAKER_RESET_MS = 60_000;
  * OPEN is skipped entirely until the reset window elapses, at which point a
  * single test request is allowed (half-open). If every provider fails, the
  * last error is rethrown.
+ *
+ * Rate-limit responses (HTTP 429 / LLM_RATE_LIMITED) are NOT retried within
+ * the request: the provider asks the caller to wait (often minutes), so the
+ * chain moves directly to the next provider. If no next provider exists, the
+ * controlled rate-limit error is propagated with its retryAfterSeconds
+ * metadata intact.
  */
 export class FallbackModelAdapter implements ModelAdapter {
   readonly providerKey: string;
@@ -84,10 +92,13 @@ export class FallbackModelAdapter implements ModelAdapter {
         return response;
       } catch (error) {
         lastError = error;
-        logger.info({
+        const mapped = mapLlmProviderError(error);
+        logger.warn({
           failedProvider: adapter.providerKey,
           chain: this.providerKey,
-          error: error instanceof Error ? error.message : String(error),
+          errorCode: mapped.code,
+          statusCode: mapped.statusCode,
+          circuitState: this.circuitStates.get(adapter.providerKey)?.state ?? "closed",
         }, "LLM provider failed; falling back to next provider");
       }
     }
@@ -103,6 +114,7 @@ export class FallbackModelAdapter implements ModelAdapter {
       logger.info({
         provider: adapter.providerKey,
         chain: this.providerKey,
+        circuitState: "open",
       }, "LLM provider skipped; circuit breaker is OPEN");
       throw new Error(`LLM provider "${adapter.providerKey}" is open for circuit breaker`);
     }
@@ -116,11 +128,37 @@ export class FallbackModelAdapter implements ModelAdapter {
       } catch (error) {
         lastError = error;
         this.recordFailure(adapter.providerKey);
+
+        const mapped = mapLlmProviderError(error);
+        const retryAfterSeconds =
+          typeof mapped.details === "object" &&
+          mapped.details !== null &&
+          "retryAfterSeconds" in mapped.details
+            ? (mapped.details as { retryAfterSeconds?: number }).retryAfterSeconds
+            : undefined;
+
+        // Rate-limit responses carry a requested retry window. Retrying the
+        // same provider within the request is pointless (and forbidden when
+        // the wait is measured in minutes): skip straight to the next
+        // provider with the structured error.
+        if (mapped.code === LLM_RATE_LIMITED) {
+          logger.warn({
+            provider: adapter.providerKey,
+            attempt: attempt + 1,
+            errorCode: mapped.code,
+            statusCode: mapped.statusCode,
+            retryAfterSeconds,
+            circuitState: this.circuitStates.get(adapter.providerKey)?.state ?? "closed",
+          }, "LLM provider rate-limited; not retrying in-request");
+          throw mapped;
+        }
+
         logger.warn({
           provider: adapter.providerKey,
           attempt: attempt + 1,
           maxRetries: this.maxRetries + 1,
-          error: error instanceof Error ? error.message : String(error),
+          errorCode: mapped.code,
+          statusCode: mapped.statusCode,
         }, "LLM provider attempt failed");
         if (attempt < this.maxRetries) {
           const backoffMs = this.retryDelayMs * Math.pow(this.backoffFactor, attempt);

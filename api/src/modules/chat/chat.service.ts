@@ -66,9 +66,105 @@ import { getLangfuse } from "../../providers/observability/langfuse.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a concise string in the user's language. citedChunkIds must be an array of chunkId strings (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
 const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
+const RAG_SUMMARY_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a structured summary in the user's language written ONLY from the provided context: a short opening statement, then several distinct evidence-grounded points organized as paragraphs or bullet points, and a brief conclusion when the context supports one. Do not invent facts, figures, or points that are not present in the context. If the evidence supports only one point, give a short summary of that point rather than padding with fabricated content. If the context is insufficient, set decision to "insufficient_evidence" and answer a short message explaining that no evidence supports a summary. citedChunkIds must be an array of chunkId strings for the sources you actually used (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
+const RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers based on company documents. You must ONLY answer using the provided context from the company's knowledge base. Write a structured summary in the user's language: a short opening, then several distinct points grounded in the context organized as paragraphs or bullet points, and a brief conclusion when supported. Never make up information or points that are not present in the context. If the context does not contain enough information for a summary, say so clearly. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
 const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
 const INSUFFICIENT_AUTHORIZED_EVIDENCE_AR =
   "لا توجد أدلة كافية مصرّح بها للإجابة على هذا السؤال.";
+
+/**
+ * Answer-task classification separates the *retrieval route* (social | rag |
+ * clarification | unsupported | unsafe) from the *answer style* the generator
+ * should produce. Summary requests must not be forced into the concise style
+ * used for direct questions.
+ */
+export type AnswerTask = "direct_question" | "document_summary";
+
+const DEFAULT_MAX_TOKENS = 1024;
+const SUMMARY_MAX_TOKENS = 2048;
+const DIRECT_TOP_K = 5;
+const SUMMARY_TOP_K = 12;
+const SUMMARY_MAX_SOURCES = 8;
+const SUMMARY_CONTEXT_CHARS = 24_000;
+
+// Deterministic summary-task signals. The summarization intent from the query
+// planner wins, then depth/summary phrases in the original message. Arabic is
+// matched with plain substring checks (no \b word boundaries).
+const SUMMARY_TASK_PATTERNS: readonly string[] = [
+  "لخص",
+  "ملخص",
+  "أعطني ملخصاً",
+  "أعطني ملخصا",
+  "اعطني ملخصاً",
+  "اعطني ملخصا",
+  "أهم النقاط",
+  "اهم النقاط",
+  "النقاط الرئيسية",
+  "النقاط الرئيسيه",
+  "خلاصة",
+  "بالتفصيل",
+  "summarize",
+  "summarise",
+  "summary",
+  "key points",
+  "main points",
+  "detailed summary",
+  "in detail",
+  "recap",
+  "overview",
+];
+
+export function detectAnswerTask(
+  plan: Pick<QueryPlan, "detectedIntent"> | null | undefined,
+  message: string,
+): AnswerTask {
+  if (plan?.detectedIntent === "summarization") return "document_summary";
+  const text = message.trim().toLowerCase();
+  for (const pattern of SUMMARY_TASK_PATTERNS) {
+    if (text.includes(pattern.toLowerCase())) return "document_summary";
+  }
+  return "direct_question";
+}
+
+function systemPromptFor(task: AnswerTask, citationsEnabled: boolean): string {
+  if (task === "document_summary") {
+    return citationsEnabled
+      ? RAG_SUMMARY_SYSTEM_PROMPT
+      : RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS;
+  }
+  return citationsEnabled ? RAG_SYSTEM_PROMPT : RAG_SYSTEM_PROMPT_NO_CITATIONS;
+}
+
+/**
+ * Bounded, evidence-gated generation context for whole-document summaries.
+ * Preserves the reranker-approved order but prefers section/page diversity so
+ * the generator does not receive the same narrow passage repeatedly, and keeps
+ * a fixed maximum number of chunks and a context-token budget. Direct questions
+ * are never bounded here — they keep every authorized survivor.
+ */
+export function boundSummaryContext(
+  candidates: RetrievalCandidate[],
+): RetrievalCandidate[] {
+  if (candidates.length === 0) return [];
+  const picked: RetrievalCandidate[] = [];
+  const seenPageKeys = new Set<string>();
+  let totalChars = 0;
+  for (const candidate of candidates) {
+    if (picked.length >= SUMMARY_MAX_SOURCES) break;
+    const pageKey = `${candidate.documentId}:${candidate.pageNumber ?? 0}`;
+    if (picked.length > 0 && seenPageKeys.has(pageKey)) continue;
+    if (
+      picked.length > 0 &&
+      totalChars + (candidate.text?.length ?? 0) > SUMMARY_CONTEXT_CHARS
+    ) {
+      break;
+    }
+    picked.push(candidate);
+    seenPageKeys.add(pageKey);
+    totalChars += candidate.text?.length ?? 0;
+  }
+  return picked;
+}
 
 function ragContextInstruction(citationsEnabled: boolean): string {
   return citationsEnabled
@@ -137,6 +233,7 @@ function logRouteDecision(
     sourceCount: number;
     reasonCode: string;
     latencyMs: number;
+    answerTask?: string;
     // Optional observability fields
     retrievalCandidateCount?: number;
     evidenceBundleSufficiency?: string;
@@ -152,6 +249,7 @@ function logRouteDecision(
       conversationId: extras.conversationId,
       route: decision.route,
       intent: decision.intent,
+      answerTask: extras.answerTask,
       language: decision.language,
       confidenceBucket: confidenceBucket(decision.confidence),
       fallbackUsed: decision.fallbackUsed,
@@ -175,15 +273,14 @@ export function buildRagMessages(options: {
   historyFromDb: Array<{ role: "user" | "assistant"; content: string }>;
   sources: ChatSource[];
   userMessage: string;
+  task?: AnswerTask;
 }): { role: "system" | "user" | "assistant"; content: string }[] {
-  const { citationsEnabled, historyFromDb, sources, userMessage } = options;
+  const { citationsEnabled, historyFromDb, sources, userMessage, task = "direct_question" } = options;
   const messages: { role: "system" | "user" | "assistant"; content: string }[] =
     [
       {
         role: "system",
-        content: citationsEnabled
-          ? RAG_SYSTEM_PROMPT
-          : RAG_SYSTEM_PROMPT_NO_CITATIONS,
+        content: systemPromptFor(task, citationsEnabled),
       },
     ];
 
@@ -327,7 +424,7 @@ export class ChatService {
 
     // 3. Load tenant AI runtime preferences (citations toggle + generation limits).
     let citationsEnabled = true;
-    let maxTokens = 1024;
+    let maxTokens = DEFAULT_MAX_TOKENS;
     try {
       const tenantSettings = await getTenantSettings(tenantIdStr);
       citationsEnabled =
@@ -551,6 +648,15 @@ export class ChatService {
           break;
       }
     } catch (err) {
+      // Fail closed for control-plane errors. Quota denials
+      // (ENTITLEMENT_EXCEEDED), authorization denials, and input-validation
+      // rejections from intent analysis must reach the caller — degrading to
+      // raw-message routing would bypass the denial and continue into
+      // retrieval/generation. Only genuine non-AppError infrastructure
+      // failures are safe to degrade to the raw message.
+      if (err instanceof AppError) {
+        throw err;
+      }
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
     }
 
@@ -561,6 +667,13 @@ export class ChatService {
       actorEmail: actor.actorEmail,
       baseRole: actor.actorRole,
     };
+
+    // Answer task governs generation style and, for whole-document summaries,
+    // a bounded broader retrieval/context strategy. Direct questions keep the
+    // concise style and the default topK.
+    const answerTask = detectAnswerTask(intentResult, input.message);
+    const retrievalTopK =
+      answerTask === "document_summary" ? SUMMARY_TOP_K : DIRECT_TOP_K;
 
     // Route-scoped retrieval: when the router resolved specific (authorized)
     // document hints, restrict search to those documents.
@@ -581,14 +694,14 @@ export class ChatService {
 
     const retrievalSpan = trace?.span({
       name: "rag-retrieval",
-      metadata: { method: "hybrid", topK: 5 },
+      metadata: { method: "hybrid", topK: retrievalTopK },
       // No input: field — queryText is derived from private user message
     });
     try {
       const retrievalResult = await this.retrievalService.hybridSearch(
         {
           queryText,
-          topK: 5,
+          topK: retrievalTopK,
           ...(routeFilter ? { filter: routeFilter } : {}),
         },
         accessContext,
@@ -605,13 +718,20 @@ export class ChatService {
 
       // Keep survivors available for final decisioning — used to validate any
       // citation IDs returned by the generator and to ensure only used chunks
-      // are ever persisted or exposed.
-      survivorsForDecision = survivors;
+      // are ever persisted or exposed. Whole-document summaries additionally
+      // bound the generation context (chunk count + token budget) to the exact
+      // list the generator actually sees, so the citation whitelist always
+      // matches the context sent to the model.
+      const generationSurvivors =
+        answerTask === "document_summary"
+          ? boundSummaryContext(survivors)
+          : survivors;
+      survivorsForDecision = generationSurvivors;
 
       // Console logs for test visibility
 
       const docIds = [
-        ...new Set(survivors.map((c) => c.documentId)),
+        ...new Set(generationSurvivors.map((c) => c.documentId)),
       ];
 
       const docTitles = new Map<string, string>();
@@ -631,7 +751,7 @@ export class ChatService {
         }
       }
 
-      sources = survivors.map((c) => ({
+      sources = generationSurvivors.map((c) => ({
         chunkId: c.chunkId,
         documentId: c.documentId,
         text: c.text,
@@ -681,6 +801,7 @@ export class ChatService {
           sourceCount: 0,
           reasonCode: "NO_SUFFICIENT_AUTHORIZED_EVIDENCE",
           latencyMs: Date.now() - start,
+          answerTask,
         },
       );
       await getAuditWriter().write({
@@ -717,15 +838,21 @@ export class ChatService {
       historyFromDb,
       sources,
       userMessage: input.message,
+      task: answerTask,
     });
 
     // 10. Call LLM
+
+    // Whole-document summaries need a larger token budget than the concise
+    // direct-question default so the model can write a structured summary.
+    const effectiveMaxTokens =
+      answerTask === "document_summary" ? SUMMARY_MAX_TOKENS : maxTokens;
 
     let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
     const generation = trace?.generation({
       name: "groq-chat",
       model: this.modelAdapter.providerKey,
-      modelParameters: { temperature: 0.3, maxTokens },
+      modelParameters: { temperature: 0.3, maxTokens: effectiveMaxTokens },
       // No input: field — messages contain private tenant document content
     });
     try {
@@ -733,7 +860,7 @@ export class ChatService {
       response = await this.modelAdapter.complete({
         messages,
         temperature: 0.3,
-        maxTokens,
+        maxTokens: effectiveMaxTokens,
       });
       generation?.end({
         // No output: field — AI answer may contain private tenant document content
@@ -882,6 +1009,7 @@ export class ChatService {
           sourceCount: 0,
           reasonCode: "MALFORMED_GENERATOR_OUTPUT",
           latencyMs: Date.now() - start,
+          answerTask,
         },
       );
 
@@ -967,6 +1095,7 @@ export class ChatService {
           sourceCount: 0,
           reasonCode: "GENERATION_DECISION_NO_SOURCES",
           latencyMs: Date.now() - start,
+          answerTask,
         },
       );
 
@@ -1040,6 +1169,7 @@ export class ChatService {
             sourceCount: 0,
             reasonCode: "MISSING_CITATIONS_FOR_GROUNDED",
             latencyMs: Date.now() - start,
+            answerTask,
           },
         );
 
@@ -1175,6 +1305,7 @@ export class ChatService {
             : "insufficient_evidence",
         returnedSourceCount: sources.length,
         persistedSourceCount: persistedSources.length,
+        answerTask,
       },
     );
 
