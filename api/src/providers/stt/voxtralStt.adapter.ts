@@ -38,7 +38,7 @@ export class VoxtralSttAdapter {
 
   /**
    * Transcribes raw audio buffer into text using mistral.voxtral-small-24b-2507 model
-   * via AWS Bedrock / Gateway service.
+   * via AWS Bedrock / Gateway service or direct ITI student API.
    */
   async transcribe(
     audioBuffer: Buffer,
@@ -49,15 +49,25 @@ export class VoxtralSttAdapter {
     }
 
     const base64Audio = audioBuffer.toString("base64");
+    const audioFormat = mimeType.split("/")[1] || "webm";
 
-    // Endpoint candidates matching ITI Bedrock Gateway Adapter route patterns
-    const endpointCandidates = this.gatewayUrl.endsWith("/v1")
-      ? [`${this.gatewayUrl}/stt`, `${this.gatewayUrl}/chat/completions`, `${this.gatewayUrl}/invoke`]
-      : [`${this.gatewayUrl}/v1/stt`, `${this.gatewayUrl}/v1/chat/completions`, `${this.gatewayUrl}/stt`, `${this.gatewayUrl}/invoke`];
+    const endpointCandidates = [
+      `${this.gatewayUrl}/api/v1/student/chat`,
+      `${this.gatewayUrl}/v1/chat/completions`,
+      `${this.gatewayUrl}/chat/completions`,
+      `${this.gatewayUrl}/v1/stt`,
+      `${this.gatewayUrl}/stt`,
+      "https://apiaccess.iti.net.eg/api/v1/student/chat",
+      "http://127.0.0.1:8787/v1/chat/completions",
+      "http://host.docker.internal:8787/v1/chat/completions",
+    ];
+
+    // Deduplicate candidates preserving priority order
+    const uniqueCandidates = [...new Set(endpointCandidates)];
 
     let lastError: Error | null = null;
 
-    for (const url of endpointCandidates) {
+    for (const url of uniqueCandidates) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -69,6 +79,7 @@ export class VoxtralSttAdapter {
             Authorization: `Bearer ${this.apiKey}`,
           },
           body: JSON.stringify({
+            model_id: this.modelId,
             modelId: this.modelId,
             model: this.modelId,
             contentType: mimeType,
@@ -79,15 +90,11 @@ export class VoxtralSttAdapter {
             messages: [
               {
                 role: "user",
-                content: [
-                  {
-                    type: "input_audio",
-                    input_audio: {
-                      data: base64Audio,
-                      format: mimeType.split("/")[1] || "webm",
-                    },
-                  },
-                ],
+                content: "Please accurately transcribe the following voice audio recording into text.",
+                audio: {
+                  data: base64Audio,
+                  format: audioFormat,
+                },
               },
             ],
           }),
