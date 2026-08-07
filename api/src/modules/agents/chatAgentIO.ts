@@ -1,10 +1,14 @@
 import { z } from "zod";
 import {
   ClarificationRequest,
+  DetectedEntity,
   IntentClass,
+  KeywordQuery,
   QueryLanguage,
   QueryRoute,
+  SemanticQuery,
   SocialSubtype,
+  TemporalConstraint,
 } from "../intent-query/intentQuery.types.js";
 import {
   boundedIdArray,
@@ -47,6 +51,22 @@ export const IntentAgentOutputSchema = z
     clarification: ClarificationRequest.nullable().default(null),
     socialSubtype: SocialSubtype.optional(),
     isFollowUp: z.boolean().default(false),
+    // Issue 3 extension: typed search-plan metadata. All fields are bounded
+    // and never carry raw document/chunk text. Non-retrieval routes
+    // (social / unsupported / unsafe / clarification) always emit empty
+    // semanticQueries and keywordQueries so no executable plan leaks out.
+    reasonCode: z.string().trim().min(1).max(100).optional(),
+    semanticQueries: z.array(SemanticQuery).max(10).default([]),
+    keywordQueries: z.array(KeywordQuery).max(10).default([]),
+    exactTerms: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
+    entities: z.array(DetectedEntity).max(50).default([]),
+    referencedDocumentTitles: z
+      .array(z.string().trim().min(1).max(500))
+      .max(20)
+      .default([]),
+    temporalConstraints: z.array(TemporalConstraint).max(10).default([]),
+    departments: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+    categories: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
   })
   .strict();
 

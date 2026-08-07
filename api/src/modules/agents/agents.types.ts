@@ -78,6 +78,14 @@ export interface ApprovalRecord {
   createdAt: string;
 }
 
+export interface StepGuardrailRecord {
+  guardrailName: string;
+  decision: "allow" | "deny" | "require_approval";
+  reasonCode: string;
+  approvalRequired: boolean;
+  evaluatedAt: string;
+}
+
 export interface StepRecord {
   id: string;
   runId: string;
@@ -99,6 +107,7 @@ export interface StepRecord {
   approvalsCount: number;
   handoffToAgent: string | null;
   previousAgent: string | null;
+  guardrails: StepGuardrailRecord[];
   traceId: string;
   requestId: string;
   createdAt: string;

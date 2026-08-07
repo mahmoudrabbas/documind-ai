@@ -29,6 +29,7 @@ export interface AgentStepDocument extends mongoose.Document {
   approvalsCount: number;
   handoffToAgent: string | null;
   previousAgent: string | null;
+  guardrails: Record<string, unknown>[];
   traceId: string;
   requestId: string;
   createdAt: Date;
@@ -84,6 +85,7 @@ const agentStepSchema = new Schema<AgentStepDocument>(
     approvalsCount: { type: Number, default: 0, min: 0 },
     handoffToAgent: { type: String, default: null, trim: true, maxlength: 120 },
     previousAgent: { type: String, default: null, trim: true, maxlength: 120 },
+    guardrails: { type: Schema.Types.Mixed, default: [] },
     traceId: { type: String, required: true },
     requestId: { type: String, required: true },
   },
