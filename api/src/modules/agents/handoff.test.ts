@@ -10,6 +10,7 @@ import {
 import {
   ChatSupervisorInputSchema,
   IntentAgentInputSchema,
+  ComplianceAgentInputSchema,
 } from "./chatAgentIO.js";
 import { createChatWorkflowRegistry, WorkflowRegistry } from "./chatWorkflow.js";
 import { validateAgentHandoff } from "./handoff.js";
@@ -32,6 +33,7 @@ function envelope(overrides: Record<string, unknown> = {}) {
 const TARGET_SCHEMAS: Record<string, z.ZodType> = {
   "chat-supervisor": ChatSupervisorInputSchema,
   "intent-query-agent": IntentAgentInputSchema,
+  "compliance-agent": ComplianceAgentInputSchema,
 };
 
 function validate(
@@ -207,5 +209,43 @@ describe("AgentHandoffEnvelope validation", () => {
     const payloadKeys = Object.keys(handoff.payload as Record<string, unknown>);
     assert.ok(!payloadKeys.includes("tenantId"));
     assert.ok(!payloadKeys.includes("actorId"));
+  });
+
+  it("allows citation-verification-agent -> compliance-agent (Issue 7 edge)", () => {
+    const registry = createChatWorkflowRegistry();
+    const validated = validate(
+      registry,
+      envelope({
+        fromAgent: "citation-verification-agent",
+        toAgent: "compliance-agent",
+        reasonCode: "VERIFY_COMPLIANCE",
+        payload: {
+          answerDecision: "grounded_answer",
+          answer: "The policy is X.",
+        },
+      }),
+    );
+    assert.equal(validated.envelope.fromAgent, "citation-verification-agent");
+    assert.equal(validated.envelope.toAgent, "compliance-agent");
+  });
+
+  it("still blocks intent-query-agent -> compliance-agent", () => {
+    const registry = createChatWorkflowRegistry();
+    expectAppError(
+      () =>
+        validate(
+          registry,
+          envelope({
+            fromAgent: "intent-query-agent",
+            toAgent: "compliance-agent",
+            payload: {
+              answerDecision: "grounded_answer",
+              answer: "x",
+            },
+          }),
+        ),
+      AGENT_HANDOFF_INVALID,
+      400,
+    );
   });
 });

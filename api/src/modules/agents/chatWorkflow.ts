@@ -188,7 +188,7 @@ export function chatRagV1Definition(): ChatWorkflowDefinition {
       ],
       "intent-query-agent": ["chat-supervisor"],
       "answer-writer-agent": ["citation-verification-agent", "chat-supervisor"],
-      "citation-verification-agent": ["answer-writer-agent", "chat-supervisor"],
+      "citation-verification-agent": ["answer-writer-agent", "chat-supervisor", "compliance-agent"],
       "compliance-agent": ["chat-supervisor"],
     },
     metadata: { schemaVersion: "1.0.0" },

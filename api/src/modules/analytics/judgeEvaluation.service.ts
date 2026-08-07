@@ -93,6 +93,18 @@ export class JudgeEvaluationService {
       return;
     }
 
+    // Issue 7: source-less replies (social/unsupported/clarification/refusal)
+    // must never invoke the LLM judge. Fail-closed: no judge call, no
+    // persisted evaluation. The message was produced by the compliance gate
+    // with an empty sources array.
+    if (!message.sources || message.sources.length === 0) {
+      logger.info(
+        { tenantId: input.tenantId, messageId: input.messageId },
+        "Judge: assistant reply has no sources; skipping evaluation",
+      );
+      return;
+    }
+
     const conversation = await this.loadConversation(input.tenantId, input.conversationId);
     if (!conversation) {
       logger.warn({ tenantId: input.tenantId, messageId: input.messageId }, "Judge: conversation not found; skipping");

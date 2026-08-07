@@ -136,7 +136,12 @@ function makeHarness(overrides: {
 
 describe("JudgeEvaluationService.runEvaluation", () => {
   it("persists a completed evaluation for a valid assistant message", async () => {
-    const harness = makeHarness();
+    const harness = makeHarness({
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 1);
     assert.equal(harness.persisted.length, 1);
@@ -203,8 +208,7 @@ describe("JudgeEvaluationService.runEvaluation", () => {
   });
 
   it("skips a source-less social/unsupported reply gracefully (no judge, no persist)", async () => {
-    // Regression for Issue #283: social / unsupported / clarification replies
-    // are persisted with empty sources, so they must never trigger a judge run.
+    const { loader, calls: evidenceCalls } = makeEvidenceLoader(0);
     const harness = makeHarness({
       message: makeMessage({
         content: "أهلاً بك! كيف يمكنني مساعدتك؟",
@@ -212,20 +216,90 @@ describe("JudgeEvaluationService.runEvaluation", () => {
       }),
       evidenceCount: 0,
     });
+    harness.service = new (Object.getPrototypeOf(harness.service).constructor)({
+      judge: harness.fakeJudge,
+      evidenceLoader: loader,
+      loadAssistantMessage: harness.service["loadAssistantMessage"],
+      loadConversation: harness.service["loadConversation"],
+      loadPrecedingQuestion: harness.service["loadPrecedingQuestion"],
+      loadExistingEvaluation: harness.service["loadExistingEvaluation"],
+      persistEvaluation: harness.service["persistEvaluation"],
+    });
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 0);
     assert.equal(harness.persisted.length, 0);
+    assert.equal(evidenceCalls(), 0, "evidence loader must not be called for source-less replies");
+  });
+
+  it("skips judge and evidence loading for source-less refusal/clarification replies", async () => {
+    const { loader, calls: evidenceCalls } = makeEvidenceLoader(5);
+    const harness = makeHarness({
+      message: makeMessage({
+        content: "I don't have sufficient authorized evidence to answer that question.",
+        sources: [],
+      }),
+      evidenceCount: 5,
+    });
+    harness.service = new (Object.getPrototypeOf(harness.service).constructor)({
+      judge: harness.fakeJudge,
+      evidenceLoader: loader,
+      loadAssistantMessage: harness.service["loadAssistantMessage"],
+      loadConversation: harness.service["loadConversation"],
+      loadPrecedingQuestion: harness.service["loadPrecedingQuestion"],
+      loadExistingEvaluation: harness.service["loadExistingEvaluation"],
+      persistEvaluation: harness.service["persistEvaluation"],
+    });
+    await harness.service.runEvaluation(input);
+    assert.equal(harness.fakeJudge.evaluateCalls, 0);
+    assert.equal(harness.persisted.length, 0);
+    assert.equal(evidenceCalls(), 0, "evidence loader must not be called even if evidence available");
+  });
+
+  it("still evaluates sourced assistant replies normally", async () => {
+    const { loader, calls: evidenceCalls } = makeEvidenceLoader(2);
+    const harness = makeHarness({
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+      evidenceCount: 2,
+    });
+    harness.service = new (Object.getPrototypeOf(harness.service).constructor)({
+      judge: harness.fakeJudge,
+      evidenceLoader: loader,
+      loadAssistantMessage: harness.service["loadAssistantMessage"],
+      loadConversation: harness.service["loadConversation"],
+      loadPrecedingQuestion: harness.service["loadPrecedingQuestion"],
+      loadExistingEvaluation: harness.service["loadExistingEvaluation"],
+      persistEvaluation: harness.service["persistEvaluation"],
+    });
+    await harness.service.runEvaluation(input);
+    assert.equal(harness.fakeJudge.evaluateCalls, 1);
+    assert.equal(harness.persisted.length, 1);
+    assert.equal(evidenceCalls(), 1, "evidence loader must be called for sourced replies");
   });
 
   it("reuses an existing completed evaluation for the same judge version", async () => {
-    const harness = makeHarness({ existing: { judgeStatus: "completed" } });
+    const harness = makeHarness({
+      existing: { judgeStatus: "completed" },
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 0);
     assert.equal(harness.persisted.length, 0);
   });
 
   it("retries a failed evaluation (provider call happens and result replaces it)", async () => {
-    const harness = makeHarness({ existing: { judgeStatus: "failed" } });
+    const harness = makeHarness({
+      existing: { judgeStatus: "failed" },
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 1);
     assert.equal(harness.persisted.length, 1);
@@ -233,14 +307,27 @@ describe("JudgeEvaluationService.runEvaluation", () => {
   });
 
   it("retries a degraded evaluation (provider call happens and result replaces it)", async () => {
-    const harness = makeHarness({ existing: { judgeStatus: "degraded" } });
+    const harness = makeHarness({
+      existing: { judgeStatus: "degraded" },
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 1);
     assert.equal(harness.persisted.length, 1);
+    assert.equal((harness.persisted[0] as { judgeStatus: string }).judgeStatus, "completed");
   });
 
   it("re-evaluates when the existing evaluation belongs to an older judge version", async () => {
-    const harness = makeHarness({ existing: { judgeStatus: "completed" } });
+    const harness = makeHarness({
+      existing: { judgeStatus: "completed" },
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     harness.fakeJudge.judgeVersion = "judge-v2";
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 1);
@@ -249,23 +336,48 @@ describe("JudgeEvaluationService.runEvaluation", () => {
 
   it("reuses a concurrently-persisted completed evaluation on a duplicate-key error", async () => {
     const dupError = Object.assign(new Error("E11000 duplicate key"), { code: 11000 });
-    const harness = makeHarness({ persistError: dupError, existingAfterPersist: { judgeStatus: "completed" } });
+    const harness = makeHarness({
+      persistError: dupError,
+      existingAfterPersist: { judgeStatus: "completed" },
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await assert.doesNotReject(harness.service.runEvaluation(input));
   });
 
   it("rethrows a duplicate-key error when no completed evaluation exists concurrently", async () => {
     const dupError = Object.assign(new Error("E11000 duplicate key"), { code: 11000 });
-    const harness = makeHarness({ persistError: dupError });
+    const harness = makeHarness({
+      persistError: dupError,
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await assert.rejects(harness.service.runEvaluation(input), /E11000/);
   });
 
   it("rethrows non-duplicate persistence errors", async () => {
-    const harness = makeHarness({ persistError: new Error("connection lost") });
+    const harness = makeHarness({
+      persistError: new Error("connection lost"),
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await assert.rejects(harness.service.runEvaluation(input), /connection lost/);
   });
 
   it("passes the nearest preceding user question as the question", async () => {
-    const harness = makeHarness({ question: { content: "How many leave days?" } });
+    const harness = makeHarness({
+      question: { content: "How many leave days?" },
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     await harness.service.runEvaluation(input);
     assert.equal(harness.fakeJudge.evaluateCalls, 1);
   });
@@ -273,7 +385,12 @@ describe("JudgeEvaluationService.runEvaluation", () => {
 
 describe("JudgeEvaluationService.evaluateAsync", () => {
   it("never rejects even when runEvaluation throws", async () => {
-    const harness = makeHarness();
+    const harness = makeHarness({
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     const original = harness.service.runEvaluation.bind(harness.service);
     harness.service.runEvaluation = async () => {
       throw new Error("boom");
@@ -283,7 +400,12 @@ describe("JudgeEvaluationService.evaluateAsync", () => {
   });
 
   it("persists degraded and failed outcomes with their error codes", async () => {
-    const harness = makeHarness();
+    const harness = makeHarness({
+      message: makeMessage({
+        content: "The leave policy grants 30 days.",
+        sources: [{ chunkId: "c1", documentId: "d1" }],
+      }),
+    });
     harness.fakeJudge.outcome = {
       status: "failed",
       scores: { faithfulness: 0.5, relevancy: 0.5, coherence: 0.5, overall: 0.5 },
