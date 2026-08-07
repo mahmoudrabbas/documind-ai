@@ -509,9 +509,9 @@ export class SupervisorRuntime {
       );
       tracker.assertWithinDeadline();
 
-      // Trace the executor's observed LLM usage into run totals and the step
-      // record. The executor reports metadata only; prompts, raw provider
-      // output, and chain-of-thought are never part of the result.
+      // Trace the executor's observed LLM usage into run totals. The executor
+      // reports metadata only; prompts, raw provider output, and
+      // chain-of-thought are never part of the result.
       if (executorResult.metadata) {
         if (typeof executorResult.metadata.tokensUsed === "number") {
           state.totalTokensUsed += executorResult.metadata.tokensUsed;
@@ -532,16 +532,37 @@ export class SupervisorRuntime {
       });
       const fullOutcomes = [...outcomes, outputOutcome];
 
-      if (outputOutcome.decision === "deny") {
+      // The specialized agent's execution is attributed to its own step, so
+      // multi-agent runs persist one step per executing agent while the
+      // handoff above stays traceable as a handoff. The handoff step is closed
+      // as completed (the transition itself succeeded) and any executor
+      // failure is recorded on the dedicated execution step.
+      const executionStep = await this.createStep(
+        state,
+        "execute",
+        validated.payload as Record<string, unknown>,
+        toAgent,
+      );
+
+      const completeHandoff = async (status: "completed" | "failed") => {
         await this.completeStepWith(state, step.id, {
-          status: "failed",
+          status,
           guardrails: fullOutcomes,
           handoffToAgent: toAgent,
           previousAgent: fromAgent,
+        });
+      };
+
+      if (outputOutcome.decision === "deny") {
+        await completeHandoff("completed");
+        await this.completeStepWith(state, executionStep.id, {
+          status: "failed",
+          guardrails: fullOutcomes,
           error: {
             code: outputOutcome.reasonCode,
             message: `Executor output failed ${outputOutcome.guardrailName}`,
           },
+          ...tracingPatch,
         });
         return this.terminalFailed(outputOutcome.reasonCode);
       }
@@ -557,11 +578,10 @@ export class SupervisorRuntime {
               ? executorResult.error.message
               : "Executor failed",
         };
-        await this.completeStepWith(state, step.id, {
+        await completeHandoff("completed");
+        await this.completeStepWith(state, executionStep.id, {
           status: "failed",
           guardrails: fullOutcomes,
-          handoffToAgent: toAgent,
-          previousAgent: fromAgent,
           error: executorError,
           ...tracingPatch,
         });
@@ -569,12 +589,11 @@ export class SupervisorRuntime {
       }
 
       this.transitionHandoff(state, toAgent, decision.reasonCode);
-      await this.completeStepWith(state, step.id, {
+      await completeHandoff("completed");
+      await this.completeStepWith(state, executionStep.id, {
         status: "completed",
         guardrails: fullOutcomes,
         output: (executorResult.output as Record<string, unknown>) ?? {},
-        handoffToAgent: toAgent,
-        previousAgent: fromAgent,
         ...tracingPatch,
       });
       return this.continueRun();
@@ -750,8 +769,9 @@ export class SupervisorRuntime {
 
   private createStep(
     state: LoopState,
-    action: "handoff" | "tool_call" | "completed" | "failed" | "approval_requested" | "guardrail",
+    action: "handoff" | "execute" | "tool_call" | "completed" | "failed" | "approval_requested" | "guardrail",
     input: Record<string, unknown>,
+    agentName?: string,
   ) {
     const { context } = state;
     const stepIndex = state.stepCount;
@@ -760,7 +780,7 @@ export class SupervisorRuntime {
       runId: state.runId,
       tenantId: context.tenantId,
       stepIndex,
-      agentName: state.currentAgent,
+      agentName: agentName ?? state.currentAgent,
       action,
       input,
       guardrails: [],

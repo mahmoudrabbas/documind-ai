@@ -213,7 +213,7 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
       const result = await runtime.execute(baseRunInput({ runId }));
 
       assert.equal(result.status, "completed");
-      assert.equal(result.totalSteps, 3);
+      assert.equal(result.totalSteps, 4);
       assert.equal(result.handoffsCount, 2);
       assert.equal(typeof result.totalTokensUsed, "number");
       assert.ok((result.totalTokensUsed as number) > 0);
@@ -225,28 +225,40 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
           .lean()
       ).map((s) => ({ ...s, _id: String(s._id), runId: String(s.runId) }));
 
-      assert.equal(steps.length, 3);
-      const intentStep = steps.find((s) => s.handoffToAgent === "intent-query-agent");
-      assert.ok(intentStep, "intent handoff step was persisted");
-      assert.equal(intentStep.agentName, "chat-supervisor");
-      assert.equal(intentStep.action, "handoff");
-      assert.equal(intentStep.status, "completed");
-      assert.equal(intentStep.previousAgent, "chat-supervisor");
+      assert.equal(steps.length, 4);
 
-      assert.equal(intentStep.modelProvider, "fake");
-      assert.equal(intentStep.modelName, "fake");
-      assert.equal(intentStep.promptVersion, "1.1.0");
-      assert.equal(typeof intentStep.tokensUsed, "number");
-      assert.ok((intentStep.tokensUsed as number) > 0);
-      assert.equal(Number(intentStep.estimatedCost), 0);
-      assert.equal(typeof intentStep.latencyMs, "number");
-      assert.ok((intentStep.latencyMs as number) >= 0);
+      const intentHandoffStep = steps.find(
+        (s) => s.action === "handoff" && s.handoffToAgent === "intent-query-agent",
+      );
+      assert.ok(intentHandoffStep, "intent handoff step was persisted");
+      assert.equal(intentHandoffStep.agentName, "chat-supervisor");
+      assert.equal(intentHandoffStep.status, "completed");
+      assert.equal(intentHandoffStep.previousAgent, "chat-supervisor");
+      assert.equal(intentHandoffStep.output, null);
+      assert.equal(intentHandoffStep.tokensUsed, null);
+
+      const intentExecutionStep = steps.find(
+        (s) => s.action === "execute" && s.agentName === "intent-query-agent",
+      );
+      assert.ok(intentExecutionStep, "intent execution step was persisted");
+      assert.equal(intentExecutionStep.status, "completed");
+      assert.equal(intentExecutionStep.handoffToAgent, null);
+      assert.equal(intentExecutionStep.previousAgent, null);
+
+      assert.equal(intentExecutionStep.modelProvider, "fake");
+      assert.equal(intentExecutionStep.modelName, "fake");
+      assert.equal(intentExecutionStep.promptVersion, "1.1.0");
+      assert.equal(typeof intentExecutionStep.tokensUsed, "number");
+      assert.ok((intentExecutionStep.tokensUsed as number) > 0);
+      assert.equal(Number(intentExecutionStep.estimatedCost), 0);
+      assert.equal(typeof intentExecutionStep.latencyMs, "number");
+      assert.ok((intentExecutionStep.latencyMs as number) >= 0);
 
       assert.ok(
-        intentStep.output && typeof intentStep.output === "object",
-        "intent step output is an object",
+        intentExecutionStep.output && typeof intentExecutionStep.output === "object",
+        "intent execution step output is an object",
       );
-      const output = intentStep.output as Record<string, unknown>;
+      const output = intentExecutionStep.output as Record<string, unknown>;
       assert.equal(output.route, "rag");
       assert.equal(output.reasonCode, "RAG_REQUIRED");
       assert.equal(output.intent, "knowledge_question");
@@ -254,8 +266,8 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
       const run = await AgentRunModel.findById(runId).lean();
       assert.ok(run);
       assert.equal(run.status, "completed");
-      assert.equal(run.totalSteps, 3);
-      assert.equal(run.totalTokensUsed, intentStep.tokensUsed);
+      assert.equal(run.totalSteps, 4);
+      assert.equal(run.totalTokensUsed, intentExecutionStep.tokensUsed);
       assert.equal(Number(run.estimatedCost), 0);
     },
   );
@@ -279,11 +291,24 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
       const steps = await AgentStepModel.find({
         runId: new mongoose.Types.ObjectId(runId),
       }).lean();
-      const intentStep = steps.find((s) => s.handoffToAgent === "intent-query-agent");
-      assert.ok(intentStep, "failed intent handoff step was persisted");
-      assert.equal(intentStep.status, "failed");
-      assert.equal(intentStep.agentName, "chat-supervisor");
-      assert.equal((intentStep.error as Record<string, unknown>).code, "PERMISSION_REQUIRED");
+
+      const intentHandoffStep = steps.find(
+        (s) => s.action === "handoff" && s.handoffToAgent === "intent-query-agent",
+      );
+      assert.ok(intentHandoffStep, "intent handoff step was persisted");
+      assert.equal(intentHandoffStep.status, "completed");
+      assert.equal(intentHandoffStep.agentName, "chat-supervisor");
+      assert.equal(intentHandoffStep.error, null);
+
+      const intentExecutionStep = steps.find(
+        (s) => s.action === "execute" && s.agentName === "intent-query-agent",
+      );
+      assert.ok(intentExecutionStep, "failed intent execution step was persisted");
+      assert.equal(intentExecutionStep.status, "failed");
+      assert.equal(
+        (intentExecutionStep.error as Record<string, unknown>).code,
+        "PERMISSION_REQUIRED",
+      );
     },
   );
 });

@@ -1,6 +1,7 @@
 export interface ChatSource {
   chunkId: string;
   documentId: string;
+  documentVersionId?: string;
   text: string;
   pageNumber?: number;
   sectionTitle?: string;

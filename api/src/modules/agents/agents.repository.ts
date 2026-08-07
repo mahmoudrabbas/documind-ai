@@ -198,7 +198,7 @@ export async function createStep(input: {
     tenantId: new mongoose.Types.ObjectId(input.tenantId),
     stepIndex: input.stepIndex,
     agentName: input.agentName,
-    action: input.action as "plan" | "tool_call" | "handoff" | "guardrail" | "approval_requested" | "approval_resolved" | "completed" | "failed" | "cancelled",
+    action: input.action as "plan" | "tool_call" | "handoff" | "execute" | "guardrail" | "approval_requested" | "approval_resolved" | "completed" | "failed" | "cancelled",
     status: "running",
     input: input.input,
     modelProvider: input.modelProvider ?? null,

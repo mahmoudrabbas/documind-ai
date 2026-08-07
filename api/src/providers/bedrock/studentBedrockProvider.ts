@@ -268,6 +268,34 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
     throw lastError ?? new Error("Unknown error after retries");
   }
 
+  /**
+   * Lightweight liveness probe used by proactive failover. Reaches the gateway
+   * models endpoint and reports availability without surfacing the key.
+   */
+  async checkAvailability(
+    signal?: AbortSignal,
+  ): Promise<{ available: boolean; reason?: string }> {
+    const url = `${this.config.baseUrl}/api/v1/student/models`;
+    const probeSignal = signal
+      ? AbortSignal.any([AbortSignal.timeout(5_000), signal])
+      : AbortSignal.timeout(5_000);
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        signal: probeSignal,
+      });
+      return {
+        available: response.ok,
+        reason: response.ok ? undefined : `HTTP ${response.status}`,
+      };
+    } catch (error) {
+      return {
+        available: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async embedBatch(inputs: EmbeddingInput[]): Promise<EmbeddingResult[]> {
     const model = this.advanceEmbeddingModel();
     const results: EmbeddingResult[] = [];
@@ -323,7 +351,14 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
     topP?: number;
     maxTokens?: number;
     signal?: AbortSignal;
+    structuredOutput?: { type: "json_object" };
   }): Promise<ModelCompletionResponse> {
+    // `structuredOutput` is accepted for interface uniformity but intentionally
+    // NOT forwarded to the SBG gateway: the gateway request contract does not
+    // document response_format support, and sending an unrecognized field could
+    // turn an otherwise-working request into a 400. AnswerWriter still parses
+    // and strictly validates whatever this provider returns, so malformed
+    // output fails closed there.
     const isFast = params.maxTokens !== undefined && params.maxTokens < 1000;
     const model = this.advanceChatModel(isFast);
 

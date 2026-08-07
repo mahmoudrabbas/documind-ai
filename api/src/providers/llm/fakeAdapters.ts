@@ -1,9 +1,14 @@
-import type { EmbeddingAdapter, ModelAdapter, ModelCompletionResponse } from "../../modules/agents/agents.types.js";
+import type { EmbeddingAdapter, ModelCompletionResponse } from "../../modules/agents/agents.types.js";
+import type { AvailabilityProbeModelAdapter } from "./failoverModelAdapter.js";
 import type { VisionAdapter } from "./visionAdapter.js";
 import { detectSocialMessage } from "../../modules/intent-query/intentQuery.socialDetector.js";
 
-export class FakeModelAdapter implements ModelAdapter {
+export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "fake";
+
+  async checkAvailability(): Promise<{ available: boolean; reason?: string }> {
+    return { available: true };
+  }
   async complete(params: {
     messages: { role: string; content: string }[];
     tools?: Record<string, unknown>[];
@@ -12,6 +17,7 @@ export class FakeModelAdapter implements ModelAdapter {
     topP?: number;
     maxTokens?: number;
     signal?: AbortSignal;
+    structuredOutput?: { type: "json_object" };
   }): Promise<ModelCompletionResponse> {
     const lastUser = [...params.messages].reverse().find((m) => m.role === "user");
     const rawContent = lastUser?.content ?? "";

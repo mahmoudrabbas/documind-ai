@@ -196,6 +196,16 @@ export interface ModelCompletionResponse {
   estimatedCost: number;
 }
 
+/**
+ * Optional provider-neutral request for structured (machine-readable) output.
+ * When set, the adapter maps it to the provider's native structured-output
+ * capability (e.g. OpenAI/Groq `response_format`). Absent for ordinary calls
+ * that remain free-form, so existing callers are unaffected.
+ */
+export interface ModelStructuredOutput {
+  type: "json_object";
+}
+
 export interface ModelAdapter {
   readonly providerKey: string;
   complete(params: {
@@ -206,6 +216,7 @@ export interface ModelAdapter {
     topP?: number;
     maxTokens?: number;
     signal?: AbortSignal;
+    structuredOutput?: ModelStructuredOutput;
   }): Promise<ModelCompletionResponse>;
 }
 
