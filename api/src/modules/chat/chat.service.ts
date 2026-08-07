@@ -24,6 +24,14 @@ import {
   isSufficientBundle,
 } from "../reranker/reranker.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
+import type { RunContext } from "../agents/agents.types.js";
+import { createAnalyticsTool } from "../agents/tools/analyticsTool.js";
+import { createKnowledgeGapTool } from "../agents/tools/knowledgeGapTool.js";
+import {
+  detectAnalyticsRequest,
+  formatAnalyticsAnswer,
+  detectReplyLanguage,
+} from "./chat.tools.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
 import { z } from "zod";
 import type { QueryPlan, QueryLanguageValue } from "../intent-query/intentQuery.types.js";
@@ -83,6 +91,14 @@ const DIRECT_TOP_K = 5;
 const SUMMARY_TOP_K = 12;
 const SUMMARY_MAX_SOURCES = 8;
 const SUMMARY_CONTEXT_CHARS = 24_000;
+
+// Production agent tools invoked by the chat assistant flow. `analytics_query`
+// answers tenant-stats/top-query questions with real tenant data; the
+// `report_knowledge_gap` tool records unanswered/low-confidence questions as
+// knowledge-gap candidates for the current tenant. Both handlers are the same
+// registered production tools surfaced to the agent supervisor.
+const analyticsTool = createAnalyticsTool();
+const knowledgeGapTool = createKnowledgeGapTool();
 
 // Deterministic summary-task signals. The summarization intent from the query
 // planner wins, then depth/summary phrases in the original message. Arabic is
@@ -687,6 +703,75 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
     }
 
+    // 7b. Deterministic analytics routing. Questions about tenant stats
+    // (document/query counts, top queries, feedback, usage trends) invoke the
+    // production `analytics_query` tool with real tenant data instead of
+    // running RAG over the knowledge base. Document-specific questions are
+    // excluded by the detector so they stay on the RAG path.
+    const analyticsRequest = detectAnalyticsRequest(input.message, intentResult);
+    if (analyticsRequest) {
+      const runCtx = this.chatRunContext(actor, context);
+      let toolOutput: { result: unknown } | null = null;
+      try {
+        const rawOutput = await analyticsTool.handler(runCtx, {
+          metric: analyticsRequest.metric,
+          period: analyticsRequest.period,
+        });
+        if (
+          typeof rawOutput === "object" &&
+          rawOutput !== null &&
+          "result" in rawOutput
+        ) {
+          toolOutput = rawOutput as { result: unknown };
+        }
+      } catch (err) {
+        logger.warn(
+          { err, tenantId: tenantIdStr },
+          "analytics_query tool failed; falling back to RAG",
+        );
+      }
+
+      if (toolOutput) {
+        const analyticsLanguage = detectReplyLanguage(input.message);
+        const analyticsAnswer = formatAnalyticsAnswer(toolOutput.result, {
+          metric: analyticsRequest.metric,
+          period: analyticsRequest.period,
+          language: analyticsLanguage,
+        });
+        const analyticsMsg = await chatRepo.addMessage(
+          tenantIdStr,
+          conversationId,
+          "assistant",
+          analyticsAnswer,
+          currentCount + 1,
+          [],
+        );
+        logRouteDecision(
+          {
+            route: intentResult?.route ?? "rag",
+            intent: intentResult?.detectedIntent ?? "knowledge_question",
+            language: analyticsLanguage,
+            confidence: intentResult?.intentConfidence ?? 0,
+            fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+          },
+          {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: true,
+            sourceCount: 0,
+            reasonCode: "ANALYTICS_TOOL",
+            latencyMs: Date.now() - start,
+          },
+        );
+        return {
+          messageId: analyticsMsg._id.toString(),
+          answer: analyticsAnswer,
+          sources: [],
+          conversationId,
+        };
+      }
+    }
+
     // 8. Retrieve relevant chunks via hybrid search
     const accessContext: AccessContext = {
       tenantId: tenantIdStr,
@@ -813,6 +898,18 @@ export class ChatService {
         currentCount + 1,
         [],
       );
+      // Implicit knowledge-gap trigger: RAG found no sufficient authorized
+      // evidence, so record an unanswered gap for the current tenant via the
+      // production `report_knowledge_gap` tool. Best-effort and never fatal.
+      await this.reportKnowledgeGap({
+        actor,
+        context,
+        question: input.message,
+        outcome: "unanswered",
+        confidence: 0.3,
+        conversationId,
+        messageId: assistantDoc._id.toString(),
+      });
       logRouteDecision(
         {
           route: intentResult?.route ?? "rag",
@@ -1022,6 +1119,19 @@ export class ChatService {
         [],
       );
 
+      // Implicit knowledge-gap trigger: malformed generator output is treated
+      // as insufficient evidence, so record an unanswered gap. Best-effort and
+      // never fatal.
+      await this.reportKnowledgeGap({
+        actor,
+        context,
+        question: input.message,
+        outcome: "unanswered",
+        confidence: 0.4,
+        conversationId,
+        messageId: assistantDoc._id.toString(),
+      });
+
       logRouteDecision(
         {
           route: intentResult?.route ?? "rag",
@@ -1108,6 +1218,22 @@ export class ChatService {
         [],
       );
 
+      // Implicit knowledge-gap trigger: the generator concluded the retrieved
+      // evidence could not answer the question (insufficient evidence or
+      // unsupported). Clarification requests are not knowledge gaps. Best-effort
+      // and never fatal.
+      if (finalDecision !== "clarification") {
+        await this.reportKnowledgeGap({
+          actor,
+          context,
+          question: input.message,
+          outcome: "unanswered",
+          confidence: 0.4,
+          conversationId,
+          messageId: assistantDoc._id.toString(),
+        });
+      }
+
       logRouteDecision(
         {
           route: intentResult?.route ?? "rag",
@@ -1165,6 +1291,20 @@ export class ChatService {
           currentCount + 1,
           [],
         );
+
+        // Implicit knowledge-gap trigger: a "grounded" decision without any
+        // citations is downgraded to insufficient_evidence, so record an
+        // unanswered gap. Best-effort and never fatal.
+        await this.reportKnowledgeGap({
+          actor,
+          context,
+          question: input.message,
+          outcome: "unanswered",
+          confidence: 0.4,
+          conversationId,
+          messageId: assistantDoc._id.toString(),
+        });
+
         await getAuditWriter().write({
           action: "RETRIEVAL_SEARCH",
           resourceType: "Retrieval",
@@ -1765,6 +1905,56 @@ export class ChatService {
 
     if (!deleted) {
       throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+    }
+  }
+
+  private chatRunContext(
+    actor: OperationAuthorizationContext,
+    context: OperationAuthorizationContext,
+    opts: { conversationId?: string; messageId?: string } = {},
+  ): RunContext {
+    return {
+      tenantId: actor.tenantId.toString(),
+      actorId: actor.actorId.toString(),
+      traceId: context.traceId ?? "",
+      requestId: context.requestId ?? "",
+      workflowName: "chat",
+      agentName: "chat-assistant",
+      conversationId: opts.conversationId,
+      messageId: opts.messageId,
+    };
+  }
+
+  /**
+   * Records a knowledge-gap candidate through the production
+   * `report_knowledge_gap` tool. Used for implicit gap creation when the RAG
+   * flow cannot answer a question. Best-effort: a failure here must never fail
+   * the chat exchange, so it is always caught and logged.
+   */
+  private async reportKnowledgeGap(options: {
+    actor: OperationAuthorizationContext;
+    context: OperationAuthorizationContext;
+    question: string;
+    outcome: "unanswered" | "low_confidence";
+    confidence: number;
+    conversationId: string;
+    messageId: string;
+  }): Promise<void> {
+    const { actor, context, question, outcome, confidence, conversationId, messageId } = options;
+    try {
+      await knowledgeGapTool.handler(
+        this.chatRunContext(actor, context, { conversationId, messageId }),
+        { question, outcome, confidence },
+      );
+      logger.info(
+        { tenantId: actor.tenantId.toString(), conversationId, messageId, outcome, confidence },
+        "[KnowledgeGap] Created candidate for unanswered chat query",
+      );
+    } catch (err) {
+      logger.warn(
+        { err, tenantId: actor.tenantId.toString() },
+        "Failed to record knowledge gap from chat flow",
+      );
     }
   }
 
