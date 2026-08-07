@@ -54,6 +54,23 @@ export async function sendVisionMessage(
   return response.data;
 }
 
+export async function transcribeAudio(
+  audioBlob: Blob,
+): Promise<{ text: string }> {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "recording.webm");
+
+  const response = await apiClient<{
+    success: boolean;
+    data: { text: string };
+  }>("/chat/stt", {
+    method: "POST",
+    body: formData,
+  });
+
+  return response.data;
+}
+
 /** Fetches a chat attachment image over an authenticated blob URL. */
 export async function fetchChatAttachmentUrl(
   attachmentId: string,

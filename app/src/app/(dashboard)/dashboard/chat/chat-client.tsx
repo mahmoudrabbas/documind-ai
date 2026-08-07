@@ -13,6 +13,7 @@ import {
 import {
   sendMessage,
   sendVisionMessage,
+  transcribeAudio,
   fetchChatAttachmentUrl,
   listConversations,
   getConversationMessages,
@@ -52,6 +53,12 @@ function formatRelativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -143,10 +150,94 @@ export function ChatClient() {
   } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const clientMessageIdRef = useRef<string | null>(null);
   const msgIdCounter = useRef(0);
+
+  const startRecording = async () => {
+    try {
+      setError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+        stream.getTracks().forEach((track) => track.stop());
+
+        if (audioBlob.size === 0) return;
+
+        setIsTranscribing(true);
+        try {
+          const res = await transcribeAudio(audioBlob);
+          if (res?.text) {
+            setInput((prev) => (prev ? `${prev} ${res.text}` : res.text));
+          }
+        } catch (err: unknown) {
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Failed to transcribe audio. Please try speaking again.";
+          setError(message);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch {
+      setError(
+        "Microphone access denied or unsupported browser. Please check microphone permissions.",
+      );
+    }
+  };
+
+  const stopRecording = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
 
   const currentMessages = messages[activeConversation] ?? [];
 
@@ -739,6 +830,31 @@ export function ChatClient() {
                 className="hidden"
                 onChange={handleSelectImage}
               />
+              <button
+                onClick={toggleRecording}
+                disabled={isTranscribing || retryAfterSeconds !== null}
+                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors ${
+                  isRecording
+                    ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
+                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+                title={isRecording ? "Stop Voice Recording" : "Voice Input"}
+              >
+                {isTranscribing ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                ) : isRecording ? (
+                  <>
+                    <span className="h-2.5 w-2.5 animate-ping rounded-full bg-error" />
+                    <span className="font-mono text-xs font-medium">
+                      {formatDuration(recordingDuration)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="material-symbols-outlined text-[20px]">
+                    mic
+                  </span>
+                )}
+              </button>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
