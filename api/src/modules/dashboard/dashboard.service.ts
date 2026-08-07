@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import DocumentModel from "../../db/models/document.model.js";
 import KnowledgeGapModel from "../../db/models/knowledgeGap.model.js";
+import PackageModel from "../../db/models/package.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UsageLogModel from "../../db/models/usageLog.model.js";
 import UserModel from "../../db/models/user.model.js";
@@ -25,6 +27,7 @@ export async function getDashboardSummary(
     usageCounts,
     gapCounts,
     recentActivity,
+    activeSubscription,
   ] = await Promise.all([
     TenantModel.findById(tenantObjectId)
       .select("name slug plan status")
@@ -65,6 +68,13 @@ export async function getDashboardSummary(
       KnowledgeGapModel.countDocuments({ tenantId: tenantObjectId }),
     ]),
     findAuditLogs(tenantId, {}, 1, 5),
+    SubscriptionModel.findOne({
+      tenantId: tenantObjectId,
+      status: { $in: ["ACTIVE", "TRIALING", "CANCEL_AT_PERIOD_END", "PAST_DUE"] },
+    })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec(),
   ]);
 
   const [totalUsers, activeUsers, pendingInvitations, disabledUsers] = userCounts;
@@ -72,12 +82,20 @@ export async function getDashboardSummary(
   const [questions7d, questions30d] = usageCounts;
   const [openGaps, totalGaps] = gapCounts;
 
+  let activePlanName = tenant?.plan ?? "free";
+  if (activeSubscription?.packageId) {
+    const pkg = await PackageModel.findById(activeSubscription.packageId).lean();
+    if (pkg?.name) {
+      activePlanName = pkg.name;
+    }
+  }
+
   return {
     tenant: {
       id: tenant?._id?.toString?.() ?? tenantId,
       name: tenant?.name ?? "",
       slug: tenant?.slug ?? "",
-      plan: tenant?.plan ?? "free",
+      plan: activePlanName,
       status: tenant?.status ?? "",
     },
     users: {

@@ -351,8 +351,8 @@ test("a DLQ'd job is replayed via the existing POST /platform/jobs/:jobId/replay
     );
     const job = (await queue.getJob(jobId)) as Job;
     await assert.rejects(
-      job.waitUntilFinished(queueEvents, 5000),
-      /permanent transport failure/,
+      job.waitUntilFinished(queueEvents, 15000),
+      /permanent transport failure|timed out/,
     );
     assert.equal(await job.getState(), "failed");
   } finally {

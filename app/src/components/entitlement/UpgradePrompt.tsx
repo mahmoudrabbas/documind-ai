@@ -118,7 +118,7 @@ export function UpgradePrompt({
     );
   }
 
-  // ── Don't render anything below the warning threshold ───────────────
+  // ── Don't render anything below the warning threshold ──
   if (ratio < warningThreshold) {
     return null;
   }

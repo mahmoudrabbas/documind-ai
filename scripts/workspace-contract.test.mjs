@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { fileURLToPath } from "node:url";
+
 const rootPackage = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const workspaces = ["workers", "api", "app"];
-const orchestrator = new URL("./run-workspaces.mjs", import.meta.url);
+const orchestrator = fileURLToPath(new URL("./run-workspaces.mjs", import.meta.url));
 
 function createWorkspaceFixture() {
   const root = mkdtempSync(join(tmpdir(), "documind-workspace-contract-"));
@@ -54,13 +56,16 @@ test("the orchestrator behaviorally executes every workspace script", () => {
   const root = createWorkspaceFixture();
   const logPath = join(root, "workspace-order.txt");
   try {
+    const isWin = process.platform === "win32";
     for (const workspace of workspaces) {
       writeWorkspaceManifest(root, workspace, {
-        build: `${process.execPath} -e 'require("node:fs").appendFileSync(process.argv[1], process.argv[2] + "\\n")' ${JSON.stringify(logPath)} ${JSON.stringify(workspace)}`,
+        build: isWin
+          ? `node -e require('node:fs').appendFileSync('${logPath.replace(/\\/g, "/")}',\x27${workspace}\\n\x27)`
+          : `${process.execPath} -e 'require("node:fs").appendFileSync(process.argv[1], process.argv[2] + "\\n")' ${JSON.stringify(logPath)} ${JSON.stringify(workspace)}`,
       });
     }
 
-    const result = spawnSync(process.execPath, [orchestrator.pathname, "build"], {
+    const result = spawnSync(process.execPath, [orchestrator, "build"], {
       cwd: root,
       encoding: "utf8",
     });
@@ -75,11 +80,12 @@ test("the orchestrator behaviorally executes every workspace script", () => {
 test("the orchestrator behaviorally fails on missing scripts and non-zero exits", () => {
   const missingScriptRoot = createWorkspaceFixture();
   try {
-    writeWorkspaceManifest(missingScriptRoot, "api", { typecheck: `${process.execPath} -e "process.exit(0)"` });
+    const exitZero = process.platform === "win32" ? "node -e process.exit(0)" : `${process.execPath} -e "process.exit(0)"`;
+    writeWorkspaceManifest(missingScriptRoot, "api", { typecheck: exitZero });
     writeWorkspaceManifest(missingScriptRoot, "app", {});
-    writeWorkspaceManifest(missingScriptRoot, "workers", { typecheck: `${process.execPath} -e "process.exit(0)"` });
+    writeWorkspaceManifest(missingScriptRoot, "workers", { typecheck: exitZero });
 
-    const result = spawnSync(process.execPath, [orchestrator.pathname, "typecheck"], {
+    const result = spawnSync(process.execPath, [orchestrator, "typecheck"], {
       cwd: missingScriptRoot,
       encoding: "utf8",
     });
@@ -91,11 +97,13 @@ test("the orchestrator behaviorally fails on missing scripts and non-zero exits"
 
   const failingRoot = createWorkspaceFixture();
   try {
-    writeWorkspaceManifest(failingRoot, "api", { typecheck: `${process.execPath} -e "process.exit(0)"` });
-    writeWorkspaceManifest(failingRoot, "app", { typecheck: `${process.execPath} -e "process.exit(7)"` });
-    writeWorkspaceManifest(failingRoot, "workers", { typecheck: `${process.execPath} -e "process.exit(0)"` });
+    const exitZero = process.platform === "win32" ? "node -e process.exit(0)" : `${process.execPath} -e "process.exit(0)"`;
+    const exitSeven = process.platform === "win32" ? "node -e process.exit(7)" : `${process.execPath} -e "process.exit(7)"`;
+    writeWorkspaceManifest(failingRoot, "api", { typecheck: exitZero });
+    writeWorkspaceManifest(failingRoot, "app", { typecheck: exitSeven });
+    writeWorkspaceManifest(failingRoot, "workers", { typecheck: exitZero });
 
-    const result = spawnSync(process.execPath, [orchestrator.pathname, "typecheck"], {
+    const result = spawnSync(process.execPath, [orchestrator, "typecheck"], {
       cwd: failingRoot,
       encoding: "utf8",
     });

@@ -67,17 +67,43 @@ export class MongoEntitlementProvider implements EntitlementProviderPort {
       (v) => v.version === subscription.packageVersion,
     );
 
-    if (!version?.entitlements) {
-      return null; // No entitlements = fail closed
+    if (!version) {
+      return null; // Missing package version = fail closed
+    }
+
+    const versionEntitlements =
+      typeof (version.entitlements as unknown as { toObject?: () => Record<string, unknown> })?.toObject === "function"
+        ? (version.entitlements as unknown as { toObject: () => Record<string, unknown> }).toObject()
+        : version.entitlements;
+
+    const pkgEntitlements =
+      typeof (pkg.entitlements as unknown as { toObject?: () => Record<string, unknown> })?.toObject === "function"
+        ? (pkg.entitlements as unknown as { toObject: () => Record<string, unknown> }).toObject()
+        : pkg.entitlements;
+
+    if (!versionEntitlements && !pkgEntitlements) {
+      return null;
+    }
+
+    const entitlements = {
+      ...pkgEntitlements,
+      ...versionEntitlements,
+    };
+
+    if ((!entitlements.documents || entitlements.documents === 0) && pkgEntitlements?.documents) {
+      entitlements.documents = pkgEntitlements.documents;
     }
 
     // Build snapshot using the canonical builder
-    return entitlementSnapshotFrom(version.entitlements, {
-      supportedModels: version.supportedModels,
-      analyticsLevel: version.analyticsLevel,
-      retentionDays: version.retentionDays,
-      supportLevel: version.supportLevel,
-    });
+    return entitlementSnapshotFrom(
+      entitlements as Parameters<typeof entitlementSnapshotFrom>[0],
+      {
+        supportedModels: version.supportedModels,
+        analyticsLevel: version.analyticsLevel,
+        retentionDays: version.retentionDays,
+        supportLevel: version.supportLevel,
+      },
+    );
   }
 
   async getPeriodRange(

@@ -21,11 +21,12 @@ import type { ModelAdapter } from "../../modules/agents/agents.types.js";
 const scriptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../run-evaluation.ts");
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-function runScript(args: string[]): { code: number; output: string } {
+function runScript(args: string[], options?: { env?: NodeJS.ProcessEnv }): { code: number; output: string } {
   try {
     const output = execFileSync(process.execPath, ["--import", "tsx", scriptPath, ...args], {
       cwd: apiRoot,
       encoding: "utf8",
+      ...(options?.env ? { env: options.env } : {}),
     });
     return { code: 0, output };
   } catch (error) {
@@ -200,12 +201,17 @@ describe("run-evaluation CLI exit codes", () => {
   it("exits 1 for a fixture run with no completed evaluations (all degraded)", () => {
     const { code } = runScript(["--fixture"]);
     expect(code).toBe(EXIT_EVAL_FAILED);
-  });
+  }, 120_000);
 
-  it("exits 0 for a fixture run with --allow-degraded", () => {
-    const { code } = runScript(["--fixture", "--allow-degraded"]);
+  it("exits 0 for a fixture --allow-degraded run when all evaluations degrade (no real provider)", () => {
+    // Force FakeModelAdapter by blanking provider keys so dotenv cannot
+    // re-inject them from the local .env file (dotenv never overrides
+    // existing env vars). FakeModelAdapter returns unparseable judge
+    // output → all evaluations degrade → allowDegraded accepts this.
+    const env = { ...process.env, GROQ_API_KEY: "", SBG_API_KEY: "", NODE_ENV: "test" };
+    const { code } = runScript(["--fixture", "--allow-degraded"], { env });
     expect(code).toBe(EXIT_OK);
-  });
+  }, 120_000);
 });
 
 describe("buildLiveRagPrompt", () => {

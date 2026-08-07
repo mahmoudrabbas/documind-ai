@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     entitlements: {
       employees: 3,
       admins: 1,
-      documents: 50,
+      documents: 10,
       storageMb: 100,
       fileSizeMb: 10,
       queriesPerMonth: 500,

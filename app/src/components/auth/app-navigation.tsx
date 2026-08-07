@@ -126,9 +126,18 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         </div>
         <nav className="mt-md flex-1 space-y-1 px-md">
           {links.map(({ label, href, icon }) => {
+            const allHrefs = links.map((l) => l.href);
             const isActive =
               pathname === href ||
-              (href !== "/super-admin" && pathname.startsWith(`${href}/`));
+              (href !== "/dashboard" &&
+                href !== "/super-admin" &&
+                pathname.startsWith(`${href}/`) &&
+                !allHrefs.some(
+                  (other) =>
+                    other !== href &&
+                    other.startsWith(`${href}/`) &&
+                    pathname.startsWith(other),
+                ));
             return (
               <Link
                 key={href}

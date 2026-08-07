@@ -21,6 +21,14 @@ test("no authorized evidence produces a refusal without citations", () => {
   });
 });
 
+test("no authorized evidence produces an Arabic refusal when language is ar", () => {
+  assert.deepEqual(insufficientAuthorizedEvidenceResponse("conversation-1", "ar"), {
+    answer: "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.",
+    sources: [],
+    conversationId: "conversation-1",
+  });
+});
+
 test("cached evidence-derived assistant answers are not replayed into new LLM context", () => {
   const history = safeHistoryForRag([
     { role: "user", content: "What is the protected value?", sources: [] },
@@ -71,6 +79,71 @@ test("citations enabled uses the citing system prompt and instructs to always ci
   assert.deepEqual(messages[messages.length - 1], {
     role: "user",
     content: "What is the protected value?",
+  });
+});
+
+test("Arabic language uses Arabic RAG system prompt and context instructions", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    historyFromDb: [],
+    sources: [SOURCE],
+    userMessage: "ما هي القيمة المحمية؟",
+    language: "ar",
+  });
+
+  assert.equal(messages[0].role, "system");
+  assert.match(messages[0].content, /أنت DocuMind AI/);
+  assert.match(messages[0].content, /اذكر المستند الذي جاءت منه/);
+
+  const contextMsg = messages[1];
+  assert.equal(contextMsg.role, "system");
+  assert.match(contextMsg.content, /اذكر دائماً مصادرك/);
+  assert.match(contextMsg.content, /السياق:/);
+  assert.match(contextMsg.content, /\[المصدر 1: Company Handbook — Protected Values \(صفحة 3\)\]/);
+
+  assert.deepEqual(messages[messages.length - 1], {
+    role: "user",
+    content: "ما هي القيمة المحمية؟",
+  });
+});
+
+test("Arabic language with citations disabled uses Arabic no-citations prompt", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: false,
+    historyFromDb: [],
+    sources: [SOURCE],
+    userMessage: "ما هي القيمة المحمية؟",
+    language: "ar",
+  });
+
+  assert.equal(messages[0].role, "system");
+  assert.match(messages[0].content, /لا تضمن أي استشهادات/);
+
+  const contextMsg = messages[1];
+  assert.match(contextMsg.content, /لا تذكر أو تستشهد بمصادرك/);
+});
+
+test("mixed language is treated as Arabic context", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    historyFromDb: [],
+    sources: [SOURCE],
+    userMessage: "ما هي سياسة vacation؟",
+    language: "mixed",
+  });
+
+  assert.equal(messages[0].role, "system");
+  assert.match(messages[0].content, /أنت DocuMind AI/);
+
+  const contextMsg = messages[1];
+  assert.match(contextMsg.content, /\[المصدر 1:/);
+});
+
+test("mixed language insufficient evidence returns Arabic response", () => {
+  assert.deepEqual(insufficientAuthorizedEvidenceResponse("conversation-1", "mixed"), {
+    answer: "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.",
+    sources: [],
+    conversationId: "conversation-1",
   });
 });
 

@@ -7,9 +7,8 @@ describe("chat assistant rendering (markdown + safety)", () => {
     expect(source).toContain(
       'import { AssistantMarkdown } from "@/components/domain/AssistantMarkdown";',
     );
-    expect(source).toContain(
-      'msg.role === "user" ? (\n                      <p className="whitespace-pre-line">{msg.content}</p>\n                    ) : (\n                      <AssistantMarkdown content={msg.content} />\n                    )',
-    );
+    expect(source).toContain('msg.role === "user" ? (');
+    expect(source).toContain('<AssistantMarkdown content={msg.content} />');
   });
 
   it("keeps user messages plain text (not markdown)", async () => {

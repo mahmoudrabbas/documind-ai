@@ -14,6 +14,7 @@ const path = [
 const result = spawnSync("next", ["build"], {
   cwd: appRoot,
   stdio: "inherit",
+  shell: true,
   env: {
     ...process.env,
     PATH: path,

@@ -3541,7 +3541,7 @@ test("GET /dashboard/summary returns tenant aggregates for a company admin", asy
     assert.equal(response.status, 200);
     assert.equal(body.success, true);
     assert.equal(body.data.tenant.name, "Acme Consulting");
-    assert.equal(body.data.tenant.plan, "free");
+    assert.equal(body.data.tenant.plan, "Test Package");
     assert.equal(body.data.tenant.status, "active");
     assert.equal(body.data.users.total, 1);
     assert.equal(body.data.users.active, 1);

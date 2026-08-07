@@ -42,24 +42,6 @@ function resolveDimensionLabel(t: (key: string) => string, dimension: string): s
     .replace(/^[a-z]/, (c) => c.toUpperCase());
 }
 
-function formatDimensionValue(dimension: string, value: number): string {
-  if (dimension === "storageMb" || dimension === "fileSizeMb") {
-    if (value >= 1024) return `${(value / 1024).toFixed(1)} GB`;
-    return `${value} MB`;
-  }
-  if (dimension === "tokensPerMonth") {
-    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-    return value.toLocaleString();
-  }
-  return value.toLocaleString();
-}
-
-function getUsagePercentage(current: number, limit: number): number {
-  if (limit <= 0) return 0;
-  return Math.min(100, Math.round((current / limit) * 100));
-}
-
 /* ── Skeleton loading card ──────────────────────────────────────── */
 
 function SkeletonCard() {
@@ -97,7 +79,6 @@ function UsageCard({
   dir: "ltr" | "rtl";
   t: (key: string) => string;
 }) {
-  const pct = getUsagePercentage(current, limit);
   const label = resolveDimensionLabel(t, dimension);
 
   return (

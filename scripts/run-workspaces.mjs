@@ -18,7 +18,9 @@ function run(label, script, cwd = root) {
   const started = performance.now();
   console.log(`\n[workspace-validation] ${label}: starting`);
   const path = [resolve(cwd, "node_modules/.bin"), resolve(root, "node_modules/.bin"), process.env.PATH].filter(Boolean).join(delimiter);
-  const result = spawnSync("/bin/sh", ["-c", script], { cwd, stdio: "inherit", env: { ...process.env, PATH: path } });
+  const shell = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+  const args = process.platform === "win32" ? ["/d", "/s", "/c", script] : ["-c", script];
+  const result = spawnSync(shell, args, { cwd, stdio: "inherit", env: { ...process.env, PATH: path } });
   const durationMs = Math.round(performance.now() - started);
   if (result.error) {
     console.error(`[workspace-validation] ${label}: failed to start (${result.error.code ?? "unknown"}) duration_ms=${durationMs}`);

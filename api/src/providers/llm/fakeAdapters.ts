@@ -21,7 +21,7 @@ export class FakeModelAdapter implements ModelAdapter {
     const _toolCall = params.tools?.length ? "tool-used" : undefined;
 
     const hasIntentSystemPrompt = params.messages.some(
-      (m) => m.role === "system" && (m.content.includes("intent detection") || m.content.includes("QueryPlan"))
+      (m) => m.role === "system" && (m.content.includes("intent detection") || m.content.includes("QueryPlan") || m.content.includes("كشف النية"))
     );
 
     // Supervisor deterministic prompt handling: produce short plan text based on user message
