@@ -63,6 +63,7 @@ import { validateVisionFile } from "./chat.vision.js";
 import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
 import { CostService } from "../analytics/cost.service.js";
 import { getLangfuse } from "../../providers/observability/langfuse.js";
+import { VoxtralSttAdapter } from "../../providers/stt/voxtralStt.adapter.js";
 
 const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a concise string in the user's language. citedChunkIds must be an array of chunkId strings (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
 const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
@@ -428,12 +429,17 @@ export function toPublicAttachment(
 }
 
 export class ChatService {
+  private readonly sttAdapter: VoxtralSttAdapter;
+
   constructor(
     private readonly retrievalService: HybridRetrievalService,
     private readonly modelAdapter: ModelAdapter,
     private readonly visionAdapter?: VisionAdapter,
     private readonly storage?: StorageProvider,
-  ) {}
+    sttAdapter?: VoxtralSttAdapter,
+  ) {
+    this.sttAdapter = sttAdapter || new VoxtralSttAdapter();
+  }
 
   async sendMessage(
     rawInput: unknown,
@@ -1766,6 +1772,55 @@ export class ChatService {
     if (!deleted) {
       throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
     }
+  }
+
+  async transcribeAudio(
+    file: { buffer: Buffer; mimetype: string; size: number } | undefined,
+    context: OperationAuthorizationContext,
+  ): Promise<{ text: string }> {
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new AppError(400, "BAD_REQUEST", "Audio file is required");
+    }
+
+    const maxSizeBytes = 10 * 1024 * 1024;
+    if (file.size > maxSizeBytes || file.buffer.length > maxSizeBytes) {
+      throw new AppError(
+        400,
+        "STT_FILE_TOO_LARGE",
+        "Audio file size exceeds maximum limit of 10MB",
+      );
+    }
+
+    const allowedMimeTypes = [
+      "audio/webm",
+      "audio/wav",
+      "audio/mp4",
+      "audio/ogg",
+      "audio/mpeg",
+      "audio/x-m4a",
+      "audio/m4a",
+      "audio/aac",
+    ];
+    const mime = file.mimetype.toLowerCase();
+    const isAllowed = allowedMimeTypes.some((type) => mime.includes(type.split("/")[1]));
+    if (!isAllowed) {
+      throw new AppError(
+        400,
+        "STT_UNSUPPORTED_MIME_TYPE",
+        `Unsupported audio format '${file.mimetype}'. Allowed formats: webm, wav, mp4, ogg, mpeg, m4a.`,
+      );
+    }
+
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE);
+
+    logger.info(
+      { tenantId: actor.tenantId.toString(), mimeType: file.mimetype, sizeBytes: file.size },
+      "Transcribing voice recording via Voxtral STT adapter",
+    );
+
+    const text = await this.sttAdapter.transcribe(file.buffer, file.mimetype);
+
+    return { text };
   }
 
   private validateInput(raw: unknown): ChatSendBody {

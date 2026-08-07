@@ -196,9 +196,41 @@ export function createChatController(service: ChatService) {
     }
   }
 
+  async function transcribeAudio(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+      const file = req.file as Express.Multer.File | undefined;
+      const fileInput = file
+        ? {
+            buffer: file.buffer,
+            mimetype: file.mimetype,
+            size: file.size,
+          }
+        : undefined;
+
+      const result = await service.transcribeAudio(fileInput, context);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
   return {
     sendMessage,
     sendVisionMessage,
+    transcribeAudio,
     getAttachment,
     listConversations,
     getConversationMessages,

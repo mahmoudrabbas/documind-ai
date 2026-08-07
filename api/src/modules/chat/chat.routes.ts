@@ -8,6 +8,7 @@ import { createChatController } from "./chat.controller.js";
 import type { ChatService } from "./chat.service.js";
 import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import { createRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
 import {
   getVisionMaxFileSizeBytes,
   isAllowedVisionMimeType,
@@ -38,6 +39,46 @@ const visionUpload = multer({
       );
     }
   },
+});
+
+const ALLOWED_AUDIO_MIME_TYPES = [
+  "audio/webm",
+  "audio/wav",
+  "audio/mp4",
+  "audio/ogg",
+  "audio/mpeg",
+  "audio/x-m4a",
+  "audio/m4a",
+  "audio/aac",
+];
+
+const sttUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    const mime = file.mimetype.toLowerCase();
+    const isAllowed = ALLOWED_AUDIO_MIME_TYPES.some((type) =>
+      mime.includes(type.split("/")[1]),
+    );
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(
+        Object.assign(
+          new Error(`Audio type ${file.mimetype} is not supported`),
+          { code: "UNSUPPORTED_FILE_TYPE" },
+        ) as Error & { code: string },
+      );
+    }
+  },
+});
+
+const sttRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Too many audio transcription requests. Please wait a minute before trying again.",
+  keyGenerator: (req) =>
+    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${req.ip}`,
 });
 
 export function createChatRoutes(service: ChatService): Router {
@@ -335,6 +376,46 @@ export function createChatRoutes(service: ChatService): Router {
     tenantScoping,
     requirePermission(Permission.CHAT_READ),
     controller.getAttachment,
+  );
+
+  /**
+   * @openapi
+   * /chat/stt:
+   *   post:
+   *     summary: Transcribe audio to text
+   *     description: Uploads an audio file (WebM, WAV, MP4, OGG, max 10MB) and returns transcribed text.
+   *     tags: [Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             required: [audio]
+   *             properties:
+   *               audio:
+   *                 type: string
+   *                 format: binary
+   *     responses:
+   *       200:
+   *         description: Transcribed text
+   *       400:
+   *         description: Validation failed or unsupported audio format
+   *       429:
+   *         description: Rate limit exceeded (max 10 requests/min)
+   *       503:
+   *         description: STT Gateway unavailable
+   */
+  router.post(
+    "/stt",
+    authenticate,
+    tenantScoping,
+    requirePermission(Permission.CHAT_CREATE),
+    sttRateLimiter,
+    sttUpload.single("audio"),
+    controller.transcribeAudio,
   );
 
   return router;
