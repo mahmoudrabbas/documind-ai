@@ -30,7 +30,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
+      - name: Pin npm version
+        run: |
+          npm install -g npm@${{ env.NPM_VERSION }}
+          test "$(npm --version)" = "${{ env.NPM_VERSION }}"
       - run: npm ci --ignore-scripts
       - name: Scan committed files and test tooling contracts
         run: |
@@ -68,7 +71,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: test "$(npm --version)" = "${{ env.NPM_VERSION }}"
+      - name: Pin npm version
+        run: |
+          npm install -g npm@${{ env.NPM_VERSION }}
+          test "$(npm --version)" = "${{ env.NPM_VERSION }}"
       - run: npm ci
       - name: Lint, typecheck, test, and build
         env:
