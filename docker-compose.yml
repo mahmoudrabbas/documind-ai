@@ -47,7 +47,7 @@ services:
       - JINA_EMBEDDING_DIMENSIONS=1024
       - BEDROCK_GATEWAY_URL=${BEDROCK_GATEWAY_URL:-https://apiaccess.iti.net.eg}
       - BEDROCK_GATEWAY_API_KEY=${BEDROCK_GATEWAY_API_KEY}
-      - SBG_API_KEY=${SBG_API_KEY}
+      - SBG_API_KEY=${SBG_API_KEY:-${BEDROCK_GATEWAY_API_KEY}}
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
       - AWS_REGION=${AWS_REGION:-eu-north-1}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}
