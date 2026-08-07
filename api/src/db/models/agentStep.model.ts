@@ -9,6 +9,7 @@ export interface AgentStepDocument extends mongoose.Document {
     | "plan"
     | "tool_call"
     | "handoff"
+    | "execute"
     | "guardrail"
     | "approval_requested"
     | "approval_resolved"
@@ -57,6 +58,7 @@ const agentStepSchema = new Schema<AgentStepDocument>(
         "plan",
         "tool_call",
         "handoff",
+        "execute",
         "guardrail",
         "approval_requested",
         "approval_resolved",

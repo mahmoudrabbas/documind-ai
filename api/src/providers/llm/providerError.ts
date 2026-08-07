@@ -50,7 +50,10 @@ function parseRetryAfterSeconds(value: string | null): number | undefined {
 }
 
 export function mapLlmProviderError(error: unknown): AppError {
-  if (error instanceof AppError && [LLM_RATE_LIMITED, LLM_PROVIDER_UNAVAILABLE, LLM_TIMEOUT].includes(error.code)) {
+  // AppErrors are already the controlled, sanitized error type. Pass every
+  // AppError through unchanged so the provider boundary preserves precise
+  // codes/status codes (e.g. validation 4xx) instead of collapsing them.
+  if (error instanceof AppError) {
     return error;
   }
 
@@ -78,6 +81,20 @@ export function mapLlmProviderError(error: unknown): AppError {
     name === "APIConnectionTimeoutError"
   ) {
     return new AppError(503, LLM_TIMEOUT, "The AI provider timed out. Please try again.");
+  }
+
+  // Client-side request errors (4xx, excluding the timeout 408 and the
+  // rate-limit 429 handled above) mean the request itself was rejected — bad
+  // request, invalid/missing credentials, unsupported route. That is NOT a
+  // provider outage: preserve the real status so failover layers do not burn
+  // the fallback provider on a rejected request, and so callers see the real
+  // status instead of a misleading 503.
+  if (status !== null && status >= 400 && status < 500) {
+    return new AppError(
+      status,
+      LLM_PROVIDER_UNAVAILABLE,
+      "The AI provider rejected the request. Please check the request and try again.",
+    );
   }
 
   return new AppError(

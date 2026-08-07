@@ -31,6 +31,15 @@ export interface SBGModel {
   is_active: boolean;
 }
 
+export interface SBGChatTool {
+  type: string;
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
+
 export interface SBGChatRequest {
   model_id: string;
   messages: SBGChatMessage[];
@@ -38,6 +47,8 @@ export interface SBGChatRequest {
   top_p?: number;
   max_tokens?: number;
   stream?: boolean;
+  tools?: SBGChatTool[];
+  tool_choice?: string | { type: "function"; function: { name: string } };
 }
 
 export interface SBGChatMessage {

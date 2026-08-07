@@ -31,6 +31,7 @@ export interface ModelCompletionParams {
   topP?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  structuredOutput?: { type: "json_object" };
 }
 
 const DEFAULT_MAX_RETRIES = 2;

@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mapLlmProviderError } from "./providerError.js";
+import { AppError } from "../../common/errors/AppError.js";
+
+test("passes every AppError through unchanged", () => {
+  const original = new AppError(
+    400,
+    "SOME_OTHER_CODE",
+    "A precise non-LLM error that must not be collapsed.",
+    { context: "preserved" },
+  );
+  const mapped = mapLlmProviderError(original);
+  assert.equal(mapped, original);
+  assert.equal(mapped.statusCode, 400);
+  assert.equal(mapped.code, "SOME_OTHER_CODE");
+  assert.deepEqual(mapped.details, { context: "preserved" });
+});
 
 test("maps provider 429 and propagates a safe Retry-After value", () => {
   const mapped = mapLlmProviderError({
