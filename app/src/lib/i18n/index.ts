@@ -28,5 +28,11 @@ export {
 /* ── utils ────────────────────────────────────────────────────────── */
 export { t, getLocaleFromCookie, setLocaleCookie } from "./i18n.utils";
 
+/* ── content direction ───────────────────────────────────────────── */
+export {
+  getContentDirection,
+  type ContentDirection,
+} from "./content-direction";
+
 /* ── translations ─────────────────────────────────────────────────── */
 export { default as dictionaries } from "./translations";

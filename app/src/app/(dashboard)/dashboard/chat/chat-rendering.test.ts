@@ -13,12 +13,20 @@ describe("chat assistant rendering (markdown + safety)", () => {
 
   it("keeps user messages plain text (not markdown)", async () => {
     const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
-    expect(source).toContain('<p className="whitespace-pre-line">{msg.content}</p>');
+    expect(source).toContain("whitespace-pre-line");
+    expect(source).toContain("{msg.content}");
     const start = source.indexOf("msg.role === \"user\" ? (");
     const end = source.indexOf(") : (", start);
     const userBranch = source.slice(start, end);
     expect(userBranch).toContain("whitespace-pre-line");
     expect(userBranch).not.toContain("AssistantMarkdown");
+  });
+
+  it("applies content-based direction to user messages", async () => {
+    const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
+    expect(source).toContain("getContentDirection(msg.content)");
+    expect(source).toContain('dir={contentDir.dir}');
+    expect(source).toContain('lang={contentDir.lang}');
   });
 
   it("preserves source citations in assistant messages", async () => {

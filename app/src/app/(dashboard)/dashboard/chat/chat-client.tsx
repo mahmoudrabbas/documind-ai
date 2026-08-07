@@ -31,6 +31,7 @@ import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
 import { previewText } from "./preview-text";
+import { getContentDirection } from "@/lib/i18n/content-direction";
 
 type Message = {
   id: string;
@@ -740,47 +741,55 @@ export function ChatClient() {
             </div>
           ) : (
             <div className="mx-auto max-w-3xl space-y-6">
-              {currentMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  {msg.role === "assistant" && (
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                      <span className="material-symbols-outlined text-[18px] text-primary">
-                        smart_toy
-                      </span>
-                    </div>
-                  )}
+              {currentMessages.map((msg) => {
+                const contentDir = getContentDirection(msg.content);
+                return (
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-primary text-on-primary"
-                        : "bg-surface-container border border-outline-variant/30 text-on-surface"
-                    }`}
+                    key={msg.id}
+                    className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    {msg.role === "user" && msg.localAttachmentUrl && (
-                      <img
-                        src={msg.localAttachmentUrl}
-                        alt={t("chat.attachmentPreview")}
-                        className="mb-2 h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
-                      />
-                    )}
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-2">
-                        {msg.attachments.map((attachment) => (
-                          <AttachmentThumbnail
-                            key={attachment.id}
-                            attachment={attachment}
-                          />
-                        ))}
+                    {msg.role === "assistant" && (
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                        <span className="material-symbols-outlined text-[18px] text-primary">
+                          smart_toy
+                        </span>
                       </div>
                     )}
-                    {msg.role === "user" ? (
-                      <p className="whitespace-pre-line">{msg.content}</p>
-                    ) : (
-                      <AssistantMarkdown content={msg.content} />
-                    )}
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-primary text-on-primary"
+                          : "bg-surface-container border border-outline-variant/30 text-on-surface"
+                      }`}
+                    >
+                      {msg.role === "user" && msg.localAttachmentUrl && (
+                        <img
+                          src={msg.localAttachmentUrl}
+                          alt={t("chat.attachmentPreview")}
+                          className="mb-2 h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
+                        />
+                      )}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {msg.attachments.map((attachment) => (
+                            <AttachmentThumbnail
+                              key={attachment.id}
+                              attachment={attachment}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {msg.role === "user" ? (
+                        <p
+                          dir={contentDir.dir}
+                          lang={contentDir.lang}
+                          className="whitespace-pre-line"
+                        >
+                          {msg.content}
+                        </p>
+                      ) : (
+                        <AssistantMarkdown content={msg.content} />
+                      )}
                     {msg.sources && msg.sources.length > 0 && (
                       <div className="mt-3 border-t border-outline-variant/20 pt-2">
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
@@ -835,7 +844,8 @@ export function ChatClient() {
                     </div>
                   )}
                 </div>
-              ))}
+              );
+            })}
               {isTyping && (
                 <div className="flex gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
