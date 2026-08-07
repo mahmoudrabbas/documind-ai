@@ -3,6 +3,7 @@
 import React from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { getContentDirection } from "@/lib/i18n/content-direction";
 
 /**
  * Client-side defense-in-depth strip for reasoning tags. The authoritative
@@ -41,31 +42,31 @@ const components: Components = {
   a: MarkdownLink,
   img: IgnoredImage,
   p: ({ node: _node, ...props }) => (
-    <p className="whitespace-pre-line" {...props} />
+    <p className="whitespace-pre-line text-start" {...props} />
   ),
   h1: ({ node: _node, ...props }) => (
-    <h1 className="mt-3 text-base font-bold text-on-surface" {...props} />
+    <h1 className="mt-3 text-start text-base font-bold text-on-surface" {...props} />
   ),
   h2: ({ node: _node, ...props }) => (
-    <h2 className="mt-3 text-base font-bold text-on-surface" {...props} />
+    <h2 className="mt-3 text-start text-base font-bold text-on-surface" {...props} />
   ),
   h3: ({ node: _node, ...props }) => (
-    <h3 className="mt-2 text-sm font-bold text-on-surface" {...props} />
+    <h3 className="mt-2 text-start text-sm font-bold text-on-surface" {...props} />
   ),
   h4: ({ node: _node, ...props }) => (
-    <h4 className="mt-2 text-sm font-semibold text-on-surface" {...props} />
+    <h4 className="mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   h5: ({ node: _node, ...props }) => (
-    <h5 className="mt-2 text-sm font-semibold text-on-surface" {...props} />
+    <h5 className="mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   h6: ({ node: _node, ...props }) => (
-    <h6 className="mt-2 text-sm font-semibold text-on-surface" {...props} />
+    <h6 className="mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   ul: ({ node: _node, ...props }) => (
-    <ul className="list-disc space-y-1 pl-5" {...props} />
+    <ul className="list-disc space-y-1 ps-5" {...props} />
   ),
   ol: ({ node: _node, ...props }) => (
-    <ol className="list-decimal space-y-1 pl-5" {...props} />
+    <ol className="list-decimal space-y-1 ps-5" {...props} />
   ),
   li: ({ node: _node, ...props }) => (
     <li className="leading-relaxed" {...props} />
@@ -84,13 +85,13 @@ const components: Components = {
   ),
   blockquote: ({ node: _node, ...props }) => (
     <blockquote
-      className="my-2 border-s-2 border-primary/40 ps-3 text-on-surface-variant"
+      className="my-2 border-s-2 border-primary/40 ps-3 text-start text-on-surface-variant"
       {...props}
     />
   ),
   table: ({ node: _node, ...props }) => (
     <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-left text-sm" {...props} />
+      <table className="w-full border-collapse text-start text-sm" {...props} />
     </div>
   ),
   th: ({ node: _node, ...props }) => (
@@ -112,8 +113,9 @@ interface AssistantMarkdownProps {
 }
 
 export function AssistantMarkdown({ content }: AssistantMarkdownProps) {
+  const { dir, lang } = getContentDirection(content);
   return (
-    <div dir="auto" className="space-y-1">
+    <div dir={dir} lang={lang} className="space-y-1">
       <ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={components}>
         {stripReasoning(content)}
       </ReactMarkdown>

@@ -32,7 +32,7 @@ describe("AssistantMarkdown", () => {
 
   it("preserves single-line soft breaks inside paragraphs (summary lines)", () => {
     const html = render("1- a\n2- b\n3- c");
-    expect(html).toContain('class="whitespace-pre-line"');
+    expect(html).toContain("whitespace-pre-line");
     expect(html).toContain("1- a\n2- b\n3- c");
   });
 
@@ -102,10 +102,24 @@ describe("AssistantMarkdown", () => {
     expect(html).toContain("const y = 2;");
   });
 
-  it("preserves RTL/LTR by delegating direction to the content", () => {
+  it("renders content with direction based on its script (Arabic -> rtl/ar)", () => {
     const html = render("مرحبا بالعالم");
-    expect(html).toContain('dir="auto"');
+    expect(html).toContain('dir="rtl"');
+    expect(html).toContain('lang="ar"');
     expect(html).toContain("مرحبا بالعالم");
+  });
+
+  it("renders content with direction based on its script (English -> ltr/en)", () => {
+    const html = render("Hello from the assistant.");
+    expect(html).toContain('dir="ltr"');
+    expect(html).toContain('lang="en"');
+  });
+
+  it("uses logical start padding for lists so markers flip per direction", () => {
+    const rtl = render("- أول عنصر\n- ثاني عنصر");
+    expect(rtl).toContain("ps-5");
+    const ltr = render("- one\n- two");
+    expect(ltr).toContain("ps-5");
   });
 
   it("renders GFM tables without raw pipe characters", () => {

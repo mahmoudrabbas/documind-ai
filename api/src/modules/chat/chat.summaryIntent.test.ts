@@ -388,6 +388,63 @@ test("Arabic summary message uses the summary prompt, broader topK, and larger m
   assert.equal(response.sources.length, 1);
 });
 
+test("Arabic summary grounded answer is returned with the cited source and is not the fail-closed refusal", async () => {
+  const { tenant, user } = await seedTenantAdmin();
+  const retrieval = createStubRetrieval(tenant.id);
+  retrieval.setCandidates([
+    makeCandidate({
+      chunkId: "chunk-1",
+      pageNumber: 2,
+      text: "ملخص الوثيقة: عمليات الاستجابة للحوادث.",
+      sectionTitle: "Civic Ops",
+    }),
+  ]);
+  const arabicSummary = "ملخص الملف: النقطة الأولى عن الاستجابة للحوادث.";
+  const { adapter } = createRecordingAdapter(arabicSummary, ["chunk-1"]);
+  const service = new ChatService(retrieval.service, adapter);
+
+  const response = await service.sendMessage(
+    { message: "لخص ملف civic ops" },
+    actorContext(tenant, user),
+  );
+
+  // Grounded Arabic summary with a valid citing id survives: answer is the
+  // grounded text (not the Arabic insufficient-evidence refusal) and the
+  // validated chunk is persisted as a source.
+  assert.equal(response.answer, arabicSummary);
+  assert.notEqual(
+    response.answer,
+    "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.",
+  );
+  assert.deepEqual((response.sources ?? []).map((s) => s.chunkId), ["chunk-1"]);
+});
+
+test("Arabic summary with an invented cited chunk id fails closed to the Arabic refusal with zero sources", async () => {
+  const { tenant, user } = await seedTenantAdmin();
+  const retrieval = createStubRetrieval(tenant.id);
+  retrieval.setCandidates([
+    makeCandidate({ chunkId: "chunk-1", pageNumber: 1, text: "Civic ops covers incident handling.", sectionTitle: "Civic Ops" }),
+  ]);
+  const { adapter } = createRecordingAdapter("ملخص مختلق.", ["invented-1"], "grounded_answer");
+  const service = new ChatService(retrieval.service, adapter);
+
+  const response = await service.sendMessage(
+    { message: "لخص ملف civic ops" },
+    actorContext(tenant, user),
+  );
+
+  assert.equal(
+    response.answer,
+    "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.",
+  );
+  assert.deepEqual(response.sources, []);
+
+  const assistantMessage = await MessageModel.findOne({ role: "assistant" }).lean().exec();
+  assert.ok(assistantMessage);
+  assert.deepEqual(assistantMessage.sources ?? [], []);
+});
+
+
 test("intent-driven Arabic detailed summary uses the summary pipeline", async () => {
   const { tenant, user } = await seedTenantAdmin();
   setIntentQueryAdaptersForTests({

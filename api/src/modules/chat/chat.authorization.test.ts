@@ -99,7 +99,10 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
   assert.equal(contextMsg.role, "system");
   assert.match(contextMsg.content, /اذكر دائماً مصادرك/);
   assert.match(contextMsg.content, /السياق:/);
-  assert.match(contextMsg.content, /\[المصدر 1: Company Handbook — Protected Values \(صفحة 3\)\]/);
+  assert.match(
+    contextMsg.content,
+    /\[المصدر 1: id:chunk-1 doc:doc-1 العنوان:Company Handbook — Protected Values \(صفحة 3\)\]/,
+  );
 
   assert.deepEqual(messages[messages.length - 1], {
     role: "user",

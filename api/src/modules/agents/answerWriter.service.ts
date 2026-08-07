@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "../../common/logger/logger.js";
 import { mapLlmProviderError } from "../../providers/llm/providerError.js";
 import {
   hasUnclosedReasoningBlock,
@@ -6,6 +7,7 @@ import {
 } from "../../providers/llm/outputSanitizer.js";
 import type { ModelAdapter, ModelCompletionResponse } from "./agents.types.js";
 import { AnswerWriterOutputSchema } from "./chatAgentIO.js";
+import { buildAnswerWriterDiagnostics } from "./generationDiagnostics.js";
 import type { ChatAnswerDecisionValue } from "./chatWorkflowContracts.js";
 import type { ChatSource } from "../chat/chat.types.js";
 import type { QueryLanguageValue } from "../intent-query/intentQuery.types.js";
@@ -117,7 +119,7 @@ export function buildRagMessages(options: {
       .map(
         (s, i) =>
           useAr
-            ? `[المصدر ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (صفحة ${s.pageNumber})` : ""}]\n${s.text}`
+            ? `[المصدر ${i + 1}: id:${s.chunkId} doc:${s.documentId} العنوان:${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (صفحة ${s.pageNumber})` : ""}]\n${s.text}`
             : `[Source ${i + 1}: id:${s.chunkId} doc:${s.documentId} title:${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
       )
       .join("\n\n");
@@ -224,6 +226,23 @@ function parseAnswerWriterJson(rawContent: string): AnswerParseResult {
 export class AnswerWriterService {
   constructor(private readonly modelAdapter: ModelAdapter) {}
 
+  /**
+   * Issue 6 observability: emit one metadata-only log per generation. The
+   * payload is built by buildAnswerWriterDiagnostics and contains decisions
+   * and counts only — never answer text, raw model output, document text,
+   * chunk ids, or document ids. Exactly one log is emitted per generate()
+   * because exactly one branch returns.
+   */
+  private emitGeneration(
+    result: AnswerWriterServiceResult,
+  ): AnswerWriterServiceResult {
+    logger.info(
+      buildAnswerWriterDiagnostics(result),
+      "answer writer generation outcome",
+    );
+    return result;
+  }
+
   async generate(
     options: AnswerWriterServiceOptions,
   ): Promise<AnswerWriterServiceResult> {
@@ -289,7 +308,7 @@ export class AnswerWriterService {
     };
 
     if (!sanitizedContent) {
-      return { outcome: "unusable", ...common };
+      return this.emitGeneration({ outcome: "unusable", ...common });
     }
 
     const parsed = parseAnswerWriterJson(rawContent);
@@ -300,7 +319,7 @@ export class AnswerWriterService {
       // the same localized refusal the legacy chat already uses when no
       // authorized evidence reaches the generator. Consumers that need the
       // model text branch on `structured` and produce their own safe message.
-      return {
+      return this.emitGeneration({
         outcome: "usable",
         structured: false,
         parsedDecision: "insufficient_evidence",
@@ -308,7 +327,7 @@ export class AnswerWriterService {
         answer: insufficientEvidenceMessage(language),
         citedChunkIds: [],
         ...common,
-      };
+      });
     }
 
     const structuredAnswer = parsed.data.answer;
@@ -316,7 +335,7 @@ export class AnswerWriterService {
       ? ""
       : sanitizeAssistantOutput(structuredAnswer);
     if (!cleanStructured) {
-      return { outcome: "unusable", ...common };
+      return this.emitGeneration({ outcome: "unusable", ...common });
     }
 
     const evidenceIdSet = new Set(evidence.map((item) => item.chunkId));
@@ -329,7 +348,7 @@ export class AnswerWriterService {
       decision = "insufficient_evidence";
     }
 
-    return {
+    return this.emitGeneration({
       outcome: "usable",
       structured: true,
       parsedDecision: parsed.data.decision,
@@ -337,6 +356,6 @@ export class AnswerWriterService {
       answer: cleanStructured,
       citedChunkIds,
       ...common,
-    };
+    });
   }
 }

@@ -155,6 +155,7 @@ describe("per-agent input/output schemas", () => {
 
     assert.equal(
       CitationVerifierInputSchema.safeParse({
+        decision: "grounded_answer",
         citedChunkIds: ["c1", "c2"],
         approvedEvidenceIds: ["c1", "c2"],
       }).success,
@@ -162,10 +163,11 @@ describe("per-agent input/output schemas", () => {
     );
     assert.equal(
       CitationVerifierOutputSchema.safeParse({
-        decision: "partial",
+        verified: false,
         validatedCitationIds: ["c1"],
         rejectedCitationIds: ["c2"],
-        reason: "c2 is not part of the approved evidence bundle",
+        unsupportedClaims: [],
+        reasonCode: "MISSING_CITATIONS",
       }).success,
       true,
     );
@@ -222,8 +224,24 @@ describe("per-agent input/output schemas", () => {
         value: { decision: "grounded_answer", answer: "x".repeat(20_001), citedChunkIds: [] },
       },
       {
+        schema: CitationVerifierInputSchema,
+        value: {
+          decision: "made_up",
+          citedChunkIds: ["c1"],
+          approvedEvidenceIds: ["c1"],
+        },
+      },
+      {
         schema: CitationVerifierOutputSchema,
-        value: { decision: "maybe", reason: "r" },
+        value: { verified: "maybe", reasonCode: "CITATIONS_VERIFIED" },
+      },
+      {
+        schema: CitationVerifierOutputSchema,
+        value: { verified: true, reasonCode: "NOT_A_CODE" },
+      },
+      {
+        schema: CitationVerifierOutputSchema,
+        value: { verified: true },
       },
       {
         schema: ComplianceAgentOutputSchema,

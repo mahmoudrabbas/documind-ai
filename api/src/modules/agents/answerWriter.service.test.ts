@@ -2,17 +2,38 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   AnswerWriterService,
+  buildRagMessages,
   insufficientEvidenceMessage,
   type AnswerWriterEvidenceItem,
   type AnswerWriterServiceResult,
 } from "./answerWriter.service.js";
 import { AnswerWriterOutputSchema } from "./chatAgentIO.js";
 import type { ModelAdapter, ModelCompletionResponse } from "./agents.types.js";
+import type { ChatSource } from "../chat/chat.types.js";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
 const CHUNK_A = "chunk-a";
 const CHUNK_B = "chunk-b";
+
+const SOURCES: ChatSource[] = [
+  {
+    chunkId: CHUNK_A,
+    documentId: "doc-a",
+    text: "CivicOps runs an annual flood-response drill every Q1.",
+    pageNumber: 3,
+    sectionTitle: "Protected Values",
+    score: 0.95,
+    documentTitle: "Company Handbook",
+  },
+  {
+    chunkId: CHUNK_B,
+    documentId: "doc-b",
+    text: "Incident command must publish a public status page within 30 minutes.",
+    score: 0.9,
+    documentTitle: "Civic Ops",
+  },
+];
 
 const EVIDENCE: AnswerWriterEvidenceItem[] = [
   {
@@ -268,4 +289,53 @@ test("CivicOps regression: multiline 10-point grounded summary is usable and nev
   // The user-facing answer must never contain the raw JSON envelope.
   assert.equal(usable.answer.includes('"decision":'), false);
   assert.equal(usable.answer.includes('"citedChunkIds":'), false);
+});
+
+// ── J: evidence block anchors ────────────────────────────────────────────────
+
+test("J: English evidence embeds id and doc anchors in every source header", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    historyFromDb: [],
+    sources: SOURCES,
+    userMessage: "Summarize the civic ops in 10 points.",
+  });
+
+  const contextMsg = messages.find((m) => m.content.includes("Context:"));
+  assert.ok(contextMsg, "English context message must be emitted");
+  assert.match(
+    contextMsg.content,
+    /\[Source 1: id:chunk-a doc:doc-a title:Company Handbook — Protected Values \(p\.3\)\]/,
+  );
+  assert.match(contextMsg.content, /\[Source 2: id:chunk-b doc:doc-b title:Civic Ops\]/);
+
+  // The anchors let the model read back the exact chunk doc — verified above.
+  assert.match(contextMsg.content, /id:chunk-a/);
+  assert.match(contextMsg.content, /doc:doc-a/);
+});
+
+test("K: Arabic evidence embeds id and doc anchors in every source header", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    historyFromDb: [],
+    sources: SOURCES,
+    userMessage: "لخص ملف civic ops",
+    language: "ar",
+  });
+
+  const contextMsg = messages.find((m) => m.content.includes("السياق:"));
+  assert.ok(contextMsg, "Arabic context message must be emitted");
+  assert.match(
+    contextMsg.content,
+    /\[المصدر 1: id:chunk-a doc:doc-a العنوان:Company Handbook — Protected Values \(صفحة 3\)\]/,
+  );
+  assert.match(
+    contextMsg.content,
+    /\[المصدر 2: id:chunk-b doc:doc-b العنوان:Civic Ops\]/,
+  );
+
+  // Same machine-readable anchor tokens as English so Arabic generations can
+  // copy back the exact chunk ids (not page numbers or titles).
+  assert.match(contextMsg.content, /id:chunk-a/);
+  assert.match(contextMsg.content, /doc:doc-a/);
 });
