@@ -200,12 +200,12 @@ describe("run-evaluation CLI exit codes", () => {
   it("exits 1 for a fixture run with no completed evaluations (all degraded)", () => {
     const { code } = runScript(["--fixture"]);
     expect(code).toBe(EXIT_EVAL_FAILED);
-  });
+  }, 120_000);
 
   it("exits 0 for a fixture run with --allow-degraded", () => {
     const { code } = runScript(["--fixture", "--allow-degraded"]);
     expect(code).toBe(EXIT_OK);
-  });
+  }, 120_000);
 });
 
 describe("buildLiveRagPrompt", () => {

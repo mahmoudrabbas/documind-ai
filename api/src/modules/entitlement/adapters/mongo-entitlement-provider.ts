@@ -81,6 +81,10 @@ export class MongoEntitlementProvider implements EntitlementProviderPort {
         ? (pkg.entitlements as unknown as { toObject: () => Record<string, unknown> }).toObject()
         : pkg.entitlements;
 
+    if (!versionEntitlements && !pkgEntitlements) {
+      return null;
+    }
+
     const entitlements = {
       ...pkgEntitlements,
       ...versionEntitlements,

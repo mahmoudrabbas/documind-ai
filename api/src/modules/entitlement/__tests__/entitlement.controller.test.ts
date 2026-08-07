@@ -290,7 +290,7 @@ describe("entitlement read controllers — null-snapshot cause distinction", () 
       expect(json).toHaveBeenCalledWith({
         success: true,
         data: {
-        current: { documents: 3 },
+        current: { documents: 0 },
         limit: {},
         actual: { documents: 0, storageBytes: 0, questions: 0 },
         periodStart: "2026-01-01T00:00:00.000Z",
