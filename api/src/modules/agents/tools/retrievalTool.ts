@@ -1,5 +1,8 @@
 import { z } from "zod";
 import type { RegisteredTool, RunContext } from "../agents.types.js";
+import type { AgentRunContext } from "../agentRunContext.js";
+import type { BaseRole } from "../../../common/auth/baseRoles.js";
+import { AppError } from "../../../common/errors/AppError.js";
 import type { HybridRetrievalService } from "../../retrieval/retrieval.service.js";
 import type { AccessContext, RetrievalQuery } from "../../retrieval/retrieval.types.js";
 
@@ -37,9 +40,18 @@ const RETRIEVAL_TOOL_OUTPUT = z.object({
  *
  * This tool performs semantic + keyword search over document chunks
  * and returns ranked results to the agent.
+ *
+ * The baseRole used for retrieval access is the trusted server-side value
+ * from the RunContext; if absent, it is resolved from the persisted actor
+ * via `resolveActor`. If neither is available the tool fails closed — no
+ * default role is ever assumed.
  */
 export function createRetrievalTool(
   service: HybridRetrievalService,
+  resolveActor?: (context: {
+    tenantId: string;
+    actorId: string;
+  }) => Promise<{ baseRole: BaseRole }>,
 ): RegisteredTool {
   return {
     schema: {
@@ -59,10 +71,35 @@ export function createRetrievalTool(
     handler: async (context: RunContext, input: unknown) => {
       const params = RETRIEVAL_TOOL_INPUT.parse(input);
 
+      let actorRole: BaseRole | undefined;
+      let actorEmail: string | undefined;
+      const agentContext = context as Partial<AgentRunContext>;
+      if (agentContext.actorRole) {
+        actorRole = agentContext.actorRole;
+        actorEmail = agentContext.actorEmail;
+      } else if (resolveActor) {
+        const resolved = await resolveActor({
+          tenantId: context.tenantId,
+          actorId: context.actorId,
+        }).catch(() => null);
+        if (resolved) {
+          actorRole = resolved.baseRole;
+        }
+      }
+
+      if (!actorRole) {
+        throw new AppError(
+          401,
+          "UNAUTHORIZED",
+          "Tool execution requires an authenticated agent context",
+        );
+      }
+
       const accessContext: AccessContext = {
         tenantId: context.tenantId,
         actorId: context.actorId,
-        baseRole: "EMPLOYEE", // Agent operates at employee level
+        actorEmail: actorEmail ?? null,
+        baseRole: actorRole,
       };
 
       const query: RetrievalQuery = {

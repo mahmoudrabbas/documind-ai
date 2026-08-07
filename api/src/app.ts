@@ -58,7 +58,10 @@ import {
 import { getEmbeddingAdapter } from "./providers/embedding/atlasEmbeddingAdapter.js";
 import { FakeRerankerAdapter } from "./modules/reranker/fakeReranker.adapter.js";
 import { createRerankerService } from "./modules/reranker/reranker.service.js";
-import { registerRetrievalService } from "./modules/agents/agents.service.js";
+import {
+  registerRetrievalService,
+  registerAuthorizedRetrievalTools,
+} from "./modules/agents/agents.service.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
 import { initializeIntentQueryService } from "./modules/intent-query/intentQuery.factory.js";
@@ -73,6 +76,11 @@ import feedbackRoutes from "./modules/feedback/feedback.routes.js";
 import { getRedisClient, isRedisConnected } from "./db/redis.js";
 import { isMongoConnected } from "./db/connection.js";
 import { getDocumentAccessAuthorizationService } from "./modules/document-access/documentAccess.authorization.service.js";
+import { resolveAuthorizedDocumentHints } from "./modules/intent-query/intentQuery.documentHints.js";
+import {
+  createDefaultLoadChunksByIds,
+  createDefaultLoadEligibleDocumentIds,
+} from "./modules/agents/tools/authorizedRetrievalTools.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
 import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
 import analyticsRoutes from "./modules/analytics/analytics.routes.js";
@@ -254,7 +262,21 @@ const retrievalService = createRetrievalService({
   },
 });
 
-registerRetrievalService(retrievalService);
+registerRetrievalService(retrievalService, async ({ tenantId, actorId }) => {
+  const actor = await getDocumentAccessAuthorizationService().resolveActor({
+    tenantId,
+    actorId,
+  });
+  return { baseRole: actor.baseRole };
+});
+registerAuthorizedRetrievalTools({
+  retrieval: retrievalService,
+  reranker: rerankerService,
+  authorization: getDocumentAccessAuthorizationService(),
+  resolveDocumentHints: resolveAuthorizedDocumentHints,
+  loadChunksByIds: createDefaultLoadChunksByIds(),
+  loadEligibleDocumentIds: createDefaultLoadEligibleDocumentIds(),
+});
 
 await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
