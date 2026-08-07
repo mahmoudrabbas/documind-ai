@@ -26,7 +26,7 @@ import {
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
 import { z } from "zod";
-import type { QueryPlan } from "../intent-query/intentQuery.types.js";
+import type { QueryPlan, QueryLanguageValue } from "../intent-query/intentQuery.types.js";
 import { getTenantSettings } from "../settings/settings.service.js";
 import DocumentModel from "../../db/models/document.model.js";
 import type { MessageAttachment } from "../../db/models/message.model.js";
@@ -68,9 +68,6 @@ const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY f
 const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
 const RAG_SUMMARY_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a structured summary in the user's language written ONLY from the provided context: a short opening statement, then several distinct evidence-grounded points organized as paragraphs or bullet points, and a brief conclusion when the context supports one. Do not invent facts, figures, or points that are not present in the context. If the evidence supports only one point, give a short summary of that point rather than padding with fabricated content. If the context is insufficient, set decision to "insufficient_evidence" and answer a short message explaining that no evidence supports a summary. citedChunkIds must be an array of chunkId strings for the sources you actually used (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
 const RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers based on company documents. You must ONLY answer using the provided context from the company's knowledge base. Write a structured summary in the user's language: a short opening, then several distinct points grounded in the context organized as paragraphs or bullet points, and a brief conclusion when supported. Never make up information or points that are not present in the context. If the context does not contain enough information for a summary, say so clearly. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
-const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
-const INSUFFICIENT_AUTHORIZED_EVIDENCE_AR =
-  "لا توجد أدلة كافية مصرّح بها للإجابة على هذا السؤال.";
 
 /**
  * Answer-task classification separates the *retrieval route* (social | rag |
@@ -166,7 +163,26 @@ export function boundSummaryContext(
   return picked;
 }
 
-function ragContextInstruction(citationsEnabled: boolean): string {
+const RAG_SYSTEM_PROMPT_AR = `أنت DocuMind AI، مساعد ذكي يجيب على الأسئلة بناءً على مستندات الشركة فقط. يجب أن تجيب باستخدام السياق المقدم من قاعدة المعرفة فقط. إذا لم يكن السياق كافياً للإجابة، قل ذلك بوضوح. لا تختلق معلومات. كن موجزاً ومفيداً. عند الاستشهاد بمعلومات، اذكر المستند الذي جاءت منه.
+
+قاعدة اللغة الصارمة: يجب أن تكون إجابتك بالكامل باللغة العربية فقط. لا تستخدم أي لغة أخرى (لا صينية، لا يابانية، لا كورية، لا أي لغة غير العربية أو الإنجليزية). المصطلحات التقنية الإنجليزية المتعارف عليها مقبولة فقط.`;
+const RAG_SYSTEM_PROMPT_NO_CITATIONS_AR = `أنت DocuMind AI، مساعد ذكي يجيب على الأسئلة بناءً على مستندات الشركة فقط. يجب أن تجيب باستخدام السياق المقدم من قاعدة المعرفة فقط. إذا لم يكن السياق كافياً للإجابة، قل ذلك بوضوح. لا تختلق معلومات. كن موجزاً ومفيداً. لا تضمن أي استشهادات، أو مراجع للمصادر، أو حواشي سفلى، أو عناوين مستندات، أو أرقام صفحات في إجابتك.
+
+قاعدة اللغة الصارمة: يجب أن تكون إجابتك بالكامل باللغة العربية فقط. لا تستخدم أي لغة أخرى (لا صينية، لا يابانية، لا كورية، لا أي لغة غير العربية أو الإنجليزية). المصطلحات التقنية الإنجليزية المتعارف عليها مقبولة فقط.`;
+
+const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
+const INSUFFICIENT_AUTHORIZED_EVIDENCE_AR = "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.";
+
+function isArabicContext(language: QueryLanguageValue): boolean {
+  return language === "ar" || language === "mixed";
+}
+
+function ragContextInstruction(citationsEnabled: boolean, language: QueryLanguageValue = "en"): string {
+  if (isArabicContext(language)) {
+    return citationsEnabled
+      ? "استخدم السياق التالي للإجابة على السؤال. اذكر دائماً مصادرك."
+      : "استخدم السياق التالي للإجابة على السؤال. لا تذكر أو تستشهد بمصادرك أو المستندات أو أرقام الصفحات في الإجابة.";
+  }
   return citationsEnabled
     ? "Use the following context to answer the question. Always cite your sources."
     : "Use the following context to answer the question. Do not mention or cite your sources, documents, or page numbers in the answer.";
@@ -274,13 +290,24 @@ export function buildRagMessages(options: {
   sources: ChatSource[];
   userMessage: string;
   task?: AnswerTask;
+  language?: QueryLanguageValue;
 }): { role: "system" | "user" | "assistant"; content: string }[] {
-  const { citationsEnabled, historyFromDb, sources, userMessage, task = "direct_question" } = options;
+  const { citationsEnabled, historyFromDb, sources, userMessage, task = "direct_question", language = "en" } = options;
+
+  let systemPrompt: string;
+  if (isArabicContext(language) && task !== "document_summary") {
+    systemPrompt = citationsEnabled
+      ? RAG_SYSTEM_PROMPT_AR
+      : RAG_SYSTEM_PROMPT_NO_CITATIONS_AR;
+  } else {
+    systemPrompt = systemPromptFor(task, citationsEnabled);
+  }
+
   const messages: { role: "system" | "user" | "assistant"; content: string }[] =
     [
       {
         role: "system",
-        content: systemPromptFor(task, citationsEnabled),
+        content: systemPrompt,
       },
     ];
 
@@ -291,16 +318,20 @@ export function buildRagMessages(options: {
   }
 
   if (sources.length > 0) {
+    const useAr = isArabicContext(language);
+    const contextHeader = useAr ? "السياق:" : "Context:";
     const contextBlock = sources
       .map(
         (s, i) =>
-          `[Source ${i + 1}: id:${s.chunkId} doc:${s.documentId} title:${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
+          useAr
+            ? `[المصدر ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (صفحة ${s.pageNumber})` : ""}]\n${s.text}`
+            : `[Source ${i + 1}: id:${s.chunkId} doc:${s.documentId} title:${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
       )
       .join("\n\n");
 
     messages.push({
       role: "system",
-      content: `${ragContextInstruction(citationsEnabled)}\n\nContext:\n${contextBlock}`,
+      content: `${ragContextInstruction(citationsEnabled, language)}\n\n${contextHeader}\n${contextBlock}`,
     });
   }
 
@@ -310,16 +341,12 @@ export function buildRagMessages(options: {
 
 export function insufficientAuthorizedEvidenceResponse(
   conversationId: string,
-  language: "ar" | "en" | "mixed" = "en",
+  language: QueryLanguageValue = "en",
 ): Omit<ChatResponse, "messageId"> {
-  return {
-    answer:
-      language === "ar"
-        ? INSUFFICIENT_AUTHORIZED_EVIDENCE_AR
-        : INSUFFICIENT_AUTHORIZED_EVIDENCE,
-    sources: [],
-    conversationId,
-  };
+  const answer = isArabicContext(language)
+    ? INSUFFICIENT_AUTHORIZED_EVIDENCE_AR
+    : INSUFFICIENT_AUTHORIZED_EVIDENCE;
+  return { answer, sources: [], conversationId };
 }
 
 /**
@@ -839,6 +866,7 @@ export class ChatService {
       sources,
       userMessage: input.message,
       task: answerTask,
+      language: intentResult?.language ?? "en",
     });
 
     // 10. Call LLM

@@ -464,6 +464,7 @@ const en: TranslationDictionary = {
   "billingAdmin.amountCredit": "Credit",
   "billingAdmin.effectiveDate": "Effective date",
   "billingAdmin.nextBillingDate": "Next billing date",
+  "billingAdmin.refunded": "Refunded / Credit",
   "billingAdmin.entitlementImpact": "Entitlement impact",
   "billingAdmin.noEntitlementChange": "This change does not alter your current package limits.",
   "billingAdmin.cancelAtPeriodEnd": "Cancel at period end",

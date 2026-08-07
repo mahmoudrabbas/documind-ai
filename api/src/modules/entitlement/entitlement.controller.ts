@@ -171,8 +171,16 @@ export const getUsageController = endpoint(async (req) => {
     }),
   ]);
 
+  // Reconcile the documents counter with the actual document count from the DB.
+  // The quota counter can drift (e.g. documents uploaded before entitlement
+  // enforcement was active), so the real document count is authoritative.
+  const reconciledUsage = {
+    ...usage,
+    documents: documents,
+  };
+
   return {
-    current: usage,
+    current: reconciledUsage,
     limit,
     actual: {
       documents,

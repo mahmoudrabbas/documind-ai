@@ -464,6 +464,7 @@ const ar: TranslationDictionary = {
   "billingAdmin.amountCredit": "الرصيد",
   "billingAdmin.effectiveDate": "تاريخ السريان",
   "billingAdmin.nextBillingDate": "تاريخ الفوترة التالي",
+  "billingAdmin.refunded": "المبلغ المسترد / الرصيد",
   "billingAdmin.entitlementImpact": "أثر الصلاحيات",
   "billingAdmin.noEntitlementChange": "هذا التغيير لا يبدّل حدود الحزمة الحالية.",
   "billingAdmin.cancelAtPeriodEnd": "الإلغاء بنهاية الفترة",

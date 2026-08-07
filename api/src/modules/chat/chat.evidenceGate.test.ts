@@ -312,14 +312,20 @@ test("weak-only evidence returns a localized refusal and never calls generation"
     chatContext,
   );
 
-  assert.equal(response.answer, "لا توجد أدلة كافية مصرّح بها للإجابة على هذا السؤال.");
+  assert.equal(
+    response.answer,
+    "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.",
+  );
   assert.deepEqual(response.sources, []);
   assert.equal(retrieval.calls.length, 1);
   assert.equal((generator as StructuredAdapter)!.calls, 0, "weak evidence must never reach generation");
 
   const assistantMessage = await MessageModel.findOne({ role: "assistant" }).lean().exec();
   assert.ok(assistantMessage);
-  assert.equal(assistantMessage.content, "لا توجد أدلة كافية مصرّح بها للإجابة على هذا السؤال.");
+  assert.equal(
+    assistantMessage.content,
+    "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.",
+  );
   assert.deepEqual(assistantMessage.sources, []);
 });
 

@@ -14,7 +14,7 @@ import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
 import { resolveAuthorizedDocumentHints } from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
-import { INTENT_SYSTEM_PROMPT, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
+import { INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { recordIntentQueryMetrics } from "./intentQuery.metrics.js";
@@ -279,8 +279,9 @@ export class IntentQueryService {
     }
 
     // 5. Load Conversation Context with strict tenant isolation
+    const systemPrompt = (language === "ar" || language === "mixed") ? INTENT_SYSTEM_PROMPT_AR : INTENT_SYSTEM_PROMPT;
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: INTENT_SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
     ];
     let isFollowUp = false;
     let contextUsed = false;

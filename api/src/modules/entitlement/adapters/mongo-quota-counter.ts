@@ -93,11 +93,13 @@ export class MongoQuotaCounter implements QuotaCounterPort {
       return { success: false, current: await this.getUsage(tenantId, dimension, periodStart) };
     }
 
+    const filter = { ...key, value: { $lte: limit - amount } };
+
     // First update an existing row atomically. Do not use upsert here: when
     // the quota predicate fails, MongoDB would attempt a duplicate insert and
     // surface E11000 instead of returning a normal denial.
     const result = await QuotaCounterModel.findOneAndUpdate(
-      { ...key, value: { $lte: limit - amount } },
+      filter,
       { $inc: { value: amount } },
       { new: true },
     );
@@ -117,7 +119,7 @@ export class MongoQuotaCounter implements QuotaCounterPort {
     }
 
     const retried = await QuotaCounterModel.findOneAndUpdate(
-      { ...key, value: { $lte: limit - amount } },
+      filter,
       { $inc: { value: amount } },
       { new: true },
     );
