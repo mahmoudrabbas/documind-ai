@@ -26,6 +26,7 @@ describe("Chat STT Endpoint & Service Integration Tests", () => {
   const mockContext: OperationAuthorizationContext = {
     tenantId: "tenant_123",
     actorId: "user_123",
+    actorEmail: "employee@documind.ai",
     actorRole: "EMPLOYEE",
     traceId: "trace_123",
     requestId: "req_123",
