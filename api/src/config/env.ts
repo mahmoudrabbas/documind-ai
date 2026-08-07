@@ -187,6 +187,7 @@ const envSchema = z
     AI_PROVIDER: z.enum(["openai", "groq", "student-bedrock", "fake"]).default("fake"),
 
     GROQ_API_KEY: z.string().default(""),
+    GROQ_STT_API_KEY: z.string().default(""),
     GROQ_CHAT_MODEL: z.string().default("llama-3.3-70b-versatile"),
     GROQ_VISION_MODEL: z.string().default("qwen/qwen3.6-27b"),
 
@@ -197,7 +198,7 @@ const envSchema = z
     SBG_API_KEY: z.string().default(""),
     SBG_BASE_URL: z.string().url().default("https://apiaccess.iti.net.eg"),
     BEDROCK_GATEWAY_URL: z.string().url().default("https://apiaccess.iti.net.eg"),
-    BEDROCK_GATEWAY_API_KEY: z.string().default("sbg_A4zeYl4Jy__mmUYpDz2zL-0eemz5xMr_"),
+    BEDROCK_GATEWAY_API_KEY: z.string().default(""),
     BEDROCK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
     BEDROCK_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
     BEDROCK_RETRY_DELAY_MS: z.coerce.number().int().positive().default(1000),

@@ -15,6 +15,7 @@ import { AppError } from "../../../common/errors/AppError.js";
 import type { HybridRetrievalService } from "../../retrieval/retrieval.service.js";
 import type { ModelAdapter } from "../../agents/agents.types.js";
 import type { OperationAuthorizationContext } from "../../permissions/permissions.operation.js";
+import type { VoxtralSttAdapter } from "../../../providers/stt/voxtralStt.adapter.js";
 
 describe("Chat STT Endpoint & Service Integration Tests", () => {
   const mockRetrievalService = {} as HybridRetrievalService;
@@ -38,7 +39,7 @@ describe("Chat STT Endpoint & Service Integration Tests", () => {
       mockModelAdapter,
       undefined,
       undefined,
-      mockSttAdapter as any,
+      mockSttAdapter as unknown as VoxtralSttAdapter,
     );
 
     await expect(
@@ -52,7 +53,7 @@ describe("Chat STT Endpoint & Service Integration Tests", () => {
       mockModelAdapter,
       undefined,
       undefined,
-      mockSttAdapter as any,
+      mockSttAdapter as unknown as VoxtralSttAdapter,
     );
 
     const oversizedBuffer = Buffer.alloc(11 * 1024 * 1024);
@@ -79,7 +80,7 @@ describe("Chat STT Endpoint & Service Integration Tests", () => {
       mockModelAdapter,
       undefined,
       undefined,
-      mockSttAdapter as any,
+      mockSttAdapter as unknown as VoxtralSttAdapter,
     );
 
     const invalidFile = {
@@ -105,7 +106,7 @@ describe("Chat STT Endpoint & Service Integration Tests", () => {
       mockModelAdapter,
       undefined,
       undefined,
-      mockSttAdapter as any,
+      mockSttAdapter as unknown as VoxtralSttAdapter,
     );
 
     const validFile = {

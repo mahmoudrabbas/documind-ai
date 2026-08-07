@@ -57,13 +57,14 @@ export async function getMyPermissionsController(
   next: NextFunction,
 ) {
   try {
-    if (!req.auth || !req.tenantId) {
+    if (!req.auth) {
       throw new AppError(
         401,
         "UNAUTHORIZED",
         "Authentication required",
       );
     }
+    const tenantId = req.tenantId || req.auth.tenantId || "platform";
 
     if (!isBaseRole(req.auth.role)) {
       throw new AppError(403, "PERMISSION_REQUIRED", "Invalid base role");
@@ -71,7 +72,7 @@ export async function getMyPermissionsController(
     const evaluator = getPermissionEvaluator();
     const resolved = await evaluator.resolve({
       actorId: req.auth.userId,
-      tenantId: req.tenantId,
+      tenantId,
       baseRole: req.auth.role,
     });
 

@@ -8,7 +8,10 @@ import { createChatController } from "./chat.controller.js";
 import type { ChatService } from "./chat.service.js";
 import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
-import { createRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
+import {
+  createRateLimiter,
+  buildHashedIpRateLimitKey,
+} from "../../common/middlewares/rateLimit.middleware.js";
 import {
   getVisionMaxFileSizeBytes,
   isAllowedVisionMimeType,
@@ -57,9 +60,11 @@ const sttUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
     const mime = file.mimetype.toLowerCase();
-    const isAllowed = ALLOWED_AUDIO_MIME_TYPES.some((type) =>
-      mime.includes(type.split("/")[1]),
-    );
+    const isAllowed =
+      mime.startsWith("audio/") ||
+      ALLOWED_AUDIO_MIME_TYPES.some((type) =>
+        mime.includes(type.split("/")[1]),
+      );
     if (isAllowed) {
       callback(null, true);
     } else {
@@ -78,7 +83,7 @@ const sttRateLimiter = createRateLimiter({
   max: 10,
   message: "Too many audio transcription requests. Please wait a minute before trying again.",
   keyGenerator: (req) =>
-    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${req.ip}`,
+    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${buildHashedIpRateLimitKey(req.ip)}`,
 });
 
 export function createChatRoutes(service: ChatService): Router {

@@ -37,7 +37,7 @@ describe("VoxtralSttAdapter Unit Tests", () => {
 
     const adapter = new VoxtralSttAdapter({
       gatewayUrl: "https://apiaccess.iti.net.eg",
-      apiKey: "sbg_A4zeYl4Jy__mmUYpDz2zL-0eemz5xMr_",
+      apiKey: "sbg_test_key_123",
     });
 
     const mockBuffer = Buffer.from("fake-audio-bytes");
