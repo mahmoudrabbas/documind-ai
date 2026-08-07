@@ -4,6 +4,10 @@ import { Supervisor } from "./supervisor.js";
 import { ToolRegistry } from "./toolRegistry.js";
 import { createFakeTools } from "./fakeTools.js";
 import { createRetrievalTool } from "./tools/retrievalTool.js";
+import {
+  registerAuthorizedRetrievalTools as registerToolsOnRegistry,
+  type AuthorizedRetrievalDependencies,
+} from "./tools/authorizedRetrievalTools.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
 import { createDefaultGuardrails } from "./guardrails.js";
 import { getModelAdapter } from "../../providers/llm/index.js";
@@ -63,8 +67,16 @@ for (const tool of createFakeTools()) {
 
 export function registerRetrievalService(
   service: HybridRetrievalService,
+  resolveActor?: (context: {
+    tenantId: string;
+    actorId: string;
+  }) => Promise<{ baseRole: import("../../common/auth/baseRoles.js").BaseRole }>,
 ): void {
-  toolRegistry.register(createRetrievalTool(service));
+  toolRegistry.register(createRetrievalTool(service, resolveActor));
+}
+
+export function registerAuthorizedRetrievalTools(deps: AuthorizedRetrievalDependencies): void {
+  registerToolsOnRegistry(toolRegistry, deps);
 }
 
 async function requireAgentPermission(_permission?: string): Promise<boolean> {
