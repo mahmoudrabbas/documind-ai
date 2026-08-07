@@ -300,12 +300,30 @@ describe("SupervisorRuntime", () => {
       returnToSupervisor(),
       completeDecision({ answer: "done" }),
     ]);
-    const { runtime } = buildHarness(model);
+    const { runtime, persistence } = buildHarness(model);
     const result = await runtime.execute(baseRunInput());
     assert.equal(result.status, "completed");
     assert.deepEqual(calls, [SUP, "intent-query-agent", SUP]);
     assert.equal(result.handoffsCount, 2);
-    assert.equal(result.totalSteps, 3);
+    assert.equal(result.totalSteps, 4);
+
+    const executionStep = Array.from(persistence.steps.values()).find(
+      (s) => s.agentName === "intent-query-agent" && s.action === "execute",
+    );
+    assert.ok(executionStep, "expected a dedicated execute step");
+    assert.equal(executionStep.status, "completed");
+    assert.equal(executionStep.handoffToAgent, null);
+    assert.equal(executionStep.previousAgent, null);
+    assert.equal(executionStep.error, null);
+    assert.deepEqual(executionStep.output, { intent: "general" });
+
+    const handoffStep = Array.from(persistence.steps.values()).find(
+      (s) => s.action === "handoff" && s.handoffToAgent === "intent-query-agent",
+    );
+    assert.ok(handoffStep, "expected a handoff step");
+    assert.equal(handoffStep.status, "completed");
+    assert.equal(handoffStep.output, null);
+    assert.equal(persistence.steps.size, 4);
   });
 
   it("fails closed when the handoff target has no executor", async () => {

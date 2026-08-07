@@ -22,6 +22,7 @@ export type SupervisorStepAction =
   | "plan"
   | "tool_call"
   | "handoff"
+  | "execute"
   | "guardrail"
   | "approval_requested"
   | "approval_resolved"

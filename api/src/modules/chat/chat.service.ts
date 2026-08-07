@@ -24,8 +24,15 @@ import {
   isSufficientBundle,
 } from "../reranker/reranker.types.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
+import type { RunContext } from "../agents/agents.types.js";
+import { createAnalyticsTool } from "../agents/tools/analyticsTool.js";
+import { createKnowledgeGapTool } from "../agents/tools/knowledgeGapTool.js";
+import {
+  detectAnalyticsRequest,
+  formatAnalyticsAnswer,
+  detectReplyLanguage,
+} from "./chat.tools.js";
 import { getIntentQueryService } from "../intent-query/intentQuery.factory.js";
-import { z } from "zod";
 import type { QueryPlan, QueryLanguageValue } from "../intent-query/intentQuery.types.js";
 import { getTenantSettings } from "../settings/settings.service.js";
 import DocumentModel from "../../db/models/document.model.js";
@@ -48,11 +55,20 @@ import {
   type ChatVisionBody,
 } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
-import { mapLlmProviderError } from "../../providers/llm/providerError.js";
 import {
   sanitizeAssistantOutput,
   hasUnclosedReasoningBlock,
 } from "../../providers/llm/outputSanitizer.js";
+import {
+  AnswerWriterService,
+  isArabicContext,
+  type AnswerTask,
+  type AnswerWriterServiceResult,
+} from "../agents/answerWriter.service.js";
+export {
+  buildRagMessages,
+  type AnswerTask,
+} from "../agents/answerWriter.service.js";
 import {
   getVisionAdapter,
   type VisionAdapter,
@@ -65,25 +81,20 @@ import { CostService } from "../analytics/cost.service.js";
 import { getLangfuse } from "../../providers/observability/langfuse.js";
 import { VoxtralSttAdapter } from "../../providers/stt/voxtralStt.adapter.js";
 
-const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a concise string in the user's language. citedChunkIds must be an array of chunkId strings (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
-const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
-const RAG_SUMMARY_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a structured summary in the user's language written ONLY from the provided context: a short opening statement, then several distinct evidence-grounded points organized as paragraphs or bullet points, and a brief conclusion when the context supports one. Do not invent facts, figures, or points that are not present in the context. If the evidence supports only one point, give a short summary of that point rather than padding with fabricated content. If the context is insufficient, set decision to "insufficient_evidence" and answer a short message explaining that no evidence supports a summary. citedChunkIds must be an array of chunkId strings for the sources you actually used (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
-const RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers based on company documents. You must ONLY answer using the provided context from the company's knowledge base. Write a structured summary in the user's language: a short opening, then several distinct points grounded in the context organized as paragraphs or bullet points, and a brief conclusion when supported. Never make up information or points that are not present in the context. If the context does not contain enough information for a summary, say so clearly. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
-
-/**
- * Answer-task classification separates the *retrieval route* (social | rag |
- * clarification | unsupported | unsafe) from the *answer style* the generator
- * should produce. Summary requests must not be forced into the concise style
- * used for direct questions.
- */
-export type AnswerTask = "direct_question" | "document_summary";
-
 const DEFAULT_MAX_TOKENS = 1024;
 const SUMMARY_MAX_TOKENS = 2048;
 const DIRECT_TOP_K = 5;
 const SUMMARY_TOP_K = 12;
 const SUMMARY_MAX_SOURCES = 8;
 const SUMMARY_CONTEXT_CHARS = 24_000;
+
+// Production agent tools invoked by the chat assistant flow. `analytics_query`
+// answers tenant-stats/top-query questions with real tenant data; the
+// `report_knowledge_gap` tool records unanswered/low-confidence questions as
+// knowledge-gap candidates for the current tenant. Both handlers are the same
+// registered production tools surfaced to the agent supervisor.
+const analyticsTool = createAnalyticsTool();
+const knowledgeGapTool = createKnowledgeGapTool();
 
 // Deterministic summary-task signals. The summarization intent from the query
 // planner wins, then depth/summary phrases in the original message. Arabic is
@@ -124,15 +135,6 @@ export function detectAnswerTask(
   return "direct_question";
 }
 
-function systemPromptFor(task: AnswerTask, citationsEnabled: boolean): string {
-  if (task === "document_summary") {
-    return citationsEnabled
-      ? RAG_SUMMARY_SYSTEM_PROMPT
-      : RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS;
-  }
-  return citationsEnabled ? RAG_SYSTEM_PROMPT : RAG_SYSTEM_PROMPT_NO_CITATIONS;
-}
-
 /**
  * Bounded, evidence-gated generation context for whole-document summaries.
  * Preserves the reranker-approved order but prefers section/page diversity so
@@ -164,30 +166,8 @@ export function boundSummaryContext(
   return picked;
 }
 
-const RAG_SYSTEM_PROMPT_AR = `أنت DocuMind AI، مساعد ذكي يجيب على الأسئلة بناءً على مستندات الشركة فقط. يجب أن تجيب باستخدام السياق المقدم من قاعدة المعرفة فقط. إذا لم يكن السياق كافياً للإجابة، قل ذلك بوضوح. لا تختلق معلومات. كن موجزاً ومفيداً. عند الاستشهاد بمعلومات، اذكر المستند الذي جاءت منه.
-
-قاعدة اللغة الصارمة: يجب أن تكون إجابتك بالكامل باللغة العربية فقط. لا تستخدم أي لغة أخرى (لا صينية، لا يابانية، لا كورية، لا أي لغة غير العربية أو الإنجليزية). المصطلحات التقنية الإنجليزية المتعارف عليها مقبولة فقط.`;
-const RAG_SYSTEM_PROMPT_NO_CITATIONS_AR = `أنت DocuMind AI، مساعد ذكي يجيب على الأسئلة بناءً على مستندات الشركة فقط. يجب أن تجيب باستخدام السياق المقدم من قاعدة المعرفة فقط. إذا لم يكن السياق كافياً للإجابة، قل ذلك بوضوح. لا تختلق معلومات. كن موجزاً ومفيداً. لا تضمن أي استشهادات، أو مراجع للمصادر، أو حواشي سفلى، أو عناوين مستندات، أو أرقام صفحات في إجابتك.
-
-قاعدة اللغة الصارمة: يجب أن تكون إجابتك بالكامل باللغة العربية فقط. لا تستخدم أي لغة أخرى (لا صينية، لا يابانية، لا كورية، لا أي لغة غير العربية أو الإنجليزية). المصطلحات التقنية الإنجليزية المتعارف عليها مقبولة فقط.`;
-
 const INSUFFICIENT_AUTHORIZED_EVIDENCE = "I don't have sufficient authorized evidence to answer that question.";
 const INSUFFICIENT_AUTHORIZED_EVIDENCE_AR = "عذراً، لم أتمكن من العثور على معلومات كافية في المستندات المتاحة للإجابة على سؤالك. يرجى التأكد من رفع المستندات ذات الصلة أو إعادة صياغة سؤالك.";
-
-function isArabicContext(language: QueryLanguageValue): boolean {
-  return language === "ar" || language === "mixed";
-}
-
-function ragContextInstruction(citationsEnabled: boolean, language: QueryLanguageValue = "en"): string {
-  if (isArabicContext(language)) {
-    return citationsEnabled
-      ? "استخدم السياق التالي للإجابة على السؤال. اذكر دائماً مصادرك."
-      : "استخدم السياق التالي للإجابة على السؤال. لا تذكر أو تستشهد بمصادرك أو المستندات أو أرقام الصفحات في الإجابة.";
-  }
-  return citationsEnabled
-    ? "Use the following context to answer the question. Always cite your sources."
-    : "Use the following context to answer the question. Do not mention or cite your sources, documents, or page numbers in the answer.";
-}
 
 const SOCIAL_REPLIES: Record<
   "ar" | "en",
@@ -285,61 +265,6 @@ function logRouteDecision(
   );
 }
 
-export function buildRagMessages(options: {
-  citationsEnabled: boolean;
-  historyFromDb: Array<{ role: "user" | "assistant"; content: string }>;
-  sources: ChatSource[];
-  userMessage: string;
-  task?: AnswerTask;
-  language?: QueryLanguageValue;
-}): { role: "system" | "user" | "assistant"; content: string }[] {
-  const { citationsEnabled, historyFromDb, sources, userMessage, task = "direct_question", language = "en" } = options;
-
-  let systemPrompt: string;
-  if (isArabicContext(language) && task !== "document_summary") {
-    systemPrompt = citationsEnabled
-      ? RAG_SYSTEM_PROMPT_AR
-      : RAG_SYSTEM_PROMPT_NO_CITATIONS_AR;
-  } else {
-    systemPrompt = systemPromptFor(task, citationsEnabled);
-  }
-
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] =
-    [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-    ];
-
-  if (historyFromDb.length > 0) {
-    for (const msg of historyFromDb.slice(-10)) {
-      messages.push({ role: msg.role, content: msg.content });
-    }
-  }
-
-  if (sources.length > 0) {
-    const useAr = isArabicContext(language);
-    const contextHeader = useAr ? "السياق:" : "Context:";
-    const contextBlock = sources
-      .map(
-        (s, i) =>
-          useAr
-            ? `[المصدر ${i + 1}: ${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (صفحة ${s.pageNumber})` : ""}]\n${s.text}`
-            : `[Source ${i + 1}: id:${s.chunkId} doc:${s.documentId} title:${s.documentTitle}${s.sectionTitle ? ` — ${s.sectionTitle}` : ""}${s.pageNumber ? ` (p.${s.pageNumber})` : ""}]\n${s.text}`,
-      )
-      .join("\n\n");
-
-    messages.push({
-      role: "system",
-      content: `${ragContextInstruction(citationsEnabled, language)}\n\n${contextHeader}\n${contextBlock}`,
-    });
-  }
-
-  messages.push({ role: "user", content: userMessage });
-  return messages;
-}
-
 export function insufficientAuthorizedEvidenceResponse(
   conversationId: string,
   language: QueryLanguageValue = "en",
@@ -429,15 +354,19 @@ export function toPublicAttachment(
 }
 
 export class ChatService {
+  private readonly answerWriter: AnswerWriterService;
+  private readonly modelAdapter: ModelAdapter;
   private readonly sttAdapter: VoxtralSttAdapter;
 
   constructor(
     private readonly retrievalService: HybridRetrievalService,
-    private readonly modelAdapter: ModelAdapter,
+    modelAdapter: ModelAdapter,
     private readonly visionAdapter?: VisionAdapter,
     private readonly storage?: StorageProvider,
     sttAdapter?: VoxtralSttAdapter,
   ) {
+    this.answerWriter = new AnswerWriterService(modelAdapter);
+    this.modelAdapter = modelAdapter;
     this.sttAdapter = sttAdapter || new VoxtralSttAdapter();
   }
 
@@ -693,6 +622,75 @@ export class ChatService {
       logger.warn({ err, tenantId: tenantIdStr }, "Intent analysis failed, using raw message");
     }
 
+    // 7b. Deterministic analytics routing. Questions about tenant stats
+    // (document/query counts, top queries, feedback, usage trends) invoke the
+    // production `analytics_query` tool with real tenant data instead of
+    // running RAG over the knowledge base. Document-specific questions are
+    // excluded by the detector so they stay on the RAG path.
+    const analyticsRequest = detectAnalyticsRequest(input.message, intentResult);
+    if (analyticsRequest) {
+      const runCtx = this.chatRunContext(actor, context);
+      let toolOutput: { result: unknown } | null = null;
+      try {
+        const rawOutput = await analyticsTool.handler(runCtx, {
+          metric: analyticsRequest.metric,
+          period: analyticsRequest.period,
+        });
+        if (
+          typeof rawOutput === "object" &&
+          rawOutput !== null &&
+          "result" in rawOutput
+        ) {
+          toolOutput = rawOutput as { result: unknown };
+        }
+      } catch (err) {
+        logger.warn(
+          { err, tenantId: tenantIdStr },
+          "analytics_query tool failed; falling back to RAG",
+        );
+      }
+
+      if (toolOutput) {
+        const analyticsLanguage = detectReplyLanguage(input.message);
+        const analyticsAnswer = formatAnalyticsAnswer(toolOutput.result, {
+          metric: analyticsRequest.metric,
+          period: analyticsRequest.period,
+          language: analyticsLanguage,
+        });
+        const analyticsMsg = await chatRepo.addMessage(
+          tenantIdStr,
+          conversationId,
+          "assistant",
+          analyticsAnswer,
+          currentCount + 1,
+          [],
+        );
+        logRouteDecision(
+          {
+            route: intentResult?.route ?? "rag",
+            intent: intentResult?.detectedIntent ?? "knowledge_question",
+            language: analyticsLanguage,
+            confidence: intentResult?.intentConfidence ?? 0,
+            fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
+          },
+          {
+            tenantId: tenantIdStr,
+            conversationId,
+            retrievalSkipped: true,
+            sourceCount: 0,
+            reasonCode: "ANALYTICS_TOOL",
+            latencyMs: Date.now() - start,
+          },
+        );
+        return {
+          messageId: analyticsMsg._id.toString(),
+          answer: analyticsAnswer,
+          sources: [],
+          conversationId,
+        };
+      }
+    }
+
     // 8. Retrieve relevant chunks via hybrid search
     const accessContext: AccessContext = {
       tenantId: tenantIdStr,
@@ -787,6 +785,7 @@ export class ChatService {
       sources = generationSurvivors.map((c) => ({
         chunkId: c.chunkId,
         documentId: c.documentId,
+        documentVersionId: c.documentVersionId,
         text: c.text,
         pageNumber: c.pageNumber,
         sectionTitle: c.sectionTitle,
@@ -819,6 +818,18 @@ export class ChatService {
         currentCount + 1,
         [],
       );
+      // Implicit knowledge-gap trigger: RAG found no sufficient authorized
+      // evidence, so record an unanswered gap for the current tenant via the
+      // production `report_knowledge_gap` tool. Best-effort and never fatal.
+      await this.reportKnowledgeGap({
+        actor,
+        context,
+        question: input.message,
+        outcome: "unanswered",
+        confidence: 0.3,
+        conversationId,
+        messageId: assistantDoc._id.toString(),
+      });
       logRouteDecision(
         {
           route: intentResult?.route ?? "rag",
@@ -862,46 +873,49 @@ export class ChatService {
       };
     }
 
-    // 9. Build RAG prompt and generate answer
-    // Build RAG messages including the retrieval candidates as context. The
-    // generator is allowed to return a structured decision in the completion
-    // response (e.g., { decision: "insufficient_evidence", message: "...", citedChunkIds: [] }).
-    const messages = buildRagMessages({
-      citationsEnabled,
-      historyFromDb,
-      sources,
-      userMessage: input.message,
-      task: answerTask,
-      language: intentResult?.language ?? "en",
-    });
-
-    // 10. Call LLM
+    // 9. Generate the answer through the shared, provider-neutral AnswerWriter
+    // service. The legacy path supplies the evidence-gated survivors only, so
+    // the generator can never see or cite chunks outside the authorized set.
 
     // Whole-document summaries need a larger token budget than the concise
     // direct-question default so the model can write a structured summary.
     const effectiveMaxTokens =
       answerTask === "document_summary" ? SUMMARY_MAX_TOKENS : maxTokens;
 
-    let response: Awaited<ReturnType<ModelAdapter["complete"]>>;
     const generation = trace?.generation({
       name: "groq-chat",
       model: this.modelAdapter.providerKey,
       modelParameters: { temperature: 0.3, maxTokens: effectiveMaxTokens },
       // No input: field — messages contain private tenant document content
     });
+
+    let generated: AnswerWriterServiceResult;
     try {
-      logger.info({ tenantId: tenantIdStr, conversationId, provider: this.modelAdapter.providerKey }, "Invoking modelAdapter.complete");
-      response = await this.modelAdapter.complete({
-        messages,
-        temperature: 0.3,
+      logger.info({ tenantId: tenantIdStr, conversationId, provider: this.modelAdapter.providerKey }, "Invoking modelAdapter.complete via answer-writer service");
+      generated = await this.answerWriter.generate({
+        conversationId,
+        question: input.message,
+        language: intentResult?.language ?? "en",
+        task: answerTask,
+        citationsEnabled,
+        historyFromDb,
+        evidence: sources.map((s) => ({
+          chunkId: s.chunkId,
+          documentId: s.documentId,
+          documentVersionId: s.documentVersionId,
+          text: s.text,
+          pageNumber: s.pageNumber,
+          sectionTitle: s.sectionTitle,
+          documentTitle: s.documentTitle,
+        })),
         maxTokens: effectiveMaxTokens,
       });
       generation?.end({
         // No output: field — AI answer may contain private tenant document content
         usage: {
-          promptTokens: response.usage?.promptTokens,
-          completionTokens: response.usage?.completionTokens,
-          totalTokens: response.usage?.totalTokens,
+          promptTokens: generated.promptTokens,
+          completionTokens: generated.completionTokens,
+          totalTokens: generated.totalTokens,
         },
       });
     } catch (error) {
@@ -909,36 +923,29 @@ export class ChatService {
         level: "ERROR",
         statusMessage: error instanceof Error ? error.message : String(error),
       });
-      const mapped = mapLlmProviderError(error);
-      const retryAfterSeconds =
-        typeof mapped.details === "object" &&
-        mapped.details !== null &&
-        "retryAfterSeconds" in mapped.details
-          ? (mapped.details as { retryAfterSeconds?: number }).retryAfterSeconds
-          : undefined;
       logger.warn(
         {
           tenantId: tenantIdStr,
           provider: this.modelAdapter.providerKey,
-          code: mapped.code,
-          statusCode: mapped.statusCode,
-          retryAfterSeconds,
+          code: error instanceof AppError ? error.code : "UNKNOWN",
+          statusCode: error instanceof AppError ? error.statusCode : undefined,
         },
         "LLM completion unavailable",
       );
-      throw mapped;
+      throw error;
     }
 
-
-    const rawContent = response.choices[0]?.message?.content ?? "";
-    const answerText = sanitizeAssistantOutput(rawContent);
-    if (!answerText) {
+    if (generated.outcome === "unusable") {
       throw new AppError(
         502,
         LLM_PROVIDER_UNAVAILABLE,
         "The assistant produced no usable answer. Please try again.",
       );
     }
+
+    const finalDecision = generated.decision;
+    const finalMessage = generated.answer;
+    let citedChunkIds = generated.citedChunkIds;
     const latencyMs = Date.now() - start;
     trace?.update({
       metadata: { outcome: "SUCCESS", latencyMs },
@@ -948,7 +955,7 @@ export class ChatService {
     // Programmatic quality scores — visible in Langfuse "Scores" column
     // These measure operational quality, not content (no private data exposed)
     if (trace) {
-      const outputTokens = response.usage?.completionTokens ?? 0;
+      const outputTokens = generated.completionTokens;
 
       // Score 1: Did retrieval find relevant documents? (1 = yes, 0 = no)
       trace.score({
@@ -976,132 +983,6 @@ export class ChatService {
       });
     }
 
-    // The generation model must return a strict JSON object conforming to the
-    // answer-writer schema. Fail-closed: malformed, missing, or schema-invalid
-    // outputs become 'insufficient_evidence' and return zero sources.
-    const AnswerWriterSchema = z.object({
-      decision: z.enum(["grounded_answer","insufficient_evidence","clarification","unsupported","unsafe"]),
-      answer: z.string(),
-      // citedChunkIds required (may be empty for non-grounded decisions)
-      citedChunkIds: z.array(z.string()),
-    }).strict();
-
-    // Try to locate and parse a JSON object in the model output. Strip fences
-    // if present. Any parse/validation failure downgrades to insufficient_evidence.
-    type AnswerParseResult =
-      | { success: false; error: unknown }
-      | { success: true; data: z.infer<typeof AnswerWriterSchema> };
-
-    let parsed: AnswerParseResult;
-    try {
-      let body = rawContent.trim();
-      if (body.startsWith("```")) {
-        body = body.replace(/^```json\s*/i, "").replace(/```$/g, "").trim();
-      }
-      if (!body.startsWith("{")) {
-        // Plain free-form output is unacceptable for production correctness
-        parsed = { success: false, error: new Error("No JSON object present") };
-      } else {
-        const obj = JSON.parse(body);
-        const sp = AnswerWriterSchema.safeParse(obj as unknown);
-        if (sp.success) parsed = { success: true, data: sp.data };
-        else parsed = { success: false, error: sp.error };
-      }
-    } catch (err) {
-      parsed = { success: false, error: err };
-    }
-
-    let finalDecision: string = "insufficient_evidence";
-    let finalMessage: string = answerText;
-    let citedChunkIds: string[] = [];
-
-    if (!parsed.success) {
-      // Malformed or invalid generator output: fail to insufficient_evidence
-      logger.warn({ tenantId: tenantIdStr }, "Generator output failed answer-writer schema validation");
-
-      const assistantDoc = await chatRepo.addMessage(
-        tenantIdStr,
-        conversationId,
-        "assistant",
-        finalMessage,
-        currentCount + 1,
-        [],
-      );
-
-      logRouteDecision(
-        {
-          route: intentResult?.route ?? "rag",
-          intent: intentResult?.detectedIntent ?? "knowledge_question",
-          language: intentResult?.language ?? "en",
-          confidence: intentResult?.intentConfidence ?? 0,
-          fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
-        },
-        {
-          tenantId: tenantIdStr,
-          conversationId,
-          retrievalSkipped: false,
-          sourceCount: 0,
-          reasonCode: "MALFORMED_GENERATOR_OUTPUT",
-          latencyMs: Date.now() - start,
-          answerTask,
-        },
-      );
-
-      await getAuditWriter().write({
-        action: "RETRIEVAL_SEARCH",
-        resourceType: "Retrieval",
-        resourceId: conversationId,
-        outcome: "SUCCESS",
-        tenantId: tenantIdStr,
-        actorId: actor.actorId,
-        actorEmail: actor.actorEmail,
-        actorRole: actor.actorRole,
-        metadata: {
-          conversationId,
-          sourceCount: 0,
-          latencyMs: Date.now() - start,
-          finalDecision: "insufficient_evidence",
-        },
-      });
-
-      return {
-        messageId: assistantDoc._id.toString(),
-        answer: finalMessage,
-        sources: [],
-        conversationId,
-      };
-    }
-
-    // Valid JSON per schema
-    finalDecision = parsed.data.decision;
-
-    // Sanitize the structured answer field itself before persistence or return.
-    // Sanitizing rawContent above is not sufficient because rawContent is the
-    // complete JSON string, while reasoning may exist inside the answer value.
-    const structuredAnswer = parsed.data.answer;
-    const sanitizedStructuredAnswer =
-      hasUnclosedReasoningBlock(structuredAnswer)
-        ? ""
-        : sanitizeAssistantOutput(structuredAnswer);
-
-    if (!sanitizedStructuredAnswer) {
-      throw new AppError(
-        502,
-        LLM_PROVIDER_UNAVAILABLE,
-        "The assistant produced no usable answer. Please try again.",
-      );
-    }
-
-    finalMessage = sanitizedStructuredAnswer;
-    // Deduplicate citedChunkIds while preserving order
-    const seen = new Set<string>();
-    citedChunkIds = parsed.data.citedChunkIds.filter((id: unknown) => {
-      if (typeof id !== "string") return false;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-
     // If decision indicates no sources, enforce zero sources and return
     const decisionNoSources = new Set(["insufficient_evidence", "unsupported", "clarification"]);
     if (decisionNoSources.has(finalDecision)) {
@@ -1113,6 +994,22 @@ export class ChatService {
         currentCount + 1,
         [],
       );
+
+      // Implicit knowledge-gap trigger: the generator concluded the retrieved
+      // evidence could not answer the question (insufficient evidence or
+      // unsupported). Clarification requests are not knowledge gaps. Best-effort
+      // and never fatal.
+      if (finalDecision !== "clarification") {
+        await this.reportKnowledgeGap({
+          actor,
+          context,
+          question: input.message,
+          outcome: "unanswered",
+          confidence: 0.4,
+          conversationId,
+          messageId: assistantDoc._id.toString(),
+        });
+      }
 
       logRouteDecision(
         {
@@ -1158,64 +1055,6 @@ export class ChatService {
       };
     }
 
-    // For grounded_answer, citedChunkIds MUST be present and non-empty.
-    if (finalDecision === "grounded_answer") {
-      if (!Array.isArray(citedChunkIds) || citedChunkIds.length === 0) {
-        // Missing citations for grounded answer: downgrade to insufficient_evidence
-        logger.warn({ tenantId: tenantIdStr }, "Grounded decision missing citedChunkIds; downgrading to insufficient_evidence");
-        const assistantDoc = await chatRepo.addMessage(
-          tenantIdStr,
-          conversationId,
-          "assistant",
-          finalMessage,
-          currentCount + 1,
-          [],
-        );
-        await getAuditWriter().write({
-          action: "RETRIEVAL_SEARCH",
-          resourceType: "Retrieval",
-          resourceId: conversationId,
-          outcome: "SUCCESS",
-          tenantId: tenantIdStr,
-          actorId: actor.actorId,
-          actorEmail: actor.actorEmail,
-          actorRole: actor.actorRole,
-          metadata: {
-            conversationId,
-            sourceCount: 0,
-            latencyMs: Date.now() - start,
-            finalDecision: "insufficient_evidence",
-          },
-        });
-
-        logRouteDecision(
-          {
-            route: intentResult?.route ?? "rag",
-            intent: intentResult?.detectedIntent ?? "knowledge_question",
-            language: intentResult?.language ?? "en",
-            confidence: intentResult?.intentConfidence ?? 0,
-            fallbackUsed: intentResult?.processingMetadata?.fallbackUsed ?? false,
-          },
-          {
-            tenantId: tenantIdStr,
-            conversationId,
-            retrievalSkipped: false,
-            sourceCount: 0,
-            reasonCode: "MISSING_CITATIONS_FOR_GROUNDED",
-            latencyMs: Date.now() - start,
-            answerTask,
-          },
-        );
-
-        return {
-          messageId: assistantDoc._id.toString(),
-          answer: finalMessage,
-          sources: [],
-          conversationId,
-        };
-      }
-    }
-
     // Validate citedChunkIds against survivorsForDecision and the reranker bundle.
     if (Array.isArray(citedChunkIds) && citedChunkIds.length > 0 && retrievalEvidenceBundle) {
       const approvedIds = new Set(survivorsForDecision.map((s) => s.chunkId));
@@ -1256,14 +1095,14 @@ export class ChatService {
     // Record usage event with end-to-end latency for Analytics
     const eventWriter = new MongoUsageEventWriter();
     const costService = new CostService();
-    const inputTokens = response.usage?.promptTokens ?? 0;
-    const outputTokens = response.usage?.completionTokens ?? 0;
-    const totalTokens = response.usage?.totalTokens ?? (inputTokens + outputTokens);
+    const inputTokens = generated.promptTokens;
+    const outputTokens = generated.completionTokens;
+    const totalTokens = generated.totalTokens;
 
     void costService
       .calculateLlmCost(
         this.modelAdapter.providerKey,
-        response.model || this.modelAdapter.providerKey,
+        generated.modelName || this.modelAdapter.providerKey,
         inputTokens,
         outputTokens,
       )
@@ -1273,7 +1112,7 @@ export class ChatService {
           actorId: actor.actorId.toString(),
           eventType: "completion",
           provider: this.modelAdapter.providerKey,
-          model: response.model || this.modelAdapter.providerKey,
+          model: generated.modelName || this.modelAdapter.providerKey,
           conversationId,
           messageId: assistantDoc._id.toString(),
           inputTokens,
@@ -1821,6 +1660,56 @@ export class ChatService {
     const text = await this.sttAdapter.transcribe(file.buffer, file.mimetype);
 
     return { text };
+  }
+
+  private chatRunContext(
+    actor: OperationAuthorizationContext,
+    context: OperationAuthorizationContext,
+    opts: { conversationId?: string; messageId?: string } = {},
+  ): RunContext {
+    return {
+      tenantId: actor.tenantId.toString(),
+      actorId: actor.actorId.toString(),
+      traceId: context.traceId ?? "",
+      requestId: context.requestId ?? "",
+      workflowName: "chat",
+      agentName: "chat-assistant",
+      conversationId: opts.conversationId,
+      messageId: opts.messageId,
+    };
+  }
+
+  /**
+   * Records a knowledge-gap candidate through the production
+   * `report_knowledge_gap` tool. Used for implicit gap creation when the RAG
+   * flow cannot answer a question. Best-effort: a failure here must never fail
+   * the chat exchange, so it is always caught and logged.
+   */
+  private async reportKnowledgeGap(options: {
+    actor: OperationAuthorizationContext;
+    context: OperationAuthorizationContext;
+    question: string;
+    outcome: "unanswered" | "low_confidence";
+    confidence: number;
+    conversationId: string;
+    messageId: string;
+  }): Promise<void> {
+    const { actor, context, question, outcome, confidence, conversationId, messageId } = options;
+    try {
+      await knowledgeGapTool.handler(
+        this.chatRunContext(actor, context, { conversationId, messageId }),
+        { question, outcome, confidence },
+      );
+      logger.info(
+        { tenantId: actor.tenantId.toString(), conversationId, messageId, outcome, confidence },
+        "[KnowledgeGap] Created candidate for unanswered chat query",
+      );
+    } catch (err) {
+      logger.warn(
+        { err, tenantId: actor.tenantId.toString() },
+        "Failed to record knowledge gap from chat flow",
+      );
+    }
   }
 
   private validateInput(raw: unknown): ChatSendBody {

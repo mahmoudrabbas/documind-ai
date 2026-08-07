@@ -5,6 +5,9 @@ services:
       dockerfile: api/Dockerfile
     ports:
       - "5000:5000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     env_file:
       - path: ./api/.env
         required: false
