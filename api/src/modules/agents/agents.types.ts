@@ -23,6 +23,10 @@ export interface RunContext {
   maxToolCalls?: number;
   maxTokens?: number;
   budgetMs?: number;
+  /** Conversation context for tools invoked from a chat assistant flow. */
+  conversationId?: string;
+  /** Assistant message id for tools invoked from a chat assistant flow. */
+  messageId?: string;
 }
 
 export interface HandoffProtocol {

@@ -8,6 +8,9 @@ import {
   registerAuthorizedRetrievalTools as registerToolsOnRegistry,
   type AuthorizedRetrievalDependencies,
 } from "./tools/authorizedRetrievalTools.js";
+import { createSummarizeTool } from "./tools/summarizeTool.js";
+import { createAnalyticsTool } from "./tools/analyticsTool.js";
+import { createKnowledgeGapTool } from "./tools/knowledgeGapTool.js";
 import type { HybridRetrievalService } from "../retrieval/retrieval.service.js";
 import { createDefaultGuardrails } from "./guardrails.js";
 import { getModelAdapter } from "../../providers/llm/index.js";
@@ -79,6 +82,10 @@ export function registerAuthorizedRetrievalTools(deps: AuthorizedRetrievalDepend
   registerToolsOnRegistry(toolRegistry, deps);
 }
 
+toolRegistry.register(createSummarizeTool(getModelAdapter()));
+toolRegistry.register(createAnalyticsTool());
+toolRegistry.register(createKnowledgeGapTool());
+
 async function requireAgentPermission(_permission?: string): Promise<boolean> {
   if (!_permission) return true;
   const allowed = new Set([
@@ -87,6 +94,9 @@ async function requireAgentPermission(_permission?: string): Promise<boolean> {
     "agents:tools:fail:use",
     "agents:approval:request",
     "agents:handoff:request",
+    Permission.DOCUMENTS_READ,
+    Permission.ANALYTICS_READ,
+    "knowledge_gaps:create",
   ]);
   return allowed.has(_permission);
 }
@@ -212,7 +222,7 @@ async function executeSupervisedRun(
     "default-agent",
     "handoff-agent",
     "approval-agent",
-  ]);
+  ], toolRegistry.list());
 
   for (
     stepIndex = 0;
