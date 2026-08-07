@@ -32,6 +32,8 @@ export default defineConfig({
       "src/modules/notifications/__tests__/*.test.ts",
       "src/modules/retrieval/ports/__tests__/*.test.ts",
       "src/providers/bedrock/__tests__/*.test.ts",
+      "src/providers/stt/__tests__/*.test.ts",
+      "src/modules/chat/__tests__/*.test.ts",
       "src/providers/embedding/__tests__/*.test.ts",
       "src/providers/keyword-index/__tests__/*.test.ts",
       "src/providers/vector-index/__tests__/*.test.ts",

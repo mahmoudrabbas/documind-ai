@@ -465,6 +465,7 @@ export function createRateLimiter(
     max,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { ip: false },
     skipFailedRequests: options.skipFailedRequests ?? false,
     keyGenerator: options.keyGenerator,
     handler(req, res) {

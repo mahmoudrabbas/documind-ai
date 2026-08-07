@@ -44,10 +44,13 @@ services:
       - SEED_SUPER_ADMIN_PASSWORD=DocuMind@2026
       - AI_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_STT_API_KEY=${GROQ_STT_API_KEY}
       - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
+      - SBG_BASE_URL=${SBG_BASE_URL:-https://apiaccess.iti.net.eg}
+
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
       - AWS_REGION=${AWS_REGION:-eu-north-1}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-documind-storage-abdallah}

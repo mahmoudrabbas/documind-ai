@@ -79,6 +79,7 @@ import { validateVisionFile } from "./chat.vision.js";
 import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
 import { CostService } from "../analytics/cost.service.js";
 import { getLangfuse } from "../../providers/observability/langfuse.js";
+import { VoxtralSttAdapter } from "../../providers/stt/voxtralStt.adapter.js";
 
 const DEFAULT_MAX_TOKENS = 1024;
 const SUMMARY_MAX_TOKENS = 2048;
@@ -355,15 +356,18 @@ export function toPublicAttachment(
 export class ChatService {
   private readonly answerWriter: AnswerWriterService;
   private readonly modelAdapter: ModelAdapter;
+  private readonly sttAdapter: VoxtralSttAdapter;
 
   constructor(
     private readonly retrievalService: HybridRetrievalService,
     modelAdapter: ModelAdapter,
     private readonly visionAdapter?: VisionAdapter,
     private readonly storage?: StorageProvider,
+    sttAdapter?: VoxtralSttAdapter,
   ) {
     this.answerWriter = new AnswerWriterService(modelAdapter);
     this.modelAdapter = modelAdapter;
+    this.sttAdapter = sttAdapter || new VoxtralSttAdapter();
   }
 
   async sendMessage(
@@ -1607,6 +1611,55 @@ export class ChatService {
     if (!deleted) {
       throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
     }
+  }
+
+  async transcribeAudio(
+    file: { buffer: Buffer; mimetype: string; size: number } | undefined,
+    context: OperationAuthorizationContext,
+  ): Promise<{ text: string }> {
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new AppError(400, "BAD_REQUEST", "Audio file is required");
+    }
+
+    const maxSizeBytes = 10 * 1024 * 1024;
+    if (file.size > maxSizeBytes || file.buffer.length > maxSizeBytes) {
+      throw new AppError(
+        400,
+        "STT_FILE_TOO_LARGE",
+        "Audio file size exceeds maximum limit of 10MB",
+      );
+    }
+
+    const allowedMimeTypes = [
+      "audio/webm",
+      "audio/wav",
+      "audio/mp4",
+      "audio/ogg",
+      "audio/mpeg",
+      "audio/x-m4a",
+      "audio/m4a",
+      "audio/aac",
+    ];
+    const mime = file.mimetype.toLowerCase();
+    const isAllowed = allowedMimeTypes.some((type) => mime.includes(type.split("/")[1]));
+    if (!isAllowed) {
+      throw new AppError(
+        400,
+        "STT_UNSUPPORTED_MIME_TYPE",
+        `Unsupported audio format '${file.mimetype}'. Allowed formats: webm, wav, mp4, ogg, mpeg, m4a.`,
+      );
+    }
+
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE);
+
+    logger.info(
+      { tenantId: actor.tenantId.toString(), mimeType: file.mimetype, sizeBytes: file.size },
+      "Transcribing voice recording via Voxtral STT adapter",
+    );
+
+    const text = await this.sttAdapter.transcribe(file.buffer, file.mimetype);
+
+    return { text };
   }
 
   private chatRunContext(

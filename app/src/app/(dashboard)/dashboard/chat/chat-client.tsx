@@ -13,6 +13,7 @@ import {
 import {
   sendMessage,
   sendVisionMessage,
+  transcribeAudio,
   fetchChatAttachmentUrl,
   listConversations,
   getConversationMessages,
@@ -52,6 +53,12 @@ function formatRelativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -120,6 +127,22 @@ function AttachmentThumbnail({
   );
 }
 
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { resultIndex: number; results: Array<Array<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface WindowWithSpeech {
+  SpeechRecognition?: new () => SpeechRecognitionInstance;
+  webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+  currentAudioStream?: MediaStream | null;
+}
+
 export function ChatClient() {
   const { t } = useI18n();
   const permissions = usePermissions();
@@ -143,10 +166,196 @@ export function ChatClient() {
   } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const speechRecognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const liveSpeechCapturedRef = useRef<boolean>(false);
+  const liveTranscriptRef = useRef<string>("");
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const clientMessageIdRef = useRef<string | null>(null);
   const msgIdCounter = useRef(0);
+
+  const startRecording = async () => {
+    try {
+      setError(null);
+      audioChunksRef.current = [];
+      liveSpeechCapturedRef.current = false;
+      liveTranscriptRef.current = "";
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      (window as unknown as WindowWithSpeech).currentAudioStream = stream;
+
+      // Set up MediaRecorder for native audio capture and Voxtral STT backend fallback
+      try {
+        if (typeof MediaRecorder !== "undefined") {
+          let mimeType = "";
+          if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+            mimeType = "audio/webm;codecs=opus";
+          } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+            mimeType = "audio/webm";
+          } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+            mimeType = "audio/mp4";
+          } else if (MediaRecorder.isTypeSupported("audio/ogg")) {
+            mimeType = "audio/ogg";
+          }
+
+          const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+          recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+              audioChunksRef.current.push(event.data);
+            }
+          };
+          recorder.start(250);
+          mediaRecorderRef.current = recorder;
+        }
+      } catch {
+        // Ignore recorder creation errors
+      }
+
+      // Try browser Web Speech API for real-time live preview (if supported & network available)
+      const win = window as unknown as WindowWithSpeech;
+      const SpeechRecognition = win.SpeechRecognition || win.webkitSpeechRecognition;
+
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang =
+            navigator.language || document.documentElement.lang || "ar-EG";
+
+          recognition.onresult = (event: { resultIndex: number; results: Array<Array<{ transcript: string }>> }) => {
+            let transcript = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              transcript += event.results[i][0].transcript;
+            }
+            if (transcript.trim()) {
+              liveSpeechCapturedRef.current = true;
+              liveTranscriptRef.current = transcript.trim();
+              setInput(transcript.trim());
+            }
+          };
+
+          recognition.onerror = (event: { error: string }) => {
+            if (event.error === "not-allowed") {
+              setError("Microphone access denied. Please allow microphone permissions.");
+            }
+          };
+
+          recognition.start();
+          speechRecognitionRef.current = recognition;
+        } catch {
+          // Ignore SpeechRecognition start errors
+        }
+      }
+
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch {
+      setError(
+        "Microphone access denied or unsupported browser. Please check microphone permissions.",
+      );
+    }
+  };
+
+  const processRecordedAudio = async () => {
+    // If live browser speech recognition already captured the exact spoken words, preserve them 100%
+    if (liveSpeechCapturedRef.current && liveTranscriptRef.current.trim()) {
+      setInput(liveTranscriptRef.current.trim());
+      return;
+    }
+
+    const chunks = audioChunksRef.current;
+    if (!chunks || chunks.length === 0) return;
+
+    const mimeType = mediaRecorderRef.current?.mimeType || "audio/webm";
+    const audioBlob = new Blob(chunks, { type: mimeType });
+    audioChunksRef.current = [];
+
+    if (audioBlob.size < 500) return;
+
+    try {
+      setIsTranscribing(true);
+      const res = await transcribeAudio(audioBlob);
+      if (res && res.text && res.text.trim()) {
+        const text = res.text.trim();
+        // Prevent silent audio hallucinations from replacing user input
+        if (
+          !/simple circuit|light bulb|turn on the light|turn off the light|thank you for watching|subtitles by|amara\.org/i.test(text)
+        ) {
+          setInput(text);
+        }
+      }
+    } catch {
+      // Silently ignore STT errors to prevent Next.js dev overlay popups
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop();
+      } catch {
+        // Ignore stop errors
+      }
+      speechRecognitionRef.current = null;
+    }
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    setIsRecording(false);
+
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+
+    const win = window as unknown as WindowWithSpeech;
+    const stream = win.currentAudioStream;
+    if (stream) {
+      stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+      win.currentAudioStream = null;
+    }
+
+    if (recorder && recorder.state !== "inactive") {
+      recorder.onstop = () => {
+        processRecordedAudio();
+      };
+      try {
+        recorder.stop();
+      } catch {
+        processRecordedAudio();
+      }
+    } else {
+      processRecordedAudio();
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
 
   const currentMessages = messages[activeConversation] ?? [];
 
@@ -739,6 +948,31 @@ export function ChatClient() {
                 className="hidden"
                 onChange={handleSelectImage}
               />
+              <button
+                onClick={toggleRecording}
+                disabled={isTranscribing || retryAfterSeconds !== null}
+                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors ${
+                  isRecording
+                    ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
+                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+                title={isRecording ? "Stop Voice Recording" : "Voice Input"}
+              >
+                {isTranscribing ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                ) : isRecording ? (
+                  <>
+                    <span className="h-2.5 w-2.5 animate-ping rounded-full bg-error" />
+                    <span className="font-mono text-xs font-medium">
+                      {formatDuration(recordingDuration)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="material-symbols-outlined text-[20px]">
+                    mic
+                  </span>
+                )}
+              </button>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

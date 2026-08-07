@@ -48,7 +48,7 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
     permissions: [Permission.NOTIFICATIONS_READ],
   },
 ];
-const TENANT_SHELL_ROLES = ["COMPANY_ADMIN", "EMPLOYEE"] as const;
+const TENANT_SHELL_ROLES = ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"] as const;
 
 export default function TenantDashboardLayout({
   children,

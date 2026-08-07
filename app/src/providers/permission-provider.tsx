@@ -159,6 +159,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const can = useCallback(
     (permission: PermissionValue): boolean => {
       if (state.status !== "ready") return false;
+      if (state.baseRole === "SUPER_ADMIN") return true;
       return canPermission(permission, state.permissions);
     },
     [state],
