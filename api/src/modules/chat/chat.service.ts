@@ -65,6 +65,7 @@ import {
   type AnswerTask,
   type AnswerWriterServiceResult,
 } from "../agents/answerWriter.service.js";
+import { CitationVerificationService } from "../agents/citationVerification.service.js";
 export {
   buildRagMessages,
   type AnswerTask,
@@ -943,14 +944,40 @@ export class ChatService {
       );
     }
 
-    const finalDecision = generated.decision;
-    const finalMessage = generated.answer;
+    let finalDecision = generated.decision;
+    let finalMessage = generated.answer;
     let citedChunkIds = generated.citedChunkIds;
     const latencyMs = Date.now() - start;
     trace?.update({
       metadata: { outcome: "SUCCESS", latencyMs },
       // No output: field — AI answer is private tenant data
     });
+
+    // Validate citedChunkIds against the authorized, reranker-approved
+    // evidence bundle (survivorsForDecision). Pure and deterministic: the
+    // answer-writer service already filters to evidence, but this re-enforces
+    // the invariant so no unauthorized or invented chunk id is ever persisted
+    // or exposed. `parsedDecision` (the decision the model actually declared,
+    // before the writer normalizes grounded-with-zero-citations) is used so a
+    // grounded claim with no surviving valid citation fails closed by
+    // downgrading to the localized insufficient-evidence refusal — which the
+    // decisionNoSources branch below then persists without sources.
+    const verifiedCitations = CitationVerificationService.verify({
+      decision: generated.parsedDecision,
+      citedChunkIds,
+      approvedEvidenceIds: survivorsForDecision.map((s) => s.chunkId),
+    });
+
+    if (!verifiedCitations.verified) {
+      finalDecision = "insufficient_evidence";
+      finalMessage = insufficientAuthorizedEvidenceResponse(
+        conversationId,
+        intentResult?.language ?? "en",
+      ).answer;
+      citedChunkIds = [];
+    } else {
+      citedChunkIds = verifiedCitations.validatedCitationIds;
+    }
 
     // Programmatic quality scores — visible in Langfuse "Scores" column
     // These measure operational quality, not content (no private data exposed)
@@ -984,7 +1011,7 @@ export class ChatService {
     }
 
     // If decision indicates no sources, enforce zero sources and return
-    const decisionNoSources = new Set(["insufficient_evidence", "unsupported", "clarification"]);
+    const decisionNoSources = new Set(["insufficient_evidence", "unsupported", "clarification", "unsafe"]);
     if (decisionNoSources.has(finalDecision)) {
       const assistantDoc = await chatRepo.addMessage(
         tenantIdStr,
@@ -1055,22 +1082,11 @@ export class ChatService {
       };
     }
 
-    // Validate citedChunkIds against survivorsForDecision and the reranker bundle.
-    if (Array.isArray(citedChunkIds) && citedChunkIds.length > 0 && retrievalEvidenceBundle) {
-      const approvedIds = new Set(survivorsForDecision.map((s) => s.chunkId));
-      const validatedCitations = citedChunkIds.filter((id) => approvedIds.has(id));
-      const orderedValidated: string[] = [];
-      for (const s of survivorsForDecision) {
-        if (validatedCitations.includes(s.chunkId)) orderedValidated.push(s.chunkId);
-      }
-      citedChunkIds = orderedValidated;
-
-      // Build persistedSources only from validated citedChunkIds
-      persistedSources = sources.filter((s) => citedChunkIds.includes(s.chunkId));
-    } else {
-      // No validated citations -> no persisted sources
-      persistedSources = [];
-    }
+    // Build persistedSources only from validated citedChunkIds. Citation
+    // validation already ran above (CitationVerificationService) and set
+    // citedChunkIds to the validated subset, so no unauthorized chunk can
+    // reach persistence here.
+    persistedSources = sources.filter((s) => citedChunkIds.includes(s.chunkId));
 
     // Persist assistant message including only validated sources when citations
     // are enabled.

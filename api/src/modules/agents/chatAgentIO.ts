@@ -98,8 +98,14 @@ export type AnswerWriterOutput = z.infer<typeof AnswerWriterOutputSchema>;
 
 // ── citation-verification-agent ─────────────────────────────────────────────
 
+/**
+ * Deterministic claim-to-evidence validation. Input carries the answer
+ * writer's decision so the verifier can distinguish grounded answers (must
+ * be validated) from non-grounded ones (skipped).
+ */
 export const CitationVerifierInputSchema = z
   .object({
+    decision: ChatAnswerDecision,
     citedChunkIds: boundedIdArray(50),
     approvedEvidenceIds: boundedIdArray(100).optional(),
     answerText: z.string().max(20_000).optional(),
@@ -108,12 +114,27 @@ export const CitationVerifierInputSchema = z
 
 export type CitationVerifierInput = z.infer<typeof CitationVerifierInputSchema>;
 
+export const CitationVerifierReasonCode = z.enum([
+  "CITATIONS_VERIFIED",
+  "MISSING_CITATIONS",
+  "CITATIONS_SKIPPED",
+]);
+export type CitationVerifierReasonCodeValue = z.infer<
+  typeof CitationVerifierReasonCode
+>;
+
 export const CitationVerifierOutputSchema = z
   .object({
-    decision: z.enum(["verified", "rejected", "partial"]),
+    verified: z.boolean(),
     validatedCitationIds: boundedIdArray(50).default([]),
     rejectedCitationIds: boundedIdArray(50).default([]),
-    reason: z.string().trim().max(500),
+    // Claim-level checks are an explicit extension point (no LLM in the
+    // deterministic core): always empty until a claim-extraction path exists.
+    unsupportedClaims: z
+      .array(z.string().trim().min(1).max(500))
+      .max(20)
+      .default([]),
+    reasonCode: CitationVerifierReasonCode,
   })
   .strict();
 
