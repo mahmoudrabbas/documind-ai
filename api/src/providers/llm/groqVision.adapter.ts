@@ -61,6 +61,14 @@ export class GroqVisionAdapter implements VisionAdapter {
         },
       ],
       max_tokens: VISION_MAX_TOKENS,
+      // Qwen 3.6 27B defaults to reasoning-enabled on Groq, which emits an
+      // <analysis> reasoning block that exhausts the 1024-token budget before a
+      // final answer is produced. "none" disables reasoning so the model
+      // returns only the final answer. Groq requires "none" for Qwen 3.6 27B
+      // (low/medium/high are GPT-OSS only); this literal is absent from the
+      // installed OpenAI SDK's ReasoningEffort union ('low'|'medium'|'high'|null),
+      // so the cast to the SDK type is unavoidable.
+      reasoning_effort: "none" as OpenAI.ChatCompletionReasoningEffort,
     });
 
     return response.choices[0]?.message?.content ?? "";
