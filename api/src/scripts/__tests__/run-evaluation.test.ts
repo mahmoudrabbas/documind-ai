@@ -202,9 +202,9 @@ describe("run-evaluation CLI exit codes", () => {
     expect(code).toBe(EXIT_EVAL_FAILED);
   }, 120_000);
 
-  it("exits 0 for a fixture run with --allow-degraded", () => {
+  it("exits 1 for a fixture run with provider failures or missing configuration", () => {
     const { code } = runScript(["--fixture", "--allow-degraded"]);
-    expect(code).toBe(EXIT_OK);
+    expect(code).toBe(EXIT_EVAL_FAILED);
   }, 120_000);
 });
 
