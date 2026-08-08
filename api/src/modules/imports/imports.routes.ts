@@ -45,12 +45,6 @@ const router = Router();
 
 const svc = getEntitlementService();
 
-const employeeGuard = createEntitlementGuard(svc, {
-  dimension: "employees",
-  amount: (req) => (req.body?.employeeCount ? Number(req.body.employeeCount) || 1 : 1),
-  failMode: "fail-closed",
-});
-
 const exportGuard = createEntitlementGuard(svc, {
   dimension: "documents",
   amount: 1,

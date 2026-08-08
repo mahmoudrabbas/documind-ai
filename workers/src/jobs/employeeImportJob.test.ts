@@ -192,7 +192,6 @@ test("completes batch with COMPLETED when all rows created", async () => {
         const setState = (u.$set as Record<string, unknown>)?.state;
         if (setState) {
           // Find which row by checking existing keys
-          const rowId = String(q._id ?? "");
           for (const key of Object.keys(rowStates)) {
             if (rowStates[key]) continue;
           }

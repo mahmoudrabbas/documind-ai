@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import OpenAI from "openai";
+import { logger } from "../../logger.js";
 
 export interface EmbeddingInput {
   chunkId: string;
@@ -271,7 +272,7 @@ export class StudentBedrockEmbeddingProvider implements EmbeddingProvider {
         const errorMessage = lastError.message.toLowerCase();
         if (errorMessage.includes("rate limit") || errorMessage.includes("timeout") || errorMessage.includes("503")) {
           this.currentModelIndex = (this.currentModelIndex + 1) % this.embeddingModels.length;
-          console.warn(`[StudentBedrock] Falling back to next embedding model: ${this.getCurrentModel()}`);
+          logger.warn(`[StudentBedrock] Falling back to next embedding model: ${this.getCurrentModel()}`);
         }
         throw lastError;
       }

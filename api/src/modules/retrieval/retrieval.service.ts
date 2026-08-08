@@ -157,6 +157,18 @@ async function revalidateAndHydrate(
     chunkMap.set(chunk._id.toString(), chunk);
   }
 
+  // Active document verification: filter out chunks belonging to soft-deleted documents
+  const allDocIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
+  let activeDocIds = new Set<string>();
+  if (allDocIds.length > 0) {
+    const activeDocs = await DocumentModel.find({
+      _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
+      tenantId: new Types.ObjectId(tenantId),
+      deletedAt: null,
+    }, { _id: 1 }).lean().exec();
+    activeDocIds = new Set(activeDocs.map((d) => d._id.toString()));
+  }
+
   // selfOnly enforcement: fetch parent documents and check ownership
   let ownedDocumentIds: Set<string> | null = null;
   if (context?.permissionScopes?.selfOnly) {
@@ -170,6 +182,7 @@ async function revalidateAndHydrate(
           _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
           tenantId: new Types.ObjectId(tenantId),
           uploadedBy: new Types.ObjectId(context.actorId),
+          deletedAt: null,
         }, { _id: 1 }).lean().exec();
         ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
       }
@@ -181,6 +194,9 @@ async function revalidateAndHydrate(
   for (const candidate of candidates) {
     const chunk = chunkMap.get(candidate.chunkId);
     if (!chunk) continue;
+
+    // Active document check: reject chunks from soft-deleted documents
+    if (!activeDocIds.has(chunk.documentId.toString())) continue;
 
     // Re-validate: classification must be in the mandatory filter's allowed set
     if (mandatoryFilter.classification) {
