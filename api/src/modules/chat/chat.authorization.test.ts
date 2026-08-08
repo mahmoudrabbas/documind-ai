@@ -41,6 +41,13 @@ test("cached evidence-derived assistant answers are not replayed into new LLM co
   ]);
 });
 
+test("source-less history strips hidden reasoning before replay", () => {
+  const history = safeHistoryForRag([
+    { role: "assistant", content: "<think>private reasoning</think>Please clarify.", sources: [] },
+  ]);
+  assert.deepEqual(history, [{ role: "assistant", content: "Please clarify." }]);
+});
+
 test("backend failure remains RETRIEVAL_UNAVAILABLE instead of an authorization refusal", () => {
   const original = new AppError(503, "RETRIEVAL_UNAVAILABLE", "All search backends unavailable");
   assert.equal(asRetrievalUnavailable(original), original);

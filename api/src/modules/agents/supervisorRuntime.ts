@@ -1,5 +1,5 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { AGENT_EXECUTOR_NOT_FOUND, AGENT_HANDOFF_INVALID, AGENT_PROVIDER_ERROR, SUPERVISOR_DECISION_INVALID } from "../../common/errors/errorCodes.js";
+import { AGENT_EXECUTOR_NOT_FOUND, AGENT_HANDOFF_INVALID, AGENT_OUTPUT_SCHEMA_INVALID, AGENT_PROVIDER_ERROR, AGENT_STATE_TRANSITION_INVALID, AGENT_UNREGISTERED_TOOL, SUPERVISOR_DECISION_INVALID } from "../../common/errors/errorCodes.js";
 import type { AgentResultMetadata } from "./agentContract.js";
 import { AgentExecutorRegistry } from "./agentExecutorRegistry.js";
 import { normalizeAgentExecutionContext, type AgentExecutionContext, type AgentExecutionContextInput } from "./agentExecutionContext.js";
@@ -25,6 +25,15 @@ export interface SupervisorDecisionRequest {
   previousAgent: ChatAgentId | null;
   input: Record<string, unknown>;
   history: readonly SupervisorHistoryEntry[];
+  availableTools: readonly SupervisorToolDescriptor[];
+}
+
+export interface SupervisorToolDescriptor {
+  readonly name: string;
+  readonly description: string;
+  readonly inputFields: readonly string[];
+  readonly requiredPermission: string | null;
+  readonly approvalRequired: boolean;
 }
 
 export interface SupervisorDecisionContent {
@@ -50,6 +59,54 @@ export interface SupervisorRunInput {
   context: AgentExecutionContextInput | AgentExecutionContext;
   input: Record<string, unknown>;
   budgetLimits?: unknown;
+}
+
+export interface SupervisorRuntimeHooks {
+  /**
+   * Optional trusted, request-scoped stage resolver. When present, the
+   * runtime obtains the next controlled transition from this hook without
+   * consulting the probabilistic supervisor model. Specialized agents and
+   * tools still execute normally. This prevents provider nondeterminism or
+   * availability from changing deterministic workflow orchestration.
+   */
+  resolveDecisionBeforeModel?(args: {
+    workflowId: string;
+    currentAgent: string;
+    currentInput: Record<string, unknown>;
+  }): SupervisorDecision;
+  resolveDecision?(args: {
+    workflowId: string;
+    currentAgent: string;
+    currentInput: Record<string, unknown>;
+    proposedDecision: SupervisorDecision;
+  }): SupervisorDecision;
+  resolveHandoffPayload?(args: {
+    workflowId: string;
+    fromAgent: string;
+    toAgent: string;
+    currentInput: Record<string, unknown>;
+    proposedPayload: Record<string, unknown>;
+  }): Record<string, unknown>;
+  resolveToolInput?(args: {
+    workflowId: string;
+    currentAgent: string;
+    toolName: string;
+    currentInput: Record<string, unknown>;
+    proposedInput: Record<string, unknown>;
+  }): Record<string, unknown>;
+  resolveCompleteResult?(args: {
+    workflowId: string;
+    currentAgent: string;
+    currentInput: Record<string, unknown>;
+    proposedResult: Record<string, unknown>;
+  }): Record<string, unknown>;
+  onToolResult?(args: {
+    workflowId: string;
+    currentAgent: string;
+    toolName: string;
+    validatedOutput: Record<string, unknown>;
+    currentInput: Record<string, unknown>;
+  }): void;
 }
 
 export interface SupervisorRunResult {
@@ -99,6 +156,9 @@ const SYSTEM_PROMPT = [
   "- {\"action\":\"fail\",\"currentAgent\":\"<current>\",\"error\":{\"code\":\"<CODE>\",\"message\":\"<message>\"},\"reasonCode\":\"<short-code>\"} to fail the run",
   "- {\"action\":\"await_approval\",\"currentAgent\":\"<current>\",\"approval\":{\"action\":\"<human-action>\",\"requiredRole\":\"EMPLOYEE\"},\"reasonCode\":\"<short-code>\"} to request human approval",
   "The currentAgent must exactly match the agent whose turn it is.",
+  "Use only exact nextAgent values from allowedHandoffs.",
+  "Use only exact toolName values from availableTools. Never invent, rename, or alias a tool.",
+  "If availableTools is empty, tool_call is not allowed.",
 ].join("\n");
 
 function buildSupervisorMessages(
@@ -110,7 +170,9 @@ function buildSupervisorMessages(
       workflowId: request.workflow.id,
       currentAgent: request.currentAgent,
       previousAgent: request.previousAgent,
+      entryAgent: request.workflow.entryAgent,
       allowedHandoffs: request.workflow.allowedHandoffs[request.currentAgent] ?? [],
+      availableTools: request.availableTools,
       input: request.input,
       history: request.history,
     }),
@@ -172,6 +234,7 @@ interface LoopState {
   handoffsCount: number;
   approvalsCount: number;
   allOutcomes: SupervisorGuardrailOutcome[];
+  hooks: SupervisorRuntimeHooks;
 }
 
 /**
@@ -211,7 +274,10 @@ export class SupervisorRuntime {
     this.clock = config.clock ?? Date.now;
   }
 
-  async execute(input: SupervisorRunInput): Promise<SupervisorRunResult> {
+  async execute(
+    input: SupervisorRunInput,
+    hooks: SupervisorRuntimeHooks = {},
+  ): Promise<SupervisorRunResult> {
     const startedAt = this.clock();
     const context = normalizeAgentExecutionContext(input.context);
     const workflow = this.workflowRegistry.require(input.workflowId);
@@ -242,13 +308,24 @@ export class SupervisorRuntime {
       handoffsCount: 0,
       approvalsCount: 0,
       allOutcomes: [],
+      hooks,
     };
 
     let status: RunStatus = "running";
     let output: Record<string, unknown> | null = null;
     let error: Record<string, unknown> | null = null;
 
-    await this.persistence.startRun(context.tenantId, input.runId);
+    const startedRun = await this.persistence.startRun(
+      context.tenantId,
+      input.runId,
+    );
+    if (!startedRun || startedRun.status !== "running") {
+      throw new AppError(
+        409,
+        AGENT_STATE_TRANSITION_INVALID,
+        `AgentRun ${input.runId} must exist in pending state before execution`,
+      );
+    }
 
     while (status === "running") {
       try {
@@ -345,23 +422,58 @@ export class SupervisorRuntime {
       totalTokens: 0,
     };
     try {
-      const content = await this.model.decide({
-        context,
-        workflow,
-        currentAgent: state.currentAgent,
-        previousAgent: state.previousAgent,
-        input: state.currentInput,
-        history: state.history,
-      });
-      usage = content.usage;
-      tracker.recordUsage(usage);
-      tracker.assertWithinDeadline();
-      decision = parseSupervisorDecision(content.content);
+      if (state.hooks.resolveDecisionBeforeModel) {
+        decision = parseSupervisorDecision(
+          JSON.stringify(
+            state.hooks.resolveDecisionBeforeModel({
+              workflowId: workflow.id,
+              currentAgent: state.currentAgent,
+              currentInput: state.currentInput,
+            }),
+          ),
+        );
+      } else {
+        const content = await this.model.decide({
+          context,
+          workflow,
+          currentAgent: state.currentAgent,
+          previousAgent: state.previousAgent,
+          input: state.currentInput,
+          history: state.history,
+          availableTools: this.availableToolDescriptors(),
+        });
+        usage = content.usage;
+        if (Number.isFinite(usage.totalTokens)) {
+          state.totalTokensUsed += usage.totalTokens;
+        }
+        tracker.recordUsage(usage);
+        tracker.assertWithinDeadline();
+        const proposedDecision = parseSupervisorDecision(content.content);
+        if (supervisorDecisionCurrentAgent(proposedDecision) !== state.currentAgent) {
+          throw new AppError(
+            400,
+            SUPERVISOR_DECISION_INVALID,
+            `Decision currentAgent mismatch (expected ${state.currentAgent})`,
+          );
+        }
+        decision = state.hooks.resolveDecision
+          ? parseSupervisorDecision(
+              JSON.stringify(
+                state.hooks.resolveDecision({
+                  workflowId: workflow.id,
+                  currentAgent: state.currentAgent,
+                  currentInput: state.currentInput,
+                  proposedDecision,
+                }),
+              ),
+            )
+          : proposedDecision;
+      }
       if (supervisorDecisionCurrentAgent(decision) !== state.currentAgent) {
         throw new AppError(
           400,
           SUPERVISOR_DECISION_INVALID,
-          `Decision currentAgent mismatch (expected ${state.currentAgent})`,
+          `Resolved decision currentAgent mismatch (expected ${state.currentAgent})`,
         );
       }
     } catch (caught) {
@@ -475,6 +587,15 @@ export class SupervisorRuntime {
 
       let validated;
       try {
+        const resolvedPayload = state.hooks.resolveHandoffPayload
+          ? state.hooks.resolveHandoffPayload({
+              workflowId: workflow.id,
+              fromAgent,
+              toAgent,
+              currentInput: state.currentInput,
+              proposedPayload: decision.payload,
+            })
+          : decision.payload;
         validated = validateAgentHandoff({
           workflowRegistry: this.workflowRegistry,
           workflowId: workflow.id,
@@ -485,7 +606,7 @@ export class SupervisorRuntime {
             requestId: context.requestId,
             traceId: context.traceId,
             reasonCode: decision.reasonCode,
-            payload: decision.payload,
+            payload: resolvedPayload,
           },
           targetInputSchema: contract.inputSchema,
         });
@@ -588,6 +709,10 @@ export class SupervisorRuntime {
         return this.terminalFailed(executorError.code);
       }
 
+      state.currentInput = {
+        ...state.currentInput,
+        ...(executorResult.output as Record<string, unknown>),
+      };
       this.transitionHandoff(state, toAgent, decision.reasonCode);
       await completeHandoff("completed");
       await this.completeStepWith(state, executionStep.id, {
@@ -623,7 +748,36 @@ export class SupervisorRuntime {
     tracker.assertCanUseTool();
     tracker.assertWithinDeadline();
 
-    const step = await this.createStep(state, "tool_call", decision.toolInput);
+    const tool = this.toolRegistry.get(decision.toolName);
+    if (!tool) {
+      throw new AppError(
+        400,
+        AGENT_UNREGISTERED_TOOL,
+        `Tool ${decision.toolName} is not registered`,
+      );
+    }
+
+    const resolvedInput = state.hooks.resolveToolInput
+      ? state.hooks.resolveToolInput({
+          workflowId: state.workflow.id,
+          currentAgent: state.currentAgent,
+          toolName: decision.toolName,
+          currentInput: state.currentInput,
+          proposedInput: decision.toolInput,
+        })
+      : decision.toolInput;
+    const parsedInput = tool.schema.inputSchema.safeParse(resolvedInput);
+    if (!parsedInput.success) {
+      throw new AppError(
+        400,
+        SUPERVISOR_DECISION_INVALID,
+        `Resolved input for tool ${decision.toolName} is invalid`,
+        parsedInput.error.issues,
+      );
+    }
+    const validatedInput = parsedInput.data as Record<string, unknown>;
+
+    const step = await this.createStep(state, "tool_call", validatedInput);
     const runContext = this.buildRunContext(state, state.currentAgent, step.stepIndex);
 
     const toolCall = await this.persistence.createToolCall({
@@ -632,7 +786,7 @@ export class SupervisorRuntime {
       tenantId: context.tenantId,
       toolName: decision.toolName,
       toolVersion: "1.0.0",
-      input: decision.toolInput,
+      input: validatedInput,
       traceId: context.traceId,
       requestId: context.requestId,
     });
@@ -640,7 +794,7 @@ export class SupervisorRuntime {
     const result = await this.toolRegistry.execute(
       runContext,
       decision.toolName,
-      decision.toolInput,
+      validatedInput,
       async (permission) => {
         if (!permission) return true;
         return (context.permissions ?? []).includes(permission);
@@ -651,16 +805,14 @@ export class SupervisorRuntime {
     state.totalToolCalls++;
     tracker.recordToolCall();
 
-    await this.persistence.completeToolCall(context.tenantId, toolCall.id, {
-      status: result.status,
-      output: (result.output as Record<string, unknown>) ?? undefined,
-      error: result.error,
-      latencyMs: result.latencyMs,
-      tokensUsed: result.tokensUsed ?? 0,
-      estimatedCost: result.estimatedCost ?? 0,
-    });
-
     if (!result.ok) {
+      await this.persistence.completeToolCall(context.tenantId, toolCall.id, {
+        status: result.status,
+        error: result.error,
+        latencyMs: result.latencyMs,
+        tokensUsed: result.tokensUsed ?? 0,
+        estimatedCost: result.estimatedCost ?? 0,
+      });
       await this.completeStepWith(state, step.id, {
         status: "failed",
         guardrails: outcomes,
@@ -674,7 +826,65 @@ export class SupervisorRuntime {
       );
     }
 
-    state.currentInput = (result.output as Record<string, unknown>) ?? {};
+    const parsedOutput = tool.schema.outputSchema.safeParse(result.output);
+    if (!parsedOutput.success) {
+      const toolError = {
+        code: AGENT_OUTPUT_SCHEMA_INVALID,
+        message: `Output from tool ${decision.toolName} failed schema validation`,
+      };
+      await this.persistence.completeToolCall(context.tenantId, toolCall.id, {
+        status: "failed",
+        error: toolError,
+        latencyMs: result.latencyMs,
+        tokensUsed: result.tokensUsed ?? 0,
+        estimatedCost: result.estimatedCost ?? 0,
+      });
+      await this.completeStepWith(state, step.id, {
+        status: "failed",
+        guardrails: outcomes,
+        toolCallsCount: 1,
+        error: toolError,
+      });
+      return this.terminalFailed(AGENT_OUTPUT_SCHEMA_INVALID);
+    }
+
+    const validatedOutput = parsedOutput.data as Record<string, unknown>;
+    await this.persistence.completeToolCall(context.tenantId, toolCall.id, {
+      status: result.status,
+      output: validatedOutput,
+      error: result.error,
+      latencyMs: result.latencyMs,
+      tokensUsed: result.tokensUsed ?? 0,
+      estimatedCost: result.estimatedCost ?? 0,
+    });
+    try {
+      state.hooks.onToolResult?.({
+        workflowId: state.workflow.id,
+        currentAgent: state.currentAgent,
+        toolName: decision.toolName,
+        validatedOutput,
+        currentInput: state.currentInput,
+      });
+    } catch (caught) {
+      const callbackError = {
+        code: caught instanceof AppError ? caught.code : AGENT_PROVIDER_ERROR,
+        message:
+          caught instanceof Error
+            ? caught.message
+            : "Tool result callback failed",
+      };
+      await this.completeStepWith(state, step.id, {
+        status: "failed",
+        guardrails: outcomes,
+        toolCallsCount: 1,
+        error: callbackError,
+      });
+      return this.terminalFailed(callbackError.code, callbackError.message);
+    }
+    state.currentInput = {
+      ...state.currentInput,
+      ...validatedOutput,
+    };
     state.history.push({
       agent: state.currentAgent,
       action: "tool_call",
@@ -683,7 +893,7 @@ export class SupervisorRuntime {
     await this.completeStepWith(state, step.id, {
       status: "completed",
       guardrails: outcomes,
-      output: (result.output as Record<string, unknown>) ?? {},
+      output: validatedOutput,
       toolCallsCount: 1,
     });
     return this.continueRun();
@@ -698,13 +908,21 @@ export class SupervisorRuntime {
     output: Record<string, unknown> | null;
     error: Record<string, unknown> | null;
   }> {
+    const resolvedResult = state.hooks.resolveCompleteResult
+      ? state.hooks.resolveCompleteResult({
+          workflowId: state.workflow.id,
+          currentAgent: state.currentAgent,
+          currentInput: state.currentInput,
+          proposedResult: decision.result,
+        })
+      : decision.result;
     const step = await this.createStep(state, "completed", state.currentInput);
     await this.completeStepWith(state, step.id, {
       status: "completed",
       guardrails: outcomes,
-      output: decision.result,
+      output: resolvedResult,
     });
-    return this.terminal("completed", decision.result, null);
+    return this.terminal("completed", resolvedResult, null);
   }
 
   private async executeFail(
@@ -871,6 +1089,21 @@ export class SupervisorRuntime {
       return { ...base, requestOutput: decision.result };
     }
     return base;
+  }
+
+  private availableToolDescriptors(): readonly SupervisorToolDescriptor[] {
+    return this.toolRegistry.list().map((tool) => {
+      const inputSchema = tool.schema.inputSchema as {
+        shape?: Record<string, unknown>;
+      };
+      return Object.freeze({
+        name: tool.schema.name,
+        description: tool.schema.description,
+        inputFields: Object.freeze(Object.keys(inputSchema.shape ?? {})),
+        requiredPermission: tool.schema.requiredPermission ?? null,
+        approvalRequired: tool.schema.approvalRequired ?? false,
+      });
+    });
   }
 
   private transitionHandoff(

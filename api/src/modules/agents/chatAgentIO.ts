@@ -81,6 +81,9 @@ export const AnswerWriterInputSchema = z
     language: QueryLanguage.optional(),
     approvedEvidenceIds: boundedIdArray(100).optional(),
     referencedDocumentIds: boundedIdArray(20).optional(),
+    task: z.enum(["direct_question", "document_summary"]).default("direct_question"),
+    citationsEnabled: z.boolean().default(true),
+    maxTokens: z.number().int().min(128).max(8192).default(1024),
   })
   .strict();
 

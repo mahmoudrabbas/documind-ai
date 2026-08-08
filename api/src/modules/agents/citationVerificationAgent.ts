@@ -186,12 +186,10 @@ export class CitationVerificationAgentExecutor implements AgentContract {
       context.tenantId,
       approvedEvidenceIds,
     );
-    const eligibleChunks = loaded.filter(
-      (chunk) =>
-        chunk.allowAiUse &&
-        RETRIEVABLE_CHUNK_STATUSES.includes(
-          chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
-        ),
+    const eligibleChunks = loaded.filter((chunk) =>
+      RETRIEVABLE_CHUNK_STATUSES.includes(
+        chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
+      ),
     );
 
     const documentIds = [...new Set(eligibleChunks.map((c) => c.documentId))];

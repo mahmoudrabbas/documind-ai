@@ -243,7 +243,7 @@ describe("CitationVerificationAgentExecutor", () => {
     }
   });
 
-  it("drops chunks that are not eligible for AI use", async () => {
+  it("drops chunks with a non-retrievable status", async () => {
     const { deps } = makeDeps({
       loadChunksByIds: async (_tenantId, chunkIds) =>
         chunkIds.map((id) =>

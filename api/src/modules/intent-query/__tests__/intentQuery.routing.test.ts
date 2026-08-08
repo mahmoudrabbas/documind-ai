@@ -287,7 +287,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.deepEqual(plan.referencedDocumentIds, []);
   });
 
-  await t.test("deterministic fallback routes to clarification with fallbackUsed set", async () => {
+  await t.test("deterministic fallback preserves a RAG-compatible knowledge route", async () => {
     const failingModel: ModelAdapter = {
       providerKey: "failing-provider",
       async complete() {
@@ -300,10 +300,11 @@ test("IntentQueryService - query routing contract", async (t) => {
       companyAdminContext,
     );
 
-    assert.equal(plan.route, "clarification");
+    assert.equal(plan.route, "rag");
     assert.equal(plan.processingMetadata.fallbackUsed, true);
-    assert.equal(plan.clarificationNeeded, true);
-    assert.ok(plan.clarification);
+    assert.equal(plan.clarificationNeeded, false);
+    assert.equal(plan.clarification, null);
+    assert.ok(plan.semanticQueries.length > 0);
   });
 
   await t.test("social stays social even after a RAG conversation", async () => {

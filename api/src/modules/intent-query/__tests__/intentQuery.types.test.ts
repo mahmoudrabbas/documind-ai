@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { QueryPlanSchema } from "../intentQuery.types.js";
+import { validateAndNormalizeQueryPlan } from "../intentQuery.validator.js";
 
 test("QueryPlanSchema validation", async (t) => {
   await t.test("should validate a valid QueryPlan structure", () => {
@@ -98,4 +99,37 @@ test("QueryPlanSchema validation", async (t) => {
     const result = QueryPlanSchema.safeParse(invalidIntentPlan);
     assert.equal(result.success, false);
   });
+});
+
+test("validator preserves a non-social RAG plan when provider emits null socialSubtype", () => {
+  const plan = validateAndNormalizeQueryPlan(
+    {
+      detectedIntent: "document_specific",
+      intentConfidence: 0.9,
+      language: "en",
+      socialSubtype: null,
+      entities: [],
+      exactTerms: ["network security"],
+      semanticQueries: [{ text: "summarize network security", language: "en", weight: 1 }],
+      keywordQueries: [{ terms: ["network", "security"], language: "en", mustMatch: true }],
+      referencedDocumentIds: ["64a000000000000000000001"],
+      referencedDocumentTitles: ["Network Security Guide"],
+      clarificationNeeded: false,
+      clarification: null,
+    },
+    "summarize the network security guide file",
+    "en",
+    "test-prompt",
+    "test-model",
+    5,
+    10,
+    0,
+  );
+
+  assert.equal(plan.processingMetadata.fallbackUsed, false);
+  assert.equal(plan.socialSubtype, "acknowledgement");
+  assert.equal(plan.route, "rag");
+  assert.deepEqual(plan.referencedDocumentIds, ["64a000000000000000000001"]);
+  assert.deepEqual(plan.exactTerms, ["network security"]);
+  assert.equal(plan.keywordQueries.length, 1);
 });

@@ -52,6 +52,7 @@ export class FusionEngine {
         retrievalMethod: method,
         scoreBreakdown: {
           fusionScore: item.score,
+          relevanceScore: this.normalizeProviderScore(item.score),
           ...(method === "vector"
             ? { vectorScore: item.score }
             : {}),
@@ -67,6 +68,7 @@ export class FusionEngine {
       total: number;
       vectorScore: number;
       keywordScore: number;
+      relevanceScore: number;
     };
 
     const accumulator = new Map<string, ScoreAccumulator>();
@@ -81,17 +83,26 @@ export class FusionEngine {
         const item = items[i];
         const rank = i + 1; // RRF uses 1-indexed rank
         const rrfScore = weight / (this.config.rrfK + rank);
+        const providerRelevance = this.normalizeProviderScore(item.score);
 
         const entry = accumulator.get(item.chunkId);
         if (entry) {
           entry.total += rrfScore;
           if (method === "vector") entry.vectorScore += rrfScore;
           if (method === "keyword") entry.keywordScore += rrfScore;
+          // Vector similarity is the stable semantic signal when available;
+          // otherwise retain the strongest normalized provider score.
+          if (method === "vector") {
+            entry.relevanceScore = providerRelevance;
+          } else if (entry.vectorScore === 0) {
+            entry.relevanceScore = Math.max(entry.relevanceScore, providerRelevance);
+          }
         } else {
           accumulator.set(item.chunkId, {
             total: rrfScore,
             vectorScore: method === "vector" ? rrfScore : 0,
             keywordScore: method === "keyword" ? rrfScore : 0,
+            relevanceScore: providerRelevance,
           });
         }
       }
@@ -109,6 +120,7 @@ export class FusionEngine {
         retrievalMethod: "hybrid" as RetrievalMethod,
         scoreBreakdown: {
           fusionScore: acc.total,
+          relevanceScore: acc.relevanceScore,
           ...(acc.vectorScore > 0
             ? { vectorScore: acc.vectorScore }
             : {}),
@@ -126,5 +138,10 @@ export class FusionEngine {
     }
 
     return candidates.slice(0, this.config.maxCandidates);
+  }
+
+  private normalizeProviderScore(score: number): number {
+    if (!Number.isFinite(score) || score <= 0) return 0;
+    return Math.min(1, score);
   }
 }

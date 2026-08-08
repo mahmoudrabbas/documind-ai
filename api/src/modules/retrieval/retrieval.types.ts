@@ -36,6 +36,11 @@ export interface ScoreBreakdown {
   vectorScore?: number;
   keywordScore?: number;
   fusionScore: number;
+  /**
+   * Provider relevance on a stable [0, 1] scale. RRF fusionScore is a rank
+   * value (~0.01) and must not be interpreted as semantic confidence.
+   */
+  relevanceScore?: number;
 }
 
 export interface RetrievalCandidate {
@@ -67,6 +72,15 @@ export interface RetrievalDiagnostics {
   totalLatencyMs: number;
   vectorCandidateCount: number;
   keywordCandidateCount: number;
+  rawVectorCandidateCount?: number;
+  rawKeywordCandidateCount?: number;
+  postAuthorizationVectorCandidateCount?: number;
+  postAuthorizationKeywordCandidateCount?: number;
+  fusedCandidateCount?: number;
+  hydratedCandidateCount?: number;
+  evidenceItemCount?: number;
+  evidenceSufficiency?: string;
+  zeroCandidateReason?: string;
   traceId: string;
 }
 

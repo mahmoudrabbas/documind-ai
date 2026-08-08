@@ -151,6 +151,7 @@ export class IntentQueryAgentExecutor
           conversationId: intentInput.conversationId,
           language: intentInput.language,
           referencedDocumentIds: intentInput.referencedDocumentIds,
+          currentMessageAlreadyPersisted: true,
           maxContext: 5,
         },
         {

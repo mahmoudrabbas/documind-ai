@@ -267,7 +267,10 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
       assert.ok(run);
       assert.equal(run.status, "completed");
       assert.equal(run.totalSteps, 4);
-      assert.equal(run.totalTokensUsed, intentExecutionStep.tokensUsed);
+      assert.equal(
+        run.totalTokensUsed,
+        (intentExecutionStep.tokensUsed as number) + 90,
+      );
       assert.equal(Number(run.estimatedCost), 0);
     },
   );

@@ -57,10 +57,14 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       const candidate = candidates[i]!;
       const candidateTerms = this.tokenize(candidate.text);
       const exactTermScore = this.computeExactTermScore(queryTerms, candidateTerms);
-      const semanticScore = candidate.scoreBreakdown?.fusionScore ?? candidate.score;
+      const retrievalRelevance =
+        candidate.scoreBreakdown?.relevanceScore ??
+        candidate.scoreBreakdown?.fusionScore ??
+        candidate.score;
+      const semanticScore = retrievalRelevance;
       const sourceAuthorityScore = this.computeSourceAuthority(candidate);
       const versionPreferenceScore = this.computeVersionPreference(candidate, candidates);
-      const fusionScore = candidate.scoreBreakdown?.fusionScore ?? candidate.score;
+      const fusionScore = retrievalRelevance;
       const rerankScore =
         semanticScore * 0.5 +
         exactTermScore * 0.3 +

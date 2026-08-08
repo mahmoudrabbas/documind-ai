@@ -38,6 +38,7 @@ export function validateAndNormalizeQueryPlan(
   const rawObject = typeof raw === "object" && raw !== null ? raw : {};
   const rawIntent = (rawObject as { detectedIntent?: unknown }).detectedIntent ?? "knowledge_question";
   const rawClarification = Boolean((rawObject as { clarificationNeeded?: unknown }).clarificationNeeded);
+  const rawSocialSubtype = (rawObject as { socialSubtype?: unknown }).socialSubtype;
 
   const rawWithDefaults = {
     schemaVersion: "1.0.0",
@@ -62,6 +63,10 @@ export function validateAndNormalizeQueryPlan(
       fallbackUsed,
     },
     ...rawObject,
+    // Providers commonly emit null for fields that only apply to another
+    // intent. Treat null like omission so an otherwise valid RAG plan does not
+    // lose its authorized title ids and query expansions wholesale.
+    socialSubtype: rawSocialSubtype == null ? "acknowledgement" : rawSocialSubtype,
     // Route is derived deterministically from intent + clarification state and
     // is never taken verbatim from model output.
     route: deriveQueryRoute(rawIntent as IntentClassValue, rawClarification),
@@ -120,14 +125,9 @@ export function validateAndNormalizeQueryPlan(
       },
     ],
     keywordQueries: [],
-    clarificationNeeded: true,
-    clarification: {
-      reason: "ambiguous_intent",
-      suggestedQuestions: ["Can you please clarify your request?"],
-      messageEn: "We encountered an issue analyzing your query. Please rephrase or try again.",
-      messageAr: "واجهنا مشكلة في تحليل سؤالك. يرجى إعادة الصياغة أو المحاولة مرة أخرى.",
-    },
-    route: "clarification",
+    clarificationNeeded: false,
+    clarification: null,
+    route: "rag",
     socialSubtype: "acknowledgement",
     isFollowUp: false,
     conversationContextUsed: false,

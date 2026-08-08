@@ -135,6 +135,10 @@ export const AnalyzeQueryInputSchema = z.object({
   question: z.string().min(1).max(2000),
   conversationId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid conversationId").optional(),
   referencedDocumentIds: z.array(z.string().max(100)).max(20).optional(),
+  // Internal chat-workflow signal: the user message is persisted before the
+  // intent agent runs and must not be injected as history and then appended a
+  // second time as the current question.
+  currentMessageAlreadyPersisted: z.boolean().optional(),
   maxContext: z.number().int().min(1).max(50).default(10),
 });
 

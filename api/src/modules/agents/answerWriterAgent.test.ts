@@ -256,7 +256,7 @@ describe("AnswerWriterAgentExecutor", () => {
     assert.deepEqual(authorizeCalls, [DOC_ID]);
   });
 
-  it("drops chunks that are not AI-usable or not in a retrievable status", async () => {
+  it("accepts stale allowAiUse metadata after active-policy authorization and drops invalid status", async () => {
     const { deps, generateCalls } = makeDeps({
       loadChunksByIds: async () => [
         makeLoadedChunk({ allowAiUse: false }),
@@ -269,10 +269,10 @@ describe("AnswerWriterAgentExecutor", () => {
     });
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.output.decision, "insufficient_evidence");
-      assert.deepEqual(result.output.citedChunkIds, []);
+      assert.equal(result.output.decision, "grounded_answer");
+      assert.deepEqual(result.output.citedChunkIds, [CHUNK_ID]);
     }
-    assert.equal(generateCalls.length, 0);
+    assert.equal(generateCalls.length, 1);
   });
 
   it("drops chunks whose parent document is ineligible", async () => {
@@ -351,6 +351,34 @@ describe("AnswerWriterAgentExecutor", () => {
     assert.equal(call.evidence.length, 1);
     assert.equal((call.evidence[0] as { chunkId: string }).chunkId, CHUNK_ID);
     assert.equal(call.maxTokens, 1024);
+  });
+
+  it("forwards trusted summary, citation, server history, and token settings", async () => {
+    const { deps, generateCalls } = makeDeps();
+    const withHistory = {
+      ...deps,
+      loadHistory: async () => [
+        { role: "user" as const, content: "Earlier question" },
+      ],
+    };
+    await makeExecutor(withHistory).execute(runContext(), {
+      ...VALID_INPUT,
+      task: "document_summary",
+      citationsEnabled: false,
+      maxTokens: 2048,
+    });
+    const call = generateCalls[0] as {
+      task: string;
+      citationsEnabled: boolean;
+      historyFromDb: unknown[];
+      maxTokens: number;
+    };
+    assert.equal(call.task, "document_summary");
+    assert.equal(call.citationsEnabled, false);
+    assert.deepEqual(call.historyFromDb, [
+      { role: "user", content: "Earlier question" },
+    ]);
+    assert.equal(call.maxTokens, 2048);
   });
 
   it("reports provider/token/cost metadata on a successful generation", async () => {

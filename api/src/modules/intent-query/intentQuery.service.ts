@@ -12,7 +12,10 @@ import { detectLanguage } from "./intentQuery.languageDetector.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
-import { resolveAuthorizedDocumentHints } from "./intentQuery.documentHints.js";
+import {
+  extractNaturalDocumentTitleHints,
+  resolveAuthorizedDocumentHints,
+} from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
 import { INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
@@ -87,6 +90,7 @@ export class IntentQueryService {
     const language = detectLanguage(input.question);
     const localEntities = extractEntities(input.question, language);
     const localTemporalConstraints = extractTemporalConstraints(input.question);
+    const deterministicTitleHints = extractNaturalDocumentTitleHints(input.question);
 
     // Check for prompt injections/unsafe inputs upfront deterministically
     const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
@@ -288,12 +292,20 @@ export class IntentQueryService {
 
     if (input.conversationId) {
       try {
-        const history = await this.conversationContextAdapter.getContext(
+        const storedHistory = await this.conversationContextAdapter.getContext(
           tenantIdStr,
           actor.actorId,
           input.conversationId,
           input.maxContext
         );
+        const history = [...storedHistory];
+        if (
+          input.currentMessageAlreadyPersisted &&
+          history.at(-1)?.role === "user" &&
+          history.at(-1)?.content.trim() === input.question.trim()
+        ) {
+          history.pop();
+        }
 
         if (history.length > 0) {
           isFollowUp = true;
@@ -523,12 +535,19 @@ export class IntentQueryService {
       const llmTitleHints = Array.isArray(rawOutput.referencedDocumentTitles)
         ? (rawOutput.referencedDocumentTitles as string[])
         : [];
+      // A clear, explicitly marked natural-language document reference is
+      // request-local and deterministic. Prefer it over provider wording so
+      // identical requests cannot alternately constrain different documents
+      // (or lose the constraint entirely) as model output varies.
+      const titleHints = deterministicTitleHints.length > 0
+        ? deterministicTitleHints
+        : llmTitleHints;
 
       const hints = await resolveAuthorizedDocumentHints(mergedOutputIds, {
         tenantId: tenantIdStr,
         actorId: actor.actorId,
         tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
-      }, llmTitleHints);
+      }, titleHints);
       rawOutput.referencedDocumentIds = hints.referencedDocumentIds;
       rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
 
@@ -536,7 +555,7 @@ export class IntentQueryService {
       // a title hint that resolves to more than one authorized document, or to
       // none at all, is a signal to clarify — never fabricate a match.
       if (
-        llmTitleHints.length > 0 &&
+        titleHints.length > 0 &&
         (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
       ) {
         titleClarificationNeeded = true;
@@ -604,6 +623,21 @@ export class IntentQueryService {
       // Deterministic fallback execution
       const expansion = expandBilingual(input.question, language, localEntities);
       const exactTerms = localEntities.filter(e => e.preserveExact).map(e => e.text);
+      const fallbackHints = await resolveAuthorizedDocumentHints(
+        input.referencedDocumentIds ?? [],
+        {
+          tenantId: tenantIdStr,
+          actorId: actor.actorId,
+          tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
+        },
+        deterministicTitleHints,
+      );
+      if (
+        deterministicTitleHints.length > 0 &&
+        (fallbackHints.ambiguousTitleMatches || fallbackHints.unresolvedTitleHints.length > 0)
+      ) {
+        titleClarificationNeeded = true;
+      }
 
       validatedPlan = validateAndNormalizeQueryPlan(
         {
@@ -615,16 +649,12 @@ export class IntentQueryService {
           exactTerms,
           semanticQueries: expansion.semanticQueries,
           keywordQueries: expansion.keywordQueries,
-          clarificationNeeded: true,
-          clarification: {
-            reason: "ambiguous_intent",
-            suggestedQuestions: ["Can you please clarify your request?"],
-            messageEn: "We encountered an issue analyzing your query. Please rephrase or try again.",
-            messageAr: "واجهنا مشكلة في تحليل سؤالك. يرجى إعادة الصياغة أو المحاولة مرة أخرى.",
-          },
+          clarificationNeeded: false,
+          clarification: null,
           isFollowUp,
           conversationContextUsed: contextUsed,
-          referencedDocumentIds: input.referencedDocumentIds ?? [],
+          referencedDocumentIds: fallbackHints.referencedDocumentIds,
+          referencedDocumentTitles: fallbackHints.referencedDocumentTitles,
         },
         input.question,
         language,

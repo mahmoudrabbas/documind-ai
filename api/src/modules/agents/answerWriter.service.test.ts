@@ -178,6 +178,43 @@ test("D: valid structured grounded output returns the human answer and preserves
   assert.deepEqual(usable.citedChunkIds, [CHUNK_B]);
 });
 
+test("D2: hidden reasoning is stripped from a structured standard-text answer", async () => {
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "<think>private reasoning</think>The supported answer.",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs());
+  assert.equal(result.outcome, "usable");
+  const usable = result as Extract<AnswerWriterServiceResult, { outcome: "usable" }>;
+  assert.equal(usable.answer, "The supported answer.");
+  assert.doesNotMatch(usable.answer, /think|private reasoning/i);
+});
+
+test("D3: reasoning-only structured output cannot become a successful answer", async () => {
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "<think>private reasoning only</think>",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs());
+  assert.equal(result.outcome, "unusable");
+  assert.doesNotMatch(result.sanitizedContent, /private reasoning/i);
+});
+
+test("D4: an unclosed reasoning block cannot become a successful answer", async () => {
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "<think>private reasoning only",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs());
+  assert.equal(result.outcome, "unusable");
+});
+
 // ── E–H: malformed / plain / unknown-key output still fails closed ──────────
 
 test("E: malformed JSON still fails closed", async () => {
@@ -246,6 +283,20 @@ test("I2: citations outside the authorized evidence set are dropped and grounded
   assert.equal(usable.parsedDecision, "grounded_answer");
   assert.equal(usable.decision, "insufficient_evidence");
   assert.deepEqual(usable.citedChunkIds, []);
+});
+
+test("I3: mixed valid and invented citations retain only the approved evidence subset", async () => {
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "A supported answer.",
+    citedChunkIds: [CHUNK_A, "invented-chunk"],
+  }));
+
+  const result = await service.generate(generateArgs());
+  assert.equal(result.outcome, "usable");
+  const usable = result as Extract<AnswerWriterServiceResult, { outcome: "usable" }>;
+  assert.equal(usable.decision, "grounded_answer");
+  assert.deepEqual(usable.citedChunkIds, [CHUNK_A]);
 });
 
 // ── CivicOps regression: multiline 10-point grounded summary ───────────────
