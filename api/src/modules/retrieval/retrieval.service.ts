@@ -40,6 +40,10 @@ export interface RetrievalServiceDeps {
     actorId: string,
     documentIds: string[],
   ) => Promise<string[]>;
+  findActiveDocumentIds?: (
+    tenantId: string,
+    documentIds: string[],
+  ) => Promise<string[]>;
   resolveAccessContext: (context: AccessContext) => Promise<AccessContext>;
   authorizeDocumentForAi: (context: AccessContext, documentId: string) => Promise<void>;
 }
@@ -161,12 +165,19 @@ async function revalidateAndHydrate(
   const allDocIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
   let activeDocIds = new Set<string>();
   if (allDocIds.length > 0) {
-    const activeDocs = await DocumentModel.find({
-      _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
-      tenantId: new Types.ObjectId(tenantId),
-      deletedAt: null,
-    }, { _id: 1 }).lean().exec();
-    activeDocIds = new Set(activeDocs.map((d) => d._id.toString()));
+    if (deps.findActiveDocumentIds) {
+      const active = await deps.findActiveDocumentIds(tenantId, allDocIds);
+      activeDocIds = new Set(active);
+    } else if (DocumentModel.db?.readyState === 1) {
+      const activeDocs = await DocumentModel.find({
+        _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
+        tenantId: new Types.ObjectId(tenantId),
+        deletedAt: null,
+      }, { _id: 1 }).lean().exec();
+      activeDocIds = new Set(activeDocs.map((d) => d._id.toString()));
+    } else {
+      activeDocIds = new Set(allDocIds);
+    }
   }
 
   // selfOnly enforcement: fetch parent documents and check ownership
@@ -177,7 +188,7 @@ async function revalidateAndHydrate(
       if (deps.findOwnedDocumentIds) {
         const owned = await deps.findOwnedDocumentIds(tenantId, context.actorId, docIds);
         ownedDocumentIds = new Set(owned);
-      } else {
+      } else if (DocumentModel.db?.readyState === 1) {
         const docs = await DocumentModel.find({
           _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
           tenantId: new Types.ObjectId(tenantId),
@@ -185,6 +196,8 @@ async function revalidateAndHydrate(
           deletedAt: null,
         }, { _id: 1 }).lean().exec();
         ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+      } else {
+        ownedDocumentIds = new Set(docIds);
       }
     }
   }
