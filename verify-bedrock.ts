@@ -12,13 +12,12 @@ interface GatewayRequestBody extends Record<string, unknown> {
   model_id?: string;
 }
 
-const API_KEY = process.env.SBG_API_KEY;
-const BASE_URL = process.env.SBG_BASE_URL;
+const API_KEY = process.env.SBG_API_KEY || "";
+const BASE_URL = process.env.BEDROCK_GATEWAY_URL || process.env.SBG_BASE_URL || "https://apiaccess.iti.net.eg";
 
-if (!API_KEY || !BASE_URL) {
-  console.error("❌ Missing required environment variables:");
+if (!API_KEY) {
+  console.error("❌ Missing required environment variable:");
   console.error("   SBG_API_KEY - Your Student Bedrock Gateway API key");
-  console.error("   SBG_BASE_URL - Base URL (e.g., https://apiaccess.iti.net.eg)");
   process.exit(1);
 }
 

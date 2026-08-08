@@ -455,6 +455,13 @@ export async function deleteUser(
     },
   );
 
+  try {
+    const { getReconciliationService } = await import("../entitlement/reconciliation.service.js");
+    await getReconciliationService().reconcile(tenantId, "execute");
+  } catch {
+    // Non-blocking counter sync
+  }
+
   return {
     success: true,
     message: "User deleted successfully.",
@@ -559,6 +566,13 @@ export async function revokeInvitation(
   }
 
   await deleteUserWithSessionRevocation(tenantId, targetUserId);
+
+  try {
+    const { getReconciliationService } = await import("../entitlement/reconciliation.service.js");
+    await getReconciliationService().reconcile(tenantId, "execute");
+  } catch {
+    // Non-blocking counter sync
+  }
 
   await auditUserOperation(
     context,

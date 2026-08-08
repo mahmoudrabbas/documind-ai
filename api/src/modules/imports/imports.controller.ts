@@ -10,6 +10,7 @@ import { generatePreview } from "./services/previewGenerator.service.js";
 import { ImportBatchService } from "./services/importBatch.service.js";
 import { getApiJobDispatcher } from "../jobs/jobDispatcher.js";
 import User from "../../db/models/user.model.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadMappingUpdateSchema,
   confirmImportSchema,
@@ -48,6 +49,8 @@ function toBatchDTO(batch: Record<string, unknown>): Record<string, unknown> {
     confidence: String(mapping?.confidence ?? ""),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
+    completedAt: raw.completedAt ?? null,
+    errorMessage: raw.errorMessage ?? null,
     summary: {
       totalRows: raw.totalRows ?? 0,
       validRows: s.valid ?? 0,
@@ -55,8 +58,25 @@ function toBatchDTO(batch: Record<string, unknown>): Record<string, unknown> {
       invalidRows: s.invalid ?? 0,
       createdCount: s.created ?? 0,
       failedCount: s.failed ?? 0,
+      skippedCount: s.skipped ?? 0,
     },
   };
+}
+
+function computeNetNewEmployeeCount(validation: {
+  rows: Array<{
+    state: string;
+    warnings: Array<{ code: string }>;
+    errors: Array<{ code: string }>;
+  }>;
+}): number {
+  return validation.rows.filter((r) => {
+    if (r.state === "INVALID") return false;
+    const isAlreadyUser =
+      r.warnings.some((w) => w.code === "USER_ALREADY_EXISTS") ||
+      r.errors.some((e) => e.code === "USER_ALREADY_EXISTS");
+    return !isAlreadyUser;
+  }).length;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +149,10 @@ export async function uploadAndPreview(
       confidence,
     };
 
+    // Pre-flight entitlement check
+    const svc = getEntitlementService();
+    const entitlementCheck = await svc.check(req.tenantId, "employees");
+
     const tenantUsers = await User.find({ tenantId: req.tenantId }).lean();
     const existingEmails = new Set<string>();
     const existingUserIds = new Map<string, string>();
@@ -141,7 +165,7 @@ export async function uploadAndPreview(
       tenantId: req.tenantId,
       existingEmails,
       existingUserIds,
-      tenantUserLimit: Number.MAX_SAFE_INTEGER,
+      tenantUserLimit: entitlementCheck.limit,
     };
 
     const validation = await validateBatch({
@@ -150,6 +174,17 @@ export async function uploadAndPreview(
       mapping: resolvedMapping,
       context: validationContext,
     });
+
+    // Entitlement Check: verify tenant quota for net-new requested employee count
+    const requestedNetNew = computeNetNewEmployeeCount(validation);
+    const remaining = Math.max(0, entitlementCheck.limit - entitlementCheck.current);
+    if (entitlementCheck.current + requestedNetNew > entitlementCheck.limit) {
+      throw new AppError(
+        403,
+        "ENTITLEMENT_EXCEEDED",
+        `Quota exceeded for employees: cannot import ${requestedNetNew} new employees (${entitlementCheck.current}/${entitlementCheck.limit} active, ${remaining} slots remaining)`,
+      );
+    }
 
     const { batch, rowCount } = await ImportBatchService.createBatch({
       tenantId: req.tenantId,
@@ -195,6 +230,11 @@ export async function uploadAndPreview(
             createdCount: 0,
             failedCount: 0,
           },
+          quotaImpact: {
+            currentUsers: entitlementCheck.current,
+            planLimit: entitlementCheck.limit,
+            wouldExceed: entitlementCheck.current + requestedNetNew > entitlementCheck.limit,
+          },
         },
       });
       return;
@@ -213,8 +253,8 @@ export async function uploadAndPreview(
       rows: parsed.rows,
       validation,
       mapping: resolvedMapping,
-      existingUserCount: 0,
-      planLimit: Number.MAX_SAFE_INTEGER,
+      existingUserCount: entitlementCheck.current,
+      planLimit: entitlementCheck.limit,
     });
 
     // Transition to PREVIEW_READY so confirmImport can proceed
@@ -254,6 +294,7 @@ export async function uploadAndPreview(
           createdCount: 0,
           failedCount: 0,
         },
+        quotaImpact: rawPreview.quotaImpact,
       },
     });
   } catch (error) {
@@ -313,7 +354,10 @@ export async function updateMapping(
       checksum: row.checksum ?? "",
     }));
 
-    // ── Build validation context from DB users ─────────────────────────────
+    // ── Build validation context from DB users and entitlement check ─────────────
+    const svc = getEntitlementService();
+    const entitlementCheck = await svc.check(req.tenantId, "employees");
+
     const tenantUsers = await User.find({ tenantId: req.tenantId }).lean();
     const existingEmails = new Set<string>();
     const existingUserIds = new Map<string, string>();
@@ -326,7 +370,7 @@ export async function updateMapping(
       tenantId: req.tenantId,
       existingEmails,
       existingUserIds,
-      tenantUserLimit: Number.MAX_SAFE_INTEGER,
+      tenantUserLimit: entitlementCheck.limit,
     };
 
     // ── Re-validate every row with the new mapping ────────────────────────
@@ -349,6 +393,8 @@ export async function updateMapping(
       };
     });
 
+    const requestedNetNew = computeNetNewEmployeeCount(validation);
+
     // Transition back to PREVIEW_READY so confirmImport can proceed
     await ImportBatchService.preparePreview(batchId, validation.summary);
 
@@ -368,6 +414,11 @@ export async function updateMapping(
           invalidRows: validation.summary.invalid,
           createdCount: 0,
           failedCount: 0,
+        },
+        quotaImpact: {
+          currentUsers: entitlementCheck.current,
+          planLimit: entitlementCheck.limit,
+          wouldExceed: entitlementCheck.current + requestedNetNew > entitlementCheck.limit,
         },
       },
     });
@@ -396,6 +447,63 @@ export async function confirmImport(
     }
 
     const batchId = extractBatchId(req.params);
+
+    const existingBatch = await ImportBatchService.getBatch(batchId);
+    if (existingBatch) {
+      const svc = getEntitlementService();
+      const check = await svc.check(req.tenantId, "employees");
+
+      const EmployeeImportRowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
+      const storedRows = await EmployeeImportRowModel.find({
+        batchId: new mongoose.Types.ObjectId(batchId),
+      }).lean();
+
+      const tenantUsers = await User.find({ tenantId: req.tenantId }).lean();
+      const existingEmails = new Set<string>();
+      const existingUserIds = new Map<string, string>();
+      for (const u of tenantUsers) {
+        if (u.email) existingEmails.add(u.email);
+        if (u.email && u._id) existingUserIds.set(u.email, u._id.toString());
+      }
+
+      const columnMapping = (existingBatch.mapping as Record<string, unknown>)?.columnMapping as Record<string, string> ?? {};
+      const resolvedMapping: ResolvedMapping = {
+        fieldMap: columnMapping,
+        unmappedHeaders: [],
+        mappedCount: Object.keys(columnMapping).length,
+        totalHeaders: Object.keys(columnMapping).length,
+        confidence: "medium",
+      };
+
+      const parsedRows: ParsedRow[] = storedRows.map((row) => ({
+        rowNumber: row.rowNumber,
+        rawData: (row.rawData ?? {}) as Record<string, string>,
+        checksum: row.checksum ?? "",
+      }));
+
+      const validation = await validateBatch({
+        tenantId: req.tenantId,
+        rows: parsedRows,
+        mapping: resolvedMapping,
+        context: {
+          tenantId: req.tenantId,
+          existingEmails,
+          existingUserIds,
+          tenantUserLimit: check.limit,
+        },
+      });
+
+      const requestedNetNew = computeNetNewEmployeeCount(validation);
+      const remaining = Math.max(0, check.limit - check.current);
+      if (check.current + requestedNetNew > check.limit) {
+        throw new AppError(
+          403,
+          "ENTITLEMENT_EXCEEDED",
+          `Quota exceeded for employees: cannot import ${requestedNetNew} new employees (${check.current}/${check.limit} active, ${remaining} slots remaining)`,
+        );
+      }
+    }
+
     const result = await ImportBatchService.confirmBatch(batchId, req.auth.userId);
 
     res.status(200).json({
@@ -431,9 +539,31 @@ export async function getBatchStatus(
       throw new AppError(404, "NOT_FOUND", "Batch not found");
     }
 
+    let rows: unknown[] | undefined;
+    if (req.query.includeRows === "true") {
+      const EmployeeImportRowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
+      const storedRows = await EmployeeImportRowModel.find({
+        batchId: new mongoose.Types.ObjectId(batchId),
+      })
+        .sort({ rowNumber: 1 })
+        .lean();
+
+      rows = storedRows.map((r) => ({
+        rowNumber: r.rowNumber,
+        state: r.state,
+        data: r.rawData,
+        errors: r.validationErrors?.length > 0 ? r.validationErrors.map((e) => e.message) : undefined,
+        warnings: r.validationWarnings?.length > 0 ? r.validationWarnings.map((w) => w.message) : undefined,
+        errorMessage: r.errorMessage ?? undefined,
+      }));
+    }
+
     res.status(200).json({
       success: true,
-      data: toBatchDTO(batch as unknown as Record<string, unknown>),
+      data: {
+        ...toBatchDTO(batch as unknown as Record<string, unknown>),
+        ...(rows ? { rows } : {}),
+      },
     });
   } catch (error) {
     next(error);
@@ -571,13 +701,27 @@ export async function retryFailedRows(
       filter.rowNumber = { $in: rowNumbers };
     }
 
+    const rowsToRetry = await EmployeeImportRowModel.find(filter).lean();
+    if (rowsToRetry.length > 0) {
+      const svc = getEntitlementService();
+      const check = await svc.check(req.tenantId, "employees");
+      const remaining = Math.max(0, check.limit - check.current);
+      if (check.current + rowsToRetry.length > check.limit) {
+        throw new AppError(
+          403,
+          "ENTITLEMENT_EXCEEDED",
+          `Quota exceeded for employees: cannot retry ${rowsToRetry.length} failed employee row(s) (${check.current}/${check.limit} active, ${remaining} slots remaining)`,
+        );
+      }
+    }
+
     const _updateResult = await EmployeeImportRowModel.updateMany(
       filter,
       { $set: { state: "PENDING", errorMessage: null, processedAt: null } },
     );
 
     // ── 3. Reset batch state to QUEUED (from terminal states) ──────────────
-    if (state === "COMPLETED" || state === "PARTIALLY_COMPLETED") {
+    if (state === "COMPLETED" || state === "PARTIALLY_COMPLETED" || state === "FAILED") {
       await EmployeeImportBatchModel.findByIdAndUpdate(batchId, {
         $set: {
           state: "QUEUED",

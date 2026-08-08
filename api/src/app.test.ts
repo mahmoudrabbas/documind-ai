@@ -29,6 +29,7 @@ import UsageLogModel from "./db/models/usageLog.model.js";
 import KnowledgeGapModel from "./db/models/knowledgeGap.model.js";
 import PackageModel from "./db/models/package.model.js";
 import SubscriptionModel from "./db/models/subscription.model.js";
+import PlatformSettingModel from "./db/models/platformSetting.model.js";
 import { PLATFORM_TENANT_SLUG } from "./common/auth/platformTenant.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { USER_INVITATION_PURPOSE } from "./modules/auth/emailVerificationToken.js";
@@ -285,6 +286,7 @@ beforeEach(async () => {
   await UsageLogModel.deleteMany({});
   await SubscriptionModel.deleteMany({});
   await PackageModel.deleteMany({});
+  await PlatformSettingModel.deleteMany({});
 });
 
 after(async () => {

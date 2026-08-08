@@ -81,7 +81,10 @@ async function markRowCreated(
 ): Promise<void> {
   await collections(db).rows.updateOne(
     { _id: rowId },
-    { $set: { state: "CREATED", createdUserId: userId, processedAt: new Date() } },
+    {
+      $set: { state: "CREATED", createdUserId: userId, processedAt: new Date() },
+      $unset: { errorMessage: 1 },
+    },
   );
 }
 
@@ -195,15 +198,22 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
       "import batch processing started",
     );
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     // ── 3. Quota re-check ───────────────────────────────────────────────────────
+    // Count non-disabled EMPLOYEE users to match reconciliation service seat model
     const activeUserCount = await users.countDocuments({
       tenantId,
-      status: "active",
+      role: "EMPLOYEE",
+      status: { $ne: "disabled" },
     });
 
     const tenant = await tenants.findOne({ _id: tenantId });
     const plan = typeof tenant?.plan === "string" ? tenant.plan : "free";
-    const planLimit = PLAN_LIMITS[plan] ?? 50;
+    const planLimit =
+      typeof tenant?.employeeLimit === "number"
+        ? tenant.employeeLimit
+        : (PLAN_LIMITS[plan] ?? 50);
 
     ctx.progress("Quota check", {
       activeUsers: activeUserCount,
@@ -215,7 +225,7 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
     const pendingRows = await rows
       .find({
         batchId,
-        state: { $in: ["PENDING", "FAILED"] },
+        state: { $in: ["PENDING", "VALID", "WARNING", "FAILED"] },
       })
       .sort({ rowNumber: 1 })
       .toArray();
@@ -254,6 +264,31 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
     ctx.progress("Rows to process", { count: pendingRows.length });
 
     // ── 5. Process rows sequentially ────────────────────────────────────────────
+    const columnMapping = (batch.mapping as Record<string, unknown>)?.columnMapping as Record<string, string> | undefined;
+
+    const getRowValue = (raw: Record<string, unknown>, targetField: string): string => {
+      if (!raw) return "";
+      // 1. Direct property match
+      if (raw[targetField] != null && String(raw[targetField]).trim() !== "") {
+        return String(raw[targetField]).trim();
+      }
+      // 2. Lookup via batch.mapping.columnMapping (header -> targetField)
+      if (columnMapping) {
+        for (const [header, mappedKey] of Object.entries(columnMapping)) {
+          if (mappedKey === targetField && raw[header] != null && String(raw[header]).trim() !== "") {
+            return String(raw[header]).trim();
+          }
+        }
+      }
+      // 3. Fallback case-insensitive match on keys
+      for (const [k, v] of Object.entries(raw)) {
+        if (k.toLowerCase().trim() === targetField.toLowerCase().trim() && v != null && String(v).trim() !== "") {
+          return String(v).trim();
+        }
+      }
+      return "";
+    };
+
     const processedKeys = new Set<string>();
     let createdCount = 0;
     let skippedCount = 0;
@@ -275,11 +310,13 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
         }
 
         // ── 5b. Extract & validate email ──────────────────────────────────────
-        const rowEmail = (
-          (row.rawData?.email as string) ?? ""
-        ).toLowerCase().trim();
-        if (!rowEmail) {
-          await markRowFailed(db, row._id, "Missing or empty email field");
+        const rawData = (row.rawData as Record<string, unknown>) ?? {};
+        const rowEmail = getRowValue(rawData, "email").toLowerCase();
+        if (!rowEmail || !EMAIL_REGEX.test(rowEmail)) {
+          const reason = !rowEmail
+            ? "Missing or empty email field"
+            : `Invalid email format: "${rowEmail}"`;
+          await markRowFailed(db, row._id, reason);
           failedCount++;
           continue;
         }
@@ -305,24 +342,24 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
         }
 
         // ── 5e. Build user document ──────────────────────────────────────────
-        const firstName = (row.rawData?.firstName as string) ?? "";
-        const lastName = (row.rawData?.lastName as string) ?? "";
-        const userName = `${firstName} ${lastName}`.trim() ||
-          rowEmail.split("@")[0];
+        const firstName = getRowValue(rawData, "firstName");
+        const lastName = getRowValue(rawData, "lastName");
+        const fullName = getRowValue(rawData, "fullName");
+        const userName = `${firstName} ${lastName}`.trim() || fullName || rowEmail.split("@")[0];
 
         const employeeProfile: Record<string, unknown> = {};
-        if (row.rawData?.employeeId)
-          employeeProfile.employeeId = String(row.rawData.employeeId);
-        if (row.rawData?.department)
-          employeeProfile.department = String(row.rawData.department);
-        if (row.rawData?.jobTitle)
-          employeeProfile.jobTitle = String(row.rawData.jobTitle);
-        if (row.rawData?.phone)
-          employeeProfile.phone = String(row.rawData.phone);
-        if (row.rawData?.hireDate)
-          employeeProfile.hireDate = new Date(String(row.rawData.hireDate));
-        employeeProfile.preferredLanguage =
-          row.rawData?.preferredLanguage === "ar" ? "ar" : "en";
+        const empId = getRowValue(rawData, "employeeId");
+        if (empId) employeeProfile.employeeId = empId;
+        const dept = getRowValue(rawData, "department");
+        if (dept) employeeProfile.department = dept;
+        const jobT = getRowValue(rawData, "jobTitle");
+        if (jobT) employeeProfile.jobTitle = jobT;
+        const ph = getRowValue(rawData, "phone");
+        if (ph) employeeProfile.phone = ph;
+        const hDate = getRowValue(rawData, "hireDate");
+        if (hDate) employeeProfile.hireDate = new Date(hDate);
+        const lang = getRowValue(rawData, "language");
+        employeeProfile.preferredLanguage = lang === "ar" ? "ar" : "en";
 
         const tempPasswordHash = crypto
           .createHash("sha256")
@@ -508,13 +545,18 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
       }
     }
 
-    // ── 6. Finalize batch ───────────────────────────────────────────────────────
+    // Recount actual row states from DB to avoid $inc accumulation across retries
+    const allRows = await rows.find({ batchId }).sort({ rowNumber: 1 }).toArray();
+    const actualCreated = allRows.filter((r) => r.state === "CREATED" || r.state === "INVITED").length;
+    const actualFailed = allRows.filter((r) => r.state === "FAILED").length;
+    const actualSkipped = allRows.filter((r) => r.state === "SKIPPED").length;
+
     const finalState =
-      createdCount > 0 && failedCount === 0
+      actualCreated > 0 && actualFailed === 0
         ? "COMPLETED"
-        : createdCount > 0 && failedCount > 0
+        : actualCreated > 0 && actualFailed > 0
           ? "PARTIALLY_COMPLETED"
-          : createdCount === 0 && skippedCount > 0
+          : actualCreated === 0 && actualSkipped > 0
             ? "COMPLETED"
             : "FAILED";
 
@@ -525,14 +567,12 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
           state: finalState,
           completedAt: new Date(),
           errorMessage:
-            failedCount > 0
-              ? `${failedCount} row(s) failed out of ${pendingRows.length}`
+            actualFailed > 0
+              ? `${actualFailed} row(s) failed out of ${allRows.length}`
               : null,
-        },
-        $inc: {
-          "summary.created": createdCount,
-          "summary.failed": failedCount,
-          "summary.skipped": skippedCount,
+          "summary.created": actualCreated,
+          "summary.failed": actualFailed,
+          "summary.skipped": actualSkipped,
         },
       },
     );
@@ -563,6 +603,35 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
       },
       "import batch finalized",
     );
+
+    // ── 7. Reconcile quota counter post-import ────────────────────────────────
+    try {
+      const actualCount = await users.countDocuments({
+        tenantId,
+        role: "EMPLOYEE",
+        status: { $ne: "disabled" },
+      });
+      await db.collection("quotacounters").updateOne(
+        { tenantId, dimension: "employees" },
+        {
+          $set: {
+            current: actualCount,
+            lastReconciledAt: new Date(),
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+      logger.info(
+        { tenantId: payload.tenantId, actualCount },
+        "employee quota counter reconciled post-import",
+      );
+    } catch (reconcileErr) {
+      logger.warn(
+        { err: reconcileErr, tenantId: payload.tenantId },
+        "failed to reconcile employee quota counter post-import",
+      );
+    }
 
     ctx.progress("Batch finalized", {
       state: finalState,

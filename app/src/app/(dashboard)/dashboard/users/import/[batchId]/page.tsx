@@ -20,15 +20,22 @@ import {
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
 
-const ROW_STATE_BADGE: Record<ImportRowState, string> = {
+const ROW_STATE_BADGE: Record<string, string> = {
   VALID: "bg-emerald-100 text-emerald-800",
+  CREATED: "bg-emerald-100 text-emerald-800",
+  INVITED: "bg-emerald-100 text-emerald-800",
   WARNING: "bg-amber-100 text-amber-800",
+  SKIPPED: "bg-amber-100 text-amber-800",
   INVALID: "bg-red-100 text-red-800",
+  FAILED: "bg-red-100 text-red-800",
+  PENDING: "bg-slate-100 text-slate-800",
+  PROCESSING: "bg-blue-100 text-blue-800",
 };
 
 const STATUS_BADGE: Record<string, string> = {
   PENDING_MAPPING: "bg-neutral-100 text-neutral-800",
   VALIDATING: "bg-blue-100 text-blue-800",
+  QUEUED: "bg-blue-100 text-blue-800",
   PROCESSING: "bg-blue-100 text-blue-800",
   COMPLETED: "bg-emerald-100 text-emerald-800",
   PARTIALLY_COMPLETED: "bg-amber-100 text-amber-800",
@@ -39,6 +46,7 @@ const STATUS_BADGE: Record<string, string> = {
 const CANCELLABLE_STATUSES = new Set<ImportBatchStatus>([
   "PENDING_MAPPING",
   "VALIDATING",
+  "QUEUED",
   "PROCESSING",
 ]);
 
@@ -198,7 +206,7 @@ export default function BatchDetailPage() {
   }
 
   const isProcessing =
-    batch.status === "PROCESSING" || batch.status === "VALIDATING";
+    batch.status === "PROCESSING" || batch.status === "VALIDATING" || batch.status === "QUEUED";
   const isTerminal =
     batch.status === "COMPLETED" ||
     batch.status === "PARTIALLY_COMPLETED" ||
@@ -209,7 +217,7 @@ export default function BatchDetailPage() {
 
   const filteredRows =
     rowFilter === "FAILED"
-      ? rows.filter((r) => r.state === "INVALID")
+      ? rows.filter((r) => r.state === "INVALID" || r.state === "FAILED")
       : rows;
 
   return (
@@ -420,11 +428,13 @@ export default function BatchDetailPage() {
                   <tr
                     key={row.rowNumber}
                     className={`transition-colors ${
-                      row.state === "INVALID"
+                      row.state === "INVALID" || row.state === "FAILED"
                         ? "bg-red-50/50"
-                        : row.state === "WARNING"
+                        : row.state === "WARNING" || row.state === "SKIPPED"
                           ? "bg-amber-50/50"
-                          : "hover:bg-surface-container-low/50"
+                          : row.state === "CREATED" || row.state === "INVITED"
+                            ? "bg-emerald-50/50"
+                            : "hover:bg-surface-container-low/50"
                     }`}
                   >
                     <td className="px-4 py-3 font-medium text-on-surface">
@@ -460,6 +470,11 @@ export default function BatchDetailPage() {
                       {row.warnings && row.warnings.length > 0 && (
                         <p className="text-xs text-amber-700">
                           {row.warnings.join("; ")}
+                        </p>
+                      )}
+                      {row.errorMessage && row.state !== "CREATED" && row.state !== "INVITED" && (
+                        <p className="text-xs text-red-700">
+                          {row.errorMessage}
                         </p>
                       )}
                     </td>

@@ -165,7 +165,6 @@ const usageEventSchema = new Schema<UsageEventDocument>(
       type: String,
       unique: true,
       sparse: true,
-      default: null,
     },
     metadata: {
       type: Schema.Types.Mixed,
