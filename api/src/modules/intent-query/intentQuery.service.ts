@@ -7,14 +7,16 @@ import { logger } from "../../common/logger/logger.js";
 import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
 import { recordQuestionAsked } from "../usage/usage.service.js";
 
-import type { QueryPlan } from "./intentQuery.types.js";
+import type { QueryLanguageValue, QueryPlan } from "./intentQuery.types.js";
 import { detectLanguage } from "./intentQuery.languageDetector.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
-import { resolveAuthorizedDocumentHints } from "./intentQuery.documentHints.js";
+import { resolveAuthorizedDocumentHints, RETRIEVABLE_DOCUMENT_STATUSES } from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
-import { INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
+import { buildIntentSystemPrompt, INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION, type DocumentManifestEntry } from "./intentQuery.prompt.js";
+import { translateQuery, buildTranslatedQueries } from "./intentQuery.translator.js";
+import DocumentModel from "../../db/models/document.model.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { recordIntentQueryMetrics } from "./intentQuery.metrics.js";
@@ -40,12 +42,141 @@ export async function authorizeExplicitIntentDocuments(
   await authorizer.authorizeDocumentsAction(context, [...new Set(documentIds)], "use_in_ai");
 }
 
+/**
+ * Loads a bounded, tenant-scoped manifest of retrievable documents
+ * (file name, title, aliases) so the intent router can recognize document
+ * references the user phrases in their own words. Only document identifiers
+ * are exposed — never content. Downstream document resolution still performs
+ * tenant + actor authorization before any document is referenced.
+ */
+async function loadTenantDocumentManifest(
+  tenantIdStr: string,
+): Promise<DocumentManifestEntry[]> {
+  try {
+    const docs = await DocumentModel.find({
+      tenantId: new mongoose.Types.ObjectId(tenantIdStr),
+      deletedAt: null,
+      isArchived: false,
+      status: { $in: RETRIEVABLE_DOCUMENT_STATUSES },
+    })
+      .select("_id fileName metadata.title metadata.aliases")
+      .sort({ createdAt: -1 })
+      .limit(150)
+      .lean()
+      .exec();
+
+    return docs.map((doc) => ({
+      fileName: doc.fileName ?? "",
+      title: (doc.metadata?.title as string | null) ?? null,
+      aliases: Array.isArray(doc.metadata?.aliases)
+        ? (doc.metadata.aliases as string[])
+        : [],
+    }));
+  } catch (err) {
+    logger.warn({ err, tenantId: tenantIdStr }, "Failed to load document manifest for intent analysis");
+    return [];
+  }
+}
+
+function normalizeManifestText(text: string): string {
+  return String(text ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Deterministic guard: did the user's question reference any known document
+ * identifier (file name, title, alias)? Used to rescue questions the router
+ * misclassifies as "unsupported" — if the user clearly pointed at a document,
+ * the query must reach retrieval.
+ */
+function matchesManifestQuestion(
+  question: string,
+  manifest: DocumentManifestEntry[],
+): boolean {
+  if (manifest.length === 0) return false;
+  const q = normalizeManifestText(question);
+  if (!q) return false;
+
+  for (const entry of manifest) {
+    const identifiers = [entry.fileName, entry.title, ...entry.aliases]
+      .filter((s): s is string => Boolean(s && s.trim()))
+      .map((s) => normalizeManifestText(s));
+    for (const identifier of identifiers) {
+      if (identifier.length < 3) continue;
+      if (q.includes(identifier)) return true;
+      const identifierWords = identifier.split(" ");
+      if (
+        identifierWords.length > 1 &&
+        identifierWords.every((w) => w.length >= 3 && q.includes(w))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export class IntentQueryService {
 
   constructor(
     private readonly modelAdapter: ModelAdapter,
     private readonly conversationContextAdapter: ConversationContextPort
   ) {}
+
+  /**
+   * Augments the validated query plan with cross-lingual translations of the
+   * user question so retrieval can find content in the complementary language
+   * (e.g. an English question searched against Arabic documents). Fail-open:
+   * any translation failure leaves the plan unchanged.
+   */
+  private async augmentPlanWithTranslation(
+    plan: QueryPlan,
+    question: string,
+    language: QueryLanguageValue,
+    traceId: string,
+  ): Promise<void> {
+    if (plan.detectedIntent === "social" || plan.detectedIntent === "unsafe") {
+      return;
+    }
+    const counterpart = language === "en" ? "ar" : language === "ar" ? "en" : "mixed";
+
+    let translated;
+    try {
+      translated = await translateQuery(
+        this.modelAdapter.complete.bind(this.modelAdapter),
+        question,
+        language,
+      );
+    } catch (err) {
+      logger.warn({ err, traceId }, "Query translation failed, continuing without it");
+      return;
+    }
+
+    const { semanticTexts, keywordTerms } = buildTranslatedQueries(
+      question,
+      language,
+      translated,
+    );
+
+    for (const text of semanticTexts) {
+      if (plan.semanticQueries.length >= 10) break;
+      plan.semanticQueries.push({
+        text,
+        language: counterpart,
+        weight: 0.85,
+      });
+    }
+    for (const terms of keywordTerms) {
+      if (plan.keywordQueries.length >= 10) break;
+      plan.keywordQueries.push({
+        terms,
+        language: counterpart,
+        mustMatch: false,
+      });
+    }
+  }
 
   /**
    * Orchestrates the query analysis workflow: input validation, authorization,
@@ -280,8 +411,10 @@ export class IntentQueryService {
 
     // 5. Load Conversation Context with strict tenant isolation
     const systemPrompt = (language === "ar" || language === "mixed") ? INTENT_SYSTEM_PROMPT_AR : INTENT_SYSTEM_PROMPT;
+    const tenantDocumentManifest = await loadTenantDocumentManifest(tenantIdStr);
+    const systemPromptWithManifest = buildIntentSystemPrompt(systemPrompt, tenantDocumentManifest);
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: systemPromptWithManifest },
     ];
     let isFollowUp = false;
     let contextUsed = false;
@@ -506,6 +639,7 @@ export class IntentQueryService {
     // 7. Deterministic validation, ownership re-scoping and exact entity rules enforcement
     let validatedPlan: QueryPlan;
     let titleClarificationNeeded = false;
+    let titleHintsUnresolved = false;
 
     if (rawOutput && !fallbackUsed) {
       // Re-verify referencedDocumentIds generated by the LLM: tenant-scoped,
@@ -533,13 +667,15 @@ export class IntentQueryService {
       rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
 
       // Deterministic title resolution governs explicit document references:
-      // a title hint that resolves to more than one authorized document, or to
-      // none at all, is a signal to clarify — never fabricate a match.
-      if (
-        llmTitleHints.length > 0 &&
-        (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
-      ) {
-        titleClarificationNeeded = true;
+      // an ambiguous hint (more than one authorized document) is a signal to
+      // clarify — never fabricate a match. Unresolved hints are NOT a dead-end:
+      // they degrade to (optionally filtered) RAG so retrieval can still find
+      // the right content.
+      if (llmTitleHints.length > 0) {
+        titleHintsUnresolved = hints.unresolvedTitleHints.length > 0;
+        if (hints.ambiguousTitleMatches) {
+          titleClarificationNeeded = true;
+        }
       }
 
       // If semanticQueries/keywordQueries are empty, use local bilingual expansion
@@ -649,7 +785,19 @@ export class IntentQueryService {
           : validatedPlan.socialSubtype;
     }
 
-    // 7c. Title-hint ambiguity/unresolved references force a clarification.
+    // 7b-2. Cross-lingual query translation: augment retrieval queries with a
+    // translated counterpart so content in the other language is searchable.
+    await this.augmentPlanWithTranslation(
+      validatedPlan,
+      input.question,
+      language,
+      traceId,
+    );
+
+    // 7c. Title-hint resolution outcomes. Genuine ambiguity between multiple
+    // authorized documents forces a clarification — never guess. Unresolved
+    // hints are not a dead-end: they keep the RAG path so retrieval (and the
+    // cross-lingual translation above) can still surface the right content.
     if (titleClarificationNeeded) {
       validatedPlan.route = "clarification";
       validatedPlan.clarificationNeeded = true;
@@ -659,6 +807,29 @@ export class IntentQueryService {
         messageEn: "I couldn't identify the exact document you're referring to. Could you clarify the document name?",
         messageAr: "لم أتمكن من تحديد الوثيقة المقصودة بدقة. هل يمكنك توضيح اسم الوثيقة؟",
       };
+    } else if (titleHintsUnresolved) {
+      validatedPlan.route = "rag";
+      validatedPlan.clarificationNeeded = false;
+      validatedPlan.clarification = null;
+    }
+
+    // 7d. The router may classify a document-referential question as
+    // "unsupported" when it cannot map the user's phrasing to a title. When
+    // the question deterministically references a document in the tenant
+    // manifest, rescue it to RAG so retrieval can answer from content.
+    if (
+      validatedPlan.detectedIntent === "unsupported" &&
+      !validatedPlan.processingMetadata.fallbackUsed &&
+      matchesManifestQuestion(input.question, tenantDocumentManifest)
+    ) {
+      validatedPlan.detectedIntent = "knowledge_question";
+      validatedPlan.route = "rag";
+      validatedPlan.clarificationNeeded = false;
+      validatedPlan.clarification = null;
+      validatedPlan.intentConfidence = Math.max(
+        validatedPlan.intentConfidence,
+        0.5,
+      );
     }
 
     // 8. Auditing

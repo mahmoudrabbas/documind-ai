@@ -735,6 +735,23 @@ export class ChatService {
           queryText,
           topK: retrievalTopK,
           ...(routeFilter ? { filter: routeFilter } : {}),
+          // Cross-lingual retrieval: forward every additional semantic query
+          // (e.g. translated variants) and keyword query so content in the
+          // complementary language is searchable.
+          ...(intentResult && intentResult.semanticQueries.length > 1
+            ? {
+                queryVariants: intentResult.semanticQueries
+                  .slice(1)
+                  .map((q) => q.text),
+              }
+            : {}),
+          ...(intentResult && intentResult.keywordQueries.length > 0
+            ? {
+                keywordTexts: intentResult.keywordQueries.map((k) =>
+                  k.terms.join(" "),
+                ),
+              }
+            : {}),
         },
         accessContext,
       );

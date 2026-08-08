@@ -16,6 +16,18 @@ export interface RetrievalFilter {
 export interface RetrievalQuery {
   queryText: string;
   queryVector?: number[];
+  /**
+   * Additional semantic query texts to embed and vector-search (e.g.
+   * cross-lingual translations of the primary query). Each variant runs a
+   * vector search; per-chunk the best score wins. Capped internally at 3.
+   */
+  queryVariants?: string[];
+  /**
+   * Additional keyword-search texts besides `queryText` (e.g. translated
+   * terms). Each text runs an `$text` search; per-chunk the best score wins.
+   * Capped internally at 3.
+   */
+  keywordTexts?: string[];
   topK: number;
   filter?: RetrievalFilter;
 }

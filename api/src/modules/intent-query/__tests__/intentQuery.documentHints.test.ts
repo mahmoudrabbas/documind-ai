@@ -68,6 +68,7 @@ async function createDoc(options: {
   ownerId: string;
   fileName: string;
   title?: string | null;
+  aliases?: string[];
   withPolicy?: boolean;
   status?: "uploaded" | "processed" | "failed" | "canceled";
   isArchived?: boolean;
@@ -87,7 +88,12 @@ async function createDoc(options: {
     storageKey: `${options.tenantId}/${options.fileName}`,
     checksum: `cs-${options.fileName}`,
     status: (options.status ?? "uploaded") as "uploaded" | "processed" | "failed" | "canceled",
-    metadata: { title: options.title ?? null, description: null, tags: [] },
+    metadata: {
+      title: options.title ?? null,
+      description: null,
+      tags: [],
+      aliases: options.aliases ?? [],
+    },
     classification: "internal" as const,
     version: 1,
     versionLabel: "v1",
@@ -369,4 +375,100 @@ test("title hint ambiguity never fabricates an arbitrary match", async () => {
   assert.equal(result.ambiguousTitleMatches, true);
   assert.equal(result.referencedDocumentIds.length, 0);
   assert.equal(result.referencedDocumentTitles.length, 0);
+});
+
+test("title hints resolve through document aliases", async () => {
+  const doc = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "policy.pdf",
+    title: "Official Title",
+    aliases: ["الحمقى", "the idiots file"],
+  });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["الحمقى"]);
+
+  assert.deepEqual(result.referencedDocumentIds, [doc.id]);
+  assert.deepEqual(result.referencedDocumentTitles, ["Official Title"]);
+  assert.equal(result.ambiguousTitleMatches, false);
+  assert.deepEqual(result.unresolvedTitleHints, []);
+});
+
+test("shared alias across two authorized documents is flagged ambiguous", async () => {
+  await createDoc({ tenantId, ownerId: actorId, fileName: "a.pdf", title: "Doc A", aliases: ["الحمقى"] });
+  await createDoc({ tenantId, ownerId: actorId, fileName: "b.pdf", title: "Doc B", aliases: ["الحمقى"] });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["الحمقى"]);
+
+  assert.equal(result.ambiguousTitleMatches, true);
+  assert.deepEqual(result.referencedDocumentIds, []);
+});
+
+test("aliases never resolve documents without use_in_ai", async () => {
+  await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "secret.pdf",
+    title: "Secret Title",
+    aliases: ["الحمقى"],
+    withPolicy: false,
+  });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["الحمقى"]);
+
+  assert.deepEqual(result.referencedDocumentIds, []);
+  assert.deepEqual(result.unresolvedTitleHints, ["الحمقى"]);
+});
+
+test("fuzzy title hints resolve approximate matches without a perfect hit", async () => {
+  const doc = await createDoc({ tenantId, ownerId: actorId, fileName: "handbook.pdf", title: "Employee Handbook 2026" });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["employee handbook"]);
+
+  assert.deepEqual(result.referencedDocumentIds, [doc.id]);
+  assert.deepEqual(result.referencedDocumentTitles, ["Employee Handbook 2026"]);
+  assert.equal(result.ambiguousTitleMatches, false);
+});
+
+test("fuzzy title hints are flagged ambiguous across close candidate titles", async () => {
+  await createDoc({ tenantId, ownerId: actorId, fileName: "a.pdf", title: "Employee Handbook 2025" });
+  await createDoc({ tenantId, ownerId: actorId, fileName: "b.pdf", title: "Employee Handbook 2026" });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["employee handbook"]);
+
+  assert.equal(result.ambiguousTitleMatches, true);
+  assert.deepEqual(result.referencedDocumentIds, []);
+});
+
+test("fuzzy title hints never resolve cross-tenant documents", async () => {
+  await createDoc({ tenantId: otherTenantId, ownerId: otherActorId, fileName: "foreign.pdf", title: "Employee Handbook 2026" });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["employee handbook"]);
+
+  assert.deepEqual(result.referencedDocumentIds, []);
+  assert.deepEqual(result.unresolvedTitleHints, ["employee handbook"]);
+});
+
+test("fuzzy title hints never resolve unauthorized documents", async () => {
+  await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "secret.pdf",
+    title: "Employee Handbook 2026",
+    withPolicy: false,
+  });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["employee handbook"]);
+
+  assert.deepEqual(result.referencedDocumentIds, []);
+  assert.deepEqual(result.unresolvedTitleHints, ["employee handbook"]);
+});
+
+test("fuzzy resolution is rejected when the hint is too far from every title", async () => {
+  await createDoc({ tenantId, ownerId: actorId, fileName: "handbook.pdf", title: "Employee Handbook" });
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), ["budget forecast"]);
+
+  assert.deepEqual(result.referencedDocumentIds, []);
+  assert.deepEqual(result.unresolvedTitleHints, ["budget forecast"]);
 });

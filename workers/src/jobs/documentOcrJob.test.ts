@@ -4,7 +4,10 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ObjectId, type MongoClient } from "mongodb";
 import type { JobHandlerContext } from "../contracts/jobDispatcher.js";
-import { PermanentJobError } from "../contracts/retryPolicy.js";
+import {
+  PermanentJobError,
+  RetryableJobError,
+} from "../contracts/retryPolicy.js";
 
 // The config singleton parses env eagerly, so the fake Atlas URI must be set
 // before any module that transitively imports config is evaluated.
@@ -23,6 +26,7 @@ config.UPLOAD_DIR = FIXTURES_DIR;
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 const ORIGINAL_OCR_PROVIDER = process.env.OCR_PROVIDER;
 const ORIGINAL_OCR_MAX_PAGES = process.env.OCR_MAX_PAGES;
+const ORIGINAL_FAKE_OCR_BLANK = process.env.FAKE_OCR_BLANK;
 
 test("production import order keeps PDF.js Path2D compatible with the render canvas", async () => {
   await import("pdf-parse");
@@ -50,6 +54,7 @@ beforeEach(() => {
   process.env.NODE_ENV = "test";
   delete process.env.OCR_PROVIDER;
   process.env.OCR_MAX_PAGES = "500";
+  delete process.env.FAKE_OCR_BLANK;
 });
 
 afterEach(() => {
@@ -69,6 +74,12 @@ afterEach(() => {
     delete process.env.OCR_MAX_PAGES;
   } else {
     process.env.OCR_MAX_PAGES = ORIGINAL_OCR_MAX_PAGES;
+  }
+
+  if (ORIGINAL_FAKE_OCR_BLANK === undefined) {
+    delete process.env.FAKE_OCR_BLANK;
+  } else {
+    process.env.FAKE_OCR_BLANK = ORIGINAL_FAKE_OCR_BLANK;
   }
 });
 
@@ -736,5 +747,512 @@ test("12. no Fake OCR fallback is introduced", async () => {
     allStoredProviders.includes("fake-ocr"),
     false,
     "No persisted OCR result may silently fall back to fake-ocr",
+  );
+});
+
+test("13. auto-OCR pipeline: merges results, enqueues chunking, tags usage source=auto", async () => {
+  process.env.OCR_MAX_PAGES = "500";
+
+  const documentRecord = {
+    _id: new ObjectId(),
+    tenantId: new ObjectId("6a51418875cc29492bf32fed"),
+    status: "processing",
+    fileName: "minimal.pdf",
+    department: "Legal",
+    classification: "confidential",
+  };
+
+  const versionRecord = {
+    documentId: documentRecord._id,
+    tenantId: documentRecord.tenantId,
+    version: 1,
+    fileName: "minimal.pdf",
+    mimeType: "application/pdf",
+    storageKey: "minimal.pdf",
+  };
+
+  const completedArtifact = {
+    _id: new ObjectId(),
+    tenantId: documentRecord.tenantId,
+    documentId: documentRecord._id,
+    documentVersion: 1,
+    status: "completed",
+    sourceChecksum: "hash-checksum",
+    pages: [
+      { pageNumber: 1, blocks: [] },
+      { pageNumber: 2, blocks: [] },
+    ],
+    metadata: {
+      totalPages: 2,
+      totalCharacters: 0,
+      detectedLanguages: [],
+      warnings: [],
+      hasImageOnlyPages: true,
+    },
+  };
+
+  const completedOcrPage = {
+    tenantId: documentRecord.tenantId,
+    documentId: documentRecord._id,
+    documentVersion: 1,
+    pageNumber: 1,
+    status: "completed",
+    text: "[FAKE OCR] Simulated text for page 1.",
+    confidence: 0.95,
+    words: [{ text: "Page 1", confidence: 0.95 }],
+    provider: "fake-ocr",
+    providerModel: "fake-ocr-v1.0.0",
+    durationMs: 10,
+    warnings: [],
+  };
+
+  const updateOneCalls: Array<{ collection: string; update: Record<string, unknown> }> = [];
+  const insertOneCalls: Array<{ collection: string; document: Record<string, unknown> }> = [];
+  const enqueued: Array<Record<string, unknown>> = [];
+
+  const db = {
+    collection: (name: string) => {
+      if (name === "ocrpageresults") {
+        return {
+          findOne: async () => null,
+          find: () => ({
+            sort: () => ({
+              toArray: async () => [completedOcrPage],
+            }),
+          }),
+          updateOne: async (_query: Record<string, unknown>, update: Record<string, unknown>, _opts?: Record<string, unknown>) => {
+            updateOneCalls.push({ collection: name, update });
+            return { matchedCount: 1, modifiedCount: 1 };
+          },
+          insertOne: async (doc: Record<string, unknown>) => {
+            insertOneCalls.push({ collection: name, document: doc });
+            return { insertedId: new ObjectId() };
+          },
+        };
+      }
+      return {
+        findOne: async (_query: Record<string, unknown>) => {
+          if (name === "documentversions") return versionRecord;
+          if (name === "documents") return documentRecord;
+          if (name === "extractionartifacts") return completedArtifact;
+          return null;
+        },
+        find: () => ({
+          sort: () => ({
+            toArray: async () => [],
+          }),
+        }),
+        updateOne: async (_query: Record<string, unknown>, update: Record<string, unknown>, _opts?: Record<string, unknown>) => {
+          updateOneCalls.push({ collection: name, update });
+          return { matchedCount: 1, modifiedCount: 1 };
+        },
+        insertOne: async (doc: Record<string, unknown>) => {
+          insertOneCalls.push({ collection: name, document: doc });
+          return { insertedId: new ObjectId() };
+        },
+      };
+    },
+  };
+
+  setMockClient({ db: () => db } as unknown as MongoClient);
+
+  const handler = createDocumentOcrJobHandler();
+  const generationId = new ObjectId().toString();
+  const ctx = {
+    ...mockCtx,
+    enqueue: async (job: unknown) => {
+      enqueued.push(job as Record<string, unknown>);
+    },
+  } as unknown as JobHandlerContext;
+
+  const result = (await handler.handle(
+    {
+      documentId: documentRecord._id.toString(),
+      tenantId: "6a51418875cc29492bf32fed",
+      documentVersion: 1,
+      ocrProvider: "fake",
+      pageNumbers: [1],
+      generationId,
+      department: "Legal",
+      classification: "confidential",
+    } as Parameters<typeof handler.handle>[0],
+    ctx,
+  )) as { summary: { success: boolean; totalPagesProcessed: number } };
+
+  assert.ok(result, "Handler should return a result");
+  assert.equal(result.summary.success, true, "Auto-OCR should succeed");
+  assert.equal(result.summary.totalPagesProcessed, 1);
+
+  // 1. Usage records from the ingest pipeline are tagged as auto-OCR.
+  const usageRecord = insertOneCalls.find(
+    (call) => call.collection === "ocrusagerecords",
+  );
+  assert.ok(usageRecord, "A usage record must be written for auto-OCR");
+  assert.equal(
+    usageRecord.document.source,
+    "auto",
+    "Auto-OCR usage must be tagged source=auto so billing reconciles it separately",
+  );
+
+  // 2. OCR text is merged back into the extraction artifact.
+  const artifactUpdate = updateOneCalls.find(
+    (call) => call.collection === "extractionartifacts",
+  );
+  assert.ok(artifactUpdate, "Extraction artifact must be updated by auto-OCR");
+  const artifactSet = artifactUpdate.update.$set as {
+    pages: Array<{ pageNumber: number; blocks: Array<{ text: string }> }>;
+    metadata: Record<string, unknown>;
+  };
+  assert.ok(
+    Array.isArray(artifactSet.pages),
+    "Merged artifact pages must be an array",
+  );
+  const mergedPage = artifactSet.pages.find(
+    (page) => page.pageNumber === 1,
+  );
+  assert.ok(mergedPage, "Merged artifact must contain the OCR'd page");
+  assert.ok(
+    mergedPage.blocks.some((block) =>
+      block.text.includes("[FAKE OCR] Simulated text for page 1."),
+    ),
+    "OCR text must be merged into the artifact page blocks",
+  );
+  assert.equal(
+    artifactSet.metadata.ocrAppliedPages,
+    1,
+    "Artifact metadata must record the number of OCR'd pages",
+  );
+  assert.equal(
+    artifactSet.metadata.hasImageOnlyPages,
+    false,
+    "Artifact must no longer be flagged as image-only after OCR",
+  );
+
+  // 3. The chunking pipeline is auto-triggered with the same generation.
+  const chunkJob = enqueued.find((job) => job.jobType === "document.chunk");
+  assert.ok(chunkJob, "document.chunk must be enqueued after auto-OCR");
+  const chunkPayload = chunkJob.payload as Record<string, unknown>;
+  assert.equal(chunkPayload.generationId, generationId);
+  assert.equal(chunkPayload.department, "Legal");
+  assert.equal(chunkPayload.classification, "confidential");
+  assert.equal(chunkPayload.documentVersion, 1);
+});
+
+test("14. a blank page is recorded as completed-empty, not a failure", async () => {
+  process.env.FAKE_OCR_BLANK = "true";
+
+  const insertOneCalls: Array<{ collection: string; document: Record<string, unknown> }> = [];
+  const updateOneCalls: Array<{ collection: string; update: Record<string, unknown> }> = [];
+  const db = buildMockDb({ insertOneCalls, updateOneCalls });
+  mountMockDb(db);
+
+  const handler = createDocumentOcrJobHandler();
+  const result = (await handler.handle(
+    {
+      documentId: db._documentRecord._id.toString(),
+      tenantId: "6a51418875cc29492bf32fed",
+      documentVersion: 1,
+      pageNumbers: [1],
+      ocrProvider: "fake",
+    } as Parameters<typeof handler.handle>[0],
+    mockCtx,
+  )) as {
+    summary: {
+      success: boolean;
+      totalPagesProcessed: number;
+      totalPagesFailed: number;
+      pageResults: Array<{ pageNumber: number; status: string; confidence: number }>;
+    };
+  };
+
+  assert.ok(result, "Handler should return a result");
+  assert.equal(
+    result.summary.success,
+    true,
+    "Blank pages are a valid outcome, not a failure",
+  );
+  assert.equal(result.summary.totalPagesProcessed, 1);
+  assert.equal(result.summary.totalPagesFailed, 0);
+  assert.equal(result.summary.pageResults[0].status, "completed");
+  assert.equal(result.summary.pageResults[0].confidence, 0);
+
+  const pageUpdate = updateOneCalls.find(
+    (call) =>
+      call.collection === "ocrpageresults" &&
+      (call.update.$set as Record<string, unknown>).status === "completed",
+  );
+  assert.ok(pageUpdate, "OCR page result must be written");
+  const set = pageUpdate.update.$set as Record<string, unknown>;
+  assert.equal(set.status, "completed");
+  assert.equal(set.text, "");
+  assert.equal(set.confidence, 0);
+  assert.ok(
+    Array.isArray(set.warnings) &&
+      (set.warnings as string[]).some((w) => /blank/i.test(w)),
+    "A blank page must carry a blank-page warning",
+  );
+
+  const usage = insertOneCalls.find(
+    (call) => call.collection === "ocrusagerecords",
+  );
+  assert.ok(usage, "Blank pages still produce an OCR usage record");
+});
+
+test("15. a transient Mongo write failure during a successful page is retried in-place", async () => {
+  const insertOneCalls: Array<{ collection: string; document: Record<string, unknown> }> = [];
+  const updateOneCalls: Array<{ collection: string; update: Record<string, unknown> }> = [];
+  const db = buildMockDb({ insertOneCalls, updateOneCalls });
+  mountMockDb(db);
+
+  let ocrResultWrites = 0;
+  const originalCollection = db.collection;
+  db.collection = ((name: string) => {
+    const col = originalCollection(name);
+    if (name === "ocrpageresults") {
+      return {
+        ...col,
+        updateOne: async (
+          query: Record<string, unknown>,
+          update: Record<string, unknown>,
+          opts?: Record<string, unknown>,
+        ) => {
+          const set = update.$set as Record<string, unknown>;
+          if (set.status === "completed") {
+            ocrResultWrites++;
+            if (ocrResultWrites === 1) {
+              const err = new Error(
+                "getaddrinfo EAI_AGAIN mongodb.test.invalid",
+              );
+              (err as NodeJS.ErrnoException).code = "EAI_AGAIN";
+              throw err;
+            }
+          }
+          return col.updateOne(query, update, opts);
+        },
+      };
+    }
+    return col;
+  }) as typeof db.collection;
+
+  const handler = createDocumentOcrJobHandler();
+  const result = (await handler.handle(
+    {
+      documentId: db._documentRecord._id.toString(),
+      tenantId: "6a51418875cc29492bf32fed",
+      documentVersion: 1,
+      pageNumbers: [1],
+      ocrProvider: "fake",
+    } as Parameters<typeof handler.handle>[0],
+    mockCtx,
+  )) as {
+    summary: {
+      success: boolean;
+      totalPagesProcessed: number;
+      pageResults: Array<{ pageNumber: number; status: string }>;
+    };
+  };
+
+  assert.ok(result, "Handler should return a result");
+  assert.equal(result.summary.success, true);
+  assert.equal(result.summary.totalPagesProcessed, 1);
+  assert.equal(
+    result.summary.pageResults[0].status,
+    "completed",
+    "Recognition already succeeded; the transient write must not fail the page",
+  );
+  assert.equal(
+    ocrResultWrites,
+    2,
+    "The failed write must be retried once inside the job",
+  );
+
+  const usage = insertOneCalls.filter(
+    (call) => call.collection === "ocrusagerecords",
+  );
+  assert.equal(
+    usage.length,
+    1,
+    "Usage record must be inserted exactly once after the retried write",
+  );
+});
+
+test("16. a persistent Mongo outage marks the page retry and throws a retryable error", async () => {
+  const insertOneCalls: Array<{ collection: string; document: Record<string, unknown> }> = [];
+  const updateOneCalls: Array<{ collection: string; update: Record<string, unknown> }> = [];
+  const db = buildMockDb({ insertOneCalls, updateOneCalls });
+  mountMockDb(db);
+
+  const originalCollection = db.collection;
+  db.collection = ((name: string) => {
+    const col = originalCollection(name);
+    if (name === "ocrpageresults") {
+      return {
+        ...col,
+        updateOne: async (
+          query: Record<string, unknown>,
+          update: Record<string, unknown>,
+          opts?: Record<string, unknown>,
+        ) => {
+          const set = update.$set as Record<string, unknown>;
+          if (set.status === "completed") {
+            const err = new Error(
+              "getaddrinfo EAI_AGAIN mongodb.test.invalid",
+            );
+            (err as NodeJS.ErrnoException).code = "EAI_AGAIN";
+            throw err;
+          }
+          return col.updateOne(query, update, opts);
+        },
+      };
+    }
+    return col;
+  }) as typeof db.collection;
+
+  const handler = createDocumentOcrJobHandler();
+  await assert.rejects(
+    async () => {
+      await handler.handle(
+        {
+          documentId: db._documentRecord._id.toString(),
+          tenantId: "6a51418875cc29492bf32fed",
+          documentVersion: 1,
+          pageNumbers: [1],
+          ocrProvider: "fake",
+        } as Parameters<typeof handler.handle>[0],
+        mockCtx,
+      );
+    },
+    (err: unknown) => {
+      assert.ok(
+        err instanceof RetryableJobError,
+        `Expected RetryableJobError, got: ${
+          err instanceof Error ? err.constructor.name : typeof err
+        }`,
+      );
+      return true;
+    },
+  );
+
+  const retryUpdate = updateOneCalls.find(
+    (call) =>
+      call.collection === "ocrpageresults" &&
+      (call.update.$set as Record<string, unknown>).status === "retry",
+  );
+  assert.ok(
+    retryUpdate,
+    "Page must be recorded with status retry so manual re-OCR can pick it up",
+  );
+  const retrySet = retryUpdate.update.$set as Record<string, unknown>;
+  assert.ok(
+    String(retrySet.failureReason).includes("EAI_AGAIN"),
+    "Failure reason must preserve the infra error",
+  );
+});
+
+test("17. quality assessment treats blank pages as warnings, not critical issues", async () => {
+  process.env.FAKE_OCR_BLANK = "true";
+
+  const insertOneCalls: Array<{ collection: string; document: Record<string, unknown> }> = [];
+  const updateOneCalls: Array<{ collection: string; update: Record<string, unknown> }> = [];
+  const db = buildMockDb({ insertOneCalls, updateOneCalls });
+  mountMockDb(db);
+
+  const storedPages: Array<Record<string, unknown>> = [];
+  const originalCollection = db.collection;
+  db.collection = ((name: string) => {
+    const col = originalCollection(name);
+    if (name === "ocrpageresults") {
+      return {
+        ...col,
+        updateOne: async (
+          query: Record<string, unknown>,
+          update: Record<string, unknown>,
+          _opts?: Record<string, unknown>,
+        ) => {
+          const set = update.$set as Record<string, unknown>;
+          const existing = storedPages.find(
+            (p) =>
+              String(p.pageNumber) === String(set.pageNumber) &&
+              String(p.documentVersion) === String(set.documentVersion),
+          );
+          if (existing) {
+            Object.assign(existing, set);
+          } else {
+            storedPages.push({
+              ...(update.$setOnInsert as Record<string, unknown>),
+              ...set,
+            });
+          }
+          return {
+            matchedCount: existing ? 1 : 0,
+            modifiedCount: 1,
+          };
+        },
+        find: () => ({
+          sort: () => ({
+            toArray: async () =>
+              storedPages
+                .filter((p) => p.status === "completed")
+                .map((p) => ({ ...p })),
+          }),
+        }),
+      };
+    }
+    return col;
+  }) as typeof db.collection;
+
+  const handler = createDocumentOcrJobHandler();
+  const result = (await handler.handle(
+    {
+      documentId: db._documentRecord._id.toString(),
+      tenantId: "6a51418875cc29492bf32fed",
+      documentVersion: 1,
+      pageNumbers: [1],
+      ocrProvider: "fake",
+    } as Parameters<typeof handler.handle>[0],
+    mockCtx,
+  )) as { summary: { success: boolean; totalPagesProcessed: number } };
+
+  assert.equal(result.summary.success, true);
+  assert.equal(result.summary.totalPagesProcessed, 1);
+
+  const qualityUpdate = updateOneCalls.find(
+    (call) => call.collection === "documentqualities",
+  );
+  assert.ok(qualityUpdate, "Quality assessment must run after OCR");
+  const qSet = qualityUpdate.update.$set as Record<string, unknown>;
+
+  assert.equal(
+    qSet.qualityStatus,
+    "READY_WITH_WARNINGS",
+    "An all-blank document should be ready-with-warnings, not review-required",
+  );
+
+  const issues = qSet.issues as Array<{
+    type: string;
+    severity: string;
+  }>;
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.type === "blank_page" &&
+        issue.severity === "warning",
+    ),
+    "A blank_page warning must be recorded",
+  );
+  assert.ok(
+    !issues.some((issue) => issue.severity === "critical"),
+    "Blank pages must never produce critical issues",
+  );
+  assert.ok(
+    !issues.some((issue) => issue.type === "low_confidence"),
+    "Blank pages must not be flagged as low-confidence",
+  );
+
+  const pageStatuses = qSet.pageStatuses as Record<string, string>;
+  assert.equal(
+    pageStatuses["1"],
+    "READY_WITH_WARNINGS",
+    "Per-page status for a blank page must be a warning, not REVIEW_REQUIRED",
   );
 });

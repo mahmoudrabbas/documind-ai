@@ -108,6 +108,7 @@ services:
       start_period: 30s
     volumes:
       - ./app:/repo/app
+      - app_node_modules:/repo/app/node_modules
       - /repo/app/.next
 
   worker:
@@ -174,6 +175,7 @@ volumes:
   uploads_data:
   api_node_modules:
   worker_node_modules:
+  app_node_modules:
 
 secrets:
   api_jwt_secret:
