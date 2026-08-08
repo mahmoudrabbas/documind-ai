@@ -144,24 +144,74 @@ export type CitationVerifierOutput = z.infer<
 
 // ── compliance-agent ────────────────────────────────────────────────────────
 
+/**
+ * Deterministic compliance reason codes. Strict: only an audited code may be
+ * emitted — never an arbitrary string — so logs and downstream consumers stay
+ * stable.
+ */
+export const ComplianceReasonCode = z.enum([
+  // A: Grounded answer whose citations were verified.
+  "COMPLIANT_GROUNDED_RESPONSE",
+  // B: Grounded answer released because citation verification is disabled by policy.
+  "COMPLIANT_GROUNDED_RESPONSE_CITATIONS_DISABLED",
+  // C: Grounded answer released without verified citations (answer redacted).
+  "UNVERIFIED_GROUNDED_RESPONSE",
+  // D: Not enough policy-authorized evidence to form an answer.
+  "INSUFFICIENT_EVIDENCE",
+  // E: Question is outside the document/knowledge scope.
+  "UNSUPPORTED_REQUEST",
+  // F: Request violates safety policy.
+  "UNSAFE_RESPONSE",
+  // G: Answer needs more information from the user.
+  "CLARIFICATION_REQUIRED",
+]);
+export type ComplianceReasonCodeValue = z.infer<typeof ComplianceReasonCode>;
+
+/**
+ * Citation-verification projection handed to the compliance agent. Carries only
+ * what compliance needs (status + the de-duplicated validated citation ids).
+ * Rejected ids are intentionally NOT projected: they are never required to
+ * reach a compliance decision.
+ */
+export const ComplianceCitationVerificationSchema = z
+  .object({
+    verified: z.boolean(),
+    validatedCitationIds: boundedIdArray(50).default([]),
+    reasonCode: CitationVerifierReasonCode,
+  })
+  .strict();
+
+/**
+ * Compliance-agent input. Carries the answer-writer decision so compliance can
+ * fail-closed on unsupported/unsafe/insufficient-evidence before touching the
+ * model answer, plus a minimal citation-verification projection.
+ */
 export const ComplianceAgentInputSchema = z
   .object({
-    answerText: z.string().max(20_000).optional(),
-    citedChunkIds: boundedIdArray(50).default([]),
-    validatedCitationIds: boundedIdArray(50).default([]),
-    language: QueryLanguage.optional(),
     route: QueryRoute.optional(),
+    answerDecision: ChatAnswerDecision,
+    answer: z.string().max(20_000),
+    language: QueryLanguage.optional(),
+    citationsEnabled: z.boolean().default(true),
+    citationVerification: ComplianceCitationVerificationSchema.optional(),
   })
   .strict();
 
 export type ComplianceAgentInput = z.infer<typeof ComplianceAgentInputSchema>;
 
+/**
+ * Compliance-agent output. `action` mirrors `ChatComplianceDecision`
+ * (release / refuse / clarify). `answer` is always present: for `release` it
+ * carries the verified grounded answer; for `refuse`/`clarify` it carries a
+ * deterministic, localized safe reply. `sourceIds` is the de-duplicated set of
+ * validated citation ids (empty when none / not applicable).
+ */
 export const ComplianceAgentOutputSchema = z
   .object({
-    decision: ChatComplianceDecision,
-    reasonCode: z.string().trim().min(1).max(100),
-    finalText: z.string().max(20_000).optional(),
-    message: z.string().max(2000).optional(),
+    action: ChatComplianceDecision,
+    answer: z.string().min(1).max(20_000),
+    sourceIds: boundedIdArray(50).default([]),
+    reasonCode: ComplianceReasonCode,
   })
   .strict();
 

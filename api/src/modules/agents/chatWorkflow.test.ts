@@ -46,9 +46,16 @@ describe("WorkflowRegistry", () => {
     assert.deepEqual(workflow.allowedHandoffs["intent-query-agent"], [
       "chat-supervisor",
     ]);
+    assert.deepEqual(workflow.allowedHandoffs["citation-verification-agent"], [
+      "answer-writer-agent",
+      "chat-supervisor",
+      "compliance-agent",
+    ]);
     assert.deepEqual(workflow.allowedHandoffs["compliance-agent"], [
       "chat-supervisor",
     ]);
+    assert.ok(!(workflow.allowedHandoffs["intent-query-agent"] ?? []).includes("compliance-agent"));
+    assert.ok(!(workflow.allowedHandoffs["answer-writer-agent"] ?? []).includes("compliance-agent"));
   });
 
   it("rejects unknown workflows", () => {
