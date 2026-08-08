@@ -154,7 +154,13 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
         );
       const isFollowUp = hasConversationContext && hasContextDependentReference;
 
-      if (/unsafe|hack|ignore\s+previous|system\s+prompt/i.test(question)) {
+      const hasExplicitlyMaliciousIntent =
+        /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(question) ||
+        /(?:give|show|reveal)\s+me\s+another\s+user(?:'s|’s)?\s+password/i.test(question) ||
+        /bypass\s+authentication/i.test(question) ||
+        /(?:أعطني|اكشف|أظهر)\s+كلمة\s+مرور\s+مستخدم\s+آخر|تجاوز\s+المصادقة|موجه\s+النظام/i.test(question);
+
+      if (hasExplicitlyMaliciousIntent) {
         detectedIntent = "unsafe";
         clarificationNeeded = true;
         clarification = {
