@@ -87,11 +87,6 @@ describe("StudentBedrockProvider", () => {
     expect(() => createStudentBedrockProvider()).toThrow("SBG_API_KEY environment variable is required");
   });
 
-  test("should throw on missing base URL", () => {
-    delete process.env.SBG_BASE_URL;
-    expect(() => createStudentBedrockProvider()).toThrow("SBG_BASE_URL environment variable is required");
-  });
-
   test("should embed batch successfully using texts field", async () => {
     const inputs: EmbeddingInput[] = [
       { chunkId: "chunk-1", text: "test text", idempotencyKey: "key-1" },

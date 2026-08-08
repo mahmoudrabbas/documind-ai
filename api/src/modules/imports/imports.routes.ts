@@ -47,7 +47,7 @@ const svc = getEntitlementService();
 
 const employeeGuard = createEntitlementGuard(svc, {
   dimension: "employees",
-  amount: (req) => req.body.employeeCount || 1,
+  amount: (req) => (req.body?.employeeCount ? Number(req.body.employeeCount) || 1 : 1),
   failMode: "fail-closed",
 });
 
@@ -71,7 +71,6 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.IMPORTS_CREATE),
-  employeeGuard,
   upload.single("file"),
   uploadAndPreview,
 );
@@ -99,7 +98,6 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.IMPORTS_CREATE),
-  employeeGuard,
   confirmImport,
 );
 

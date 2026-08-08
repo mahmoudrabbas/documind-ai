@@ -537,13 +537,10 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
 
 export function createStudentBedrockProvider(): StudentBedrockProvider {
   const apiKey = process.env.SBG_API_KEY;
-  const baseUrl = process.env.SBG_BASE_URL;
+  const baseUrl = process.env.BEDROCK_GATEWAY_URL || process.env.SBG_BASE_URL || "http://apiaccess.iti.net.eg";
 
   if (!apiKey || apiKey.trim() === "") {
     throw new Error("SBG_API_KEY environment variable is required for student-bedrock provider");
-  }
-  if (!baseUrl || baseUrl.trim() === "") {
-    throw new Error("SBG_BASE_URL environment variable is required for student-bedrock provider");
   }
 
   const config: SBGConfig = {

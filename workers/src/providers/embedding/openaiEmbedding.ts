@@ -286,10 +286,10 @@ export function createEmbeddingProvider(): EmbeddingProvider {
 
   if (aiProvider === "student-bedrock") {
     const apiKey = process.env.SBG_API_KEY;
-    const baseUrl = process.env.SBG_BASE_URL;
+    const baseUrl = process.env.BEDROCK_GATEWAY_URL || process.env.SBG_BASE_URL || "http://apiaccess.iti.net.eg";
 
-    if (!apiKey || !baseUrl) {
-      throw new Error("SBG_API_KEY and SBG_BASE_URL are required for student-bedrock provider");
+    if (!apiKey) {
+      throw new Error("SBG_API_KEY is required for student-bedrock provider");
     }
 
     const embeddingModels = (process.env.BEDROCK_EMBEDDING_MODELS || "amazon.titan-embed-text-v2:0,us.cohere.embed-v4:0")

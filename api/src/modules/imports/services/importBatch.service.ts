@@ -43,7 +43,7 @@ export interface ListBatchesFilters {
 const VALID_TRANSITIONS: Record<ImportBatchState, ImportBatchState[]> = {
   UPLOADED: ["PARSED", "CANCELLED"],
   PARSED: ["PREVIEW_READY", "CANCELLED"],
-  PREVIEW_READY: ["PARSED", "QUEUED", "CANCELLED"],
+  PREVIEW_READY: ["QUEUED", "CANCELLED"],
   QUEUED: ["PROCESSING", "CANCELLED"],
   PROCESSING: ["COMPLETED", "PARTIALLY_COMPLETED", "FAILED"],
   COMPLETED: [],
@@ -121,7 +121,7 @@ export class ImportBatchService {
       checksum: string;
     }>;
   }): Promise<{ batch: IEmployeeImportBatch; rowCount: number }> {
-    const idempotencyKey = sha256(`${params.tenantId}:${params.fileChecksum}`);
+    const idempotencyKey = sha256(`${params.tenantId}:${params.fileChecksum}:${Date.now()}:${Math.random()}`);
     const tenantId = new mongoose.Types.ObjectId(params.tenantId);
     const createdBy = new mongoose.Types.ObjectId(params.createdBy);
 
@@ -339,26 +339,30 @@ export class ImportBatchService {
     batchId: string,
     actorId: string,
   ): Promise<{ batch: IEmployeeImportBatch; jobResult: unknown }> {
-    // Atomic transition: only update if currently in PREVIEW_READY
-    const batch = await EmployeeImportBatchModel.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(batchId), state: "PREVIEW_READY" as ImportBatchState },
+    let batch = await EmployeeImportBatchModel.findOneAndUpdate(
+      { _id: new mongoose.Types.ObjectId(batchId), state: "PREVIEW_READY" },
       { $set: { state: "QUEUED" as ImportBatchState } },
       { new: true },
     );
 
     if (!batch) {
-      // Check if batch exists but in wrong state
-      const existing = await EmployeeImportBatchModel.findById(batchId);
-      if (!existing) throw new AppError(404, "NOT_FOUND", "Batch not found");
-      if (existing.state === "QUEUED" || existing.state === "PROCESSING" || existing.state === "COMPLETED") {
-        // Idempotent: already confirmed
-        const jobResult = { ok: true, deduplicated: true };
-        return { batch: existing, jobResult };
+      batch = await EmployeeImportBatchModel.findById(batchId);
+      if (!batch) {
+        throw new AppError(404, "NOT_FOUND", "Batch not found");
       }
-      throw new AppError(400, "INVALID_STATE_TRANSITION", `Cannot confirm batch in ${existing.state} state`);
+      if (batch.state === "QUEUED" || batch.state === "PROCESSING") {
+        return {
+          batch: batch as unknown as IEmployeeImportBatch,
+          jobResult: { ok: true, deduplicated: true },
+        };
+      }
+      throw new AppError(
+        400,
+        "INVALID_STATE_TRANSITION",
+        `Cannot confirm batch in ${batch.state} state`,
+      );
     }
 
-    // Enqueue job
     const jobResult = await getApiJobDispatcher().enqueue({
       jobType: "import.employee.batch",
       idempotencyKey: batch.idempotencyKey,
