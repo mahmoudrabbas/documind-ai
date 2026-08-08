@@ -467,7 +467,7 @@ export function createRateLimiter(
     legacyHeaders: false,
     validate: { ip: false },
     skipFailedRequests: options.skipFailedRequests ?? false,
-    keyGenerator: options.keyGenerator,
+    keyGenerator: options.keyGenerator ?? (isTestEnv() ? () => "test-ip" : undefined),
     handler(req, res) {
       const retryAfterSeconds = getRetryAfterSeconds(req, windowMs);
       res.setHeader("Retry-After", String(retryAfterSeconds));

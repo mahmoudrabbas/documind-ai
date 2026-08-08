@@ -66,7 +66,7 @@ export class BillingOperationService {
     if (prior) return this.replayOrConflict(prior, requestFingerprint, input.actor);
 
     if (input.subscriptionId && conflictGroup) {
-      const incompatible = await BillingOperationModel.findOne({ tenantId, subscriptionId: new Types.ObjectId(input.subscriptionId), conflictGroup, status: { $in: PENDING } })
+      const incompatible = await BillingOperationModel.findOne({ tenantId, subscriptionId: new Types.ObjectId(input.subscriptionId), conflictGroup, status: { $in: PENDING }, idempotencyKeyHash: { $ne: idempotencyKeyHash } })
         .session(options?.session ?? null)
         .exec();
       if (incompatible) throw new AppError(409, BILLING_OPERATION_ALREADY_PENDING, "A billing operation is already pending");
