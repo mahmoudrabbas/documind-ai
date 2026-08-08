@@ -58,7 +58,7 @@ const processingProgressVitestTestsDir = resolve(
   "processing-progress",
   "__tests__",
 ).replace(/\\/g, "/");
-const apiSrcRoot = resolve(apiRoot, "src");
+const rootSrcVitestTestsDir = resolve(apiRoot, "src", "__tests__").replace(/\\/g, "/");
 
 function isVitestOnlyTest(path) {
   const normalized = path.replace(/\\/g, "/");
@@ -73,6 +73,7 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
     || normalized.startsWith(`${agentsTokenChargeTestsDir}/`)
     || normalized.startsWith(`${processingProgressVitestTestsDir}/`)
+    || normalized.startsWith(`${rootSrcVitestTestsDir}/`)
   ) {
     return true;
   }
