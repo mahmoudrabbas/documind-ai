@@ -178,6 +178,77 @@ test("D: valid structured grounded output returns the human answer and preserves
   assert.deepEqual(usable.citedChunkIds, [CHUNK_B]);
 });
 
+test("D-AR1: Arabic direct RAG output parses as a grounded structured answer", async () => {
+  const answer = "تُعتمد المصروفات وفقاً للصلاحيات المحددة في سياسة الشركة.";
+  const { service, adapter } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer,
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs({
+    question: "من يعتمد المصروفات؟",
+    language: "ar",
+    task: "direct_question",
+  }));
+
+  assert.equal(result.outcome, "usable");
+  const usable = result as Extract<AnswerWriterServiceResult, { outcome: "usable" }>;
+  assert.equal(usable.structured, true);
+  assert.equal(usable.parsedDecision, "grounded_answer");
+  assert.equal(usable.decision, "grounded_answer");
+  assert.equal(usable.answer, answer);
+  assert.match(usable.answer, /[\u0600-\u06ff]/);
+  assert.deepEqual(usable.citedChunkIds, [CHUNK_A]);
+  assert.deepEqual(adapter.calls[0].structuredOutput, { type: "json_object" });
+});
+
+test("D-AR2: Arabic insufficient_evidence output remains structured", async () => {
+  const answer = "لا يحتوي السياق المقدم على معلومات كافية للإجابة عن السؤال.";
+  const { service } = makeService(JSON.stringify({
+    decision: "insufficient_evidence",
+    answer,
+    citedChunkIds: [],
+  }));
+
+  const result = await service.generate(generateArgs({
+    question: "ما هي السياسة؟",
+    language: "ar",
+    task: "direct_question",
+  }));
+
+  assert.equal(result.outcome, "usable");
+  const usable = result as Extract<AnswerWriterServiceResult, { outcome: "usable" }>;
+  assert.equal(usable.structured, true);
+  assert.equal(usable.parsedDecision, "insufficient_evidence");
+  assert.equal(usable.decision, "insufficient_evidence");
+  assert.equal(usable.answer, answer);
+  assert.deepEqual(usable.citedChunkIds, []);
+});
+
+test("D-AR3: citations-disabled Arabic answers still use structured provenance", async () => {
+  const answer = "توضح السياسة أن التدريب إلزامي كل عام.";
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer,
+    citedChunkIds: [CHUNK_B],
+  }));
+
+  const result = await service.generate(generateArgs({
+    question: "ماذا تنص السياسة؟",
+    language: "ar",
+    task: "direct_question",
+    citationsEnabled: false,
+  }));
+
+  assert.equal(result.outcome, "usable");
+  const usable = result as Extract<AnswerWriterServiceResult, { outcome: "usable" }>;
+  assert.equal(usable.structured, true);
+  assert.equal(usable.decision, "grounded_answer");
+  assert.equal(usable.answer, answer);
+  assert.deepEqual(usable.citedChunkIds, [CHUNK_B]);
+});
+
 test("D2: hidden reasoning is stripped from a structured standard-text answer", async () => {
   const { service } = makeService(JSON.stringify({
     decision: "grounded_answer",

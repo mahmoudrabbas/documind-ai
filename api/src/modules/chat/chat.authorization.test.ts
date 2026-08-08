@@ -98,7 +98,11 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
 
   assert.equal(messages[0].role, "system");
   assert.match(messages[0].content, /أنت DocuMind AI/);
-  assert.match(messages[0].content, /اذكر المستند الذي جاءت منه/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /\{"decision","answer","citedChunkIds"\}/);
+  assert.match(messages[0].content, /grounded_answer/);
+  assert.match(messages[0].content, /قيمة answer بالكامل باللغة العربية/);
+  assert.match(messages[0].content, /معرفات المقاطع المقدمة التي استُخدمت فعلياً/);
 
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "system");
@@ -124,7 +128,10 @@ test("Arabic language with citations disabled uses Arabic no-citations prompt", 
   });
 
   assert.equal(messages[0].role, "system");
-  assert.match(messages[0].content, /لا تضمن أي استشهادات/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /\{"decision","answer","citedChunkIds"\}/);
+  assert.match(messages[0].content, /لا تضع داخل قيمة answer أي استشهادات ظاهرة/);
+  assert.match(messages[0].content, /citedChunkIds مطلوبة للتتبع الداخلي/);
 
   const contextMsg = messages[1];
   assert.match(contextMsg.content, /لا تذكر أو تستشهد بمصادرك/);
@@ -162,13 +169,30 @@ test("citations disabled uses the non-citing system prompt and forbids source me
 
   assert.equal(messages[0].role, "system");
   assert.doesNotMatch(messages[0].content, /mention which document it came from/);
-  assert.match(messages[0].content, /Do not include any citations, source references, footnotes/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /Do not put visible citations, source references, footnotes/);
+  assert.match(messages[0].content, /citedChunkIds remains required for internal provenance/);
 
   const contextMsg = messages[1];
   assert.match(contextMsg.content, /Do not mention or cite your sources/);
   assert.doesNotMatch(contextMsg.content, /Always cite your sources/);
 
   assert.ok(messages[1].content.includes(SOURCE.text), "retrieved context is still provided");
+});
+
+test("Arabic document summaries keep the canonical structured contract and Arabic answer rule", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    sources: [SOURCE],
+    userMessage: "لخص المستند",
+    task: "document_summary",
+    language: "ar",
+  });
+
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /\{"decision","answer","citedChunkIds"\}/);
+  assert.match(messages[0].content, /ملخصاً منظماً/);
+  assert.match(messages[0].content, /قيمة answer بالكامل باللغة العربية/);
 });
 
 test("answer generation contains only the current resolved user turn", () => {
