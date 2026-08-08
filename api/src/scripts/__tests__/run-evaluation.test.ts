@@ -208,7 +208,8 @@ describe("run-evaluation CLI exit codes", () => {
   });
 
   it("exits 1 for a fixture run with no completed evaluations (all degraded)", () => {
-    const { code } = runScript(["--fixture"]);
+    const env = { ...process.env, GROQ_API_KEY: "", SBG_API_KEY: "", NODE_ENV: "test" };
+    const { code } = runScript(["--fixture"], { env });
     expect(code).toBe(EXIT_EVAL_FAILED);
   }, 120_000);
 

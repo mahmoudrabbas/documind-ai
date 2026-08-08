@@ -25,6 +25,7 @@ export class DocumentAccessAuthorizationService {
       const [actor, document] = await Promise.all([this.loadActor(context).catch(() => null), this.loadDocument(context.tenantId, documentId)]);
       if (!actor) return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
       if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING");
+      if (document.deletedAt && action !== "restore" && action !== "delete") return this.deny(context, documentId, action, "DOCUMENT_DELETED");
       const resource = resourceContext(document);
 
       // Control-plane recovery does not imply permission to use document content in AI.

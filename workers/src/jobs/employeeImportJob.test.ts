@@ -40,6 +40,7 @@ function makeCtx(overrides?: Partial<JobHandlerContext>): JobHandlerContext {
     maxAttempts: 3,
     signal: new AbortController().signal,
     progress: () => {},
+    enqueue: async (input) => ({ jobId: "mock-job", idempotencyKey: input.idempotencyKey ?? "mock-key", deduplicated: false }),
     ...overrides,
   };
 }
@@ -142,6 +143,8 @@ test("completes batch with COMPLETED when all rows created", async () => {
   const batchId = new ObjectId();
   const calls: Array<{ name: string; update: Record<string, unknown> }> = [];
 
+  const rowStates: Record<string, string> = {};
+
   setDb({
     employeeimportbatches: {
       findOne: async () => ({
@@ -158,30 +161,46 @@ test("completes batch with COMPLETED when all rows created", async () => {
     employeeimportrows: {
       find: () => ({
         sort: () => ({
-          toArray: async () => [
-            {
-              _id: new ObjectId(),
-              batchId,
-              tenantId: mockTenantId,
-              rowNumber: 1,
-              rawData: { email: "alice@test.com", firstName: "Alice", lastName: "Smith" },
-              state: "PENDING",
-              idempotencyKey: "row-1",
-            },
-            {
-              _id: new ObjectId(),
-              batchId,
-              tenantId: mockTenantId,
-              rowNumber: 2,
-              rawData: { email: "bob@test.com", firstName: "Bob", lastName: "Jones" },
-              state: "PENDING",
-              idempotencyKey: "row-2",
-            },
-          ],
+          toArray: async () => {
+            const baseRows = [
+              {
+                _id: new ObjectId(),
+                batchId,
+                tenantId: mockTenantId,
+                rowNumber: 1,
+                rawData: { email: "alice@test.com", firstName: "Alice", lastName: "Smith" },
+                state: rowStates["row-1"] ?? "PENDING",
+                idempotencyKey: "row-1",
+              },
+              {
+                _id: new ObjectId(),
+                batchId,
+                tenantId: mockTenantId,
+                rowNumber: 2,
+                rawData: { email: "bob@test.com", firstName: "Bob", lastName: "Jones" },
+                state: rowStates["row-2"] ?? "PENDING",
+                idempotencyKey: "row-2",
+              },
+            ];
+            return baseRows;
+          },
         }),
       }),
-      updateOne: async (_q: unknown, u: Record<string, unknown>) => {
+      updateOne: async (q: Record<string, unknown>, u: Record<string, unknown>) => {
         calls.push({ name: "employeeimportrows", update: u });
+        // Track state changes for recount
+        const setState = (u.$set as Record<string, unknown>)?.state;
+        if (setState) {
+          // Find which row by checking existing keys
+          for (const key of Object.keys(rowStates)) {
+            if (rowStates[key]) continue;
+          }
+          // Use a simple counter approach
+          const pendingKeys = ["row-1", "row-2"].filter((k) => (rowStates[k] ?? "PENDING") === "PENDING" || rowStates[k] === "VALID" || rowStates[k] === "WARNING");
+          if (pendingKeys.length > 0) {
+            rowStates[pendingKeys[0]] = setState as string;
+          }
+        }
         return { matchedCount: 1, modifiedCount: 1 };
       },
     },

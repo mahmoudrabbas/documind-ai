@@ -111,7 +111,6 @@ const envSchema = z
     JINA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),
 
     SBG_API_KEY: z.string().default(""),
-    SBG_BASE_URL: z.string().url().default("https://apiaccess.iti.net.eg"),
     BEDROCK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
     BEDROCK_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
     BEDROCK_RETRY_DELAY_MS: z.coerce.number().int().positive().default(1000),
@@ -170,13 +169,6 @@ const envSchema = z
         context.addIssue({
           code: "custom",
           path: ["SBG_API_KEY"],
-          message: "is required when AI_PROVIDER is student-bedrock",
-        });
-      }
-      if (!env.SBG_BASE_URL || env.SBG_BASE_URL.trim() === "") {
-        context.addIssue({
-          code: "custom",
-          path: ["SBG_BASE_URL"],
           message: "is required when AI_PROVIDER is student-bedrock",
         });
       }

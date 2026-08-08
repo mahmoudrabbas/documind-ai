@@ -38,6 +38,21 @@ export class EntitlementService {
     const snapshot = await this.getSnapshotOrThrow(tenantId);
     const limit = await this.getLimit(tenantId, snapshot, dimension);
     const periodKey = await this.getCounterPeriodKey(tenantId);
+
+    if (
+      dimension === "employees" ||
+      dimension === "admins" ||
+      dimension === "documents" ||
+      dimension === "storageMb"
+    ) {
+      try {
+        const { getReconciliationService } = await import("./reconciliation.service.js");
+        await getReconciliationService().reconcile(tenantId, "execute");
+      } catch {
+        // Fallback gracefully if reconciliation cannot run in current context
+      }
+    }
+
     const current = await this.counter.getUsage(tenantId, dimension, periodKey);
 
     return {
