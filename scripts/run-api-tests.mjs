@@ -7,6 +7,7 @@ import { clearTimeout, setTimeout } from "node:timers";
 
 const root = resolve(import.meta.dirname, "..");
 const apiRoot = resolve(root, "api");
+const apiSrcRoot = resolve(apiRoot, "src");
 const require = createRequire(resolve(apiRoot, "package.json"));
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
