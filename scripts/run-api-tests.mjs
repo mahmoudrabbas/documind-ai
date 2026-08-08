@@ -177,29 +177,34 @@ const selectedTests = requestedTests.length > 0
 const requestedVitestTests = requestedTests.filter(isVitestOnlyTest);
 
 let mongo = null;
-let mongodbUri = process.env.MONGODB_URI;
+const baseMongodbUri = process.env.MONGODB_URI;
 
-if (mongodbUri) {
-  try {
-    const parsed = new URL(mongodbUri);
-    parsed.pathname = `/documind-test-${randomUUID()}`;
-    mongodbUri = parsed.toString();
-  } catch {
-    // If MONGODB_URI is not a standard URL, use it as provided
-  }
-} else {
+if (!baseMongodbUri) {
   mongo = await MongoMemoryReplSet.create({
     binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
     replSet: { count: 1 },
     instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
   });
-  mongodbUri = mongo.getUri(`documind-test-${randomUUID()}`);
+}
+
+function getDatabaseUriForFile() {
+  if (baseMongodbUri) {
+    try {
+      const parsed = new URL(baseMongodbUri);
+      parsed.pathname = `/documind-test-${randomUUID()}`;
+      return parsed.toString();
+    } catch {
+      return baseMongodbUri;
+    }
+  }
+  return mongo.getUri(`documind-test-${randomUUID()}`);
 }
 
 let exitCode = 0;
 try {
   for (const testFile of selectedTests) {
-    const result = await runTestFile(testFile, mongodbUri);
+    const fileMongodbUri = getDatabaseUriForFile();
+    const result = await runTestFile(testFile, fileMongodbUri);
     if (result !== 0) {
       exitCode = result;
       break;
@@ -216,7 +221,7 @@ try {
       const child = spawn("vitest", vitestArgs, {
         cwd: apiRoot,
         stdio: "inherit",
-        env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },
+        env: { ...process.env, ...testEnvironment, MONGODB_URI: getDatabaseUriForFile(), PATH: path },
         shell: true,
       });
       child.once("error", (error) => {
