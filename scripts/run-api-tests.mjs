@@ -179,7 +179,15 @@ const requestedVitestTests = requestedTests.filter(isVitestOnlyTest);
 let mongo = null;
 let mongodbUri = process.env.MONGODB_URI;
 
-if (!mongodbUri) {
+if (mongodbUri) {
+  try {
+    const parsed = new URL(mongodbUri);
+    parsed.pathname = `/documind-test-${randomUUID()}`;
+    mongodbUri = parsed.toString();
+  } catch {
+    // If MONGODB_URI is not a standard URL, use it as provided
+  }
+} else {
   mongo = await MongoMemoryReplSet.create({
     binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
     replSet: { count: 1 },
