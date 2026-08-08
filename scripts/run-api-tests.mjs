@@ -137,6 +137,8 @@ const testEnvironment = {
     "test-only-webhook-secret-at-least-32-characters",
   NOTIFICATION_SOCKET_SERVICE_TOKEN:
     "test-only-notification-socket-service-token-at-least-32",
+  BEDROCK_GATEWAY_API_KEY:
+    "test-fake-key-for-ci",
 };
 
 const path = [
