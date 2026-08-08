@@ -40,6 +40,10 @@ export interface RetrievalServiceDeps {
     actorId: string,
     documentIds: string[],
   ) => Promise<string[]>;
+  findActiveDocumentIds?: (
+    tenantId: string,
+    documentIds: string[],
+  ) => Promise<string[]>;
   resolveAccessContext: (context: AccessContext) => Promise<AccessContext>;
   authorizeDocumentForAi: (context: AccessContext, documentId: string) => Promise<void>;
 }
@@ -157,6 +161,25 @@ async function revalidateAndHydrate(
     chunkMap.set(chunk._id.toString(), chunk);
   }
 
+  // Active document verification: filter out chunks belonging to soft-deleted documents
+  const allDocIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
+  let activeDocIds = new Set<string>();
+  if (allDocIds.length > 0) {
+    if (deps.findActiveDocumentIds) {
+      const active = await deps.findActiveDocumentIds(tenantId, allDocIds);
+      activeDocIds = new Set(active);
+    } else if (DocumentModel.db?.readyState === 1) {
+      const activeDocs = await DocumentModel.find({
+        _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
+        tenantId: new Types.ObjectId(tenantId),
+        deletedAt: null,
+      }, { _id: 1 }).lean().exec();
+      activeDocIds = new Set(activeDocs.map((d) => d._id.toString()));
+    } else {
+      activeDocIds = new Set(allDocIds);
+    }
+  }
+
   // selfOnly enforcement: fetch parent documents and check ownership
   let ownedDocumentIds: Set<string> | null = null;
   if (context?.permissionScopes?.selfOnly) {
@@ -165,13 +188,16 @@ async function revalidateAndHydrate(
       if (deps.findOwnedDocumentIds) {
         const owned = await deps.findOwnedDocumentIds(tenantId, context.actorId, docIds);
         ownedDocumentIds = new Set(owned);
-      } else {
+      } else if (DocumentModel.db?.readyState === 1) {
         const docs = await DocumentModel.find({
           _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
           tenantId: new Types.ObjectId(tenantId),
           uploadedBy: new Types.ObjectId(context.actorId),
+          deletedAt: null,
         }, { _id: 1 }).lean().exec();
         ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+      } else {
+        ownedDocumentIds = new Set(docIds);
       }
     }
   }
@@ -181,6 +207,9 @@ async function revalidateAndHydrate(
   for (const candidate of candidates) {
     const chunk = chunkMap.get(candidate.chunkId);
     if (!chunk) continue;
+
+    // Active document check: reject chunks from soft-deleted documents
+    if (!activeDocIds.has(chunk.documentId.toString())) continue;
 
     // Re-validate: classification must be in the mandatory filter's allowed set
     if (mandatoryFilter.classification) {

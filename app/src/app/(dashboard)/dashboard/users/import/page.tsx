@@ -46,10 +46,16 @@ const TARGET_FIELDS = [
   { value: "_skip", label: "(Skip column)" },
 ];
 
-const ROW_STATE_BADGE: Record<ImportRowState, string> = {
+const ROW_STATE_BADGE: Record<string, string> = {
   VALID: "bg-emerald-100 text-emerald-800",
+  CREATED: "bg-emerald-100 text-emerald-800",
+  INVITED: "bg-emerald-100 text-emerald-800",
   WARNING: "bg-amber-100 text-amber-800",
+  SKIPPED: "bg-amber-100 text-amber-800",
   INVALID: "bg-red-100 text-red-800",
+  FAILED: "bg-red-100 text-red-800",
+  PENDING: "bg-slate-100 text-slate-800",
+  PROCESSING: "bg-blue-100 text-blue-800",
 };
 
 function generateIdempotencyKey(): string {

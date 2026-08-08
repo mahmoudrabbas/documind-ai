@@ -22,6 +22,7 @@ import {
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
 import { ConfirmDialog } from "@/components/ui/Modal";
+import { BulkImportModal } from "@/components/users/BulkImportModal";
 
 type Pagination = {
   page: number;
@@ -107,6 +108,7 @@ export default function UsersPage() {
   const filtersInitializedRef = useRef(false);
 
   const [customRoles, setCustomRoles] = useState<RoleView[]>([]);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState<boolean>(false);
 
   const loadRoles = useCallback(async () => {
     if (!canAssignCustomRole) {
@@ -664,15 +666,16 @@ export default function UsersPage() {
             </select>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard/users/import"
+            <button
+              type="button"
+              onClick={() => setIsBulkImportOpen(true)}
               className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
             >
               <span className="material-symbols-outlined text-[18px]">
                 upload_file
               </span>
               Bulk import
-            </Link>
+            </button>
             <Link
               href="/dashboard/users/import/history"
               className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
@@ -868,22 +871,6 @@ export default function UsersPage() {
                               {isResending ? "Resending..." : "Resend"}
                             </button>
                             ) : null}
-                            {isPending && canDeleteUsers ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-warning/40 bg-surface px-3 py-1.5 text-xs font-bold text-warning shadow-sm transition-colors hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isRevoking || isDeleting}
-                              onClick={() =>
-                                setConfirmAction({
-                                  type: "revoke",
-                                  userId: user.id,
-                                  userName: user.name,
-                                })
-                              }
-                            >
-                              {isRevoking ? "Revoking..." : "Revoke"}
-                            </button>
-                            ) : null}
                             {canDeleteUsers ? (
                             <button
                               type="button"
@@ -994,6 +981,13 @@ export default function UsersPage() {
           } else {
             void handleRevokeInvitation(confirmAction.userId);
           }
+        }}
+      />
+      <BulkImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onImportSuccess={() => {
+          void loadUsers(page);
         }}
       />
     </DashboardPage>
