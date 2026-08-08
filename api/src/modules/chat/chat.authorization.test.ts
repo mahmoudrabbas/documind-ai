@@ -61,7 +61,6 @@ test("backend failure remains RETRIEVAL_UNAVAILABLE instead of an authorization 
 test("citations enabled uses the citing system prompt and instructs to always cite", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "What is the protected value?",
   });
@@ -92,7 +91,6 @@ test("citations enabled uses the citing system prompt and instructs to always ci
 test("Arabic language uses Arabic RAG system prompt and context instructions", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "ما هي القيمة المحمية؟",
     language: "ar",
@@ -120,7 +118,6 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
 test("Arabic language with citations disabled uses Arabic no-citations prompt", () => {
   const messages = buildRagMessages({
     citationsEnabled: false,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "ما هي القيمة المحمية؟",
     language: "ar",
@@ -136,7 +133,6 @@ test("Arabic language with citations disabled uses Arabic no-citations prompt", 
 test("mixed language is treated as Arabic context", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "ما هي سياسة vacation؟",
     language: "mixed",
@@ -160,7 +156,6 @@ test("mixed language insufficient evidence returns Arabic response", () => {
 test("citations disabled uses the non-citing system prompt and forbids source mentions", () => {
   const messages = buildRagMessages({
     citationsEnabled: false,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "What is the protected value?",
   });
@@ -176,30 +171,25 @@ test("citations disabled uses the non-citing system prompt and forbids source me
   assert.ok(messages[1].content.includes(SOURCE.text), "retrieved context is still provided");
 });
 
-test("conversation history is replayed into the prompt (last 10 only)", () => {
-  const history = Array.from({ length: 12 }, (_, i) => ({
-    role: "user" as const,
-    content: `message-${i}`,
-  }));
+test("answer generation contains only the current resolved user turn", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: history,
     sources: [],
-    userMessage: "next",
+    userMessage: "Can a full-time employee use annual leave during probation?",
   });
 
-  const historyContents = messages
-    .map((m) => m.content)
-    .filter((c) => c.startsWith("message-"));
-  assert.equal(historyContents.length, 10);
-  assert.equal(historyContents[0], "message-2");
-  assert.equal(historyContents[historyContents.length - 1], "message-11");
+  assert.deepEqual(messages.filter((message) => message.role === "user"), [
+    {
+      role: "user",
+      content: "Can a full-time employee use annual leave during probation?",
+    },
+  ]);
+  assert.equal(messages.some((message) => /EGP 7,500|Department Head/.test(message.content)), false);
 });
 
 test("no context block when no sources are retrieved", () => {
   const messages = buildRagMessages({
     citationsEnabled: false,
-    historyFromDb: [],
     sources: [],
     userMessage: "hello",
   });

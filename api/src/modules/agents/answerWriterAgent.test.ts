@@ -353,15 +353,9 @@ describe("AnswerWriterAgentExecutor", () => {
     assert.equal(call.maxTokens, 1024);
   });
 
-  it("forwards trusted summary, citation, server history, and token settings", async () => {
+  it("forwards trusted summary, citation, and token settings without conversation history", async () => {
     const { deps, generateCalls } = makeDeps();
-    const withHistory = {
-      ...deps,
-      loadHistory: async () => [
-        { role: "user" as const, content: "Earlier question" },
-      ],
-    };
-    await makeExecutor(withHistory).execute(runContext(), {
+    await makeExecutor(deps).execute(runContext(), {
       ...VALID_INPUT,
       task: "document_summary",
       citationsEnabled: false,
@@ -370,14 +364,11 @@ describe("AnswerWriterAgentExecutor", () => {
     const call = generateCalls[0] as {
       task: string;
       citationsEnabled: boolean;
-      historyFromDb: unknown[];
       maxTokens: number;
     };
     assert.equal(call.task, "document_summary");
     assert.equal(call.citationsEnabled, false);
-    assert.deepEqual(call.historyFromDb, [
-      { role: "user", content: "Earlier question" },
-    ]);
+    assert.equal("historyFromDb" in call, false);
     assert.equal(call.maxTokens, 2048);
   });
 

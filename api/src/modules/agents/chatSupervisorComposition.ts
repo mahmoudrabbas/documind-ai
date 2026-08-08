@@ -34,8 +34,6 @@ import {
   registerAuthorizedRetrievalTools,
   type AuthorizedRetrievalDependencies,
 } from "./tools/authorizedRetrievalTools.js";
-import * as chatRepo from "../chat/chat.repository.js";
-import { safeHistoryForRag } from "../chat/chat.history.js";
 
 export interface ProductionChatSupervisorDependencies {
   readonly model: ModelAdapter;
@@ -82,10 +80,6 @@ export function createProductionChatSupervisorComposition(
   registerAnswerWriterAgentExecutor(executorRegistry, {
     ...evidenceDependencies,
     answerWriter: new AnswerWriterService(deps.model),
-    loadHistory: async (tenantId, conversationId) =>
-      safeHistoryForRag(
-        await chatRepo.getConversationHistory(tenantId, conversationId, 20),
-      ),
   });
   registerCitationVerificationAgentExecutor(
     executorRegistry,

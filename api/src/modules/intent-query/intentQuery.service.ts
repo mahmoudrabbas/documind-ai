@@ -287,8 +287,7 @@ export class IntentQueryService {
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
     ];
-    let isFollowUp = false;
-    let contextUsed = false;
+    let conversationHistoryAvailable = false;
 
     if (input.conversationId) {
       try {
@@ -308,9 +307,6 @@ export class IntentQueryService {
         }
 
         if (history.length > 0) {
-          isFollowUp = true;
-          contextUsed = true;
-
           // Limit context by character size (max 8000 characters)
           let totalLength = 0;
           const fitHistory = [];
@@ -323,6 +319,7 @@ export class IntentQueryService {
             fitHistory.unshift(msg);
             totalLength += msg.content.length;
           }
+          conversationHistoryAvailable = fitHistory.length > 0;
 
           // Add history to system prompt execution context
           for (const msg of fitHistory) {
@@ -587,8 +584,41 @@ export class IntentQueryService {
       // Set confidence rules
       const rawConfidence = typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0.8;
       const detectedIntent = (rawOutput.detectedIntent as string) || "knowledge_question";
+      const isFollowUp =
+        conversationHistoryAvailable && detectedIntent === "follow_up";
+      const normalizedQuestion =
+        typeof rawOutput.normalizedQuestion === "string"
+          ? rawOutput.normalizedQuestion.trim()
+          : "";
       let clarificationNeeded = !!rawOutput.clarificationNeeded;
       let clarification = rawOutput.clarification || null;
+
+      // A follow-up is safe to retrieve only after the intent model has
+      // resolved it into a standalone question. Merely having prior messages
+      // does not make a self-contained turn a follow-up. If context is missing
+      // or resolution failed, clarify instead of searching with a vague or
+      // contaminated transcript-derived query.
+      if (detectedIntent === "follow_up" && !conversationHistoryAvailable) {
+        clarificationNeeded = true;
+        clarification = {
+          reason: "missing_context",
+          suggestedQuestions: [input.question],
+          messageEn: "Could you restate the question with the subject you mean?",
+          messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
+        };
+      } else if (
+        isFollowUp &&
+        (!normalizedQuestion ||
+          normalizedQuestion === input.question.trim())
+      ) {
+        clarificationNeeded = true;
+        clarification = {
+          reason: "missing_context",
+          suggestedQuestions: [input.question],
+          messageEn: "Could you restate the question with the subject you mean?",
+          messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
+        };
+      }
 
       if (rawConfidence < 0.5 || detectedIntent === "unsupported") {
         clarificationNeeded = true;
@@ -606,7 +636,47 @@ export class IntentQueryService {
       rawOutput.clarificationNeeded = clarificationNeeded;
       rawOutput.clarification = clarification;
       rawOutput.isFollowUp = isFollowUp;
-      rawOutput.conversationContextUsed = contextUsed;
+      rawOutput.conversationContextUsed = isFollowUp;
+
+      if (isFollowUp && normalizedQuestion) {
+        const existingSemanticQueries = Array.isArray(rawOutput.semanticQueries)
+          ? rawOutput.semanticQueries
+          : [];
+        rawOutput.semanticQueries = [
+          { text: normalizedQuestion, language, weight: 1 },
+          ...existingSemanticQueries.filter(
+            (query) =>
+              typeof query === "object" &&
+              query !== null &&
+              typeof (query as { text?: unknown }).text === "string" &&
+              (query as { text?: unknown }).text !== normalizedQuestion,
+          ),
+        ].slice(0, 10);
+      } else {
+        // History is not allowed to alter a self-contained turn's executable
+        // retrieval plan. Rebuild it from the current message and explicit
+        // request-local document constraints, discarding any model fields that
+        // may have been inferred from unrelated prior messages.
+        const currentExpansion = expandBilingual(
+          input.question,
+          language,
+          localEntities,
+        );
+        rawOutput.normalizedQuestion = input.question.trim();
+        rawOutput.semanticQueries = currentExpansion.semanticQueries;
+        rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        rawOutput.referencedDocumentIds =
+          deterministicTitleHints.length > 0
+            ? hints.referencedDocumentIds
+            : (input.referencedDocumentIds ?? []);
+        rawOutput.referencedDocumentTitles =
+          deterministicTitleHints.length > 0
+            ? hints.referencedDocumentTitles
+            : [];
+        if (deterministicTitleHints.length === 0) {
+          titleClarificationNeeded = false;
+        }
+      }
 
       validatedPlan = validateAndNormalizeQueryPlan(
         rawOutput,
@@ -651,8 +721,8 @@ export class IntentQueryService {
           keywordQueries: expansion.keywordQueries,
           clarificationNeeded: false,
           clarification: null,
-          isFollowUp,
-          conversationContextUsed: contextUsed,
+          isFollowUp: false,
+          conversationContextUsed: false,
           referencedDocumentIds: fallbackHints.referencedDocumentIds,
           referencedDocumentTitles: fallbackHints.referencedDocumentTitles,
         },

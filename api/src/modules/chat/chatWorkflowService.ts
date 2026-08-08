@@ -278,6 +278,7 @@ const INTENT_OUTPUT_FIELDS = [
   "clarification",
   "socialSubtype",
   "isFollowUp",
+  "conversationContextUsed",
   "reasonCode",
   "semanticQueries",
   "keywordQueries",
@@ -602,11 +603,11 @@ function createChatRuntimePolicy(input: {
         }
         const task = detectAnswerTask(
           { detectedIntent: intent.intent },
-          input.question,
+          intent.normalizedQuestion,
         );
         resolved = {
           conversationId: input.conversationId,
-          question: input.question,
+          question: intent.normalizedQuestion,
           language: intent.language,
           approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
           referencedDocumentIds: unique([
@@ -724,11 +725,10 @@ function createChatRuntimePolicy(input: {
           ...intent.referencedDocumentIds,
           ...artifacts.resolvedDocumentIds,
         ]);
-        const queryText =
-          intent.semanticQueries[0]?.text ?? intent.normalizedQuestion ?? input.question;
+        const queryText = intent.normalizedQuestion;
         const task = detectAnswerTask(
           { detectedIntent: intent.intent },
-          input.question,
+          intent.normalizedQuestion,
         );
         return {
           queryText,
@@ -1004,6 +1004,11 @@ export class ChatWorkflowService {
           conversationId,
           sourceCount: persisted.length,
           reasonCode: terminal.reasonCode,
+          isFollowUp: artifacts.intent?.isFollowUp ?? false,
+          conversationContextUsed:
+            artifacts.intent?.conversationContextUsed ?? false,
+          historyMessagesSuppliedToWriter: 0,
+          retrievalUsedNormalizedQuestion: true,
           runId: run.id,
           traceId,
           requestId,

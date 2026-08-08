@@ -60,15 +60,6 @@ export interface AnswerWriterAgentDependencies {
    * trusts that approved evidence ids remain authorized.
    */
   readonly authorization: DocumentAccessAuthorizationService;
-  /**
-   * Loads the bounded, replay-safe conversation history server-side. History
-   * is deliberately absent from the handoff contract so it is never persisted
-   * in AgentStep input or proposed by the Supervisor model.
-   */
-  readonly loadHistory?: (
-    tenantId: string,
-    conversationId: string,
-  ) => Promise<Array<{ role: "user" | "assistant"; content: string }>>;
 }
 
 /**
@@ -169,27 +160,12 @@ export class AnswerWriterAgentExecutor implements AgentContract {
         };
       }
 
-      let historyFromDb: Array<{
-        role: "user" | "assistant";
-        content: string;
-      }> = [];
-      try {
-        historyFromDb =
-          (await this.deps.loadHistory?.(
-            context.tenantId,
-            agentInput.conversationId,
-          )) ?? [];
-      } catch {
-        // History is contextual only; generation remains evidence-authoritative.
-      }
-
       const generated = await this.deps.answerWriter.generate({
         conversationId: agentInput.conversationId,
         question: agentInput.question,
         language: agentInput.language ?? "en",
         task: agentInput.task,
         citationsEnabled: agentInput.citationsEnabled,
-        historyFromDb,
         evidence,
         maxTokens: agentInput.maxTokens,
       });

@@ -347,7 +347,6 @@ test("CivicOps regression: multiline 10-point grounded summary is usable and nev
 test("J: English evidence embeds id and doc anchors in every source header", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: SOURCES,
     userMessage: "Summarize the civic ops in 10 points.",
   });
@@ -368,7 +367,6 @@ test("J: English evidence embeds id and doc anchors in every source header", () 
 test("K: Arabic evidence embeds id and doc anchors in every source header", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: SOURCES,
     userMessage: "لخص ملف civic ops",
     language: "ar",

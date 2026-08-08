@@ -79,6 +79,10 @@ interface HarnessOptions {
   authorizationReject?: boolean;
   missingPersistedActor?: boolean;
   intentLanguage?: "ar" | "en";
+  intentNormalizedQuestion?: string;
+  intentSemanticQuery?: string;
+  intentIsFollowUp?: boolean;
+  conversationContextUsed?: boolean;
   analyticsResult?: unknown;
   persistedActor?: Partial<{
     tenantId: string;
@@ -94,12 +98,16 @@ function intentOutput(
   referencedDocumentIds: string[] = [],
   referencedDocumentTitles: string[] = [],
   language: "ar" | "en" = "en",
+  normalizedQuestion = "trusted normalized question",
+  semanticQuery = "trusted semantic query",
+  isFollowUp = false,
+  conversationContextUsed = false,
 ): Record<string, unknown> {
   const intentRoute = ["analytics", "grounded", "insufficient", "weak"].includes(route)
     ? "rag"
     : route;
   return {
-    normalizedQuestion: "trusted normalized question",
+    normalizedQuestion,
     language,
     route: intentRoute,
     intent: intentRoute === "social" ? "social" : "knowledge_question",
@@ -116,9 +124,10 @@ function intentOutput(
           }
         : null,
     ...(intentRoute === "social" ? { socialSubtype: "greeting" } : {}),
-    isFollowUp: false,
+    isFollowUp,
+    conversationContextUsed,
     reasonCode: "TRUSTED_INTENT",
-    semanticQueries: [{ text: "trusted semantic query", language: "en", weight: 1 }],
+    semanticQueries: [{ text: semanticQuery, language: "en", weight: 1 }],
     keywordQueries: [],
     exactTerms: [],
     entities: [],
@@ -233,6 +242,10 @@ function makeHarness(options: HarnessOptions = {}) {
           options.intentReferencedDocumentIds,
           options.intentReferencedDocumentTitles,
           options.intentLanguage,
+          options.intentNormalizedQuestion,
+          options.intentSemanticQuery,
+          options.intentIsFollowUp,
+          options.conversationContextUsed,
         ),
       };
 
@@ -810,7 +823,9 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
   });
 
   it("uses summary retrieval/generation settings for summary questions", async () => {
-    const harness = makeHarness();
+    const harness = makeHarness({
+      intentNormalizedQuestion: "Summarize the policy in detail",
+    });
     await executeHarness(harness, "Summarize the policy in detail");
     expect(harness.observations.tools[0].input.topK).toBe(12);
     const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
@@ -846,12 +861,12 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     expect(harness.observations.complianceInput).not.toHaveProperty("candidates");
   });
 
-  it("uses trusted semantic query and server topK for search", async () => {
+  it("uses the standalone normalized question and server topK for search", async () => {
     const harness = makeHarness();
     await executeHarness(harness);
     expect(harness.observations.tools[0]).toEqual({
       name: "authorized_hybrid_search",
-      input: { queryText: "trusted semantic query", topK: 5 },
+      input: { queryText: "trusted normalized question", topK: 5 },
     });
   });
 
@@ -868,7 +883,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     });
     await executeHarness(harness);
     expect(harness.observations.tools[0].input).toEqual({
-      queryText: "trusted semantic query",
+      queryText: "trusted normalized question",
       topK: 5,
       documentIds: [documentA],
     });
@@ -881,6 +896,92 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
       name: "evaluate_evidence",
       input: { question: "trusted normalized question", candidateIds: [chunkA, chunkB] },
     });
+  });
+
+  it("isolates a self-contained probation turn from a previous expense topic", async () => {
+    const resolved = "Can an employee use annual leave during probation?";
+    const harness = makeHarness({
+      intentNormalizedQuestion: resolved,
+      intentSemanticQuery: "Who approves an expense of EGP 7,500?",
+      searchCandidates: [
+        { chunkId: chunkB, documentId: documentB, documentVersionId: versionB, score: 0.93, pageNumber: 4 },
+      ],
+      approvedIds: [chunkB],
+      writerCitations: [chunkB],
+      verifierIds: [chunkB],
+      complianceSourceIds: [chunkB],
+      complianceAnswer: "Annual leave cannot be used during probation.",
+    });
+
+    const response = await executeHarness(harness, resolved);
+    const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
+    expect(harness.observations.tools[0]?.input.queryText).toBe(resolved);
+    expect(writer?.payload).toMatchObject({ question: resolved, approvedEvidenceIds: [chunkB] });
+    expect(writer?.payload).not.toHaveProperty("historyFromDb");
+    expect(response.answer).not.toMatch(/EGP 7,500|Department Head/i);
+    expect(response.sources?.map((source) => source.chunkId)).toEqual([chunkB]);
+  });
+
+  it("isolates a self-contained expense turn from a previous probation topic", async () => {
+    const resolved = "Who approves an expense of EGP 7,500?";
+    const harness = makeHarness({
+      intentNormalizedQuestion: resolved,
+      intentSemanticQuery: "Can an employee use annual leave during probation?",
+      searchCandidates: [
+        { chunkId: chunkA, documentId: documentA, documentVersionId: versionA, score: 0.94, pageNumber: 3 },
+      ],
+      approvedIds: [chunkA],
+      writerCitations: [chunkA],
+      verifierIds: [chunkA],
+      complianceSourceIds: [chunkA],
+      complianceAnswer: "The Department Head approves an expense of EGP 7,500.",
+    });
+
+    const response = await executeHarness(harness, resolved);
+    const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
+    expect(harness.observations.tools[0]?.input.queryText).toBe(resolved);
+    expect(writer?.payload).toMatchObject({ question: resolved, approvedEvidenceIds: [chunkA] });
+    expect(response.answer).not.toMatch(/annual leave|probation/i);
+    expect(response.sources?.map((source) => source.chunkId)).toEqual([chunkA]);
+  });
+
+  it("uses a standalone resolved question for a genuine probation follow-up", async () => {
+    const resolved = "Can a full-time employee use annual leave during probation?";
+    const harness = makeHarness({
+      intentNormalizedQuestion: resolved,
+      intentIsFollowUp: true,
+      conversationContextUsed: true,
+      approvedIds: [chunkB],
+      writerCitations: [chunkB],
+      verifierIds: [chunkB],
+      complianceSourceIds: [chunkB],
+    });
+
+    await executeHarness(harness, "What about during probation?");
+    const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
+    expect(harness.observations.tools[0]?.input.queryText).toBe(resolved);
+    expect(harness.observations.tools[1]?.input.question).toBe(resolved);
+    expect(writer?.payload.question).toBe(resolved);
+    expect(writer?.payload).not.toHaveProperty("historyFromDb");
+  });
+
+  it("uses a standalone resolved question for a referential amount follow-up", async () => {
+    const resolved = "Who approves an expense of EGP 15,000?";
+    const harness = makeHarness({
+      intentNormalizedQuestion: resolved,
+      intentIsFollowUp: true,
+      conversationContextUsed: true,
+      approvedIds: [chunkA],
+      writerCitations: [chunkA],
+      verifierIds: [chunkA],
+      complianceSourceIds: [chunkA],
+    });
+
+    await executeHarness(harness, "What about EGP 15,000?");
+    const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
+    expect(harness.observations.tools[0]?.input.queryText).toBe(resolved);
+    expect(harness.observations.tools[1]?.input.question).toBe(resolved);
+    expect(writer?.payload.question).toBe(resolved);
   });
 
   it("fails closed when evidence approves an ID outside this run's candidates", async () => {
@@ -1248,7 +1349,10 @@ describe("ChatWorkflowService controlled short paths", () => {
   });
 
   it("uses the Arabic summary task and reviewed summary budgets", async () => {
-    const harness = makeHarness({ intentLanguage: "ar" });
+    const harness = makeHarness({
+      intentLanguage: "ar",
+      intentNormalizedQuestion: "لخص سياسة العمل عن بعد بالتفصيل",
+    });
     await executeHarness(harness, "لخص سياسة العمل عن بعد بالتفصيل");
     expect(harness.observations.tools[0]?.input.topK).toBe(12);
     const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
@@ -1294,7 +1398,7 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(harness.observations.tools[1]).toEqual({
       name: "authorized_hybrid_search",
       input: {
-        queryText: "trusted semantic query",
+        queryText: "trusted normalized question",
         topK: 5,
         documentIds: [documentA],
       },

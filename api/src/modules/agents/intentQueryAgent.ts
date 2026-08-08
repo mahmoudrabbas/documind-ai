@@ -51,6 +51,7 @@ export function mapQueryPlanToAgentOutput(plan: QueryPlan): IntentAgentOutput {
     clarificationNeeded: plan.clarificationNeeded,
     clarification: plan.clarification,
     isFollowUp: plan.isFollowUp,
+    conversationContextUsed: plan.conversationContextUsed,
     reasonCode: INTENT_QUERY_ROUTE_REASON_CODES[route],
     semanticQueries: retrievable ? plan.semanticQueries : [],
     keywordQueries: retrievable ? plan.keywordQueries : [],

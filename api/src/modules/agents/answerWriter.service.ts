@@ -81,13 +81,12 @@ function ragContextInstruction(
 
 export function buildRagMessages(options: {
   citationsEnabled: boolean;
-  historyFromDb: Array<{ role: "user" | "assistant"; content: string }>;
   sources: ChatSource[];
   userMessage: string;
   task?: AnswerTask;
   language?: QueryLanguageValue;
 }): { role: "system" | "user" | "assistant"; content: string }[] {
-  const { citationsEnabled, historyFromDb, sources, userMessage, task = "direct_question", language = "en" } = options;
+  const { citationsEnabled, sources, userMessage, task = "direct_question", language = "en" } = options;
 
   let systemPrompt: string;
   if (isArabicContext(language) && task !== "document_summary") {
@@ -105,12 +104,6 @@ export function buildRagMessages(options: {
         content: systemPrompt,
       },
     ];
-
-  if (historyFromDb.length > 0) {
-    for (const msg of historyFromDb.slice(-10)) {
-      messages.push({ role: msg.role, content: msg.content });
-    }
-  }
 
   if (sources.length > 0) {
     const useAr = isArabicContext(language);
@@ -152,7 +145,6 @@ export interface AnswerWriterServiceOptions {
   language?: QueryLanguageValue;
   task?: AnswerTask;
   citationsEnabled: boolean;
-  historyFromDb?: Array<{ role: "user" | "assistant"; content: string }>;
   evidence: readonly AnswerWriterEvidenceItem[];
   maxTokens: number;
 }
@@ -251,7 +243,6 @@ export class AnswerWriterService {
       language = "en",
       task = "direct_question",
       citationsEnabled,
-      historyFromDb = [],
       evidence,
       maxTokens,
     } = options;
@@ -268,7 +259,6 @@ export class AnswerWriterService {
 
     const messages = buildRagMessages({
       citationsEnabled,
-      historyFromDb,
       sources,
       userMessage: question,
       task,

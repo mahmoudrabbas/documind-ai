@@ -146,7 +146,13 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
       const intentConfidence = 0.95;
       let clarificationNeeded = false;
       let clarification = null;
-      const isFollowUp = params.messages.length > 2; // system prompt + user question = length 2, anything more is context history
+      const priorMessages = params.messages.slice(1, -1);
+      const hasConversationContext = priorMessages.length > 0;
+      const hasContextDependentReference =
+        /^(?:and\s+)?(?:what|how)\s+about\b|\b(?:it|that|those|they|them|the same)\b/i.test(
+          question.trim(),
+        );
+      const isFollowUp = hasConversationContext && hasContextDependentReference;
 
       if (/unsafe|hack|ignore\s+previous|system\s+prompt/i.test(question)) {
         detectedIntent = "unsafe";
@@ -167,15 +173,25 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
         detectedIntent = "navigation";
       } else if (lowerQ.includes("upload") || lowerQ.includes("delete") || lowerQ.includes("حذف")) {
         detectedIntent = "administrative_action";
+      } else if (isFollowUp) {
+        detectedIntent = "follow_up";
       }
 
       const isArabic = /[\u0600-\u06FF]/.test(question);
       const language = isArabic ? "ar" : "en";
       const social = detectSocialMessage(question);
 
+      const priorUserQuestion = [...priorMessages]
+        .reverse()
+        .find((message) => message.role === "user")?.content;
+      const normalizedQuestion =
+        isFollowUp && priorUserQuestion
+          ? `Regarding ${priorUserQuestion.replace(/[?.!]+$/, "")}, ${question.trim()}`
+          : question.trim();
+
       const simulatedPlan = {
         schemaVersion: "1.0.0",
-        normalizedQuestion: question.trim(),
+        normalizedQuestion,
         originalQuestion: question,
         language,
         detectedIntent,
@@ -192,7 +208,7 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
         categories: [],
         exactTerms: [],
         semanticQueries: detectedIntent === "social" ? [] : [
-          { text: question, language, weight: 1.0 }
+          { text: normalizedQuestion, language, weight: 1.0 }
         ],
         keywordQueries: [],
         clarificationNeeded,

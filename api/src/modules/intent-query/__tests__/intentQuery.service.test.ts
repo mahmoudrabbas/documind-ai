@@ -50,6 +50,55 @@ let companyAdminContext: OperationAuthorizationContext;
 let fakeConvoAdapter: FakeConversationContextAdapter;
 let service: IntentQueryService;
 
+function scriptedIntentModel(
+  resolve: (question: string) => {
+    detectedIntent: "knowledge_question" | "follow_up";
+    normalizedQuestion: string;
+  },
+): ModelAdapter {
+  return {
+    providerKey: "scripted-intent",
+    async complete(params) {
+      const question = [...params.messages]
+        .reverse()
+        .find((message) => message.role === "user")?.content ?? "";
+      const resolution = resolve(question);
+      return {
+        id: "scripted-intent-1",
+        provider: "scripted-intent",
+        model: "scripted-intent",
+        choices: [{
+          index: 0,
+          finishReason: "stop",
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              ...resolution,
+              intentConfidence: 0.99,
+              language: "en",
+              entities: [],
+              exactTerms: [],
+              semanticQueries: [{
+                text: resolution.normalizedQuestion,
+                language: "en",
+                weight: 1,
+              }],
+              keywordQueries: [],
+              referencedDocumentIds: [],
+              referencedDocumentTitles: [],
+              clarificationNeeded: false,
+              clarification: null,
+            }),
+          },
+        }],
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        latencyMs: 1,
+        estimatedCost: 0,
+      };
+    },
+  };
+}
+
 async function createTestDocWithPolicy(
   forTenantId: string,
   userId: string,
@@ -287,6 +336,92 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
 
     assert.equal(plan.isFollowUp, true);
     assert.equal(plan.conversationContextUsed, true);
+  });
+
+  await t.test("does not classify a self-contained turn as a follow-up merely because history exists", async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    const question = "Can an employee use annual leave during probation?";
+    fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+      { role: "user", content: "Who approves an expense of EGP 7,500?", timestamp: new Date().toISOString() },
+      { role: "assistant", content: "The Department Head approves it.", timestamp: new Date().toISOString() },
+      { role: "user", content: question, timestamp: new Date().toISOString() },
+    ]);
+    const isolatedService = new IntentQueryService(
+      scriptedIntentModel((current) => ({
+        detectedIntent: "knowledge_question",
+        normalizedQuestion: `Who approves an expense of EGP 7,500? ${current}`,
+      })),
+      fakeConvoAdapter,
+    );
+
+    const plan = await isolatedService.analyzeQuery(
+      {
+        question,
+        conversationId,
+        currentMessageAlreadyPersisted: true,
+      },
+      companyAdminContext,
+    );
+
+    assert.equal(plan.isFollowUp, false);
+    assert.equal(plan.conversationContextUsed, false);
+    assert.equal(plan.normalizedQuestion, question);
+    assert.equal(plan.semanticQueries[0]?.text, question);
+  });
+
+  await t.test("resolves a genuine probation follow-up into a standalone retrieval question", async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    const question = "What about during probation?";
+    const resolved = "Can a full-time employee use annual leave during probation?";
+    fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+      { role: "user", content: "How many annual leave days does a full-time employee receive?", timestamp: new Date().toISOString() },
+      { role: "assistant", content: "Full-time employees receive 25 days.", timestamp: new Date().toISOString() },
+      { role: "user", content: question, timestamp: new Date().toISOString() },
+    ]);
+    const isolatedService = new IntentQueryService(
+      scriptedIntentModel(() => ({
+        detectedIntent: "follow_up",
+        normalizedQuestion: resolved,
+      })),
+      fakeConvoAdapter,
+    );
+
+    const plan = await isolatedService.analyzeQuery(
+      { question, conversationId, currentMessageAlreadyPersisted: true },
+      companyAdminContext,
+    );
+
+    assert.equal(plan.isFollowUp, true);
+    assert.equal(plan.conversationContextUsed, true);
+    assert.equal(plan.normalizedQuestion, resolved);
+    assert.equal(plan.semanticQueries[0]?.text, resolved);
+  });
+
+  await t.test("resolves a referential amount follow-up into a standalone retrieval question", async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    const question = "What about EGP 15,000?";
+    const resolved = "Who approves an expense of EGP 15,000?";
+    fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+      { role: "user", content: "Who approves an expense of EGP 7,500?", timestamp: new Date().toISOString() },
+      { role: "assistant", content: "The Department Head approves it.", timestamp: new Date().toISOString() },
+      { role: "user", content: question, timestamp: new Date().toISOString() },
+    ]);
+    const isolatedService = new IntentQueryService(
+      scriptedIntentModel(() => ({
+        detectedIntent: "follow_up",
+        normalizedQuestion: resolved,
+      })),
+      fakeConvoAdapter,
+    );
+
+    const plan = await isolatedService.analyzeQuery(
+      { question, conversationId, currentMessageAlreadyPersisted: true },
+      companyAdminContext,
+    );
+
+    assert.equal(plan.isFollowUp, true);
+    assert.equal(plan.normalizedQuestion, resolved);
+    assert.equal(plan.semanticQueries[0]?.text, resolved);
   });
 
   await t.test("does not inject the already-persisted current chat message twice", async () => {
