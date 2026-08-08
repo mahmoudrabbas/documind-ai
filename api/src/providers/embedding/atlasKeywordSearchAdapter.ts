@@ -9,9 +9,13 @@ const COLLECTION_NAME = "documentchunks";
 export function buildAtlasKeywordCompoundFilter(filter: AdapterFilter): Document[] {
   const compoundFilter: Document[] = [{ in: { path: "tenantId", value: [new ObjectId(filter.tenantId)] } }];
   if (filter.documentIds?.length) compoundFilter.push({ in: { path: "documentId", value: filter.documentIds.map((id) => new ObjectId(id)) } });
-  if (filter.classification) compoundFilter.push({ in: { path: "classification", value: filter.classification.$in } });
-  if (filter.department) compoundFilter.push({ in: { path: "department", value: filter.department.$in } });
-  if (filter.category) compoundFilter.push({ in: { path: "category", value: filter.category.$in } });
+  // These fields are deployed as analyzed `string` mappings, not `token`
+  // mappings. Atlas `in` only performs exact string filtering on token fields;
+  // a `text` clause in compound.filter matches the deployed mapping without
+  // contributing to score.
+  if (filter.classification) compoundFilter.push({ text: { path: "classification", query: filter.classification.$in } });
+  if (filter.department) compoundFilter.push({ text: { path: "department", query: filter.department.$in } });
+  if (filter.category) compoundFilter.push({ text: { path: "category", query: filter.category.$in } });
   return compoundFilter;
 }
 

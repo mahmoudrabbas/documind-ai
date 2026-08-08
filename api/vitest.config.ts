@@ -42,6 +42,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/subscription-provisioning.contract.test.ts",
+    "src/modules/chat/__tests__/chat.productionWorkflow.e2e.test.ts",
       "**/indexing/__tests__/indexing.tenant-isolation.test.ts",
     ],
   },

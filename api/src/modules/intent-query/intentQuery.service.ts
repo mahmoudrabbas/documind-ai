@@ -12,7 +12,10 @@ import { detectLanguage } from "./intentQuery.languageDetector.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
-import { resolveAuthorizedDocumentHints } from "./intentQuery.documentHints.js";
+import {
+  extractNaturalDocumentTitleHints,
+  resolveAuthorizedDocumentHints,
+} from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
 import { INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
@@ -87,6 +90,7 @@ export class IntentQueryService {
     const language = detectLanguage(input.question);
     const localEntities = extractEntities(input.question, language);
     const localTemporalConstraints = extractTemporalConstraints(input.question);
+    const deterministicTitleHints = extractNaturalDocumentTitleHints(input.question);
 
     // Check for prompt injections/unsafe inputs upfront deterministically
     const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
@@ -283,22 +287,26 @@ export class IntentQueryService {
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
     ];
-    let isFollowUp = false;
-    let contextUsed = false;
+    let conversationHistoryAvailable = false;
 
     if (input.conversationId) {
       try {
-        const history = await this.conversationContextAdapter.getContext(
+        const storedHistory = await this.conversationContextAdapter.getContext(
           tenantIdStr,
           actor.actorId,
           input.conversationId,
           input.maxContext
         );
+        const history = [...storedHistory];
+        if (
+          input.currentMessageAlreadyPersisted &&
+          history.at(-1)?.role === "user" &&
+          history.at(-1)?.content.trim() === input.question.trim()
+        ) {
+          history.pop();
+        }
 
         if (history.length > 0) {
-          isFollowUp = true;
-          contextUsed = true;
-
           // Limit context by character size (max 8000 characters)
           let totalLength = 0;
           const fitHistory = [];
@@ -311,6 +319,7 @@ export class IntentQueryService {
             fitHistory.unshift(msg);
             totalLength += msg.content.length;
           }
+          conversationHistoryAvailable = fitHistory.length > 0;
 
           // Add history to system prompt execution context
           for (const msg of fitHistory) {
@@ -523,12 +532,19 @@ export class IntentQueryService {
       const llmTitleHints = Array.isArray(rawOutput.referencedDocumentTitles)
         ? (rawOutput.referencedDocumentTitles as string[])
         : [];
+      // A clear, explicitly marked natural-language document reference is
+      // request-local and deterministic. Prefer it over provider wording so
+      // identical requests cannot alternately constrain different documents
+      // (or lose the constraint entirely) as model output varies.
+      const titleHints = deterministicTitleHints.length > 0
+        ? deterministicTitleHints
+        : llmTitleHints;
 
       const hints = await resolveAuthorizedDocumentHints(mergedOutputIds, {
         tenantId: tenantIdStr,
         actorId: actor.actorId,
         tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
-      }, llmTitleHints);
+      }, titleHints);
       rawOutput.referencedDocumentIds = hints.referencedDocumentIds;
       rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
 
@@ -536,7 +552,7 @@ export class IntentQueryService {
       // a title hint that resolves to more than one authorized document, or to
       // none at all, is a signal to clarify — never fabricate a match.
       if (
-        llmTitleHints.length > 0 &&
+        titleHints.length > 0 &&
         (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
       ) {
         titleClarificationNeeded = true;
@@ -568,8 +584,41 @@ export class IntentQueryService {
       // Set confidence rules
       const rawConfidence = typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0.8;
       const detectedIntent = (rawOutput.detectedIntent as string) || "knowledge_question";
+      const isFollowUp =
+        conversationHistoryAvailable && detectedIntent === "follow_up";
+      const normalizedQuestion =
+        typeof rawOutput.normalizedQuestion === "string"
+          ? rawOutput.normalizedQuestion.trim()
+          : "";
       let clarificationNeeded = !!rawOutput.clarificationNeeded;
       let clarification = rawOutput.clarification || null;
+
+      // A follow-up is safe to retrieve only after the intent model has
+      // resolved it into a standalone question. Merely having prior messages
+      // does not make a self-contained turn a follow-up. If context is missing
+      // or resolution failed, clarify instead of searching with a vague or
+      // contaminated transcript-derived query.
+      if (detectedIntent === "follow_up" && !conversationHistoryAvailable) {
+        clarificationNeeded = true;
+        clarification = {
+          reason: "missing_context",
+          suggestedQuestions: [input.question],
+          messageEn: "Could you restate the question with the subject you mean?",
+          messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
+        };
+      } else if (
+        isFollowUp &&
+        (!normalizedQuestion ||
+          normalizedQuestion === input.question.trim())
+      ) {
+        clarificationNeeded = true;
+        clarification = {
+          reason: "missing_context",
+          suggestedQuestions: [input.question],
+          messageEn: "Could you restate the question with the subject you mean?",
+          messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
+        };
+      }
 
       if (rawConfidence < 0.5 || detectedIntent === "unsupported") {
         clarificationNeeded = true;
@@ -587,7 +636,55 @@ export class IntentQueryService {
       rawOutput.clarificationNeeded = clarificationNeeded;
       rawOutput.clarification = clarification;
       rawOutput.isFollowUp = isFollowUp;
-      rawOutput.conversationContextUsed = contextUsed;
+      rawOutput.conversationContextUsed = isFollowUp;
+
+      if (isFollowUp && normalizedQuestion) {
+        const existingSemanticQueries = Array.isArray(rawOutput.semanticQueries)
+          ? rawOutput.semanticQueries
+          : [];
+        rawOutput.semanticQueries = [
+          { text: normalizedQuestion, language, weight: 1 },
+          ...existingSemanticQueries.filter(
+            (query) =>
+              typeof query === "object" &&
+              query !== null &&
+              typeof (query as { text?: unknown }).text === "string" &&
+              (query as { text?: unknown }).text !== normalizedQuestion,
+          ),
+        ].slice(0, 10);
+      } else {
+        // History is not allowed to alter a self-contained turn's executable
+        // retrieval plan. Rebuild it from the current message and explicit
+        // request-local document constraints. A fresh conversation has no
+        // prior messages from which model document hints could have leaked, so
+        // its revalidated model hints remain current-turn hints. Once history
+        // exists, only deterministic title hints or explicit request IDs are
+        // retained; other model fields are discarded as potentially
+        // history-derived.
+        const retainCurrentTurnDocumentHints =
+          !conversationHistoryAvailable ||
+          deterministicTitleHints.length > 0 ||
+          (input.referencedDocumentIds?.length ?? 0) > 0;
+        const currentExpansion = expandBilingual(
+          input.question,
+          language,
+          localEntities,
+        );
+        rawOutput.normalizedQuestion = input.question.trim();
+        rawOutput.semanticQueries = currentExpansion.semanticQueries;
+        rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        rawOutput.referencedDocumentIds =
+          retainCurrentTurnDocumentHints
+            ? hints.referencedDocumentIds
+            : (input.referencedDocumentIds ?? []);
+        rawOutput.referencedDocumentTitles =
+          retainCurrentTurnDocumentHints
+            ? hints.referencedDocumentTitles
+            : [];
+        if (!retainCurrentTurnDocumentHints) {
+          titleClarificationNeeded = false;
+        }
+      }
 
       validatedPlan = validateAndNormalizeQueryPlan(
         rawOutput,
@@ -604,6 +701,21 @@ export class IntentQueryService {
       // Deterministic fallback execution
       const expansion = expandBilingual(input.question, language, localEntities);
       const exactTerms = localEntities.filter(e => e.preserveExact).map(e => e.text);
+      const fallbackHints = await resolveAuthorizedDocumentHints(
+        input.referencedDocumentIds ?? [],
+        {
+          tenantId: tenantIdStr,
+          actorId: actor.actorId,
+          tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
+        },
+        deterministicTitleHints,
+      );
+      if (
+        deterministicTitleHints.length > 0 &&
+        (fallbackHints.ambiguousTitleMatches || fallbackHints.unresolvedTitleHints.length > 0)
+      ) {
+        titleClarificationNeeded = true;
+      }
 
       validatedPlan = validateAndNormalizeQueryPlan(
         {
@@ -615,16 +727,12 @@ export class IntentQueryService {
           exactTerms,
           semanticQueries: expansion.semanticQueries,
           keywordQueries: expansion.keywordQueries,
-          clarificationNeeded: true,
-          clarification: {
-            reason: "ambiguous_intent",
-            suggestedQuestions: ["Can you please clarify your request?"],
-            messageEn: "We encountered an issue analyzing your query. Please rephrase or try again.",
-            messageAr: "واجهنا مشكلة في تحليل سؤالك. يرجى إعادة الصياغة أو المحاولة مرة أخرى.",
-          },
-          isFollowUp,
-          conversationContextUsed: contextUsed,
-          referencedDocumentIds: input.referencedDocumentIds ?? [],
+          clarificationNeeded: false,
+          clarification: null,
+          isFollowUp: false,
+          conversationContextUsed: false,
+          referencedDocumentIds: fallbackHints.referencedDocumentIds,
+          referencedDocumentTitles: fallbackHints.referencedDocumentTitles,
         },
         input.question,
         language,

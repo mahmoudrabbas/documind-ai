@@ -241,7 +241,7 @@ export class InMemorySupervisorPersistence implements SupervisorPersistence {
   readonly toolCalls = new Map<string, ToolCallRecord>();
   readonly approvals = new Map<string, ApprovalRecord>();
 
-  private seedRun(runId: string, tenantId: string): RunRecord {
+  seedPendingRun(runId: string, tenantId: string): RunRecord {
     const existing = this.runs.get(runId);
     if (existing) return existing;
     const run: RunRecord = {
@@ -279,8 +279,10 @@ export class InMemorySupervisorPersistence implements SupervisorPersistence {
   }
 
   startRun(tenantId: string, runId: string): Promise<RunRecord | null> {
-    const run = this.seedRun(runId, tenantId);
-    if (run.status !== "pending") return Promise.resolve(null);
+    const run = this.runs.get(runId);
+    if (!run || run.tenantId !== tenantId || run.status !== "pending") {
+      return Promise.resolve(null);
+    }
     const started: RunRecord = {
       ...run,
       status: "running",
@@ -296,8 +298,8 @@ export class InMemorySupervisorPersistence implements SupervisorPersistence {
     runId: string,
     patch: SupervisorRunPatch,
   ): Promise<RunRecord | null> {
-    const run = this.seedRun(runId, tenantId);
-    if (run.tenantId !== tenantId) return Promise.resolve(null);
+    const run = this.runs.get(runId);
+    if (!run || run.tenantId !== tenantId) return Promise.resolve(null);
     const completed: RunRecord = {
       ...run,
       ...patch,

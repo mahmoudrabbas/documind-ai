@@ -137,6 +137,15 @@ function buildDiagnostics(params: {
   totalLatencyMs: number;
   vectorCandidateCount: number;
   keywordCandidateCount: number;
+  rawVectorCandidateCount?: number;
+  rawKeywordCandidateCount?: number;
+  postAuthorizationVectorCandidateCount?: number;
+  postAuthorizationKeywordCandidateCount?: number;
+  fusedCandidateCount?: number;
+  hydratedCandidateCount?: number;
+  evidenceItemCount?: number;
+  evidenceSufficiency?: string;
+  zeroCandidateReason?: string;
 }): RetrievalDiagnostics {
   return params;
 }
@@ -462,6 +471,9 @@ export function createRetrievalService(
         );
       }
 
+      const rawVectorCandidateCount = vectorResults.length;
+      const rawKeywordCandidateCount = keywordResults.length;
+
       const authorizedChunkIds = await authorizeCandidateIds(
         deps,
         authorizationContext,
@@ -494,6 +506,17 @@ export function createRetrievalService(
 
       const totalLatencyMs = Date.now() - totalStartTime;
       const filterSummary = buildFilterSummary(authorizationContext, query.filter);
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      const zeroCandidateReason =
+        rawVectorCandidateCount + rawKeywordCandidateCount === 0
+          ? "NO_RAW_SEARCH_RESULTS"
+          : vectorResults.length + keywordResults.length === 0
+            ? "NO_AUTHORIZED_CANDIDATES"
+            : fused.length === 0
+              ? "NO_FUSED_CANDIDATES"
+              : hydrated.length === 0
+                ? "NO_HYDRATED_CANDIDATES"
+                : undefined;
       const diagnostics = buildDiagnostics({
         traceId,
         vectorLatencyMs,
@@ -502,9 +525,32 @@ export function createRetrievalService(
         totalLatencyMs,
         vectorCandidateCount: vectorResults.length,
         keywordCandidateCount: keywordResults.length,
+        rawVectorCandidateCount,
+        rawKeywordCandidateCount,
+        postAuthorizationVectorCandidateCount: vectorResults.length,
+        postAuthorizationKeywordCandidateCount: keywordResults.length,
+        fusedCandidateCount: fused.length,
+        hydratedCandidateCount: hydrated.length,
+        evidenceItemCount: evidenceBundle?.items.length ?? 0,
+        evidenceSufficiency: evidenceBundle?.sufficiency.level,
+        zeroCandidateReason,
       });
 
-      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      logger.info(
+        {
+          traceId,
+          rawVectorCandidateCount,
+          rawKeywordCandidateCount,
+          postAuthorizationVectorCandidateCount: vectorResults.length,
+          postAuthorizationKeywordCandidateCount: keywordResults.length,
+          fusedCandidateCount: fused.length,
+          hydratedCandidateCount: hydrated.length,
+          evidenceItemCount: evidenceBundle?.items.length ?? 0,
+          evidenceSufficiency: evidenceBundle?.sufficiency.level,
+          zeroCandidateReason,
+        },
+        "Hybrid retrieval stage counts",
+      );
 
       void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",

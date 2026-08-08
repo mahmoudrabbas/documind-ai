@@ -12,8 +12,16 @@ test("Atlas vector prefilter uses stable fields and never allowAiUse metadata", 
 });
 
 test("Atlas keyword prefilter uses stable fields and never allowAiUse metadata", () => {
-  const filter = buildAtlasKeywordCompoundFilter({ tenantId, allowAiUse: true });
+  const filter = buildAtlasKeywordCompoundFilter({
+    tenantId,
+    allowAiUse: true,
+    classification: { $in: ["public", "internal"] },
+    department: { $in: ["security"] },
+  });
   assert.ok(filter.some((clause) => JSON.stringify(clause).includes('"path":"tenantId"')));
+  assert.ok(filter.some((clause) => JSON.stringify(clause).includes('"text":{"path":"classification"')));
+  assert.ok(filter.some((clause) => JSON.stringify(clause).includes('"text":{"path":"department"')));
+  assert.ok(filter.every((clause) => !JSON.stringify(clause).includes('"in":{"path":"classification"')));
   assert.ok(filter.every((clause) => !JSON.stringify(clause).includes('"path":"allowAiUse"')));
 });
 

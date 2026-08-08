@@ -31,7 +31,13 @@ export class FakeIntentQueryAdapter {
     let clarification = null;
     const isFollowUp = !!conversationId;
 
-    if (/unsafe|hack|ignore\s+previous|system\s+prompt|تجاهل|التعليمات\s+السابقة/i.test(question)) {
+    const hasExplicitlyMaliciousIntent =
+      /unsafe|hack|ignore\s+previous|system\s+prompt|تجاهل|التعليمات\s+السابقة/i.test(question) ||
+      /(?:give|show|reveal)\s+me\s+another\s+user(?:'s|’s)?\s+password/i.test(question) ||
+      /bypass\s+authentication/i.test(question) ||
+      /(?:أعطني|اكشف|أظهر)\s+كلمة\s+مرور\s+مستخدم\s+آخر|تجاوز\s+المصادقة|موجه\s+النظام/i.test(question);
+
+    if (hasExplicitlyMaliciousIntent) {
       detectedIntent = "unsafe";
       intentConfidence = 0.95;
       clarificationNeeded = true;

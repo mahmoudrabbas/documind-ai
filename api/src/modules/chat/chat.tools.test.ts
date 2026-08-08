@@ -103,9 +103,20 @@ describe("detectAnalyticsRequest", () => {
   it("suppresses analytics when the plan resolved specific documents", () => {
     const plan = {
       referencedDocumentIds: ["64b000000000000000000001"],
-    } as never;
+      referencedDocumentTitles: [],
+    };
     assert.equal(
-      detectAnalyticsRequest("How many documents do we have?", plan),
+      detectAnalyticsRequest("How many questions are in Onboarding 2026?", plan),
+      null,
+    );
+  });
+
+  it("suppresses analytics when the plan resolved only a document title", () => {
+    assert.equal(
+      detectAnalyticsRequest("How many questions are in Onboarding 2026?", {
+        referencedDocumentIds: [],
+        referencedDocumentTitles: ["Onboarding 2026"],
+      }),
       null,
     );
   });

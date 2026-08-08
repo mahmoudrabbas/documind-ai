@@ -698,18 +698,9 @@ test("evaluate_evidence excludes stale-document candidates and non-retrievable c
     confidenceScore: 0.9,
     status: "RETIRED",
   });
-  const aiOffDoc = await createDoc({ tenantId, ownerId: actorId, fileName: "aioff.pdf", title: "AI Off Doc" });
-  const aiOffChunk = await createChunk({
-    tenantId,
-    documentId: aiOffDoc.id,
-    text: "ai use disabled content",
-    confidenceScore: 0.9,
-    allowAiUse: false,
-  });
-
   const output = (await evaluateEvidenceTool.handler(runContext(), {
     question: "content",
-    candidateIds: [staleChunk.id, retiredChunk.id, aiOffChunk.id],
+    candidateIds: [staleChunk.id, retiredChunk.id],
   })) as {
     sufficiency: string;
     approvedEvidenceIds: string[];
@@ -719,5 +710,42 @@ test("evaluate_evidence excludes stale-document candidates and non-retrievable c
 
   assert.equal(output.sufficiency, "NO_EVIDENCE");
   assert.deepEqual(output.approvedEvidenceIds, []);
-  assert.deepEqual(output.rejectedEvidenceIds.sort(), [staleChunk.id, retiredChunk.id, aiOffChunk.id].sort());
+  assert.deepEqual(output.rejectedEvidenceIds.sort(), [staleChunk.id, retiredChunk.id].sort());
+});
+
+test("newly indexed chunks without allowAiUse use the active document policy", async () => {
+  const doc = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "new-ready.pdf",
+    title: "New Ready Guide",
+    status: "processed",
+    searchStatus: "READY",
+  });
+  const chunk = await createChunk({
+    tenantId,
+    documentId: doc.id,
+    text: "The deployment uses a blue-green release strategy.",
+    confidenceScore: 0.95,
+  });
+  await DocumentChunkModel.collection.updateOne(
+    { _id: chunk._id },
+    { $unset: { allowAiUse: "" } },
+  );
+
+  const loaded = await createDefaultLoadChunksByIds()(tenantId, [chunk.id]);
+  assert.equal(loaded[0]?.allowAiUse, undefined);
+
+  const output = (await evaluateEvidenceTool.handler(runContext(), {
+    question: "Which release strategy is used?",
+    candidateIds: [chunk.id],
+  })) as {
+    sufficiency: string;
+    approvedEvidenceIds: string[];
+    rejectedEvidenceIds: string[];
+  };
+
+  assert.equal(output.sufficiency, "SUFFICIENT");
+  assert.deepEqual(output.approvedEvidenceIds, [chunk.id]);
+  assert.deepEqual(output.rejectedEvidenceIds, []);
 });

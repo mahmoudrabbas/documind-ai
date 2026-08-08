@@ -41,6 +41,13 @@ test("cached evidence-derived assistant answers are not replayed into new LLM co
   ]);
 });
 
+test("source-less history strips hidden reasoning before replay", () => {
+  const history = safeHistoryForRag([
+    { role: "assistant", content: "<think>private reasoning</think>Please clarify.", sources: [] },
+  ]);
+  assert.deepEqual(history, [{ role: "assistant", content: "Please clarify." }]);
+});
+
 test("backend failure remains RETRIEVAL_UNAVAILABLE instead of an authorization refusal", () => {
   const original = new AppError(503, "RETRIEVAL_UNAVAILABLE", "All search backends unavailable");
   assert.equal(asRetrievalUnavailable(original), original);
@@ -54,7 +61,6 @@ test("backend failure remains RETRIEVAL_UNAVAILABLE instead of an authorization 
 test("citations enabled uses the citing system prompt and instructs to always cite", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "What is the protected value?",
   });
@@ -85,7 +91,6 @@ test("citations enabled uses the citing system prompt and instructs to always ci
 test("Arabic language uses Arabic RAG system prompt and context instructions", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "ما هي القيمة المحمية؟",
     language: "ar",
@@ -93,7 +98,11 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
 
   assert.equal(messages[0].role, "system");
   assert.match(messages[0].content, /أنت DocuMind AI/);
-  assert.match(messages[0].content, /اذكر المستند الذي جاءت منه/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /\{"decision","answer","citedChunkIds"\}/);
+  assert.match(messages[0].content, /grounded_answer/);
+  assert.match(messages[0].content, /قيمة answer بالكامل باللغة العربية/);
+  assert.match(messages[0].content, /معرفات المقاطع المقدمة التي استُخدمت فعلياً/);
 
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "system");
@@ -113,14 +122,16 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
 test("Arabic language with citations disabled uses Arabic no-citations prompt", () => {
   const messages = buildRagMessages({
     citationsEnabled: false,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "ما هي القيمة المحمية؟",
     language: "ar",
   });
 
   assert.equal(messages[0].role, "system");
-  assert.match(messages[0].content, /لا تضمن أي استشهادات/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /\{"decision","answer","citedChunkIds"\}/);
+  assert.match(messages[0].content, /لا تضع داخل قيمة answer أي استشهادات ظاهرة/);
+  assert.match(messages[0].content, /citedChunkIds مطلوبة للتتبع الداخلي/);
 
   const contextMsg = messages[1];
   assert.match(contextMsg.content, /لا تذكر أو تستشهد بمصادرك/);
@@ -129,7 +140,6 @@ test("Arabic language with citations disabled uses Arabic no-citations prompt", 
 test("mixed language is treated as Arabic context", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "ما هي سياسة vacation؟",
     language: "mixed",
@@ -153,14 +163,15 @@ test("mixed language insufficient evidence returns Arabic response", () => {
 test("citations disabled uses the non-citing system prompt and forbids source mentions", () => {
   const messages = buildRagMessages({
     citationsEnabled: false,
-    historyFromDb: [],
     sources: [SOURCE],
     userMessage: "What is the protected value?",
   });
 
   assert.equal(messages[0].role, "system");
   assert.doesNotMatch(messages[0].content, /mention which document it came from/);
-  assert.match(messages[0].content, /Do not include any citations, source references, footnotes/);
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /Do not put visible citations, source references, footnotes/);
+  assert.match(messages[0].content, /citedChunkIds remains required for internal provenance/);
 
   const contextMsg = messages[1];
   assert.match(contextMsg.content, /Do not mention or cite your sources/);
@@ -169,30 +180,40 @@ test("citations disabled uses the non-citing system prompt and forbids source me
   assert.ok(messages[1].content.includes(SOURCE.text), "retrieved context is still provided");
 });
 
-test("conversation history is replayed into the prompt (last 10 only)", () => {
-  const history = Array.from({ length: 12 }, (_, i) => ({
-    role: "user" as const,
-    content: `message-${i}`,
-  }));
+test("Arabic document summaries keep the canonical structured contract and Arabic answer rule", () => {
   const messages = buildRagMessages({
     citationsEnabled: true,
-    historyFromDb: history,
-    sources: [],
-    userMessage: "next",
+    sources: [SOURCE],
+    userMessage: "لخص المستند",
+    task: "document_summary",
+    language: "ar",
   });
 
-  const historyContents = messages
-    .map((m) => m.content)
-    .filter((c) => c.startsWith("message-"));
-  assert.equal(historyContents.length, 10);
-  assert.equal(historyContents[0], "message-2");
-  assert.equal(historyContents[historyContents.length - 1], "message-11");
+  assert.match(messages[0].content, /Return JSON ONLY/);
+  assert.match(messages[0].content, /\{"decision","answer","citedChunkIds"\}/);
+  assert.match(messages[0].content, /ملخصاً منظماً/);
+  assert.match(messages[0].content, /قيمة answer بالكامل باللغة العربية/);
+});
+
+test("answer generation contains only the current resolved user turn", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    sources: [],
+    userMessage: "Can a full-time employee use annual leave during probation?",
+  });
+
+  assert.deepEqual(messages.filter((message) => message.role === "user"), [
+    {
+      role: "user",
+      content: "Can a full-time employee use annual leave during probation?",
+    },
+  ]);
+  assert.equal(messages.some((message) => /EGP 7,500|Department Head/.test(message.content)), false);
 });
 
 test("no context block when no sources are retrieved", () => {
   const messages = buildRagMessages({
     citationsEnabled: false,
-    historyFromDb: [],
     sources: [],
     userMessage: "hello",
   });

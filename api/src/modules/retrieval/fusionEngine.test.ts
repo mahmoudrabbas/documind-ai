@@ -206,6 +206,8 @@ describe("FusionEngine", () => {
     assert.ok(candidateB.scoreBreakdown!.keywordScore !== undefined);
     assert.equal(candidateB.scoreBreakdown!.keywordScore, candidateB.score);
     assert.equal(candidateB.scoreBreakdown!.vectorScore, undefined);
+    assert.equal(candidateA.scoreBreakdown!.relevanceScore, 0.9);
+    assert.equal(candidateB.scoreBreakdown!.relevanceScore, 0.8);
   });
 
   it("single strategy keyword — passthrough with keyword in scoreBreakdown", () => {

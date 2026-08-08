@@ -22,16 +22,7 @@ import type { QueryLanguageValue } from "../intent-query/intentQuery.types.js";
  */
 export type AnswerTask = "direct_question" | "document_summary";
 
-const RAG_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a concise string in the user's language. citedChunkIds must be an array of chunkId strings (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
-const RAG_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers questions based on company documents. You must ONLY answer using the provided context from the company's knowledge base. If the context does not contain enough information to answer the question, say so clearly. Never make up information. Be concise and helpful. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
-const RAG_SUMMARY_SYSTEM_PROMPT = `You are DocuMind AI, an assistant that answers ONLY from the provided document context. Return JSON ONLY (no prose) with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a structured summary in the user's language written ONLY from the provided context: a short opening statement, then several distinct evidence-grounded points organized as paragraphs or bullet points, and a brief conclusion when the context supports one. Do not invent facts, figures, or points that are not present in the context. If the evidence supports only one point, give a short summary of that point rather than padding with fabricated content. If the context is insufficient, set decision to "insufficient_evidence" and answer a short message explaining that no evidence supports a summary. citedChunkIds must be an array of chunkId strings for the sources you actually used (may be empty for non-grounded decisions). Do NOT include any other keys, citations, or markdown fences.`;
-const RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS = `You are DocuMind AI, an intelligent assistant that answers based on company documents. You must ONLY answer using the provided context from the company's knowledge base. Write a structured summary in the user's language: a short opening, then several distinct points grounded in the context organized as paragraphs or bullet points, and a brief conclusion when supported. Never make up information or points that are not present in the context. If the context does not contain enough information for a summary, say so clearly. Do not include any citations, source references, footnotes, document titles, or page numbers in your answer.`;
-const RAG_SYSTEM_PROMPT_AR = `أنت DocuMind AI، مساعد ذكي يجيب على الأسئلة بناءً على مستندات الشركة فقط. يجب أن تجيب باستخدام السياق المقدم من قاعدة المعرفة فقط. إذا لم يكن السياق كافياً للإجابة، قل ذلك بوضوح. لا تختلق معلومات. كن موجزاً ومفيداً. عند الاستشهاد بمعلومات، اذكر المستند الذي جاءت منه.
-
-قاعدة اللغة الصارمة: يجب أن تكون إجابتك بالكامل باللغة العربية فقط. لا تستخدم أي لغة أخرى (لا صينية، لا يابانية، لا كورية، لا أي لغة غير العربية أو الإنجليزية). المصطلحات التقنية الإنجليزية المتعارف عليها مقبولة فقط.`;
-const RAG_SYSTEM_PROMPT_NO_CITATIONS_AR = `أنت DocuMind AI، مساعد ذكي يجيب على الأسئلة بناءً على مستندات الشركة فقط. يجب أن تجيب باستخدام السياق المقدم من قاعدة المعرفة فقط. إذا لم يكن السياق كافياً للإجابة، قل ذلك بوضوح. لا تختلق معلومات. كن موجزاً ومفيداً. لا تضمن أي استشهادات، أو مراجع للمصادر، أو حواشي سفلى، أو عناوين مستندات، أو أرقام صفحات في إجابتك.
-
-قاعدة اللغة الصارمة: يجب أن تكون إجابتك بالكامل باللغة العربية فقط. لا تستخدم أي لغة أخرى (لا صينية، لا يابانية، لا كورية، لا أي لغة غير العربية أو الإنجليزية). المصطلحات التقنية الإنجليزية المتعارف عليها مقبولة فقط.`;
+const ANSWER_WRITER_JSON_CONTRACT = `Return JSON ONLY with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a string. citedChunkIds must be an array containing only supplied chunkId strings actually used for the answer (and may be empty for non-grounded decisions). Do NOT include any other keys, markdown fences, conversational preamble, or prose outside the JSON object.`;
 
 export function isArabicContext(language: QueryLanguageValue): boolean {
   return language === "ar" || language === "mixed";
@@ -56,13 +47,41 @@ export function insufficientEvidenceMessage(
     : INSUFFICIENT_AUTHORIZED_EVIDENCE;
 }
 
-function systemPromptFor(task: AnswerTask, citationsEnabled: boolean): string {
-  if (task === "document_summary") {
-    return citationsEnabled
-      ? RAG_SUMMARY_SYSTEM_PROMPT
-      : RAG_SUMMARY_SYSTEM_PROMPT_NO_CITATIONS;
-  }
-  return citationsEnabled ? RAG_SYSTEM_PROMPT : RAG_SYSTEM_PROMPT_NO_CITATIONS;
+function systemPromptFor(
+  task: AnswerTask,
+  citationsEnabled: boolean,
+  language: QueryLanguageValue,
+): string {
+  const useAr = isArabicContext(language);
+  const groundingInstruction = useAr
+    ? "أنت DocuMind AI، مساعد يجيب فقط من سياق مستندات الشركة المقدم. لا تختلق معلومات، وإذا لم يكن السياق كافياً فاستخدم القرار insufficient_evidence."
+    : "You are DocuMind AI, an assistant that answers ONLY from the provided company-document context. Never invent information; when the context is insufficient, use the insufficient_evidence decision.";
+  const taskInstruction =
+    task === "document_summary"
+      ? useAr
+        ? "يجب أن تكون قيمة answer ملخصاً منظماً: مقدمة قصيرة، ثم نقاط مختلفة مدعومة بالسياق، وخاتمة قصيرة عندما يدعمها السياق. لا تضف نقاطاً غير موجودة في الأدلة."
+        : "The answer value must be a structured summary: a short opening, distinct evidence-grounded points, and a brief conclusion when supported. Do not add points absent from the evidence."
+      : useAr
+        ? "يجب أن تكون قيمة answer موجزة ومفيدة وتجيب عن السؤال الحالي فقط."
+        : "The answer value must be concise, helpful, and answer only the current question.";
+  const languageInstruction = useAr
+    ? "يجب أن تكون قيمة answer بالكامل باللغة العربية، باستثناء المصطلحات التقنية الإنجليزية المتعارف عليها عند الضرورة."
+    : "The answer value must use the user's language.";
+  const citationInstruction = citationsEnabled
+    ? useAr
+      ? "ضع في citedChunkIds فقط معرفات المقاطع المقدمة التي استُخدمت فعلياً لدعم الإجابة."
+      : "Put only the supplied chunk IDs actually used to support the answer in citedChunkIds."
+    : useAr
+      ? "لا تضع داخل قيمة answer أي استشهادات ظاهرة أو مراجع مصادر أو حواشي أو عناوين مستندات أو أرقام صفحات. تبقى citedChunkIds مطلوبة للتتبع الداخلي ويجب أن تحتوي فقط على معرفات المقاطع المقدمة المستخدمة فعلياً."
+      : "Do not put visible citations, source references, footnotes, document titles, or page numbers in the answer value. citedChunkIds remains required for internal provenance and must contain only supplied chunk IDs actually used.";
+
+  return [
+    groundingInstruction,
+    ANSWER_WRITER_JSON_CONTRACT,
+    taskInstruction,
+    languageInstruction,
+    citationInstruction,
+  ].join(" ");
 }
 
 function ragContextInstruction(
@@ -81,22 +100,14 @@ function ragContextInstruction(
 
 export function buildRagMessages(options: {
   citationsEnabled: boolean;
-  historyFromDb: Array<{ role: "user" | "assistant"; content: string }>;
   sources: ChatSource[];
   userMessage: string;
   task?: AnswerTask;
   language?: QueryLanguageValue;
 }): { role: "system" | "user" | "assistant"; content: string }[] {
-  const { citationsEnabled, historyFromDb, sources, userMessage, task = "direct_question", language = "en" } = options;
+  const { citationsEnabled, sources, userMessage, task = "direct_question", language = "en" } = options;
 
-  let systemPrompt: string;
-  if (isArabicContext(language) && task !== "document_summary") {
-    systemPrompt = citationsEnabled
-      ? RAG_SYSTEM_PROMPT_AR
-      : RAG_SYSTEM_PROMPT_NO_CITATIONS_AR;
-  } else {
-    systemPrompt = systemPromptFor(task, citationsEnabled);
-  }
+  const systemPrompt = systemPromptFor(task, citationsEnabled, language);
 
   const messages: { role: "system" | "user" | "assistant"; content: string }[] =
     [
@@ -105,12 +116,6 @@ export function buildRagMessages(options: {
         content: systemPrompt,
       },
     ];
-
-  if (historyFromDb.length > 0) {
-    for (const msg of historyFromDb.slice(-10)) {
-      messages.push({ role: msg.role, content: msg.content });
-    }
-  }
 
   if (sources.length > 0) {
     const useAr = isArabicContext(language);
@@ -152,7 +157,6 @@ export interface AnswerWriterServiceOptions {
   language?: QueryLanguageValue;
   task?: AnswerTask;
   citationsEnabled: boolean;
-  historyFromDb?: Array<{ role: "user" | "assistant"; content: string }>;
   evidence: readonly AnswerWriterEvidenceItem[];
   maxTokens: number;
 }
@@ -251,7 +255,6 @@ export class AnswerWriterService {
       language = "en",
       task = "direct_question",
       citationsEnabled,
-      historyFromDb = [],
       evidence,
       maxTokens,
     } = options;
@@ -268,7 +271,6 @@ export class AnswerWriterService {
 
     const messages = buildRagMessages({
       citationsEnabled,
-      historyFromDb,
       sources,
       userMessage: question,
       task,

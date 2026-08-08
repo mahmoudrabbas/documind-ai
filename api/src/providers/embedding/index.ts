@@ -3,6 +3,38 @@ import { FakeEmbeddingProvider } from "./fakeEmbeddingProvider.js";
 
 let singleton: EmbeddingProvider | null = null;
 
+export type EmbeddingProviderKey =
+  | "fake"
+  | "openai"
+  | "groq"
+  | "student-bedrock";
+
+/**
+ * Resolve embedding configuration independently from chat-model failover.
+ * AI_PROVIDER remains an explicit override for backwards compatibility. When
+ * it is absent, infer the embedding backend from its own credential, matching
+ * the legacy provider chain used by the LLM layer. This prevents a configured
+ * Jina embedding runtime from silently becoming a dimension-incompatible fake.
+ */
+export function resolveEmbeddingProviderKey(
+  env: NodeJS.ProcessEnv = process.env,
+): EmbeddingProviderKey {
+  if (env.NODE_ENV === "test") return "fake";
+  const explicit = env.AI_PROVIDER?.trim().toLowerCase();
+  if (
+    explicit === "fake" ||
+    explicit === "openai" ||
+    explicit === "groq" ||
+    explicit === "student-bedrock"
+  ) {
+    return explicit;
+  }
+  if (env.JINA_API_KEY?.trim()) return "groq";
+  if (env.OPENAI_API_KEY?.trim()) return "openai";
+  if (env.SBG_API_KEY?.trim()) return "student-bedrock";
+  return "fake";
+}
+
 /**
  * Returns the configured embedding provider singleton.
  * In development/test, uses FakeEmbeddingProvider.
@@ -18,7 +50,7 @@ export function getEmbeddingProvider(): EmbeddingProvider {
 }
 
 function createEmbeddingProviderSyncSync(): EmbeddingProvider {
-  const aiProvider = process.env.AI_PROVIDER || "fake";
+  const aiProvider = resolveEmbeddingProviderKey();
 
   // For student-bedrock, return a placeholder fake provider
   // The real provider will be swapped in on first actual use
@@ -26,10 +58,14 @@ function createEmbeddingProviderSyncSync(): EmbeddingProvider {
     return new FakeEmbeddingProvider(parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10));
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
+  const dimensions = parseInt(
+    aiProvider === "groq"
+      ? process.env.JINA_EMBEDDING_DIMENSIONS || "1024"
+      : process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536",
+    10,
+  );
 
-  if (apiKey && apiKey !== "" && process.env.NODE_ENV !== "test") {
+  if (aiProvider === "openai") {
     // For OpenAI, we use dynamic import but this is sync - return fake for now
     // The async version will properly initialize
     return new FakeEmbeddingProvider(dimensions);
@@ -50,7 +86,7 @@ export async function getEmbeddingProviderAsync(): Promise<EmbeddingProvider> {
 }
 
 async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
-  const aiProvider = process.env.AI_PROVIDER || "fake";
+  const aiProvider = resolveEmbeddingProviderKey();
 
   if (aiProvider === "student-bedrock") {
     const { createStudentBedrockProvider } = await import("../bedrock/index.js");
@@ -66,16 +102,18 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions, "https://api.jina.ai/v1");
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
-
-  if (apiKey && apiKey !== "" && process.env.NODE_ENV !== "test") {
+  if (aiProvider === "openai") {
+    const apiKey = process.env.OPENAI_API_KEY;
+    const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
+    if (!apiKey) throw new Error("OPENAI_API_KEY is required for openai provider");
     const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
     const model = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions);
   }
 
-  return new FakeEmbeddingProvider(dimensions);
+  return new FakeEmbeddingProvider(
+    parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10),
+  );
 }
 
 export type { EmbeddingProvider, EmbeddingInput, EmbeddingResult } from "./embeddingProvider.port.js";
