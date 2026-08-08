@@ -543,21 +543,38 @@ export function createAuthorizedHybridSearchTool(
       }
 
       const result = await deps.retrieval.hybridSearch(query, accessContext);
+      const candidateDocumentIds = [
+        ...new Set(result.candidates.map((candidate) => candidate.documentId)),
+      ];
+      const eligibleDocumentIds = candidateDocumentIds.length > 0
+        ? new Set(
+            await deps.loadEligibleDocumentIds(
+              actor.tenantId,
+              candidateDocumentIds,
+            ),
+          )
+        : new Set<string>();
+      const eligibleCandidates = result.candidates.filter((candidate) =>
+        eligibleDocumentIds.has(candidate.documentId),
+      );
       if (trustedCandidateCatalog) {
         // Bounded, request-private provenance cache. Only the server-produced
-        // candidates are retained; the model sees ids and safe metadata only.
+        // and currently retrievable candidates are retained; the model sees
+        // ids and safe metadata only.
         if (trustedCandidateCatalog.size >= 1_000) {
           const oldest = trustedCandidateCatalog.keys().next().value;
           if (oldest) trustedCandidateCatalog.delete(oldest);
         }
         trustedCandidateCatalog.set(
           catalogKey(context),
-          new Map(result.candidates.map((candidate) => [candidate.chunkId, candidate])),
+          new Map(
+            eligibleCandidates.map((candidate) => [candidate.chunkId, candidate]),
+          ),
         );
       }
 
       return {
-        candidates: result.candidates.map((candidate) => ({
+        candidates: eligibleCandidates.map((candidate) => ({
           chunkId: candidate.chunkId,
           documentId: candidate.documentId,
           documentVersionId: candidate.documentVersionId,
@@ -566,9 +583,9 @@ export function createAuthorizedHybridSearchTool(
           sectionTitle: candidate.sectionTitle,
           retrievalMethod: candidate.retrievalMethod,
         })),
-        totalCandidates: result.totalCandidates,
+        totalCandidates: eligibleCandidates.length,
         reasonCode:
-          result.candidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+          eligibleCandidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
       };
     } catch (error) {
       if (error instanceof AppError) throw error;

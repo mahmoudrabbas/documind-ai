@@ -655,8 +655,16 @@ export class IntentQueryService {
       } else {
         // History is not allowed to alter a self-contained turn's executable
         // retrieval plan. Rebuild it from the current message and explicit
-        // request-local document constraints, discarding any model fields that
-        // may have been inferred from unrelated prior messages.
+        // request-local document constraints. A fresh conversation has no
+        // prior messages from which model document hints could have leaked, so
+        // its revalidated model hints remain current-turn hints. Once history
+        // exists, only deterministic title hints or explicit request IDs are
+        // retained; other model fields are discarded as potentially
+        // history-derived.
+        const retainCurrentTurnDocumentHints =
+          !conversationHistoryAvailable ||
+          deterministicTitleHints.length > 0 ||
+          (input.referencedDocumentIds?.length ?? 0) > 0;
         const currentExpansion = expandBilingual(
           input.question,
           language,
@@ -666,14 +674,14 @@ export class IntentQueryService {
         rawOutput.semanticQueries = currentExpansion.semanticQueries;
         rawOutput.keywordQueries = currentExpansion.keywordQueries;
         rawOutput.referencedDocumentIds =
-          deterministicTitleHints.length > 0
+          retainCurrentTurnDocumentHints
             ? hints.referencedDocumentIds
             : (input.referencedDocumentIds ?? []);
         rawOutput.referencedDocumentTitles =
-          deterministicTitleHints.length > 0
+          retainCurrentTurnDocumentHints
             ? hints.referencedDocumentTitles
             : [];
-        if (deterministicTitleHints.length === 0) {
+        if (!retainCurrentTurnDocumentHints) {
           titleClarificationNeeded = false;
         }
       }
