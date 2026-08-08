@@ -176,14 +176,20 @@ const selectedTests = requestedTests.length > 0
   : findTests(resolve(apiRoot, "src"));
 const requestedVitestTests = requestedTests.filter(isVitestOnlyTest);
 
-const mongo = await MongoMemoryReplSet.create({
-  binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-  replSet: { count: 1 },
-  instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
-});
+let mongo = null;
+let mongodbUri = process.env.MONGODB_URI;
+
+if (!mongodbUri) {
+  mongo = await MongoMemoryReplSet.create({
+    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+    replSet: { count: 1 },
+    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+  });
+  mongodbUri = mongo.getUri(`documind-test-${randomUUID()}`);
+}
+
 let exitCode = 0;
 try {
-  const mongodbUri = mongo.getUri(`documind-test-${randomUUID()}`);
   for (const testFile of selectedTests) {
     const result = await runTestFile(testFile, mongodbUri);
     if (result !== 0) {
@@ -213,6 +219,8 @@ try {
     });
   }
 } finally {
-  await mongo.stop();
+  if (mongo) {
+    await mongo.stop();
+  }
 }
 process.exitCode = exitCode;
