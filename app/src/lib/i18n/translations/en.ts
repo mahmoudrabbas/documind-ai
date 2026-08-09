@@ -780,6 +780,9 @@ const en: TranslationDictionary = {
   "chat.removeImage": "Remove image",
   "chat.attachmentPreview": "Attachment preview",
   "chat.selectedImagePreview": "Selected image preview",
+  "chat.openImagePreview": "Open image preview",
+  "chat.closeImagePreview": "Close image preview",
+  "chat.imagePreview": "Image preview",
   "chat.error.rateLimited":
     "The AI provider is temporarily rate-limited. Please try again shortly.",
   "chat.error.providerUnavailable":

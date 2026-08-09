@@ -182,4 +182,32 @@ describe("SourceList", () => {
     const list = screen.getByRole("list");
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
   });
+
+  it("truncates long document titles and section names safely", () => {
+    const longTitle = "Annual Vendor Management Policy " + "x".repeat(200);
+    const longSection = "Compliance Subsection Overview " + "y".repeat(120);
+    render(
+      <SourceList
+        sources={[source({ documentTitle: longTitle, sectionTitle: longSection })]}
+        onOpen={openHandler()}
+      />,
+    );
+    const title = screen.getByText(longTitle);
+    expect(title.className).toContain("truncate");
+    const section = screen.getByText(longSection);
+    expect(section.className).toContain("truncate");
+  });
+
+  it("keeps Arabic document titles truncated without breaking the card layout", () => {
+    const longArabic = "سياسة إدارة الموردين السنوية الخاصة بالشركة " + "ل".repeat(150);
+    render(
+      <SourceList
+        sources={[source({ documentTitle: longArabic })]}
+        onOpen={openHandler()}
+      />,
+    );
+    const title = screen.getByText(longArabic);
+    expect(title.getAttribute("dir")).toBe("rtl");
+    expect(title.className).toContain("truncate");
+  });
 });

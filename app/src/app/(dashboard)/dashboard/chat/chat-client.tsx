@@ -6,6 +6,11 @@ import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
 import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
 import { AssistantMarkdown } from "@/components/domain/AssistantMarkdown";
 import { SourceList } from "@/components/domain/ChatSources";
+import {
+  ChatImageThumbnail,
+  PersistedChatImageThumbnail,
+} from "@/components/domain/ChatImageThumbnail";
+import { ChatImagePreviewModal } from "@/components/domain/ChatImagePreviewModal";
 import { UpgradePrompt } from "@/components/entitlement/UpgradePrompt";
 import {
   mapEntitlementError,
@@ -15,7 +20,6 @@ import {
   sendMessage,
   sendVisionMessage,
   transcribeAudio,
-  fetchChatAttachmentUrl,
   listConversations,
   getConversationMessages,
   deleteConversation,
@@ -112,48 +116,6 @@ function ThinkingIndicator({ label }: { label: string }) {
   );
 }
 
-function AttachmentThumbnail({
-  attachment,
-  alt,
-}: {
-  attachment: ChatAttachment;
-  alt?: string;
-}) {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    fetchChatAttachmentUrl(attachment.id)
-      .then((url) => {
-        if (cancelled) return;
-        objectUrl = url;
-        setSrc(url);
-      })
-      .catch(() => {
-        // Silently fail; the bubble still shows the message text.
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [attachment.id]);
-
-  if (!src) {
-    return (
-      <div className="h-28 w-36 animate-pulse rounded-xl bg-on-surface/10" />
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt={alt ?? attachment.fileName}
-      className="h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
-    />
-  );
-}
-
 interface SpeechRecognitionInstance {
   continuous: boolean;
   interimResults: boolean;
@@ -190,6 +152,10 @@ export function ChatClient() {
     pageNumber?: number;
     highlightText?: string;
     documentTitle?: string;
+  } | null>(null);
+  const [imagePreview, setImagePreview] = useState<{
+    src: string;
+    alt: string;
   } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -716,7 +682,7 @@ export function ChatClient() {
                     <span
                       dir={titleDir.dir}
                       lang={titleDir.lang}
-                      className="truncate text-sm font-semibold text-on-surface"
+                      className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface"
                     >
                       {conv.title}
                     </span>
@@ -811,8 +777,8 @@ export function ChatClient() {
                     <div
                       className={`flex min-w-0 flex-col ${
                         msg.role === "user"
-                          ? "max-w-[88%] items-end sm:max-w-[70%]"
-                          : "max-w-[85%] items-start"
+                          ? "max-w-[calc(100%-3rem)] items-end sm:max-w-[70%]"
+                          : "max-w-[calc(100%-3rem)] items-start sm:max-w-[85%]"
                       }`}
                     >
                       <div
@@ -823,18 +789,32 @@ export function ChatClient() {
                         }
                       >
                         {msg.role === "user" && msg.localAttachmentUrl && (
-                          <img
-                            src={msg.localAttachmentUrl}
-                            alt={t("chat.attachmentPreview")}
-                            className="mb-2 h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
-                          />
+                          <div className="mb-2">
+                            <ChatImageThumbnail
+                              src={msg.localAttachmentUrl}
+                              alt={t("chat.attachmentPreview")}
+                              onOpen={() =>
+                                setImagePreview({
+                                  src: msg.localAttachmentUrl as string,
+                                  alt: t("chat.attachmentPreview"),
+                                })
+                              }
+                            />
+                          </div>
                         )}
                         {msg.attachments && msg.attachments.length > 0 && (
                           <div className="mb-2 flex flex-wrap gap-2">
                             {msg.attachments.map((attachment) => (
-                              <AttachmentThumbnail
+                              <PersistedChatImageThumbnail
                                 key={attachment.id}
                                 attachment={attachment}
+                                alt={attachment.fileName}
+                                onOpen={(src) =>
+                                  setImagePreview({
+                                    src,
+                                    alt: attachment.fileName,
+                                  })
+                                }
                               />
                             ))}
                           </div>
@@ -947,7 +927,7 @@ export function ChatClient() {
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 sm:px-6 lg:px-10">
           <div className="mx-auto max-w-4xl">
             {previewUrl && selectedFile && (
-              <div className="mb-2 flex w-full items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pr-3 sm:max-w-md">
+              <div className="mb-2 flex w-full items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pe-3 sm:max-w-md">
                 <img
                   src={previewUrl}
                   alt={t("chat.selectedImagePreview")}
@@ -1089,6 +1069,12 @@ export function ChatClient() {
           onClose={() => setPdfViewer(null)}
         />
       )}
+
+      <ChatImagePreviewModal
+        src={imagePreview?.src ?? null}
+        alt={imagePreview?.alt}
+        onClose={() => setImagePreview(null)}
+      />
     </div>
   );
 }

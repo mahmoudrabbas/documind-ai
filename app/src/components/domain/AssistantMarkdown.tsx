@@ -21,16 +21,28 @@ function MarkdownLink(
   props: React.AnchorHTMLAttributes<HTMLAnchorElement> & { node?: unknown },
 ) {
   const { href, node: _node, children, ...rest } = props;
+  const linkClass =
+    "break-words text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary";
   const isExternal =
     typeof href === "string" && /^https?:\/\//i.test(href);
   if (isExternal) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={linkClass}
+        {...rest}
+      >
         {children}
       </a>
     );
   }
-  return <a href={href} {...rest}>{children}</a>;
+  return (
+    <a href={href} className={linkClass} {...rest}>
+      {children}
+    </a>
+  );
 }
 
 function IgnoredImage(): null {
@@ -45,22 +57,22 @@ const components: Components = {
     <p className="whitespace-pre-line text-start" {...props} />
   ),
   h1: ({ node: _node, ...props }) => (
-    <h1 className="mt-3 text-start text-base font-bold text-on-surface" {...props} />
+    <h1 className="mb-1 mt-3 text-start text-base font-bold text-on-surface" {...props} />
   ),
   h2: ({ node: _node, ...props }) => (
-    <h2 className="mt-3 text-start text-base font-bold text-on-surface" {...props} />
+    <h2 className="mb-1 mt-3 text-start text-base font-bold text-on-surface" {...props} />
   ),
   h3: ({ node: _node, ...props }) => (
-    <h3 className="mt-2 text-start text-sm font-bold text-on-surface" {...props} />
+    <h3 className="mb-1 mt-3 text-start text-sm font-bold text-on-surface" {...props} />
   ),
   h4: ({ node: _node, ...props }) => (
-    <h4 className="mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
+    <h4 className="mb-1 mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   h5: ({ node: _node, ...props }) => (
-    <h5 className="mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
+    <h5 className="mb-1 mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   h6: ({ node: _node, ...props }) => (
-    <h6 className="mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
+    <h6 className="mb-1 mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   ul: ({ node: _node, ...props }) => (
     <ul className="list-disc space-y-1 ps-5" {...props} />
@@ -69,28 +81,28 @@ const components: Components = {
     <ol className="list-decimal space-y-1 ps-5" {...props} />
   ),
   li: ({ node: _node, ...props }) => (
-    <li className="leading-relaxed" {...props} />
+    <li className="break-words leading-relaxed" {...props} />
   ),
   code: ({ node: _node, ...props }) => (
     <code
-      className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-[0.9em] text-on-surface"
+      className="break-words rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-[0.9em] text-on-surface"
       {...props}
     />
   ),
   pre: ({ node: _node, ...props }) => (
     <pre
-      className="my-2 overflow-x-auto rounded-lg border border-outline-variant/30 bg-surface-container-high p-3 text-[13px] leading-relaxed [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[13px]"
+      className="my-2 max-w-full overflow-x-auto rounded-lg border border-outline-variant/30 bg-surface-container-high p-3 text-[13px] leading-relaxed [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[13px]"
       {...props}
     />
   ),
   blockquote: ({ node: _node, ...props }) => (
     <blockquote
-      className="my-2 border-s-2 border-primary/40 ps-3 text-start text-on-surface-variant"
+      className="my-2 max-w-full break-words border-s-2 border-primary/40 ps-3 text-start text-on-surface-variant"
       {...props}
     />
   ),
   table: ({ node: _node, ...props }) => (
-    <div className="my-2 overflow-x-auto">
+    <div className="my-2 max-w-full overflow-x-auto">
       <table className="w-full border-collapse text-start text-sm" {...props} />
     </div>
   ),

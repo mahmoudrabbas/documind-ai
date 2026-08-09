@@ -186,7 +186,7 @@ export function FeedbackWidget({
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-0.5">
+          <div className="flex flex-wrap justify-end gap-2 pt-0.5">
             <button
               type="button"
               onClick={() => {

@@ -780,6 +780,9 @@ const ar: TranslationDictionary = {
   "chat.removeImage": "إزالة الصورة",
   "chat.attachmentPreview": "معاينة المرفق",
   "chat.selectedImagePreview": "معاينة الصورة المحددة",
+  "chat.openImagePreview": "فتح معاينة الصورة",
+  "chat.closeImagePreview": "إغلاق معاينة الصورة",
+  "chat.imagePreview": "معاينة الصورة",
   "chat.error.rateLimited":
     "مزوّد الذكاء الاصطناعي محدود مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
   "chat.error.providerUnavailable":

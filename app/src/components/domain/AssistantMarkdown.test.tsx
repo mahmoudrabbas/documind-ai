@@ -132,6 +132,34 @@ describe("AssistantMarkdown", () => {
     expect(html).not.toContain("| --- |");
   });
 
+  it("wraps tables in a horizontal overflow container so the page never scrolls", () => {
+    const html = render(
+      "| A | B | C | D |\n| --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 |",
+    );
+    const wrapper = html.match(/<div class="([^"]*overflow-x-auto[^"]*)">/);
+    expect(wrapper).toBeTruthy();
+    expect(wrapper![1]).toContain("max-w-full");
+    expect(wrapper![1]).toContain("overflow-x-auto");
+  });
+
+  it("keeps code blocks in a horizontal overflow container", () => {
+    const html = render(
+      "```ts\nconst long = 'line with lots of content';\n```",
+    );
+    const pre = html.match(/<pre class="([^"]+)"/);
+    expect(pre).toBeTruthy();
+    expect(pre![1]).toContain("overflow-x-auto");
+    expect(pre![1]).toContain("max-w-full");
+  });
+
+  it("lets long URLs wrap safely instead of widening the bubble", () => {
+    const html = render(
+      "[docs](https://example.com/a/very/long/path?query=with=parameters&more=stuff)",
+    );
+    expect(html).toContain("break-words");
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
   it("renders Arabic headings", () => {
     const html = render("## العنوان الرئيسي\n\nنص توضيحي.");
     expect(html).toContain("<h2");
