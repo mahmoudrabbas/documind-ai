@@ -125,6 +125,7 @@ export const CitationVerifierReasonCode = z.enum([
   "CITATIONS_VERIFIED",
   "MISSING_CITATIONS",
   "UNSUPPORTED_CLAIMS",
+  "VERIFICATION_BOUNDS_EXCEEDED",
   "CITATIONS_SKIPPED",
 ]);
 export type CitationVerifierReasonCodeValue = z.infer<

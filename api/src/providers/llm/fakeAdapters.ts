@@ -234,17 +234,24 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
       text = JSON.stringify(simulatedPlan);
     } else {
       // For RAG/chat generation contexts, produce a strict JSON answer when
-      // the prompt contains a Context block with source ids. Otherwise, emit
-      // a structured insufficient_evidence JSON.
-      const hasContext = params.messages.some((m) => m.content && m.content.includes("Context:"));
+      // the prompt contains the legacy Context block or the provider-neutral
+      // RAG data envelope with source ids. Otherwise, emit a structured
+      // insufficient_evidence JSON.
+      const hasContext = params.messages.some((m) =>
+        m.content && (
+          m.content.includes("Context:") ||
+          m.content.includes("RAG_REQUEST_DATA_START")
+        ),
+      );
       if (hasContext) {
-        // extract chunk ids embedded as 'id:chunkId' inside the context
+        // Extract legacy id anchors and structured data-envelope chunk ids.
         const combined = params.messages.map((m) => m.content).join("\n");
-        const idRegex = /id:([^\s\]]+)/g;
+        const idRegex = /(?:id:([^\s\]]+)|"chunkId":"([^"]+)")/g;
         const ids: string[] = [];
         let match: RegExpExecArray | null;
         while ((match = idRegex.exec(combined))) {
-          if (!ids.includes(match[1])) ids.push(match[1]);
+          const id = match[1] ?? match[2];
+          if (id && !ids.includes(id)) ids.push(id);
         }
         const cited = ids.slice(0, 5);
         const json = {

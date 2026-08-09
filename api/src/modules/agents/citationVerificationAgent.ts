@@ -22,7 +22,7 @@ import {
 } from "./tools/authorizedRetrievalTools.js";
 
 export const CITATION_VERIFICATION_AGENT_ID = "citation-verification-agent";
-export const CITATION_VERIFICATION_AGENT_VERSION = "1.3.0";
+export const CITATION_VERIFICATION_AGENT_VERSION = "1.4.0";
 
 /**
  * Trusted dependencies injected from the composition root. The executor never
@@ -172,6 +172,24 @@ export class CitationVerificationAgentExecutor implements AgentContract {
           .filter((chunk) => validated.has(chunk.chunkId))
           .map((chunk) => ({ chunkId: chunk.chunkId, text: chunk.text })),
       });
+      if (semantic.reasonCode === "VERIFICATION_BOUNDS_EXCEEDED") {
+        return {
+          ok: true,
+          status: "completed",
+          output: {
+            ...membership,
+            verified: false,
+            validatedCitationIds: [],
+            rejectedCitationIds: [...new Set([
+              ...membership.rejectedCitationIds,
+              ...membership.validatedCitationIds,
+            ])],
+            unsupportedClaims: [],
+            reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
+          },
+          latencyMs: Date.now() - startedAt,
+        };
+      }
       const unsupportedClaims = [...semantic.unsupportedClaims];
       const supportingIds = new Set(semantic.supportingEvidenceIds);
       const validatedCitationIds = unsupportedClaims.length > 0

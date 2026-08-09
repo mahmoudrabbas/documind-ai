@@ -233,6 +233,42 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     assert.deepEqual(output.rejectedCitationIds, [CHUNK_ID]);
   });
 
+  it("persists verification-bounds overflow as a fail-closed citation result", async () => {
+    const { model } = scriptedModel([
+      handoffToCitationVerifier({
+        decision: "grounded_answer",
+        answerText: "Candidate with uncovered factual text.",
+        citedChunkIds: [CHUNK_ID],
+        approvedEvidenceIds: [CHUNK_ID],
+      }),
+      returnToSupervisor(),
+      completeDecision({ answerText: "done" }),
+    ]);
+    const { deps } = stubDeps({
+      semanticVerifier: {
+        verify: async () => ({
+          claims: ["Candidate with uncovered factual text."],
+          unsupportedClaims: [],
+          supportingEvidenceIds: [],
+          reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
+        }),
+      },
+    });
+    const { runtime, persistence } = buildHarness(model, deps);
+
+    const result = await runtime.execute(baseRunInput());
+    assert.equal(result.status, "completed");
+    const executionStep = Array.from(persistence.steps.values()).find(
+      (step) => step.action === "execute" && step.agentName === CITATION_VERIFICATION_AGENT_ID,
+    );
+    assert.ok(executionStep);
+    const output = executionStep.output as Record<string, unknown>;
+    assert.equal(output.verified, false);
+    assert.equal(output.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
+    assert.deepEqual(output.validatedCitationIds, []);
+    assert.deepEqual(output.rejectedCitationIds, [CHUNK_ID]);
+  });
+
   it("skips non-grounded decisions without loading evidence", async () => {
     const { model } = scriptedModel([
       handoffToCitationVerifier({
@@ -267,6 +303,6 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     registerCitationVerificationAgentExecutor(registry, stubDeps().deps);
     const contract = registry.requireExecutor(CITATION_VERIFICATION_AGENT_ID);
     assert.equal(contract.id, toAgentId(CITATION_VERIFICATION_AGENT_ID));
-    assert.equal(contract.version, "1.3.0");
+    assert.equal(contract.version, "1.4.0");
   });
 });

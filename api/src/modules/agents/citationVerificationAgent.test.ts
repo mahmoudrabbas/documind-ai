@@ -301,6 +301,39 @@ describe("CitationVerificationAgentExecutor", () => {
     );
   });
 
+  it("fails closed with no validated citations when semantic verification bounds are exceeded", async () => {
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async ({ answerText }) => ({
+          claims: answerText ? [answerText] : [],
+          unsupportedClaims: [],
+          supportingEvidenceIds: [],
+          reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
+          coverage: {
+            claimCount: 21,
+            maxClaims: 20,
+            maxClaimLength: 500,
+            observedMaxClaimLength: 42,
+            overflowType: "claim_count",
+          },
+        }),
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      ...VALID_INPUT,
+      answerText: "A grounded candidate whose semantic coverage overflowed.",
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.output.verified, false);
+      assert.equal(result.output.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
+      assert.deepEqual(result.output.validatedCitationIds, []);
+      assert.deepEqual(result.output.rejectedCitationIds, [CHUNK_ID]);
+      assert.deepEqual(result.output.unsupportedClaims, []);
+    }
+  });
+
   it("does not invoke semantic verification when citation membership fails", async () => {
     let semanticCalls = 0;
     const { deps } = makeDeps({
