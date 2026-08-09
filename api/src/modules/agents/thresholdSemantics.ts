@@ -221,7 +221,8 @@ function sameQuantity(left: NumericMention, right: NumericMention): boolean {
 }
 
 function hasComparativeMeaning(text: string): boolean {
-  return /(?:[<>]=?|≥|≤|greater\s+than|less\s+than|above|below|at\s+least|at\s+most|minimum|maximum|up\s+to|more\s+than|fewer\s+than|threshold|within|exceeds?|satisf(?:y|ies|ied)|meets?|eligible|appl(?:y|ies|ied))/iu.test(text);
+  const normalized = normalizeNumericText(text);
+  return /(?:[<>]=?|≥|≤|greater\s+than|less\s+than|above|below|at\s+least|at\s+most|minimum|maximum|up\s+to|more\s+than|fewer\s+than|threshold|within|exceeds?|satisf(?:y|ies|ied)|meets?|eligible|appl(?:y|ies|ied)|الحد\s+الادني|الحد\s+الاقصي|علي\s+الاقل|بحد\s+ادني|بحد\s+اقصي|لا\s+يقل\s+عن|لا\s+يزيد\s+عن|(?:لم|لا)?\s*يستوف(?:ي)?|يلبي|مؤهل)/iu.test(normalized);
 }
 
 /**

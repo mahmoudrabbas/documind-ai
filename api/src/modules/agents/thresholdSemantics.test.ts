@@ -137,6 +137,28 @@ test("evaluates Arabic and mixed-language threshold questions at their boundarie
   assert.deepEqual(outcomes("هل ٣ أيام مسموحة؟", maximum), [false]);
 });
 
+test("keeps the remote-work and receipt threshold regression matrix deterministic", () => {
+  const remote = "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.";
+  const remoteCases = [
+    ["هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟", false],
+    ["لو الموظف كمل ٩٠ يوم بالظبط، ينفع يطلب العمل عن بعد؟", true],
+    ["لو الموظف كمل ١٢٠ يوم، ينفع يطلب العمل عن بعد؟", true],
+    ["هل الموظف اللي اشتغل 30 يوم يقدر يطلب العمل عن بعد؟", false],
+    ["لو الموظف كمل 90 يوم بالظبط، ينفع يطلب العمل عن بعد؟", true],
+    ["لو الموظف كمل 120 يوم، ينفع يطلب العمل عن بعد؟", true],
+    ["Can an employee who has worked for 30 days request regular remote work?", false],
+    ["Can an employee who has worked for 90 days request regular remote work?", true],
+    ["Can an employee who has worked for 120 days request regular remote work?", true],
+  ] as const;
+  for (const [question, expected] of remoteCases) {
+    assert.deepEqual(outcomes(question, remote), [expected], question);
+  }
+
+  const receipts = "Receipts are required for expenses above USD 25.";
+  assert.deepEqual(outcomes("لو المصروف ٢٠ دولار، لازم أقدم إيصال؟", receipts), [false]);
+  assert.deepEqual(outcomes("لو المصروف ٣٠ دولار، لازم أقدم إيصال؟", receipts), [true]);
+});
+
 test("preserves explicit signs and excludes dates and hyphenated identifiers", () => {
   assert.deepEqual(
     extractNumericMentions("-5 USD, USD -2.5, +5 days, and -2.5%").map(({ value, unit }) => ({ value, unit })),

@@ -70,6 +70,30 @@ const DEFAULT_MAX_TOKENS = 1024;
 const DIRECT_TOP_K = 5;
 const SUMMARY_TOP_K = 12;
 const SUMMARY_MAX_TOKENS = 2048;
+const MAX_SEARCH_QUERY_CHARS = 2_000;
+
+/**
+ * For Arabic questions, prioritize one validated English semantic expansion
+ * while retaining the standalone Arabic question as secondary search text.
+ * Other languages keep their standalone question unchanged. This stays
+ * request-local and bounded; same-language provider paraphrases are excluded.
+ */
+export function buildAuthorizedSearchQueryText(
+  intent: Pick<IntentAgentOutput, "normalizedQuestion" | "language" | "semanticQueries">,
+): string {
+  const normalizedQuestion = intent.normalizedQuestion.trim();
+  if (intent.language !== "ar") return normalizedQuestion;
+
+  const englishExpansion = intent.semanticQueries.find((query) =>
+    query.language === "en" && query.text.trim() !== normalizedQuestion
+  )?.text.trim();
+  if (!englishExpansion) return normalizedQuestion;
+
+  const combined = `${englishExpansion}\n${normalizedQuestion}`;
+  return combined.length <= MAX_SEARCH_QUERY_CHARS
+    ? combined
+    : englishExpansion.slice(0, MAX_SEARCH_QUERY_CHARS);
+}
 
 const SearchCandidateSchema = z
   .object({
@@ -728,7 +752,7 @@ function createChatRuntimePolicy(input: {
           ...intent.referencedDocumentIds,
           ...artifacts.resolvedDocumentIds,
         ]);
-        const queryText = intent.normalizedQuestion;
+        const queryText = buildAuthorizedSearchQueryText(intent);
         const task = detectAnswerTask(
           { detectedIntent: intent.intent },
           intent.normalizedQuestion,

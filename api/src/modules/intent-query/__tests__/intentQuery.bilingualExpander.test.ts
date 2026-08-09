@@ -37,4 +37,36 @@ test("Bilingual Expander utility", async (t) => {
     assert.equal(result.semanticQueries[1].language, "en");
     assert.equal(result.semanticQueries[1].weight, 0.7);
   });
+
+  await t.test("preserves the remote-work subject across Arabic and English queries", () => {
+    for (const question of [
+      "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+      "لو الموظف كمل ٩٠ يوم بالظبط، ينفع يطلب العمل عن بعد؟",
+    ]) {
+      const result = expandBilingual(question, "ar", []);
+      const english = result.semanticQueries
+        .filter((query) => query.language === "en")
+        .map((query) => query.text)
+        .join(" ");
+      assert.match(english, /remote work/u, question);
+      assert.ok(
+        result.keywordQueries.some((query) =>
+          query.language === "en" &&
+          query.terms.includes("remote work"),
+        ),
+        question,
+      );
+    }
+
+    const english = expandBilingual(
+      "Can an employee who has worked for 30 days request regular remote work?",
+      "en",
+      [],
+    );
+    assert.ok(
+      english.semanticQueries.some((query) =>
+        query.language === "ar" && query.text.includes("العمل عن بعد"),
+      ),
+    );
+  });
 });

@@ -278,6 +278,39 @@ test("passes question-sourced values used in valid threshold inferences", async 
   }
 });
 
+test("passes a valid Arabic negative conclusion derived from an English threshold rule", async () => {
+  const result = await new CitationSemanticVerificationService(
+    judgmentModel(["supported", "supported"]),
+  ).verify({
+    questionText: "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+    answerText: "لا. الموظف الذي عمل ٣٠ يومًا لم يستوف الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.",
+    evidence: [{
+      chunkId: "remote",
+      text: "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+    }],
+  });
+  assert.deepEqual(result.unsupportedClaims, []);
+  assert.deepEqual(result.supportingEvidenceIds, ["remote"]);
+});
+
+test("does not let an unrelated weekly day limit invalidate an Arabic employment-threshold conclusion", async () => {
+  const result = await new CitationSemanticVerificationService(
+    judgmentModel(["supported", "supported"]),
+  ).verify({
+    questionText: "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+    answerText: "لا. الموظف الذي عمل ٣٠ يومًا لم يستوف الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.",
+    evidence: [{
+      chunkId: "remote",
+      text: [
+        "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+        "Regular remote work is limited to two days per week and requires manager approval.",
+      ].join(" "),
+    }],
+  });
+  assert.deepEqual(result.unsupportedClaims, []);
+  assert.deepEqual(result.supportingEvidenceIds, ["remote"]);
+});
+
 test("keeps fixed-value contradictions strict even when the wrong value came from the question", async () => {
   const result = await new CitationSemanticVerificationService(judgmentModel(["supported"])).verify({
     questionText: "Does the account lock for 20 minutes after 5 failed logins?",

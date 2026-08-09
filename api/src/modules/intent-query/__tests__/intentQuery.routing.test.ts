@@ -525,7 +525,7 @@ test("IntentQueryService - query routing contract", async (t) => {
       fakeConvoAdapter,
     );
     assert.equal((await unknown.analyzeQuery({ question: "unclear input here" }, companyAdminContext)).route, "unsupported");
-    assert.equal((await unknown.analyzeQuery({ question: "What is our leave policy?" }, companyAdminContext)).route, "unsupported");
+    assert.equal((await unknown.analyzeQuery({ question: "What is our leave policy?" }, companyAdminContext)).route, "rag");
   });
 
   await t.test("schema-invalid known knowledge intent recovers only through deterministic positive gating", async () => {
@@ -544,7 +544,113 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.equal(ambiguous.route, "unsupported");
   });
 
-  await t.test("low-confidence knowledge classification requests clarification instead of retrieval", async () => {
+  await t.test("strong current-turn knowledge is stable across provider outcomes", async () => {
+    const question = "هل الموظف اللي اشتغل 30 يوم يقدر يطلب العمل عن بعد؟";
+    const malformedAdapter: ModelAdapter = {
+      providerKey: "malformed-provider",
+      async complete() {
+        return {
+          id: "malformed",
+          provider: "malformed-provider",
+          model: "malformed-provider",
+          choices: [{ index: 0, message: { role: "assistant", content: "not-json" }, finishReason: "stop" }],
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          latencyMs: 1,
+          estimatedCost: 0,
+        };
+      },
+    };
+    const unavailableAdapter: ModelAdapter = {
+      providerKey: "unavailable-provider",
+      async complete() { throw new Error("Provider Offline"); },
+    };
+    const variants: Array<[string, ModelAdapter]> = [
+      ["knowledge-high", planAdapter({ detectedIntent: "knowledge_question", intentConfidence: 0.99 })],
+      ["unsupported-high", planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 })],
+      ["clarification", planAdapter({
+        detectedIntent: "knowledge_question",
+        intentConfidence: 0.9,
+        clarificationNeeded: true,
+        clarification: {
+          reason: "ambiguous_intent",
+          suggestedQuestions: [question],
+          messageEn: "Clarify",
+          messageAr: "وضح",
+        },
+      })],
+      ["low-confidence", planAdapter({ detectedIntent: "knowledge_question", intentConfidence: 0.2 })],
+      ["malformed", malformedAdapter],
+      ["invalid-enum", planAdapter({ detectedIntent: "not-a-real-intent" })],
+      ["unavailable", unavailableAdapter],
+    ];
+
+    for (const [label, adapter] of variants) {
+      const variantService = new IntentQueryService(adapter, fakeConvoAdapter);
+      for (let iteration = 0; iteration < 3; iteration += 1) {
+        const plan = await variantService.analyzeQuery({ question }, companyAdminContext);
+        assert.equal(plan.route, "rag", `${label} iteration ${iteration + 1}`);
+        assert.equal(plan.detectedIntent, "knowledge_question", label);
+        assert.equal(plan.clarificationNeeded, false, label);
+        assert.ok(plan.semanticQueries.length > 0, label);
+      }
+    }
+
+    const suppressingProvider = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      fakeConvoAdapter,
+    );
+    for (const enterpriseQuestion of [
+      "ما زمن الاستجابة الأولية لـ P1؟",
+      "هل MFA إجباري للـ VPN؟",
+      "كام حد الفندق؟",
+      "امتى لازم Purchase Order؟",
+      "شكرا، كام حد الفندق؟",
+    ]) {
+      const plan = await suppressingProvider.analyzeQuery(
+        { question: enterpriseQuestion },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "rag", enterpriseQuestion);
+    }
+  });
+
+  await t.test("deterministic precedence does not promote general, social or assistant input", async () => {
+    const suppressingProvider = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      fakeConvoAdapter,
+    );
+    for (const question of [
+      "What is VPN?",
+      "Explain MFA.",
+      "What is procurement?",
+      "What is an SLA?",
+      "What is hotel management?",
+      "asdasdasd",
+      "?! 🎉",
+    ]) {
+      const plan = await suppressingProvider.analyzeQuery(
+        { question },
+        companyAdminContext,
+      );
+      assert.notEqual(plan.route, "rag", question);
+    }
+    for (const question of ["شكرا", "شجرا"]) {
+      assert.equal(
+        (await suppressingProvider.analyzeQuery({ question }, companyAdminContext)).route,
+        "social",
+        question,
+      );
+    }
+    for (const question of ["انت مين؟", "بتعرف تعمل ايه؟"]) {
+      assert.equal(
+        (await suppressingProvider.analyzeQuery({ question }, companyAdminContext)).route,
+        "assistant",
+        question,
+      );
+    }
+  });
+
+  await t.test("low-confidence strong knowledge uses deterministic RAG precedence", async () => {
     const uncertain = new IntentQueryService(
       planAdapter({ intentConfidence: 0.3 }),
       fakeConvoAdapter,
@@ -552,8 +658,8 @@ test("IntentQueryService - query routing contract", async (t) => {
     const plan = await uncertain.analyzeQuery(
       { question: "What is our leave policy?" }, companyAdminContext,
     );
-    assert.equal(plan.route, "clarification");
-    assert.equal(plan.clarificationNeeded, true);
+    assert.equal(plan.route, "rag");
+    assert.equal(plan.clarificationNeeded, false);
   });
 
   await t.test("social stays social even after a RAG conversation", async () => {

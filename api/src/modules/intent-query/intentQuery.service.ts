@@ -829,50 +829,53 @@ export class IntentQueryService {
         false
       );
 
-      // Schema-invalid provider output (including an invalid/missing intent)
-      // is non-authoritative. Recover only when the current turn independently
-      // has strong deterministic enterprise/document knowledge signals.
+      // A provider plan is non-authoritative when it would suppress a current
+      // turn that independently has strong, bounded enterprise/document
+      // knowledge signals. This applies to valid-but-wrong classifications and
+      // low-confidence clarification as well as schema-invalid output. Unsafe
+      // remains a hard boundary; deterministic assistant-only, social-only and
+      // external-current requests already returned before the provider call.
+      const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       if (
-        validatedPlan.processingMetadata.fallbackUsed
+        knowledgeSignals.positive &&
+        validatedPlan.route !== "rag" &&
+        validatedPlan.route !== "unsafe"
       ) {
-        const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
-        if (knowledgeSignals.positive) {
-          const fallbackQuestion = knowledgeSignals.retrievalText;
-          const expansion = expandBilingual(
-            fallbackQuestion,
+        const fallbackQuestion = knowledgeSignals.retrievalText;
+        const expansion = expandBilingual(
+          fallbackQuestion,
+          language,
+          localEntities,
+        );
+        validatedPlan = validateAndNormalizeQueryPlan(
+          {
+            detectedIntent: "knowledge_question",
+            intentConfidence: 0.75,
+            normalizedQuestion: fallbackQuestion,
             language,
-            localEntities,
-          );
-          validatedPlan = validateAndNormalizeQueryPlan(
-            {
-              detectedIntent: "knowledge_question",
-              intentConfidence: 0.75,
-              normalizedQuestion: fallbackQuestion,
-              language,
-              entities: localEntities,
-              temporalConstraints: localTemporalConstraints,
-              exactTerms: localEntities
-                .filter((entity) => entity.preserveExact)
-                .map((entity) => entity.text),
-              semanticQueries: expansion.semanticQueries,
-              keywordQueries: expansion.keywordQueries,
-              clarificationNeeded: false,
-              clarification: null,
-              isFollowUp: false,
-              conversationContextUsed: false,
-              referencedDocumentIds: hints.referencedDocumentIds,
-              referencedDocumentTitles: hints.referencedDocumentTitles,
-            },
-            input.question,
-            language,
-            INTENT_PROMPT_VERSION,
-            this.modelAdapter.providerKey,
-            Date.now() - start,
-            tokensUsed,
-            estimatedCost,
-            true,
-          );
-        }
+            entities: localEntities,
+            temporalConstraints: localTemporalConstraints,
+            exactTerms: localEntities
+              .filter((entity) => entity.preserveExact)
+              .map((entity) => entity.text),
+            semanticQueries: expansion.semanticQueries,
+            keywordQueries: expansion.keywordQueries,
+            clarificationNeeded: false,
+            clarification: null,
+            isFollowUp: false,
+            conversationContextUsed: false,
+            referencedDocumentIds: hints.referencedDocumentIds,
+            referencedDocumentTitles: hints.referencedDocumentTitles,
+          },
+          input.question,
+          language,
+          INTENT_PROMPT_VERSION,
+          this.modelAdapter.providerKey,
+          Date.now() - start,
+          tokensUsed,
+          estimatedCost,
+          validatedPlan.processingMetadata.fallbackUsed,
+        );
       }
     } else {
       // Deterministic fallback execution

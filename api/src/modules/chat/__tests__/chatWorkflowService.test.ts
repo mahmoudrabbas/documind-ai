@@ -11,10 +11,35 @@ import type {
   ResolvedPermissions,
 } from "../../permissions/permissions.types.js";
 import {
+  buildAuthorizedSearchQueryText,
   ChatWorkflowService,
   type ChatWorkflowRepository,
   type ChatWorkflowServiceDependencies,
 } from "../chatWorkflowService.js";
+
+describe("buildAuthorizedSearchQueryText", () => {
+  it("prioritizes a bounded English expansion for an Arabic search", () => {
+    const question = "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟";
+    expect(buildAuthorizedSearchQueryText({
+      normalizedQuestion: question,
+      language: "ar",
+      semanticQueries: [
+        { text: question, language: "ar", weight: 1 },
+        { text: "employee employment remote work", language: "en", weight: 0.7 },
+      ],
+    })).toBe(`employee employment remote work\n${question}`);
+  });
+
+  it("does not append same-language provider paraphrases", () => {
+    expect(buildAuthorizedSearchQueryText({
+      normalizedQuestion: "trusted normalized question",
+      language: "en",
+      semanticQueries: [
+        { text: "provider rewrite", language: "en", weight: 1 },
+      ],
+    })).toBe("trusted normalized question");
+  });
+});
 
 const tenantId = "64b000000000000000000001";
 const actorId = "64b000000000000000000002";

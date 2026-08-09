@@ -83,6 +83,19 @@ class RecordingAdapter implements ModelAdapter {
   }
 }
 
+class SequenceRecordingAdapter extends RecordingAdapter {
+  constructor(private readonly contents: readonly string[]) {
+    super();
+  }
+
+  override async complete(
+    params: Parameters<RecordingAdapter["complete"]>[0],
+  ): ReturnType<RecordingAdapter["complete"]> {
+    this.setContent(this.contents[this.calls.length] ?? this.contents.at(-1) ?? "");
+    return super.complete(params);
+  }
+}
+
 function makeService(content: string): {
   service: AnswerWriterService;
   adapter: RecordingAdapter;
@@ -516,4 +529,121 @@ test("L: threshold questions receive only bounded question-and-evidence comparis
   assert.ok(controlled);
   assert.match(controlled.content, /satisfied:false result supports a correctly stated negative answer/u);
   assert.match(controlled.content, /do not add related eligibility conditions/u);
+  assert.match(controlled.content, /must not be called probation/u);
+  assert.match(controlled.content, /same cited threshold statement/u);
+});
+
+test("K4: direct threshold instructions forbid cross-chunk probation equivalence", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    language: "ar",
+    userMessage: "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+    sources: [
+      {
+        chunkId: "remote-eligibility",
+        documentId: "remote-policy",
+        documentTitle: "Remote_Work_Policy",
+        text: [
+          "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+          "Regular remote work is limited to two days per week and requires manager approval.",
+        ].join(" "),
+        score: 1,
+      },
+      {
+        chunkId: "related-hr-policy",
+        documentId: "hr-policy",
+        documentTitle: "HR Policy",
+        text: [
+          "New employees complete a probation period before confirmation.",
+          "Remote work is discussed separately in the flexible-work section.",
+        ].join(" "),
+        score: 0.8,
+      },
+    ],
+  });
+
+  const controlled = messages.find((message) => message.role === "system");
+  assert.ok(controlled);
+  assert.match(controlled.content, /state only whether the current value satisfies/u);
+  assert.match(controlled.content, /must not be called probation/u);
+  assert.match(controlled.content, /Similar or equal durations in separate statements are not interchangeable/u);
+
+  const data = messages.find((message) => message.content.includes("RAG_REQUEST_DATA_START"));
+  assert.ok(data);
+  assert.equal(data.role, "user");
+  assert.match(data.content, /"chunkId":"remote-eligibility"/u);
+  assert.doesNotMatch(data.content, /related-hr-policy/u);
+  assert.match(data.content, /"questionValue":30/u);
+  assert.match(data.content, /"thresholdValue":90/u);
+  assert.match(data.content, /"satisfied":false/u);
+});
+
+test("K5: retries and removes a named employment phase absent from the threshold evidence", async () => {
+  const bad = JSON.stringify({
+    decision: "grounded_answer",
+    answer: "نعم، بعد إكمال فترة الاختبار (حوالي ٩٠ يومًا) يمكن التقديم.",
+    citedChunkIds: ["remote-eligibility"],
+  });
+  const goodAnswer = "نعم، إكمال ١٢٠ يومًا يستوفي الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.";
+  const good = JSON.stringify({
+    decision: "grounded_answer",
+    answer: goodAnswer,
+    citedChunkIds: ["remote-eligibility"],
+  });
+  const adapter = new SequenceRecordingAdapter([bad, good]);
+  const result = await new AnswerWriterService(adapter).generate({
+    conversationId: "conversation-threshold-retry",
+    question: "أنا شغال بقالى ١٢٠ يوم، ينفع أطلب العمل عن بعد؟",
+    language: "ar",
+    citationsEnabled: true,
+    maxTokens: 512,
+    evidence: [
+      {
+        chunkId: "remote-eligibility",
+        documentId: "remote-policy",
+        documentTitle: "Remote_Work_Policy",
+        text: "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+      },
+      {
+        chunkId: "hr-probation",
+        documentId: "hr-policy",
+        documentTitle: "HR Policy",
+        text: "New employees complete a probation period before confirmation.",
+      },
+    ],
+  });
+
+  assert.equal(adapter.calls.length, 2);
+  assert.equal(result.outcome, "usable");
+  assert.equal(result.outcome === "usable" ? result.decision : null, "grounded_answer");
+  assert.equal(result.outcome === "usable" ? result.answer : null, goodAnswer);
+  assert.deepEqual(result.outcome === "usable" ? result.citedChunkIds : [], ["remote-eligibility"]);
+  const retrySystem = adapter.calls[1]?.messages as Array<{ role: string; content: string }>;
+  assert.match(retrySystem[0]?.content ?? "", /prior candidate was rejected/u);
+});
+
+test("K6: fails closed when a bounded retry repeats an unsupported employment phase", async () => {
+  const bad = JSON.stringify({
+    decision: "grounded_answer",
+    answer: "لا، يجب إكمال فترة الاختبار أولاً.",
+    citedChunkIds: ["remote-eligibility"],
+  });
+  const adapter = new SequenceRecordingAdapter([bad, bad]);
+  const result = await new AnswerWriterService(adapter).generate({
+    conversationId: "conversation-threshold-retry-fail-closed",
+    question: "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+    language: "ar",
+    citationsEnabled: true,
+    maxTokens: 512,
+    evidence: [{
+      chunkId: "remote-eligibility",
+      documentId: "remote-policy",
+      text: "Employees who have completed at least 90 days of employment may request regular remote work.",
+    }],
+  });
+
+  assert.equal(adapter.calls.length, 2);
+  assert.equal(result.outcome, "usable");
+  assert.equal(result.outcome === "usable" ? result.decision : null, "insufficient_evidence");
+  assert.deepEqual(result.outcome === "usable" ? result.citedChunkIds : [], []);
 });

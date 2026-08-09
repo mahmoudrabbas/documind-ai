@@ -35,6 +35,7 @@ test("bounded enterprise structures survive intent-provider failure", () => {
     "شكرا، كام حد الفندق؟",
     "p1 response time كام؟",
     "محتاج 3 quotations لو السعر 1500؟",
+    "هل الموظف اللي اشتغل 30 يوم يقدر يطلب العمل عن بعد؟",
   ]) {
     assert.equal(assessPositiveKnowledgeSeeking(input).positive, true, input);
   }

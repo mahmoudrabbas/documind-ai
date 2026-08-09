@@ -349,6 +349,46 @@ class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
   }
 }
 
+class WriterSourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
+  constructor(
+    answers: ReadonlyMap<string, string>,
+    private readonly supportingEvidencePattern: RegExp,
+  ) {
+    super(answers);
+  }
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (
+      !params.structuredOutput ||
+      isIntentClassificationRequest(params) ||
+      isSemanticCitationRequest(params)
+    ) {
+      return response;
+    }
+    const payload = answerWriterRequestData(params);
+    const citedChunkIds = payload.authorizedEvidence
+      .filter((item) => this.supportingEvidencePattern.test(item.text))
+      .map((item) => item.chunkId);
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) => {
+        if (index !== 0) return choice;
+        const parsed = JSON.parse(choice.message.content) as Record<string, unknown>;
+        return {
+          ...choice,
+          message: {
+            ...choice.message,
+            content: JSON.stringify({ ...parsed, citedChunkIds }),
+          },
+        };
+      }),
+    };
+  }
+}
+
 class IntentProviderFailureFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   override async complete(
     params: Parameters<FakeModelAdapter["complete"]>[0],
@@ -2027,6 +2067,187 @@ test(
     const graph = await loadSupervisorGraph(requestId);
     const intent = graph.steps.find((step) => step.agentName === "intent-query-agent");
     assert.equal(intent?.output?.route, "rag");
+    assert.deepEqual(
+      graph.toolCalls.map((call) => call.toolName),
+      ["authorized_hybrid_search", "evaluate_evidence"],
+    );
+  },
+);
+
+test(
+  "production-composed workflow grounds Arabic 30, 90, and 120-day remote-work questions against English policy text",
+  { timeout: 90_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const cases = [
+      {
+        question: "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+        answer: "لا. الموظف الذي عمل ٣٠ يومًا لم يستوف الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.",
+        satisfied: false,
+      },
+      {
+        question: "لو الموظف كمل ٩٠ يوم بالظبط، ينفع يطلب العمل عن بعد؟",
+        answer: "نعم. إكمال ٩٠ يومًا يستوفي الحد الأدنى المطلوب لطلب العمل عن بعد.",
+        satisfied: true,
+      },
+      {
+        question: "لو الموظف كمل ١٢٠ يوم، ينفع يطلب العمل عن بعد؟",
+        answer: "نعم. إكمال ١٢٠ يومًا يتجاوز الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.",
+        satisfied: true,
+      },
+    ] as const;
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "Remote_Work_Policy.pdf",
+      title: "Remote_Work_Policy",
+      question: "employee employment remote work minimum days",
+      text: [
+        "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+        "Regular remote work is limited to two days per week and requires manager approval.",
+      ].join(" "),
+      sectionTitle: "Eligibility",
+      pageNumber: 2,
+    });
+    const relatedHrEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "HR_Policy.pdf",
+      title: "HR Policy",
+      question: "employee employment remote work minimum days",
+      text: [
+        "New employees complete a probation period before confirmation.",
+        "Remote work is limited to two days per week with manager approval.",
+      ].join(" "),
+      sectionTitle: "Employment lifecycle and flexible work",
+      pageNumber: 4,
+    });
+    const model = new WriterSourcePreciseRecordingFakeModelAdapter(
+      new Map(cases.map(({ question, answer }) => [question, answer])),
+      /at least 90 days of employment/iu,
+    );
+    const service = await productionService(fixture, {
+      evidence: [evidence, relatedHrEvidence],
+      model,
+    });
+    const conversationIds = [fixture.conversationId];
+    for (let index = 1; index < cases.length; index += 1) {
+      const conversation = await ConversationModel.create({
+        tenantId: fixture.tenantId,
+        userId: fixture.actorId,
+        title: `Arabic remote threshold ${index}`,
+        lastMessageAt: new Date(),
+        messageCount: 0,
+      });
+      conversationIds.push(conversation.id);
+    }
+
+    for (const [index, item] of cases.entries()) {
+      const requestId = `request-stage3-arabic-remote-matrix-${index}`;
+      const response = await service.execute(
+        { conversationId: conversationIds[index]!, message: item.question },
+        executionContext(fixture, requestId),
+      );
+      const graph = await loadSupervisorGraph(requestId);
+      assert.equal(
+        graph.steps.find((step) => step.agentName === "intent-query-agent")?.output?.route,
+        "rag",
+        item.question,
+      );
+      const search = graph.toolCalls.find((call) => call.toolName === "authorized_hybrid_search");
+      assert.deepEqual(new Set(
+        (search?.output?.candidates as Array<{ chunkId: string }> | undefined)
+          ?.map((candidate) => candidate.chunkId),
+      ), new Set([evidence.chunkId, relatedHrEvidence.chunkId]), item.question);
+      const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+      assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT", item.question);
+      assert.deepEqual(
+        new Set(evaluation?.output?.approvedEvidenceIds as string[] | undefined),
+        new Set([evidence.chunkId, relatedHrEvidence.chunkId]),
+        item.question,
+      );
+      assert.equal(
+        graph.steps.find((step) => step.agentName === "citation-verification-agent")?.output?.verified,
+        true,
+        `${item.question}\n${JSON.stringify(
+          graph.steps.find((step) => step.agentName === "citation-verification-agent")?.output,
+        )}`,
+      );
+      assert.equal(
+        graph.steps.find((step) => step.agentName === "answer-writer-agent")?.output?.answer,
+        item.answer,
+        item.question,
+      );
+      assert.equal(response.answer, item.answer, item.question);
+      assert.deepEqual(
+        response.sources?.map((source) => source.chunkId),
+        [evidence.chunkId],
+        item.question,
+      );
+      assert.equal(response.sources?.[0]?.documentTitle, "Remote_Work_Policy", item.question);
+
+      const writerCall = model.calls.find((call) =>
+        call.messages.at(-1)?.content.includes(`"currentQuestion":"${item.question}`),
+      );
+      assert.ok(writerCall, item.question);
+      const writerData = parseDelimitedModelData<{
+        authorizedEvidence: Array<{ chunkId: string }>;
+        thresholdComparisons: Array<{ satisfied: boolean }>;
+      }>(
+        writerCall.messages.at(-1)?.content ?? "",
+        "RAG_REQUEST_DATA_START",
+        "RAG_REQUEST_DATA_END",
+      );
+      if (!item.satisfied) {
+        assert.deepEqual(
+          writerData.authorizedEvidence.map((item) => item.chunkId),
+          [evidence.chunkId],
+          "a failed employment threshold must exclude the related probation chunk",
+        );
+      }
+      assert.equal(
+        writerData.thresholdComparisons[0]?.satisfied,
+        item.satisfied,
+        item.question,
+      );
+    }
+  },
+);
+
+test(
+  "production-composed workflow deterministically routes the Arabic ASCII 30-day question during intent-provider failure",
+  { timeout: 120_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "هل الموظف اللي اشتغل 30 يوم يقدر يطلب العمل عن بعد؟";
+    const answer = "لا. الموظف الذي عمل 30 يومًا لم يستوف الحد الأدنى البالغ 90 يومًا لطلب العمل عن بعد.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "Remote_Work_Policy.pdf",
+      title: "Remote_Work_Policy",
+      question: "employee employment remote work minimum days",
+      text: [
+        "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+        "Regular remote work is limited to two days per week and requires manager approval.",
+      ].join(" "),
+      sectionTitle: "Eligibility",
+      pageNumber: 2,
+    });
+    const model = new ControlledIntentFallbackModelAdapter(
+      new Map([[question, answer]]),
+      new Error("simulated intent timeout"),
+    );
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const requestId = "request-routing-arabic-ascii-30-fallback";
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const graph = await loadSupervisorGraph(requestId);
+    const intent = graph.steps.find((step) => step.agentName === "intent-query-agent");
+    assert.equal(intent?.output?.route, "rag");
+    const intentTrace = await IntentQueryTraceModel.findOne({
+      traceId: `trace-${requestId}`,
+    }).lean().exec();
+    assert.equal(intentTrace?.fallbackUsed, true);
     assert.deepEqual(
       graph.toolCalls.map((call) => call.toolName),
       ["authorized_hybrid_search", "evaluate_evidence"],
