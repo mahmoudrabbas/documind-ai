@@ -80,13 +80,13 @@ export function FeedbackWidget({
   };
 
   return (
-    <div className="mt-3 flex flex-col gap-1.5 text-xs" id={`feedback-widget-${messageId}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-on-surface-variant">
+    <div className="mt-3.5 flex flex-col gap-1.5 text-xs" id={`feedback-widget-${messageId}`}>
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10.5px] text-on-surface-variant/70">
             {t("chat.feedback.prompt")}
           </span>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               id={`thumbs-up-${messageId}`}
@@ -95,14 +95,14 @@ export function FeedbackWidget({
               aria-label={t("chat.feedback.thumbsUpAria")}
               aria-pressed={rating === "thumbs_up"}
               title={t("chat.feedback.helpfulTitle")}
-              className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${
                 rating === "thumbs_up"
                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                  : "border-outline-variant/25 text-on-surface-variant/80 hover:bg-surface-container-high hover:text-on-surface"
+                  : "border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high hover:text-on-surface"
               }`}
             >
               <span
-                className="material-symbols-outlined text-[16px]"
+                className="material-symbols-outlined text-[14px]"
                 style={rating === "thumbs_up" ? { fontVariationSettings: "'FILL' 1" } : undefined}
               >
                 thumb_up
@@ -118,14 +118,14 @@ export function FeedbackWidget({
               aria-label={t("chat.feedback.thumbsDownAria")}
               aria-pressed={rating === "thumbs_down"}
               title={t("chat.feedback.notHelpfulTitle")}
-              className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${
                 rating === "thumbs_down"
                   ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                  : "border-outline-variant/25 text-on-surface-variant/80 hover:bg-surface-container-high hover:text-on-surface"
+                  : "border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high hover:text-on-surface"
               }`}
             >
               <span
-                className="material-symbols-outlined text-[16px]"
+                className="material-symbols-outlined text-[14px]"
                 style={rating === "thumbs_down" ? { fontVariationSettings: "'FILL' 1" } : undefined}
               >
                 thumb_down
@@ -136,8 +136,8 @@ export function FeedbackWidget({
         </div>
 
         {submitted && !showCategoryMenu && (
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-            <span className="material-symbols-outlined text-[13px]">check_circle</span>
+          <div className="inline-flex items-center gap-1 rounded-full bg-emerald-500/5 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-600/80 dark:text-emerald-400">
+            <span className="material-symbols-outlined text-[12px]">check_circle</span>
             <span>{t("chat.feedback.thanks")}</span>
           </div>
         )}
@@ -150,7 +150,7 @@ export function FeedbackWidget({
       {showCategoryMenu && (
         <form
           onSubmit={handleSubmitDetails}
-          className="flex flex-col gap-2.5 rounded-xl border border-outline-variant/25 bg-surface-container-lowest/70 p-3"
+          className="flex flex-col gap-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/80 p-3"
           id={`feedback-form-${messageId}`}
         >
           <div className="flex flex-col gap-1">
@@ -161,7 +161,7 @@ export function FeedbackWidget({
               id={`category-select-${messageId}`}
               value={category}
               onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
-              className="w-full rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">{t("chat.feedback.selectCategory")}</option>
               <option value="inaccurate">{t("chat.feedback.category.inaccurate")}</option>
@@ -182,7 +182,7 @@ export function FeedbackWidget({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder={t("chat.feedback.detailsPlaceholder")}
-              className="w-full rounded-lg border border-outline-variant/40 bg-surface p-2 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded-lg border border-outline-variant/30 bg-surface p-2 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 

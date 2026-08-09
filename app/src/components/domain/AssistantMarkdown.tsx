@@ -54,16 +54,16 @@ const components: Components = {
   a: MarkdownLink,
   img: IgnoredImage,
   p: ({ node: _node, ...props }) => (
-    <p className="whitespace-pre-line text-start" {...props} />
+    <p className="whitespace-pre-line text-start leading-7" {...props} />
   ),
   h1: ({ node: _node, ...props }) => (
-    <h1 className="mb-1 mt-3 text-start text-base font-bold text-on-surface" {...props} />
+    <h1 className="mb-1 mt-3 text-start text-lg font-semibold text-on-surface" {...props} />
   ),
   h2: ({ node: _node, ...props }) => (
-    <h2 className="mb-1 mt-3 text-start text-base font-bold text-on-surface" {...props} />
+    <h2 className="mb-1 mt-3 text-start text-lg font-semibold text-on-surface" {...props} />
   ),
   h3: ({ node: _node, ...props }) => (
-    <h3 className="mb-1 mt-3 text-start text-sm font-bold text-on-surface" {...props} />
+    <h3 className="mb-1 mt-3 text-start text-base font-semibold text-on-surface" {...props} />
   ),
   h4: ({ node: _node, ...props }) => (
     <h4 className="mb-1 mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
@@ -75,10 +75,10 @@ const components: Components = {
     <h6 className="mb-1 mt-2 text-start text-sm font-semibold text-on-surface" {...props} />
   ),
   ul: ({ node: _node, ...props }) => (
-    <ul className="list-disc space-y-1 ps-5" {...props} />
+    <ul className="list-disc space-y-1.5 ps-5" {...props} />
   ),
   ol: ({ node: _node, ...props }) => (
-    <ol className="list-decimal space-y-1 ps-5" {...props} />
+    <ol className="list-decimal space-y-1.5 ps-5" {...props} />
   ),
   li: ({ node: _node, ...props }) => (
     <li className="break-words leading-relaxed" {...props} />
@@ -127,7 +127,7 @@ interface AssistantMarkdownProps {
 export function AssistantMarkdown({ content }: AssistantMarkdownProps) {
   const { dir, lang } = getContentDirection(content);
   return (
-    <div dir={dir} lang={lang} className="space-y-1">
+    <div dir={dir} lang={lang} className="space-y-2">
       <ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={components}>
         {stripReasoning(content)}
       </ReactMarkdown>

@@ -104,14 +104,14 @@ function ThinkingIndicator({ label }: { label: string }) {
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center gap-2.5"
+      className="flex items-center gap-2"
     >
       <span className="flex gap-1" aria-hidden="true">
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:0ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:300ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40 [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/30 [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/25 [animation-delay:300ms]" />
       </span>
-      <span className="text-sm text-on-surface-variant">{label}</span>
+      <span className="text-[13px] text-on-surface-variant">{label}</span>
     </div>
   );
 }
@@ -644,22 +644,22 @@ export function ChatClient() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-4rem)] overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm lg:h-[calc(100dvh-6rem)]">
+    <div className="flex h-[calc(100dvh-4rem)] overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface shadow-sm lg:h-[calc(100dvh-6rem)]">
       {/* Sidebar */}
-      <aside className="hidden w-72 shrink-0 flex-col border-e border-outline-variant/30 bg-surface-container-low md:flex">
-        <div className="border-b border-outline-variant/30 p-4">
-          <h2 className="text-title-sm font-bold text-on-surface">
+      <aside className="hidden w-72 shrink-0 flex-col border-e border-outline-variant/25 bg-surface-container-lowest md:flex">
+        <div className="border-b border-outline-variant/20 px-4 py-3.5">
+          <h2 className="text-sm font-semibold tracking-normal text-on-surface">
             {t("chat.conversationsTitle")}
           </h2>
           <button
             onClick={() => handleNewConversation()}
-            className="mt-3 flex w-full items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
+            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            <span className="material-symbols-outlined text-[18px]">add</span>
+            <span className="material-symbols-outlined text-[17px]">add</span>
             {t("chat.newConversation")}
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-2 py-2">
           {loadingConversations && conversations.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
               {t("common.loading")}
@@ -672,36 +672,42 @@ export function ChatClient() {
                 <div
                   key={conv.id}
                   onClick={() => handleSelectConversation(conv.id)}
-                  className={`group flex w-full cursor-pointer flex-col gap-1 border-b border-outline-variant/20 px-4 py-3 text-start transition-colors hover:bg-surface-container ${
+                  className={`group relative flex w-full cursor-pointer flex-col gap-1.5 rounded-xl px-3 py-2.5 text-start transition-colors hover:bg-surface-container-low ${
                     activeConversation === conv.id
-                      ? "bg-primary/5 border-s-4 border-s-primary"
+                      ? "bg-primary/5"
                       : ""
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  {activeConversation === conv.id && (
+                    <span
+                      className="absolute inset-y-3 start-0 w-1 rounded-full bg-primary/70"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <div className="flex items-start justify-between gap-2">
                     <span
                       dir={titleDir.dir}
                       lang={titleDir.lang}
-                      className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface"
+                      className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-5 text-on-surface"
                     >
                       {conv.title}
                     </span>
                     <button
                       onClick={(e) => handleDeleteConversation(conv.id, e)}
-                      className="hidden shrink-0 rounded p-0.5 text-on-surface-variant/40 transition-colors hover:bg-error/10 hover:text-error group-hover:block"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-variant/0 transition-colors hover:bg-error/10 hover:text-error group-hover:text-on-surface-variant/50 focus-visible:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
                       title={t("chat.deleteConversation")}
                     >
-                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                      <span className="material-symbols-outlined text-[15px]">delete</span>
                     </button>
                   </div>
                   <span
                     dir={previewDir.dir}
                     lang={previewDir.lang}
-                    className="truncate text-xs text-on-surface-variant"
+                    className="truncate text-xs leading-4 text-on-surface-variant/70"
                   >
                     {previewText(conv.lastMessage) || t("chat.noMessagesYet")}
                   </span>
-                  <span className="text-[11px] text-outline">
+                  <span className="text-[10px] font-medium leading-4 text-outline/80">
                     {formatRelativeTime(conv.updatedAt, t)}
                   </span>
                 </div>
@@ -717,35 +723,35 @@ export function ChatClient() {
       </aside>
 
       {/* Main chat area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col bg-surface-container-lowest">
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6 lg:pe-8 lg:ps-8">
           {currentMessages.length === 0 && !loadingMessages ? (
-            <div className="flex h-full flex-col items-center justify-center gap-6 px-4 text-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 ring-1 ring-primary/10">
+            <div className="flex h-full flex-col items-center justify-center gap-5 px-4 pb-12 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/10">
                 <span
-                  className="material-symbols-outlined text-[40px] text-primary"
+                  className="material-symbols-outlined text-[30px] text-primary/80"
                   style={{ fontVariationSettings: "'FILL' 1" }}
                 >
                   psychology
                 </span>
               </div>
-              <div className="space-y-2">
-                <h2 className="text-headline-md font-bold text-on-surface">
+              <div className="space-y-1.5">
+                <h2 className="text-title-lg font-semibold text-on-surface">
                   {t("chat.emptyTitle")}
                 </h2>
-                <p className="mx-auto max-w-sm text-body-md text-on-surface-variant">
+                <p className="mx-auto max-w-md text-sm leading-6 text-on-surface-variant">
                   {t("chat.emptyDescription")}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-2">
+              <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
                 {SUGGESTED_QUESTION_KEYS.map((key) => (
                   <button
                     key={key}
                     type="button"
                     onClick={() => handleSend(t(key))}
                     disabled={isTyping || retryAfterSeconds !== null}
-                    className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-full border border-outline-variant/30 bg-surface px-3.5 py-1.5 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {t(key)}
                   </button>
@@ -754,22 +760,22 @@ export function ChatClient() {
             </div>
           ) : loadingMessages ? (
             <div className="flex h-full items-center justify-center">
-              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3">
+              <div className="rounded-2xl border border-outline-variant/20 bg-surface px-3.5 py-2.5">
                 <ThinkingIndicator label={t("chat.loadingConversation")} />
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-4xl space-y-6">
+            <div className="mx-auto flex max-w-5xl flex-col gap-4">
               {currentMessages.map((msg) => {
                 const contentDir = getContentDirection(msg.content);
                 return (
                   <div
                     key={msg.id}
-                    className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     {msg.role === "assistant" && (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                        <span className="material-symbols-outlined text-[18px] text-primary">
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/10">
+                        <span className="material-symbols-outlined text-[16px] text-primary/80">
                           smart_toy
                         </span>
                       </div>
@@ -777,15 +783,15 @@ export function ChatClient() {
                     <div
                       className={`flex min-w-0 flex-col ${
                         msg.role === "user"
-                          ? "max-w-[calc(100%-3rem)] items-end sm:max-w-[70%]"
-                          : "max-w-[calc(100%-3rem)] items-start sm:max-w-[85%]"
+                          ? "max-w-[calc(100%-2.5rem)] items-end sm:max-w-[68%]"
+                          : "max-w-[calc(100%-2.5rem)] items-start sm:max-w-[88%]"
                       }`}
                     >
                       <div
                         className={
                           msg.role === "user"
-                            ? "w-fit max-w-full rounded-xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-on-primary"
-                            : "w-full text-[15px] leading-relaxed text-on-surface"
+                            ? "w-fit max-w-full rounded-2xl rounded-ee-md bg-primary px-3.5 py-2 text-[15px] leading-6 text-on-primary shadow-sm"
+                            : "w-full rounded-2xl rounded-ss-md border border-outline-variant/15 bg-surface/80 px-5 py-4 text-base leading-7 text-on-surface"
                         }
                       >
                         {msg.role === "user" && msg.localAttachmentUrl && (
@@ -845,8 +851,8 @@ export function ChatClient() {
                       )}
                     </div>
                     {msg.role === "user" && (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-container-high">
-                        <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-container-high/80 ring-1 ring-outline-variant/20">
+                        <span className="material-symbols-outlined text-[16px] text-on-surface-variant/80">
                           person
                         </span>
                       </div>
@@ -855,13 +861,13 @@ export function ChatClient() {
                 );
               })}
               {isTyping && (
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <span className="material-symbols-outlined text-[18px] text-primary">
+                <div className="flex gap-2.5">
+                  <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/10">
+                    <span className="material-symbols-outlined text-[16px] text-primary/80">
                       smart_toy
                     </span>
                   </div>
-                  <div className="rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3">
+                  <div className="rounded-2xl rounded-ss-md border border-outline-variant/20 bg-surface px-4 py-3">
                     <ThinkingIndicator label={t("chat.thinking")} />
                   </div>
                 </div>
@@ -884,8 +890,8 @@ export function ChatClient() {
 
         {/* Entitlement denial banner (429 quota exceeded / 403 subscription inactive) */}
         {entitlementBanner && (
-          <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-3 sm:px-6 lg:px-10">
-            <div className="mx-auto max-w-4xl">
+          <div className="border-t border-outline-variant/25 bg-surface-container-lowest px-4 py-3 sm:px-6 lg:px-10">
+            <div className="mx-auto max-w-3xl">
               {entitlementBanner.kind === "subscription-inactive" ? (
                 <UpgradePrompt
                   variant="subscription-inactive"
@@ -924,14 +930,14 @@ export function ChatClient() {
         )}
 
         {/* Input */}
-        <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 sm:px-6 lg:px-10">
-          <div className="mx-auto max-w-4xl">
+        <div className="border-t border-outline-variant/20 bg-surface/95 px-4 pb-3 pt-3 sm:px-6 lg:pe-8 lg:ps-8">
+          <div className="mx-auto max-w-5xl">
             {previewUrl && selectedFile && (
-              <div className="mb-2 flex w-full items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pe-3 sm:max-w-md">
+              <div className="mb-2 flex w-full items-center gap-3 rounded-xl border border-outline-variant/25 bg-surface-container-lowest p-2 pe-3 sm:max-w-md">
                 <img
                   src={previewUrl}
                   alt={t("chat.selectedImagePreview")}
-                  className="h-14 w-18 shrink-0 rounded-xl object-cover"
+                  className="h-12 w-16 shrink-0 rounded-lg object-cover"
                 />
                 <span className="min-w-0 flex-1 truncate text-xs text-on-surface-variant">
                   {selectedFile.name}
@@ -952,17 +958,17 @@ export function ChatClient() {
                 </button>
               </div>
             )}
-            <div className="flex items-end gap-2 rounded-2xl border border-outline-variant/40 bg-surface p-2 shadow-sm transition-shadow focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
+            <div className="flex items-end gap-1.5 rounded-2xl border border-outline-variant/25 bg-surface-container-lowest p-2 shadow-sm transition-colors focus-within:border-primary/50 focus-within:bg-surface focus-within:ring-4 focus-within:ring-primary/10">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={retryAfterSeconds !== null}
                 aria-label={t("chat.attachImage")}
                 title={t("chat.attachImage")}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant/75 transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <span
-                  className="material-symbols-outlined text-[22px]"
+                  className="material-symbols-outlined text-[20px]"
                   aria-hidden="true"
                 >
                   image
@@ -983,10 +989,10 @@ export function ChatClient() {
                   isRecording ? t("chat.stopRecording") : t("chat.voiceInput")
                 }
                 title={isRecording ? t("chat.stopRecording") : t("chat.voiceInput")}
-                className={`flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
+                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
                   isRecording
                     ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
-                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
+                    : "text-on-surface-variant/75 hover:bg-surface-container-high hover:text-primary"
                 } disabled:cursor-not-allowed disabled:opacity-40`}
               >
                 {isTranscribing ? (
@@ -1006,7 +1012,7 @@ export function ChatClient() {
                   </>
                 ) : (
                   <span
-                    className="material-symbols-outlined text-[22px]"
+                    className="material-symbols-outlined text-[20px]"
                     aria-hidden="true"
                   >
                     mic
@@ -1026,7 +1032,7 @@ export function ChatClient() {
                 disabled={retryAfterSeconds !== null}
                 placeholder={t("chat.inputPlaceholder")}
                 rows={1}
-                className="max-h-32 min-h-[24px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/60"
+                className="max-h-32 min-h-[24px] flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-1.5 text-[15px] leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/55"
               />
               <button
                 type="button"
@@ -1034,18 +1040,18 @@ export function ChatClient() {
                 disabled={!input.trim() || isTyping || retryAfterSeconds !== null}
                 aria-label={t("chat.sendAriaLabel")}
                 title={t("chat.sendAriaLabel")}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-on-primary disabled:cursor-not-allowed disabled:bg-primary/40 disabled:hover:bg-primary/40 disabled:shadow-none"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-on-primary disabled:cursor-not-allowed disabled:bg-primary/40 disabled:text-on-primary/80 disabled:hover:bg-primary/40 disabled:shadow-none"
               >
                 {isTyping ? (
                   <span
-                    className="material-symbols-outlined animate-spin text-[20px]"
+                    className="material-symbols-outlined animate-spin text-[19px]"
                     aria-hidden="true"
                   >
                     progress_activity
                   </span>
                 ) : (
                   <span
-                    className="material-symbols-outlined text-[20px]"
+                    className="material-symbols-outlined text-[19px]"
                     aria-hidden="true"
                   >
                     send
@@ -1053,7 +1059,7 @@ export function ChatClient() {
                 )}
               </button>
             </div>
-            <p className="mt-2.5 text-center text-[11px] text-outline">
+            <p className="mt-2 text-center text-[10.5px] leading-4 text-outline">
               {t("chat.disclaimer")}
             </p>
           </div>
