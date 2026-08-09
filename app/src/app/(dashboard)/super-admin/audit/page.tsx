@@ -5,10 +5,11 @@ import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platfo
 import { listPlatformAudit } from "@/services/super-admin.service";
 import type { PlatformAuditLog } from "@/types/api/super-admin.types";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { actionLabel, resourceLabel, describeChanges } from "@/lib/audit-formatters";
 
 export default function AuditPage() {
-  const { t } = useI18n();
+  const { t, tPlural } = useI18n();
   const [logs, setLogs] = useState<PlatformAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,23 +54,26 @@ export default function AuditPage() {
           minWidth="920px"
         >
           {logs.map((log) => {
-            const changeDesc = describeChanges(log.action, log.changes);
+            const changeDesc = describeChanges(log.action, log.changes, { t, tPlural });
             return (
               <tr key={log._id}>
                 <td className={cell}>
                   <strong className="text-on-surface">
-                    {actionLabel(log.action)}
+                    {actionLabel(log.action, t)}
                   </strong>
                   {log.outcome !== "SUCCESS" && (
                     <span className="ms-2 text-xs text-red-500">[{log.outcome}]</span>
                   )}
                 </td>
-                <td className={cell}>{log.actorEmail ?? "Unauthenticated"}</td>
+                <td className={cell}>{log.actorEmail ?? t("audit.unauthenticated")}</td>
                 <td className={cell}>
-                  <StatusPill value={log.actorRole ?? "N/A"} />
+                  <StatusPill
+                    value={log.actorRole ?? "unknown"}
+                    label={codeLabel(t, "audit.actorRole", log.actorRole ?? "unknown")}
+                  />
                 </td>
                 <td className={cell}>
-                  <span className="text-on-surface">{resourceLabel(log.resourceType)}</span>
+                  <span className="text-on-surface">{resourceLabel(log.resourceType, t)}</span>
                   <p className="max-w-44 truncate text-xs text-on-surface-variant">{log.resourceId}</p>
                 </td>
                 <td className={cell}>
