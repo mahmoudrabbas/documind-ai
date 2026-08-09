@@ -659,6 +659,54 @@ async function seedAdditionalAuthorizedEvidence(
   };
 }
 
+async function seedAdditionalChunkInDocument(
+  evidence: EvidenceFixture,
+  input: {
+    text: string;
+    question: string;
+    sectionTitle: string;
+    pageNumber: number;
+    chunkIndex: number;
+  },
+): Promise<EvidenceFixture> {
+  const chunk = await DocumentChunkModel.create({
+    tenantId: evidence.tenantId,
+    documentId: evidence.documentId,
+    documentVersion: 1,
+    documentVersionId: evidence.documentVersionId,
+    generationId: new Types.ObjectId(),
+    chunkIndex: input.chunkIndex,
+    sectionPath: [input.sectionTitle],
+    pageStart: input.pageNumber,
+    pageEnd: input.pageNumber,
+    offsetStart: 0,
+    offsetEnd: input.text.length,
+    contentType: "paragraph",
+    language: "en",
+    department: null,
+    classification: "internal",
+    accessPolicyVersion: "1",
+    confidenceScore: 1,
+    text: input.text,
+    checksum: `checksum-${evidence.documentId}-${input.chunkIndex}`,
+    tokenCount: Math.ceil(input.text.length / 4),
+    status: "ACTIVE",
+    partIndex: null,
+    partCount: null,
+    vector: [],
+    category: null,
+    allowAiUse: true,
+    pageNumber: input.pageNumber,
+    sectionTitle: input.sectionTitle,
+  });
+  return {
+    ...evidence,
+    chunkId: chunk.id,
+    question: input.question,
+    text: input.text,
+  };
+}
+
 async function seedOtherTenantScope(): Promise<{
   tenantId: string;
   actorId: string;
@@ -1257,6 +1305,181 @@ test(
         message.role === "user" && message.content.includes(maliciousInstruction),
       ), true);
     }
+  },
+);
+
+test(
+  "production-composed workflow does not treat same-document hotel and meal limits as conflicting",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "What is the hotel limit?";
+    const answer = "The hotel maximum is USD 180 per night.";
+    const hotelEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "travel-policy-numeric-rules.pdf",
+      title: "Travel Policy",
+      question,
+      text: answer,
+      sectionTitle: "Hotel",
+      pageNumber: 3,
+    });
+    const mealEvidence = await seedAdditionalChunkInDocument(hotelEvidence, {
+      question,
+      text: "The meal maximum is USD 60 per day.",
+      sectionTitle: "Meals",
+      pageNumber: 4,
+      chunkIndex: 1,
+    });
+    const requestId = "request-same-document-numeric-rules";
+    const model = new SourcePreciseRecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+      /hotel maximum/iu,
+    );
+    const service = await productionService(fixture, {
+      evidence: [hotelEvidence, mealEvidence],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [hotelEvidence.chunkId]);
+  },
+);
+
+test(
+  "production-composed workflow fails closed on unresolved cross-document remote-work limits",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "How many remote work days are allowed?";
+    const arbitraryAnswer = "Remote work is allowed 2 days per week.";
+    const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v1.pdf",
+      title: "Remote Work Policy v1",
+      question,
+      text: "Remote work is allowed 1 day per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const versionTwo = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v2.pdf",
+      title: "Remote Work Policy v2",
+      question,
+      text: "Remote work is allowed 2 days per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const requestId = "request-cross-document-policy-conflict";
+    const model = new RecordingFakeModelAdapter(new Map([[question, arbitraryAnswer]]));
+    const service = await productionService(fixture, {
+      evidence: [versionOne, versionTwo],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "CONFLICTING");
+    assert.deepEqual(evaluation?.output?.approvedEvidenceIds, []);
+    assert.notEqual(response.answer, arbitraryAnswer);
+    assert.deepEqual(response.sources, []);
+    assert.equal(graph.steps.some((step) => step.agentName === "answer-writer-agent"), false);
+  },
+);
+
+test(
+  "production-composed workflow treats identical eligible version evidence as consistent and deduplicates sources",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Is manager approval required?";
+    const answer = "Manager approval is required.";
+    const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "approval-policy-v1.pdf",
+      title: "Approval Policy v1",
+      question,
+      text: answer,
+      sectionTitle: "Approval",
+      pageNumber: 1,
+    });
+    const versionTwo = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "approval-policy-v2.pdf",
+      title: "Approval Policy v2",
+      question,
+      text: " Manager   approval is required!!! ",
+      sectionTitle: "Approval",
+      pageNumber: 1,
+    });
+    const requestId = "request-identical-version-evidence";
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, {
+      evidence: [versionOne, versionTwo],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.equal(response.answer, answer);
+    assert.equal(response.sources?.length, 1);
+  },
+);
+
+test(
+  "production-composed workflow retains compatible claims from two distinct documents",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "What do I need for international travel while accessing internal systems remotely?";
+    const answer = "International travel requires department-head approval. Remote access requires the corporate VPN.";
+    const travelEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "international-travel-policy.pdf",
+      title: "International Travel Policy",
+      question,
+      text: "International travel requires department-head approval.",
+      sectionTitle: "Approval",
+      pageNumber: 2,
+    });
+    const itEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-access-policy.pdf",
+      title: "Remote Access Policy",
+      question,
+      text: "Remote access to internal systems requires the corporate VPN.",
+      sectionTitle: "VPN",
+      pageNumber: 3,
+    });
+    const requestId = "request-compatible-cross-document-claims";
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, {
+      evidence: [travelEvidence, itEvidence],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.equal(response.answer, answer);
+    assert.deepEqual(
+      new Set(response.sources?.map((source) => source.chunkId)),
+      new Set([travelEvidence.chunkId, itEvidence.chunkId]),
+    );
   },
 );
 
