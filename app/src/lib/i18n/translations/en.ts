@@ -811,8 +811,12 @@ const en: TranslationDictionary = {
   "chat.noConversations": "No conversations yet",
   "chat.noMessagesYet": "No messages yet",
   "chat.inputPlaceholder": "Ask about your documents...",
+  "chat.emptyTitle": "Ask DocuMind AI",
   "chat.emptyDescription":
-    "Ask questions about your company documents and get instant answers sourced from your knowledge base.",
+    "Ask questions about your company documents and get grounded answers with sources.",
+  "chat.thinking": "Thinking...",
+  "chat.loadingConversation": "Loading conversation...",
+  "chat.sendAriaLabel": "Send message",
   "chat.sources": "Sources",
   "chat.sourceCount": "Sources ({{count}})",
   "chat.source": "Source",

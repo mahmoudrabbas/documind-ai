@@ -45,6 +45,7 @@ type Message = {
 
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_TEXTAREA_HEIGHT = 128;
 
 function formatRelativeTime(
   iso: string,
@@ -92,6 +93,23 @@ function isVisionResponse(
   response: ChatResponse | ChatVisionResponse,
 ): response is ChatVisionResponse {
   return "attachment" in response;
+}
+
+function ThinkingIndicator({ label }: { label: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex items-center gap-2.5"
+    >
+      <span className="flex gap-1" aria-hidden="true">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-on-surface-variant/50 [animation-delay:300ms]" />
+      </span>
+      <span className="text-sm text-on-surface-variant">{label}</span>
+    </div>
+  );
 }
 
 function AttachmentThumbnail({
@@ -185,6 +203,7 @@ export function ChatClient() {
   const liveTranscriptRef = useRef<string>("");
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const clientMessageIdRef = useRef<string | null>(null);
   const msgIdCounter = useRef(0);
@@ -427,6 +446,13 @@ export function ChatClient() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages.length, isTyping]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+  }, [input]);
 
   function handleSelectConversation(id: string) {
     setActiveConversation(id);
@@ -729,30 +755,31 @@ export function ChatClient() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
           {currentMessages.length === 0 && !loadingMessages ? (
-            <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <div className="flex h-full flex-col items-center justify-center gap-6 px-4 text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 ring-1 ring-primary/10">
                 <span
-                  className="material-symbols-outlined text-[32px] text-primary"
+                  className="material-symbols-outlined text-[40px] text-primary"
                   style={{ fontVariationSettings: "'FILL' 1" }}
                 >
                   psychology
                 </span>
               </div>
-              <div>
-                <h3 className="text-title-lg font-bold text-on-surface">
-                  DocuMind AI
-                </h3>
-                <p className="mt-1 max-w-sm text-sm text-on-surface-variant">
+              <div className="space-y-2">
+                <h2 className="text-headline-md font-bold text-on-surface">
+                  {t("chat.emptyTitle")}
+                </h2>
+                <p className="mx-auto max-w-sm text-body-md text-on-surface-variant">
                   {t("chat.emptyDescription")}
                 </p>
               </div>
-              <div className="flex flex-wrap justify-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 {SUGGESTED_QUESTION_KEYS.map((key) => (
                   <button
                     key={key}
+                    type="button"
                     onClick={() => handleSend(t(key))}
                     disabled={isTyping || retryAfterSeconds !== null}
-                    className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                    className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {t(key)}
                   </button>
@@ -761,10 +788,8 @@ export function ChatClient() {
             </div>
           ) : loadingMessages ? (
             <div className="flex h-full items-center justify-center">
-              <div className="flex gap-1">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:0ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:150ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:300ms]" />
+              <div className="rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3">
+                <ThinkingIndicator label={t("chat.loadingConversation")} />
               </div>
             </div>
           ) : (
@@ -857,11 +882,7 @@ export function ChatClient() {
                     </span>
                   </div>
                   <div className="rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3">
-                    <div className="flex gap-1">
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:300ms]" />
-                    </div>
+                    <ThinkingIndicator label={t("chat.thinking")} />
                   </div>
                 </div>
               )}
@@ -926,34 +947,44 @@ export function ChatClient() {
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 sm:px-6 lg:px-10">
           <div className="mx-auto max-w-4xl">
             {previewUrl && selectedFile && (
-              <div className="mb-2 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pr-3">
+              <div className="mb-2 flex w-full items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pr-3 sm:max-w-md">
                 <img
                   src={previewUrl}
                   alt={t("chat.selectedImagePreview")}
-                  className="h-16 w-20 rounded-xl object-cover"
+                  className="h-14 w-18 shrink-0 rounded-xl object-cover"
                 />
                 <span className="min-w-0 flex-1 truncate text-xs text-on-surface-variant">
                   {selectedFile.name}
                 </span>
                 <button
+                  type="button"
                   onClick={handleRemoveImage}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                  aria-label={t("chat.removeImage")}
                   title={t("chat.removeImage")}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-error"
                 >
-                  <span className="material-symbols-outlined text-[18px]">
+                  <span
+                    className="material-symbols-outlined text-[18px]"
+                    aria-hidden="true"
+                  >
                     close
                   </span>
                 </button>
               </div>
             )}
-            <div className="flex items-end gap-3 rounded-2xl border border-outline-variant/40 bg-surface px-4 py-3 shadow-sm transition-all focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+            <div className="flex items-end gap-2 rounded-2xl border border-outline-variant/40 bg-surface p-2 shadow-sm transition-shadow focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={retryAfterSeconds !== null}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t("chat.attachImage")}
                 title={t("chat.attachImage")}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span className="material-symbols-outlined text-[20px]">
+                <span
+                  className="material-symbols-outlined text-[22px]"
+                  aria-hidden="true"
+                >
                   image
                 </span>
               </button>
@@ -965,31 +996,45 @@ export function ChatClient() {
                 onChange={handleSelectImage}
               />
               <button
+                type="button"
                 onClick={toggleRecording}
                 disabled={isTranscribing || retryAfterSeconds !== null}
-                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors ${
+                aria-label={
+                  isRecording ? t("chat.stopRecording") : t("chat.voiceInput")
+                }
+                title={isRecording ? t("chat.stopRecording") : t("chat.voiceInput")}
+                className={`flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
                   isRecording
                     ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
                     : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
                 } disabled:cursor-not-allowed disabled:opacity-40`}
-                title={isRecording ? t("chat.stopRecording") : t("chat.voiceInput")}
               >
                 {isTranscribing ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                    aria-hidden="true"
+                  />
                 ) : isRecording ? (
                   <>
-                    <span className="h-2.5 w-2.5 animate-ping rounded-full bg-error" />
-                    <span className="font-mono text-xs font-medium">
+                    <span
+                      className="h-2.5 w-2.5 animate-ping rounded-full bg-error"
+                      aria-hidden="true"
+                    />
+                    <span className="font-mono text-xs font-medium tabular-nums">
                       {formatDuration(recordingDuration)}
                     </span>
                   </>
                 ) : (
-                  <span className="material-symbols-outlined text-[20px]">
+                  <span
+                    className="material-symbols-outlined text-[22px]"
+                    aria-hidden="true"
+                  >
                     mic
                   </span>
                 )}
               </button>
               <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -1001,19 +1046,34 @@ export function ChatClient() {
                 disabled={retryAfterSeconds !== null}
                 placeholder={t("chat.inputPlaceholder")}
                 rows={1}
-                className="max-h-32 min-h-[24px] flex-1 resize-none bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/50"
+                className="max-h-32 min-h-[24px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/60"
               />
               <button
+                type="button"
                 onClick={() => handleSend()}
                 disabled={!input.trim() || isTyping || retryAfterSeconds !== null}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t("chat.sendAriaLabel")}
+                title={t("chat.sendAriaLabel")}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-on-primary disabled:cursor-not-allowed disabled:bg-primary/40 disabled:hover:bg-primary/40 disabled:shadow-none"
               >
-                <span className="material-symbols-outlined text-[20px]">
-                  send
-                </span>
+                {isTyping ? (
+                  <span
+                    className="material-symbols-outlined animate-spin text-[20px]"
+                    aria-hidden="true"
+                  >
+                    progress_activity
+                  </span>
+                ) : (
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    send
+                  </span>
+                )}
               </button>
             </div>
-            <p className="mt-2 text-center text-[11px] text-outline">
+            <p className="mt-2.5 text-center text-[11px] text-outline">
               {t("chat.disclaimer")}
             </p>
           </div>

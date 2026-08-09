@@ -812,8 +812,12 @@ const ar: TranslationDictionary = {
   "chat.noConversations": "لا توجد محادثات بعد",
   "chat.noMessagesYet": "لا توجد رسائل بعد",
   "chat.inputPlaceholder": "اسأل عن مستنداتك...",
+  "chat.emptyTitle": "اسأل DocuMind AI",
   "chat.emptyDescription":
-    "اطرح أسئلة عن مستندات شركتك واحصل على إجابات فورية من قاعدة معرفتك.",
+    "اطرح أسئلة عن مستندات شركتك واحصل على إجابات موثقة بالمصادر.",
+  "chat.thinking": "جارٍ التفكير...",
+  "chat.loadingConversation": "جارٍ تحميل المحادثة...",
+  "chat.sendAriaLabel": "إرسال الرسالة",
   "chat.sources": "المصادر",
   "chat.sourceCount": "المصادر ({{count}})",
   "chat.source": "المصدر",
