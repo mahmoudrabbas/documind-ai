@@ -87,6 +87,22 @@ describe("compliance.service — deterministic gate", () => {
     assert.deepEqual(out.sourceIds, []);
   });
 
+  it("semantic unsupported claims refuse the entire grounded answer and expose no sources", () => {
+    const out = evaluateCompliance(
+      groundedInput({
+        citationVerification: {
+          verified: false,
+          validatedCitationIds: [CITATION],
+          reasonCode: "UNSUPPORTED_CLAIMS",
+        },
+      }),
+    );
+    assert.equal(out.action, "refuse");
+    assert.equal(out.reasonCode, "UNVERIFIED_GROUNDED_RESPONSE");
+    assert.equal(out.answer, insufficientEvidenceMessage("en"));
+    assert.deepEqual(out.sourceIds, []);
+  });
+
   it("verified=false + citationsEnabled=true => refuse", () => {
     const out = evaluateCompliance(
       groundedInput({
