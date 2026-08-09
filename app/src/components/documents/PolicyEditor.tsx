@@ -147,7 +147,7 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
             {!optionsLoading && !optionsError && classifications.length === 0 && <Alert variant="warning">{t("documents.noActiveClassifications")}</Alert>}
             {!optionsLoading && !optionsError && classifications.length > 0 && (
               <div className="grid gap-4 sm:grid-cols-3">
-                <Select label={t("documents.classificationSensitivity")} aria-label={t("documents.classificationSensitivity")} value={taxonomy.classificationId} disabled={!taxonomyEditable} onChange={(event) => editTaxonomy({ ...taxonomy, classificationId: event.target.value })} options={classifications.map((item) => ({ value: item.id, label: `${item.name}${item.level ? ` (${item.level.replaceAll("_", " ")})` : ""}` }))} />
+                <Select label={t("documents.classificationSensitivity")} aria-label={t("documents.classificationSensitivity")} value={taxonomy.classificationId} disabled={!taxonomyEditable} onChange={(event) => editTaxonomy({ ...taxonomy, classificationId: event.target.value })} options={classifications.map((item) => ({ value: item.id, label: `${item.name}${item.level ? ` (${codeLabel(t, "documents.classificationLevel", item.level)})` : ""}` }))} />
                 <Select label={t("documents.categoryLabel")} aria-label={t("documents.categoryLabel")} value={taxonomy.categoryId ?? ""} disabled={!taxonomyEditable} onChange={(event) => editTaxonomy({ ...taxonomy, categoryId: event.target.value || null })} options={[{ value: "", label: t("documents.notAssigned") }, ...categories.map((item) => ({ value: item.id, label: item.name }))]} helperText={categories.length === 0 ? t("documents.noActiveCategories") : undefined} />
                 <Select label={t("documents.departmentLabel")} aria-label={t("documents.departmentLabel")} value={taxonomy.departmentId ?? ""} disabled={!taxonomyEditable} onChange={(event) => editTaxonomy({ ...taxonomy, departmentId: event.target.value || null })} options={[{ value: "", label: t("documents.notAssigned") }, ...departments.map((item) => ({ value: item.id, label: item.name }))]} helperText={departments.length === 0 ? t("documents.noActiveDepartments") : undefined} />
               </div>
@@ -285,7 +285,7 @@ export function PolicyEditor({ documentId, active, taxonomy: currentTaxonomy, on
               <div>
                 <h3 id="sensitive-title" className="text-title-lg font-bold text-on-surface">{t("documents.confirmSensitiveBroadening")}</h3>
                 <div className="mt-2 flex items-center gap-2">
-                  <Badge status="error" icon="shield_lock">{preview.taxonomy.classificationLevel.replaceAll("_", " ")}</Badge>
+                  <Badge status="error" icon="shield_lock" label={codeLabel(t, "documents.classificationLevel", preview.taxonomy.classificationLevel)} />
                 </div>
               </div>
             </div>

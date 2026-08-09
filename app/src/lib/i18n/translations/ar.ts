@@ -20,6 +20,8 @@ const ar: TranslationDictionary = {
   "common.next": "التالي",
   "common.close": "إغلاق",
   "common.search": "بحث",
+  "common.select": "تحديد",
+  "common.page": "صفحة",
   "common.noResults": "لا توجد نتائج",
   "common.welcome": "أهلاً، {{name}}!",
 
@@ -37,6 +39,7 @@ const ar: TranslationDictionary = {
   "taxonomy.categories": "الفئات",
   "taxonomy.departments": "الأقسام",
   "taxonomy.classifications": "درجات السرية",
+  "taxonomy.classification": "التصنيف",
   "taxonomy.create": "إنشاء سجل",
   "taxonomy.edit": "تعديل",
   "taxonomy.archive": "أرشفة",

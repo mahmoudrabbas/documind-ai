@@ -194,14 +194,10 @@ Verify against `git diff --name-only`; this list is from memory.
 
 ## 5. Known risks — check these first
 
-1. **`tPlural` vs. test mocks.** `tPlural` was added as a **required** field on
-   `I18nContextValue`. At least three test files mock `useI18n` without it:
-   `SubscriptionWidget.test.tsx`, `CompanyBillingPage.test.tsx`,
-   `refunds/page.test.tsx` (and a `QualityPanel` test). `vi.mock` factories are
-   not type-checked against the real module, so this *should* compile — but it
-   was never confirmed. If `tsc` complains, add `tPlural` to the mocks rather
-   than making the field optional (optional would force `tPlural?.()` at every
-   call site).
+1. **`tPlural` vs. test mocks — RESOLVED (verified by reading, 2026-08-09).**
+   All four mocks (`SubscriptionWidget.test.tsx`, `CompanyBillingPage.test.tsx`,
+   `refunds/page.test.tsx`, `QualityPanel.test.tsx`) already pass `tPlural`.
+   No action needed.
 2. **`cookies()` in the root layout** makes every route dynamic. Near-zero cost
    here (authenticated dashboard, client layouts throughout), but it is a
    rendering-strategy change and should be a conscious decision.
@@ -211,6 +207,26 @@ Verify against `git diff --name-only`; this list is from memory.
    (`__tests__/translation-modules.test.ts`) — **never run.**
 4. Removing `font-sans` from `<body>` is required for the Arabic font (see §2).
    Behaviour-neutral in English, but it is an edit to a shared shell element.
+
+### 5a. Plural key separator — bug found and fixed, UNVERIFIED
+
+`tPlural` resolves `<key>.<category>`, but both dictionaries defined the only
+plural key as `documents.rulesInDraft_one` / `_other` (the i18next convention).
+Both the category lookup and the `.other` fallback missed, so `t()` returned the
+key and `PolicyEditor.tsx:269` rendered the literal string
+`documents.rulesInDraft.other` in **both** languages.
+
+Why nothing caught it: the parity test passes because both locales carried the
+same wrong keys, and the key-shape regex in `translation-modules.test.ts` allows
+`_` because `\w` includes underscore.
+
+Fixed by renaming to dotted categories and filling in all six CLDR forms for
+Arabic (`zero`/`one`/`two`/`few`/`many`/`other`, including the dual `قاعدتان`).
+Added `__tests__/plural-keys.test.ts`, which pins the separator, requires an
+`.other` fallback for every `tPlural` call site, and requires every category
+`Intl.PluralRules` can actually select for each locale.
+
+**None of this has been executed** — same caveat as everything else here.
 
 ---
 

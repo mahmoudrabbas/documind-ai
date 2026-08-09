@@ -58,6 +58,33 @@ describe("Badge status/label coupling", () => {
         `visible text in \`label\`:\n${offenders.join("\n")}`,
     ).toEqual([]);
   });
+
+  /* `StatusPill` (super-admin tables) has the same coupling as `<Badge>`:
+     `value` picks the colour AND used to render as the text. It takes a
+     `label` prop for the same reason. The rule below is the inverse of the
+     Badge one — `value` must stay a raw code, so what we assert is that any
+     pill showing a *translated* label still routes colour through `value`. */
+  it("never passes a translated string as the StatusPill colour key", () => {
+    /* Scoped to the opening tag itself. A file-wide search would flag any
+       page that happens to render both a `StatusPill` and an unrelated
+       `<Detail value={t(…)} />`, where a translated `value` is correct. */
+    const translatedAsValue = /<StatusPill\b[^>]*\bvalue=\{\s*(?:t|tPlural)\(/;
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      if (translatedAsValue.test(source)) {
+        offenders.push(file.replace(SRC_ROOT, "src"));
+      }
+    }
+
+    expect(
+      offenders,
+      `StatusPill colours from \`value\`, so a translated string there ` +
+        `silently greys the pill. Keep the raw code in \`value\` and pass ` +
+        `the text via \`label\`:\n${offenders.join("\n")}`,
+    ).toEqual([]);
+  });
 });
 
 describe("SUBSCRIPTION_BADGE_STATUS", () => {

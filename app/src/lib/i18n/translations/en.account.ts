@@ -10,6 +10,28 @@
 
 import type { TranslationDictionary } from "../i18n.types";
 
-const enAccount: TranslationDictionary = {};
+const enAccount: TranslationDictionary = {
+  /* ── Checkout ──────────────────────────────────────────── */
+  "account.checkout.title": "Choose a Subscription Plan",
+  "account.checkout.description": "Upgrade your workspace limits and unlock advanced document intelligence features.",
+  "account.checkout.currentPlan": "Current plan",
+  "account.checkout.subscribe": "Subscribe Now",
+  "account.checkout.changePlan": "Change Plan",
+  "account.checkout.perMonth": "/ month",
+  "account.checkout.loadingPlans": "Loading plans…",
+
+  /* ── Billing ───────────────────────────────────────────── */
+  "account.billing.title": "Billing & Subscription",
+  "account.billing.description": "View current plan usage, active subscriptions, and billing history.",
+  "account.billing.manageSubscription": "Manage Subscription",
+  "account.billing.monthlyCost": "Monthly cost",
+
+  /* ── Settings ──────────────────────────────────────────── */
+  "account.settings.title": "Company Settings",
+  "account.settings.description": "Configure company details, branding, and platform preferences.",
+  "account.settings.companyName": "Company Name",
+  "account.settings.slug": "Workspace Slug",
+  "account.settings.saveChanges": "Save Changes",
+};
 
 export default enAccount;

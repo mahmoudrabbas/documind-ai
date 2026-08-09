@@ -377,7 +377,7 @@ export default function CheckoutPage() {
 
               {isCurrentPlan && (
                 <div className="absolute start-4 top-4">
-                  <Badge status="success">Current plan</Badge>
+                  <Badge status="success" label={t("billingAdmin.currentPlan")} />
                 </div>
               )}
 

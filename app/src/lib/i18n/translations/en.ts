@@ -21,6 +21,8 @@ const en: TranslationDictionary = {
   "common.next": "Next",
   "common.close": "Close",
   "common.search": "Search",
+  "common.select": "Select",
+  "common.page": "Page",
   "common.noResults": "No results found",
   "common.welcome": "Welcome, {{name}}!",
 
@@ -38,6 +40,7 @@ const en: TranslationDictionary = {
   "taxonomy.categories": "Categories",
   "taxonomy.departments": "Departments",
   "taxonomy.classifications": "Classifications",
+  "taxonomy.classification": "Classification",
   "taxonomy.create": "Create record",
   "taxonomy.edit": "Edit",
   "taxonomy.archive": "Archive",
