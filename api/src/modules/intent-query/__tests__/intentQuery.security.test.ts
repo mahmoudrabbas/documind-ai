@@ -42,7 +42,19 @@ let tenantId: string;
 let actorId: string;
 let companyAdminContext: OperationAuthorizationContext;
 let fakeConvoAdapter: FakeConversationContextAdapter;
+let modelAdapter: RecordingFakeModelAdapter;
 let service: IntentQueryService;
+
+class RecordingFakeModelAdapter extends FakeModelAdapter {
+  readonly requestMessages: string[][] = [];
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    this.requestMessages.push(params.messages.map((message) => message.content));
+    return super.complete(params);
+  }
+}
 
 beforeEach(async () => {
   await TenantModel.deleteMany({});
@@ -78,11 +90,12 @@ beforeEach(async () => {
   };
 
   fakeConvoAdapter = new FakeConversationContextAdapter();
-  service = new IntentQueryService(new FakeModelAdapter(), fakeConvoAdapter);
+  modelAdapter = new RecordingFakeModelAdapter();
+  service = new IntentQueryService(modelAdapter, fakeConvoAdapter);
 });
 
 test("IntentQueryService - Security & Isolation Tests", async (t) => {
-  await t.test("should block access to conversation context belonging to another tenant", async () => {
+  await t.test("should not consume conversation context belonging to another tenant", async () => {
     const anotherTenantId = new mongoose.Types.ObjectId().toString();
     const anotherActorId = new mongoose.Types.ObjectId().toString();
     const conversationId = new mongoose.Types.ObjectId().toString();
@@ -92,25 +105,21 @@ test("IntentQueryService - Security & Isolation Tests", async (t) => {
       { role: "user", content: "Top secret details", timestamp: new Date().toISOString() },
     ]);
 
-    // Request using Tenant A's context
-    await assert.rejects(
-      service.analyzeQuery(
-        {
-          question: "What is my vacation policy?",
-          conversationId,
-        },
-        companyAdminContext
-      ),
-      (err: unknown) => {
-        const error = err as Record<string, unknown>;
-        assert.equal(error.statusCode, 403);
-        assert.equal(error.code, "FORBIDDEN");
-        return true;
-      }
+    const result = await service.analyzeQuery(
+      {
+        question: "What is my vacation policy?",
+        conversationId,
+      },
+      companyAdminContext,
+    );
+    assert.equal(result.conversationContextUsed, false);
+    assert.equal(
+      modelAdapter.requestMessages.flat().some((content) => content.includes("Top secret details")),
+      false,
     );
   });
 
-  await t.test("should block access to conversation context belonging to another user in same tenant", async () => {
+  await t.test("should not consume conversation context belonging to another user in same tenant", async () => {
     const anotherActorId = new mongoose.Types.ObjectId().toString();
     const conversationId = new mongoose.Types.ObjectId().toString();
 
@@ -119,21 +128,41 @@ test("IntentQueryService - Security & Isolation Tests", async (t) => {
       { role: "user", content: "Top secret details of User B", timestamp: new Date().toISOString() },
     ]);
 
-    // Request using User A's context
-    await assert.rejects(
-      service.analyzeQuery(
-        {
-          question: "What did I ask last time?",
-          conversationId,
-        },
-        companyAdminContext
+    const result = await service.analyzeQuery(
+      {
+        question: "What did I ask last time?",
+        conversationId,
+      },
+      companyAdminContext,
+    );
+    assert.equal(result.conversationContextUsed, false);
+    assert.equal(
+      modelAdapter.requestMessages.flat().some((content) =>
+        content.includes("Top secret details of User B")
       ),
-      (err: unknown) => {
-        const error = err as Record<string, unknown>;
-        assert.equal(error.statusCode, 403);
-        assert.equal(error.code, "FORBIDDEN");
-        return true;
-      }
+      false,
+    );
+
+    const missingResult = await service.analyzeQuery(
+      {
+        question: "What did I ask last time?",
+        conversationId: new mongoose.Types.ObjectId().toString(),
+      },
+      companyAdminContext,
+    );
+    assert.deepEqual(
+      {
+        route: result.route,
+        detectedIntent: result.detectedIntent,
+        isFollowUp: result.isFollowUp,
+        conversationContextUsed: result.conversationContextUsed,
+      },
+      {
+        route: missingResult.route,
+        detectedIntent: missingResult.detectedIntent,
+        isFollowUp: missingResult.isFollowUp,
+        conversationContextUsed: missingResult.conversationContextUsed,
+      },
     );
   });
 
