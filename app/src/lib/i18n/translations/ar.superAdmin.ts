@@ -432,6 +432,17 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.sufficiencyLevel.weak": "ضعيفة",
   "superAdmin.sufficiencyLevel.conflicting": "متعارضة",
   "superAdmin.sufficiencyLevel.no_evidence": "لا توجد أدلة",
+
+  /* ── ترويسات صفحات الإعدادات وتهيئة الذكاء والحزمة الجديدة ── */
+  "superAdmin.globalSettings.title": "الإعدادات العامة",
+  "superAdmin.globalSettings.description":
+    "اضبط الإعدادات الافتراضية للتسجيل والدعم والصيانة والفترات التجريبية ومدة الاحتفاظ.",
+  "superAdmin.aiConfiguration.title": "تهيئة الذكاء الاصطناعي",
+  "superAdmin.aiConfiguration.description":
+    "أدر الإعدادات الافتراضية للنماذج على مستوى المنصة دون كشف مفاتيح المزوّدين للمتصفح.",
+  "superAdmin.packageForm.newTitle": "حزمة جديدة",
+  "superAdmin.packageForm.newDescription":
+    "حدّد الأسعار وحدود الاستخدام للحزمة الجديدة.",
 };
 
 export default arSuperAdmin;

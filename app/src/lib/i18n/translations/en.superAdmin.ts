@@ -436,6 +436,17 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.sufficiencyLevel.weak": "Weak",
   "superAdmin.sufficiencyLevel.conflicting": "Conflicting",
   "superAdmin.sufficiencyLevel.no_evidence": "No Evidence",
+
+  /* ── Page headers for settings / AI config / new package ── */
+  "superAdmin.globalSettings.title": "Global Settings",
+  "superAdmin.globalSettings.description":
+    "Configure registration, support, maintenance, trials, and retention defaults.",
+  "superAdmin.aiConfiguration.title": "AI Configuration",
+  "superAdmin.aiConfiguration.description":
+    "Manage platform-wide model defaults without exposing provider secrets to the browser.",
+  "superAdmin.packageForm.newTitle": "New Package",
+  "superAdmin.packageForm.newDescription":
+    "Define pricing and usage limits for a new package.",
 };
 
 export default enSuperAdmin;
