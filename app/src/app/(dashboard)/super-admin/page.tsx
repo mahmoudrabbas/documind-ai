@@ -12,11 +12,12 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { getPlatformOverview } from "@/services/super-admin.service";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function SuperAdminOverviewPage() {
   const { t, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const state = usePlatformData(getPlatformOverview);
 
   const metrics: readonly [string, string, string][] = [
@@ -32,10 +33,16 @@ export default function SuperAdminOverviewPage() {
 
   const format = (key: string, value: number) =>
     key === "estimatedCost"
-      ? `$${value.toFixed(2)}`
+      ? new Intl.NumberFormat(intlLocale, {
+          style: "currency",
+          currency: "USD",
+        }).format(value)
       : key === "storageBytes"
-        ? `${(value / 1024 / 1024).toFixed(1)} MB`
-        : value.toLocaleString();
+        ? `${(value / 1024 / 1024).toLocaleString(intlLocale, {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          })} ${t("common.unitMB")}`
+        : value.toLocaleString(intlLocale);
 
   return (
     <DashboardPage dir={dir}>

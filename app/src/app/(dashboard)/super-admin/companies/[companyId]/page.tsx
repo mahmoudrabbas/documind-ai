@@ -32,6 +32,8 @@ import {
   createLifecyclePreviewRequestTracker,
   lifecyclePreviewRequestKey,
 } from "@/lib/tenant-lifecycle-state";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -53,6 +55,7 @@ function LifecycleDialog({
   tenant: TenantDetailView;
   targetStatus: "suspended" | "active";
 }) {
+  const { t, tPlural } = useI18n();
   const [preview, setPreview] = useState<TenantLifecyclePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -75,8 +78,12 @@ function LifecycleDialog({
   }, [submitting]);
 
   const isSuspend = targetStatus === "suspended";
-  const title = isSuspend ? "Suspend Tenant" : "Reinstate Tenant";
-  const confirmLabel = isSuspend ? "Suspend" : "Reinstate";
+  const title = isSuspend
+    ? t("superAdmin.companies.suspendTitle")
+    : t("superAdmin.companies.reinstateTitle");
+  const confirmLabel = isSuspend
+    ? t("superAdmin.companies.suspend")
+    : t("superAdmin.companies.reinstate");
   const confirmVariant: "danger" | "primary" = isSuspend ? "danger" : "primary";
 
   const loadPreview = useCallback(async (signal?: AbortSignal, retry = false) => {
@@ -95,11 +102,11 @@ function LifecycleDialog({
     } catch {
       previewRequestTrackerRef.current.cancel(requestKey);
       if (signal?.aborted) return;
-      setPreviewError("Unable to load preview. Please try again.");
+      setPreviewError(t("superAdmin.companies.previewError"));
     } finally {
       if (!signal?.aborted) setPreviewLoading(false);
     }
-  }, [isSuspend, targetStatus, tenant.id]);
+  }, [isSuspend, t, targetStatus, tenant.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -145,7 +152,7 @@ function LifecycleDialog({
       completeTenantLifecycleTransition(onSuccess, onClose);
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Operation failed.";
+        err instanceof Error ? err.message : t("superAdmin.companies.operationFailed");
       setSubmitError(message);
     } finally {
       setSubmitting(false);
@@ -176,7 +183,7 @@ function LifecycleDialog({
           </h3>
           <button
             type="button"
-            aria-label={`Close ${title}`}
+            aria-label={t("superAdmin.companies.closeDialog", { title })}
             onClick={onClose}
             disabled={submitting}
             className="rounded-md p-1 text-on-surface-variant hover:bg-surface-container disabled:opacity-50"
@@ -188,7 +195,11 @@ function LifecycleDialog({
           {tenant.name} ({tenant.slug})
         </p>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Current status: <StatusPill value={tenant.status} />
+          {t("superAdmin.companies.currentStatusLabel")}{" "}
+          <StatusPill
+            value={tenant.status}
+            label={codeLabel(t, "superAdmin.tenantStatus", tenant.status)}
+          />
         </p>
 
         {previewLoading && (
@@ -209,7 +220,7 @@ function LifecycleDialog({
               onClick={() => void loadPreview(undefined, true)}
               className="ms-2 font-bold underline"
             >
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         )}
@@ -227,28 +238,44 @@ function LifecycleDialog({
           <>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-on-surface-variant">Users affected:</span>
+                <span className="text-on-surface-variant">
+                  {t("superAdmin.companies.usersAffectedLabel")}
+                </span>
                 <span className="ms-1 font-bold text-on-surface">
-                  {preview.activeUsersAffected} active /{" "}
-                  {preview.totalUsersAffected} total
+                  {t("superAdmin.companies.usersValue", {
+                    active: String(preview.activeUsersAffected),
+                    total: String(preview.totalUsersAffected),
+                  })}
                 </span>
               </div>
               <div>
-                <span className="text-on-surface-variant">Admins affected:</span>
+                <span className="text-on-surface-variant">
+                  {t("superAdmin.companies.adminsAffectedLabel")}
+                </span>
                 <span className="ms-1 font-bold text-on-surface">
                   {preview.activeCompanyAdminsAffected}
                 </span>
               </div>
               <div>
-                <span className="text-on-surface-variant">Documents:</span>
+                <span className="text-on-surface-variant">
+                  {t("superAdmin.companies.documentsLabel")}
+                </span>
                 <span className="ms-1 font-bold text-on-surface">
                   {preview.documentCount}
                 </span>
               </div>
               <div>
-                <span className="text-on-surface-variant">Subscription:</span>
+                <span className="text-on-surface-variant">
+                  {t("superAdmin.companies.subscriptionLabel")}
+                </span>
                 <span className="ms-1 font-bold text-on-surface">
-                  {preview.currentSubscriptionStatus ?? "none"}
+                  {preview.currentSubscriptionStatus
+                    ? codeLabel(
+                        t,
+                        "superAdmin.subsStatus",
+                        preview.currentSubscriptionStatus,
+                      )
+                    : t("superAdmin.companies.noSubscriptionValue")}
                 </span>
               </div>
             </div>
@@ -275,7 +302,8 @@ function LifecycleDialog({
                   htmlFor="lifecycle-reason"
                   className="block text-sm font-medium text-on-surface"
                 >
-                  Reason <span className="text-error">*</span>
+                  {t("superAdmin.packages.reason")}{" "}
+                  <span className="text-error">*</span>
                 </label>
                 <textarea
                   id="lifecycle-reason"
@@ -283,16 +311,19 @@ function LifecycleDialog({
                   maxLength={500}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Enter a reason (minimum 3 characters)..."
+                  placeholder={t("superAdmin.companies.reasonPlaceholder")}
                   className="mt-1 w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   disabled={submitting}
                 />
                 <p className="mt-1 text-xs text-on-surface-variant">
                   {reason.trim().length < 3
-                    ? `${3 - reason.trim().length} more character(s) needed`
+                    ? tPlural(
+                        "superAdmin.companies.charactersNeeded",
+                        3 - reason.trim().length,
+                      )
                     : reason.trim().length > 500
-                      ? "Reason must be 500 characters or fewer"
-                      : "Reason is valid"}
+                      ? t("superAdmin.companies.reasonTooLong")
+                      : t("superAdmin.companies.reasonValid")}
                 </p>
               </div>
             )}
@@ -304,7 +335,7 @@ function LifecycleDialog({
                 className="inline-flex items-center justify-center rounded-md px-4 py-2 text-label-md font-medium text-on-surface-variant transition-colors hover:bg-surface-container-low"
                 disabled={submitting}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               {preview.transitionAllowed && !preview.alreadyInTargetState && (
                 <button
@@ -332,6 +363,8 @@ function LifecycleDialog({
 }
 
 export default function CompanyDetailPage() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const id = String(useParams<{ companyId: string }>().companyId ?? "");
   const permissions = usePermissions();
   const canManageTenant = permissions.can(Permission.COMPANY_SETTINGS_UPDATE);
@@ -363,7 +396,7 @@ export default function CompanyDetailPage() {
         <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
           arrow_back
         </span>
-        Companies
+        {t("superAdmin.companies.backLink")}
       </Link>
 
       <PlatformState
@@ -388,7 +421,10 @@ export default function CompanyDetailPage() {
             description={state.data.slug}
             actions={
               <div className="flex items-center gap-3">
-                <StatusPill value={state.data.status} />
+                <StatusPill
+                  value={state.data.status}
+                  label={codeLabel(t, "superAdmin.tenantStatus", state.data.status)}
+                />
                 {canManageTenant && canSuspend && (
                   <button
                     type="button"
@@ -398,7 +434,7 @@ export default function CompanyDetailPage() {
                     <span className="material-symbols-outlined text-[16px]">
                       block
                     </span>
-                    Suspend
+                    {t("superAdmin.companies.suspend")}
                   </button>
                 )}
                 {canManageTenant && state.data.status === "suspended" && (
@@ -410,7 +446,7 @@ export default function CompanyDetailPage() {
                     <span className="material-symbols-outlined text-[16px]">
                       restart_alt
                     </span>
-                    Reinstate
+                    {t("superAdmin.companies.reinstate")}
                   </button>
                 )}
               </div>
@@ -419,26 +455,32 @@ export default function CompanyDetailPage() {
 
           <div className="grid auto-rows-auto items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 xl:gap-5">
             {[
-              ["Plan", state.data.plan],
+              ["plan", t("superAdmin.companies.plan"), codeLabel(t, "superAdmin.tenantPlan", state.data.plan)],
               [
-                "Users",
-                `${state.data.users.active} active / ${state.data.users.total} total`,
+                "users",
+                t("superAdmin.companies.users"),
+                t("superAdmin.companies.usersValue", {
+                  active: String(state.data.users.active),
+                  total: String(state.data.users.total),
+                }),
               ],
-              ["Company Admins", state.data.users.companyAdmins],
-              ["Employees", state.data.users.employees],
-              ["Documents", state.data.usage.documents],
-              ["Storage", formatBytes(state.data.usage.storageBytes)],
-              ["Queries", state.data.usage.questions],
+              ["companyAdmins", t("superAdmin.companies.companyAdmins"), state.data.users.companyAdmins],
+              ["employees", t("superAdmin.packages.employees"), state.data.users.employees],
+              ["documents", t("superAdmin.documents"), state.data.usage.documents],
+              ["storage", t("superAdmin.storage"), formatBytes(state.data.usage.storageBytes)],
+              ["queries", t("superAdmin.queries"), state.data.usage.questions],
               [
-                "Created",
-                new Date(state.data.createdAt).toLocaleDateString(),
+                "created",
+                t("superAdmin.tableCreated"),
+                new Date(state.data.createdAt).toLocaleDateString(intlLocale),
               ],
               [
-                "Updated",
-                new Date(state.data.updatedAt).toLocaleDateString(),
+                "updated",
+                t("superAdmin.tableUpdated"),
+                new Date(state.data.updatedAt).toLocaleDateString(intlLocale),
               ],
-            ].map(([label, value]) => (
-              <DashboardPanel key={label} padding="compact">
+            ].map(([id, label, value]) => (
+              <DashboardPanel key={id} padding="compact">
                 <p className="text-sm text-on-surface-variant">{label}</p>
                 <p className="mt-1 break-words text-title-lg font-bold text-primary">
                   {value}
@@ -450,57 +492,77 @@ export default function CompanyDetailPage() {
           {state.data.subscription && (
             <DashboardPanel className="mt-4">
               <h3 className="text-title-sm font-bold text-on-surface">
-                Subscription
+                {t("superAdmin.companies.subscription")}
               </h3>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
-                  <span className="text-on-surface-variant">Status:</span>
+                  <span className="text-on-surface-variant">
+                    {t("superAdmin.companies.statusLabel")}
+                  </span>
                   <span className="ms-1 font-bold text-on-surface">
-                    {state.data.subscription.status}
+                    {codeLabel(
+                      t,
+                      "superAdmin.subsStatus",
+                      state.data.subscription.status,
+                    )}
                   </span>
                 </div>
                 <div>
-                  <span className="text-on-surface-variant">Provider:</span>
+                  <span className="text-on-surface-variant">
+                    {t("superAdmin.companies.providerLabel")}
+                  </span>
                   <span className="ms-1 font-bold text-on-surface">
-                    {state.data.subscription.provider}
+                    {codeLabel(
+                      t,
+                      "superAdmin.subsProvider",
+                      state.data.subscription.provider,
+                    )}
                   </span>
                 </div>
                 {state.data.subscription.periodStart && (
                   <div>
-                    <span className="text-on-surface-variant">Period start:</span>
+                    <span className="text-on-surface-variant">
+                      {t("superAdmin.companies.periodStartLabel")}
+                    </span>
                     <span className="ms-1 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.periodStart,
-                      ).toLocaleDateString()}
+                      ).toLocaleDateString(intlLocale)}
                     </span>
                   </div>
                 )}
                 {state.data.subscription.periodEnd && (
                   <div>
-                    <span className="text-on-surface-variant">Period end:</span>
+                    <span className="text-on-surface-variant">
+                      {t("superAdmin.companies.periodEndLabel")}
+                    </span>
                     <span className="ms-1 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.periodEnd,
-                      ).toLocaleDateString()}
+                      ).toLocaleDateString(intlLocale)}
                     </span>
                   </div>
                 )}
                 {state.data.subscription.trialEnd && (
                   <div>
-                    <span className="text-on-surface-variant">Trial end:</span>
+                    <span className="text-on-surface-variant">
+                      {t("superAdmin.subsTrialEndLabel")}
+                    </span>
                     <span className="ms-1 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.trialEnd,
-                      ).toLocaleDateString()}
+                      ).toLocaleDateString(intlLocale)}
                     </span>
                   </div>
                 )}
                 {state.data.subscription.cancelAtPeriodEnd && (
                   <div>
                     <span className="text-on-surface-variant">
-                      Cancel at period end:
+                      {t("superAdmin.companies.cancelAtPeriodEndLabel")}
                     </span>
-                    <span className="ms-1 font-bold text-error">Yes</span>
+                    <span className="ms-1 font-bold text-error">
+                      {t("superAdmin.verifiedYes")}
+                    </span>
                   </div>
                 )}
               </div>
@@ -510,23 +572,29 @@ export default function CompanyDetailPage() {
           {state.data.package && (
             <DashboardPanel className="mt-4">
               <h3 className="text-title-sm font-bold text-on-surface">
-                Package
+                {t("superAdmin.subsTablePackage")}
               </h3>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
-                  <span className="text-on-surface-variant">Name:</span>
+                  <span className="text-on-surface-variant">
+                    {t("superAdmin.companies.nameLabel")}
+                  </span>
                   <span className="ms-1 font-bold text-on-surface">
                     {state.data.package.packageName}
                   </span>
                 </div>
                 <div>
-                  <span className="text-on-surface-variant">Code:</span>
+                  <span className="text-on-surface-variant">
+                    {t("superAdmin.companies.codeLabel")}
+                  </span>
                   <span className="ms-1 font-bold text-on-surface">
                     {state.data.package.packageCode}
                   </span>
                 </div>
                 <div>
-                  <span className="text-on-surface-variant">Version:</span>
+                  <span className="text-on-surface-variant">
+                    {t("superAdmin.companies.versionLabel")}
+                  </span>
                   <span className="ms-1 font-bold text-on-surface">
                     {state.data.package.packageVersion}
                   </span>
@@ -535,7 +603,7 @@ export default function CompanyDetailPage() {
                   <>
                     <div>
                       <span className="text-on-surface-variant">
-                        Max employees:
+                        {t("superAdmin.companies.maxEmployeesLabel")}
                       </span>
                       <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.employees}
@@ -543,7 +611,7 @@ export default function CompanyDetailPage() {
                     </div>
                     <div>
                       <span className="text-on-surface-variant">
-                        Max admins:
+                        {t("superAdmin.companies.maxAdminsLabel")}
                       </span>
                       <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.admins}
@@ -551,7 +619,7 @@ export default function CompanyDetailPage() {
                     </div>
                     <div>
                       <span className="text-on-surface-variant">
-                        Max documents:
+                        {t("superAdmin.companies.maxDocumentsLabel")}
                       </span>
                       <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.documents}
@@ -559,15 +627,19 @@ export default function CompanyDetailPage() {
                     </div>
                     <div>
                       <span className="text-on-surface-variant">
-                        Storage:
+                        {t("superAdmin.companies.storageLabel")}
                       </span>
                       <span className="ms-1 font-bold text-on-surface">
-                        {state.data.package.entitlements.storageMb} MB
+                        {t("superAdmin.packages.megabytes", {
+                          value: String(
+                            state.data.package.entitlements.storageMb,
+                          ),
+                        })}
                       </span>
                     </div>
                     <div>
                       <span className="text-on-surface-variant">
-                        Queries/month:
+                        {t("superAdmin.companies.queriesPerMonthLabel")}
                       </span>
                       <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.queriesPerMonth}
@@ -582,7 +654,7 @@ export default function CompanyDetailPage() {
           {state.data.recentAudit.length > 0 && (
             <DashboardPanel className="mt-4">
               <h3 className="text-title-sm font-bold text-on-surface">
-                Recent Activity
+                {t("superAdmin.companies.recentActivity")}
               </h3>
               <div className="mt-3 space-y-2">
                 {state.data.recentAudit.map((entry) => (
@@ -596,14 +668,19 @@ export default function CompanyDetailPage() {
                       </span>
                       {entry.actorEmail && (
                         <span className="text-on-surface-variant">
-                          by {entry.actorEmail}
+                          {t("superAdmin.companies.byActor", {
+                            email: entry.actorEmail,
+                          })}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <StatusPill value={entry.outcome.toLowerCase()} />
+                      <StatusPill
+                        value={entry.outcome.toLowerCase()}
+                        label={codeLabel(t, "superAdmin.auditOutcome", entry.outcome)}
+                      />
                       <span className="text-on-surface-variant">
-                        {new Date(entry.createdAt).toLocaleString()}
+                        {new Date(entry.createdAt).toLocaleString(intlLocale)}
                       </span>
                     </div>
                   </div>
@@ -615,7 +692,7 @@ export default function CompanyDetailPage() {
           {!state.data.subscription && !state.data.package && (
             <DashboardPanel className="mt-4">
               <p className="text-sm text-on-surface-variant">
-                No subscription or package configured for this tenant.
+                {t("superAdmin.companies.noSubscriptionOrPackage")}
               </p>
             </DashboardPanel>
           )}
@@ -629,8 +706,8 @@ export default function CompanyDetailPage() {
           onSuccess={() => {
             setLifecycleNotice(
               lifecycleAction === "suspend"
-                ? "Tenant suspended successfully."
-                : "Tenant reinstated successfully.",
+                ? t("superAdmin.companies.suspendSuccess")
+                : t("superAdmin.companies.reinstateSuccess"),
             );
             state.reload();
           }}

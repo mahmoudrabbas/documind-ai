@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { isStandardUserRole } from "@/lib/role-home";
 import {
   DashboardPage as DashboardPageShell,
@@ -28,6 +28,7 @@ type SummaryViewState =
 export default function DashboardPage() {
   const auth = useAuth();
   const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const router = useRouter();
   const [view, setView] = useState<SummaryViewState>({ status: "loading" });
   const [retryCount, setRetryCount] = useState(0);
@@ -82,7 +83,11 @@ export default function DashboardPage() {
                 <span className="material-symbols-outlined text-[16px]">
                   schedule
                 </span>
-                Updated {new Date(summary.generatedAt).toLocaleTimeString()}
+                {t("dashboard.updatedAtTime", {
+                  time: new Date(summary.generatedAt).toLocaleTimeString(
+                    intlLocale,
+                  ),
+                })}
               </span>
             ) : null}
             <Link

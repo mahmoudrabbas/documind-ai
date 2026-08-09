@@ -14,7 +14,7 @@ import {
 } from "@/services/users.service";
 import type { RoleView, UserView } from "@/types/api/users.types";
 import { useAuth } from "@/providers/auth-provider";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -67,6 +67,7 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export default function UsersPage() {
   const { t, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const auth = useAuth();
   const permissionContext = usePermissions();
   const canCreateUsers = permissionContext.can(Permission.USERS_CREATE);
@@ -850,7 +851,7 @@ export default function UsersPage() {
                           )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-4 text-sm text-on-surface-variant">
-                          {new Date(user.createdAt).toLocaleDateString()}
+                          {new Date(user.createdAt).toLocaleDateString(intlLocale)}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
                           <div className="flex flex-col gap-2 sm:flex-row">

@@ -15,6 +15,8 @@ import type {
   ImportPreview,
   ImportRowState,
 } from "@/types/api/imports.types";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import {
   DashboardPageHeader,
   DashboardPanel,
@@ -30,20 +32,22 @@ type PagePhase =
 
 type ColumnMapping = Record<string, string>;
 
+/* `value` is the contract field identifier posted to the mapping endpoint
+   and must never be translated. `labelKey` supplies the visible option text. */
 const TARGET_FIELDS = [
-  { value: "name", label: "Full Name" },
-  { value: "firstName", label: "First Name" },
-  { value: "lastName", label: "Last Name" },
-  { value: "email", label: "Email" },
-  { value: "employeeId", label: "Employee ID" },
-  { value: "department", label: "Department" },
-  { value: "jobTitle", label: "Job Title" },
-  { value: "customRole", label: "Custom Role" },
-  { value: "language", label: "Preferred Language" },
-  { value: "phone", label: "Phone" },
-  { value: "hireDate", label: "Hire Date" },
-  { value: "managerEmail", label: "Manager Email" },
-  { value: "_skip", label: "(Skip column)" },
+  { value: "name", labelKey: "dashboard.import.field.fullName" },
+  { value: "firstName", labelKey: "dashboard.import.field.firstName" },
+  { value: "lastName", labelKey: "dashboard.import.field.lastName" },
+  { value: "email", labelKey: "dashboard.import.field.email" },
+  { value: "employeeId", labelKey: "dashboard.import.field.employeeId" },
+  { value: "department", labelKey: "dashboard.import.field.department" },
+  { value: "jobTitle", labelKey: "dashboard.import.field.jobTitle" },
+  { value: "customRole", labelKey: "dashboard.import.field.customRole" },
+  { value: "language", labelKey: "dashboard.import.field.language" },
+  { value: "phone", labelKey: "dashboard.import.field.phone" },
+  { value: "hireDate", labelKey: "dashboard.import.field.hireDate" },
+  { value: "managerEmail", labelKey: "dashboard.import.field.managerEmail" },
+  { value: "_skip", labelKey: "dashboard.import.field.skip" },
 ];
 
 const ROW_STATE_BADGE: Record<string, string> = {
@@ -64,6 +68,7 @@ function generateIdempotencyKey(): string {
 
 export default function ImportPage() {
   const router = useRouter();
+  const { t, tPlural } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<PagePhase>("upload");
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +112,7 @@ export default function ImportPage() {
     } catch {
       stopPolling();
       setPhase("error");
-      setError("Failed to check import status.");
+      setError(t("dashboard.import.statusCheckError"));
     }
   }
 
@@ -124,7 +129,7 @@ export default function ImportPage() {
       setError(
         err instanceof ApiError
           ? err.message
-          : "Failed to download template.",
+          : t("dashboard.import.templateDownloadError"),
       );
     }
   }
@@ -154,7 +159,7 @@ export default function ImportPage() {
   async function handleFileSelected(file: File) {
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (!ext || !["xlsx", "xls", "csv"].includes(ext)) {
-      setError("Please select an .xlsx, .xls, or .csv file.");
+      setError(t("dashboard.import.selectSpreadsheetFile"));
       return;
     }
     setError(null);
@@ -183,7 +188,7 @@ export default function ImportPage() {
       setError(
         err instanceof ApiError
           ? err.message
-          : "Failed to update mapping.",
+          : t("dashboard.import.updateMappingError"),
       );
     }
   }
@@ -211,7 +216,7 @@ export default function ImportPage() {
       setError(
         err instanceof ApiError
           ? err.message
-          : "Failed to start import.",
+          : t("dashboard.import.startImportError"),
       );
     }
   }
@@ -221,12 +226,10 @@ export default function ImportPage() {
       <DashboardPanel>
         <div className="mb-6">
           <h2 className="text-title-lg font-bold text-primary">
-            Upload Employee File
+            {t("dashboard.import.uploadPhaseTitle")}
           </h2>
           <p className="mt-1 text-body-sm leading-relaxed text-on-surface-variant">
-            Upload an Excel or CSV file to bulk-import employees into your
-            company directory. Download the template first to ensure the correct
-            format.
+            {t("dashboard.import.uploadPhaseDescription")}
           </p>
         </div>
 
@@ -237,7 +240,7 @@ export default function ImportPage() {
             onClick={() => void handleDownloadTemplate()}
           >
             <span className="material-symbols-outlined text-[18px]">download</span>
-            Download Template
+            {t("dashboard.import.downloadTemplate")}
           </button>
         </div>
 
@@ -256,10 +259,10 @@ export default function ImportPage() {
             cloud_upload
           </span>
           <p className="text-title-lg font-bold text-on-surface">
-            Drag & drop your file here
+            {t("dashboard.import.dropzoneTitleShort")}
           </p>
           <p className="mt-1 text-body-sm text-on-surface-variant">
-            or click to browse &mdash; .xlsx, .xls, .csv accepted
+            {t("dashboard.import.dropzoneBrowseHint")}
           </p>
           <input
             ref={fileInputRef}
@@ -281,15 +284,16 @@ export default function ImportPage() {
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <h2 className="text-title-lg font-bold text-primary">
-                Review Column Mapping
+                {t("dashboard.import.reviewMappingTitle")}
               </h2>
               <p className="mt-1 text-body-sm leading-relaxed text-on-surface-variant">
-                File: <span className="font-medium text-on-surface">{preview.originalFileName}</span>
-                &nbsp;&mdash; {preview.totalRows} rows found
+                {t("dashboard.import.fileLabel")}{" "}
+                <span className="font-medium text-on-surface">{preview.originalFileName}</span>
+                &nbsp;&mdash; {tPlural("dashboard.import.rowsFound", preview.totalRows)}
               </p>
             </div>
             <div className="shrink-0 rounded-full bg-surface-container-low px-3 py-1 text-label-sm font-bold text-on-surface-variant">
-              Step 2 of 3
+              {t("dashboard.import.stepIndicator", { current: "2", total: "3" })}
             </div>
           </div>
 
@@ -298,10 +302,10 @@ export default function ImportPage() {
               <thead className="bg-surface-container-low">
                 <tr>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Source Column
+                    {t("dashboard.import.colSourceColumn")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Map To
+                    {t("dashboard.import.colMapTo")}
                   </th>
                 </tr>
               </thead>
@@ -320,11 +324,11 @@ export default function ImportPage() {
                         }
                       >
                         <option value="" disabled>
-                          Select field
+                          {t("dashboard.import.selectFieldOption")}
                         </option>
                         {TARGET_FIELDS.map((field) => (
                           <option key={field.value} value={field.value}>
-                            {field.label}
+                            {t(field.labelKey)}
                           </option>
                         ))}
                       </select>
@@ -342,7 +346,7 @@ export default function ImportPage() {
               onClick={() => void handleRemap()}
             >
               <span className="material-symbols-outlined text-[18px]">refresh</span>
-              Re-preview with this mapping
+              {t("dashboard.import.rePreviewWithMapping")}
             </button>
           </div>
         </DashboardPanel>
@@ -350,20 +354,20 @@ export default function ImportPage() {
         <DashboardPanel>
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-title-md font-bold text-primary">
-              Validation Preview
+              {t("dashboard.import.validationPreview")}
             </h3>
             <div className="flex gap-3 text-sm">
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                {preview.summary.validRows} valid
+                {tPlural("dashboard.import.validCount", preview.summary.validRows)}
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
-                {preview.summary.warningRows} warnings
+                {tPlural("dashboard.import.warningCount", preview.summary.warningRows)}
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
-                {preview.summary.invalidRows} invalid
+                {tPlural("dashboard.import.invalidCount", preview.summary.invalidRows)}
               </span>
             </div>
           </div>
@@ -376,7 +380,7 @@ export default function ImportPage() {
                     #
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    State
+                    {t("dashboard.import.colState")}
                   </th>
                   {preview.columns.map((col) => (
                     <th
@@ -387,7 +391,7 @@ export default function ImportPage() {
                     </th>
                   ))}
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Messages
+                    {t("dashboard.import.colMessages")}
                   </th>
                 </tr>
               </thead>
@@ -411,7 +415,7 @@ export default function ImportPage() {
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${ROW_STATE_BADGE[row.state]}`}
                         >
-                          {row.state}
+                          {codeLabel(t, "dashboard.importRowState", row.state)}
                         </span>
                       </td>
                       {preview.columns.map((col) => (
@@ -442,7 +446,7 @@ export default function ImportPage() {
                       colSpan={preview.columns.length + 3}
                       className="px-4 py-8 text-center text-sm text-on-surface-variant"
                     >
-                      No rows to preview.
+                      {t("dashboard.import.noRowsToPreview")}
                     </td>
                   </tr>
                 )}
@@ -453,16 +457,16 @@ export default function ImportPage() {
           <div className="mt-4 flex items-center justify-between">
             <div className="flex gap-4 text-sm">
               <span className="font-medium text-on-surface">
-                Total: {preview.summary.totalRows} rows
+                {tPlural("dashboard.import.totalRowsCount", preview.summary.totalRows)}
               </span>
               <span className="text-emerald-700">
-                {preview.summary.validRows} valid
+                {tPlural("dashboard.import.validCount", preview.summary.validRows)}
               </span>
               <span className="text-amber-700">
-                {preview.summary.warningRows} warnings
+                {tPlural("dashboard.import.warningCount", preview.summary.warningRows)}
               </span>
               <span className="text-red-700">
-                {preview.summary.invalidRows} invalid
+                {tPlural("dashboard.import.invalidCount", preview.summary.invalidRows)}
               </span>
             </div>
             <div className="flex gap-3">
@@ -476,7 +480,7 @@ export default function ImportPage() {
                   setError(null);
                 }}
               >
-                Back
+                {t("common.back")}
               </button>
               <button
                 type="button"
@@ -484,7 +488,7 @@ export default function ImportPage() {
                 disabled={preview.summary.validRows === 0}
                 onClick={() => void handleConfirmImport()}
               >
-                Confirm Import
+                {t("dashboard.import.confirmImport")}
               </button>
             </div>
           </div>
@@ -501,23 +505,30 @@ export default function ImportPage() {
             progress_activity
           </span>
           <h2 className="text-title-lg font-bold text-on-surface">
-            Import in progress
+            {t("dashboard.import.inProgressTitle")}
           </h2>
           <p className="mt-2 text-body-sm text-on-surface-variant">
-            Processing your file. This may take a moment...
+            {t("dashboard.import.inProgressDesc")}
           </p>
           {batch && (
             <div className="mt-6 flex gap-6 text-sm">
               <span className="text-on-surface-variant">
-                Processed:{" "}
-                {batch.summary.createdCount + batch.summary.failedCount} /{" "}
-                {batch.summary.totalRows}
+                {t("dashboard.import.processedOf", {
+                  done: String(
+                    batch.summary.createdCount + batch.summary.failedCount,
+                  ),
+                  total: String(batch.summary.totalRows),
+                })}
               </span>
               <span className="text-emerald-700">
-                Created: {batch.summary.createdCount}
+                {t("dashboard.import.createdLabel", {
+                  count: String(batch.summary.createdCount),
+                })}
               </span>
               <span className="text-red-700">
-                Failed: {batch.summary.failedCount}
+                {t("dashboard.import.failedLabel", {
+                  count: String(batch.summary.failedCount),
+                })}
               </span>
             </div>
           )}
@@ -542,10 +553,10 @@ export default function ImportPage() {
           </span>
           <h2 className="text-title-lg font-bold text-on-surface">
             {batch.status === "COMPLETED"
-              ? "Import completed"
+              ? t("dashboard.import.resultCompleted")
               : batch.status === "PARTIALLY_COMPLETED"
-                ? "Partially completed"
-                : "Import failed"}
+                ? t("dashboard.import.resultPartiallyCompleted")
+                : t("dashboard.import.resultFailed")}
           </h2>
 
           <div className="mt-4 flex flex-wrap justify-center gap-6 text-sm">
@@ -553,19 +564,25 @@ export default function ImportPage() {
               <p className="text-2xl font-bold text-on-surface">
                 {batch.summary.createdCount}
               </p>
-              <p className="text-xs text-on-surface-variant">Created</p>
+              <p className="text-xs text-on-surface-variant">
+                {t("dashboard.import.created")}
+              </p>
             </div>
             <div className="rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-center">
               <p className="text-2xl font-bold text-red-600">
                 {batch.summary.failedCount}
               </p>
-              <p className="text-xs text-on-surface-variant">Failed</p>
+              <p className="text-xs text-on-surface-variant">
+                {t("dashboard.import.failed")}
+              </p>
             </div>
             <div className="rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-center">
               <p className="text-2xl font-bold text-on-surface">
                 {batch.summary.totalRows}
               </p>
-              <p className="text-xs text-on-surface-variant">Total</p>
+              <p className="text-xs text-on-surface-variant">
+                {t("dashboard.import.total")}
+              </p>
             </div>
           </div>
 
@@ -577,8 +594,7 @@ export default function ImportPage() {
 
           {batch.summary.invalidRows > 0 && (
             <p className="mt-2 text-sm text-red-600">
-              {batch.summary.invalidRows} row(s) were skipped due to validation
-              errors.
+              {tPlural("dashboard.import.rowsSkipped", batch.summary.invalidRows)}
             </p>
           )}
 
@@ -588,7 +604,7 @@ export default function ImportPage() {
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-md font-bold text-on-primary shadow-sm transition-all hover:opacity-90"
               onClick={() => router.push(`/dashboard/users/import/${batch.id}`)}
             >
-              View batch detail
+              {t("dashboard.import.viewBatchDetail")}
             </button>
             <button
               type="button"
@@ -601,7 +617,7 @@ export default function ImportPage() {
                 setError(null);
               }}
             >
-              Import another file
+              {t("dashboard.import.importAnotherFile")}
             </button>
           </div>
         </div>
@@ -617,7 +633,7 @@ export default function ImportPage() {
             error
           </span>
           <h2 className="text-title-lg font-bold text-on-surface">
-            Something went wrong
+            {t("common.error")}
           </h2>
           {error && (
             <p className="mt-2 text-sm text-red-700">{error}</p>
@@ -633,7 +649,7 @@ export default function ImportPage() {
               setError(null);
             }}
           >
-            Try again
+            {t("common.tryAgain")}
           </button>
         </div>
       </DashboardPanel>
@@ -648,19 +664,18 @@ export default function ImportPage() {
             <span className="material-symbols-outlined text-[16px]">
               file_upload
             </span>
-            Employee import
+            {t("dashboard.import.eyebrow")}
           </div>
         }
-        title="Import Employees"
-        description="Upload a spreadsheet of employees to bulk-add them to your company directory with the right information from the start."
+        title={t("dashboard.import.pageTitle")}
+        description={t("dashboard.import.pageDescription")}
         actions={
           <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm">
             <p className="font-semibold text-on-surface">
-              Supported formats
+              {t("dashboard.import.supportedFormats")}
             </p>
             <p className="mt-1 max-w-xs text-on-surface-variant">
-              .xlsx, .xls, and .csv files up to 10 MB. Download the template
-              to get started.
+              {t("dashboard.import.supportedFormatsHint")}
             </p>
           </div>
         }
@@ -680,7 +695,7 @@ export default function ImportPage() {
             <span className="material-symbols-outlined animate-spin">
               progress_activity
             </span>
-            Starting import...
+            {t("dashboard.import.startingImport")}
           </div>
         </DashboardPanel>
       )}

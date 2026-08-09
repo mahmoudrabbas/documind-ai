@@ -79,18 +79,6 @@ const arDocuments: TranslationDictionary = {
   "documents.processingStatus.failed": "فشل",
   "documents.processingStatus.canceled": "ملغى",
 
-  /* مراحل معالجة المستند. المفاتيح هي رموز المراحل من الواجهة الخلفية
-     بحروف صغيرة ليجدها codeLabel؛ الرموز نفسها لا تُترجم أبدًا. */
-  "documents.processingStage.security_scanning": "الفحص الأمني",
-  "documents.processingStage.extraction": "استخراج النص",
-  "documents.processingStage.ocr": "التعرّف الضوئي على الحروف",
-  "documents.processingStage.quality_review": "مراجعة الجودة",
-  "documents.processingStage.metadata_review": "مراجعة البيانات الوصفية",
-  "documents.processingStage.chunking": "التقسيم إلى مقاطع",
-  "documents.processingStage.embedding": "التضمين",
-  "documents.processingStage.indexing": "الفهرسة",
-  "documents.processingStage.finalization": "الإنهاء",
-
   /* رموز أعطال المعالجة الآمنة المعروضة للمستخدم. */
   "documents.errorCode.extraction_failed": "فشل استخراج النص",
   "documents.errorCode.ocr_failed": "فشل التعرّف الضوئي على الحروف",

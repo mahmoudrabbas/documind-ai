@@ -24,6 +24,10 @@ const en: TranslationDictionary = {
   "common.select": "Select",
   "common.page": "Page",
   "common.noResults": "No results found",
+  "common.tryAgain": "Try again",
+  "common.dismissError": "Dismiss error",
+  "common.unexpectedRenderError":
+    "An unexpected error occurred while rendering this section.",
   "common.welcome": "Welcome, {{name}}!",
 
   "common.relativeJustNow": "just now",
@@ -34,6 +38,13 @@ const en: TranslationDictionary = {
   "common.unitBytes": "B",
   "common.unitKB": "KB",
   "common.unitMB": "MB",
+  "common.unitGB": "GB",
+  "common.unlimited": "Unlimited",
+  /* Quota progress bar. */
+  "quota.full": "Full",
+  "quota.almostFull": "Almost full",
+  "quota.noLimit": "No limit",
+  "quota.resets": "Resets {{date}}",
 
   "taxonomy.title": "Document taxonomy",
   "taxonomy.authorityNote": "The backend remains authoritative for tenant records and permissions.",
@@ -128,6 +139,31 @@ const en: TranslationDictionary = {
   "auth.durationDay": "day",
   "auth.durationDays": "days",
   "auth.resendVerificationLink": "Resend verification email",
+  /* Session security panel on the settings page. */
+  "auth.sessionSecurityTitle": "Session Security",
+  "auth.sessionSecurityDescription":
+    "Sign out all other sessions across your other devices and browsers. This session will stay signed in.",
+  "auth.currentSession": "Current session",
+  "auth.currentSessionRole":
+    "Role: {{role}} · Signed in to your active session",
+  "auth.signOutOtherSessions": "Sign out all other sessions",
+  "auth.revokeSessionsConfirm":
+    "Are you sure? This will sign out every other device for your account. This session will remain signed in.",
+  "auth.revokeSessionsConfirmAction": "Yes, revoke others",
+  "auth.revokingSessions": "Revoking...",
+  "auth.sessionsRevokedSuccess":
+    "All other sessions have been revoked. This session stays signed in.",
+  "auth.sessionsRevokeError":
+    "Failed to revoke sessions. Please try again.",
+  /* Transient states shown while a route guard resolves or a session ends. */
+  "auth.restoringSession": "Restoring your session…",
+  "auth.signingOut": "Signing you out…",
+  "auth.redirectingToLogin": "Redirecting to login",
+  /* Placeholder screen at /chat — the live assistant lives at /dashboard/chat. */
+  "chat.placeholderHeading": "Chat",
+  "chat.placeholderSubtitle": "Ask DocuMind AI anything about your knowledge base.",
+  "chat.comingSoonTitle": "AI Chat Coming Soon",
+  "chat.comingSoonDescription": "The unified conversational interface for interacting with your enterprise document knowledge base is currently under construction.",
 
   /* ── nav ───────────────────────────────────────────────── */
   "nav.home": "Home",
@@ -690,6 +726,11 @@ const en: TranslationDictionary = {
   "dashboard.totalDocuments": "Total Documents",
   "dashboard.totalQuestions": "Total Questions",
   "dashboard.storageUsed": "Storage Used",
+  /* Quota lines. Full sentences — never concatenate "used" onto a number,
+     since Arabic puts the verb elsewhere. */
+  "dashboard.usedOfLimit": "{{current}} / {{limit}} used",
+  "dashboard.updatedAtTime": "Updated {{time}}",
+  "dashboard.usedUnlimited": "{{current}} used",
   "dashboard.activeUsers": "Active Users",
   "dashboard.documentsProcessed": "Documents Processed",
   "dashboard.questionsAsked": "Questions Asked",
@@ -945,6 +986,11 @@ const en: TranslationDictionary = {
   "audit.action.permission_denied": "Permission denied",
   "audit.action.quota_denied": "Quota exceeded",
 
+  /* AuditOutcome — SUCCESS | FAILURE | DENIED, lowercased for codeLabel. */
+  "audit.outcome.success": "Succeeded",
+  "audit.outcome.failure": "Failed",
+  "audit.outcome.denied": "Denied",
+
   /* Change summaries. Counted forms go through `tPlural`. */
   /* English distinguishes only one/other, but every locale must define the
      same key set, so the remaining CLDR categories repeat the plural wording.
@@ -972,6 +1018,59 @@ const en: TranslationDictionary = {
   "settings.documentTaxonomyTitle": "Document taxonomy",
   "settings.documentTaxonomyDesc": "Manage categories, departments, and document sensitivity classifications.",
   "settings.openDocumentTaxonomy": "Open document taxonomy",
+
+  /* Tenant settings manager — company profile. */
+  "settings.companyProfileTitle": "Company Profile",
+  "settings.companyProfileDesc":
+    "Branding and regional defaults used across the workspace.",
+  "settings.companyNameLabel": "Company name",
+  "settings.companyNamePlaceholder": "Acme Inc.",
+  "settings.timezoneLabel": "Timezone",
+  "settings.logoUrlLabel": "Logo URL",
+  "settings.defaultLanguageLabel": "Default language",
+  /* Tenant default-language codes. Lowercase so codeLabel can reach them. */
+  "settings.language.en": "English",
+  "settings.language.ar": "Arabic",
+
+  /* Tenant settings manager — AI runtime preferences. */
+  "settings.aiPreferencesTitle": "AI Runtime Preferences",
+  "settings.aiPreferencesDesc":
+    "Tune how DocuMind AI answers questions across the workspace.",
+  "settings.temperatureLabel": "Temperature (0–2)",
+  "settings.maxTokensLabel": "Max tokens (128–8192)",
+  "settings.responseStyleLabel": "Response style",
+  /* Response-style codes. Lowercase so codeLabel can reach them. */
+  "settings.responseStyle.concise": "Concise",
+  "settings.responseStyle.balanced": "Balanced",
+  "settings.responseStyle.detailed": "Detailed",
+  "settings.citationsLabel":
+    "Attach citations to answers when sources are available",
+
+  /* Tenant settings manager — save bar and outcomes. */
+  "settings.unsavedChanges": "You have unsaved changes.",
+  "settings.loadedFromVersion": "Loaded from version {{version}}",
+  "settings.loadedFromVersionUpdated":
+    "Loaded from version {{version}} · last updated {{timestamp}}",
+  "settings.discardChanges": "Discard changes",
+  "settings.saveChanges": "Save changes",
+  "settings.loadError": "Failed to load settings",
+  "settings.saveError": "Failed to save settings. Please try again.",
+  "settings.saveSuccess": "Settings saved successfully.",
+  "settings.upToDate": "Settings are up to date.",
+  "settings.noChanges": "No changes to save.",
+  "settings.conflictMessage":
+    "Settings were changed in another session. Your edits were re-applied on top of the latest version — review and save again.",
+  "settings.conflictReloadFailed":
+    "Settings changed in another session, but the latest version could not be loaded. Refresh to review.",
+  "settings.temperatureRangeError": "Temperature must be between 0 and 2",
+  "settings.maxTokensRangeError":
+    "Max tokens must be an integer between 128 and 8192",
+
+  /* ── email preview dialog ──────────────────────────────── */
+  "emailPreview.title": "Preview: {{subject}}",
+  "emailPreview.recipient": "Recipient:",
+  "emailPreview.templateId": "Template ID:",
+  "emailPreview.status": "Status:",
 
   /* ── notifications ─────────────────────────────────────── */
   "notifications.title": "Notifications",

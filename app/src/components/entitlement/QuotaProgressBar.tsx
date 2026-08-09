@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { Card } from "../ui/Card";
 
 export interface QuotaProgressBarProps {
@@ -28,9 +29,9 @@ function getBarColor(percent: number, isUnlimited: boolean): string {
 
 /* ---- helpers ----------------------------------------------------------- */
 
-function formatNumber(n: number): string {
+function formatNumber(n: number, locale: string): string {
   if (!Number.isFinite(n)) return "0";
-  return Math.round(n).toLocaleString();
+  return Math.round(n).toLocaleString(locale);
 }
 
 /* ---- component --------------------------------------------------------- */
@@ -44,6 +45,8 @@ export function QuotaProgressBar({
   className,
   dir: dirProp,
 }: QuotaProgressBarProps) {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const [isRtl, setIsRtl] = useState(dirProp === "rtl");
 
   useEffect(() => {
@@ -69,10 +72,10 @@ export function QuotaProgressBar({
   let badge: string | null = null;
   let badgeVariant: "warning" | "error" = "warning";
   if (isFull) {
-    badge = "Full";
+    badge = t("quota.full");
     badgeVariant = "error";
   } else if (almostFull) {
-    badge = "Almost full";
+    badge = t("quota.almostFull");
     badgeVariant = "warning";
   }
 
@@ -137,29 +140,30 @@ export function QuotaProgressBar({
           {isUnlimited ? (
             <>
               <span className="font-medium text-on-surface">
-                {formatNumber(safeCurrent)}
+                {formatNumber(safeCurrent, intlLocale)}
               </span>
               {" / "}
-              No limit
+              {t("quota.noLimit")}
             </>
           ) : (
             <>
               <span className="font-medium text-on-surface">
-                {formatNumber(safeCurrent)}
+                {formatNumber(safeCurrent, intlLocale)}
               </span>
               {" / "}
-              {formatNumber(safeLimit)}
+              {formatNumber(safeLimit, intlLocale)}
             </>
           )}{" "}
           {dimension}
         </span>
         {periodReset && (
           <span className="text-label-sm text-on-surface-variant">
-            Resets{" "}
-            {new Date(periodReset).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
+            {t("quota.resets", {
+              date: new Date(periodReset).toLocaleDateString(intlLocale, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              }),
             })}
           </span>
         )}

@@ -9,6 +9,8 @@ import {
   updateMapping,
   uploadImportFile,
 } from "@/services/imports.service";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import type {
   ImportBatchView,
   ImportPreview,
@@ -24,20 +26,23 @@ interface BulkImportModalProps {
 
 type Step = "UPLOAD" | "MAPPING" | "PROCESSING" | "SUMMARY";
 
+/* `key` is the contract value sent to the API and used for auto-match
+   comparisons — it never changes. `labelKey` is the dictionary key for the
+   human-visible option text. */
 const SYSTEM_FIELDS = [
-  { key: "email", label: "Email Address", required: true },
-  { key: "fullName", label: "Full Name", required: false },
-  { key: "firstName", label: "First Name", required: false },
-  { key: "lastName", label: "Last Name", required: false },
-  { key: "role", label: "System Role (ADMIN/EMPLOYEE)", required: false },
-  { key: "customRole", label: "Custom Role", required: false },
-  { key: "department", label: "Department", required: false },
-  { key: "jobTitle", label: "Job Title", required: false },
-  { key: "employeeId", label: "Employee ID", required: false },
-  { key: "phone", label: "Phone Number", required: false },
-  { key: "hireDate", label: "Hire Date", required: false },
-  { key: "managerEmail", label: "Manager Email", required: false },
-  { key: "language", label: "Language", required: false },
+  { key: "email", labelKey: "dashboard.import.field.email", required: true },
+  { key: "fullName", labelKey: "dashboard.import.field.fullName", required: false },
+  { key: "firstName", labelKey: "dashboard.import.field.firstName", required: false },
+  { key: "lastName", labelKey: "dashboard.import.field.lastName", required: false },
+  { key: "role", labelKey: "dashboard.import.field.role", required: false },
+  { key: "customRole", labelKey: "dashboard.import.field.customRole", required: false },
+  { key: "department", labelKey: "dashboard.import.field.department", required: false },
+  { key: "jobTitle", labelKey: "dashboard.import.field.jobTitle", required: false },
+  { key: "employeeId", labelKey: "dashboard.import.field.employeeId", required: false },
+  { key: "phone", labelKey: "dashboard.import.field.phone", required: false },
+  { key: "hireDate", labelKey: "dashboard.import.field.hireDate", required: false },
+  { key: "managerEmail", labelKey: "dashboard.import.field.managerEmail", required: false },
+  { key: "language", labelKey: "dashboard.import.field.language", required: false },
 ];
 
 const STATE_BADGE_STYLES: Record<string, string> = {
@@ -57,6 +62,7 @@ export function BulkImportModal({
   onClose,
   onImportSuccess,
 }: BulkImportModalProps) {
+  const { t, tPlural } = useI18n();
   const [step, setStep] = useState<Step>("UPLOAD");
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -131,7 +137,7 @@ export function BulkImportModal({
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch {
-      setError("Failed to download template file. Please try again.");
+      setError(t("dashboard.import.templateDownloadError"));
     } finally {
       setDownloadingTemplate(false);
     }
@@ -143,13 +149,13 @@ export function BulkImportModal({
     // Validate size (50 MB)
     const maxSizeBytes = 50 * 1024 * 1024;
     if (selectedFile.size > maxSizeBytes) {
-      setError("File size exceeds maximum limit of 50 MB.");
+      setError(t("dashboard.import.fileTooLarge"));
       return;
     }
 
     const name = selectedFile.name.toLowerCase();
     if (!name.endsWith(".csv") && !name.endsWith(".xlsx") && !name.endsWith(".xls")) {
-      setError("Unsupported file format. Please upload a .csv or .xlsx spreadsheet.");
+      setError(t("dashboard.import.unsupportedFormat"));
       return;
     }
 
@@ -192,10 +198,10 @@ export function BulkImportModal({
         setColumnMapping(autoMapping);
         setStep("MAPPING");
       } else {
-        setError("Invalid response received during file upload.");
+        setError(t("dashboard.import.invalidUploadResponse"));
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
+      const msg = err instanceof Error ? err.message : t("dashboard.import.uploadFailed");
       setError(msg);
     } finally {
       setIsUploading(false);
@@ -252,7 +258,7 @@ export function BulkImportModal({
       // Start polling status
       startPollingBatchStatus(batchId);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to confirm mapping";
+      const msg = err instanceof Error ? err.message : t("dashboard.import.confirmMappingError");
       setError(msg);
       setStep("MAPPING");
     } finally {
@@ -302,7 +308,7 @@ export function BulkImportModal({
       pollTimerRef.current = null;
       onClose();
     } catch {
-      setError("Failed to cancel import batch.");
+      setError(t("dashboard.import.cancelImportError"));
     }
   };
 
@@ -333,10 +339,10 @@ export function BulkImportModal({
             </span>
             <div>
               <h2 id="bulk-import-title" className="text-title-md font-bold text-on-surface">
-                Bulk Import Employees
+                {t("dashboard.import.modalTitle")}
               </h2>
               <p className="text-body-xs text-on-surface-variant">
-                Upload CSV or Excel spreadsheets to import users in bulk
+                {t("dashboard.import.modalSubtitle")}
               </p>
             </div>
           </div>
@@ -345,7 +351,7 @@ export function BulkImportModal({
             <button
               onClick={onClose}
               className="rounded-full p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-              title="Close modal"
+              title={t("common.close")}
             >
               <span className="material-symbols-outlined text-[20px]">close</span>
             </button>
@@ -368,7 +374,7 @@ export function BulkImportModal({
             >
               1
             </span>
-            Upload File
+            {t("dashboard.import.stepUpload")}
           </div>
           <span className="material-symbols-outlined text-[16px] opacity-40 rtl:rotate-180">
             chevron_right
@@ -387,7 +393,7 @@ export function BulkImportModal({
             >
               2
             </span>
-            Map Columns
+            {t("dashboard.import.stepMapColumns")}
           </div>
           <span className="material-symbols-outlined text-[16px] opacity-40 rtl:rotate-180">
             chevron_right
@@ -406,7 +412,7 @@ export function BulkImportModal({
             >
               3
             </span>
-            Processing
+            {t("dashboard.import.stepProcessing")}
           </div>
           <span className="material-symbols-outlined text-[16px] opacity-40 rtl:rotate-180">
             chevron_right
@@ -425,7 +431,7 @@ export function BulkImportModal({
             >
               4
             </span>
-            Summary & Log
+            {t("dashboard.import.stepSummary")}
           </div>
         </div>
 
@@ -477,24 +483,24 @@ export function BulkImportModal({
                   </span>
                 </div>
                 <h3 className="text-body-md font-bold text-on-surface">
-                  Drag and drop your spreadsheet here
+                  {t("dashboard.import.dropzoneTitle")}
                 </h3>
                 <p className="mt-1 text-body-xs text-on-surface-variant">
-                  Supports CSV or Excel files (.xlsx, .xls) up to 50 MB
+                  {t("dashboard.import.dropzoneHint")}
                 </p>
                 <button
                   type="button"
                   className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-sm font-bold text-on-primary shadow-sm hover:bg-primary/90"
                 >
-                  Browse Computer
+                  {t("dashboard.import.browseComputer")}
                 </button>
               </div>
 
               {isUploading && (
                 <div className="w-full space-y-2">
                   <div className="flex justify-between text-body-xs font-medium text-on-surface">
-                    <span>Uploading {file?.name}...</span>
-                    <span>{uploadProgress}%</span>
+                    <span>{t("dashboard.import.uploadingFile", { name: file?.name ?? "" })}</span>
+                    <span>{t("dashboard.import.percent", { value: String(uploadProgress) })}</span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-high">
                     <div
@@ -512,10 +518,10 @@ export function BulkImportModal({
                   </span>
                   <div>
                     <span className="font-semibold text-on-surface">
-                      Need a sample CSV format?
+                      {t("dashboard.import.sampleCsvTitle")}
                     </span>
                     <p className="text-on-surface-variant">
-                      Download our pre-formatted employee import template.
+                      {t("dashboard.import.sampleCsvDescription")}
                     </p>
                   </div>
                 </div>
@@ -527,7 +533,9 @@ export function BulkImportModal({
                   <span className="material-symbols-outlined text-[16px]">
                     download
                   </span>
-                  {downloadingTemplate ? "Downloading..." : "Download Template"}
+                  {downloadingTemplate
+                    ? t("dashboard.import.downloading")
+                    : t("dashboard.import.downloadTemplate")}
                 </button>
               </div>
             </div>
@@ -539,17 +547,19 @@ export function BulkImportModal({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-body-md font-bold text-on-surface">
-                    Map Columns & Preview Rows
+                    {t("dashboard.import.mapColumnsTitle")}
                   </h3>
                   <p className="text-body-xs text-on-surface-variant">
-                    Match file headers to system fields ({preview.totalRows} total rows found)
+                    {t("dashboard.import.mapColumnsSubtitle", {
+                      rows: tPlural("dashboard.import.totalRowsFound", preview.totalRows),
+                    })}
                   </p>
                 </div>
                 <button
                   onClick={() => setStep("UPLOAD")}
                   className="text-label-xs font-bold text-primary hover:underline"
                 >
-                  Change File
+                  {t("dashboard.import.changeFile")}
                 </button>
               </div>
 
@@ -559,7 +569,11 @@ export function BulkImportModal({
                     warning
                   </span>
                   <div className="flex-1">
-                    <span className="font-bold">Quota Limit Warning:</span> Importing these employees would exceed your active employee seat limit ({preview.quotaImpact.currentUsers}/{preview.quotaImpact.planLimit} seats used).
+                    <span className="font-bold">{t("dashboard.import.quotaWarningTitle")}</span>{" "}
+                    {t("dashboard.import.quotaWarningBody", {
+                      current: String(preview.quotaImpact.currentUsers),
+                      limit: String(preview.quotaImpact.planLimit),
+                    })}
                   </div>
                 </div>
               )}
@@ -570,7 +584,13 @@ export function BulkImportModal({
                     info
                   </span>
                   <div className="flex-1">
-                    <span className="font-bold">{preview.summary.invalidRows ?? preview.summary.invalid ?? 0} Invalid Row(s):</span> Rows with errors (e.g. invalid email format or missing names) will be skipped during processing.
+                    <span className="font-bold">
+                      {tPlural(
+                        "dashboard.import.invalidRowsHeading",
+                        preview.summary.invalidRows ?? preview.summary.invalid ?? 0,
+                      )}
+                    </span>{" "}
+                    {t("dashboard.import.invalidRowsBody")}
                   </div>
                 </div>
               )}
@@ -578,7 +598,7 @@ export function BulkImportModal({
               {/* Column Mapping Grid */}
               <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
                 <h4 className="mb-3 text-label-sm font-bold text-on-surface">
-                  Header Mappings
+                  {t("dashboard.import.headerMappings")}
                 </h4>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {preview.columns.map((header) => (
@@ -591,7 +611,7 @@ export function BulkImportModal({
                           {`"${header}"`}
                         </span>
                         <span className="shrink-0 rounded-md bg-surface-container-high px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant">
-                          CSV Column
+                          {t("dashboard.import.csvColumn")}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -603,10 +623,10 @@ export function BulkImportModal({
                           onChange={(e) => handleMappingChange(header, e.target.value)}
                           className="w-full rounded-lg border border-outline-variant/50 bg-surface px-2.5 py-1.5 text-body-xs font-medium text-on-surface focus:border-primary focus:outline-hidden"
                         >
-                          <option value="">-- Skip Column --</option>
+                          <option value="">{t("dashboard.import.skipColumnOption")}</option>
                           {SYSTEM_FIELDS.map((field) => (
                             <option key={field.key} value={field.key}>
-                              {field.label} {field.required ? "*" : ""}
+                              {t(field.labelKey)} {field.required ? "*" : ""}
                             </option>
                           ))}
                         </select>
@@ -619,15 +639,15 @@ export function BulkImportModal({
               {/* Preview Table */}
               <div>
                 <h4 className="mb-2 text-label-sm font-bold text-on-surface">
-                  Row Validation Preview (First 5 Rows)
+                  {t("dashboard.import.rowPreviewTitle")}
                 </h4>
                 <div className="max-w-full overflow-x-auto rounded-xl border border-outline-variant/30">
                   <table className="w-full text-start text-body-xs">
                     <thead className="bg-surface-container-low font-semibold text-on-surface-variant">
                       <tr>
-                        <th className="px-3 py-2 text-start">Row #</th>
-                        <th className="px-3 py-2 text-start">Status</th>
-                        <th className="px-3 py-2 text-start">Preview Data</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colRowNumber")}</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colStatus")}</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colPreviewData")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/20">
@@ -640,7 +660,7 @@ export function BulkImportModal({
                                 STATE_BADGE_STYLES[row.state]
                               }`}
                             >
-                              {row.state}
+                              {codeLabel(t, "dashboard.importRowState", row.state)}
                             </span>
                           </td>
                           <td className="px-3 py-2 font-mono text-on-surface-variant">
@@ -662,7 +682,7 @@ export function BulkImportModal({
                   onClick={onClose}
                   className="rounded-lg border border-outline-variant px-4 py-2 text-label-sm font-bold text-on-surface hover:bg-surface-container-high"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
@@ -675,11 +695,11 @@ export function BulkImportModal({
                       <span className="material-symbols-outlined text-[18px] animate-spin">
                         progress_activity
                       </span>
-                      Confirming...
+                      {t("dashboard.import.confirming")}
                     </>
                   ) : (
                     <>
-                      Confirm & Start Import
+                      {t("dashboard.import.confirmAndStart")}
                       <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
                         arrow_forward
                       </span>
@@ -699,19 +719,25 @@ export function BulkImportModal({
                 </span>
               </div>
               <h3 className="text-title-md font-bold text-on-surface">
-                Processing Employee Import...
+                {t("dashboard.import.processingTitle")}
               </h3>
               <p className="mt-1 max-w-md text-body-xs text-on-surface-variant">
-                Validating email credentials, hashing invites, and persisting user records.
+                {t("dashboard.import.processingDescription")}
               </p>
 
               {batchDetail && (
                 <div className="mt-6 w-full max-w-md space-y-2">
                   <div className="flex justify-between text-body-xs font-semibold text-on-surface">
-                    <span>Status: {batchDetail.status}</span>
                     <span>
-                      {batchDetail.summary?.createdCount ?? 0} /{" "}
-                      {batchDetail.summary?.totalRows ?? 0} Processed
+                      {t("dashboard.import.statusLabel", {
+                        status: codeLabel(t, "dashboard.importStatus", batchDetail.status),
+                      })}
+                    </span>
+                    <span>
+                      {t("dashboard.import.processedCount", {
+                        done: String(batchDetail.summary?.createdCount ?? 0),
+                        total: String(batchDetail.summary?.totalRows ?? 0),
+                      })}
                     </span>
                   </div>
                   <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-container-high">
@@ -739,7 +765,7 @@ export function BulkImportModal({
                 onClick={handleCancelImport}
                 className="mt-8 rounded-lg border border-rose-500/40 px-4 py-1.5 text-label-xs font-bold text-rose-600 hover:bg-rose-500/10 dark:text-rose-400"
               >
-                Cancel Batch
+                {t("dashboard.import.cancelBatch")}
               </button>
             </div>
           )}
@@ -750,14 +776,16 @@ export function BulkImportModal({
               {/* Summary Stats Cards */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4 text-center">
-                  <span className="text-body-xs text-on-surface-variant">Total Rows</span>
+                  <span className="text-body-xs text-on-surface-variant">
+                    {t("dashboard.import.totalRows")}
+                  </span>
                   <div className="text-title-md font-bold text-on-surface">
                     {batchDetail.summary?.totalRows ?? 0}
                   </div>
                 </div>
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
                   <span className="text-body-xs text-emerald-600 dark:text-emerald-400">
-                    Successfully Created
+                    {t("dashboard.import.successfullyCreated")}
                   </span>
                   <div className="text-title-md font-bold text-emerald-600 dark:text-emerald-400">
                     {batchDetail.summary?.createdCount ?? 0}
@@ -765,7 +793,7 @@ export function BulkImportModal({
                 </div>
                 <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-center">
                   <span className="text-body-xs text-rose-600 dark:text-rose-400">
-                    Failed / Invalid
+                    {t("dashboard.import.failedOrInvalid")}
                   </span>
                   <div className="text-title-md font-bold text-rose-600 dark:text-rose-400">
                     {batchDetail.summary?.failedCount ?? 0}
@@ -777,7 +805,7 @@ export function BulkImportModal({
               <div>
                 <div className="mb-3 flex items-center justify-between">
                   <h4 className="text-label-sm font-bold text-on-surface">
-                    Row Execution Details
+                    {t("dashboard.import.rowExecutionDetails")}
                   </h4>
                   <div className="flex items-center gap-1 rounded-lg border border-outline-variant/30 bg-surface-container-low p-1 text-label-xs">
                     {(["ALL", "INVALID", "WARNING", "VALID"] as const).map((st) => (
@@ -790,7 +818,7 @@ export function BulkImportModal({
                             : "text-on-surface-variant hover:text-on-surface"
                         }`}
                       >
-                        {st}
+                        {codeLabel(t, "dashboard.importRowFilter", st)}
                       </button>
                     ))}
                   </div>
@@ -800,17 +828,17 @@ export function BulkImportModal({
                   <table className="w-full text-start text-body-xs">
                     <thead className="sticky top-0 bg-surface-container-low font-semibold text-on-surface-variant">
                       <tr>
-                        <th className="px-3 py-2 text-start">Row #</th>
-                        <th className="px-3 py-2 text-start">Status</th>
-                        <th className="px-3 py-2 text-start">Data</th>
-                        <th className="px-3 py-2 text-start">Errors / Notes</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colRowNumber")}</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colStatus")}</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colData")}</th>
+                        <th className="px-3 py-2 text-start">{t("dashboard.import.colErrorsNotes")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/20">
                       {filteredRows.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="py-6 text-center text-on-surface-variant">
-                            No rows match the selected filter.
+                            {t("dashboard.import.noRowsMatchFilter")}
                           </td>
                         </tr>
                       ) : (
@@ -823,14 +851,14 @@ export function BulkImportModal({
                                   STATE_BADGE_STYLES[row.state]
                                 }`}
                               >
-                                {row.state}
+                                {codeLabel(t, "dashboard.importRowState", row.state)}
                               </span>
                             </td>
                             <td className="px-3 py-2 font-mono text-on-surface-variant">
                               {row.data.email || row.data.fullName || JSON.stringify(row.data)}
                             </td>
                             <td className="px-3 py-2 text-rose-600 dark:text-rose-400">
-                              {row.errors?.join(", ") || (row.state !== "CREATED" && row.state !== "INVITED" ? row.errorMessage : null) || row.warnings?.join(", ") || "OK"}
+                              {row.errors?.join(", ") || (row.state !== "CREATED" && row.state !== "INVITED" ? row.errorMessage : null) || row.warnings?.join(", ") || t("dashboard.import.rowOk")}
                             </td>
                           </tr>
                         ))
@@ -847,14 +875,14 @@ export function BulkImportModal({
                   onClick={() => setStep("UPLOAD")}
                   className="rounded-lg border border-outline-variant px-4 py-2 text-label-sm font-bold text-on-surface hover:bg-surface-container-high"
                 >
-                  Import Another File
+                  {t("dashboard.import.importAnotherFile")}
                 </button>
                 <button
                   type="button"
                   onClick={onClose}
                   className="rounded-lg bg-primary px-6 py-2 text-label-sm font-bold text-on-primary shadow-sm hover:bg-primary/90"
                 >
-                  Done
+                  {t("dashboard.import.done")}
                 </button>
               </div>
             </div>

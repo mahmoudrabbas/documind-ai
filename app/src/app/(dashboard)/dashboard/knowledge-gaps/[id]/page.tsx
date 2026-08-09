@@ -22,6 +22,8 @@ import type { DocumentView } from "@/types/api/documents.types";
 import type { UserView } from "@/types/api/users.types";
 import { GapStatusBadge } from "../components/GapStatusBadge";
 import { GapSeverityBadge } from "../components/GapSeverityBadge";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 type ActionTab = "resolve" | "test" | "assign" | "dismiss";
 
@@ -29,6 +31,8 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
   const resolvedParams = use(params);
   const gapId = resolvedParams.id;
   const { can } = usePermissions();
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
 
   const [gap, setGap] = useState<KnowledgeGap | null>(null);
   const [occurrences, setOccurrences] = useState<GapOccurrence[]>([]);
@@ -73,11 +77,11 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
       if (gapRes.gap.assigneeId) setAssigneeId(gapRes.gap.assigneeId);
       if (gapRes.gap.resolutionNotes) setResolutionNotes(gapRes.gap.resolutionNotes);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load knowledge gap details");
+      setError(err instanceof Error ? err.message : t("dashboard.gapDetail.loadError"));
     } finally {
       setLoading(false);
     }
-  }, [gapId]);
+  }, [gapId, t]);
 
   // Load available documents and users for pickers only if permitted
   useEffect(() => {
@@ -105,9 +109,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
       setActionSuccess(null);
       const res = await assignKnowledgeGap(gapId, { assigneeId: finalId });
       setGap(res.gap);
-      setActionSuccess("Assignee updated successfully!");
+      setActionSuccess(t("dashboard.gapDetail.assignSuccess"));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to assign gap");
+      setError(err instanceof Error ? err.message : t("dashboard.gapDetail.assignError"));
     } finally {
       setActionLoading(false);
     }
@@ -125,9 +129,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
         linkedDocumentIds: docId ? [docId] : [],
       });
       setGap(res.gap);
-      setActionSuccess("Knowledge gap resolved!");
+      setActionSuccess(t("dashboard.gapDetail.resolveSuccess"));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to resolve gap");
+      setError(err instanceof Error ? err.message : t("dashboard.gapDetail.resolveError"));
     } finally {
       setActionLoading(false);
     }
@@ -141,9 +145,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
       setActionSuccess(null);
       const res = await dismissKnowledgeGap(gapId, { reason: dismissReason });
       setGap(res.gap);
-      setActionSuccess("Knowledge gap dismissed.");
+      setActionSuccess(t("dashboard.gapDetail.dismissSuccess"));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to dismiss gap");
+      setError(err instanceof Error ? err.message : t("dashboard.gapDetail.dismissError"));
     } finally {
       setActionLoading(false);
     }
@@ -155,9 +159,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
       setActionSuccess(null);
       const res = await reopenKnowledgeGap(gapId);
       setGap(res.gap);
-      setActionSuccess("Knowledge gap reopened.");
+      setActionSuccess(t("dashboard.gapDetail.reopenSuccess"));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to reopen gap");
+      setError(err instanceof Error ? err.message : t("dashboard.gapDetail.reopenError"));
     } finally {
       setActionLoading(false);
     }
@@ -171,10 +175,10 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
       setActionLoading(true);
       setActionSuccess(null);
       await triggerGapReevaluation(gapId, finalDocId);
-      setActionSuccess("Resolution test completed!");
+      setActionSuccess(t("dashboard.gapDetail.testSuccess"));
       fetchDetail();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to run resolution test");
+      setError(err instanceof Error ? err.message : t("dashboard.gapDetail.testError"));
     } finally {
       setActionLoading(false);
     }
@@ -183,7 +187,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
   if (loading) {
     return (
       <DashboardPage>
-        <DashboardPageHeader eyebrow="Knowledge Gaps" title="Loading gap details..." />
+        <DashboardPageHeader eyebrow={t("dashboard.gaps.title")} title={t("dashboard.gapDetail.loadingTitle")} />
         <DashboardPanel>
           <div className="h-64 animate-pulse rounded-2xl bg-surface-container/50" />
         </DashboardPanel>
@@ -194,15 +198,15 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
   if (error || !gap) {
     return (
       <DashboardPage>
-        <DashboardPageHeader eyebrow="Knowledge Gaps" title="Gap Error" />
+        <DashboardPageHeader eyebrow={t("dashboard.gaps.title")} title={t("dashboard.gapDetail.errorTitle")} />
         <DashboardPanel>
           <div className="rounded-2xl border border-error/20 bg-error/5 p-6 text-center">
-            <p className="text-sm font-semibold text-error">{error || "Gap not found"}</p>
+            <p className="text-sm font-semibold text-error">{error || t("dashboard.gapDetail.notFound")}</p>
             <Link
               href="/dashboard/knowledge-gaps"
               className="mt-3 inline-block rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-on-primary"
             >
-              Back to Knowledge Gaps
+              {t("dashboard.gapDetail.back")}
             </Link>
           </div>
         </DashboardPanel>
@@ -218,7 +222,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
         eyebrow={
           <Link href="/dashboard/knowledge-gaps" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
             <span className="material-symbols-outlined text-[16px] rtl:rotate-180">arrow_back</span>
-            Back to Knowledge Gaps
+            {t("dashboard.gapDetail.back")}
           </Link>
         }
         title={gap.topic}
@@ -228,10 +232,12 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
               type="button"
               onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
               className="inline-flex items-center gap-1 rounded-xl border border-outline-variant/30 bg-surface px-2.5 py-1 text-xs font-semibold text-on-surface-variant hover:bg-surface-container"
-              title="Toggle internal technical details"
+              title={t("dashboard.gapDetail.devInfoToggleTitle")}
             >
               <span className="material-symbols-outlined text-[14px]">code</span>
-              {showTechnicalDetails ? "Hide Dev Info" : "Dev Info"}
+              {showTechnicalDetails
+                ? t("dashboard.gapDetail.devInfoHide")
+                : t("dashboard.gapDetail.devInfoShow")}
             </button>
             {(() => {
               const gapStatus = gap.status;
@@ -244,8 +250,8 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
 
       {showTechnicalDetails && (
         <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3 text-xs font-mono text-on-surface-variant">
-          <p><strong>Cluster Key:</strong> {gap.clusterKey}</p>
-          <p><strong>Gap ID:</strong> {gap.id}</p>
+          <p><strong>{t("dashboard.gapDetail.clusterKey")}</strong> {gap.clusterKey}</p>
+          <p><strong>{t("dashboard.gapDetail.gapId")}</strong> {gap.id}</p>
         </div>
       )}
 
@@ -263,7 +269,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
           <DashboardPanel>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
               <span className="material-symbols-outlined text-[18px] text-primary">help</span>
-              <span>Representative Question</span>
+              <span>{t("dashboard.gapDetail.representativeQuestionLabel")}</span>
             </div>
             <div className="mt-2.5 rounded-2xl border border-primary/20 bg-primary/5 p-4">
               <p className="text-base font-semibold text-on-surface">
@@ -273,38 +279,42 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
 
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-6 border-t border-outline-variant/20 pt-4">
               <div>
-                <span className="text-on-surface-variant block font-medium">Department</span>
-                <span className="font-bold text-on-surface">{gap.department || "General"}</span>
+                <span className="text-on-surface-variant block font-medium">{t("dashboard.gaps.colDepartment")}</span>
+                <span className="font-bold text-on-surface">{gap.department || t("dashboard.gaps.departmentGeneral")}</span>
               </div>
               <div>
-                <span className="text-on-surface-variant block font-medium">Issue Category</span>
+                <span className="text-on-surface-variant block font-medium">{t("dashboard.gapDetail.issueCategory")}</span>
                 <span className="inline-flex items-center gap-1 font-bold text-rose-600 dark:text-rose-400 capitalize">
                   {gap.sourceMetadata?.category
-                    ? String(gap.sourceMetadata.category).replace(/_/g, " ")
+                    ? codeLabel(t, "dashboard.gapCategory", String(gap.sourceMetadata.category))
                     : occurrences.find((o) => o.category)?.category
-                    ? String(occurrences.find((o) => o.category)?.category).replace(/_/g, " ")
-                    : "Unspecified"}
+                    ? codeLabel(t, "dashboard.gapCategory", String(occurrences.find((o) => o.category)?.category))
+                    : t("dashboard.gapCategory.unspecified")}
                 </span>
               </div>
               <div>
-                <span className="text-on-surface-variant block font-medium">Occurrences</span>
+                <span className="text-on-surface-variant block font-medium">{t("dashboard.gaps.colOccurrences")}</span>
                 <span className="inline-flex items-center gap-1 font-bold text-primary">
                   <span className="material-symbols-outlined text-[14px]">repeat</span>
                   {gap.occurrenceCount}
                 </span>
               </div>
               <div>
-                <span className="text-on-surface-variant block font-medium">First Seen</span>
-                <span className="font-bold text-on-surface">{new Date(gap.firstOccurrence).toLocaleDateString()}</span>
+                <span className="text-on-surface-variant block font-medium">{t("dashboard.gapDetail.firstSeen")}</span>
+                <span className="font-bold text-on-surface">{new Date(gap.firstOccurrence).toLocaleDateString(intlLocale)}</span>
               </div>
               <div>
-                <span className="text-on-surface-variant block font-medium">Source</span>
-                <span className="font-bold uppercase text-on-surface">{gap.source.replace(/_/g, " ")}</span>
+                <span className="text-on-surface-variant block font-medium">{t("dashboard.gapDetail.source")}</span>
+                <span className="font-bold uppercase text-on-surface">{codeLabel(t, "dashboard.gapSource", gap.source)}</span>
               </div>
               <div>
-                <span className="text-on-surface-variant block font-medium">Assignee</span>
+                <span className="text-on-surface-variant block font-medium">{t("dashboard.gapDetail.assignee")}</span>
                 <span className="font-bold text-on-surface">
-                  {assignedUser ? assignedUser.name : gap.assigneeId ? `User (${gap.assigneeId.slice(0, 8)}...)` : "Unassigned"}
+                  {assignedUser
+                    ? assignedUser.name
+                    : gap.assigneeId
+                    ? t("dashboard.gapDetail.assigneeFallback", { id: gap.assigneeId.slice(0, 8) })
+                    : t("dashboard.gapDetail.unassigned")}
                 </span>
               </div>
             </div>
@@ -316,11 +326,13 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-primary">
                   <span className="material-symbols-outlined text-[22px]">auto_awesome</span>
-                  <h3 className="text-sm font-bold text-on-surface">AI Recommended Action</h3>
+                  <h3 className="text-sm font-bold text-on-surface">{t("dashboard.gapDetail.aiRecommendedAction")}</h3>
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
                   <span className="material-symbols-outlined text-[14px]">verified</span>
-                  {Math.round(gap.agentProposal.confidence * 100)}% Confidence
+                  {t("dashboard.gapDetail.confidenceBadge", {
+                    percent: String(Math.round(gap.agentProposal.confidence * 100)),
+                  })}
                 </span>
               </div>
 
@@ -332,7 +344,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                 </div>
                 {gap.agentProposal.requiredDocumentType && (
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-on-surface-variant">Required Content Type:</span>
+                    <span className="font-medium text-on-surface-variant">{t("dashboard.gapDetail.requiredContentType")}</span>
                     <span className="rounded-lg bg-surface-container px-2.5 py-0.5 font-semibold text-on-surface">
                       {gap.agentProposal.requiredDocumentType}
                     </span>
@@ -347,12 +359,12 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px] text-tertiary">science</span>
-                Resolution Verification Tests ({reevaluations.length})
+                {tPlural("dashboard.gapDetail.verificationTests", reevaluations.length)}
               </h3>
             </div>
             {reevaluations.length === 0 ? (
               <p className="mt-2 text-xs text-on-surface-variant">
-                No resolution tests performed yet. Select a document in the Action Center to verify if it answers this gap!
+                {t("dashboard.gapDetail.noVerificationTests")}
               </p>
             ) : (
               <div className="mt-3 space-y-2">
@@ -367,10 +379,12 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                         <span className="material-symbols-outlined text-[14px]">
                           {r.result === "improved" ? "check_circle" : "cancel"}
                         </span>
-                        {r.result === "improved" ? "IMPROVED (Resolved)" : "NOT IMPROVED"}
+                        {r.result === "improved"
+                          ? t("dashboard.gapDetail.resultImproved")
+                          : t("dashboard.gapDetail.resultNotImproved")}
                       </span>
                       <span className="text-[11px] text-on-surface-variant font-normal">
-                        {new Date(r.createdAt).toLocaleDateString()}
+                        {new Date(r.createdAt).toLocaleDateString(intlLocale)}
                       </span>
                     </div>
                     {r.notes && <p className="mt-2 text-on-surface-variant">{r.notes}</p>}
@@ -384,10 +398,10 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
           <DashboardPanel>
             <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-secondary">forum</span>
-              Recorded Occurrences ({occurrences.length})
+              {tPlural("dashboard.gapDetail.recordedOccurrences", occurrences.length)}
             </h3>
             {occurrences.length === 0 ? (
-              <p className="mt-2 text-xs text-on-surface-variant">No individual user questions logged for this gap.</p>
+              <p className="mt-2 text-xs text-on-surface-variant">{t("dashboard.gapDetail.noOccurrences")}</p>
             ) : (
               <div className="mt-3 space-y-2.5">
                 {occurrences.map((occ) => (
@@ -395,15 +409,30 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     <p className="font-semibold text-on-surface">&ldquo;{occ.question}&rdquo;</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-on-surface-variant">
                       <span className="rounded-md bg-surface-container px-2 py-0.5 font-medium">
-                        Outcome: <strong>{occ.outcome.replace(/_/g, " ")}</strong>
+                        {t("dashboard.gapDetail.outcomeLabel")}{" "}
+                        <strong>{codeLabel(t, "dashboard.gapOutcome", occ.outcome)}</strong>
                       </span>
                       {Boolean(occ.category || gap.sourceMetadata?.category) && (
                         <span className="rounded-md bg-rose-500/10 px-2 py-0.5 font-semibold text-rose-600 dark:text-rose-400 capitalize">
-                          Category: {String(occ.category || gap.sourceMetadata?.category).replace(/_/g, " ")}
+                          {t("dashboard.gapDetail.categoryValue", {
+                            value: codeLabel(
+                              t,
+                              "dashboard.gapCategory",
+                              String(occ.category || gap.sourceMetadata?.category),
+                            ),
+                          })}
                         </span>
                       )}
-                      <span>Confidence: {Math.round(occ.confidence * 100)}%</span>
-                      <span>Date: {new Date(occ.createdAt).toLocaleDateString()}</span>
+                      <span>
+                        {t("dashboard.gapDetail.confidenceValue", {
+                          percent: String(Math.round(occ.confidence * 100)),
+                        })}
+                      </span>
+                      <span>
+                        {t("dashboard.gapDetail.dateValue", {
+                          date: new Date(occ.createdAt).toLocaleDateString(intlLocale),
+                        })}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -417,7 +446,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
           <DashboardPanel>
             <h3 className="text-sm font-bold text-on-surface mb-3 flex items-center gap-2">
               <span className="material-symbols-outlined text-[20px] text-primary">touch_app</span>
-              Action Center
+              {t("dashboard.gapDetail.actionCenter")}
             </h3>
 
             {/* Action Tabs Navigation */}
@@ -431,7 +460,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                Resolve
+                {t("dashboard.gapDetail.tabResolve")}
               </button>
               <button
                 type="button"
@@ -442,7 +471,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                Verify
+                {t("dashboard.gapDetail.tabVerify")}
               </button>
               <button
                 type="button"
@@ -453,7 +482,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                Assign
+                {t("dashboard.gapDetail.tabAssign")}
               </button>
               <button
                 type="button"
@@ -464,7 +493,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                Dismiss
+                {t("dashboard.gapDetail.tabDismiss")}
               </button>
             </div>
 
@@ -473,14 +502,14 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
               <form onSubmit={handleResolve} className="mt-4 space-y-3 text-xs">
                 <div>
                   <label className="font-semibold text-on-surface block mb-1" htmlFor="resolution-notes-input">
-                    Resolution Notes <span className="text-error">*</span>
+                    {t("dashboard.gapDetail.resolutionNotesLabel")} <span className="text-error">*</span>
                   </label>
                   <textarea
                     id="resolution-notes-input"
                     rows={3}
                     value={resolutionNotes}
                     onChange={(e) => setResolutionNotes(e.target.value)}
-                    placeholder="Describe how this gap was answered or what document was added..."
+                    placeholder={t("dashboard.gapDetail.resolutionNotesPlaceholder")}
                     className="w-full rounded-xl border border-outline-variant/40 bg-surface p-2.5 text-xs text-on-surface focus:border-primary focus:outline-none"
                     required
                   />
@@ -488,7 +517,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
 
                 <div>
                   <label className="font-semibold text-on-surface block mb-1" htmlFor="doc-select">
-                    Link Answering Document
+                    {t("dashboard.gapDetail.linkDocumentLabel")}
                   </label>
                   <select
                     id="doc-select"
@@ -496,7 +525,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     onChange={(e) => setSelectedDocId(e.target.value)}
                     className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:border-primary focus:outline-none"
                   >
-                    <option value="">Select document from library...</option>
+                    <option value="">{t("dashboard.gapDetail.selectDocumentOption")}</option>
                     {documents.map((doc) => (
                       <option key={doc.id} value={doc.id}>
                         {doc.metadata?.title || doc.originalFileName || doc.fileName}
@@ -506,13 +535,13 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
 
                   <details className="mt-1 text-[11px]">
                     <summary className="cursor-pointer text-on-surface-variant hover:underline">
-                      Or enter custom Document ID
+                      {t("dashboard.gapDetail.customDocIdSummary")}
                     </summary>
                     <input
                       type="text"
                       value={customDocId}
                       onChange={(e) => setCustomDocId(e.target.value)}
-                      placeholder="Paste Document ID"
+                      placeholder={t("dashboard.gapDetail.customDocIdPlaceholder")}
                       className="mt-1 w-full rounded-xl border border-outline-variant/40 bg-surface px-2.5 py-1 text-xs focus:outline-none"
                     />
                   </details>
@@ -523,7 +552,11 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                   disabled={actionLoading || gap.status === "resolved"}
                   className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  {actionLoading ? "Saving..." : gap.status === "resolved" ? "Gap Resolved" : "Mark as Resolved"}
+                  {actionLoading
+                    ? t("dashboard.gapDetail.saving")
+                    : gap.status === "resolved"
+                    ? t("dashboard.gapDetail.gapResolved")
+                    : t("dashboard.gapDetail.markResolved")}
                 </button>
               </form>
             )}
@@ -532,11 +565,11 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
             {activeTab === "test" && (
               <form onSubmit={handleTestReevaluation} className="mt-4 space-y-3 text-xs">
                 <p className="text-on-surface-variant text-[11px]">
-                  Select a document to test if its contents successfully answer this gap&apos;s question.
+                  {t("dashboard.gapDetail.testIntro")}
                 </p>
                 <div>
                   <label className="font-semibold text-on-surface block mb-1" htmlFor="test-doc-select">
-                    Target Document
+                    {t("dashboard.gapDetail.targetDocumentLabel")}
                   </label>
                   <select
                     id="test-doc-select"
@@ -544,7 +577,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     onChange={(e) => setTestDocId(e.target.value)}
                     className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:border-tertiary focus:outline-none"
                   >
-                    <option value="">Select document to test...</option>
+                    <option value="">{t("dashboard.gapDetail.selectTestDocumentOption")}</option>
                     {documents.map((doc) => (
                       <option key={doc.id} value={doc.id}>
                         {doc.metadata?.title || doc.originalFileName || doc.fileName}
@@ -554,13 +587,13 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
 
                   <details className="mt-1 text-[11px]">
                     <summary className="cursor-pointer text-on-surface-variant hover:underline">
-                      Or enter custom Document ID
+                      {t("dashboard.gapDetail.customDocIdSummary")}
                     </summary>
                     <input
                       type="text"
                       value={customTestDocId}
                       onChange={(e) => setCustomTestDocId(e.target.value)}
-                      placeholder="Paste Target Document ID"
+                      placeholder={t("dashboard.gapDetail.customTestDocIdPlaceholder")}
                       className="mt-1 w-full rounded-xl border border-outline-variant/40 bg-surface px-2.5 py-1 text-xs focus:outline-none"
                     />
                   </details>
@@ -571,7 +604,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                   disabled={actionLoading || (!testDocId && !customTestDocId)}
                   className="w-full rounded-xl bg-tertiary px-4 py-2 text-xs font-semibold text-on-tertiary shadow-sm hover:bg-tertiary/90 disabled:opacity-50"
                 >
-                  {actionLoading ? "Running Test..." : "Run Resolution Test"}
+                  {actionLoading
+                    ? t("dashboard.gapDetail.runningTest")
+                    : t("dashboard.gapDetail.runTest")}
                 </button>
               </form>
             )}
@@ -581,7 +616,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
               <form onSubmit={handleAssign} className="mt-4 space-y-3 text-xs">
                 <div>
                   <label className="font-semibold text-on-surface block mb-1" htmlFor="user-select">
-                    Assignee Team Member
+                    {t("dashboard.gapDetail.assigneeLabel")}
                   </label>
                   <select
                     id="user-select"
@@ -589,7 +624,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                     onChange={(e) => setAssigneeId(e.target.value)}
                     className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:border-secondary focus:outline-none"
                   >
-                    <option value="">Select team member...</option>
+                    <option value="">{t("dashboard.gapDetail.selectTeamMemberOption")}</option>
                     {users.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.name} ({u.email})
@@ -599,13 +634,13 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
 
                   <details className="mt-1 text-[11px]">
                     <summary className="cursor-pointer text-on-surface-variant hover:underline">
-                      Or enter custom User ID / Email
+                      {t("dashboard.gapDetail.customAssigneeSummary")}
                     </summary>
                     <input
                       type="text"
                       value={customAssigneeId}
                       onChange={(e) => setCustomAssigneeId(e.target.value)}
-                      placeholder="User ID or Email"
+                      placeholder={t("dashboard.gapDetail.customAssigneePlaceholder")}
                       className="mt-1 w-full rounded-xl border border-outline-variant/40 bg-surface px-2.5 py-1 text-xs focus:outline-none"
                     />
                   </details>
@@ -616,7 +651,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                   disabled={actionLoading}
                   className="w-full rounded-xl bg-secondary px-4 py-2 text-xs font-semibold text-on-secondary shadow-sm hover:bg-secondary/90 disabled:opacity-50"
                 >
-                  {actionLoading ? "Saving..." : "Save Assignee"}
+                  {actionLoading
+                    ? t("dashboard.gapDetail.saving")
+                    : t("dashboard.gapDetail.saveAssignee")}
                 </button>
               </form>
             )}
@@ -628,14 +665,14 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                   <form onSubmit={handleDismiss} className="space-y-3">
                     <div>
                       <label className="font-semibold text-on-surface block mb-1" htmlFor="dismiss-reason-input">
-                        Reason for Dismissal <span className="text-error">*</span>
+                        {t("dashboard.gapDetail.dismissReasonLabel")} <span className="text-error">*</span>
                       </label>
                       <input
                         type="text"
                         id="dismiss-reason-input"
                         value={dismissReason}
                         onChange={(e) => setDismissReason(e.target.value)}
-                        placeholder="Why is this gap ignored/not relevant?"
+                        placeholder={t("dashboard.gapDetail.dismissReasonPlaceholder")}
                         className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none"
                         required
                       />
@@ -646,13 +683,17 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                       disabled={actionLoading}
                       className="w-full rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-500/20 dark:text-rose-400 disabled:opacity-50"
                     >
-                      {actionLoading ? "Dismissing..." : "Dismiss Gap"}
+                      {actionLoading
+                        ? t("dashboard.gapDetail.dismissing")
+                        : t("dashboard.gapDetail.dismissGap")}
                     </button>
                   </form>
                 ) : (
                   <div className="space-y-2">
                     <p className="text-[11px] text-on-surface-variant">
-                      This gap is currently <strong>{gap.status}</strong>. You can reopen it if needed.
+                      {t("dashboard.gapDetail.reopenHint", {
+                        status: codeLabel(t, "dashboard.gapStatus", gap.status),
+                      })}
                     </p>
                     <button
                       type="button"
@@ -660,7 +701,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
                       disabled={actionLoading}
                       className="w-full rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-on-primary hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {actionLoading ? "Reopening..." : "Reopen Knowledge Gap"}
+                      {actionLoading
+                        ? t("dashboard.gapDetail.reopening")
+                        : t("dashboard.gapDetail.reopenGap")}
                     </button>
                   </div>
                 )}
@@ -672,18 +715,20 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
           <DashboardPanel tone="muted">
             <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-on-surface-variant">history</span>
-              Audit Trail ({gap.auditHistory?.length || 0})
+              {tPlural("dashboard.gapDetail.auditTrail", gap.auditHistory?.length || 0)}
             </h3>
             <div className="mt-3 space-y-2 text-[11px]">
               {gap.auditHistory?.map((audit, idx) => (
                 <div key={idx} className="border-b border-outline-variant/20 pb-2">
                   <div className="flex justify-between font-semibold text-on-surface">
-                    <span>{audit.action.replace(/_/g, " ")}</span>
+                    <span>{codeLabel(t, "audit.action", audit.action)}</span>
                     <span className="text-on-surface-variant font-normal">
-                      {new Date(audit.timestamp).toLocaleDateString()}
+                      {new Date(audit.timestamp).toLocaleDateString(intlLocale)}
                     </span>
                   </div>
-                  <p className="text-on-surface-variant text-[10px] mt-0.5">By: {String(audit.actorId)}</p>
+                  <p className="text-on-surface-variant text-[10px] mt-0.5">
+                    {t("dashboard.gapDetail.auditActor", { actor: String(audit.actorId) })}
+                  </p>
                 </div>
               ))}
             </div>

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -40,6 +40,7 @@ const STATUS_BADGE_MAP: Record<string, string> = {
 
 export default function DocumentsPage() {
   const { t, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canCreate = permissions.can(Permission.DOCUMENTS_CREATE);
   const canDelete = permissions.can(Permission.DOCUMENTS_DELETE);
@@ -429,7 +430,7 @@ export default function DocumentsPage() {
                     <td className="px-lg py-4">
                       <span className="text-sm font-medium text-on-surface-variant">{doc.versionLabel}</span>
                     </td>
-                    <td className="px-lg py-4 whitespace-nowrap text-body-sm text-on-surface-variant">{new Date(doc.createdAt).toLocaleDateString()}</td>
+                    <td className="px-lg py-4 whitespace-nowrap text-body-sm text-on-surface-variant">{new Date(doc.createdAt).toLocaleDateString(intlLocale)}</td>
                     <td className="px-lg py-4 text-end">
                       {canDelete ? (
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>

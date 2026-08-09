@@ -23,6 +23,10 @@ const ar: TranslationDictionary = {
   "common.select": "تحديد",
   "common.page": "صفحة",
   "common.noResults": "لا توجد نتائج",
+  "common.tryAgain": "حاول مرة أخرى",
+  "common.dismissError": "تجاهل الخطأ",
+  "common.unexpectedRenderError":
+    "حدث خطأ غير متوقع أثناء عرض هذا القسم.",
   "common.welcome": "أهلاً، {{name}}!",
 
   "common.relativeJustNow": "الآن",
@@ -33,6 +37,13 @@ const ar: TranslationDictionary = {
   "common.unitBytes": "بايت",
   "common.unitKB": "كيلوبايت",
   "common.unitMB": "ميجابايت",
+  "common.unitGB": "جيجابايت",
+  "common.unlimited": "غير محدود",
+  /* شريط تقدّم الحصة. */
+  "quota.full": "مكتملة",
+  "quota.almostFull": "على وشك الاكتمال",
+  "quota.noLimit": "بلا حد",
+  "quota.resets": "تُعاد في {{date}}",
 
   "taxonomy.title": "تصنيف المستندات",
   "taxonomy.authorityNote": "تظل الواجهة الخلفية المرجع الموثوق لسجلات المستأجر وصلاحياته.",
@@ -128,6 +139,31 @@ const ar: TranslationDictionary = {
   "auth.durationDay": "يوم",
   "auth.durationDays": "أيام",
   "auth.resendVerificationLink": "إعادة إرسال بريد التحقق",
+  /* لوحة أمان الجلسة في صفحة الإعدادات. */
+  "auth.sessionSecurityTitle": "أمان الجلسة",
+  "auth.sessionSecurityDescription":
+    "سجّل الخروج من جميع الجلسات الأخرى على أجهزتك ومتصفحاتك الأخرى. وستبقى هذه الجلسة قيد تسجيل الدخول.",
+  "auth.currentSession": "الجلسة الحالية",
+  "auth.currentSessionRole":
+    "الدور: {{role}} · مسجَّل الدخول في جلستك النشطة",
+  "auth.signOutOtherSessions": "تسجيل الخروج من جميع الجلسات الأخرى",
+  "auth.revokeSessionsConfirm":
+    "هل أنت متأكد؟ سيؤدي هذا إلى تسجيل الخروج من كل جهاز آخر مرتبط بحسابك. وستبقى هذه الجلسة قيد تسجيل الدخول.",
+  "auth.revokeSessionsConfirmAction": "نعم، ألغِ الجلسات الأخرى",
+  "auth.revokingSessions": "جارٍ الإلغاء...",
+  "auth.sessionsRevokedSuccess":
+    "تم إلغاء جميع الجلسات الأخرى. وتبقى هذه الجلسة قيد تسجيل الدخول.",
+  "auth.sessionsRevokeError":
+    "تعذّر إلغاء الجلسات. يرجى المحاولة مرة أخرى.",
+  /* حالات مؤقتة تظهر أثناء تحقّق حارس المسار أو عند إنهاء الجلسة. */
+  "auth.restoringSession": "جارٍ استعادة جلستك…",
+  "auth.signingOut": "جارٍ تسجيل خروجك…",
+  "auth.redirectingToLogin": "جارٍ التحويل إلى تسجيل الدخول",
+  /* شاشة مؤقتة على /chat — المساعد الفعلي في /dashboard/chat. */
+  "chat.placeholderHeading": "المحادثة",
+  "chat.placeholderSubtitle": "اسأل DocuMind AI عن أي شيء في قاعدة معارفك.",
+  "chat.comingSoonTitle": "محادثة الذكاء الاصطناعي قريبًا",
+  "chat.comingSoonDescription": "واجهة المحادثة الموحّدة للتفاعل مع قاعدة معارف مستندات مؤسستك قيد التطوير حاليًا.",
 
   /* ── nav ───────────────────────────────────────────────── */
   "nav.home": "الرئيسية",
@@ -690,6 +726,10 @@ const ar: TranslationDictionary = {
   "dashboard.totalDocuments": "إجمالي المستندات",
   "dashboard.totalQuestions": "إجمالي الأسئلة",
   "dashboard.storageUsed": "المساحة المستخدمة",
+  /* أسطر الحصص — جُمل كاملة، دون دمج «مستخدم» مع الرقم. */
+  "dashboard.usedOfLimit": "مستخدم {{current}} من {{limit}}",
+  "dashboard.updatedAtTime": "آخر تحديث {{time}}",
+  "dashboard.usedUnlimited": "مستخدم {{current}}",
   "dashboard.activeUsers": "المستخدمين النشطين",
   "dashboard.documentsProcessed": "المستندات المعالجة",
   "dashboard.questionsAsked": "الأسئلة المطروحة",
@@ -943,6 +983,11 @@ const ar: TranslationDictionary = {
   "audit.action.permission_denied": "تم رفض الصلاحية",
   "audit.action.quota_denied": "تم تجاوز الحد المسموح",
 
+  /* AuditOutcome — SUCCESS | FAILURE | DENIED بحروف صغيرة من أجل codeLabel. */
+  "audit.outcome.success": "نجحت",
+  "audit.outcome.failure": "فشلت",
+  "audit.outcome.denied": "مرفوضة",
+
   /* ملخصات التغييرات. الصيغ المعدودة تمر عبر `tPlural`، والعربية
      تختار ست فئات فيجب تعريفها كلها. */
   "audit.changes.listed.zero": "لم يتم عرض أي سجل تدقيق",
@@ -968,6 +1013,59 @@ const ar: TranslationDictionary = {
   "settings.documentTaxonomyTitle": "تصنيف المستندات",
   "settings.documentTaxonomyDesc": "إدارة الفئات والأقسام وتصنيفات الحساسية للمستندات.",
   "settings.openDocumentTaxonomy": "فتح تصنيف المستندات",
+
+  /* مدير إعدادات المستأجر — ملف الشركة. */
+  "settings.companyProfileTitle": "ملف الشركة",
+  "settings.companyProfileDesc":
+    "الهوية البصرية والإعدادات الإقليمية الافتراضية المستخدمة في مساحة العمل.",
+  "settings.companyNameLabel": "اسم الشركة",
+  "settings.companyNamePlaceholder": "إيكمي المحدودة",
+  "settings.timezoneLabel": "المنطقة الزمنية",
+  "settings.logoUrlLabel": "رابط الشعار",
+  "settings.defaultLanguageLabel": "اللغة الافتراضية",
+  /* رموز اللغة الافتراضية للمستأجر بأحرف صغيرة ليتمكن codeLabel من الوصول إليها. */
+  "settings.language.en": "الإنجليزية",
+  "settings.language.ar": "العربية",
+
+  /* مدير إعدادات المستأجر — تفضيلات تشغيل الذكاء الاصطناعي. */
+  "settings.aiPreferencesTitle": "تفضيلات تشغيل الذكاء الاصطناعي",
+  "settings.aiPreferencesDesc":
+    "اضبط طريقة إجابة DocuMind AI عن الأسئلة في مساحة العمل.",
+  "settings.temperatureLabel": "درجة الإبداع (0–2)",
+  "settings.maxTokensLabel": "الحد الأقصى للرموز (128–8192)",
+  "settings.responseStyleLabel": "أسلوب الإجابة",
+  /* رموز أسلوب الإجابة بأحرف صغيرة ليتمكن codeLabel من الوصول إليها. */
+  "settings.responseStyle.concise": "موجز",
+  "settings.responseStyle.balanced": "متوازن",
+  "settings.responseStyle.detailed": "مفصّل",
+  "settings.citationsLabel":
+    "إرفاق الاستشهادات بالإجابات عند توفّر المصادر",
+
+  /* مدير إعدادات المستأجر — شريط الحفظ والنتائج. */
+  "settings.unsavedChanges": "لديك تغييرات غير محفوظة.",
+  "settings.loadedFromVersion": "تم التحميل من النسخة {{version}}",
+  "settings.loadedFromVersionUpdated":
+    "تم التحميل من النسخة {{version}} · آخر تحديث {{timestamp}}",
+  "settings.discardChanges": "تجاهل التغييرات",
+  "settings.saveChanges": "حفظ التغييرات",
+  "settings.loadError": "تعذّر تحميل الإعدادات",
+  "settings.saveError": "تعذّر حفظ الإعدادات. يرجى المحاولة مرة أخرى.",
+  "settings.saveSuccess": "تم حفظ الإعدادات بنجاح.",
+  "settings.upToDate": "الإعدادات محدّثة بالفعل.",
+  "settings.noChanges": "لا توجد تغييرات للحفظ.",
+  "settings.conflictMessage":
+    "تم تغيير الإعدادات في جلسة أخرى. أُعيد تطبيق تعديلاتك على أحدث نسخة — راجعها ثم احفظ مرة أخرى.",
+  "settings.conflictReloadFailed":
+    "تم تغيير الإعدادات في جلسة أخرى، لكن تعذّر تحميل أحدث نسخة. حدّث الصفحة للمراجعة.",
+  "settings.temperatureRangeError": "يجب أن تتراوح درجة الإبداع بين 0 و2",
+  "settings.maxTokensRangeError":
+    "يجب أن يكون الحد الأقصى للرموز عدداً صحيحاً بين 128 و8192",
+
+  /* ── email preview dialog ──────────────────────────────── */
+  "emailPreview.title": "معاينة: {{subject}}",
+  "emailPreview.recipient": "المستلم:",
+  "emailPreview.templateId": "معرّف القالب:",
+  "emailPreview.status": "الحالة:",
 
   /* ── notifications ─────────────────────────────────────── */
   "notifications.title": "الإشعارات",

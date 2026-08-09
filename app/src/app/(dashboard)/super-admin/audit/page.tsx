@@ -4,12 +4,13 @@ import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPag
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { listPlatformAudit } from "@/services/super-admin.service";
 import type { PlatformAuditLog } from "@/types/api/super-admin.types";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { actionLabel, resourceLabel, describeChanges } from "@/lib/audit-formatters";
 
 export default function AuditPage() {
   const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
   const [logs, setLogs] = useState<PlatformAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +85,7 @@ export default function AuditPage() {
                   )}
                 </td>
                 <td className={cell}>
-                  {new Date(log.createdAt).toLocaleString()}
+                  {new Date(log.createdAt).toLocaleString(intlLocale)}
                 </td>
               </tr>
             );
