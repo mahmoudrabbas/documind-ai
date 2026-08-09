@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AssistantIntentKind,
   ClarificationRequest,
   DetectedEntity,
   IntentClass,
@@ -45,6 +46,7 @@ export const IntentAgentOutputSchema = z
     language: QueryLanguage,
     route: QueryRoute,
     intent: IntentClass,
+    assistantKind: AssistantIntentKind.nullable().default(null),
     intentConfidence: z.number().min(0).max(1),
     referencedDocumentIds: boundedIdArray(20).default([]),
     clarificationNeeded: z.boolean().default(false),

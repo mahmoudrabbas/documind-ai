@@ -59,6 +59,7 @@ import {
   type ChatAnalyticsRequest,
 } from "./chat.tools.js";
 import { socialReplyFor } from "./chat.social.js";
+import { assistantReplyFor } from "./chat.assistant.js";
 import { detectAnswerTask } from "./chat.answerTask.js";
 import type { ChatResponse, ChatSource } from "./chat.types.js";
 import { ChatSendBodySchema, type ChatSendBody } from "./chat.validator.js";
@@ -114,7 +115,7 @@ const SourceLessTerminalSchema = z
     action: z.literal("release"),
     answer: z.string().min(1).max(20_000),
     sourceIds: z.array(z.string()).length(0),
-    reasonCode: z.enum(["SOCIAL_INTENT", "ANALYTICS_TOOL"]),
+    reasonCode: z.enum(["ASSISTANT_INTENT", "SOCIAL_INTENT", "ANALYTICS_TOOL"]),
   })
   .strict();
 
@@ -272,6 +273,7 @@ const INTENT_OUTPUT_FIELDS = [
   "language",
   "route",
   "intent",
+  "assistantKind",
   "intentConfidence",
   "referencedDocumentIds",
   "clarificationNeeded",
@@ -424,13 +426,13 @@ function createChatRuntimePolicy(input: {
               result: {},
               reasonCode: "ANALYTICS_COMPLETE",
             };
-      } else if (artifacts.intent.route === "social") {
+      } else if (artifacts.intent.route === "assistant" || artifacts.intent.route === "social") {
         trusted = {
           action: "complete",
           currentAgent,
           nextAgent: null,
           result: {},
-          reasonCode: "SOCIAL_COMPLETE",
+          reasonCode: artifacts.intent.route === "assistant" ? "ASSISTANT_COMPLETE" : "SOCIAL_COMPLETE",
         };
       } else if (artifacts.intent.route !== "rag") {
         trusted = artifacts.compliance
@@ -632,8 +634,8 @@ function createChatRuntimePolicy(input: {
         };
       } else if (args.toAgent === "compliance-agent") {
         const intent = artifacts.intent ?? failClosed("Trusted intent output is required");
-        if (artifacts.analyticsRequest || intent.route === "social") {
-          failClosed("Compliance is not valid for analytics or social paths");
+        if (artifacts.analyticsRequest || intent.route === "assistant" || intent.route === "social") {
+          failClosed("Compliance is not valid for analytics, assistant, or social paths");
         }
 
         let answerDecision: AnswerWriterOutput["decision"];
@@ -821,6 +823,15 @@ function createChatRuntimePolicy(input: {
       }
 
       const intent = artifacts.intent ?? failClosed("Completion requires trusted intent output");
+      if (intent.route === "assistant") {
+        const kind = intent.assistantKind ?? failClosed("Assistant completion requires a trusted assistant kind");
+        return SourceLessTerminalSchema.parse({
+          action: "release",
+          answer: assistantReplyFor(intent.language, kind),
+          sourceIds: [],
+          reasonCode: "ASSISTANT_INTENT",
+        });
+      }
       if (intent.route === "social") {
         return SourceLessTerminalSchema.parse({
           action: "release",
@@ -1019,7 +1030,10 @@ export class ChatWorkflowService {
     return {
       messageId: idOf(assistant),
       answer: terminal.answer,
-      sources: settings.citationsEnabled ? response : undefined,
+      sources:
+        terminal.reasonCode === "ASSISTANT_INTENT"
+          ? []
+          : settings.citationsEnabled ? response : undefined,
       conversationId,
     };
   }
@@ -1073,7 +1087,7 @@ export class ChatWorkflowService {
     output: Record<string, unknown>,
     artifacts: ChatRunArtifacts,
   ): TrustedTerminal {
-    if (artifacts.analyticsRequest || artifacts.intent?.route === "social") {
+    if (artifacts.analyticsRequest || artifacts.intent?.route === "assistant" || artifacts.intent?.route === "social") {
       return SourceLessTerminalSchema.parse(output);
     }
     const terminal = ComplianceAgentOutputSchema.parse(output);

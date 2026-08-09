@@ -1113,6 +1113,81 @@ test(
 );
 
 test(
+  "production-composed workflow answers assistant identity and capabilities deterministically without retrieval or sources",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const model = new RecordingFakeModelAdapter(new Map());
+    const service = await productionService(fixture, { model });
+    const cases = [
+      { message: "انت مين؟", intent: "assistant_identity", kind: "identity", marker: "DocuMind AI" },
+      { message: "Who are you?", intent: "assistant_identity", kind: "identity", marker: "DocuMind AI" },
+      { message: "بتعمل اية", intent: "assistant_capabilities", kind: "capabilities", marker: "مستندات الشركة" },
+      { message: "what can u do", intent: "assistant_capabilities", kind: "capabilities", marker: "company documents" },
+    ] as const;
+
+    for (const [index, item] of cases.entries()) {
+      const requestId = `request-assistant-intent-${index}`;
+      const response = await service.execute(
+        { conversationId: fixture.conversationId, message: item.message },
+        executionContext(fixture, requestId),
+      );
+      const graph = await loadSupervisorGraph(requestId);
+      const intentStep = graph.steps.find(
+        (step) => step.agentName === "intent-query-agent" && step.action === "execute",
+      );
+
+      assert.equal(intentStep?.output?.route, "assistant", item.message);
+      assert.equal(intentStep?.output?.intent, item.intent, item.message);
+      assert.equal(intentStep?.output?.assistantKind, item.kind, item.message);
+      assert.match(response.answer, new RegExp(item.marker), item.message);
+      assert.deepEqual(response.sources, [], item.message);
+      assert.deepEqual(graph.toolCalls, [], item.message);
+      assert.equal(
+        graph.steps.some((step) =>
+          ["answer-writer-agent", "citation-verification-agent", "compliance-agent"].includes(step.agentName),
+        ),
+        false,
+        item.message,
+      );
+    }
+    assert.equal(model.calls.length, 0, "assistant-only turns must not call any model stage");
+  },
+);
+
+test(
+  "production-composed mixed assistant and knowledge turn preserves controlled RAG",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const knowledgeQuestion = "what is the remote work policy?";
+    const model = new RecordingFakeModelAdapter(
+      new Map([[knowledgeQuestion, COMPLIANCE_APPROVED_ANSWER]]),
+    );
+    const service = await productionService(fixture, { model });
+    const requestId = "request-mixed-assistant-knowledge";
+    const response = await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: `Who are you and ${knowledgeQuestion}`,
+      },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const intentStep = graph.steps.find(
+      (step) => step.agentName === "intent-query-agent" && step.action === "execute",
+    );
+
+    assert.equal(intentStep?.output?.route, "rag");
+    assert.equal(intentStep?.output?.normalizedQuestion, knowledgeQuestion);
+    assert.ok(graph.toolCalls.some((call) => call.toolName === "authorized_hybrid_search"));
+    assert.ok(graph.toolCalls.some((call) => call.toolName === "evaluate_evidence"));
+    assert.equal(response.answer, COMPLIANCE_APPROVED_ANSWER);
+    assert.equal(response.sources?.length, 1);
+  },
+);
+
+test(
   "production-composed workflow positively routes social-prefixed knowledge questions to grounded retrieval",
   { timeout: 90_000 },
   async () => {

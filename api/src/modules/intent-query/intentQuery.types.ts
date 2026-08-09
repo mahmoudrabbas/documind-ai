@@ -9,6 +9,8 @@ export const IntentClass = z.enum([
   "summarization",          // Summarize a document or section
   "navigation",             // "Where do I find…" / "Show me…"
   "administrative_action",  // Requests an action (e.g., "upload X")
+  "assistant_identity",     // Product-owned DocuMind identity (no docs)
+  "assistant_capabilities", // Product-owned implemented capabilities (no docs)
   "social",                 // Social/ritual greeting, thanks, politeness (no docs)
   "unsupported",            // General/off-topic question
   "unsafe",                 // Prompt injection / policy violation
@@ -18,6 +20,7 @@ export type IntentClassValue = z.infer<typeof IntentClass>;
 
 // ── Query routes ──
 export const QueryRoute = z.enum([
+  "assistant",              // Deterministic DocuMind self-description, no retrieval
   "social",                 // Pure social exchange → no retrieval, no sources
   "rag",                    // Retrieval-augmented generation with citations
   "clarification",          // Request more details from the user
@@ -26,6 +29,9 @@ export const QueryRoute = z.enum([
 ]);
 
 export type QueryRouteValue = z.infer<typeof QueryRoute>;
+
+export const AssistantIntentKind = z.enum(["identity", "capabilities"]);
+export type AssistantIntentKindValue = z.infer<typeof AssistantIntentKind>;
 
 // ── Social subtypes (populated only when route === "social") ──
 export const SocialSubtype = z.enum([
@@ -97,13 +103,14 @@ export type ClarificationRequestType = z.infer<typeof ClarificationRequest>;
 
 // ── Full Query Plan ──
 export const QueryPlanSchema = z.object({
-  schemaVersion: z.literal("1.0.0"),
+  schemaVersion: z.literal("1.1.0"),
   normalizedQuestion: z.string().min(1).max(2000),
   originalQuestion: z.string().min(1).max(2000),
   language: QueryLanguage,
   detectedIntent: IntentClass,
   intentConfidence: z.number().min(0).max(1),
   route: QueryRoute,
+  assistantKind: AssistantIntentKind.nullable().default(null),
   socialSubtype: SocialSubtype.default("acknowledgement"),
   entities: z.array(DetectedEntity).max(50),
   temporalConstraints: z.array(TemporalConstraint).max(10),

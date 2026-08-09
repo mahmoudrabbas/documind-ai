@@ -18,7 +18,7 @@ const KNOWLEDGE_TERMS = new Set([
   "benefit", "benefits", "insurance", "probation", "employee", "employees",
   "contract", "article", "section", "code", "working", "hours", "hr",
   "سياسه", "سياسات", "وثيقه", "وثائق", "مستند", "مستندات", "ملف", "دليل",
-  "اجازه", "اجازات", "راتب", "رواتب", "تامين", "موظف", "موظفين", "عقد",
+  "اجازه", "الاجازه", "اجازات", "الاجازات", "راتب", "رواتب", "تامين", "موظف", "موظفين", "عقد",
   "ماده", "بند", "لائحه", "لوائح", "دوام", "ساعات", "ترقيه", "تعويض",
 ]);
 
@@ -29,7 +29,7 @@ const QUESTION_TERMS = new Set([
 
 const REQUEST_TERMS = new Set([
   "show", "find", "explain", "summarize", "compare", "list", "locate", "upload", "delete",
-  "اعرض", "اجد", "اشرح", "لخص", "قارن", "اذكر", "اريد", "عايز", "احذف", "ارفع",
+  "اعرض", "اجد", "اشرح", "لخص", "قارن", "اذكر", "قولي", "اريد", "عايز", "احذف", "ارفع",
 ]);
 
 const CONTEXTUAL_ACKNOWLEDGEMENTS = new Set([

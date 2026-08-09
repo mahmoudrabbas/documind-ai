@@ -149,7 +149,7 @@ function planAdapter(overrides: Record<string, unknown> = {}): ModelAdapter {
     providerKey: "plan-adapter",
     async complete() {
       const plan = {
-        schemaVersion: "1.0.0",
+        schemaVersion: "1.1.0",
         normalizedQuestion: "q",
         originalQuestion: "q",
         language: "en",
@@ -322,6 +322,109 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.equal(plan.route, "social");
     assert.equal(plan.detectedIntent, "social");
     assert.deepEqual(plan.semanticQueries, []);
+  });
+
+  await t.test("identity and capabilities use the deterministic assistant route without calling the model", async () => {
+    let modelCalls = 0;
+    const deterministicService = new IntentQueryService({
+      providerKey: "must-not-run",
+      async complete() {
+        modelCalls += 1;
+        throw new Error("assistant-only input must not call the model");
+      },
+    }, fakeConvoAdapter);
+    const cases = [
+      ["انت مين؟", "assistant_identity", "identity"],
+      ["مين حضرتك؟", "assistant_identity", "identity"],
+      ["من أنت؟", "assistant_identity", "identity"],
+      ["Who are you?", "assistant_identity", "identity"],
+      ["What are you?", "assistant_identity", "identity"],
+      ["بتعمل ايه؟", "assistant_capabilities", "capabilities"],
+      ["تقدر تساعدني في ايه؟", "assistant_capabilities", "capabilities"],
+      ["ايه قدراتك؟", "assistant_capabilities", "capabilities"],
+      ["What can you do?", "assistant_capabilities", "capabilities"],
+      ["What can you help me with?", "assistant_capabilities", "capabilities"],
+      ["انت ميين", "assistant_identity", "identity"],
+      ["مين انتا", "assistant_identity", "identity"],
+      ["بتعمل اية", "assistant_capabilities", "capabilities"],
+      ["who r u", "assistant_identity", "identity"],
+      ["what can u do", "assistant_capabilities", "capabilities"],
+      ["انت DocuMind AI؟", "assistant_identity", "identity"],
+      ["what can you do يا DocuMind؟", "assistant_capabilities", "capabilities"],
+    ] as const;
+
+    for (const [question, expectedIntent, expectedKind] of cases) {
+      const plan = await deterministicService.analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.route, "assistant", question);
+      assert.equal(plan.detectedIntent, expectedIntent, question);
+      assert.equal(plan.assistantKind, expectedKind, question);
+      assert.deepEqual(plan.semanticQueries, [], question);
+      assert.deepEqual(plan.keywordQueries, [], question);
+      assert.deepEqual(plan.referencedDocumentIds, [], question);
+    }
+    assert.equal(modelCalls, 0);
+  });
+
+  await t.test("mixed assistant and knowledge turns preserve only the substantive RAG request", async () => {
+    const seenQuestions: string[] = [];
+    const base = planAdapter();
+    const mixedService = new IntentQueryService({
+      providerKey: "mixed-plan-adapter",
+      async complete(params) {
+        seenQuestions.push(params.messages.at(-1)?.content ?? "");
+        return base.complete(params);
+      },
+    }, fakeConvoAdapter);
+    const cases = [
+      ["انت مين وكام يوم الإجازة السنوية؟", "كام يوم الإجازة السنوية؟"],
+      ["Who are you and what is our annual leave policy?", "what is our annual leave policy?"],
+    ] as const;
+    for (const [question, expectedRemainder] of cases) {
+      const plan = await mixedService.analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.route, "rag", question);
+      assert.equal(plan.normalizedQuestion, expectedRemainder, question);
+      assert.ok(plan.semanticQueries.some((query) => query.text === expectedRemainder), question);
+    }
+    assert.deepEqual(seenQuestions, cases.map(([, remainder]) => remainder));
+  });
+
+  await t.test("assistant capability follow-up stays coherent and a later knowledge turn returns to RAG", async () => {
+    const conversationId = new Types.ObjectId().toString();
+    const assistantReply = "أنا DocuMind AI، مساعد خاص لمعرفة الشركة.";
+    fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+      { role: "user", content: "انت مين؟", timestamp: new Date(1).toISOString() },
+      { role: "assistant", content: assistantReply, timestamp: new Date(2).toISOString() },
+    ]);
+
+    let modelCalls = 0;
+    const base = planAdapter();
+    const contextualService = new IntentQueryService({
+      providerKey: "context-plan-adapter",
+      async complete(params) {
+        modelCalls += 1;
+        return base.complete(params);
+      },
+    }, fakeConvoAdapter);
+    const capability = await contextualService.analyzeQuery(
+      { question: "طب بتعرف تعمل ايه؟", conversationId },
+      companyAdminContext,
+    );
+    assert.equal(capability.route, "assistant");
+    assert.equal(capability.assistantKind, "capabilities");
+    assert.equal(modelCalls, 0);
+
+    fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+      { role: "user", content: "انت مين؟", timestamp: new Date(1).toISOString() },
+      { role: "assistant", content: assistantReply, timestamp: new Date(2).toISOString() },
+      { role: "user", content: "طب بتعرف تعمل ايه؟", timestamp: new Date(3).toISOString() },
+      { role: "assistant", content: "بصفتي DocuMind AI، أساعدك من مستندات الشركة.", timestamp: new Date(4).toISOString() },
+    ]);
+    const knowledge = await contextualService.analyzeQuery(
+      { question: "طيب وسياسة الإجازات؟", conversationId },
+      companyAdminContext,
+    );
+    assert.equal(knowledge.route, "rag");
+    assert.equal(modelCalls, 1);
   });
 
   await t.test("social prefix does not override a substantive request", async () => {
