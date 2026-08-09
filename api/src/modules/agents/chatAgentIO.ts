@@ -121,6 +121,7 @@ export type CitationVerifierInput = z.infer<typeof CitationVerifierInputSchema>;
 export const CitationVerifierReasonCode = z.enum([
   "CITATIONS_VERIFIED",
   "MISSING_CITATIONS",
+  "UNSUPPORTED_CLAIMS",
   "CITATIONS_SKIPPED",
 ]);
 export type CitationVerifierReasonCodeValue = z.infer<
@@ -132,8 +133,8 @@ export const CitationVerifierOutputSchema = z
     verified: z.boolean(),
     validatedCitationIds: boundedIdArray(50).default([]),
     rejectedCitationIds: boundedIdArray(50).default([]),
-    // Claim-level checks are an explicit extension point (no LLM in the
-    // deterministic core): always empty until a claim-extraction path exists.
+    // Bounded factual claims that were absent from or contradicted by the
+    // authorized cited evidence.
     unsupportedClaims: z
       .array(z.string().trim().min(1).max(500))
       .max(20)

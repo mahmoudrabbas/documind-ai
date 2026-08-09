@@ -12,6 +12,7 @@ import {
   registerCitationVerificationAgentExecutor,
   type CitationVerificationAgentDependencies,
 } from "./citationVerificationAgent.js";
+import { CitationSemanticVerificationService } from "./citationSemanticVerification.service.js";
 import { createChatAgentRegistry } from "./chatAgents.js";
 import {
   createChatWorkflowRegistry,
@@ -83,7 +84,10 @@ export function createProductionChatSupervisorComposition(
   });
   registerCitationVerificationAgentExecutor(
     executorRegistry,
-    evidenceDependencies,
+    {
+      ...evidenceDependencies,
+      semanticVerifier: new CitationSemanticVerificationService(deps.model),
+    },
   );
   registerComplianceAgentExecutor(executorRegistry, {
     evaluate: evaluateCompliance,

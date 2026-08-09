@@ -87,12 +87,19 @@ function makeDeps(overrides: Partial<CitationVerificationAgentDependencies> = {}
       authorizeCalls.push(documentId);
     },
   } as unknown as DocumentAccessAuthorizationService;
+  const semanticVerifier: CitationVerificationAgentDependencies["semanticVerifier"] = {
+    verify: async ({ answerText }) => ({
+      claims: answerText ? [answerText] : [],
+      unsupportedClaims: [],
+    }),
+  };
 
   return {
     deps: {
       loadChunksByIds,
       loadEligibleDocumentIds,
       authorization,
+      semanticVerifier,
       ...overrides,
     } as CitationVerificationAgentDependencies,
     loadChunksCalls,
@@ -210,6 +217,56 @@ describe("CitationVerificationAgentExecutor", () => {
     assert.deepEqual(loadChunksCalls[0].chunkIds, [CHUNK_ID]);
   });
 
+  it("runs semantic support only after membership and fails closed on unsupported claims", async () => {
+    const semanticCalls: unknown[] = [];
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async (input) => {
+          semanticCalls.push(input);
+          return {
+            claims: ["Employees receive 30 days of annual leave."],
+            unsupportedClaims: ["Employees receive 30 days of annual leave."],
+          };
+        },
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      ...VALID_INPUT,
+      answerText: "Employees receive 30 days of annual leave.",
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.output.verified, false);
+      assert.equal(result.output.reasonCode, "UNSUPPORTED_CLAIMS");
+      assert.deepEqual(result.output.validatedCitationIds, [CHUNK_ID]);
+      assert.deepEqual(result.output.unsupportedClaims, [
+        "Employees receive 30 days of annual leave.",
+      ]);
+    }
+    assert.equal(semanticCalls.length, 1);
+  });
+
+  it("does not invoke semantic verification when citation membership fails", async () => {
+    let semanticCalls = 0;
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async () => {
+          semanticCalls += 1;
+          return { claims: [], unsupportedClaims: [] };
+        },
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      decision: "grounded_answer",
+      citedChunkIds: [INVENTED_ID],
+      approvedEvidenceIds: [CHUNK_ID],
+      answerText: "Invented claim.",
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.output.reasonCode, "MISSING_CITATIONS");
+    assert.equal(semanticCalls, 0);
+  });
+
   it("fails closed to MISSING_CITATIONS when no cited id survives authorization", async () => {
     const { deps } = makeDeps();
     const result = await makeExecutor(deps).execute(runContext(), {
@@ -286,12 +343,33 @@ describe("CitationVerificationAgentExecutor", () => {
     }
   });
 
-  it("reports no model metadata for deterministic execution", async () => {
-    const { deps } = makeDeps();
-    const result = await makeExecutor(deps).execute(runContext(), VALID_INPUT);
+  it("reports semantic model metadata when supplied by the verifier", async () => {
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async () => ({
+          claims: ["Supported."],
+          unsupportedClaims: [],
+          providerKey: "semantic-provider",
+          modelName: "semantic-model",
+          totalTokens: 12,
+          estimatedCost: 0.01,
+          latencyMs: 3,
+        }),
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      ...VALID_INPUT,
+      answerText: "Supported.",
+    });
     assert.equal(result.ok, true);
     if (result.ok) {
-      assert.equal(result.metadata, undefined);
+      assert.deepEqual(result.metadata, {
+        modelProvider: "semantic-provider",
+        modelName: "semantic-model",
+        tokensUsed: 12,
+        estimatedCost: 0.01,
+        latencyMs: 3,
+      });
       assert.ok(result.latencyMs >= 0);
     }
   });

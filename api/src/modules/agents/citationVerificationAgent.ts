@@ -15,13 +15,14 @@ import {
   type CitationVerifierOutput,
 } from "./chatAgentIO.js";
 import { CitationVerificationService } from "./citationVerification.service.js";
+import type { CitationSemanticVerifier } from "./citationSemanticVerification.service.js";
 import {
   RETRIEVABLE_CHUNK_STATUSES,
   type LoadedChunkCandidate,
 } from "./tools/authorizedRetrievalTools.js";
 
 export const CITATION_VERIFICATION_AGENT_ID = "citation-verification-agent";
-export const CITATION_VERIFICATION_AGENT_VERSION = "1.0.0";
+export const CITATION_VERIFICATION_AGENT_VERSION = "1.1.0";
 
 /**
  * Trusted dependencies injected from the composition root. The executor never
@@ -52,6 +53,8 @@ export interface CitationVerificationAgentDependencies {
    * tool's approval and verification time (TOCTOU guard).
    */
   readonly authorization: DocumentAccessAuthorizationService;
+  /** Semantic support judge over only the reauthorized, cited evidence. */
+  readonly semanticVerifier: CitationSemanticVerifier;
 }
 
 /**
@@ -83,9 +86,8 @@ export function mapCitationVerificationAgentError(caught: unknown): {
 }
 
 /**
- * Real, traced citation-verification-agent. Deterministic and provider-free:
- * it never calls an LLM, so it reports no model/provider/token metadata and
- * the supervisor persists null model fields for its step.
+ * Real, traced citation-verification-agent. Deterministic membership and
+ * authorization checks run before the bounded semantic support judge.
  *
  * Fails closed:
  * - the evidence set is re-authorized server-side (tenant scope, document
@@ -144,20 +146,57 @@ export class CitationVerificationAgentExecutor implements AgentContract {
         };
       }
 
-      const authorizedIds = await this.loadAuthorizedChunkIds(
+      const authorizedChunks = await this.loadAuthorizedChunks(
         context,
         agentInput.approvedEvidenceIds ?? [],
       );
 
-      const output = CitationVerificationService.verify({
+      const membership = CitationVerificationService.verify({
         ...agentInput,
-        approvedEvidenceIds: authorizedIds,
+        approvedEvidenceIds: authorizedChunks.map((chunk) => chunk.chunkId),
       });
+      if (!membership.verified) {
+        return {
+          ok: true,
+          status: "completed",
+          output: membership,
+          latencyMs: Date.now() - startedAt,
+        };
+      }
+
+      const validated = new Set(membership.validatedCitationIds);
+      const semantic = await this.deps.semanticVerifier.verify({
+        answerText: agentInput.answerText ?? "",
+        evidence: authorizedChunks
+          .filter((chunk) => validated.has(chunk.chunkId))
+          .map((chunk) => ({ chunkId: chunk.chunkId, text: chunk.text })),
+      });
+      const unsupportedClaims = [...semantic.unsupportedClaims];
+      const output: CitationVerifierOutput = {
+        ...membership,
+        verified: unsupportedClaims.length === 0,
+        unsupportedClaims,
+        reasonCode:
+          unsupportedClaims.length === 0
+            ? "CITATIONS_VERIFIED"
+            : "UNSUPPORTED_CLAIMS",
+      };
       return {
         ok: true,
         status: "completed",
         output,
         latencyMs: Date.now() - startedAt,
+        ...(semantic.providerKey
+          ? {
+              metadata: {
+                modelProvider: semantic.providerKey,
+                modelName: semantic.modelName,
+                tokensUsed: semantic.totalTokens,
+                estimatedCost: semantic.estimatedCost,
+                latencyMs: semantic.latencyMs,
+              },
+            }
+          : {}),
       };
     } catch (caught) {
       const mapped = mapCitationVerificationAgentError(caught);
@@ -176,10 +215,10 @@ export class CitationVerificationAgentExecutor implements AgentContract {
    * reauthorizes each parent document for use_in_ai. Any failure drops the
    * chunk. Returns the ids that remain authorized at verification time.
    */
-  private async loadAuthorizedChunkIds(
+  private async loadAuthorizedChunks(
     context: AgentRunContext,
     approvedEvidenceIds: readonly string[],
-  ): Promise<string[]> {
+  ): Promise<LoadedChunkCandidate[]> {
     if (approvedEvidenceIds.length === 0) return [];
 
     const loaded = await this.deps.loadChunksByIds(
@@ -202,7 +241,7 @@ export class CitationVerificationAgentExecutor implements AgentContract {
       eligibleDocumentIds = new Set(eligibleDocs);
     }
 
-    const authorizedIds: string[] = [];
+    const authorizedChunks: LoadedChunkCandidate[] = [];
     for (const chunk of eligibleChunks) {
       if (!eligibleDocumentIds.has(chunk.documentId)) continue;
       try {
@@ -214,9 +253,9 @@ export class CitationVerificationAgentExecutor implements AgentContract {
       } catch {
         continue;
       }
-      authorizedIds.push(chunk.chunkId);
+      authorizedChunks.push(chunk);
     }
-    return authorizedIds;
+    return authorizedChunks;
   }
 }
 

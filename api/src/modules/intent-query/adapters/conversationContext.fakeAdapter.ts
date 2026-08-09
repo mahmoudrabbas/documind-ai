@@ -1,6 +1,4 @@
 import type { ConversationContextPort, ConversationMessage } from "../ports/conversationContext.port.js";
-import { AppError } from "../../../common/errors/AppError.js";
-import { FORBIDDEN } from "../../../common/errors/errorCodes.js";
 
 interface StoredConversation {
   tenantId: string;
@@ -41,13 +39,10 @@ export class FakeConversationContextAdapter implements ConversationContextPort {
       return [];
     }
 
-    // Verify tenant and user authorization
+    // Match production's non-enumerating behavior: inaccessible and missing
+    // conversations both yield no context.
     if (convo.tenantId !== tenantId || convo.actorId !== actorId) {
-      throw new AppError(
-        403,
-        FORBIDDEN,
-        "Access denied to this conversation context"
-      );
+      return [];
     }
 
     // Limit context length

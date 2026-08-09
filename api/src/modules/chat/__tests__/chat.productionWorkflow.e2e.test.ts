@@ -181,7 +181,48 @@ function isIntentClassificationRequest(
   );
 }
 
-class RecordingFakeModelAdapter extends FakeModelAdapter {
+function isSemanticCitationRequest(
+  params: Parameters<FakeModelAdapter["complete"]>[0],
+): boolean {
+  return params.messages.some(
+    (message) =>
+      message.role === "system" &&
+      message.content.includes("Judge whether each supplied factual claim is entailed"),
+  );
+}
+
+class SemanticAwareFakeModelAdapter extends FakeModelAdapter {
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isSemanticCitationRequest(params)) return response;
+    const payload = JSON.parse(params.messages.at(-1)?.content ?? "{}") as {
+      claims?: unknown[];
+    };
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) =>
+        index === 0
+          ? {
+              ...choice,
+              message: {
+                ...choice.message,
+                content: JSON.stringify({
+                  judgments: (payload.claims ?? []).map((_claim, claimIndex) => ({
+                    claimIndex,
+                    verdict: "supported",
+                  })),
+                }),
+              },
+            }
+          : choice,
+      ),
+    };
+  }
+}
+
+class RecordingFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   readonly calls: RecordedModelCall[] = [];
 
   constructor(private readonly answers: ReadonlyMap<string, string>) {
@@ -192,15 +233,17 @@ class RecordingFakeModelAdapter extends FakeModelAdapter {
     params: Parameters<FakeModelAdapter["complete"]>[0],
   ): ReturnType<FakeModelAdapter["complete"]> {
     const isIntentClassification = isIntentClassificationRequest(params);
+    const isSemanticCitation = isSemanticCitationRequest(params);
     this.calls.push({
       messages: params.messages.map((message) => ({ ...message })),
-      ...(params.structuredOutput && !isIntentClassification
+      ...(params.structuredOutput && !isIntentClassification && !isSemanticCitation
         ? { structuredOutput: params.structuredOutput }
         : {}),
     });
     const response = await super.complete(params);
     if (!params.structuredOutput) return response;
     if (isIntentClassification) return response;
+    if (isSemanticCitation) return response;
 
     const question = [...params.messages]
       .reverse()
@@ -233,7 +276,7 @@ class RecordingFakeModelAdapter extends FakeModelAdapter {
   }
 }
 
-class IntentProviderFailureFakeModelAdapter extends FakeModelAdapter {
+class IntentProviderFailureFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   override async complete(
     params: Parameters<FakeModelAdapter["complete"]>[0],
   ): ReturnType<FakeModelAdapter["complete"]> {
@@ -734,7 +777,7 @@ async function productionService(
     useMongoHistory?: boolean;
   } = {},
 ) {
-  const model = options.model ?? new FakeModelAdapter();
+  const model = options.model ?? new SemanticAwareFakeModelAdapter();
   const embedding = new FakeEmbeddingAdapter();
   const vector = new FakeVectorStoreAdapter();
   const keyword = new FakeKeywordAdapter();
@@ -988,6 +1031,34 @@ test(
       );
     }
     assertPersistenceSafety({ run, steps, toolCalls });
+  },
+);
+
+test(
+  "production-composed workflow refuses a numerically contradicted claim despite a valid citation id",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const contradictedAnswer = "Employees may work remotely 30 days each week.";
+    const model = new RecordingFakeModelAdapter(
+      new Map([[QUESTION, contradictedAnswer]]),
+    );
+    const service = await productionService(fixture, { model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: QUESTION },
+      executionContext(fixture, "request-semantic-contradiction"),
+    );
+
+    assert.notEqual(response.answer, contradictedAnswer);
+    assert.deepEqual(response.sources, []);
+    const verifierStep = await AgentStepModel.findOne({
+      requestId: "request-semantic-contradiction",
+      agentName: "citation-verification-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(verifierStep?.output?.verified, false);
+    assert.equal(verifierStep?.output?.reasonCode, "UNSUPPORTED_CLAIMS");
+    assert.deepEqual(verifierStep?.output?.validatedCitationIds, [fixture.chunkId]);
   },
 );
 
