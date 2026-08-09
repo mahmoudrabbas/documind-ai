@@ -32,9 +32,19 @@ describe("chat assistant rendering (markdown + safety)", () => {
   it("preserves source citations in assistant messages", async () => {
     const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
     expect(source).toContain("msg.sources && msg.sources.length > 0");
+    expect(source).toContain("import { SourceList } from \"@/components/domain/ChatSources\";");
+    expect(source).toContain("<SourceList");
     expect(source).toContain("setPdfViewer({");
-    expect(source).toContain('src.documentTitle ?? t("chat.document")');
+    expect(source).toContain('documentId: source.documentId');
+    expect(source).toContain('highlightText: source.text');
+    expect(source).toContain('documentTitle: source.documentTitle');
     expect(source).toContain("<PdfViewerModal");
+  });
+
+  it("hides the internal retrieval score from the chat message UI", async () => {
+    const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("src.score");
+    expect(source).not.toContain("(src.score * 100)");
   });
 
   it("renders the source section only for messages that carry sources (social/unsupported replies stay clean)", async () => {
@@ -44,8 +54,8 @@ describe("chat assistant rendering (markdown + safety)", () => {
     // render as a plain assistant bubble with no citation UI.
     const gate = source.indexOf("{msg.sources && msg.sources.length > 0 && (");
     expect(gate).toBeGreaterThan(-1);
-    expect(source.slice(0, gate)).not.toContain('t("chat.sources")');
-    expect(source.slice(gate)).toContain('t("chat.sources")');
+    expect(source.slice(0, gate)).not.toContain("<SourceList");
+    expect(source.slice(gate)).toContain("<SourceList");
   });
 
   it("preserves the feedback widget for assistant messages", async () => {

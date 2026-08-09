@@ -815,8 +815,12 @@ const ar: TranslationDictionary = {
   "chat.emptyDescription":
     "اطرح أسئلة عن مستندات شركتك واحصل على إجابات فورية من قاعدة معرفتك.",
   "chat.sources": "المصادر",
+  "chat.sourceCount": "المصادر ({{count}})",
+  "chat.source": "المصدر",
   "chat.document": "مستند",
-  "chat.sourcePage": "(ص. {{page}})",
+  "chat.page": "الصفحة {{page}}",
+  "chat.section": "القسم",
+  "chat.openSource": "فتح المصدر",
   "chat.voiceInput": "إدخال صوتي",
   "chat.stopRecording": "إيقاف التسجيل",
   "chat.disclaimer":

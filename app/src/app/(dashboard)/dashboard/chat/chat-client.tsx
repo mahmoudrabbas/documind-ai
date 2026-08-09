@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
 import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
 import { AssistantMarkdown } from "@/components/domain/AssistantMarkdown";
+import { SourceList } from "@/components/domain/ChatSources";
 import { UpgradePrompt } from "@/components/entitlement/UpgradePrompt";
 import {
   mapEntitlementError,
@@ -492,6 +493,15 @@ export function ChatClient() {
     clientMessageIdRef.current = null;
   }
 
+  const handleOpenSource = useCallback((source: ChatSource) => {
+    setPdfViewer({
+      documentId: source.documentId,
+      pageNumber: source.pageNumber,
+      highlightText: source.text,
+      documentTitle: source.documentTitle,
+    });
+  }, []);
+
   async function handleSend(text?: string) {
     const question = (text || input).trim();
     if (!question || isTyping || retryAfterSeconds !== null) return;
@@ -817,47 +827,10 @@ export function ChatClient() {
                         )}
                       </div>
                       {msg.sources && msg.sources.length > 0 && (
-                        <div className="mt-3 w-full border-t border-outline-variant/20 pt-2">
-                          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                            {t("chat.sources")}
-                          </p>
-                          {msg.sources.map((src) => (
-                            <button
-                              key={src.chunkId}
-                              onClick={() =>
-                                setPdfViewer({
-                                  documentId: src.documentId,
-                                  pageNumber: src.pageNumber,
-                                  highlightText: src.text,
-                                  documentTitle: src.documentTitle,
-                                })
-                              }
-                              className="flex items-center gap-1 text-xs text-on-surface-variant transition-colors hover:text-primary"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">
-                                description
-                              </span>
-                              <span className="underline-offset-2 hover:underline">
-                                {src.documentTitle ?? t("chat.document")}
-                              </span>
-                              {src.sectionTitle && (
-                                <span className="text-outline">
-                                  — {src.sectionTitle}
-                                </span>
-                              )}
-                              {src.pageNumber && (
-                                <span className="text-outline">
-                                  {t("chat.sourcePage", {
-                                    page: String(src.pageNumber),
-                                  })}
-                                </span>
-                              )}
-                              <span className="ms-1 text-outline">
-                                ({(src.score * 100).toFixed(0)}%)
-                              </span>
-                            </button>
-                          ))}
-                        </div>
+                        <SourceList
+                          sources={msg.sources}
+                          onOpen={handleOpenSource}
+                        />
                       )}
                       {msg.role === "assistant" && activeConversation && (
                         <FeedbackWidget

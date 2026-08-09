@@ -814,8 +814,12 @@ const en: TranslationDictionary = {
   "chat.emptyDescription":
     "Ask questions about your company documents and get instant answers sourced from your knowledge base.",
   "chat.sources": "Sources",
+  "chat.sourceCount": "Sources ({{count}})",
+  "chat.source": "Source",
   "chat.document": "Document",
-  "chat.sourcePage": "(p. {{page}})",
+  "chat.page": "Page {{page}}",
+  "chat.section": "Section",
+  "chat.openSource": "Open source",
   "chat.voiceInput": "Voice Input",
   "chat.stopRecording": "Stop Voice Recording",
   "chat.disclaimer":
