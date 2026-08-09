@@ -360,6 +360,33 @@ class IntentProviderFailureFakeModelAdapter extends SemanticAwareFakeModelAdapte
   }
 }
 
+class ControlledIntentFallbackModelAdapter extends RecordingFakeModelAdapter {
+  constructor(
+    answers: ReadonlyMap<string, string>,
+    private readonly intentOutput: string | Error,
+  ) {
+    super(answers);
+  }
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    if (!isIntentClassificationRequest(params)) return super.complete(params);
+    const intentOutput = this.intentOutput;
+    if (intentOutput instanceof Error) throw intentOutput;
+    const response = await super.complete(params);
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) => index === 0
+        ? {
+            ...choice,
+            message: { ...choice.message, content: intentOutput },
+          }
+        : choice),
+    };
+  }
+}
+
 async function seedWorkflowState(): Promise<SeededWorkflow> {
   const tenant = await TenantModel.create({
     name: "Production Workflow Corp",
@@ -1965,6 +1992,144 @@ test(
       response.sources?.map((source) => source.chunkId),
       [fixture.chunkId],
     );
+  },
+);
+
+test(
+  "production-composed workflow grounds an Arabic-Indic threshold question against English evidence during provider failure",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const message = "شكرا، لو المصروف ٢٠ دولار، لازم أقدم إيصال؟";
+    const retrievalQuestion = "لو المصروف ٢٠ دولار، لازم أقدم إيصال؟";
+    const answer = "لا. المصروف ٢٠ دولار لا يتجاوز حد ٢٥ دولار المطلوب بعده الإيصال.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "receipt-policy.pdf",
+      title: "Receipt Policy",
+      question: retrievalQuestion,
+      text: "Receipts are required for expenses above USD 25.",
+      sectionTitle: "Receipts",
+      pageNumber: 2,
+    });
+    const model = new ControlledIntentFallbackModelAdapter(
+      new Map([[retrievalQuestion, answer]]),
+      new Error("simulated intent timeout"),
+    );
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const requestId = "request-stage3-arabic-english-threshold";
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const graph = await loadSupervisorGraph(requestId);
+    const intent = graph.steps.find((step) => step.agentName === "intent-query-agent");
+    assert.equal(intent?.output?.route, "rag");
+    assert.deepEqual(
+      graph.toolCalls.map((call) => call.toolName),
+      ["authorized_hybrid_search", "evaluate_evidence"],
+    );
+  },
+);
+
+test(
+  "production-composed workflow applies an Arabic evidence comparator deterministically",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Are receipts required for 30 USD under the expense policy?";
+    const answer = "Yes. Receipts are required for 30 USD because the rule applies above 25 USD.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "arabic-expense-policy.pdf",
+      title: "Arabic Expense Policy",
+      question,
+      text: "يجب تقديم إيصال للمصروفات التي تزيد عن ٢٥ دولارًا.",
+      language: "ar",
+      sectionTitle: "الإيصالات",
+      pageNumber: 3,
+    });
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, "request-stage3-arabic-evidence-threshold"),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+  },
+);
+
+test(
+  "production-composed workflow recovers malformed enterprise intent but keeps a bare VPN definition out of RAG",
+  { timeout: 60_000 },
+  async () => {
+    const positiveFixture = await seedWorkflowState();
+    const question = "What is the hotel limit?";
+    const answer = "The hotel limit is USD 180 per night.";
+    const evidence = await seedAdditionalAuthorizedEvidence(positiveFixture, {
+      fileName: "hotel-policy.pdf",
+      title: "Hotel Policy",
+      question,
+      text: "The hotel limit is USD 180 per night.",
+      sectionTitle: "Hotel",
+      pageNumber: 1,
+    });
+    const malformed = "{malformed-intent-json";
+    const positiveService = await productionService(positiveFixture, {
+      evidence: [evidence],
+      model: new ControlledIntentFallbackModelAdapter(new Map([[question, answer]]), malformed),
+    });
+    const positiveRequestId = "request-stage3-malformed-enterprise";
+    const positiveResponse = await positiveService.execute(
+      { conversationId: positiveFixture.conversationId, message: question },
+      executionContext(positiveFixture, positiveRequestId),
+    );
+    assert.equal(positiveResponse.answer, answer);
+    assert.deepEqual(positiveResponse.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+
+    const positiveGraph = await loadSupervisorGraph(positiveRequestId);
+    assert.equal(
+      positiveGraph.steps.find((step) => step.agentName === "intent-query-agent")?.output?.route,
+      "rag",
+    );
+
+    const generalRequestId = "request-stage3-malformed-general-vpn";
+    const generalResponse = await positiveService.execute(
+      { conversationId: positiveFixture.conversationId, message: "What is VPN?" },
+      executionContext(positiveFixture, generalRequestId),
+    );
+    assert.deepEqual(generalResponse.sources, []);
+    assert.deepEqual((await loadSupervisorGraph(generalRequestId)).toolCalls, []);
+  },
+);
+
+test(
+  "production-composed workflow preserves signed threshold values",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Is a balance of -10 USD blocked?";
+    const answer = "Yes. A balance of -10 USD is below -5 USD and is blocked.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "balance-policy.pdf",
+      title: "Balance Policy",
+      question,
+      text: "A balance below -5 USD is blocked.",
+      sectionTitle: "Balance controls",
+      pageNumber: 1,
+    });
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, "request-stage3-signed-threshold"),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
   },
 );
 

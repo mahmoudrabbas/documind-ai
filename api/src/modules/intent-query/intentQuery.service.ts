@@ -829,13 +829,11 @@ export class IntentQueryService {
         false
       );
 
-      // A model may express a positive, known knowledge intent but omit or
-      // mistype another required schema field. Recover only when the current
-      // turn independently has strong document-knowledge signals. Unknown
-      // intent labels never receive this recovery path.
+      // Schema-invalid provider output (including an invalid/missing intent)
+      // is non-authoritative. Recover only when the current turn independently
+      // has strong deterministic enterprise/document knowledge signals.
       if (
-        validatedPlan.processingMetadata.fallbackUsed &&
-        isRetrievableIntent(rawDetectedIntent)
+        validatedPlan.processingMetadata.fallbackUsed
       ) {
         const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
         if (knowledgeSignals.positive) {

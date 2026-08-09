@@ -1,3 +1,5 @@
+import { normalizeArabic } from "../intent-query/intentQuery.languageDetector.js";
+
 export type ThresholdOperator = "gt" | "gte" | "lt" | "lte";
 
 export interface NumericMention {
@@ -32,27 +34,39 @@ const NUMBER_WORD_VALUES: Readonly<Record<string, number>> = {
   forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
 };
 
-const NUMBER_TOKEN = String.raw`(?:\d[\d,]*(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|thirty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|forty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|fifty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|sixty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|seventy(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|eighty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|ninety(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?)`;
+const NUMBER_TOKEN = String.raw`(?:[+-]?\d[\d,]*(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|thirty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|forty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|fifty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|sixty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|seventy(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|eighty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|ninety(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?)`;
 
 const NUMBER_PATTERN = new RegExp(
-  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?))?(?![\p{L}\p{N}_])`,
+  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|degrees?|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
   "giu",
 );
 
 const PREFIX_OPERATORS: readonly [RegExp, ThresholdOperator][] = [
-  [/(?:>=|≥|at\s+least|minimum(?:\s+of)?(?:\s+[\p{L}-]+){0,4}\s*(?:is|=|:)?|no\s+less\s+than)\s*$/iu, "gte"],
-  [/(?:<=|≤|at\s+most|maximum(?:\s+of)?(?:\s+[\p{L}-]+){0,4}\s*(?:is|=|:)?|up\s+to|no\s+more\s+than)\s*$/iu, "lte"],
-  [/(?:>|greater\s+than|above|more\s+than|over)\s*$/iu, "gt"],
-  [/(?:<|less\s+than|below|fewer\s+than|under)\s*$/iu, "lt"],
+  [/(?:>=|≥|at\s+least|minimum(?:\s+of)?(?:\s+[\p{L}-]+){0,4}\s*(?:is|=|:)?|no\s+less\s+than|علي\s+الاقل|بحد\s+ادني|لا\s+يقل\s+عن)\s*$/iu, "gte"],
+  [/(?:<=|≤|at\s+most|maximum(?:\s+of)?(?:\s+[\p{L}-]+){0,4}\s*(?:is|=|:)?|up\s+to|no\s+more\s+than|بحد\s+اقصي|لا\s+يزيد\s+عن|حتي|الي\s+حد\s+اقصي)\s*$/iu, "lte"],
+  [/(?:>|greater\s+than|above|more\s+than|over|اكثر\s+من|اكبر\s+من|فوق|(?:ي|ت)زيد\s+عن)\s*$/iu, "gt"],
+  [/(?:<|less\s+than|below|fewer\s+than|under|اقل\s+من|اصغر\s+من|تحت|(?:ي|ت)قل\s+عن)\s*$/iu, "lt"],
 ];
 
 const POSTFIX_OPERATORS: readonly [RegExp, ThresholdOperator][] = [
-  [/^\s*(?:or\s+more|minimum)\b/iu, "gte"],
-  [/^\s*(?:or\s+less|maximum)\b/iu, "lte"],
+  [/^\s*(?:or\s+more|minimum)\b|^\s*(?:علي\s+الاقل|بحد\s+ادني)(?:\s|$)/iu, "gte"],
+  [/^\s*(?:or\s+less|maximum)\b|^\s*(?:بحد\s+اقصي)(?:\s|$)/iu, "lte"],
 ];
 
+const ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+const EASTERN_ARABIC_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+
+/** Controlled parsing representation; caller-visible text is never rewritten. */
+export function normalizeNumericText(text: string): string {
+  return normalizeArabic(text.normalize("NFKC"))
+    .replace(/[٠-٩]/gu, (digit) => String(ARABIC_INDIC_DIGITS.indexOf(digit)))
+    .replace(/[۰-۹]/gu, (digit) => String(EASTERN_ARABIC_DIGITS.indexOf(digit)))
+    .replace(/٫/gu, ".")
+    .replace(/٬/gu, ",");
+}
+
 function parseNumber(raw: string): number | null {
-  if (/^\d/iu.test(raw)) {
+  if (/^[+-]?\d/iu.test(raw)) {
     const value = Number(raw.replaceAll(",", ""));
     return Number.isFinite(value) ? value : null;
   }
@@ -72,7 +86,13 @@ function normalizeUnit(fullMatch: string, capturedUnit: string | undefined): str
   if (/^days?$/u.test(unit)) return "duration:day";
   if (/^hours?$/u.test(unit)) return "duration:hour";
   if (/^minutes?$/u.test(unit)) return "duration:minute";
+  if (/^(?:ايام|يوم(?:ا)?)$/u.test(unit)) return "duration:day";
+  if (/^(?:ساعات?|ساعه)$/u.test(unit)) return "duration:hour";
+  if (/^(?:دقائق?|دقيقه)$/u.test(unit)) return "duration:minute";
+  if (/^degrees?$/u.test(unit) || /^(?:درجات?|درجه)$/u.test(unit)) return "temperature:degree";
   if (unit === "%" || /^percent(?:age)?$/u.test(unit)) return "percentage";
+  if (unit === "بالمئه") return "percentage";
+  if (/^دولار(?:ا)?$/u.test(unit)) return "currency:usd";
   return null;
 }
 
@@ -90,12 +110,24 @@ function inferCountUnit(text: string, end: number): string | null {
   return `count:${singular}`;
 }
 
-export function extractNumericMentions(text: string): NumericMention[] {
+function overlapsStructuredNumber(text: string, start: number, end: number): boolean {
+  const datePattern = /(?<![\p{L}\p{N}_])\d{4}-\d{1,2}-\d{1,2}(?![\p{L}\p{N}_])/gu;
+  for (const match of text.matchAll(datePattern)) {
+    const dateStart = match.index ?? -1;
+    const dateEnd = dateStart + match[0].length;
+    if (start < dateEnd && end > dateStart) return true;
+  }
+  return /[\p{L}\p{N}_]-$/u.test(text.slice(Math.max(0, start - 2), start)) ||
+    /^-[\p{L}\p{N}_]/u.test(text.slice(end, end + 2));
+}
+
+function extractNormalizedNumericMentions(text: string): NumericMention[] {
   const mentions: NumericMention[] = [];
   for (const match of text.matchAll(NUMBER_PATTERN)) {
     const value = parseNumber(match[1] ?? "");
     if (value === null || match.index === undefined) continue;
     const end = match.index + match[0].length;
+    if (overlapsStructuredNumber(text, match.index, end)) continue;
     const explicitUnit = normalizeUnit(match[0], match[2]);
     mentions.push({
       value,
@@ -105,6 +137,10 @@ export function extractNumericMentions(text: string): NumericMention[] {
     });
   }
   return mentions;
+}
+
+export function extractNumericMentions(text: string): NumericMention[] {
+  return extractNormalizedNumericMentions(normalizeNumericText(text));
 }
 
 function operatorFor(text: string, mention: NumericMention): ThresholdOperator | null {
@@ -120,8 +156,9 @@ function operatorFor(text: string, mention: NumericMention): ThresholdOperator |
 }
 
 export function extractThresholdRules(text: string): ThresholdRule[] {
-  return extractNumericMentions(text).flatMap((mention) => {
-    const operator = operatorFor(text, mention);
+  const normalized = normalizeNumericText(text);
+  return extractNormalizedNumericMentions(normalized).flatMap((mention) => {
+    const operator = operatorFor(normalized, mention);
     return operator ? [{ ...mention, operator }] : [];
   });
 }

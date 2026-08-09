@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   deriveThresholdComparisons,
   deriveThresholdDecisions,
+  extractNumericMentions,
   extractThresholdRules,
   hasNumericConsistencyViolation,
+  normalizeNumericText,
 } from "./thresholdSemantics.js";
 
 function outcomes(question: string, evidence: string): boolean[] {
@@ -79,6 +81,84 @@ test("recognizes the supported comparison vocabulary and symbolic operators", ()
   }
   assert.equal(extractThresholdRules("minimum employment = 90 days")[0]?.operator, "gte");
   assert.equal(extractThresholdRules("maximum remote duration: 2 days")[0]?.operator, "lte");
+});
+
+test("normalizes Arabic-Indic and Eastern Arabic numerals for controlled parsing", () => {
+  assert.equal(
+    normalizeNumericText("٢٥ ٩٠ ١٠٠٠ ١٥٠٠ ۲۵ ١٬٥٠٠ ٢٫٥"),
+    "25 90 1000 1500 25 1,500 2.5",
+  );
+  assert.deepEqual(
+    extractNumericMentions("-٥ دولار و ٢٫٥ بالمئة").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: -5, unit: "currency:usd" },
+      { value: 2.5, unit: "percentage" },
+    ],
+  );
+});
+
+test("extracts the bounded Arabic comparator vocabulary", () => {
+  const phrases = [
+    ["أكثر من ٢٥ دولار", "gt"],
+    ["أكثر مِن ٢٥ دولار", "gt"],
+    ["أكبر من ٢٥ دولار", "gt"],
+    ["فوق ٢٥ دولار", "gt"],
+    ["يزيد عن ٢٥ دولار", "gt"],
+    ["على الأقل ٩٠ يومًا", "gte"],
+    ["بحد أدنى ٩٠ يومًا", "gte"],
+    ["لا يقل عن ٩٠ يومًا", "gte"],
+    ["أقل من ١٠ أيام", "lt"],
+    ["أصغر من ١٠ أيام", "lt"],
+    ["تحت ١٠ أيام", "lt"],
+    ["لا يزيد عن ٢ يوم", "lte"],
+    ["بحد أقصى ٢ يوم", "lte"],
+    ["حتى ٢ يوم", "lte"],
+    ["إلى حد أقصى ٢ يوم", "lte"],
+  ] as const;
+  for (const [text, operator] of phrases) {
+    assert.equal(extractThresholdRules(text)[0]?.operator, operator, text);
+  }
+});
+
+test("evaluates Arabic and mixed-language threshold questions at their boundaries", () => {
+  const receipts = "يجب تقديم إيصال للمصروفات التي تزيد عن ٢٥ دولارًا.";
+  assert.deepEqual(outcomes("لو المصروف ٢٠ دولار، لازم أقدم إيصال؟", receipts), [false]);
+  assert.deepEqual(outcomes("لو المصروف ٣٠ دولار، لازم أقدم إيصال؟", receipts), [true]);
+
+  const remote = "يحق للموظف طلب العمل عن بعد بعد إكمال ٩٠ يومًا على الأقل من العمل.";
+  assert.deepEqual(outcomes("هل ٣٠ يوم كفاية؟", remote), [false]);
+  assert.deepEqual(outcomes("can i اشتغل remote بعد 90 يوم؟", remote), [true]);
+  assert.deepEqual(outcomes("أنا شغال بقالى ١٢٠ يوم، ينفع أطلب العمل عن بعد؟", remote), [true]);
+
+  const purchaseOrder = "يلزم Purchase Order للمشتريات التي تزيد عن ١٠٠٠ دولار.";
+  assert.deepEqual(outcomes("لو قيمة الشراء ١٠٠٠ دولار بالظبط، لازم PO؟", purchaseOrder), [false]);
+
+  const maximum = "لا يجوز العمل عن بعد لأكثر من يومين في الأسبوع. بحد أقصى ٢ يوم.";
+  assert.deepEqual(outcomes("هل ٣ أيام مسموحة؟", maximum), [false]);
+});
+
+test("preserves explicit signs and excludes dates and hyphenated identifiers", () => {
+  assert.deepEqual(
+    extractNumericMentions("-5 USD, USD -2.5, +5 days, and -2.5%").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: -5, unit: "currency:usd" },
+      { value: -2.5, unit: "currency:usd" },
+      { value: 5, unit: "duration:day" },
+      { value: -2.5, unit: "percentage" },
+    ],
+  );
+  assert.deepEqual(extractNumericMentions("2025-01-01 and CASE-123-A"), []);
+});
+
+test("evaluates signed thresholds without losing or inverting the sign", () => {
+  const balance = "A balance below -5 USD is blocked.";
+  assert.deepEqual(outcomes("Is -10 USD blocked?", balance), [true]);
+  assert.deepEqual(outcomes("Is -5 USD blocked?", balance), [false]);
+  assert.deepEqual(outcomes("Is -2 USD blocked?", balance), [false]);
+
+  const temperature = "Temperature must remain above -10 degrees.";
+  assert.deepEqual(outcomes("Is -5 degrees acceptable?", temperature), [true]);
+  assert.deepEqual(outcomes("Is +10 degrees acceptable?", "Temperature must remain above +10 degrees."), [false]);
 });
 
 test("compares compatible count units conservatively", () => {
