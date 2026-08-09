@@ -161,3 +161,37 @@ test("unknown messages fall through as non-social without a subtype", () => {
   assert.equal(result.isSocial, false);
   assert.equal(result.subtype, null);
 });
+
+test("bounded typo, elongation, dialect and mixed-language social forms are recognized", () => {
+  const cases: Array<[string, SocialSubtypeValue]> = [
+    ["شجرا", "thanks"],
+    ["شكررا", "thanks"],
+    ["شكرن", "thanks"],
+    ["شكراااا", "thanks"],
+    ["تسلممم", "thanks"],
+    ["شكرا يا قائد", "thanks"],
+    ["ألف شكر يا معلم", "thanks"],
+    ["ماشي", "acknowledgement"],
+    ["اشطا", "acknowledgement"],
+    ["thx", "thanks"],
+    ["tnx", "thanks"],
+    ["thanx", "thanks"],
+    ["thanks يا قائد", "thanks"],
+    ["شكرا bro", "thanks"],
+  ];
+  for (const [message, subtype] of cases) assertSocial(message, subtype);
+});
+
+test("bounded fuzzy matching never consumes substantive questions", () => {
+  for (const message of [
+    "شكرا، كام يوم الإجازة السنوية؟",
+    "السلام عليكم، ما سياسة الإجازات؟",
+    "thanks, what is our leave policy?",
+    "تسلم، ممكن تلخص HR_Policy.pdf؟",
+    "شجرة الشركة جميلة",
+    "سياسة شكر الموظفين",
+    "ما سياسة الشكر والتقدير؟",
+  ]) {
+    assert.equal(detectSocialMessage(message).isSocial, false, message);
+  }
+});

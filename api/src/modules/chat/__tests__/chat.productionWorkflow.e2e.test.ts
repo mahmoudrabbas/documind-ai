@@ -59,6 +59,10 @@ const ARABIC_QUESTION = "ما مدة الإجازة السنوية في وثيق
 const ARABIC_ANSWER = "تمنح سياسة الشركة الموظفين إجازة سنوية مدتها عشرون يوم عمل.";
 const ARABIC_CHUNK_TEXT =
   "تمنح سياسة الإجازات الموظفين عشرين يوم عمل من الإجازة السنوية المدفوعة.";
+const SOCIAL_KNOWLEDGE_QUESTION = "شكرا، كام يوم الإجازة السنوية؟";
+const SOCIAL_KNOWLEDGE_RETRIEVAL = "كام يوم الإجازة السنوية؟";
+const GREETING_KNOWLEDGE_QUESTION = "السلام عليكم، ما سياسة الإجازات؟";
+const GREETING_KNOWLEDGE_RETRIEVAL = "ما سياسة الإجازات؟";
 const BLUE_FALCON_QUESTION = "What is the Project Blue Falcon access code?";
 const BLUE_FALCON_CODE = "BF-7391-ORBIT";
 const BLUE_FALCON_ANSWER = `The Project Blue Falcon access code is ${BLUE_FALCON_CODE}.`;
@@ -166,6 +170,17 @@ interface RecordedModelCall {
   structuredOutput?: { type: "json_object" };
 }
 
+function isIntentClassificationRequest(
+  params: Parameters<FakeModelAdapter["complete"]>[0],
+): boolean {
+  return params.messages.some(
+    (message) =>
+      message.role === "system" &&
+      message.content.includes('"detectedIntent"') &&
+      message.content.includes('"semanticQueries"'),
+  );
+}
+
 class RecordingFakeModelAdapter extends FakeModelAdapter {
   readonly calls: RecordedModelCall[] = [];
 
@@ -176,14 +191,16 @@ class RecordingFakeModelAdapter extends FakeModelAdapter {
   override async complete(
     params: Parameters<FakeModelAdapter["complete"]>[0],
   ): ReturnType<FakeModelAdapter["complete"]> {
+    const isIntentClassification = isIntentClassificationRequest(params);
     this.calls.push({
       messages: params.messages.map((message) => ({ ...message })),
-      ...(params.structuredOutput
+      ...(params.structuredOutput && !isIntentClassification
         ? { structuredOutput: params.structuredOutput }
         : {}),
     });
     const response = await super.complete(params);
     if (!params.structuredOutput) return response;
+    if (isIntentClassification) return response;
 
     const question = [...params.messages]
       .reverse()
@@ -213,6 +230,17 @@ class RecordingFakeModelAdapter extends FakeModelAdapter {
           : choice,
       ),
     };
+  }
+}
+
+class IntentProviderFailureFakeModelAdapter extends FakeModelAdapter {
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    if (isIntentClassificationRequest(params)) {
+      throw new Error("simulated intent provider failure");
+    }
+    return super.complete(params);
   }
 }
 
@@ -960,6 +988,157 @@ test(
       );
     }
     assertPersistenceSafety({ run, steps, toolCalls });
+  },
+);
+
+test(
+  "production-composed workflow keeps varied social-only and unsupported input out of retrieval with empty sources",
+  { timeout: 90_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const service = await productionService(fixture);
+    const cases = [
+      { message: "شجرا", route: "social" },
+      { message: "شكررا", route: "social" },
+      { message: "شكرن", route: "social" },
+      { message: "شكراااا", route: "social" },
+      { message: "تسلممم", route: "social" },
+      { message: "شكرا يا قائد", route: "social" },
+      { message: "ألف شكر يا معلم", route: "social" },
+      { message: "تمام", route: "social" },
+      { message: "ماشي", route: "social" },
+      { message: "اشطا", route: "social" },
+      { message: "تسلم", route: "social" },
+      { message: "thanks", route: "social" },
+      { message: "thx", route: "social" },
+      { message: "tnx", route: "social" },
+      { message: "thanx", route: "social" },
+      { message: "thanks يا قائد", route: "social" },
+      { message: "شكرا bro", route: "social" },
+      { message: "❤️", route: "social" },
+      { message: "👍", route: "social" },
+      { message: "🙏", route: "social" },
+      { message: "asdasd", route: "unsupported" },
+      { message: "What is the capital of France?", route: "unsupported" },
+    ] as const;
+
+    for (const [index, item] of cases.entries()) {
+      const requestId = `request-terminal-intent-${index}`;
+      const response = await service.execute(
+        { conversationId: fixture.conversationId, message: item.message },
+        executionContext(fixture, requestId),
+      );
+      const graph = await loadSupervisorGraph(requestId);
+      const intentStep = graph.steps.find(
+        (step) =>
+          step.agentName === "intent-query-agent" && step.action === "execute",
+      );
+
+      assert.equal(intentStep?.output?.route, item.route, item.message);
+      assert.deepEqual(response.sources, [], item.message);
+      assert.deepEqual(graph.toolCalls, [], item.message);
+    }
+  },
+);
+
+test(
+  "production-composed workflow positively routes social-prefixed knowledge questions to grounded retrieval",
+  { timeout: 90_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "leave-policy-ar.pdf",
+      title: "سياسة الإجازات",
+      question: SOCIAL_KNOWLEDGE_RETRIEVAL,
+      text: ARABIC_CHUNK_TEXT,
+      sectionTitle: "الإجازة السنوية",
+      pageNumber: 3,
+      language: "ar",
+    });
+    const model = new RecordingFakeModelAdapter(
+      new Map([
+        [SOCIAL_KNOWLEDGE_RETRIEVAL, ARABIC_ANSWER],
+        [GREETING_KNOWLEDGE_RETRIEVAL, ARABIC_ANSWER],
+      ]),
+    );
+    const service = await productionService(fixture, {
+      evidence: [evidence],
+      model,
+    });
+
+    for (const [index, message] of [
+      SOCIAL_KNOWLEDGE_QUESTION,
+      GREETING_KNOWLEDGE_QUESTION,
+    ].entries()) {
+      const requestId = `request-social-knowledge-${index}`;
+      const response = await service.execute(
+        { conversationId: fixture.conversationId, message },
+        executionContext(fixture, requestId),
+      );
+      const graph = await loadSupervisorGraph(requestId);
+      const intentStep = graph.steps.find(
+        (step) =>
+          step.agentName === "intent-query-agent" && step.action === "execute",
+      );
+
+      assert.equal(intentStep?.output?.route, "rag", message);
+      assert.equal(response.answer, ARABIC_ANSWER, message);
+      assert.deepEqual(
+        response.sources?.map((source) => source.chunkId),
+        [evidence.chunkId],
+        message,
+      );
+      assert.deepEqual(
+        graph.toolCalls.map((toolCall) => toolCall.toolName),
+        ["authorized_hybrid_search", "evaluate_evidence"],
+        message,
+      );
+    }
+  },
+);
+
+test(
+  "production-composed workflow fails closed on provider uncertainty unless knowledge signals are positive",
+  { timeout: 90_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const service = await productionService(fixture, {
+      model: new IntentProviderFailureFakeModelAdapter(),
+    });
+
+    for (const [index, message] of ["شجرا", "asdasd"].entries()) {
+      const requestId = `request-provider-failure-terminal-${index}`;
+      const response = await service.execute(
+        { conversationId: fixture.conversationId, message },
+        executionContext(fixture, requestId),
+      );
+      const graph = await loadSupervisorGraph(requestId);
+      assert.deepEqual(response.sources, [], message);
+      assert.deepEqual(graph.toolCalls, [], message);
+    }
+
+    const requestId = "request-provider-failure-positive-knowledge";
+    const response = await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: "What is the remote work policy?",
+      },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const intentStep = graph.steps.find(
+      (step) =>
+        step.agentName === "intent-query-agent" && step.action === "execute",
+    );
+    assert.equal(intentStep?.output?.route, "rag");
+    assert.deepEqual(
+      graph.toolCalls.map((toolCall) => toolCall.toolName),
+      ["authorized_hybrid_search", "evaluate_evidence"],
+    );
+    assert.deepEqual(
+      response.sources?.map((source) => source.chunkId),
+      [fixture.chunkId],
+    );
   },
 );
 

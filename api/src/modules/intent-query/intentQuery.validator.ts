@@ -36,7 +36,7 @@ export function validateAndNormalizeQueryPlan(
   fallbackUsed = false
 ): QueryPlan {
   const rawObject = typeof raw === "object" && raw !== null ? raw : {};
-  const rawIntent = (rawObject as { detectedIntent?: unknown }).detectedIntent ?? "knowledge_question";
+  const rawIntent = (rawObject as { detectedIntent?: unknown }).detectedIntent ?? "unsupported";
   const rawClarification = Boolean((rawObject as { clarificationNeeded?: unknown }).clarificationNeeded);
   const rawSocialSubtype = (rawObject as { socialSubtype?: unknown }).socialSubtype;
 
@@ -108,7 +108,7 @@ export function validateAndNormalizeQueryPlan(
     normalizedQuestion: originalQuestion.trim(),
     originalQuestion,
     language: detectedLanguage,
-    detectedIntent: "knowledge_question",
+    detectedIntent: "unsupported",
     intentConfidence: 0.3,
     entities: [],
     temporalConstraints: [],
@@ -117,17 +117,11 @@ export function validateAndNormalizeQueryPlan(
     departments: [],
     categories: [],
     exactTerms: [],
-    semanticQueries: [
-      {
-        text: originalQuestion,
-        language: detectedLanguage,
-        weight: 1.0,
-      },
-    ],
+    semanticQueries: [],
     keywordQueries: [],
     clarificationNeeded: false,
     clarification: null,
-    route: "rag",
+    route: "unsupported",
     socialSubtype: "acknowledgement",
     isFollowUp: false,
     conversationContextUsed: false,

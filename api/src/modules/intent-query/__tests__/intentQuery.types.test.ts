@@ -133,3 +133,22 @@ test("validator preserves a non-social RAG plan when provider emits null socialS
   assert.deepEqual(plan.exactTerms, ["network security"]);
   assert.equal(plan.keywordQueries.length, 1);
 });
+
+test("validator fails unknown or malformed intent output closed to unsupported", () => {
+  for (const raw of [{ detectedIntent: "future_intent" }, { normalizedQuestion: "x" }, null]) {
+    const plan = validateAndNormalizeQueryPlan(
+      raw,
+      "ambiguous input",
+      "en",
+      "test-prompt",
+      "test-model",
+      1,
+      0,
+      0,
+    );
+    assert.equal(plan.route, "unsupported");
+    assert.equal(plan.detectedIntent, "unsupported");
+    assert.deepEqual(plan.semanticQueries, []);
+    assert.equal(plan.processingMetadata.fallbackUsed, true);
+  }
+});

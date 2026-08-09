@@ -467,6 +467,37 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
     );
   });
 
+  await t.test("uses an acknowledgement as context only after an assistant confirmation question", async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+      { role: "user", content: "Tell me about leave", timestamp: new Date().toISOString() },
+      { role: "assistant", content: "Do you mean the annual leave policy?", timestamp: new Date().toISOString() },
+    ]);
+    const contextualService = new IntentQueryService(
+      scriptedIntentModel(() => ({
+        detectedIntent: "follow_up",
+        normalizedQuestion: "What is the annual leave policy?",
+      })),
+      fakeConvoAdapter,
+    );
+    const plan = await contextualService.analyzeQuery(
+      { question: "ايوه", conversationId }, companyAdminContext,
+    );
+    assert.equal(plan.route, "rag");
+    assert.equal(plan.detectedIntent, "follow_up");
+    assert.equal(plan.conversationContextUsed, true);
+    assert.equal(plan.normalizedQuestion, "What is the annual leave policy?");
+  });
+
+  await t.test("standalone acknowledgement stays conversational and never enters RAG", async () => {
+    for (const question of ["ايوه", "لا", "تمام", "ماشي"]) {
+      const plan = await service.analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.route, "social", question);
+      assert.equal(plan.detectedIntent, "social", question);
+      assert.deepEqual(plan.semanticQueries, [], question);
+    }
+  });
+
   await t.test("should truncate oversized conversation history without crashing", async () => {
     const conversationId = new mongoose.Types.ObjectId().toString();
     
@@ -542,7 +573,7 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
     );
   });
 
-  await t.test("should activate fallback mode when LLM completion fails", async () => {
+  await t.test("should fail closed when LLM completion fails without positive knowledge signals", async () => {
     const failingModel: ModelAdapter = {
       providerKey: "failing-provider",
       async complete() {
@@ -559,8 +590,8 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
     assert.equal(plan.processingMetadata.fallbackUsed, true);
     assert.equal(plan.clarificationNeeded, false);
     assert.equal(plan.clarification, null);
-    assert.equal(plan.route, "rag");
-    assert.equal(plan.detectedIntent, "knowledge_question");
+    assert.equal(plan.route, "unsupported");
+    assert.equal(plan.detectedIntent, "unsupported");
   });
 
   await t.test("should preserve a clear authorized document constraint when the LLM fails", async () => {
@@ -610,5 +641,23 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
     assert.equal(plan.clarification, null);
     assert.equal(plan.route, "rag");
     assert.ok(plan.semanticQueries.length > 0);
+  });
+
+  await t.test("preserves a safe corrected standalone retrieval question and exact original", async () => {
+    const correctingService = new IntentQueryService(
+      scriptedIntentModel(() => ({
+        detectedIntent: "knowledge_question",
+        normalizedQuestion: "What is the annual leave policy?",
+      })),
+      fakeConvoAdapter,
+    );
+    const original = "Thanks, what is the anual leave polcy?";
+    const plan = await correctingService.analyzeQuery(
+      { question: original }, companyAdminContext,
+    );
+    assert.equal(plan.originalQuestion, original);
+    assert.equal(plan.normalizedQuestion, "What is the annual leave policy?");
+    assert.equal(plan.semanticQueries[0]?.text, "What is the annual leave policy?");
+    assert.equal(plan.route, "rag");
   });
 });
