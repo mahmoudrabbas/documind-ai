@@ -8,7 +8,7 @@ import { CompanyBillingPage } from "../CompanyBillingPage";
 import { Permission } from "@/types/api/permissions.types";
 
 const localeState = vi.hoisted(() => ({ locale: "en" as "en" | "ar", t: (key: string) => key }));
-vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: localeState.locale, dir: localeState.locale === "ar" ? "rtl" : "ltr", t: localeState.t }) }));
+vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: localeState.locale, dir: localeState.locale === "ar" ? "rtl" : "ltr", t: localeState.t, tPlural: (key: string) => key, setLocale: vi.fn() }) }));
 vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
 vi.mock("@/services/billing.service", () => ({
   getBillingSummary: vi.fn(),

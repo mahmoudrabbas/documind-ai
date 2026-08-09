@@ -11,7 +11,7 @@ import { SubscriptionWidget } from "../SubscriptionWidget";
 
 vi.mock("@/providers/auth-provider", () => ({ useAuth: vi.fn() }));
 vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
-vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ t: (key: string) => key === "billingAdmin.title" ? "Billing & invoices" : key }) }));
+vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: "en", dir: "ltr", t: (key: string) => key === "billingAdmin.title" ? "Billing & invoices" : key, tPlural: (key: string) => key, setLocale: vi.fn() }) }));
 vi.mock("@/services/billing.service", () => ({
   getSubscriptionStatus: vi.fn(),
   createBillingPortalSession: vi.fn(),

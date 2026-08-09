@@ -370,7 +370,7 @@ export function BulkImportModal({
             </span>
             Upload File
           </div>
-          <span className="material-symbols-outlined text-[16px] opacity-40">
+          <span className="material-symbols-outlined text-[16px] opacity-40 rtl:rotate-180">
             chevron_right
           </span>
           <div
@@ -389,7 +389,7 @@ export function BulkImportModal({
             </span>
             Map Columns
           </div>
-          <span className="material-symbols-outlined text-[16px] opacity-40">
+          <span className="material-symbols-outlined text-[16px] opacity-40 rtl:rotate-180">
             chevron_right
           </span>
           <div
@@ -408,7 +408,7 @@ export function BulkImportModal({
             </span>
             Processing
           </div>
-          <span className="material-symbols-outlined text-[16px] opacity-40">
+          <span className="material-symbols-outlined text-[16px] opacity-40 rtl:rotate-180">
             chevron_right
           </span>
           <div
@@ -680,7 +680,7 @@ export function BulkImportModal({
                   ) : (
                     <>
                       Confirm & Start Import
-                      <span className="material-symbols-outlined text-[18px]">
+                      <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
                         arrow_forward
                       </span>
                     </>

@@ -18,6 +18,7 @@ import {
   type QualityMetricsData,
   type InsightProposal,
 } from "@/services/analytics.service";
+import { useI18n } from "@/providers/i18n-provider";
 import { MetricCard } from "./components/MetricCard";
 import { TimeSeriesChart } from "./components/TimeSeriesChart";
 import { CostBreakdownChart } from "./components/CostBreakdownChart";
@@ -50,6 +51,7 @@ function getLocalStartDateString(daysAgo = 30): string {
 }
 
 export default function AnalyticsPage() {
+  const { t, dir } = useI18n();
   const [filters, setFilters] = useState({
     startDate: getLocalStartDateString(30),
     endDate: getLocalDateString(),
@@ -91,11 +93,11 @@ export default function AnalyticsPage() {
       setCostBreakdown(cbRes.data);
       setQualityMetrics(qmRes.data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load analytics data");
+      setError(err instanceof Error ? err.message : t("analytics.fetchError"));
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, t]);
 
   const loadInsights = useCallback(async () => {
     try {
@@ -118,10 +120,10 @@ export default function AnalyticsPage() {
   }, [loadData, loadInsights]);
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
-        title="Token, Cost & Quality Analytics"
-        description="Real-time operational telemetry, LLM token expenditure, and AI quality metrics across your organization."
+        title={t("analytics.title")}
+        description={t("analytics.description")}
         actions={<ExportButton filters={{ startDate: filters.startDate, endDate: filters.endDate }} />}
       />
 
@@ -145,7 +147,7 @@ export default function AnalyticsPage() {
               onClick={loadData}
               className="min-h-9 rounded-lg bg-error px-4 py-1.5 text-label-md font-bold text-on-error transition-opacity hover:opacity-90"
             >
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         </DashboardPanel>
@@ -162,38 +164,38 @@ export default function AnalyticsPage() {
           {/* Overview Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <MetricCard
-              title="Total Queries"
+              title={t("analytics.totalQueries")}
               value={overview?.totalQueries?.toLocaleString() || "0"}
               changePct={overview?.trends?.queriesChangePct}
-              subtitle="Questions asked"
+              subtitle={t("analytics.totalQueriesDesc")}
               icon="quiz"
             />
             <MetricCard
-              title="Total Tokens"
+              title={t("analytics.totalTokens")}
               value={overview?.totalTokens ? `${(overview.totalTokens / 1000).toFixed(1)}k` : "0"}
               changePct={overview?.trends?.tokensChangePct}
-              subtitle="Input & Output tokens"
+              subtitle={t("analytics.totalTokensDesc")}
               icon="token"
             />
             <MetricCard
-              title="Operational Cost"
+              title={t("analytics.operationalCost")}
               value={`$${overview?.totalCostUsd?.toFixed(2) || "0.00"}`}
               changePct={overview?.trends?.costChangePct}
               costTypeBadge={overview?.costType}
-              freshnessLabel="Live"
+              freshnessLabel={t("analytics.live")}
               icon="payments"
             />
             <MetricCard
-              title="Avg Latency"
+              title={t("analytics.avgLatency")}
               value={`${overview?.avgLatencyMs || 0}ms`}
               changePct={overview?.trends?.latencyChangePct}
-              subtitle="End-to-end response"
+              subtitle={t("analytics.avgLatencyDesc")}
               icon="speed"
             />
             <MetricCard
-              title="Quality Index"
+              title={t("analytics.qualityIndex")}
               value={`${overview?.qualityScore || 100}%`}
-              subtitle="Aggregate AI quality score"
+              subtitle={t("analytics.qualityIndexDesc")}
               icon="verified"
             />
           </div>
@@ -201,7 +203,7 @@ export default function AnalyticsPage() {
           {/* Time Series & Cost Breakdown Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <TimeSeriesChart data={timeSeries} metricKey="queries" title="Daily Query Volume & Activity" />
+              <TimeSeriesChart data={timeSeries} metricKey="queries" title={t("analytics.dailyVolumeTitle")} />
             </div>
             <div>
               <CostBreakdownChart data={costBreakdown} />

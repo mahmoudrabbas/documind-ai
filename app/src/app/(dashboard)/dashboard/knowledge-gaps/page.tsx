@@ -161,7 +161,7 @@ export default function KnowledgeGapsPage() {
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto" id="gap-table-container">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-start text-xs">
               <thead>
                 <tr className="border-b border-outline-variant/30 text-on-surface-variant font-semibold">
                   <th className="py-3 px-2">Topic & Question</th>
@@ -170,7 +170,7 @@ export default function KnowledgeGapsPage() {
                   <th className="py-3 px-2">Department</th>
                   <th className="py-3 px-2 text-center">Occurrences</th>
                   <th className="py-3 px-2">Last Seen</th>
-                  <th className="py-3 px-2 text-right">Action</th>
+                  <th className="py-3 px-2 text-end">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/20">
@@ -188,7 +188,10 @@ export default function KnowledgeGapsPage() {
                       </p>
                     </td>
                     <td className="py-3 px-2">
-                      <GapStatusBadge status={gap.status} />
+                      {(() => {
+                        const gapStatus = gap.status;
+                        return <GapStatusBadge status={gapStatus} />;
+                      })()}
                     </td>
                     <td className="py-3 px-2">
                       <GapSeverityBadge severity={gap.severity} />
@@ -202,7 +205,7 @@ export default function KnowledgeGapsPage() {
                     <td className="py-3 px-2 text-on-surface-variant text-[11px]">
                       {new Date(gap.lastOccurrence).toLocaleDateString()}
                     </td>
-                    <td className="py-3 px-2 text-right">
+                    <td className="py-3 px-2 text-end">
                       <Link
                         href={`/dashboard/knowledge-gaps/${gap.id}`}
                         className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"

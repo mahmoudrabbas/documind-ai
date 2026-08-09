@@ -109,7 +109,7 @@ export function UpgradePrompt({
               {ctaLabel ?? "Reactivate plan"}
             </Button>
           ) : (
-            <span className="block max-w-40 text-right text-label-sm text-on-surface-variant/70">
+            <span className="block max-w-40 text-end text-label-sm text-on-surface-variant/70">
               {hintLabel ?? "Contact your admin to reactivate"}
             </span>
           )}
@@ -198,7 +198,7 @@ export function UpgradePrompt({
             {ctaLabel ?? "Upgrade"}
           </Button>
         ) : (
-          <span className="block max-w-40 text-right text-label-sm text-on-surface-variant/70">
+          <span className="block max-w-40 text-end text-label-sm text-on-surface-variant/70">
             {hintLabel ?? "Contact your admin to upgrade"}
           </span>
         )}

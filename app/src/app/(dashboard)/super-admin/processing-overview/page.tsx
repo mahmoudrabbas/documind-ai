@@ -155,14 +155,17 @@ export default function SuperAdminProcessingOverviewPage() {
                         <button
                           type="button"
                           onClick={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
-                          className="text-sm font-medium text-blue-600 hover:underline text-left"
+                          className="text-sm font-medium text-blue-600 hover:underline text-start"
                         >
                           {run.documentId.slice(0, 12)}...
                         </button>
                         <p className="text-xs text-slate-400 mt-0.5">v{run.documentVersion}</p>
                       </td>
                       <td className="px-4 py-4">
-                        <ProcessingStatusBadge status={run.status} />
+                        {(() => {
+                          const runStatus = run.status;
+                          return <ProcessingStatusBadge status={runStatus} />;
+                        })()}
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {run.currentStage

@@ -14,6 +14,7 @@ import {
 } from "@/services/users.service";
 import type { RoleView, UserView } from "@/types/api/users.types";
 import { useAuth } from "@/providers/auth-provider";
+import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import {
@@ -62,6 +63,7 @@ const ROLE_OPTIONS = [
 const DEFAULT_PAGE_SIZE = 10;
 
 export default function UsersPage() {
+  const { t, dir } = useI18n();
   const auth = useAuth();
   const permissionContext = usePermissions();
   const canCreateUsers = permissionContext.can(Permission.USERS_CREATE);
@@ -464,7 +466,7 @@ export default function UsersPage() {
   }
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
@@ -567,7 +569,7 @@ export default function UsersPage() {
                 {pendingAssignment && canAssignCustomRole ? (
                   <button
                     type="button"
-                    className="ml-3 underline"
+                    className="ms-3 underline"
                     onClick={() => void retryPendingAssignment()}
                   >
                     Retry role assignment
@@ -644,7 +646,7 @@ export default function UsersPage() {
         <div className="mb-4 flex flex-col gap-3 border-b border-outline-variant/30 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center">
             <div className="relative min-[480px]:w-64">
-              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+              <span className="material-symbols-outlined pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
                 search
               </span>
               <input
@@ -652,7 +654,7 @@ export default function UsersPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by name or email"
-                className="w-full rounded-lg border border-outline-variant bg-surface py-2 pl-9 pr-3 text-sm transition-all outline-none placeholder:text-outline focus:border-transparent focus:ring-2 focus:ring-primary"
+                className="w-full rounded-lg border border-outline-variant bg-surface py-2 ps-9 pe-3 text-sm transition-all outline-none placeholder:text-outline focus:border-transparent focus:ring-2 focus:ring-primary"
               />
             </div>
             <select

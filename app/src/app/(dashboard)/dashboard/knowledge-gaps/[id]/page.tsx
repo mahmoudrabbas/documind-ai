@@ -217,7 +217,7 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
       <DashboardPageHeader
         eyebrow={
           <Link href="/dashboard/knowledge-gaps" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-            <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+            <span className="material-symbols-outlined text-[16px] rtl:rotate-180">arrow_back</span>
             Back to Knowledge Gaps
           </Link>
         }
@@ -233,7 +233,10 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
               <span className="material-symbols-outlined text-[14px]">code</span>
               {showTechnicalDetails ? "Hide Dev Info" : "Dev Info"}
             </button>
-            <GapStatusBadge status={gap.status} />
+            {(() => {
+              const gapStatus = gap.status;
+              return <GapStatusBadge status={gapStatus} />;
+            })()}
             <GapSeverityBadge severity={gap.severity} />
           </div>
         }

@@ -20,6 +20,9 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui";
+import { SUBSCRIPTION_BADGE_STATUS } from "@/components/ui/variants";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
 import {
@@ -65,12 +68,6 @@ function formatPrice(price: number, currency: string): string {
   return formatMoneyMinor(price, currency || "USD");
 }
 
-function statusLabel(status: string): string {
-  return status
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 const ENTITLEMENT_ITEMS: {
   key: keyof PublicPackage["entitlements"];
   label: string;
@@ -87,6 +84,7 @@ const ENTITLEMENT_ITEMS: {
 export default function CheckoutPage() {
   const router = useRouter();
   const auth = useAuth();
+  const { t } = useI18n();
   const permissions = usePermissions();
   const canReadBilling =
     auth.status === "authenticated" && permissions.can(Permission.BILLING_READ);
@@ -245,7 +243,7 @@ export default function CheckoutPage() {
         onClick={() => router.push("/dashboard")}
         className="mb-5 inline-flex items-center gap-1.5 self-start text-label-md text-on-surface-variant transition-colors hover:text-primary"
       >
-        <span className="material-symbols-outlined text-[18px]">
+        <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
           arrow_back
         </span>
         Dashboard
@@ -304,9 +302,10 @@ export default function CheckoutPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Badge status={currentSub.status}>
-                {statusLabel(currentSub.status)}
-              </Badge>
+              <Badge
+                status={SUBSCRIPTION_BADGE_STATUS[currentSub.status] ?? "neutral"}
+                label={codeLabel(t, "billing.subscriptionStatus", currentSub.status)}
+              />
             </div>
           </div>
         </DashboardPanel>
@@ -338,7 +337,7 @@ export default function CheckoutPage() {
             )}
           >
             Annual
-            <span className="ml-1.5 inline-block rounded-full bg-tertiary-container px-2 py-0.5 text-[10px] font-bold text-on-tertiary-container">
+            <span className="ms-1.5 inline-block rounded-full bg-tertiary-container px-2 py-0.5 text-[10px] font-bold text-on-tertiary-container">
               Save
             </span>
           </button>
@@ -369,7 +368,7 @@ export default function CheckoutPage() {
             >
               {/* Selected indicator */}
               {isSelected && (
-                <div className="absolute right-4 top-4 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-on-primary">
+                <div className="absolute end-4 top-4 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-on-primary">
                   <span className="material-symbols-outlined text-[18px]">
                     check
                   </span>
@@ -377,13 +376,13 @@ export default function CheckoutPage() {
               )}
 
               {isCurrentPlan && (
-                <div className="absolute left-4 top-4">
+                <div className="absolute start-4 top-4">
                   <Badge status="success">Current plan</Badge>
                 </div>
               )}
 
               {/* Plan name & description */}
-              <h3 className="pr-10 text-title-lg font-bold text-on-surface">
+              <h3 className="pe-10 text-title-lg font-bold text-on-surface">
                 {pkg.name}
               </h3>
               <p className="mt-1.5 line-clamp-2 text-body-sm leading-relaxed text-on-surface-variant">

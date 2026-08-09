@@ -15,6 +15,8 @@ import {
 } from "@/constants/routes";
 import { Permission } from "@/types/api/permissions.types";
 import { NotificationsBell } from "./NotificationsBell";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { useI18n } from "@/providers/i18n-provider";
 
 export function TopNavBar({
   onNavigationOpen,
@@ -24,6 +26,7 @@ export function TopNavBar({
   const auth = useAuth();
   const permissions = usePermissions();
   const tenant = useTenantSettings();
+  const { t } = useI18n();
   const { user } = auth;
   const pathname = usePathname();
   const router = useRouter();
@@ -99,7 +102,7 @@ export function TopNavBar({
         <button
           type="button"
           onClick={onNavigationOpen}
-          aria-label="Open navigation"
+          aria-label={t("shell.openNavigation")}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high md:hidden"
         >
           <span className="material-symbols-outlined">menu</span>
@@ -110,14 +113,14 @@ export function TopNavBar({
           </span>
           <input
             className="w-full rounded-full border-none bg-surface-container-low py-2 ps-10 pe-4 text-label-md outline-none transition-shadow focus:ring-2 focus:ring-primary/20"
-            placeholder="Search knowledge base..."
+            placeholder={t("shell.searchPlaceholder")}
             type="text"
           />
         </div>
 
         {topLinks.length > 0 && (
           <nav className="hidden items-center gap-md lg:flex">
-            {topLinks.map(({ label, href }) => {
+            {topLinks.map(({ label, labelKey, href }) => {
               const isActive = pathname === href;
               return (
                 <Link
@@ -130,7 +133,7 @@ export function TopNavBar({
                       : "text-label-md text-on-surface-variant transition-opacity hover:text-on-surface"
                   }
                 >
-                  {label}
+                  {labelKey ? t(labelKey) : label}
                 </Link>
               );
             })}
@@ -140,12 +143,14 @@ export function TopNavBar({
 
       <div className="flex min-w-0 items-center gap-1 sm:gap-md">
         <div className="hidden items-center gap-xs sm:flex lg:me-md">
+          <LanguageSwitcher />
+
           <NotificationsBell />
 
           {settingsHref && (
             <Link
               href={settingsHref}
-              aria-label="Settings"
+              aria-label={t("shell.settings")}
               className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
             >
               <span className="material-symbols-outlined">settings</span>
@@ -170,7 +175,7 @@ export function TopNavBar({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={logoUrl}
-                  alt={companyName ?? "Company logo"}
+                  alt={companyName ?? t("shell.companyLogo")}
                   className="h-full w-full object-cover"
                 />
               ) : (
@@ -179,14 +184,14 @@ export function TopNavBar({
             </div>
             <div className="hidden min-w-0 text-start sm:block">
               <p className="max-w-32 truncate text-label-md font-bold text-on-surface xl:max-w-48">
-                {user?.name || "Admin User"}
+                {user?.name || t("shell.defaultUserName")}
               </p>
               <p className="max-w-32 truncate text-label-sm text-on-surface-variant xl:max-w-48">
                 {appContext === "tenant" && companyName
                   ? companyName
                   : user?.role === "COMPANY_ADMIN"
-                    ? "Company Admin"
-                    : "User"}
+                    ? t("shell.roleCompanyAdmin")
+                    : t("shell.roleUser")}
               </p>
             </div>
             <span
@@ -205,7 +210,7 @@ export function TopNavBar({
             >
               <div className="border-b border-outline-variant px-4 py-3">
                 <p className="truncate text-label-md font-bold text-on-surface">
-                  {user?.name || "Admin User"}
+                  {user?.name || t("shell.defaultUserName")}
                 </p>
                 <p className="truncate text-label-sm text-on-surface-variant">
                   {user?.email}
@@ -222,7 +227,7 @@ export function TopNavBar({
                   <span className="material-symbols-outlined text-[20px]">
                     settings
                   </span>
-                  Settings
+                  {t("shell.settings")}
                 </Link>
               ) : null}
 
@@ -235,7 +240,7 @@ export function TopNavBar({
                 <span className="material-symbols-outlined text-[20px]">
                   help
                 </span>
-                Help Center
+                {t("shell.helpCenter")}
               </Link>
 
               <button
@@ -248,7 +253,7 @@ export function TopNavBar({
                 <span className="material-symbols-outlined text-[20px]">
                   logout
                 </span>
-                {loggingOut ? "Logging out..." : "Logout"}
+                {loggingOut ? t("shell.loggingOut") : t("shell.logout")}
               </button>
             </div>
           ) : null}

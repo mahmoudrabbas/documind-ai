@@ -112,7 +112,7 @@ export default function CompanyEmailsPage() {
           <div className="p-8 text-center text-error">{error}</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-start text-sm">
               <thead className="bg-surface-container-high border-b border-outline-variant text-on-surface-variant text-xs font-semibold uppercase">
                 <tr>
                   <th className="px-6 py-4">Recipient</th>
@@ -120,7 +120,7 @@ export default function CompanyEmailsPage() {
                   <th className="px-6 py-4">Template</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Date</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-6 py-4 text-end">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant">
@@ -137,7 +137,7 @@ export default function CompanyEmailsPage() {
                     <td className="px-6 py-4 text-on-surface-variant">
                       {new Date(email.createdAt).toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 text-right space-x-2">
+                    <td className="px-6 py-4 text-end space-x-2">
                       <Button
                         variant="outline"
                         size="sm"

@@ -61,7 +61,7 @@ export default function AuditPage() {
                     {actionLabel(log.action)}
                   </strong>
                   {log.outcome !== "SUCCESS" && (
-                    <span className="ml-2 text-xs text-red-500">[{log.outcome}]</span>
+                    <span className="ms-2 text-xs text-red-500">[{log.outcome}]</span>
                   )}
                 </td>
                 <td className={cell}>{log.actorEmail ?? "Unauthenticated"}</td>

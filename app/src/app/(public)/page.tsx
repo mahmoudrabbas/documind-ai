@@ -65,7 +65,7 @@ function HeroSection() {
               className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
             >
               {t("landing.heroCta")}
-              <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+              <span className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
                 arrow_forward
               </span>
             </Link>
@@ -572,7 +572,7 @@ function FaqSection() {
             <div key={i} className="overflow-hidden rounded-xl border border-outline-variant">
               <button
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="flex w-full items-center justify-between gap-4 bg-surface px-6 py-5 text-left transition-colors hover:bg-surface-container-high"
+                className="flex w-full items-center justify-between gap-4 bg-surface px-6 py-5 text-start transition-colors hover:bg-surface-container-high"
                 aria-expanded={openIndex === i}
               >
                 <span className="text-title-lg text-primary">{faq.q}</span>
@@ -606,7 +606,7 @@ function CtaSection() {
             className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
           >
             {t("landing.ctaButton")}
-            <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+            <span className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
               arrow_forward
             </span>
           </Link>

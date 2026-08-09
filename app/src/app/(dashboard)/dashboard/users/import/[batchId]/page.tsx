@@ -255,7 +255,7 @@ export default function BatchDetailPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
             onClick={() => router.push("/dashboard/users/import/history")}
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
               arrow_back
             </span>
             Back to history

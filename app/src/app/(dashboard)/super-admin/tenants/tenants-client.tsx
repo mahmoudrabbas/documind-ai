@@ -21,13 +21,14 @@ import {
   SUBSCRIPTION_STATUS_COLORS,
 } from "@/types/api/super-admin.types";
 import { listSubscriptions } from "@/services/super-admin.service";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 
 const label = (value: string) =>
   value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const date = (value: string) =>
-  new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+const formatDate = (value: string, locale?: string) =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
     new Date(value),
   );
 
@@ -44,6 +45,8 @@ function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
 }
 
 export function TenantsClient() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canReadBilling = permissions.can(Permission.BILLING_READ);
   const canManageTenant =
@@ -348,7 +351,10 @@ export function TenantsClient() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {sub ? (
-                        <SubscriptionBadge status={sub.status} />
+                        (() => {
+                          const subStatus = sub.status;
+                          return <SubscriptionBadge status={subStatus} />;
+                        })()
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
@@ -364,21 +370,21 @@ export function TenantsClient() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-slate-600">
                       {sub?.currentPeriodStart
-                        ? date(sub.currentPeriodStart)
+                        ? formatDate(sub.currentPeriodStart, intlLocale)
                         : sub?.periodStart
-                          ? date(sub.periodStart)
+                          ? formatDate(sub.periodStart, intlLocale)
                           : "—"}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-slate-600">
                       {sub?.currentPeriodEnd
-                        ? date(sub.currentPeriodEnd)
+                        ? formatDate(sub.currentPeriodEnd, intlLocale)
                         : sub?.periodEnd
-                          ? date(sub.periodEnd)
+                          ? formatDate(sub.periodEnd, intlLocale)
                           : "—"}
                     </td>
                     <td className="px-4 py-4 text-slate-500">
                       {label(tenant.plan)}
-                      <span className="ml-1 text-[10px] text-slate-400" title="Deprecated">
+                      <span className="ms-1 text-[10px] text-slate-400" title="Deprecated">
                         (old)
                       </span>
                     </td>
@@ -386,7 +392,7 @@ export function TenantsClient() {
                     <td className="px-4 py-4">{tenant.stats.documents}</td>
                     <td className="px-4 py-4">{tenant.stats.questions}</td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      {date(tenant.createdAt)}
+                      {formatDate(tenant.createdAt, intlLocale)}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex gap-2">
@@ -492,9 +498,10 @@ export function TenantsClient() {
                   {subscriptionByTenant.get(editing.id)!.packageId?.name ??
                     "—"}{" "}
                   &middot;{" "}
-                  <SubscriptionBadge
-                    status={subscriptionByTenant.get(editing.id)!.status}
-                  />
+                  {(() => {
+                    const editingSubStatus = subscriptionByTenant.get(editing.id)!.status;
+                    return <SubscriptionBadge status={editingSubStatus} />;
+                  })()}
                   <p className="mt-1 text-blue-700">
                     Subscription managed via{" "}
                     <a

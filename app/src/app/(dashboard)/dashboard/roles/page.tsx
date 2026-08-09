@@ -55,6 +55,7 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
+import { useI18n } from "@/providers/i18n-provider";
 
 const BASE_ROLE_OPTIONS = [
   { value: "EMPLOYEE", label: "Employee" },
@@ -132,6 +133,7 @@ function isVersionConflict(error: unknown): error is ApiError {
 }
 
 export default function RolesPage() {
+  const { t, dir } = useI18n();
   const permissionContext = usePermissions();
   const permissionsReady = permissionContext.status === "ready";
   const effectivePermissions = useMemo(
@@ -844,7 +846,7 @@ export default function RolesPage() {
   }
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
         title="Custom Roles"
         description="Define tenant roles using the authoritative permission catalog and delegated scopes."
@@ -1406,7 +1408,10 @@ function RoleRow(props: RoleActionProps) {
         {role.baseRole === "COMPANY_ADMIN" ? "Company Admin" : "Employee"}
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={role.status} />
+        {(() => {
+          const roleStatus = role.status;
+          return <StatusBadge status={roleStatus} />;
+        })()}
       </td>
       <td className="px-4 py-3 text-on-surface-variant">{role.userCount}</td>
       <td className="px-4 py-3 font-mono text-on-surface-variant">
@@ -1421,6 +1426,7 @@ function RoleRow(props: RoleActionProps) {
 
 function RoleCard(props: RoleActionProps) {
   const { role } = props;
+  const roleStatus = role.status;
   return (
     <article className="p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1431,7 +1437,7 @@ function RoleCard(props: RoleActionProps) {
             {role.userCount} user(s) · v{role.version}
           </p>
         </div>
-        <StatusBadge status={role.status} />
+        <StatusBadge status={roleStatus} />
       </div>
       <div className="mt-3">
         <RoleActionButtons {...props} />

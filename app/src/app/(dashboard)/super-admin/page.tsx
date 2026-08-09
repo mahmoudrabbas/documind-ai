@@ -12,31 +12,35 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { getPlatformOverview } from "@/services/super-admin.service";
-
-const metrics = [
-  ["companies", "Total Companies", "business"],
-  ["activeCompanies", "Active Companies", "domain_verification"],
-  ["users", "Platform Users", "group"],
-  ["documents", "Documents", "description"],
-  ["questions", "Queries", "forum"],
-  ["estimatedCost", "Estimated Cost", "payments"],
-  ["failedJobs", "Failed Jobs", "error"],
-  ["storageBytes", "Storage", "database"],
-] as const;
+import { useI18n } from "@/providers/i18n-provider";
 
 export default function SuperAdminOverviewPage() {
+  const { t, dir } = useI18n();
   const state = usePlatformData(getPlatformOverview);
+
+  const metrics: readonly [string, string, string][] = [
+    ["companies", t("superAdmin.companies"), "business"],
+    ["activeCompanies", t("superAdmin.activeCompanies"), "domain_verification"],
+    ["users", t("superAdmin.users"), "group"],
+    ["documents", t("superAdmin.documents"), "description"],
+    ["questions", t("superAdmin.queries"), "forum"],
+    ["estimatedCost", t("superAdmin.estimatedCost"), "payments"],
+    ["failedJobs", t("superAdmin.failedJobs"), "error"],
+    ["storageBytes", t("superAdmin.storage"), "database"],
+  ];
+
   const format = (key: string, value: number) =>
     key === "estimatedCost"
       ? `$${value.toFixed(2)}`
       : key === "storageBytes"
         ? `${(value / 1024 / 1024).toFixed(1)} MB`
         : value.toLocaleString();
+
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
-        title="Platform Overview"
-        description="Monitor companies, usage, processing, and operational activity across DocuMind AI."
+        title={t("superAdmin.title")}
+        description={t("superAdmin.description")}
       />
       <PlatformState
         loading={state.loading}

@@ -13,6 +13,8 @@ import {
   PLATFORM_SIDEBAR_LINKS,
   TENANT_SIDEBAR_LINKS,
 } from "@/constants/routes";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { useI18n } from "@/providers/i18n-provider";
 
 type AppNavigationProps = {
   open: boolean;
@@ -23,6 +25,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const auth = useAuth();
   const permissions = usePermissions();
   const tenant = useTenantSettings();
+  const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -83,7 +86,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
     <>
       <button
         type="button"
-        aria-label="Close navigation"
+        aria-label={t("shell.closeNavigation")}
         tabIndex={open ? 0 : -1}
         onClick={onClose}
         className={`fixed inset-0 z-40 bg-primary/35 transition-opacity md:hidden ${
@@ -91,7 +94,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         }`}
       />
       <aside
-        aria-label="Primary navigation"
+        aria-label={t("shell.primaryNavigation")}
         className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[280px] ${
           open
             ? "translate-x-0"
@@ -112,12 +115,12 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
               DocuMind AI
             </h1>
             <p className="text-label-sm text-on-surface-variant">
-              {companyName || "Enterprise Knowledge"}
+              {companyName || t("shell.enterpriseKnowledge")}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close navigation"
+            aria-label={t("shell.closeNavigation")}
             onClick={onClose}
             className="ms-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high md:hidden"
           >
@@ -125,7 +128,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
           </button>
         </div>
         <nav className="mt-md flex-1 space-y-1 px-md">
-          {links.map(({ label, href, icon }) => {
+          {links.map(({ label, labelKey, href, icon }) => {
             const allHrefs = links.map((l) => l.href);
             const isActive =
               pathname === href ||
@@ -151,19 +154,26 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                 }`}
               >
                 <span className="material-symbols-outlined shrink-0">{icon}</span>
-                <span className="min-w-0 truncate text-body-md">{label}</span>
+                <span className="min-w-0 truncate text-body-md">
+                  {labelKey ? t(labelKey) : label}
+                </span>
               </Link>
             );
           })}
         </nav>
         <div className="mt-auto border-t border-outline-variant p-md">
           <div className="space-y-1">
+            {/* The top bar's switcher is hidden below `sm`, so the drawer
+                carries the only language control on small screens. */}
+            <div className="px-4 pb-2 sm:hidden">
+              <LanguageSwitcher className="w-full justify-center" />
+            </div>
             <Link
               href="#"
               className="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
             >
               <span className="material-symbols-outlined">help</span>
-              <span className="text-body-sm">Help Center</span>
+              <span className="text-body-sm">{t("shell.helpCenter")}</span>
             </Link>
             <button
               onClick={() => void handleLogout()}
@@ -172,7 +182,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             >
               <span className="material-symbols-outlined">logout</span>
               <span className="text-body-sm">
-                {loggingOut ? "Logging out…" : "Logout"}
+                {loggingOut ? t("shell.loggingOut") : t("shell.logout")}
               </span>
             </button>
           </div>

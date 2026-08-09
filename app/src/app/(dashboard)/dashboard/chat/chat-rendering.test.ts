@@ -44,8 +44,8 @@ describe("chat assistant rendering (markdown + safety)", () => {
     // render as a plain assistant bubble with no citation UI.
     const gate = source.indexOf("{msg.sources && msg.sources.length > 0 && (");
     expect(gate).toBeGreaterThan(-1);
-    expect(source.slice(0, gate)).not.toContain("Sources");
-    expect(source.slice(gate)).toContain("Sources");
+    expect(source.slice(0, gate)).not.toContain('t("chat.sources")');
+    expect(source.slice(gate)).toContain('t("chat.sources")');
   });
 
   it("preserves the feedback widget for assistant messages", async () => {
@@ -84,7 +84,7 @@ describe("chat assistant rendering (markdown + safety)", () => {
       'import { previewText } from "./preview-text";',
     );
     expect(source).toContain("previewText(conv.lastMessage)");
-    expect(source).toContain('|| "No messages yet"');
+    expect(source).toContain('t("chat.noMessages")');
   });
 
   it("keeps the full stored assistant content unchanged (rendered via AssistantMarkdown)", async () => {

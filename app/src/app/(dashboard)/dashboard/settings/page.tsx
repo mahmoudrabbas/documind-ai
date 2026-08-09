@@ -1,3 +1,5 @@
+"use client";
+
 import {
   DashboardPage,
   DashboardPageHeader,
@@ -6,13 +8,16 @@ import {
 import { SessionSecurity } from "@/components/auth/session-security";
 import { TenantSettingsManager } from "@/components/settings/TenantSettingsManager";
 import Link from "next/link";
+import { useI18n } from "@/providers/i18n-provider";
 
 export default function SettingsPage() {
+  const { t, dir } = useI18n();
+
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
-        title="Settings"
-        description="Manage your account settings and security."
+        title={t("settings.title")}
+        description={t("settings.description")}
       />
 
       <div className="space-y-6">
@@ -20,8 +25,13 @@ export default function SettingsPage() {
 
         <DashboardPanel>
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div><h2 className="text-title-lg font-bold text-primary">Document taxonomy</h2><p className="mt-1 text-sm text-on-surface-variant">Manage categories, departments, and document sensitivity classifications.</p></div>
-            <Link href="/dashboard/settings/document-taxonomy" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">Open document taxonomy</Link>
+            <div>
+              <h2 className="text-title-lg font-bold text-primary">{t("settings.documentTaxonomyTitle")}</h2>
+              <p className="mt-1 text-sm text-on-surface-variant">{t("settings.documentTaxonomyDesc")}</p>
+            </div>
+            <Link href="/dashboard/settings/document-taxonomy" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">
+              {t("settings.openDocumentTaxonomy")}
+            </Link>
           </div>
         </DashboardPanel>
 

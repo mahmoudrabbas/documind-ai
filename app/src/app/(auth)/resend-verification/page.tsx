@@ -111,7 +111,7 @@ export default function ResendVerificationPage() {
       className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
     >
       <section className="z-10 flex min-h-screen w-full flex-col border-r border-outline-variant p-lg md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
-        <div className="absolute top-6 right-6 z-20">
+        <div className="absolute top-6 end-6 z-20">
           <LanguageSwitcher />
         </div>
 
@@ -121,7 +121,7 @@ export default function ResendVerificationPage() {
             aria-label={t("auth.backToHome")}
             className="mb-lg inline-flex items-center gap-xs text-label-md font-semibold text-primary transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
           >
-            <span className="material-symbols-outlined text-lg" aria-hidden="true">
+            <span className="material-symbols-outlined text-lg rtl:rotate-180" aria-hidden="true">
               arrow_back
             </span>
             {t("auth.backToHome")}

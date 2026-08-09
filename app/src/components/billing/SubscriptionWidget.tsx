@@ -9,14 +9,15 @@ import { getSubscriptionStatus } from "@/services/billing.service";
 import type { SubscriptionStatus } from "@/types/api/billing.types";
 import { ApiError } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import {
-  formatSubscriptionStatus,
   formatPrice,
   formatNullableDate,
   getDaysRemaining,
   pluralize,
 } from "@/lib/billing.helpers";
 import { DashboardPanel, Badge, Skeleton, Button } from "@/components/ui";
+import { SUBSCRIPTION_BADGE_STATUS } from "@/components/ui/variants";
 
 /* ── State machine ─────────────────────────────────────────────────── */
 
@@ -187,13 +188,17 @@ export function SubscriptionWidget() {
               {pkg.name}
             </h3>
             <p className="text-label-sm text-on-surface-variant truncate">
-              Payment: {formatSubscriptionStatus(sub.paymentState)}
+              {t("billing.paymentLabel", {
+                state: codeLabel(t, "billing.paymentState", sub.paymentState),
+              })}
             </p>
           </div>
         </div>
-        <Badge status={sub.status} className="shrink-0">
-          {formatSubscriptionStatus(sub.status)}
-        </Badge>
+        <Badge
+          status={SUBSCRIPTION_BADGE_STATUS[sub.status] ?? "neutral"}
+          label={codeLabel(t, "billing.subscriptionStatus", sub.status)}
+          className="shrink-0"
+        />
       </div>
 
       {/* Divider */}
@@ -227,7 +232,7 @@ export function SubscriptionWidget() {
               Trial: {formatNullableDate(sub.trialStart)}&nbsp;&mdash;
               {formatNullableDate(sub.trialEnd)}
               {getDaysRemaining(sub.trialEnd) !== null && (
-                <span className="ml-1 font-medium">
+                <span className="ms-1 font-medium">
                   ({getDaysRemaining(sub.trialEnd)}d left)
                 </span>
               )}

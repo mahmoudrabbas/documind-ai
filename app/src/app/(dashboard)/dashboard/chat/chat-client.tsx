@@ -45,15 +45,18 @@ type Message = {
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-function formatRelativeTime(iso: string): string {
+function formatRelativeTime(
+  iso: string,
+  t: (key: string, params?: Record<string, string>) => string,
+): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("chat.justNow");
+  if (mins < 60) return t("chat.minsAgo", { count: String(mins) });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t("chat.hoursAgo", { count: String(hrs) });
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return t("chat.daysAgo", { count: String(days) });
 }
 
 function formatDuration(seconds: number): string {
@@ -647,13 +650,13 @@ export function ChatClient() {
             className="mt-3 flex w-full items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
-            New conversation
+            {t("chat.newChat")}
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loadingConversations && conversations.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
-              Loading...
+              {t("common.loading")}
             </div>
           ) : (
             conversations.map((conv) => (
@@ -673,23 +676,23 @@ export function ChatClient() {
                   <button
                     onClick={(e) => handleDeleteConversation(conv.id, e)}
                     className="hidden shrink-0 rounded p-0.5 text-on-surface-variant/40 transition-colors hover:bg-error/10 hover:text-error group-hover:block"
-                    title="Delete conversation"
+                    title={t("chat.deleteConversation")}
                   >
                     <span className="material-symbols-outlined text-[16px]">delete</span>
                   </button>
                 </div>
                 <span className="truncate text-xs text-on-surface-variant">
-                  {previewText(conv.lastMessage) || "No messages yet"}
+                  {previewText(conv.lastMessage) || t("chat.noMessages")}
                 </span>
                 <span className="text-[11px] text-outline">
-                  {formatRelativeTime(conv.updatedAt)}
+                  {formatRelativeTime(conv.updatedAt, t)}
                 </span>
               </div>
             ))
           )}
           {!loadingConversations && conversations.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
-              No conversations yet
+              {t("chat.noConversations")}
             </div>
           )}
         </div>
@@ -714,8 +717,7 @@ export function ChatClient() {
                   DocuMind AI
                 </h3>
                 <p className="mt-1 max-w-sm text-sm text-on-surface-variant">
-                  Ask questions about your company documents and get instant
-                  answers sourced from your knowledge base.
+                  {t("chat.emptyStateDescription")}
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
@@ -793,7 +795,7 @@ export function ChatClient() {
                     {msg.sources && msg.sources.length > 0 && (
                       <div className="mt-3 border-t border-outline-variant/20 pt-2">
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                          Sources
+                          {t("chat.sources")}
                         </p>
                         {msg.sources.map((src) => (
                             <button
@@ -822,7 +824,7 @@ export function ChatClient() {
                                   (p.{src.pageNumber})
                                 </span>
                               )}
-                              <span className="ml-1 text-outline">
+                              <span className="ms-1 text-outline">
                                 ({(src.score * 100).toFixed(0)}%)
                               </span>
                             </button>
@@ -920,7 +922,7 @@ export function ChatClient() {
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 sm:px-6 lg:px-10">
           <div className="mx-auto max-w-3xl">
             {previewUrl && selectedFile && (
-              <div className="mb-2 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pr-3">
+              <div className="mb-2 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pe-3">
                 <img
                   src={previewUrl}
                   alt={t("chat.selectedImagePreview")}

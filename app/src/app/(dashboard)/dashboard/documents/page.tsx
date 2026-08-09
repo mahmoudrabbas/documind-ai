@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { useDocuments } from "@/hooks/features/useDocuments";
@@ -169,16 +170,16 @@ export default function DocumentsPage() {
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">folder</span>
-            Knowledge base
+            {t("documents.knowledgeBase")}
           </div>
         }
         title={t("documents.title")}
         description={t("documents.subtitle")}
         actions={
           <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm">
-            <p className="font-semibold text-on-surface">Upload and organize</p>
+            <p className="font-semibold text-on-surface">{t("documents.uploadAndOrganize")}</p>
             <p className="mt-1 max-w-xs text-on-surface-variant">
-              Keep your documents structured so answers stay accurate and searchable.
+              {t("documents.uploadAndOrganizeDesc")}
             </p>
           </div>
         }
@@ -191,10 +192,10 @@ export default function DocumentsPage() {
               <div className="min-w-0 flex-1">
                 <h2 className="text-title-lg font-bold text-primary">{t("documents.upload")}</h2>
                 <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                  Add a file, enrich it with metadata, and let the system prepare it for retrieval.
+                  {t("documents.uploadInstruction")}
                 </p>
               </div>
-              <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">New upload</div>
+              <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">{t("documents.newUpload")}</div>
             </div>
 
             <FileDropzone
@@ -270,8 +271,8 @@ export default function DocumentsPage() {
             ) : null}
 
             <div className="mt-4 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 text-sm text-on-surface-variant">
-              <strong className="text-on-surface">Restricted and private by default.</strong>{" "}
-              A new upload grants its owner discover, read, and download only. Broader access requires policy management after upload.
+              <strong className="text-on-surface">{t("documents.restrictedByDefaultTitle")}</strong>{" "}
+              {t("documents.restrictedByDefaultDesc")}
             </div>
           </DashboardPanel>
 
@@ -281,16 +282,16 @@ export default function DocumentsPage() {
               <div className="min-w-0 max-w-2xl">
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
                   <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                  AI-assisted prep
+                  {t("documents.aiAssistedPrep")}
                 </div>
-                <h3 className="mt-4 text-title-md font-bold text-primary">Turn uploads into sharper answers</h3>
+                <h3 className="mt-4 text-title-md font-bold text-primary">{t("documents.turnUploadsTitle")}</h3>
                 <p className="mt-3 max-w-xl text-sm leading-relaxed text-on-surface-variant">
-                  Strong titles, clear descriptions, and thoughtful tags help the retrieval layer surface the right context faster.
+                  {t("documents.turnUploadsDesc")}
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">Better retrieval</span>
-                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">Cleaner context</span>
-                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">Faster answers</span>
+                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">{t("documents.betterRetrieval")}</span>
+                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">{t("documents.cleanerContext")}</span>
+                  <span className="rounded-full border border-outline-variant/40 bg-surface/70 px-3 py-1 text-xs font-medium text-on-surface-variant">{t("documents.fasterAnswers")}</span>
                 </div>
               </div>
             </div>
@@ -338,7 +339,13 @@ export default function DocumentsPage() {
               )}
             </div>
           </div>
-          {canManageAccess && selectedIds.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-primary/5 p-3" role="status"><strong>{selectedIds.length} / 50 selected</strong><Button size="sm" onClick={() => setShowBatchPolicy(true)}>Manage selected access</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear selection</Button></div>}
+          {canManageAccess && selectedIds.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-primary/5 p-3" role="status">
+              <strong>{t("documents.selectedCount", { selected: String(selectedIds.length), max: "50" })}</strong>
+              <Button size="sm" onClick={() => setShowBatchPolicy(true)}>{t("documents.manageSelectedAccess")}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>{t("documents.clearSelection")}</Button>
+            </div>
+          )}
         </div>
 
         {error ? (
@@ -371,13 +378,13 @@ export default function DocumentsPage() {
             <table className="w-full min-w-[860px] border-collapse text-start text-sm">
               <thead className="border-b border-outline-variant/30 bg-surface-container-low">
                 <tr>
-                  {canManageAccess && <th className="p-4 text-start"><span className="sr-only">Select</span></th>}
+                  {canManageAccess && <th className="p-4 text-start"><span className="sr-only">{t("common.select")}</span></th>}
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableName")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableSize")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableType")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableStatus")}</th>
-                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Classification</th>
-                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Taxonomy</th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("taxonomy.classification")}</th>
+                  <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("taxonomy.title")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.version")}</th>
                   <th className="px-lg py-4 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableDate")}</th>
                   <th className="px-lg py-4 text-end text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.tableActions")}</th>
@@ -415,11 +422,9 @@ export default function DocumentsPage() {
                       </span>
                     </td>
                     <td className="px-lg py-4"><ClassificationBadge level={doc.classification} /></td>
-                    <td className="px-lg py-4 text-xs text-on-surface-variant"><div>{doc.category ?? "No category"}</div><div>{doc.department ?? "No department"}</div></td>
+                    <td className="px-lg py-4 text-xs text-on-surface-variant"><div>{doc.category ?? t("documents.noCategory")}</div><div>{doc.department ?? t("documents.noDepartment")}</div></td>
                     <td className="px-lg py-4">
-                      <Badge status={STATUS_BADGE_MAP[doc.status] as "success" | "info" | "warning" | "error" | undefined}>
-                        {t(`documents.status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`)}
-                      </Badge>
+                      <Badge status={STATUS_BADGE_MAP[doc.status] as "success" | "info" | "warning" | "error" | undefined} label={codeLabel(t, "documents.status", doc.status)} />
                     </td>
                     <td className="px-lg py-4">
                       <span className="text-sm font-medium text-on-surface-variant">{doc.versionLabel}</span>
@@ -433,7 +438,7 @@ export default function DocumentsPage() {
                             size="sm"
                             className="text-on-surface-variant hover:bg-surface-container-high"
                             onClick={() => openDrawer(doc)}
-                            title="View Document"
+                            title={t("documents.viewDocument")}
                           >
                             <span className="material-symbols-outlined text-[20px]">visibility</span>
                           </Button>
@@ -448,14 +453,14 @@ export default function DocumentsPage() {
                                 await remove(doc.id);
                                 setDeletingId(null);
                               }}
-                              title="Delete Document"
+                              title={t("documents.deleteDocument")}
                             >
                               <span className="material-symbols-outlined text-[20px]">delete</span>
                             </Button>
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-on-surface-variant">Read only</span>
+                        <span className="text-xs text-on-surface-variant">{t("taxonomy.readOnly")}</span>
                       )}
                     </td>
                   </tr>

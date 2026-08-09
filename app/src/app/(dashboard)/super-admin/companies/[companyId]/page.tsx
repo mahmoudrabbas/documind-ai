@@ -207,7 +207,7 @@ function LifecycleDialog({
             <button
               type="button"
               onClick={() => void loadPreview(undefined, true)}
-              className="ml-2 font-bold underline"
+              className="ms-2 font-bold underline"
             >
               Retry
             </button>
@@ -228,26 +228,26 @@ function LifecycleDialog({
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
                 <span className="text-on-surface-variant">Users affected:</span>
-                <span className="ml-1 font-bold text-on-surface">
+                <span className="ms-1 font-bold text-on-surface">
                   {preview.activeUsersAffected} active /{" "}
                   {preview.totalUsersAffected} total
                 </span>
               </div>
               <div>
                 <span className="text-on-surface-variant">Admins affected:</span>
-                <span className="ml-1 font-bold text-on-surface">
+                <span className="ms-1 font-bold text-on-surface">
                   {preview.activeCompanyAdminsAffected}
                 </span>
               </div>
               <div>
                 <span className="text-on-surface-variant">Documents:</span>
-                <span className="ml-1 font-bold text-on-surface">
+                <span className="ms-1 font-bold text-on-surface">
                   {preview.documentCount}
                 </span>
               </div>
               <div>
                 <span className="text-on-surface-variant">Subscription:</span>
-                <span className="ml-1 font-bold text-on-surface">
+                <span className="ms-1 font-bold text-on-surface">
                   {preview.currentSubscriptionStatus ?? "none"}
                 </span>
               </div>
@@ -455,20 +455,20 @@ export default function CompanyDetailPage() {
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
                   <span className="text-on-surface-variant">Status:</span>
-                  <span className="ml-1 font-bold text-on-surface">
+                  <span className="ms-1 font-bold text-on-surface">
                     {state.data.subscription.status}
                   </span>
                 </div>
                 <div>
                   <span className="text-on-surface-variant">Provider:</span>
-                  <span className="ml-1 font-bold text-on-surface">
+                  <span className="ms-1 font-bold text-on-surface">
                     {state.data.subscription.provider}
                   </span>
                 </div>
                 {state.data.subscription.periodStart && (
                   <div>
                     <span className="text-on-surface-variant">Period start:</span>
-                    <span className="ml-1 font-bold text-on-surface">
+                    <span className="ms-1 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.periodStart,
                       ).toLocaleDateString()}
@@ -478,7 +478,7 @@ export default function CompanyDetailPage() {
                 {state.data.subscription.periodEnd && (
                   <div>
                     <span className="text-on-surface-variant">Period end:</span>
-                    <span className="ml-1 font-bold text-on-surface">
+                    <span className="ms-1 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.periodEnd,
                       ).toLocaleDateString()}
@@ -488,7 +488,7 @@ export default function CompanyDetailPage() {
                 {state.data.subscription.trialEnd && (
                   <div>
                     <span className="text-on-surface-variant">Trial end:</span>
-                    <span className="ml-1 font-bold text-on-surface">
+                    <span className="ms-1 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.trialEnd,
                       ).toLocaleDateString()}
@@ -500,7 +500,7 @@ export default function CompanyDetailPage() {
                     <span className="text-on-surface-variant">
                       Cancel at period end:
                     </span>
-                    <span className="ml-1 font-bold text-error">Yes</span>
+                    <span className="ms-1 font-bold text-error">Yes</span>
                   </div>
                 )}
               </div>
@@ -515,19 +515,19 @@ export default function CompanyDetailPage() {
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 <div>
                   <span className="text-on-surface-variant">Name:</span>
-                  <span className="ml-1 font-bold text-on-surface">
+                  <span className="ms-1 font-bold text-on-surface">
                     {state.data.package.packageName}
                   </span>
                 </div>
                 <div>
                   <span className="text-on-surface-variant">Code:</span>
-                  <span className="ml-1 font-bold text-on-surface">
+                  <span className="ms-1 font-bold text-on-surface">
                     {state.data.package.packageCode}
                   </span>
                 </div>
                 <div>
                   <span className="text-on-surface-variant">Version:</span>
-                  <span className="ml-1 font-bold text-on-surface">
+                  <span className="ms-1 font-bold text-on-surface">
                     {state.data.package.packageVersion}
                   </span>
                 </div>
@@ -537,7 +537,7 @@ export default function CompanyDetailPage() {
                       <span className="text-on-surface-variant">
                         Max employees:
                       </span>
-                      <span className="ml-1 font-bold text-on-surface">
+                      <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.employees}
                       </span>
                     </div>
@@ -545,7 +545,7 @@ export default function CompanyDetailPage() {
                       <span className="text-on-surface-variant">
                         Max admins:
                       </span>
-                      <span className="ml-1 font-bold text-on-surface">
+                      <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.admins}
                       </span>
                     </div>
@@ -553,7 +553,7 @@ export default function CompanyDetailPage() {
                       <span className="text-on-surface-variant">
                         Max documents:
                       </span>
-                      <span className="ml-1 font-bold text-on-surface">
+                      <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.documents}
                       </span>
                     </div>
@@ -561,7 +561,7 @@ export default function CompanyDetailPage() {
                       <span className="text-on-surface-variant">
                         Storage:
                       </span>
-                      <span className="ml-1 font-bold text-on-surface">
+                      <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.storageMb} MB
                       </span>
                     </div>
@@ -569,7 +569,7 @@ export default function CompanyDetailPage() {
                       <span className="text-on-surface-variant">
                         Queries/month:
                       </span>
-                      <span className="ml-1 font-bold text-on-surface">
+                      <span className="ms-1 font-bold text-on-surface">
                         {state.data.package.entitlements.queriesPerMonth}
                       </span>
                     </div>
