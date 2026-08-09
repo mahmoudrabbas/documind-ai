@@ -6,7 +6,7 @@ import type { IntentClassValue, QueryRouteValue } from "./intentQuery.types.js";
  * social / unsafe / clarification take priority over the generic intents
  * because they represent hard behavior boundaries (no retrieval).
  */
-export function deriveQueryRoute(intent: IntentClassValue, clarificationNeeded: boolean): QueryRouteValue {
+export function deriveQueryRoute(intent: IntentClassValue | unknown, clarificationNeeded: boolean): QueryRouteValue {
   switch (intent) {
     case "social":
       return "social";
@@ -23,6 +23,8 @@ export function deriveQueryRoute(intent: IntentClassValue, clarificationNeeded: 
     case "administrative_action":
       return clarificationNeeded ? "clarification" : "rag";
     default:
-      return "rag";
+      // Unknown/unversioned classifier output is never positive evidence that
+      // document retrieval is appropriate.
+      return "unsupported";
   }
 }

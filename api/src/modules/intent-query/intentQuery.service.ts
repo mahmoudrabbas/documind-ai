@@ -8,10 +8,18 @@ import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
 import { recordQuestionAsked } from "../usage/usage.service.js";
 
 import type { QueryPlan } from "./intentQuery.types.js";
-import { detectLanguage } from "./intentQuery.languageDetector.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
+import { preprocessIntentText } from "./intentQuery.preprocessor.js";
+import {
+  assessPositiveKnowledgeSeeking,
+  assistantRequestsUserResponse,
+  isContextualAcknowledgement,
+  isLikelyGibberish,
+  isRetrievableIntent,
+  selectSafeRetrievalQuestion,
+} from "./intentQuery.knowledgeSignals.js";
 import {
   extractNaturalDocumentTitleHints,
   resolveAuthorizedDocumentHints,
@@ -87,7 +95,8 @@ export class IntentQueryService {
     }
 
     // 4. Determine language and entities early to handle fallback/clarification deterministically if needed
-    const language = detectLanguage(input.question);
+    const preprocessed = preprocessIntentText(input.question);
+    const language = preprocessed.language;
     const localEntities = extractEntities(input.question, language);
     const localTemporalConstraints = extractTemporalConstraints(input.question);
     const deterministicTitleHints = extractNaturalDocumentTitleHints(input.question);
@@ -144,7 +153,12 @@ export class IntentQueryService {
     // retrieval, so no sources are ever attached to the response. Substantive
     // questions (including social-prefixed ones) are never classified here.
     const social = detectSocialMessage(input.question);
-    if (social.isSocial) {
+    const deferSocialForContext = Boolean(
+      social.isSocial &&
+      input.conversationId &&
+      isContextualAcknowledgement(input.question),
+    );
+    const buildAndPersistSocialPlan = async (): Promise<QueryPlan> => {
       const socialPlan = validateAndNormalizeQueryPlan(
         {
           detectedIntent: "social",
@@ -200,6 +214,9 @@ export class IntentQueryService {
       }
 
       return socialPlan;
+    };
+    if (social.isSocial && !deferSocialForContext) {
+      return buildAndPersistSocialPlan();
     }
 
     // 5. Deterministic unsupported external/current-data detector
@@ -218,10 +235,9 @@ export class IntentQueryService {
       // Phrases that indicate the user is asking about a document/report
       const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
 
-      if (!temporal.test(q)) return false;
-      if (!topics.test(q)) return false;
       if (docIndicators.test(q)) return false;
-      return true;
+      const clearlyExternalGeneral = /(?:capital of|weather|طقس|latest news|اخر الاخبار|نتيجه مباراه|match score|recipe|وصفه|who is (?:the )?president)/i;
+      return (temporal.test(q) && topics.test(q)) || clearlyExternalGeneral.test(q);
     }
 
     // Deterministic short-circuit: clear live external-data questions with NO
@@ -288,6 +304,7 @@ export class IntentQueryService {
       { role: "system", content: systemPrompt },
     ];
     let conversationHistoryAvailable = false;
+    let latestAssistantMessage = "";
 
     if (input.conversationId) {
       try {
@@ -320,6 +337,8 @@ export class IntentQueryService {
             totalLength += msg.content.length;
           }
           conversationHistoryAvailable = fitHistory.length > 0;
+          latestAssistantMessage =
+            [...fitHistory].reverse().find((message) => message.role === "assistant")?.content ?? "";
 
           // Add history to system prompt execution context
           for (const msg of fitHistory) {
@@ -337,6 +356,13 @@ export class IntentQueryService {
         // TODO: In production adapter, ensure robust handling of non-AppError network/DB failures
         logger.error({ err, traceId }, "Failed to load conversation context");
       }
+    }
+
+    if (
+      deferSocialForContext &&
+      (!conversationHistoryAvailable || !assistantRequestsUserResponse(latestAssistantMessage))
+    ) {
+      return buildAndPersistSocialPlan();
     }
 
     // Append the current question
@@ -359,6 +385,7 @@ export class IntentQueryService {
         messages: messagesPayload,
         temperature: 0,
         maxTokens: 1000,
+        structuredOutput: { type: "json_object" },
       });
 
       const content = response.choices[0]?.message?.content ?? "";
@@ -558,6 +585,27 @@ export class IntentQueryService {
         titleClarificationNeeded = true;
       }
 
+      const rawDetectedIntent = rawOutput.detectedIntent;
+      if (
+        isRetrievableIntent(rawDetectedIntent) &&
+        isLikelyGibberish(input.question)
+      ) {
+        rawOutput = {
+          detectedIntent: "unsupported",
+          normalizedQuestion: input.question.trim(),
+          intentConfidence: 0.99,
+          language,
+          entities: [],
+          exactTerms: [],
+          semanticQueries: [],
+          keywordQueries: [],
+          clarificationNeeded: false,
+          clarification: null,
+        };
+      } else if (!isRetrievableIntent(rawDetectedIntent) && rawDetectedIntent == null) {
+        rawOutput.detectedIntent = "unsupported";
+      }
+
       // If semanticQueries/keywordQueries are empty, use local bilingual expansion
       if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
         const expansion = expandBilingual(input.question, language, localEntities);
@@ -583,7 +631,7 @@ export class IntentQueryService {
 
       // Set confidence rules
       const rawConfidence = typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0.8;
-      const detectedIntent = (rawOutput.detectedIntent as string) || "knowledge_question";
+      const detectedIntent = (rawOutput.detectedIntent as string) || "unsupported";
       const isFollowUp =
         conversationHistoryAvailable && detectedIntent === "follow_up";
       const normalizedQuestion =
@@ -665,12 +713,24 @@ export class IntentQueryService {
           !conversationHistoryAvailable ||
           deterministicTitleHints.length > 0 ||
           (input.referencedDocumentIds?.length ?? 0) > 0;
+        const safeRetrievalQuestion = isRetrievableIntent(detectedIntent)
+          ? selectSafeRetrievalQuestion(
+              input.question,
+              normalizedQuestion,
+              [
+                ...localEntities
+                  .filter((entity) => entity.preserveExact)
+                  .map((entity) => entity.text),
+                ...deterministicTitleHints,
+              ],
+            )
+          : input.question.trim();
         const currentExpansion = expandBilingual(
-          input.question,
+          safeRetrievalQuestion,
           language,
           localEntities,
         );
-        rawOutput.normalizedQuestion = input.question.trim();
+        rawOutput.normalizedQuestion = safeRetrievalQuestion;
         rawOutput.semanticQueries = currentExpansion.semanticQueries;
         rawOutput.keywordQueries = currentExpansion.keywordQueries;
         rawOutput.referencedDocumentIds =
@@ -697,9 +757,61 @@ export class IntentQueryService {
         estimatedCost,
         false
       );
+
+      // A model may express a positive, known knowledge intent but omit or
+      // mistype another required schema field. Recover only when the current
+      // turn independently has strong document-knowledge signals. Unknown
+      // intent labels never receive this recovery path.
+      if (
+        validatedPlan.processingMetadata.fallbackUsed &&
+        isRetrievableIntent(rawDetectedIntent)
+      ) {
+        const knowledgeSignals = assessPositiveKnowledgeSeeking(input.question);
+        if (knowledgeSignals.positive) {
+          const fallbackQuestion = knowledgeSignals.retrievalText;
+          const expansion = expandBilingual(
+            fallbackQuestion,
+            language,
+            localEntities,
+          );
+          validatedPlan = validateAndNormalizeQueryPlan(
+            {
+              detectedIntent: "knowledge_question",
+              intentConfidence: 0.75,
+              normalizedQuestion: fallbackQuestion,
+              language,
+              entities: localEntities,
+              temporalConstraints: localTemporalConstraints,
+              exactTerms: localEntities
+                .filter((entity) => entity.preserveExact)
+                .map((entity) => entity.text),
+              semanticQueries: expansion.semanticQueries,
+              keywordQueries: expansion.keywordQueries,
+              clarificationNeeded: false,
+              clarification: null,
+              isFollowUp: false,
+              conversationContextUsed: false,
+              referencedDocumentIds: hints.referencedDocumentIds,
+              referencedDocumentTitles: hints.referencedDocumentTitles,
+            },
+            input.question,
+            language,
+            INTENT_PROMPT_VERSION,
+            this.modelAdapter.providerKey,
+            Date.now() - start,
+            tokensUsed,
+            estimatedCost,
+            true,
+          );
+        }
+      }
     } else {
       // Deterministic fallback execution
-      const expansion = expandBilingual(input.question, language, localEntities);
+      const knowledgeSignals = assessPositiveKnowledgeSeeking(input.question);
+      const fallbackQuestion = knowledgeSignals.retrievalText || input.question.trim();
+      const expansion = knowledgeSignals.positive
+        ? expandBilingual(fallbackQuestion, language, localEntities)
+        : { semanticQueries: [], keywordQueries: [] };
       const exactTerms = localEntities.filter(e => e.preserveExact).map(e => e.text);
       const fallbackHints = await resolveAuthorizedDocumentHints(
         input.referencedDocumentIds ?? [],
@@ -719,8 +831,9 @@ export class IntentQueryService {
 
       validatedPlan = validateAndNormalizeQueryPlan(
         {
-          detectedIntent: "knowledge_question",
-          intentConfidence: 0.3,
+          detectedIntent: knowledgeSignals.positive ? "knowledge_question" : "unsupported",
+          intentConfidence: knowledgeSignals.positive ? 0.75 : 0,
+          normalizedQuestion: fallbackQuestion,
           language,
           entities: localEntities,
           temporalConstraints: localTemporalConstraints,

@@ -247,7 +247,7 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
 
       assert.equal(intentExecutionStep.modelProvider, "fake");
       assert.equal(intentExecutionStep.modelName, "fake");
-      assert.equal(intentExecutionStep.promptVersion, "1.3.1");
+      assert.equal(intentExecutionStep.promptVersion, "1.4.0");
       assert.equal(typeof intentExecutionStep.tokensUsed, "number");
       assert.ok((intentExecutionStep.tokensUsed as number) > 0);
       assert.equal(Number(intentExecutionStep.estimatedCost), 0);

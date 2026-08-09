@@ -351,7 +351,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.deepEqual(plan.referencedDocumentIds, []);
   });
 
-  await t.test("deterministic fallback preserves a RAG-compatible knowledge route", async () => {
+  await t.test("provider failure does not route an unproven knowledge-like phrase to RAG", async () => {
     const failingModel: ModelAdapter = {
       providerKey: "failing-provider",
       async complete() {
@@ -364,11 +364,93 @@ test("IntentQueryService - query routing contract", async (t) => {
       companyAdminContext,
     );
 
-    assert.equal(plan.route, "rag");
+    assert.equal(plan.route, "unsupported");
     assert.equal(plan.processingMetadata.fallbackUsed, true);
     assert.equal(plan.clarificationNeeded, false);
     assert.equal(plan.clarification, null);
-    assert.ok(plan.semanticQueries.length > 0);
+    assert.deepEqual(plan.semanticQueries, []);
+  });
+
+  await t.test("provider failure permits RAG only for deterministic positive document knowledge", async () => {
+    const failingService = new IntentQueryService({
+      providerKey: "failing-provider",
+      async complete() { throw new Error("Provider Offline"); },
+    }, fakeConvoAdapter);
+    const plan = await failingService.analyzeQuery(
+      { question: "ما سياسة الإجازات السنوية؟" },
+      companyAdminContext,
+    );
+    assert.equal(plan.route, "rag");
+    assert.equal(plan.detectedIntent, "knowledge_question");
+    assert.equal(plan.processingMetadata.fallbackUsed, true);
+    assert.equal(plan.normalizedQuestion, "ما سياسة الإجازات السنوية؟");
+  });
+
+  await t.test("provider failure keeps social and gibberish out of RAG", async () => {
+    const failingService = new IntentQueryService({
+      providerKey: "failing-provider",
+      async complete() { throw new Error("Provider Offline"); },
+    }, fakeConvoAdapter);
+    const socialPlan = await failingService.analyzeQuery(
+      { question: "شجرا" }, companyAdminContext,
+    );
+    const gibberishPlan = await failingService.analyzeQuery(
+      { question: "asdasd" }, companyAdminContext,
+    );
+    assert.equal(socialPlan.route, "social");
+    assert.equal(socialPlan.processingMetadata.fallbackUsed, false);
+    assert.equal(gibberishPlan.route, "unsupported");
+    assert.equal(gibberishPlan.processingMetadata.fallbackUsed, true);
+  });
+
+  await t.test("invalid JSON and unknown intents fail closed unless positive knowledge signals exist", async () => {
+    const invalidJson = new IntentQueryService({
+      providerKey: "invalid-json",
+      async complete() {
+        return {
+          id: "bad", provider: "invalid-json", model: "invalid-json",
+          choices: [{ index: 0, message: { role: "assistant", content: "not-json" }, finishReason: "stop" }],
+          usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, latencyMs: 1, estimatedCost: 0,
+        };
+      },
+    }, fakeConvoAdapter);
+    assert.equal((await invalidJson.analyzeQuery({ question: "asdasd" }, companyAdminContext)).route, "unsupported");
+    assert.equal((await invalidJson.analyzeQuery({ question: "What is our leave policy?" }, companyAdminContext)).route, "rag");
+
+    const unknown = new IntentQueryService(
+      planAdapter({ detectedIntent: "future_unknown_intent" }),
+      fakeConvoAdapter,
+    );
+    assert.equal((await unknown.analyzeQuery({ question: "unclear input here" }, companyAdminContext)).route, "unsupported");
+    assert.equal((await unknown.analyzeQuery({ question: "What is our leave policy?" }, companyAdminContext)).route, "unsupported");
+  });
+
+  await t.test("schema-invalid known knowledge intent recovers only through deterministic positive gating", async () => {
+    const invalidSchema = new IntentQueryService(
+      planAdapter({ entities: "not-an-array" }),
+      fakeConvoAdapter,
+    );
+    const positive = await invalidSchema.analyzeQuery(
+      { question: "What is our leave policy?" }, companyAdminContext,
+    );
+    const ambiguous = await invalidSchema.analyzeQuery(
+      { question: "unclear input here" }, companyAdminContext,
+    );
+    assert.equal(positive.route, "rag");
+    assert.equal(positive.processingMetadata.fallbackUsed, true);
+    assert.equal(ambiguous.route, "unsupported");
+  });
+
+  await t.test("low-confidence knowledge classification requests clarification instead of retrieval", async () => {
+    const uncertain = new IntentQueryService(
+      planAdapter({ intentConfidence: 0.3 }),
+      fakeConvoAdapter,
+    );
+    const plan = await uncertain.analyzeQuery(
+      { question: "What is our leave policy?" }, companyAdminContext,
+    );
+    assert.equal(plan.route, "clarification");
+    assert.equal(plan.clarificationNeeded, true);
   });
 
   await t.test("social stays social even after a RAG conversation", async () => {
