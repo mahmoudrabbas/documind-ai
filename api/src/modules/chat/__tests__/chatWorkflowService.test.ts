@@ -849,6 +849,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     const verifier = harness.observations.handoffs.find((entry) => entry.agent === "citation-verification-agent");
     expect(verifier?.payload).toMatchObject({
       answerText: "WRITER_DRAFT",
+      questionText: "trusted normalized question",
       citedChunkIds: [chunkA],
       approvedEvidenceIds: [chunkA],
     });

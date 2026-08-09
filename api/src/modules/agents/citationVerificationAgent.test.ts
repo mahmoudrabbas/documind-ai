@@ -88,9 +88,10 @@ function makeDeps(overrides: Partial<CitationVerificationAgentDependencies> = {}
     },
   } as unknown as DocumentAccessAuthorizationService;
   const semanticVerifier: CitationVerificationAgentDependencies["semanticVerifier"] = {
-    verify: async ({ answerText }) => ({
+    verify: async ({ answerText, evidence }) => ({
       claims: answerText ? [answerText] : [],
       unsupportedClaims: [],
+      supportingEvidenceIds: evidence.map((item) => item.chunkId),
     }),
   };
 
@@ -217,6 +218,54 @@ describe("CitationVerificationAgentExecutor", () => {
     assert.deepEqual(loadChunksCalls[0].chunkIds, [CHUNK_ID]);
   });
 
+  it("retains only semantically claim-supporting citations", async () => {
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async ({ answerText }) => ({
+          claims: answerText ? [answerText] : [],
+          unsupportedClaims: [],
+          supportingEvidenceIds: [CHUNK_ID],
+        }),
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      decision: "grounded_answer",
+      answerText: "Employees may request remote work after 90 days.",
+      citedChunkIds: [CHUNK_ID, INVENTED_ID],
+      approvedEvidenceIds: [CHUNK_ID, INVENTED_ID],
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.output.verified, true);
+      assert.deepEqual(result.output.validatedCitationIds, [CHUNK_ID]);
+      assert.deepEqual(result.output.rejectedCitationIds, [INVENTED_ID]);
+    }
+  });
+
+  it("retains multiple citations when the semantic mapping requires both", async () => {
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async ({ answerText }) => ({
+          claims: answerText ? [answerText] : [],
+          unsupportedClaims: [],
+          supportingEvidenceIds: [CHUNK_ID, INVENTED_ID],
+        }),
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      decision: "grounded_answer",
+      answerText: "Two distinct claims require two sources.",
+      citedChunkIds: [CHUNK_ID, INVENTED_ID],
+      approvedEvidenceIds: [CHUNK_ID, INVENTED_ID],
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.output.verified, true);
+      assert.deepEqual(result.output.validatedCitationIds, [CHUNK_ID, INVENTED_ID]);
+      assert.deepEqual(result.output.rejectedCitationIds, []);
+    }
+  });
+
   it("runs semantic support only after membership and fails closed on unsupported claims", async () => {
     const semanticCalls: unknown[] = [];
     const { deps } = makeDeps({
@@ -226,6 +275,7 @@ describe("CitationVerificationAgentExecutor", () => {
           return {
             claims: ["Employees receive 30 days of annual leave."],
             unsupportedClaims: ["Employees receive 30 days of annual leave."],
+            supportingEvidenceIds: [],
           };
         },
       },
@@ -233,6 +283,7 @@ describe("CitationVerificationAgentExecutor", () => {
     const result = await makeExecutor(deps).execute(runContext(), {
       ...VALID_INPUT,
       answerText: "Employees receive 30 days of annual leave.",
+      questionText: "How much annual leave do employees receive?",
     });
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -244,6 +295,10 @@ describe("CitationVerificationAgentExecutor", () => {
       ]);
     }
     assert.equal(semanticCalls.length, 1);
+    assert.equal(
+      (semanticCalls[0] as { questionText?: string }).questionText,
+      "How much annual leave do employees receive?",
+    );
   });
 
   it("does not invoke semantic verification when citation membership fails", async () => {
@@ -252,7 +307,7 @@ describe("CitationVerificationAgentExecutor", () => {
       semanticVerifier: {
         verify: async () => {
           semanticCalls += 1;
-          return { claims: [], unsupportedClaims: [] };
+          return { claims: [], unsupportedClaims: [], supportingEvidenceIds: [] };
         },
       },
     });
@@ -349,6 +404,7 @@ describe("CitationVerificationAgentExecutor", () => {
         verify: async () => ({
           claims: ["Supported."],
           unsupportedClaims: [],
+          supportingEvidenceIds: [CHUNK_ID],
           providerKey: "semantic-provider",
           modelName: "semantic-model",
           totalTokens: 12,

@@ -120,9 +120,10 @@ function stubDeps(
       authorizeDocumentAction: async () => undefined,
     } as unknown as DocumentAccessAuthorizationService,
     semanticVerifier: {
-      verify: async ({ answerText }) => ({
+      verify: async ({ answerText, evidence }) => ({
         claims: answerText ? [answerText] : [],
         unsupportedClaims: [],
+        supportingEvidenceIds: evidence.map((item) => item.chunkId),
       }),
     },
     ...overrides,
@@ -266,6 +267,6 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     registerCitationVerificationAgentExecutor(registry, stubDeps().deps);
     const contract = registry.requireExecutor(CITATION_VERIFICATION_AGENT_ID);
     assert.equal(contract.id, toAgentId(CITATION_VERIFICATION_AGENT_ID));
-    assert.equal(contract.version, "1.1.0");
+    assert.equal(contract.version, "1.3.0");
   });
 });

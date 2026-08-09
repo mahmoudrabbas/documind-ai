@@ -459,3 +459,28 @@ test("K: Arabic evidence embeds id and doc anchors in every source header", () =
   assert.match(contextMsg.content, /id:chunk-a/);
   assert.match(contextMsg.content, /doc:doc-a/);
 });
+
+test("L: threshold questions receive only bounded question-and-evidence comparisons", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    sources: [{
+      chunkId: "receipt-rule",
+      documentId: "expense-policy",
+      documentTitle: "Expense Policy",
+      text: "Receipts are required for any single expense greater than USD 25.",
+      score: 1,
+    }],
+    userMessage: "Are receipts required for $20?",
+  });
+  const derived = messages.find((message) =>
+    message.content.includes("Bounded threshold comparisons"),
+  );
+  assert.ok(derived);
+  assert.match(derived.content, /"questionValue":20/);
+  assert.match(derived.content, /"thresholdValue":25/);
+  assert.match(derived.content, /"operator":"gt"/);
+  assert.match(derived.content, /"satisfied":false/);
+  assert.match(derived.content, /"chunkId":"receipt-rule"/);
+  assert.match(derived.content, /satisfied:false result is present evidence for a negative answer/);
+  assert.match(derived.content, /do not add related eligibility conditions/);
+});

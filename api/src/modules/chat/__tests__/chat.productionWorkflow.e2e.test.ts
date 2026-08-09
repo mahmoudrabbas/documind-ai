@@ -199,7 +199,9 @@ class SemanticAwareFakeModelAdapter extends FakeModelAdapter {
     if (!isSemanticCitationRequest(params)) return response;
     const payload = JSON.parse(params.messages.at(-1)?.content ?? "{}") as {
       claims?: unknown[];
+      evidence?: Array<{ chunkId: string }>;
     };
+    const supportingChunkIds = (payload.evidence ?? []).map((item) => item.chunkId);
     return {
       ...response,
       choices: response.choices.map((choice, index) =>
@@ -212,6 +214,7 @@ class SemanticAwareFakeModelAdapter extends FakeModelAdapter {
                   judgments: (payload.claims ?? []).map((_claim, claimIndex) => ({
                     claimIndex,
                     verdict: "supported",
+                    supportingChunkIds,
                   })),
                 }),
               },
@@ -267,6 +270,49 @@ class RecordingFakeModelAdapter extends SemanticAwareFakeModelAdapter {
                   decision: "grounded_answer",
                   answer,
                   citedChunkIds: [...new Set(citedChunkIds)],
+                }),
+              },
+            }
+          : choice,
+      ),
+    };
+  }
+}
+
+class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
+  constructor(
+    answers: ReadonlyMap<string, string>,
+    private readonly supportingEvidencePattern: RegExp,
+  ) {
+    super(answers);
+  }
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isSemanticCitationRequest(params)) return response;
+    const payload = JSON.parse(params.messages.at(-1)?.content ?? "{}") as {
+      claims?: unknown[];
+      evidence?: Array<{ chunkId: string; text: string }>;
+    };
+    const supportingChunkIds = (payload.evidence ?? [])
+      .filter((item) => this.supportingEvidencePattern.test(item.text))
+      .map((item) => item.chunkId);
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) =>
+        index === 0
+          ? {
+              ...choice,
+              message: {
+                ...choice.message,
+                content: JSON.stringify({
+                  judgments: (payload.claims ?? []).map((_claim, claimIndex) => ({
+                    claimIndex,
+                    verdict: "supported",
+                    supportingChunkIds,
+                  })),
                 }),
               },
             }
@@ -1059,6 +1105,265 @@ test(
     assert.equal(verifierStep?.output?.verified, false);
     assert.equal(verifierStep?.output?.reasonCode, "UNSUPPORTED_CLAIMS");
     assert.deepEqual(verifierStep?.output?.validatedCitationIds, [fixture.chunkId]);
+  },
+);
+
+test(
+  "production-composed workflow releases a grounded negative threshold comparison",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Are three vendor quotations required for a $1500 purchase?";
+    const answer = "No. A $1500 purchase is not above the USD 2,000 threshold, so the three-quotation rule does not apply.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "procurement-policy.pdf",
+      title: "Procurement Policy",
+      question,
+      text: "For purchases above USD 2,000, at least three written vendor quotations are required unless a sole-source exception is approved.",
+      sectionTitle: "Vendor quotations",
+      pageNumber: 4,
+    });
+    const requestId = "request-threshold-negative";
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const intentTrace = await IntentQueryTraceModel.findOne({ traceId: `trace-${requestId}` }).lean().exec();
+    assert.equal(intentTrace?.queryPlan.normalizedQuestion, question);
+    const graph = await loadSupervisorGraph(requestId);
+    const search = graph.toolCalls.find((call) => call.toolName === "authorized_hybrid_search");
+    const candidates = search?.output?.candidates as Array<{ chunkId: string; score: number }>;
+    assert.equal(candidates[0]?.chunkId, evidence.chunkId);
+    assert.ok((candidates[0]?.score ?? 0) > 0);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.deepEqual(evaluation?.output?.approvedEvidenceIds, [evidence.chunkId]);
+    const verifier = graph.steps.find((step) => step.agentName === "citation-verification-agent");
+    assert.equal(verifier?.output?.verified, true);
+    assert.equal(verifier?.output?.reasonCode, "CITATIONS_VERIFIED");
+    const compliance = graph.steps.find((step) => step.agentName === "compliance-agent");
+    assert.equal(compliance?.output?.action, "release");
+    assert.equal(compliance?.output?.reasonCode, "COMPLIANT_GROUNDED_RESPONSE");
+  },
+);
+
+test(
+  "production-composed workflow releases the grounded receipt-threshold comparison",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Do receipts become mandatory above $20?";
+    const answer = "No. Receipts do not become mandatory above $20; they are required only for a single expense greater than USD 25.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "travel-expense-policy.pdf",
+      title: "Travel Expense Policy",
+      question,
+      text: "Receipts are required for any single expense greater than USD 25.",
+      sectionTitle: "Receipts",
+      pageNumber: 3,
+    });
+    const requestId = "request-threshold-receipts";
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const graph = await loadSupervisorGraph(requestId);
+    const search = graph.toolCalls.find((call) => call.toolName === "authorized_hybrid_search");
+    assert.equal((search?.output?.candidates as Array<{ chunkId: string }>)[0]?.chunkId, evidence.chunkId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.deepEqual(evaluation?.output?.approvedEvidenceIds, [evidence.chunkId]);
+    const writer = graph.steps.find((step) => step.agentName === "answer-writer-agent");
+    assert.equal(writer?.output?.decision, "grounded_answer");
+    assert.deepEqual(writer?.output?.citedChunkIds, [evidence.chunkId]);
+    const verifier = graph.steps.find((step) => step.agentName === "citation-verification-agent");
+    assert.equal(verifier?.output?.reasonCode, "CITATIONS_VERIFIED");
+    const compliance = graph.steps.find((step) => step.agentName === "compliance-agent");
+    assert.equal(compliance?.output?.reasonCode, "COMPLIANT_GROUNDED_RESPONSE");
+  },
+);
+
+test(
+  "production-composed workflow releases the grounded below-minimum employment comparison",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Can an employee who has worked for 30 days request regular remote work?";
+    const answer = "No. An employee with 30 days does not meet the minimum employment duration of 90 days.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-eligibility.pdf",
+      title: "Remote Work Eligibility",
+      question,
+      text: "Employees who have completed at least 90 days of employment may request regular remote work.",
+      sectionTitle: "Eligibility",
+      pageNumber: 2,
+    });
+    const requestId = "request-threshold-remote-negative";
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const graph = await loadSupervisorGraph(requestId);
+    const search = graph.toolCalls.find((call) => call.toolName === "authorized_hybrid_search");
+    assert.equal((search?.output?.candidates as Array<{ chunkId: string }>)[0]?.chunkId, evidence.chunkId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.deepEqual(evaluation?.output?.approvedEvidenceIds, [evidence.chunkId]);
+    const writer = graph.steps.find((step) => step.agentName === "answer-writer-agent");
+    assert.equal(writer?.output?.decision, "grounded_answer");
+    assert.deepEqual(writer?.output?.citedChunkIds, [evidence.chunkId]);
+    const verifier = graph.steps.find((step) => step.agentName === "citation-verification-agent");
+    assert.equal(verifier?.output?.reasonCode, "CITATIONS_VERIFIED");
+    const compliance = graph.steps.find((step) => step.agentName === "compliance-agent");
+    assert.equal(compliance?.output?.reasonCode, "COMPLIANT_GROUNDED_RESPONSE");
+  },
+);
+
+test(
+  "production-composed workflow releases a grounded positive threshold comparison",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Can I work remotely if I have been employed for 120 days?";
+    const answer = "Yes. At 120 days, the minimum employment duration of 90 days is satisfied, subject to manager approval.";
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-eligibility-policy.pdf",
+      title: "Remote Eligibility Policy",
+      question,
+      text: "Employees who have completed at least 90 days of employment may request regular remote work, subject to manager approval.",
+      sectionTitle: "Eligibility",
+      pageNumber: 2,
+    });
+    const requestId = "request-threshold-positive";
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, { evidence: [evidence], model });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const graph = await loadSupervisorGraph(requestId);
+    const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
+    assert.equal(evaluation?.output?.sufficiency, "SUFFICIENT");
+    assert.deepEqual(evaluation?.output?.approvedEvidenceIds, [evidence.chunkId]);
+    const writer = graph.steps.find((step) => step.agentName === "answer-writer-agent");
+    assert.equal(writer?.output?.decision, "grounded_answer");
+    assert.deepEqual(writer?.output?.citedChunkIds, [evidence.chunkId]);
+    const verifier = graph.steps.find((step) => step.agentName === "citation-verification-agent");
+    assert.equal(verifier?.output?.verified, true);
+    assert.equal(verifier?.output?.reasonCode, "CITATIONS_VERIFIED");
+    const compliance = graph.steps.find((step) => step.agentName === "compliance-agent");
+    assert.equal(compliance?.output?.action, "release");
+    assert.equal(compliance?.output?.reasonCode, "COMPLIANT_GROUNDED_RESPONSE");
+  },
+);
+
+test(
+  "production-composed workflow materializes only the chunk supporting the released threshold claim",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Can I work remotely if I have been employed for 120 days?";
+    const answer = "Yes. At 120 days, the minimum employment duration of 90 days is satisfied, subject to manager approval.";
+    const hrEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "hr-policy-related.pdf",
+      title: "HR Policy",
+      question,
+      text: "Regular remote-work arrangements require manager approval.",
+      sectionTitle: "Working arrangements",
+      pageNumber: 5,
+    });
+    const remoteEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-threshold.pdf",
+      title: "Remote Work Policy",
+      question,
+      text: "Employees who have completed at least 90 days of employment may request regular remote work, subject to manager approval.",
+      sectionTitle: "Eligibility",
+      pageNumber: 2,
+    });
+    const requestId = "request-threshold-source-precision";
+    const model = new SourcePreciseRecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+      /at least 90 days/iu,
+    );
+    const service = await productionService(fixture, {
+      evidence: [hrEvidence, remoteEvidence],
+      model,
+    });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    const graph = await loadSupervisorGraph(requestId);
+    const writer = graph.steps.find((step) => step.agentName === "answer-writer-agent");
+    assert.deepEqual(
+      new Set(writer?.output?.citedChunkIds as string[]),
+      new Set([hrEvidence.chunkId, remoteEvidence.chunkId]),
+    );
+    const verifier = graph.steps.find((step) => step.agentName === "citation-verification-agent");
+    assert.deepEqual(verifier?.output?.validatedCitationIds, [remoteEvidence.chunkId]);
+    assert.deepEqual(verifier?.output?.rejectedCitationIds, [hrEvidence.chunkId]);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [remoteEvidence.chunkId]);
+    assert.deepEqual(response.sources?.map((source) => source.documentTitle), ["Remote Work Policy"]);
+  },
+);
+
+test(
+  "production-composed workflow preserves multiple sources when released claims require both",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "What are the remote-work eligibility threshold and the meal reimbursement limit?";
+    const answer = "Remote-work eligibility requires at least 90 days of employment. Meals are reimbursed up to USD 50.";
+    const remoteEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-multi-source.pdf",
+      title: "Remote Work Policy",
+      question,
+      text: "Employees with at least 90 days of employment may request regular remote work.",
+      sectionTitle: "Eligibility",
+      pageNumber: 2,
+    });
+    const expenseEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "expense-multi-source.pdf",
+      title: "Expense Policy",
+      question,
+      text: "Meals are reimbursed up to USD 50 per day.",
+      sectionTitle: "Meals",
+      pageNumber: 6,
+    });
+    const model = new RecordingFakeModelAdapter(new Map([[question, answer]]));
+    const service = await productionService(fixture, {
+      evidence: [remoteEvidence, expenseEvidence],
+      model,
+    });
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, "request-legitimate-multi-source"),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(
+      new Set(response.sources?.map((source) => source.chunkId)),
+      new Set([remoteEvidence.chunkId, expenseEvidence.chunkId]),
+    );
   },
 );
 

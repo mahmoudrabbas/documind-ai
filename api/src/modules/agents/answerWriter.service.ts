@@ -11,6 +11,7 @@ import { buildAnswerWriterDiagnostics } from "./generationDiagnostics.js";
 import type { ChatAnswerDecisionValue } from "./chatWorkflowContracts.js";
 import type { ChatSource } from "../chat/chat.types.js";
 import type { QueryLanguageValue } from "../intent-query/intentQuery.types.js";
+import { formatThresholdComparisons } from "./thresholdSemantics.js";
 
 // ── Answer task classification ─────────────────────────────────────────────
 
@@ -133,6 +134,22 @@ export function buildRagMessages(options: {
       role: "system",
       content: `${ragContextInstruction(citationsEnabled, language)}\n\n${contextHeader}\n${contextBlock}`,
     });
+
+    const thresholdComparisons = formatThresholdComparisons(
+      userMessage,
+      sources.map((source) => ({ chunkId: source.chunkId, text: source.text })),
+    );
+    if (thresholdComparisons) {
+      messages.push({
+        role: "system",
+        content:
+          "Bounded threshold comparisons derived only from the current question and cited context follow. " +
+          "Use them only when the cited rule is relevant to the question. A satisfied:false result is present evidence for a negative answer; do not discard it or change it to insufficient evidence. " +
+          "Answer only the current threshold question and do not add related eligibility conditions, durations, limits, or equivalences unless they are necessary and explicitly documented by a cited source. " +
+          "Preserve the documented operator and unit, cite the smallest sufficient set of source chunks supporting released claims, and do not introduce any value absent from the question or evidence. " +
+          thresholdComparisons,
+      });
+    }
   }
 
   messages.push({ role: "user", content: userMessage });

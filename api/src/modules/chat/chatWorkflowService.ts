@@ -631,6 +631,7 @@ function createChatRuntimePolicy(input: {
           citedChunkIds: [...writer.citedChunkIds],
           approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
           answerText: writer.answer,
+          questionText: artifacts.intent?.normalizedQuestion ?? input.question,
         };
       } else if (args.toAgent === "compliance-agent") {
         const intent = artifacts.intent ?? failClosed("Trusted intent output is required");
