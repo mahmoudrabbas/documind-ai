@@ -15,6 +15,7 @@ import {
 import type { RoleView, UserView } from "@/types/api/users.types";
 import { useAuth } from "@/providers/auth-provider";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import {
@@ -49,10 +50,12 @@ type ConfirmAction =
   | { type: "revoke"; userId: string; userName: string }
   | null;
 
+/* Values are the API's machine codes and stay untranslated; the visible
+   text is resolved per-render via codeLabel so it follows the locale. */
 const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "pending_email_verification", label: "Pending verification" },
-  { value: "disabled", label: "Disabled" },
+  { value: "active" },
+  { value: "pending_email_verification" },
+  { value: "disabled" },
 ];
 
 const ROLE_OPTIONS = [
@@ -824,12 +827,12 @@ export default function UsersPage() {
                           >
                             {STATUS_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
-                                {option.label}
+                                {codeLabel(t, "dashboard.userStatus", option.value)}
                               </option>
                             ))}
                           </select>
                           ) : (
-                            <span>{user.status.replaceAll("_", " ")}</span>
+                            <span>{codeLabel(t, "dashboard.userStatus", user.status)}</span>
                           )}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">

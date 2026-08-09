@@ -865,6 +865,12 @@ const en: TranslationDictionary = {
   "audit.exporting": "Exporting...",
   "audit.export": "Export CSV (30 days)",
   "audit.noLogs": "No audit logs found.",
+  /* Actor roles. Keys are the API's role codes, lowercased for codeLabel;
+     the codes themselves stay untranslated. */
+  "audit.actorRole.super_admin": "Super admin",
+  "audit.actorRole.company_admin": "Company admin",
+  "audit.actorRole.employee": "Employee",
+  "audit.actorRole.unknown": "Not available",
   "audit.tableAction": "Action",
   "audit.tableActor": "Actor",
   "audit.tableRole": "Role",

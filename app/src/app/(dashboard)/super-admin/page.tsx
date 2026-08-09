@@ -13,6 +13,7 @@ import {
 } from "@/components/super-admin/platform-ui";
 import { getPlatformOverview } from "@/services/super-admin.service";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function SuperAdminOverviewPage() {
   const { t, dir } = useI18n();
@@ -78,7 +79,10 @@ export default function SuperAdminOverviewPage() {
                         {item.actorEmail} · {item.resourceType}
                       </p>
                     </div>
-                    <StatusPill value={item.actorRole ?? "N/A"} />
+                    <StatusPill
+                      value={item.actorRole ?? "unknown"}
+                      label={codeLabel(t, "audit.actorRole", item.actorRole ?? "unknown")}
+                    />
                   </div>
                 ))
               ) : (

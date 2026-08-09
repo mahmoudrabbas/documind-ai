@@ -87,6 +87,29 @@ const enDocuments: TranslationDictionary = {
   "documents.processingStatus.failed": "Failed",
   "documents.processingStatus.canceled": "Canceled",
 
+  /* Processing pipeline stages. Keys are the API's stage codes, lowercased
+     for codeLabel; the codes themselves are never translated. */
+  "documents.processingStage.security_scanning": "Security scanning",
+  "documents.processingStage.extraction": "Extraction",
+  "documents.processingStage.ocr": "OCR",
+  "documents.processingStage.quality_review": "Quality review",
+  "documents.processingStage.metadata_review": "Metadata review",
+  "documents.processingStage.chunking": "Chunking",
+  "documents.processingStage.embedding": "Embedding",
+  "documents.processingStage.indexing": "Indexing",
+  "documents.processingStage.finalization": "Finalization",
+
+  /* Safe, user-facing processing failure codes returned by the API. */
+  "documents.errorCode.extraction_failed": "Extraction failed",
+  "documents.errorCode.ocr_failed": "OCR failed",
+  "documents.errorCode.ocr_timeout": "OCR timed out",
+  "documents.errorCode.quality_review_required": "Quality review required",
+  "documents.errorCode.encrypted_document": "Encrypted document",
+  "documents.errorCode.unsupported_format": "Unsupported format",
+  "documents.errorCode.file_not_found": "File not found",
+  "documents.errorCode.quota_exceeded": "Quota exceeded",
+  "documents.errorCode.resource_limit": "Resource limit reached",
+
   /* ── PDF Viewer ────────────────────────────────────────── */
   "documents.pdfViewerTitle": "PDF viewer: {{title}}",
   "documents.documentFallbackTitle": "Document",

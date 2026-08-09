@@ -865,6 +865,12 @@ const ar: TranslationDictionary = {
   "audit.exporting": "جارٍ التصدير...",
   "audit.export": "تصدير CSV (30 يومًا)",
   "audit.noLogs": "لم يتم العثور على سجلات تدقيق.",
+  /* أدوار المنفّذين. المفاتيح هي رموز الأدوار من الواجهة الخلفية بحروف
+     صغيرة ليجدها codeLabel؛ الرموز نفسها لا تُترجم. */
+  "audit.actorRole.super_admin": "مسؤول عام",
+  "audit.actorRole.company_admin": "مسؤول الشركة",
+  "audit.actorRole.employee": "موظف",
+  "audit.actorRole.unknown": "غير متاح",
   "audit.tableAction": "الإجراء",
   "audit.tableActor": "المنفذ",
   "audit.tableRole": "الدور",

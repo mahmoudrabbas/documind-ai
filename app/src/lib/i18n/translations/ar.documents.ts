@@ -79,6 +79,29 @@ const arDocuments: TranslationDictionary = {
   "documents.processingStatus.failed": "فشل",
   "documents.processingStatus.canceled": "ملغى",
 
+  /* مراحل معالجة المستند. المفاتيح هي رموز المراحل من الواجهة الخلفية
+     بحروف صغيرة ليجدها codeLabel؛ الرموز نفسها لا تُترجم أبدًا. */
+  "documents.processingStage.security_scanning": "الفحص الأمني",
+  "documents.processingStage.extraction": "استخراج النص",
+  "documents.processingStage.ocr": "التعرّف الضوئي على الحروف",
+  "documents.processingStage.quality_review": "مراجعة الجودة",
+  "documents.processingStage.metadata_review": "مراجعة البيانات الوصفية",
+  "documents.processingStage.chunking": "التقسيم إلى مقاطع",
+  "documents.processingStage.embedding": "التضمين",
+  "documents.processingStage.indexing": "الفهرسة",
+  "documents.processingStage.finalization": "الإنهاء",
+
+  /* رموز أعطال المعالجة الآمنة المعروضة للمستخدم. */
+  "documents.errorCode.extraction_failed": "فشل استخراج النص",
+  "documents.errorCode.ocr_failed": "فشل التعرّف الضوئي على الحروف",
+  "documents.errorCode.ocr_timeout": "انتهت مهلة التعرّف الضوئي على الحروف",
+  "documents.errorCode.quality_review_required": "مراجعة الجودة مطلوبة",
+  "documents.errorCode.encrypted_document": "مستند مشفَّر",
+  "documents.errorCode.unsupported_format": "صيغة غير مدعومة",
+  "documents.errorCode.file_not_found": "الملف غير موجود",
+  "documents.errorCode.quota_exceeded": "تم تجاوز الحصة",
+  "documents.errorCode.resource_limit": "تم بلوغ حد الموارد",
+
   /* ── PDF Viewer ────────────────────────────────────────── */
   "documents.pdfViewerTitle": "عارض ملفات PDF: {{title}}",
   "documents.documentFallbackTitle": "مستند",
