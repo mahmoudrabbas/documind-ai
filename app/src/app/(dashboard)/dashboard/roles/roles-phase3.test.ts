@@ -26,6 +26,7 @@ import {
 import type {
   PermissionCatalogEntry,
   PermissionCatalogGroup,
+  PermissionGrant,
   PermissionScopes,
 } from "@/types/api/permissions.types";
 import type { RoleScopeOption, RoleView } from "@/types/api/users.types";
@@ -730,6 +731,142 @@ describe("production grant submission preparation", () => {
   });
 });
 
+describe("scoped overrides on inherited base-role permissions", () => {
+  const hrDepartmentId = "hr-dept-xyz";
+  const employeeInheritedIds = ["documents:read", "chat:read"];
+  const unrestrictedActorGrants: ActorGrantMap = {
+    "documents:read": { source: "base-role", scope: null },
+    "chat:read": { source: "base-role", scope: null },
+  };
+  const scopedActorGrants: ActorGrantMap = {
+    "documents:read": {
+      source: "custom-role",
+      scope: {
+        selfOnly: false,
+        departmentIds: ["hr-dept-xyz", "dept-b"],
+        documentCategories: ["invoices", "contracts"],
+        documentClassifications: ["internal", "confidential"],
+      },
+    },
+  };
+  const hrScopedGrant: PermissionGrant = {
+    permission: "documents:read",
+    scopes: {
+      selfOnly: false,
+      departmentIds: [hrDepartmentId],
+      documentCategories: [],
+      documentClassifications: [],
+    },
+  };
+
+  it("A) drops an inherited permission left untouched (empty scope) -> grants: []", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [
+        { permission: "documents:read" },
+        { permission: "documents:read", scopes: unrestrictedScope() },
+      ],
+      inheritedPermissionIds: employeeInheritedIds,
+      catalogEntries: [documentRead],
+      actorGrants: unrestrictedActorGrants,
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.grants).toEqual([]);
+    }
+  });
+
+  it("B) preserves a scoped override on an inherited permission with the HR scope", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [hrScopedGrant],
+      inheritedPermissionIds: employeeInheritedIds,
+      catalogEntries: [documentRead],
+      actorGrants: unrestrictedActorGrants,
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.grants).toEqual([hrScopedGrant]);
+    }
+  });
+
+  it("C) preserves an existing scoped override when saved unchanged", () => {
+    const result = prepareUpdateRoleSubmission({
+      name: "HR Viewer Test",
+      baseRole: "EMPLOYEE",
+      grants: [hrScopedGrant],
+      version: 3,
+      baseRoleDefaults: { COMPANY_ADMIN: [], EMPLOYEE: employeeInheritedIds },
+      catalogEntries: [documentRead],
+      actorGrants: unrestrictedActorGrants,
+      isStale: false,
+    });
+    expect(result).toEqual({
+      valid: true,
+      payload: {
+        name: "HR Viewer Test",
+        baseRole: "EMPLOYEE",
+        grants: [hrScopedGrant],
+        version: 3,
+      },
+    });
+  });
+
+  it("D) removes an explicit override when its scoped grant is dropped from the editor", () => {
+    const result = prepareUpdateRoleSubmission({
+      name: "HR Viewer Test",
+      baseRole: "EMPLOYEE",
+      grants: [],
+      version: 3,
+      baseRoleDefaults: { COMPANY_ADMIN: [], EMPLOYEE: employeeInheritedIds },
+      catalogEntries: [documentRead],
+      actorGrants: unrestrictedActorGrants,
+      isStale: false,
+    });
+    expect(result).toEqual({
+      valid: true,
+      payload: {
+        name: "HR Viewer Test",
+        baseRole: "EMPLOYEE",
+        grants: [],
+        version: 3,
+      },
+    });
+  });
+
+  it("E) does not copy unrelated inherited permissions into grants", () => {
+    const result = prepareRoleGrantsForSubmission({
+      grants: [hrScopedGrant],
+      inheritedPermissionIds: employeeInheritedIds,
+      catalogEntries: [documentRead],
+      actorGrants: unrestrictedActorGrants,
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.grants.map((grant) => grant.permission)).toEqual([
+        "documents:read",
+      ]);
+    }
+  });
+
+  it("F) serializes category, classification, and selfOnly narrowing overrides", () => {
+    const narrowing: PermissionGrant = {
+      permission: "documents:read",
+      scopes: {
+        selfOnly: true,
+        departmentIds: [hrDepartmentId],
+        documentCategories: ["invoices"],
+        documentClassifications: ["internal"],
+      },
+    };
+    const result = prepareRoleGrantsForSubmission({
+      grants: [narrowing],
+      inheritedPermissionIds: [],
+      catalogEntries: [documentRead],
+      actorGrants: scopedActorGrants,
+    });
+    expect(result).toEqual({ valid: true, grants: [narrowing] });
+  });
+});
+
 describe("create and update request preparation used by the page", () => {
   const defaults = {
     COMPANY_ADMIN: ["analytics:read"],
@@ -1031,7 +1168,11 @@ describe("roles service route contracts", () => {
       departments: [activeDept],
       categories: [activeCategory],
       classifications: [activeClassification],
-      archived: { departments: [archivedDept], categories: [], classifications: [] },
+      archived: {
+        departments: [archivedDept],
+        categories: [],
+        classifications: [],
+      },
     };
     apiClient.mockResolvedValue({ success: true, data: options });
 
@@ -1067,7 +1208,9 @@ describe("roles service route contracts", () => {
 describe("role scope option helpers", () => {
   it("normalizes taxonomy names the same way the API does", () => {
     expect(normalizeTaxonomyName("  Invoices  ")).toBe("invoices");
-    expect(normalizeTaxonomyName("Vendor   Contracts")).toBe("vendor contracts");
+    expect(normalizeTaxonomyName("Vendor   Contracts")).toBe(
+      "vendor contracts",
+    );
   });
 
   it("collects every taxonomy scope value across grants", () => {
@@ -1115,7 +1258,15 @@ describe("role scope option helpers", () => {
   });
 
   it("restricts department options to the actor's delegated departments", () => {
-    const options = [activeDept, { ...activeDept, id: "dept-outside", name: "Outside", normalizedName: "outside" }];
+    const options = [
+      activeDept,
+      {
+        ...activeDept,
+        id: "dept-outside",
+        name: "Outside",
+        normalizedName: "outside",
+      },
+    ];
     const filtered = filterScopeOptionsByActorScope({
       dimension: "departmentIds",
       options,
@@ -1130,7 +1281,12 @@ describe("role scope option helpers", () => {
   it("restricts category options by normalized name", () => {
     const options = [
       activeCategory,
-      { ...activeCategory, id: "cat-2", name: "Contracts", normalizedName: "contracts" },
+      {
+        ...activeCategory,
+        id: "cat-2",
+        name: "Contracts",
+        normalizedName: "contracts",
+      },
     ];
     const filtered = filterScopeOptionsByActorScope({
       dimension: "documentCategories",

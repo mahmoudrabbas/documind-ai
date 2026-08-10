@@ -551,7 +551,9 @@ export type PreparedGrantResult =
 
 /**
  * Produces the exact explicit grants that may be sent to create/update. It:
- * - removes inherited permissions,
+ * - drops inherited permissions that merely restate the base-role scope,
+ * - preserves inherited permissions that narrow the base-role scope into a
+ *   deliberate scoped override (the backend narrows the effective grant),
  * - requires a current actor grant,
  * - normalizes only unsupported catalog dimensions,
  * - rejects widening instead of clipping,
@@ -570,9 +572,14 @@ export function prepareRoleGrantsForSubmission(input: {
   const prepared = new Map<string, PermissionGrant>();
 
   for (const grant of input.grants) {
-    if (inherited.has(grant.permission)) continue;
-
     const entry = catalogById.get(grant.permission);
+    const isInherited = inherited.has(grant.permission);
+
+    // An inherited permission whose catalog entry is no longer selectable
+    // cannot express a narrowing, so it falls back to the base role. Drop it
+    // silently rather than blocking the save.
+    if (isInherited && (!entry || !isTenantSelectable(entry))) continue;
+
     if (!entry || !isTenantSelectable(entry)) {
       return {
         valid: false,
@@ -580,6 +587,17 @@ export function prepareRoleGrantsForSubmission(input: {
         error: `${grant.permission} is no longer available for tenant delegation.`,
       };
     }
+
+    const requested = normalizeScopesForPermission(
+      grant.scopes ?? emptyPermissionScopes(),
+      entry.compatibleScopes,
+    );
+
+    // Inherited permissions are granted unrestricted by the base role. A grant
+    // that merely re-states that unrestricted scope is redundant and is dropped;
+    // a grant that narrows the inherited scope is a deliberate scoped override
+    // the backend honours, so it is validated and preserved below.
+    if (isInherited && permissionScopesAreEmpty(requested)) continue;
 
     const actorGrant = input.actorGrants[grant.permission];
     if (!actorGrant) {
@@ -590,10 +608,6 @@ export function prepareRoleGrantsForSubmission(input: {
       };
     }
 
-    const requested = normalizeScopesForPermission(
-      grant.scopes ?? emptyPermissionScopes(),
-      entry.compatibleScopes,
-    );
     const validation = validateRoleGrantScopes(requested, actorGrant.scope);
     if (!validation.valid) {
       return {
