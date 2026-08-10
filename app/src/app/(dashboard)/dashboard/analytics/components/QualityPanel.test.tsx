@@ -8,7 +8,7 @@ const localeState = vi.hoisted(() => ({
   t: (key: string, params?: Record<string, string>) =>
     params ? `${key}:${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(",")}` : key,
 }));
-vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: localeState.locale, dir: localeState.locale === "ar" ? "rtl" : "ltr", t: localeState.t, tPlural: (key: string) => key, setLocale: vi.fn() }) }));
+vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: localeState.locale, dir: localeState.locale === "ar" ? "rtl" : "ltr", t: localeState.t, tPlural: (key: string) => key, setLocale: vi.fn() }), useIntlLocale: () => (localeState.locale === "ar" ? "ar-EG-u-nu-latn" : "en-US") }));
 
 function baseMetrics(overrides: Partial<QualityMetricsData> = {}): QualityMetricsData {
   return {

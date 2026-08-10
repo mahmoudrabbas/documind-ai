@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { CostBreakdownItem } from "@/services/analytics.service";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 
 interface CostBreakdownChartProps {
   data: CostBreakdownItem[];
@@ -10,6 +10,7 @@ interface CostBreakdownChartProps {
 
 export function CostBreakdownChart({ data }: CostBreakdownChartProps) {
   const { t } = useI18n();
+  const intlLocale = useIntlLocale();
 
   if (!data || data.length === 0) {
     return (
@@ -55,7 +56,7 @@ export function CostBreakdownChart({ data }: CostBreakdownChartProps) {
             </div>
 
             <div className="flex items-center gap-4">
-              <span className="text-on-surface-variant font-mono text-label-xs">{t("analytics.tokensCount", { count: item.totalTokens.toLocaleString() })}</span>
+              <span className="text-on-surface-variant font-mono text-label-xs">{t("analytics.tokensCount", { count: item.totalTokens.toLocaleString(intlLocale) })}</span>
               <span className="font-bold text-on-surface font-mono">${item.costUsd.toFixed(4)}</span>
               <span className="text-outline font-mono text-label-xs w-12 text-end">{item.percentageOfTotal}%</span>
             </div>
