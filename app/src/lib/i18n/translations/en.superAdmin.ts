@@ -25,7 +25,12 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.auditLogTitle": "Platform Audit Log",
   "superAdmin.auditLogDesc": "Inspect administrative actions across the platform.",
   "superAdmin.processingOverviewTitle": "Processing Overview",
-  "superAdmin.processingOverviewDesc": "Monitor active and completed background processing tasks.",
+  "superAdmin.processingOverviewDesc": "Platform-wide view of failed document processing runs across all tenants.",
+  "superAdmin.processingOverviewEmpty": "No failed processing jobs across any tenant.",
+  "superAdmin.processingOverviewLoadError": "Failed to load processing jobs",
+  "superAdmin.processingOverviewRetryError": "Failed to retry",
+  "superAdmin.processingOverviewReprocessError": "Failed to reprocess",
+  "superAdmin.processingOverviewTimelineTitle": "Processing Timeline",
   "superAdmin.refundReviewsTitle": "Refund Reviews",
   "superAdmin.refundReviewsDesc": "Review and process customer refund requests.",
 
@@ -42,6 +47,13 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.tableCreated": "Created",
   "superAdmin.tableUpdated": "Updated",
   "superAdmin.tableDocument": "Document",
+  "superAdmin.tableTenant": "Tenant",
+  "superAdmin.tableFailedStage": "Failed Stage",
+  "superAdmin.tableError": "Error",
+  "superAdmin.tableRetries": "Retries",
+  "superAdmin.tableFailedAt": "Failed At",
+  "superAdmin.tableActions": "Actions",
+  "superAdmin.documentVersion": "v{{version}}",
   "superAdmin.verifiedYes": "Yes",
   "superAdmin.verifiedNo": "No",
 
@@ -343,6 +355,17 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.tenantPlan.free": "Free",
   "superAdmin.tenantPlan.trial": "Trial",
   "superAdmin.tenantPlan.pro": "Pro",
+
+  /* ── Standalone platform shell + tenant detail ─────────── */
+  /* "DocuMind AI" is the product name and stays untranslated. */
+  "superAdmin.platformBrand": "DocuMind AI Platform",
+  "superAdmin.platformTenants.back": "Back to tenants",
+  "superAdmin.platformTenants.loading": "Loading tenant",
+  "superAdmin.platformTenants.eyebrow": "Tenant details",
+  "superAdmin.platformTenants.questions": "Questions",
+  "superAdmin.platformTenants.notFound": "Tenant not found.",
+  "superAdmin.platformTenants.invalidId": "Invalid tenant ID.",
+  "superAdmin.platformTenants.loadError": "Unable to load this tenant.",
 
   /* ── Package form ──────────────────────────────────────── */
   "superAdmin.packageForm.noPermission": "You do not have permission to create or version packages.",

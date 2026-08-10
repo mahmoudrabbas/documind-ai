@@ -9,9 +9,11 @@ import { ProcessingStatusBadge } from "@/components/documents/ProcessingStatusBa
 import { ProcessingTimeline } from "@/components/documents/ProcessingTimeline";
 import { RetryConfirmDialog, ReprocessConfirmDialog } from "@/components/documents/ProcessingConfirmDialogs";
 import { ApiError } from "@/lib/api-client";
-import { useIntlLocale } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function SuperAdminProcessingOverviewPage() {
+  const { t } = useI18n();
   const intlLocale = useIntlLocale();
   const [runs, setRuns] = useState<ProcessingRunView[]>([]);
   const [total, setTotal] = useState(0);
@@ -35,11 +37,11 @@ export default function SuperAdminProcessingOverviewPage() {
       setRuns(res.data.runs);
       setTotal(res.data.pagination.totalRecords);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load processing jobs");
+      setError(err instanceof ApiError ? err.message : t("superAdmin.processingOverviewLoadError"));
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, t]);
 
   useEffect(() => {
     void load();
@@ -53,11 +55,11 @@ export default function SuperAdminProcessingOverviewPage() {
       setRetryDialogRun(null);
       await load();
     } catch (err) {
-      setRetryActionError(err instanceof Error ? err.message : "Failed to retry");
+      setRetryActionError(err instanceof Error ? err.message : t("superAdmin.processingOverviewRetryError"));
     } finally {
       setIsRetrying(false);
     }
-  }, [load]);
+  }, [load, t]);
 
   const handleReprocess = useCallback(async (run: ProcessingRunView) => {
     setIsReprocessing(true);
@@ -67,17 +69,17 @@ export default function SuperAdminProcessingOverviewPage() {
       setReprocessDialogRun(null);
       await load();
     } catch (err) {
-      setReprocessActionError(err instanceof Error ? err.message : "Failed to reprocess");
+      setReprocessActionError(err instanceof Error ? err.message : t("superAdmin.processingOverviewReprocessError"));
     } finally {
       setIsReprocessing(false);
     }
-  }, [load]);
+  }, [load, t]);
 
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Processing Overview"
-        description="Platform-wide view of failed document processing runs across all tenants."
+        title={t("superAdmin.processingOverviewTitle")}
+        description={t("superAdmin.processingOverviewDesc")}
       />
 
       {loading && (
@@ -86,7 +88,7 @@ export default function SuperAdminProcessingOverviewPage() {
             {[1, 2, 3].map((n) => (
               <div key={n} className="h-14 animate-pulse rounded-xl bg-slate-100" />
             ))}
-            <span className="sr-only">Loading</span>
+            <span className="sr-only">{t("common.loading")}</span>
           </div>
         </DashboardPanel>
       )}
@@ -100,7 +102,7 @@ export default function SuperAdminProcessingOverviewPage() {
               onClick={() => void load()}
               className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white"
             >
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         </DashboardPanel>
@@ -109,7 +111,7 @@ export default function SuperAdminProcessingOverviewPage() {
       {!loading && !error && runs.length === 0 && (
         <DashboardPanel>
           <p className="text-center text-sm text-slate-500 py-8">
-            No failed processing jobs across any tenant.
+            {t("superAdmin.processingOverviewEmpty")}
           </p>
         </DashboardPanel>
       )}
@@ -122,28 +124,28 @@ export default function SuperAdminProcessingOverviewPage() {
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Tenant
+                      {t("superAdmin.tableTenant")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Document
+                      {t("superAdmin.tableDocument")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Status
+                      {t("superAdmin.tableStatus")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Failed Stage
+                      {t("superAdmin.tableFailedStage")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Error
+                      {t("superAdmin.tableError")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Retries
+                      {t("superAdmin.tableRetries")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Failed At
+                      {t("superAdmin.tableFailedAt")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Actions
+                      {t("superAdmin.tableActions")}
                     </th>
                   </tr>
                 </thead>
@@ -161,7 +163,11 @@ export default function SuperAdminProcessingOverviewPage() {
                         >
                           {run.documentId.slice(0, 12)}...
                         </button>
-                        <p className="text-xs text-slate-400 mt-0.5">v{run.documentVersion}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {t("superAdmin.documentVersion", {
+                            version: String(run.documentVersion),
+                          })}
+                        </p>
                       </td>
                       <td className="px-4 py-4">
                         {(() => {
@@ -171,13 +177,13 @@ export default function SuperAdminProcessingOverviewPage() {
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-600">
                         {run.currentStage
-                          ? run.currentStage.replace(/_/g, " ")
+                          ? codeLabel(t, "documents.stage", run.currentStage)
                           : "—"}
                       </td>
                       <td className="px-4 py-4 max-w-[200px]">
                         <p className="text-sm font-medium text-red-600">
                           {run.errorCode
-                            ? run.errorCode.replace(/_/g, " ")
+                            ? codeLabel(t, "documents.errorCode", run.errorCode)
                             : "—"}
                         </p>
                         {run.errorMessage && (
@@ -202,7 +208,7 @@ export default function SuperAdminProcessingOverviewPage() {
                             onClick={() => setRetryDialogRun(run)}
                           >
                             <span className="material-symbols-outlined me-1 text-[14px]">refresh</span>
-                            Retry
+                            {t("documents.retry")}
                           </Button>
                           <Button
                             size="sm"
@@ -210,7 +216,7 @@ export default function SuperAdminProcessingOverviewPage() {
                             onClick={() => setReprocessDialogRun(run)}
                           >
                             <span className="material-symbols-outlined me-1 text-[14px]">replay</span>
-                            Reprocess
+                            {t("documents.reprocess")}
                           </Button>
                         </div>
                       </td>
@@ -224,13 +230,13 @@ export default function SuperAdminProcessingOverviewPage() {
           {expandedRunId && (
             <DashboardPanel>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-slate-700">Processing Timeline</h3>
+                <h3 className="text-sm font-semibold text-slate-700">{t("superAdmin.processingOverviewTimelineTitle")}</h3>
                 <button
                   type="button"
                   onClick={() => setExpandedRunId(null)}
                   className="text-xs text-slate-400 hover:text-slate-600"
                 >
-                  Close
+                  {t("common.close")}
                 </button>
               </div>
               {runs
@@ -248,17 +254,20 @@ export default function SuperAdminProcessingOverviewPage() {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
               >
-                Previous
+                {t("common.previous")}
               </Button>
               <span className="text-sm text-slate-500">
-                Page {page} of {Math.ceil(total / limit)}
+                {t("common.pageOf", {
+                  page: String(page),
+                  totalPages: String(Math.ceil(total / limit)),
+                })}
               </span>
               <Button
                 variant="secondary"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page >= Math.ceil(total / limit)}
               >
-                Next
+                {t("common.next")}
               </Button>
             </div>
           )}

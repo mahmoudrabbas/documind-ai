@@ -21,7 +21,12 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.auditLogTitle": "سجل تدقيق المنصة",
   "superAdmin.auditLogDesc": "فحص الإجراءات الإدارية عبر المنصة.",
   "superAdmin.processingOverviewTitle": "نظرة عامة على المعالجة",
-  "superAdmin.processingOverviewDesc": "مراقبة مهام المعالجة الخلفية النشطة والمكتملة.",
+  "superAdmin.processingOverviewDesc": "عرض على مستوى المنصة لعمليات معالجة المستندات الفاشلة لدى جميع المستأجرين.",
+  "superAdmin.processingOverviewEmpty": "لا توجد مهام معالجة فاشلة لدى أي مستأجر.",
+  "superAdmin.processingOverviewLoadError": "تعذّر تحميل مهام المعالجة",
+  "superAdmin.processingOverviewRetryError": "تعذّرت إعادة المحاولة",
+  "superAdmin.processingOverviewReprocessError": "تعذّرت إعادة المعالجة",
+  "superAdmin.processingOverviewTimelineTitle": "المسار الزمني للمعالجة",
   "superAdmin.refundReviewsTitle": "مراجعة الاسترداد",
   "superAdmin.refundReviewsDesc": "مراجعة ومعالجة طلبات استرداد الأموال للعملاء.",
 
@@ -38,6 +43,13 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.tableCreated": "تاريخ الإنشاء",
   "superAdmin.tableUpdated": "آخر تحديث",
   "superAdmin.tableDocument": "المستند",
+  "superAdmin.tableTenant": "المستأجر",
+  "superAdmin.tableFailedStage": "المرحلة الفاشلة",
+  "superAdmin.tableError": "الخطأ",
+  "superAdmin.tableRetries": "المحاولات",
+  "superAdmin.tableFailedAt": "تاريخ الفشل",
+  "superAdmin.tableActions": "الإجراءات",
+  "superAdmin.documentVersion": "الإصدار {{version}}",
   "superAdmin.verifiedYes": "نعم",
   "superAdmin.verifiedNo": "لا",
 
@@ -339,6 +351,17 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.tenantPlan.free": "مجانية",
   "superAdmin.tenantPlan.trial": "تجريبية",
   "superAdmin.tenantPlan.pro": "احترافية",
+
+  /* ── واجهة المنصة المستقلة + تفاصيل المستأجر ───────────── */
+  /* "DocuMind AI" اسم المنتج ويبقى دون ترجمة. */
+  "superAdmin.platformBrand": "منصة DocuMind AI",
+  "superAdmin.platformTenants.back": "العودة إلى المستأجرين",
+  "superAdmin.platformTenants.loading": "جارٍ تحميل بيانات المستأجر",
+  "superAdmin.platformTenants.eyebrow": "تفاصيل المستأجر",
+  "superAdmin.platformTenants.questions": "الأسئلة",
+  "superAdmin.platformTenants.notFound": "المستأجر غير موجود.",
+  "superAdmin.platformTenants.invalidId": "معرّف المستأجر غير صالح.",
+  "superAdmin.platformTenants.loadError": "تعذّر تحميل بيانات هذا المستأجر.",
 
   /* ── Package form ──────────────────────────────────────── */
   "superAdmin.packageForm.noPermission": "لا تملك صلاحية إنشاء الباقات أو إصدار نسخ جديدة منها.",

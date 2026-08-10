@@ -19,10 +19,12 @@ const en: TranslationDictionary = {
   "common.confirm": "Confirm",
   "common.back": "Back",
   "common.next": "Next",
+  "common.previous": "Previous",
   "common.close": "Close",
   "common.search": "Search",
   "common.select": "Select",
   "common.page": "Page",
+  "common.pageOf": "Page {{page}} of {{totalPages}}",
   "common.noResults": "No results found",
   "common.tryAgain": "Try again",
   "common.dismissError": "Dismiss error",
@@ -494,6 +496,27 @@ const en: TranslationDictionary = {
   "billing.viewBilling": "View Billing",
   "billing.manageBilling": "Manage Billing",
   "billing.loadingPaymentDetails": "Loading payment details…",
+
+  /* Dashboard subscription widget. The billing/trial period is one
+     interpolated sentence — the date order differs between languages, so
+     the label and the dates must never be concatenated in JSX. */
+  "billing.loadingSubscription": "Loading subscription…",
+  "billing.subscriptionLoadError": "Could not load subscription data",
+  "billing.noActiveSubscription": "No active subscription",
+  "billing.noActiveSubscriptionDesc":
+    "You don't currently have an active subscription plan.",
+  "billing.viewPlans": "View Plans",
+  "billing.billingPeriod": "Billing Period: {{start}} — {{end}}",
+  "billing.trialPeriod": "Trial: {{start}} — {{end}}",
+  "billing.priceMonthly": "{{price}}/mo",
+  "billing.priceMonthlyOrAnnual": "{{monthly}}/mo or {{annual}}/yr",
+
+  "billing.trialDaysLeft.zero": "({{count}}d left)",
+  "billing.trialDaysLeft.one": "({{count}}d left)",
+  "billing.trialDaysLeft.two": "({{count}}d left)",
+  "billing.trialDaysLeft.few": "({{count}}d left)",
+  "billing.trialDaysLeft.many": "({{count}}d left)",
+  "billing.trialDaysLeft.other": "({{count}}d left)",
 
   /* Package entitlement labels — shared by the landing pricing cards, the
      checkout plan cards, and the dashboard subscription widget. Counts go

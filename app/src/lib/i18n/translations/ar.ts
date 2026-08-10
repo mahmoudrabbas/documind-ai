@@ -18,10 +18,12 @@ const ar: TranslationDictionary = {
   "common.confirm": "تأكيد",
   "common.back": "رجوع",
   "common.next": "التالي",
+  "common.previous": "السابق",
   "common.close": "إغلاق",
   "common.search": "بحث",
   "common.select": "تحديد",
   "common.page": "صفحة",
+  "common.pageOf": "صفحة {{page}} من {{totalPages}}",
   "common.noResults": "لا توجد نتائج",
   "common.tryAgain": "حاول مرة أخرى",
   "common.dismissError": "تجاهل الخطأ",
@@ -494,6 +496,26 @@ const ar: TranslationDictionary = {
   "billing.viewBilling": "عرض الفواتير",
   "billing.manageBilling": "إدارة الفواتير",
   "billing.loadingPaymentDetails": "جارٍ تحميل تفاصيل الدفع…",
+
+  /* أداة الاشتراك في لوحة التحكم. فترة الفوترة والفترة التجريبية جملة
+     واحدة قابلة للاستبدال — ترتيب التواريخ يختلف بين اللغتين، لذا لا يجوز
+     دمج التسمية مع التواريخ داخل JSX. */
+  "billing.loadingSubscription": "جارٍ تحميل الاشتراك…",
+  "billing.subscriptionLoadError": "تعذّر تحميل بيانات الاشتراك",
+  "billing.noActiveSubscription": "لا يوجد اشتراك نشط",
+  "billing.noActiveSubscriptionDesc": "ليس لديك حالياً أي خطة اشتراك نشطة.",
+  "billing.viewPlans": "عرض الخطط",
+  "billing.billingPeriod": "فترة الفوترة: {{start}} — {{end}}",
+  "billing.trialPeriod": "الفترة التجريبية: {{start}} — {{end}}",
+  "billing.priceMonthly": "{{price}}/شهر",
+  "billing.priceMonthlyOrAnnual": "{{monthly}}/شهر أو {{annual}}/سنة",
+
+  "billing.trialDaysLeft.zero": "(لم يتبقَّ أي يوم)",
+  "billing.trialDaysLeft.one": "(يتبقى يوم واحد)",
+  "billing.trialDaysLeft.two": "(يتبقى يومان)",
+  "billing.trialDaysLeft.few": "(يتبقى {{count}} أيام)",
+  "billing.trialDaysLeft.many": "(يتبقى {{count}} يومًا)",
+  "billing.trialDaysLeft.other": "(يتبقى {{count}} يوم)",
 
   /* تسميات حدود الباقات — مشتركة بين بطاقات الأسعار في الصفحة الرئيسية
      وبطاقات الدفع وأداة الاشتراك في لوحة التحكم. الأعداد تمر عبر
