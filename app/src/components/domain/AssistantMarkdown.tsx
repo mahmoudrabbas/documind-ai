@@ -91,7 +91,7 @@ const components: Components = {
   ),
   pre: ({ node: _node, ...props }) => (
     <pre
-      className="my-2 max-w-full overflow-x-auto rounded-lg border border-outline-variant/30 bg-surface-container-high p-3 text-[13px] leading-relaxed [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[13px]"
+      className="my-2 max-w-full overflow-x-auto rounded-lg border border-outline-variant/30 bg-surface-container-high p-3 text-[13px] leading-relaxed [&>code]:break-normal [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[13px] [&>code]:whitespace-pre"
       {...props}
     />
   ),
@@ -127,7 +127,7 @@ interface AssistantMarkdownProps {
 export function AssistantMarkdown({ content }: AssistantMarkdownProps) {
   const { dir, lang } = getContentDirection(content);
   return (
-    <div dir={dir} lang={lang} className="space-y-2">
+    <div dir={dir} lang={lang} className="min-w-0 space-y-2 overflow-hidden break-words">
       <ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={components}>
         {stripReasoning(content)}
       </ReactMarkdown>

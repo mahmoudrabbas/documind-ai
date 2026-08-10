@@ -811,6 +811,7 @@ const en: TranslationDictionary = {
   "chat.conversationsTitle": "Conversations",
   "chat.newConversation": "New conversation",
   "chat.deleteConversation": "Delete conversation",
+  "chat.closeConversations": "Close conversations",
   "chat.noConversations": "No conversations yet",
   "chat.noMessagesYet": "No messages yet",
   "chat.inputPlaceholder": "Ask about your documents...",

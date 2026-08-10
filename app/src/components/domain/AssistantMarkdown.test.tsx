@@ -150,6 +150,8 @@ describe("AssistantMarkdown", () => {
     expect(pre).toBeTruthy();
     expect(pre![1]).toContain("overflow-x-auto");
     expect(pre![1]).toContain("max-w-full");
+    expect(pre![1]).toContain("[&amp;&gt;code]:whitespace-pre");
+    expect(pre![1]).toContain("[&amp;&gt;code]:break-normal");
   });
 
   it("lets long URLs wrap safely instead of widening the bubble", () => {
@@ -158,6 +160,15 @@ describe("AssistantMarkdown", () => {
     );
     expect(html).toContain("break-words");
     expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  it("bounds the markdown root so narrow chat columns do not overflow", () => {
+    const html = render("A very long paragraph " + "x".repeat(200));
+    const root = html.match(/^<div dir="ltr" lang="en" class="([^"]+)"/);
+    expect(root).toBeTruthy();
+    expect(root![1]).toContain("min-w-0");
+    expect(root![1]).toContain("overflow-hidden");
+    expect(root![1]).toContain("break-words");
   });
 
   it("renders Arabic headings", () => {

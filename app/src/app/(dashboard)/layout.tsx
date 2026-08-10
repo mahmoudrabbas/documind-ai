@@ -18,14 +18,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     >
       <ProtectedRoute>
-        <div className="flex min-h-dvh overflow-x-clip bg-background text-on-background">
+        <div className="flex h-dvh min-h-0 overflow-x-clip bg-background text-on-background">
           <AppNavigation
             open={navigationOpen}
             onClose={() => setNavigationOpen(false)}
           />
-          <div className="flex min-w-0 flex-1 flex-col md:ms-[72px] xl:ms-[280px]">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col md:ms-[72px] xl:ms-[280px]">
             <TopNavBar onNavigationOpen={() => setNavigationOpen(true)} />
-            <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+            <main className="flex min-w-0 min-h-0 flex-1 flex-col">{children}</main>
           </div>
         </div>
       </ProtectedRoute>

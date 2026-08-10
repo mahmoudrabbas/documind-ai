@@ -116,6 +116,114 @@ function ThinkingIndicator({ label }: { label: string }) {
   );
 }
 
+type ConversationPanelProps = {
+  conversations: ConversationListItem[];
+  activeConversation: string;
+  loadingConversations: boolean;
+  onSelect: (id: string) => void;
+  onDelete: (id: string, e: React.MouseEvent) => void;
+  onNew: () => void;
+  headerTrailing?: React.ReactNode;
+};
+
+/**
+ * Shared conversation-history panel used by both the persistent
+ * desktop/tablet sidebar and the mobile chat-history drawer. Keeping a single
+ * source of truth guarantees the two surfaces never drift apart and that the
+ * mobile drawer cannot accidentally reuse the global navigation drawer.
+ */
+function ConversationPanel({
+  conversations,
+  activeConversation,
+  loadingConversations,
+  onSelect,
+  onDelete,
+  onNew,
+  headerTrailing,
+}: ConversationPanelProps) {
+  const { t } = useI18n();
+  return (
+    <>
+      <div className="border-b border-outline-variant/20 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-normal text-on-surface">
+            {t("chat.conversationsTitle")}
+          </h2>
+          {headerTrailing}
+        </div>
+        <button
+          type="button"
+          onClick={onNew}
+          className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          <span className="material-symbols-outlined text-[17px]">add</span>
+          {t("chat.newConversation")}
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        {loadingConversations && conversations.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
+            {t("common.loading")}
+          </div>
+        ) : (
+          conversations.map((conv) => {
+            const titleDir = getContentDirection(conv.title);
+            const previewDir = getContentDirection(conv.lastMessage);
+            return (
+              <div
+                key={conv.id}
+                onClick={() => onSelect(conv.id)}
+                className={`group relative flex w-full cursor-pointer flex-col gap-1.5 rounded-xl px-3 py-2.5 text-start transition-colors hover:bg-surface-container-low ${
+                  activeConversation === conv.id ? "bg-primary/5" : ""
+                }`}
+              >
+                {activeConversation === conv.id && (
+                  <span
+                    className="absolute inset-y-3 start-0 w-1 rounded-full bg-primary/70"
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="flex items-start justify-between gap-2">
+                  <span
+                    dir={titleDir.dir}
+                    lang={titleDir.lang}
+                    className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-5 text-on-surface"
+                  >
+                    {conv.title}
+                  </span>
+                  <button
+                    onClick={(e) => onDelete(conv.id, e)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-variant/0 transition-colors hover:bg-error/10 hover:text-error group-hover:text-on-surface-variant/50 focus-visible:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                    title={t("chat.deleteConversation")}
+                    aria-label={t("chat.deleteConversation")}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">delete</span>
+                  </button>
+                </div>
+                <span
+                  dir={previewDir.dir}
+                  lang={previewDir.lang}
+                  className="truncate text-xs leading-4 text-on-surface-variant/70"
+                >
+                  {previewText(conv.lastMessage) || t("chat.noMessagesYet")}
+                </span>
+                <span className="text-[10px] font-medium leading-4 text-outline/80">
+                  {formatRelativeTime(conv.updatedAt, t)}
+                </span>
+              </div>
+            );
+          })
+        )}
+        {!loadingConversations && conversations.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
+            {t("chat.noConversations")}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 interface SpeechRecognitionInstance {
   continuous: boolean;
   interimResults: boolean;
@@ -147,6 +255,7 @@ export function ChatClient() {
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [pdfViewer, setPdfViewer] = useState<{
     documentId: string;
     pageNumber?: number;
@@ -351,6 +460,10 @@ export function ChatClient() {
 
   const currentMessages = messages[activeConversation] ?? [];
 
+  const activeConversationTitle =
+    conversations.find((c) => c.id === activeConversation)?.title ?? "";
+  const activeTitleDir = getContentDirection(activeConversationTitle);
+
   const loadConversations = useCallback(async () => {
     try {
       setLoadingConversations(true);
@@ -367,6 +480,22 @@ export function ChatClient() {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Mobile chat-history drawer: close on Escape and lock body scroll while
+  // open. Kept independent from the global navigation drawer.
+  useEffect(() => {
+    if (!historyOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setHistoryOpen(false);
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [historyOpen]);
 
   // Refresh relative timestamps every minute
   useEffect(() => {
@@ -644,86 +773,52 @@ export function ChatClient() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-4rem)] overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface shadow-sm lg:h-[calc(100dvh-6rem)]">
+    <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface shadow-sm">
       {/* Sidebar */}
-      <aside className="hidden w-72 shrink-0 flex-col border-e border-outline-variant/25 bg-surface-container-lowest md:flex">
-        <div className="border-b border-outline-variant/20 px-4 py-3.5">
-          <h2 className="text-sm font-semibold tracking-normal text-on-surface">
-            {t("chat.conversationsTitle")}
-          </h2>
-          <button
-            onClick={() => handleNewConversation()}
-            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            <span className="material-symbols-outlined text-[17px]">add</span>
-            {t("chat.newConversation")}
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2 py-2">
-          {loadingConversations && conversations.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
-              {t("common.loading")}
-            </div>
-          ) : (
-            conversations.map((conv) => {
-              const titleDir = getContentDirection(conv.title);
-              const previewDir = getContentDirection(conv.lastMessage);
-              return (
-                <div
-                  key={conv.id}
-                  onClick={() => handleSelectConversation(conv.id)}
-                  className={`group relative flex w-full cursor-pointer flex-col gap-1.5 rounded-xl px-3 py-2.5 text-start transition-colors hover:bg-surface-container-low ${
-                    activeConversation === conv.id
-                      ? "bg-primary/5"
-                      : ""
-                  }`}
-                >
-                  {activeConversation === conv.id && (
-                    <span
-                      className="absolute inset-y-3 start-0 w-1 rounded-full bg-primary/70"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <div className="flex items-start justify-between gap-2">
-                    <span
-                      dir={titleDir.dir}
-                      lang={titleDir.lang}
-                      className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-5 text-on-surface"
-                    >
-                      {conv.title}
-                    </span>
-                    <button
-                      onClick={(e) => handleDeleteConversation(conv.id, e)}
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-variant/0 transition-colors hover:bg-error/10 hover:text-error group-hover:text-on-surface-variant/50 focus-visible:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
-                      title={t("chat.deleteConversation")}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">delete</span>
-                    </button>
-                  </div>
-                  <span
-                    dir={previewDir.dir}
-                    lang={previewDir.lang}
-                    className="truncate text-xs leading-4 text-on-surface-variant/70"
-                  >
-                    {previewText(conv.lastMessage) || t("chat.noMessagesYet")}
-                  </span>
-                  <span className="text-[10px] font-medium leading-4 text-outline/80">
-                    {formatRelativeTime(conv.updatedAt, t)}
-                  </span>
-                </div>
-              );
-            })
-          )}
-          {!loadingConversations && conversations.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
-              {t("chat.noConversations")}
-            </div>
-          )}
-        </div>
+      <aside
+        data-testid="chat-conversations-sidebar"
+        className="hidden w-56 shrink-0 flex-col border-e border-outline-variant/25 bg-surface-container-lowest md:flex lg:w-64 xl:w-72"
+      >
+        <ConversationPanel
+          conversations={conversations}
+          activeConversation={activeConversation}
+          loadingConversations={loadingConversations}
+          onSelect={handleSelectConversation}
+          onDelete={handleDeleteConversation}
+          onNew={() => void handleNewConversation()}
+        />
       </aside>
 
       {/* Main chat area */}
       <div className="flex min-w-0 flex-1 flex-col bg-surface-container-lowest">
+        {/* Mobile conversation header (chat history lives in its own drawer on small screens) */}
+        <header className="flex items-center gap-2 border-b border-outline-variant/20 bg-surface-container-lowest px-3 py-2 md:hidden">
+          <button
+            type="button"
+            data-testid="chat-mobile-history-toggle"
+            onClick={() => setHistoryOpen(true)}
+            aria-label={t("chat.conversationsTitle")}
+            aria-haspopup="dialog"
+            aria-expanded={historyOpen}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span
+              className="material-symbols-outlined text-[18px]"
+              aria-hidden="true"
+            >
+              chat
+            </span>
+            {t("chat.conversationsTitle")}
+          </button>
+          <h2
+            dir={activeTitleDir.dir}
+            lang={activeTitleDir.lang}
+            className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface-variant"
+          >
+            {activeConversationTitle}
+          </h2>
+        </header>
+
         {/* Messages */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6 lg:pe-8 lg:ps-8">
           {currentMessages.length === 0 && !loadingMessages ? (
@@ -751,7 +846,7 @@ export function ChatClient() {
                     type="button"
                     onClick={() => handleSend(t(key))}
                     disabled={isTyping || retryAfterSeconds !== null}
-                    className="rounded-full border border-outline-variant/30 bg-surface px-3.5 py-1.5 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    className="max-w-full rounded-full border border-outline-variant/30 bg-surface px-3.5 py-1.5 text-center text-sm leading-5 text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {t(key)}
                   </button>
@@ -930,7 +1025,7 @@ export function ChatClient() {
         )}
 
         {/* Input */}
-        <div className="border-t border-outline-variant/20 bg-surface/95 px-4 pb-3 pt-3 sm:px-6 lg:pe-8 lg:ps-8">
+        <div className="min-w-0 border-t border-outline-variant/20 bg-surface/95 px-4 pb-3 pt-3 sm:px-6 lg:pe-8 lg:ps-8">
           <div className="mx-auto max-w-5xl">
             {previewUrl && selectedFile && (
               <div className="mb-2 flex w-full items-center gap-3 rounded-xl border border-outline-variant/25 bg-surface-container-lowest p-2 pe-3 sm:max-w-md">
@@ -958,7 +1053,7 @@ export function ChatClient() {
                 </button>
               </div>
             )}
-            <div className="flex items-end gap-1.5 rounded-2xl border border-outline-variant/25 bg-surface-container-lowest p-2 shadow-sm transition-colors focus-within:border-primary/50 focus-within:bg-surface focus-within:ring-4 focus-within:ring-primary/10">
+            <div className="flex min-w-0 items-end gap-1.5 rounded-2xl border border-outline-variant/25 bg-surface-container-lowest p-2 shadow-sm transition-colors focus-within:border-primary/50 focus-within:bg-surface focus-within:ring-4 focus-within:ring-primary/10">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -1032,7 +1127,7 @@ export function ChatClient() {
                 disabled={retryAfterSeconds !== null}
                 placeholder={t("chat.inputPlaceholder")}
                 rows={1}
-                className="max-h-32 min-h-[24px] flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-1.5 text-[15px] leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/55"
+                className="max-h-32 min-h-[24px] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-1.5 text-[15px] leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/55"
               />
               <button
                 type="button"
@@ -1065,6 +1160,59 @@ export function ChatClient() {
           </div>
         </div>
       </div>
+
+      {/* Mobile chat-history drawer: its own overlay, never the global
+          navigation drawer. Selecting a conversation closes it. */}
+      {historyOpen && (
+        <>
+          <button
+            type="button"
+            data-testid="chat-history-backdrop"
+            aria-label={t("chat.closeConversations")}
+            tabIndex={-1}
+            onClick={() => setHistoryOpen(false)}
+            className="fixed inset-0 z-[55] bg-primary/35 md:hidden"
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("chat.conversationsTitle")}
+            data-testid="chat-history-drawer"
+            className="fixed inset-y-0 start-0 z-[60] flex w-[min(300px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface shadow-xl md:hidden"
+          >
+            <ConversationPanel
+              conversations={conversations}
+              activeConversation={activeConversation}
+              loadingConversations={loadingConversations}
+              onSelect={(id) => {
+                handleSelectConversation(id);
+                setHistoryOpen(false);
+              }}
+              onDelete={handleDeleteConversation}
+              onNew={() => {
+                void handleNewConversation();
+                setHistoryOpen(false);
+              }}
+              headerTrailing={
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(false)}
+                  aria-label={t("chat.closeConversations")}
+                  title={t("chat.closeConversations")}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    close
+                  </span>
+                </button>
+              }
+            />
+          </aside>
+        </>
+      )}
 
       {pdfViewer && (
         <PdfViewerModal

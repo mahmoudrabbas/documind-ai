@@ -812,6 +812,7 @@ const ar: TranslationDictionary = {
   "chat.conversationsTitle": "المحادثات",
   "chat.newConversation": "محادثة جديدة",
   "chat.deleteConversation": "حذف المحادثة",
+  "chat.closeConversations": "إغلاق المحادثات",
   "chat.noConversations": "لا توجد محادثات بعد",
   "chat.noMessagesYet": "لا توجد رسائل بعد",
   "chat.inputPlaceholder": "اسأل عن مستنداتك...",

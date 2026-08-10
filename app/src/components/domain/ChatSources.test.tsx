@@ -196,6 +196,7 @@ describe("SourceList", () => {
     expect(title.className).toContain("truncate");
     const section = screen.getByText(longSection);
     expect(section.className).toContain("truncate");
+    expect(section.className).toContain("min-w-0");
   });
 
   it("keeps Arabic document titles truncated without breaking the card layout", () => {
@@ -209,5 +210,15 @@ describe("SourceList", () => {
     const title = screen.getByText(longArabic);
     expect(title.getAttribute("dir")).toBe("rtl");
     expect(title.className).toContain("truncate");
+  });
+
+  it("keeps source cards width-contained for narrow chat viewports", () => {
+    render(<SourceList sources={[source()]} onOpen={openHandler()} />);
+    const wrapper = screen.getByText("Sources (1)").parentElement;
+    expect(wrapper?.className).toContain("min-w-0");
+    const button = screen.getByRole("button", {
+      name: /Vendor Management Policy 2024/i,
+    });
+    expect(button.className).toContain("min-w-0");
   });
 });

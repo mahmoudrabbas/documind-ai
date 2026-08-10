@@ -31,7 +31,7 @@ export function SourceList({ sources, onOpen }: SourceListProps) {
     sources.length === 1 ? t("chat.source") : t("chat.sources");
 
   return (
-    <div className="mt-3 w-full">
+    <div className="mt-3 w-full min-w-0">
       <p className="mb-1.5 text-[12px] font-semibold text-on-surface-variant/80">
         {t("chat.sourceCount", { count: String(sources.length) })}
       </p>
@@ -64,7 +64,7 @@ function SourceCard({ source, onOpen }: SourceCardProps) {
       onClick={() => onOpen(source)}
       title={t("chat.openSource")}
       aria-label={buildSourceAriaLabel(source, t)}
-      className="group flex w-full items-center gap-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/70 px-2.5 py-2 text-start transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      className="group flex w-full min-w-0 items-center gap-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/70 px-2.5 py-2 text-start transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary/80">
         <span className="material-symbols-outlined text-[16px]">
@@ -95,7 +95,7 @@ function SourceCard({ source, onOpen }: SourceCardProps) {
               <span
                 dir={sectionDir.dir}
                 lang={sectionDir.lang}
-                className="truncate"
+                className="min-w-0 truncate"
               >
                 {source.sectionTitle}
               </span>
