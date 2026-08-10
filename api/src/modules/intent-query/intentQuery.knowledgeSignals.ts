@@ -77,6 +77,13 @@ export function isRetrievableIntent(intent: unknown): intent is IntentClassValue
   return typeof intent === "string" && RETRIEVABLE_INTENTS.has(intent as IntentClassValue);
 }
 
+function isBareGeneralDefinitionText(normalized: string): boolean {
+  return (
+    /^(?:what\s+is|explain|define)\s+(?:a\s+|an\s+|the\s+)?(?:vpn|mfa|procurement|sla|hotel\s+management)(?:\s+in\s+general)?$/u.test(normalized) ||
+    /^(?:ما|ماذا)\s+(?:هو|هي)\s+(?:vpn|mfa|sla|المشتريات)$/u.test(normalized)
+  );
+}
+
 /** Remove only a leading segment that independently classifies as social. */
 export function stripLeadingSocialExpression(raw: string): {
   text: string;
@@ -129,9 +136,7 @@ export function assessPositiveKnowledgeSeeking(raw: string): KnowledgeSignalAsse
     /(?:هل|امتي)\s+.*(?:لازم|اجباري|الزامي|مطلوب|مسموح)/u.test(normalized) ||
     /(?:كام|كم)\s+(?:هو\s+)?(?:حد|يوم|وقت)/u.test(normalized)
   );
-  const isBareGeneralDefinition =
-    /^(?:what\s+is|explain|define)\s+(?:a\s+|an\s+|the\s+)?(?:vpn|mfa|procurement|sla|hotel\s+management)(?:\s+in\s+general)?$/u.test(normalized) ||
-    /^(?:ما|ماذا)\s+(?:هو|هي)\s+(?:vpn|mfa|sla|المشتريات)$/u.test(normalized);
+  const isBareGeneralDefinition = isBareGeneralDefinitionText(normalized);
   const substantiveTokens = tokens.filter(
     (token) => !QUESTION_TERMS.has(token) && !OVERLAP_STOP_WORDS.has(token),
   );
@@ -156,6 +161,30 @@ export function assessPositiveKnowledgeSeeking(raw: string): KnowledgeSignalAsse
     socialPrefixRemoved: stripped.removed,
     reasons,
   };
+}
+
+/**
+ * Domain-agnostic question detection. Unlike assessPositiveKnowledgeSeeking,
+ * this does not require the enterprise/HR vocabulary: any well-formed
+ * question or request with substantive content qualifies. Used to keep a
+ * provider's "unsupported" verdict from blocking questions about arbitrary
+ * uploaded-document topics; retrieval and the evidence gate remain the
+ * authority on whether the corpus can answer.
+ */
+export function hasDomainAgnosticQuestionShape(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  const tokens = prepared.normalizedTokens;
+  if (tokens.length === 0) return false;
+  if (isBareGeneralDefinitionText(prepared.elongationReducedText)) return false;
+  const substantiveTokens = tokens.filter(
+    (token) => !QUESTION_TERMS.has(token) && !OVERLAP_STOP_WORDS.has(token),
+  );
+  if (substantiveTokens.length === 0) return false;
+  const hasQuestionShape = tokens.some((token) => QUESTION_TERMS.has(token));
+  const hasRequestShape = tokens.some((token) => REQUEST_TERMS.has(token));
+  const hasQuestionMark = /[?؟]/u.test(stripped.text);
+  return hasQuestionShape || hasQuestionMark || hasRequestShape;
 }
 
 export function isLikelyGibberish(raw: string): boolean {

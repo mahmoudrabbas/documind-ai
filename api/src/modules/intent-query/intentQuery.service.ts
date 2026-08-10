@@ -16,6 +16,7 @@ import { preprocessIntentText } from "./intentQuery.preprocessor.js";
 import {
   assessPositiveKnowledgeSeeking,
   assistantRequestsUserResponse,
+  hasDomainAgnosticQuestionShape,
   isContextualAcknowledgement,
   isLikelyGibberish,
   isRetrievableIntent,
@@ -293,11 +294,12 @@ export class IntentQueryService {
     // Exemptions: when the user explicitly references documents or reports.
     function isLikelyExternalCurrent(question: string): boolean {
       const q = question.toLowerCase();
-      // Temporal markers that imply 'current' or 'latest' (no word-boundary
-      // anchors because Arabic tokens may not be matched by \b reliably).
-      const temporal = /(today|now|yesterday|latest|this (morning|evening)|الآن|اليوم|أمس|آخر)/i;
+      // Temporal markers that imply 'current' or 'latest'. English terms are
+      // word-anchored so substrings ("now" in "knowledge") cannot trigger the
+      // short-circuit; Arabic tokens are not reliably matched by \b.
+      const temporal = /\b(?:today|now|yesterday|latest)\b|this (?:morning|evening)|الآن|اليوم|أمس|آخر/i;
       // Topics typically requiring live external data
-      const topics = /(gold|الذهب|dollar|دollar|weather|طقس|news|أخبار|score|نتيجة|مباراة|أسعار)/i;
+      const topics = /\b(?:gold|dollar|weather|news|score)\b|الذهب|دollar|طقس|أخبار|نتيجة|مباراة|أسعار/i;
       // Phrases that indicate the user is asking about a document/report
       const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
 
@@ -835,9 +837,20 @@ export class IntentQueryService {
       // low-confidence clarification as well as schema-invalid output. Unsafe
       // remains a hard boundary; deterministic assistant-only, social-only and
       // external-current requests already returned before the provider call.
+      //
+      // Additionally, a valid provider "unsupported" verdict never blocks a
+      // well-formed question about an arbitrary topic: the corpus (not the
+      // provider's topic judgement) is the authority, so the question is sent
+      // to retrieval and the evidence gate decides. Schema-invalid output
+      // (fallbackUsed) and gibberish stay fail-closed.
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
+      const unsupportedQuestionOverride =
+        validatedPlan.route === "unsupported" &&
+        !validatedPlan.processingMetadata.fallbackUsed &&
+        !isLikelyGibberish(routingQuestion) &&
+        hasDomainAgnosticQuestionShape(routingQuestion);
       if (
-        knowledgeSignals.positive &&
+        (knowledgeSignals.positive || unsupportedQuestionOverride) &&
         validatedPlan.route !== "rag" &&
         validatedPlan.route !== "unsafe"
       ) {
@@ -850,7 +863,7 @@ export class IntentQueryService {
         validatedPlan = validateAndNormalizeQueryPlan(
           {
             detectedIntent: "knowledge_question",
-            intentConfidence: 0.75,
+            intentConfidence: knowledgeSignals.positive ? 0.75 : 0.6,
             normalizedQuestion: fallbackQuestion,
             language,
             entities: localEntities,
@@ -880,8 +893,9 @@ export class IntentQueryService {
     } else {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
+      const isKnowledgeQuestion = knowledgeSignals.positive;
       const fallbackQuestion = knowledgeSignals.retrievalText || routingQuestion.trim();
-      const expansion = knowledgeSignals.positive
+      const expansion = isKnowledgeQuestion
         ? expandBilingual(fallbackQuestion, language, localEntities)
         : { semanticQueries: [], keywordQueries: [] };
       const exactTerms = localEntities.filter(e => e.preserveExact).map(e => e.text);
@@ -903,7 +917,7 @@ export class IntentQueryService {
 
       validatedPlan = validateAndNormalizeQueryPlan(
         {
-          detectedIntent: knowledgeSignals.positive ? "knowledge_question" : "unsupported",
+          detectedIntent: isKnowledgeQuestion ? "knowledge_question" : "unsupported",
           intentConfidence: knowledgeSignals.positive ? 0.75 : 0,
           normalizedQuestion: fallbackQuestion,
           language,
