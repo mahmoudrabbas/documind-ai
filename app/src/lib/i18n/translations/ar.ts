@@ -130,6 +130,27 @@ const ar: TranslationDictionary = {
   "auth.errorTenantAlreadyExists":
     "يوجد شركة بهذا الاسم أو الرابط بالفعل. يرجى اختيار اسم أو رابط مختلف.",
   "auth.backToHome": "العودة إلى الرئيسية",
+  /* Login / super-admin login page copy + auth hero panel */
+  "auth.tagline": "مساعد المعرفة بالذكاء الاصطناعي الخاص لوثائق الشركة",
+  "auth.welcomeBack": "مرحباً بعودتك",
+  "auth.portalAccess": "ادخل إلى بوابة ذكاء مؤسستك.",
+  "auth.rememberMe": "تذكّرني",
+  "auth.encryptedBadge": "مشفّر بمعيار AES-256 ومتوافق مع SOC2",
+  "auth.rightsReserved":
+    "© {{year}} DocuMind Intelligence Systems. جميع الحقوق محفوظة.",
+  "auth.platformAdmin": "إدارة المنصة",
+  "auth.superAdminSignIn": "تسجيل دخول المسؤول العام",
+  "auth.superAdminCredentials": "استخدم بيانات اعتماد مسؤول المنصة.",
+  "auth.errorInvalidEmailOrPassword": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+  "auth.heroSecurityTitle": "الأمان المؤسسي أولاً",
+  "auth.heroSecurityBody":
+    "لا تغادر مستنداتك بيئة DocuMind الآمنة أبداً. يعمل ذكاؤنا الاصطناعي في سحابة خاصة معزولة.",
+  "auth.heroAiAnswer":
+    "تُقدَّر توقعات النمو لعام 2024 بنحو 12.5%، مدفوعةً بشكل أساسي بالتوسع في منطقة أوروبا والشرق الأوسط وأفريقيا (EMEA).",
+  "auth.heroAiSource": "المصدر: Annual_Review.pdf (صفحة 42)",
+  "auth.heroDocParsedIndexed": "تم التحليل والفهرسة",
+  "auth.heroDocSize": "الحجم: 4.2 ميغابايت • 82 صفحة",
+  "auth.heroDocAddedAgo": "أُضيف منذ ساعتين",
   "auth.rateLimitTitle": "طلبات كثيرة جداً",
   "auth.rateLimitCountdown": "يرجى الانتظار {{seconds}} ثانية قبل المحاولة مرة أخرى.",
   "auth.rateLimitLongWait": "يرجى الانتظار {{duration}} قبل المحاولة مرة أخرى.",

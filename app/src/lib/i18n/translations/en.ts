@@ -130,6 +130,27 @@ const en: TranslationDictionary = {
   "auth.errorTenantAlreadyExists":
     "A company with this name or URL already exists. Please choose a different one.",
   "auth.backToHome": "Back to Home",
+  /* Login / super-admin login page copy + auth hero panel */
+  "auth.tagline": "Private AI Knowledge Assistant for Company Documents",
+  "auth.welcomeBack": "Welcome Back",
+  "auth.portalAccess": "Access your enterprise intelligence portal.",
+  "auth.rememberMe": "Remember me",
+  "auth.encryptedBadge": "AES-256 Encrypted & SOC2 Compliant",
+  "auth.rightsReserved":
+    "© {{year}} DocuMind Intelligence Systems. All rights reserved.",
+  "auth.platformAdmin": "Platform administration",
+  "auth.superAdminSignIn": "Super Admin Sign In",
+  "auth.superAdminCredentials": "Use your platform administrator credentials.",
+  "auth.errorInvalidEmailOrPassword": "Invalid email or password.",
+  "auth.heroSecurityTitle": "Enterprise Security First",
+  "auth.heroSecurityBody":
+    "Your documents never leave your secure DocuMind environment. Our AI runs in a sandboxed private cloud.",
+  "auth.heroAiAnswer":
+    "The growth projection for 2024 is estimated at 12.5%, primarily driven by expansion into the EMEA region.",
+  "auth.heroAiSource": "Source: Annual_Review.pdf (Page 42)",
+  "auth.heroDocParsedIndexed": "Parsed & Indexed",
+  "auth.heroDocSize": "Size: 4.2MB • 82 Pages",
+  "auth.heroDocAddedAgo": "Added 2h ago",
   "auth.rateLimitTitle": "Too many requests",
   "auth.rateLimitCountdown": "Please wait {{seconds}} seconds before trying again.",
   "auth.rateLimitLongWait": "Please wait {{duration}} before trying again.",

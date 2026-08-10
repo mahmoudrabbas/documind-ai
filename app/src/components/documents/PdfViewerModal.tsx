@@ -56,7 +56,12 @@ export function PdfViewerModal({
           return;
         }
 
-        const loadingTask = pdfjsLib.getDocument(blobUrl);
+        const loadingTask = pdfjsLib.getDocument({
+          url: blobUrl,
+          standardFontDataUrl: "/pdfjs/standard_fonts/",
+          cMapUrl: "/pdfjs/cmaps/",
+          cMapPacked: true,
+        });
         const doc = await loadingTask.promise;
         if (cancelled) {
           doc.destroy();
