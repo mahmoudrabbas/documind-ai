@@ -1,7 +1,8 @@
 import { logger } from "../../common/logger/logger.js";
 import { getReconciliationService } from "./reconciliation.service.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
-import { reconcileSucceededSystemRefundSettlements } from "../billing/refund.service.js";
+import { reconcileSucceededSystemRefundSettlements, reconcilePendingRefundSettlements } from "../billing/refund.service.js";
+import { reconcileProviderPendingOperations } from "../billing/billing-operation-reconciliation.service.js";
 
 export interface EntitlementReconciliationSchedulerOptions {
   intervalMs?: number;
@@ -52,8 +53,9 @@ export function startEntitlementReconciliation(
     );
     }
     if (process.env.BILLING_REFUND_RECONCILE_ENABLED === "false") return;
+    const provider = await getPaymentProvider();
     try {
-      const settlements = await reconcileSucceededSystemRefundSettlements({ provider: await getPaymentProvider(), maxRecords: 200 });
+      const settlements = await reconcileSucceededSystemRefundSettlements({ provider, maxRecords: 200 });
       logger.info({
         examined: settlements.examined,
         eligibleForTransitionRepair: settlements.eligibleForTransitionRepair,
@@ -63,6 +65,33 @@ export function startEntitlementReconciliation(
       }, "Succeeded refund settlement reconciliation sweep completed");
     } catch (error) {
       logger.error({ err: error }, "Succeeded refund settlement reconciliation sweep failed");
+    }
+    try {
+      const pendingRefunds = await reconcilePendingRefundSettlements({ provider });
+      logger.info({
+        examined: pendingRefunds.examined,
+        synchronized: pendingRefunds.synchronized,
+        retried: pendingRefunds.retried,
+        confirmed: pendingRefunds.confirmed,
+        failed: pendingRefunds.failed,
+        pending: pendingRefunds.pending,
+      }, "Pending refund reconciliation sweep completed");
+    } catch (error) {
+      logger.error({ err: error }, "Pending refund reconciliation sweep failed");
+    }
+    try {
+      const pendingOperations = await reconcileProviderPendingOperations({ provider });
+      logger.info({
+        examined: pendingOperations.examined,
+        synchronized: pendingOperations.synchronized,
+        repaired: pendingOperations.repaired,
+        confirmed: pendingOperations.confirmed,
+        failed: pendingOperations.failed,
+        pending: pendingOperations.pending,
+        providerUnavailable: pendingOperations.providerUnavailable,
+      }, "Provider-pending billing operation reconciliation sweep completed");
+    } catch (error) {
+      logger.error({ err: error }, "Provider-pending billing operation reconciliation sweep failed");
     }
   };
 

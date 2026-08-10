@@ -252,6 +252,12 @@ export async function requestSubscriptionChange(input: {
         subscriptionId: subscription.providerSubscriptionId,
         expectedCustomerId: subscription.providerCustomerId,
         targetPriceReference: target.providerPriceReference,
+        targetPackage: {
+          packageId: target.packageId,
+          packageVersionId: target.packageVersionId,
+          packageVersion: target.packageVersion,
+          billingInterval: target.billingInterval,
+        },
         previewReference: preview.providerPreviewReference || undefined,
         operationContext: operationContextFor(pending, input.idempotencyKey, normalizedRequest, input.tenantId, input.context.traceId),
       });
