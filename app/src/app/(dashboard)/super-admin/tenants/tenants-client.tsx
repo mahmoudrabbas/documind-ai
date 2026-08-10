@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { ApiError } from "@/lib/api-client";
 import {
   buildTenantListSearch,
@@ -104,15 +105,9 @@ export function TenantsClient() {
       setLoading(true);
       setError("");
       try {
-        const [tenantsRes, subsRes] = await Promise.all([
-          listTenants(query, signal),
-          canReadBilling
-            ? listSubscriptions(signal)
-            : Promise.resolve({ success: true as const, data: [] }),
-        ]);
+        const tenantsRes = await listTenants(query, signal);
         setTenants(tenantsRes.data.tenants);
         setPagination(tenantsRes.data.pagination);
-        setSubscriptions(subsRes.data);
       } catch (caught) {
         if (signal?.aborted) return;
         setError(
@@ -124,7 +119,7 @@ export function TenantsClient() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [canReadBilling, query],
+    [query],
   );
 
   useEffect(() => {
@@ -133,6 +128,28 @@ export function TenantsClient() {
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);
+  useEffect(() => {
+    // Subscriptions feed only the per-row badge (decorative), so they are
+    // fetched once per BILLING_READ change instead of on every tenant
+    // page/filter change (P-6).
+    if (!canReadBilling) {
+      setSubscriptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    listSubscriptions({ page: 1, pageSize: 100 }, controller.signal)
+      .then((subsRes) => {
+        if (controller.signal.aborted) return;
+        setSubscriptions(subsRes.data.subscriptions);
+      })
+      .catch(() => {
+        // Badges degrade gracefully: on failure leave the list empty (the
+        // badge renderer already handles missing entries with "—"). Never
+        // surface this in the tenants error state — tenants still loaded fine.
+        if (!controller.signal.aborted) setSubscriptions([]);
+      });
+    return () => controller.abort();
+  }, [canReadBilling]);
   useEffect(() => {
     if (editing) {
       const previousOverflow = document.body.style.overflow;
@@ -390,12 +407,12 @@ export function TenantsClient() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex gap-2">
-                        <a
+                        <Link
                           href={`/super-admin/companies/${tenant.id}`}
                           className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white"
                         >
                           Open
-                        </a>
+                        </Link>
                         {canManageTenant ? (
                         <button
                           onClick={() => {
@@ -497,24 +514,24 @@ export function TenantsClient() {
                   />
                   <p className="mt-1 text-blue-700">
                     Subscription managed via{" "}
-                    <a
+                    <Link
                       href="/super-admin/subscriptions"
                       className="underline font-semibold"
                     >
                       Subscriptions page
-                    </a>
+                    </Link>
                     .
                   </p>
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">
                   No active subscription. Assign one via the{" "}
-                  <a
+                  <Link
                     href="/super-admin/subscriptions"
                     className="underline font-semibold"
                   >
                     Subscriptions page
-                  </a>
+                  </Link>
                   .
                 </p>
               )}

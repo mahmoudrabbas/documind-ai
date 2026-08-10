@@ -70,10 +70,22 @@ export const activatePackage = (id: string, body: PackageLifecycleInput) =>
     `/platform/packages/${encodeURIComponent(id)}/activate`,
     { method: "POST", body: { ...body } },
   );
-export const listSubscriptions = (signal?: AbortSignal) =>
-  apiClient<Success<PlatformSubscription[]>>("/platform/subscriptions", {
-    signal,
+export const listSubscriptions = (
+  params: { page: number; pageSize: number; search?: string; status?: string },
+  signal?: AbortSignal,
+) => {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
   });
+  if (params.search) search.set("search", params.search);
+  if (params.status) search.set("status", params.status);
+  const qs = search.toString();
+  return apiClient<Success<{ subscriptions: PlatformSubscription[]; pagination: Pagination }>>(
+    `/platform/subscriptions${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+};
 export const updateSubscription = (
   tenantId: string,
   body: SubscriptionUpdateInput,

@@ -37,10 +37,12 @@ export function usePlatformData<T>(
 
 export function PlatformState({
   loading,
+  refreshing = false,
   error,
   onRetry,
 }: {
   loading: boolean;
+  refreshing?: boolean;
   error: string;
   onRetry: () => void;
 }) {
@@ -57,6 +59,18 @@ export function PlatformState({
           <span className="sr-only">Loading</span>
         </div>
       </DashboardPanel>
+    );
+  // Data is on screen during a refetch: thin progress bar, never a skeleton swap.
+  if (refreshing)
+    return (
+      <div
+        role="progressbar"
+        aria-label="Loading"
+        className="w-full overflow-hidden"
+      >
+        <div className="h-0.5 w-full bg-primary" />
+        <span className="sr-only">Loading</span>
+      </div>
     );
   if (error)
     return (

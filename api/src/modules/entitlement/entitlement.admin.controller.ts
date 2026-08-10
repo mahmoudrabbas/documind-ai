@@ -7,6 +7,7 @@ import { requireAuthenticatedAuditActor } from "../../common/observability/audit
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { AuditOperationContext } from "../audit/audit.types.js";
 import QuotaOverrideModel from "../../db/models/quotaOverride.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
 import EntitlementReconciliationReportModel from "../../db/models/entitlementReconciliationReport.model.js";
 import { getReconciliationService } from "./reconciliation.service.js";
 
@@ -125,6 +126,52 @@ const listReconciliationReportsQuerySchema = z
 
 // ── Controllers ──────────────────────────────────────────────────────────────
 
+/**
+ * Shape of the `tenantId` / `createdBy` fields after `.populate()`.
+ *
+ * A populated ref resolves to the referenced document; it stays a bare
+ * ObjectId when the referenced document no longer exists (deleted tenant,
+ * removed admin). Both cases must be handled — see `flattenOverride`.
+ */
+type PopulatedRef<T> = mongoose.Types.ObjectId | (T & { _id: mongoose.Types.ObjectId });
+
+function isPopulated<T>(
+  ref: PopulatedRef<T> | null | undefined,
+): ref is T & { _id: mongoose.Types.ObjectId } {
+  return Boolean(ref) && !(ref instanceof mongoose.Types.ObjectId);
+}
+
+/**
+ * Flatten a populated override document into the wire contract.
+ *
+ * `tenantId` stays a plain string so existing clients and the
+ * `PUT/DELETE /overrides/:tenantId` round-trip keep working unchanged; the
+ * human-readable fields are added alongside it. Admin UIs display an
+ * identifier only when the tenant record is genuinely gone.
+ */
+function flattenOverride(override: {
+  tenantId: PopulatedRef<{ name?: string; slug?: string; status?: string }>;
+  createdBy?: PopulatedRef<{ name?: string; email?: string }> | null;
+  [key: string]: unknown;
+}) {
+  const { tenantId, createdBy, ...rest } = override;
+  const tenant = isPopulated(tenantId) ? tenantId : null;
+  const actor = isPopulated(createdBy) ? createdBy : null;
+
+  return {
+    ...rest,
+    tenantId: (tenant?._id ?? tenantId).toString(),
+    tenantName: tenant?.name ?? null,
+    tenantSlug: tenant?.slug ?? null,
+    tenantStatus: tenant?.status ?? null,
+    /** True when the referenced tenant no longer exists — the override is orphaned. */
+    tenantMissing: tenant === null,
+    createdBy: (actor?._id ?? createdBy)?.toString() ?? null,
+    createdByName: actor?.name ?? null,
+    createdByEmail: actor?.email ?? null,
+  };
+}
+
 export const listOverridesController = endpoint(async (req) => {
   const { page, pageSize, tenantId } = parse(
     listOverridesQuerySchema,
@@ -139,17 +186,25 @@ export const listOverridesController = endpoint(async (req) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
+      // Resolve refs so the admin UI can render names instead of ObjectIds.
+      .populate("tenantId", "name slug status")
+      .populate("createdBy", "name email")
       .lean()
       .exec(),
     QuotaOverrideModel.countDocuments(filter).exec(),
   ]);
 
   return {
-    overrides,
+    overrides: overrides.map((override) =>
+      flattenOverride(override as unknown as Parameters<typeof flattenOverride>[0]),
+    ),
     pagination: {
       page,
       pageSize,
       total,
+      // `totalRecords` mirrors `total` for parity with the other platform list
+      // endpoints, whose clients read `pagination.totalRecords`.
+      totalRecords: total,
       totalPages: Math.ceil(total / pageSize),
     },
   };
@@ -181,6 +236,9 @@ export const setOverrideController = endpoint(async (req) => {
     },
     { upsert: true, returnDocument: "after", runValidators: true },
   )
+    // Match the list contract so the client can patch the row in place.
+    .populate("tenantId", "name slug status")
+    .populate("createdBy", "name email")
     .lean()
     .exec();
 
@@ -205,7 +263,9 @@ export const setOverrideController = endpoint(async (req) => {
     actorRole: ctx.actorRole,
   });
 
-  return override;
+  return flattenOverride(
+    override as unknown as Parameters<typeof flattenOverride>[0],
+  );
 });
 
 export const removeOverrideController = endpoint(async (req) => {
@@ -253,13 +313,72 @@ export const removeOverrideController = endpoint(async (req) => {
   return { removed: true, tenantId, dimension };
 });
 
+/**
+ * Normalise a reconciliation report into the flat, name-bearing shape the
+ * admin UI renders.
+ *
+ * The domain service returns per-tenant reports each holding a nested
+ * `results[]` of per-dimension rows, and `reconcile()` (single tenant)
+ * returns one report where `reconcileAll()` returns many. Both are flattened
+ * to one row per (tenant, dimension) with the tenant name resolved in a
+ * single batched query.
+ */
+async function attachTenantNames(
+  raw:
+    | Awaited<ReturnType<ReturnType<typeof getReconciliationService>["reconcile"]>>
+    | Awaited<ReturnType<ReturnType<typeof getReconciliationService>["reconcileAll"]>>,
+) {
+  const perTenant = "reports" in raw ? raw.reports : [raw];
+
+  const tenantIds = [...new Set(perTenant.map((report) => report.tenantId))];
+  const tenants = await TenantModel.find({
+    _id: { $in: tenantIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select("name slug")
+    .lean()
+    .exec();
+  const nameById = new Map(
+    tenants.map((tenant) => [
+      tenant._id.toString(),
+      { name: tenant.name as string, slug: tenant.slug as string },
+    ]),
+  );
+
+  const rows = perTenant.flatMap((report) =>
+    report.results.map((result) => ({
+      tenantId: report.tenantId,
+      tenantName: nameById.get(report.tenantId)?.name ?? null,
+      tenantSlug: nameById.get(report.tenantId)?.slug ?? null,
+      dimension: result.dimension,
+      authoritative: result.authoritative,
+      current: result.current,
+      discrepancy: result.discrepancy,
+      fixed: result.fixed,
+    })),
+  );
+
+  return {
+    mode: raw.mode,
+    timestamp: raw.timestamp,
+    totalTenants: "totalTenants" in raw ? raw.totalTenants : perTenant.length,
+    totalDiscrepancies: raw.totalDiscrepancies,
+    totalFixed: raw.totalFixed,
+    // Only discrepant rows are worth showing; a clean dimension is noise.
+    reports: rows.filter((row) => row.discrepancy !== 0),
+  };
+}
+
 export const reconcileController = endpoint(async (req) => {
   const { mode, tenantId } = parse(reconcileSchema, req.body);
   const ctx = auditContext(req);
 
-  const report = tenantId
+  const rawReport = tenantId
     ? await getReconciliationService().reconcile(tenantId, mode)
     : await getReconciliationService().reconcileAll(mode);
+
+  // Resolve tenant names at the presentation boundary so the admin UI never
+  // has to render a bare ObjectId. The domain service stays name-agnostic.
+  const report = await attachTenantNames(rawReport);
 
   await getAuditWriter().write({
     action: "ENTITLEMENT_RECONCILE",

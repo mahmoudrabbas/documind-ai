@@ -376,37 +376,82 @@ export async function createSubscription(
 }
 
 /**
- * List subscriptions — delegates to {@link SubscriptionService.listSubscriptions}
- * then populates tenant and package references for backward compat.
+ * List subscriptions with server-side pagination — Super Admin scope.
+ *
+ * Mirrors {@link listPlatformUsers}/{@link listJobs}: accepts `page`/`pageSize`
+ * plus optional free-text `search` (matches the tenant `name` or `slug`,
+ * case-insensitively) and a lowercase `status` filter. Each page item keeps the
+ * exact shape the legacy bare-array endpoint returned: populated `tenantId` and
+ * `packageId`, lowercase status, `version` from `revision`, provider-state
+ * summary, and current period mapped from `periodStart`/`periodEnd`.
  */
 export async function listSubscriptions(
+  input: { page: number; pageSize: number; search?: string; status?: string },
   context: OperationAuthorizationContext,
-  filter?: { status?: string },
 ) {
   await authorizePlatformOperation(context, Permission.BILLING_READ);
-  const status = filter?.status?.toUpperCase() as SubscriptionStatus | undefined;
-  const subs = await SubscriptionService.listSubscriptions(
-    status ? { status } : undefined,
-  );
+  const filter: Record<string, unknown> = {};
+  if (input.status) filter.status = input.status.toUpperCase();
+  if (input.search) {
+    const tenantIds = (
+      await TenantModel.find({
+        $or: [
+          { name: { $regex: input.search, $options: "i" } },
+          { slug: { $regex: input.search, $options: "i" } },
+        ],
+      })
+        .select("_id")
+        .lean()
+        .exec()
+    ).map((tenant) => tenant._id);
+    if (tenantIds.length === 0) {
+      return {
+        subscriptions: [],
+        pagination: { ...input, totalRecords: 0, totalPages: 0 },
+      };
+    }
+    filter.tenantId = { $in: tenantIds };
+  }
+  const [subs, totalRecords] = await Promise.all([
+    SubscriptionModel.find(filter)
+      .sort({ updatedAt: -1 })
+      .skip((input.page - 1) * input.pageSize)
+      .limit(input.pageSize)
+      .exec(),
+    SubscriptionModel.countDocuments(filter),
+  ]);
   const populated = await SubscriptionModel.populate(subs, [
     { path: "tenantId", select: "name slug status" },
     { path: "packageId", select: "name code version monthlyPrice currency entitlements" },
   ]);
-  return populated.map((entry) => {
-    const value = typeof (entry as { toObject?: () => unknown }).toObject === "function"
-      ? (entry as unknown as { toObject: () => Record<string, unknown> }).toObject()
-      : entry as unknown as Record<string, unknown>;
-    const { providerCustomerId: _customer, providerSubscriptionId: _subscription, providerPriceId: _price, providerMetadata: _metadata, adminOperations: _operations, ...safe } = value;
-    return {
-      ...safe,
-      status: String(value.status ?? "").toLowerCase(),
-      version: Number(value.revision ?? 0),
-      providerManaged: Boolean(_customer || _subscription || _price),
-      providerState: { hasCustomer: Boolean(_customer), hasSubscription: Boolean(_subscription), hasPrice: Boolean(_price) },
-      currentPeriodStart: value.periodStart ?? null,
-      currentPeriodEnd: value.periodEnd ?? null,
-    };
-  });
+  return {
+    subscriptions: populated.map(mapSubscriptionView),
+    pagination: {
+      ...input,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / input.pageSize),
+    },
+  };
+}
+
+/**
+ * Map a populated subscription document to the platform-list item shape,
+ * stripping provider/admin internals and deriving display fields.
+ */
+function mapSubscriptionView(entry: unknown): Record<string, unknown> {
+  const value = typeof (entry as { toObject?: () => unknown }).toObject === "function"
+    ? (entry as unknown as { toObject: () => Record<string, unknown> }).toObject()
+    : entry as unknown as Record<string, unknown>;
+  const { providerCustomerId: _customer, providerSubscriptionId: _subscription, providerPriceId: _price, providerMetadata: _metadata, adminOperations: _operations, ...safe } = value;
+  return {
+    ...safe,
+    status: String(value.status ?? "").toLowerCase(),
+    version: Number(value.revision ?? 0),
+    providerManaged: Boolean(_customer || _subscription || _price),
+    providerState: { hasCustomer: Boolean(_customer), hasSubscription: Boolean(_subscription), hasPrice: Boolean(_price) },
+    currentPeriodStart: value.periodStart ?? null,
+    currentPeriodEnd: value.periodEnd ?? null,
+  };
 }
 
 const billingActor = (actor: Awaited<ReturnType<typeof authorizePlatformOperation>>) => ({

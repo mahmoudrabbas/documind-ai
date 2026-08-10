@@ -10,8 +10,8 @@ import {
   PlatformState,
   PlatformTable,
   StatusPill,
-  usePlatformData,
 } from "@/components/super-admin/platform-ui";
+import { usePlatformQuery } from "@/components/super-admin/use-platform-query";
 import {
   listPaymentEvents,
   reprocessPaymentEvent,
@@ -20,13 +20,16 @@ import {
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 
-const loadEvents = (signal?: AbortSignal) =>
-  listPaymentEvents({ page: 1, pageSize: 50 }, signal);
+const loadEvents = (
+  params: { page: number; pageSize: number },
+  signal?: AbortSignal,
+) => listPaymentEvents(params, signal);
 
 export default function PaymentDiagnosticsPage() {
   const permissions = usePermissions();
   const canManage = permissions.can(Permission.BILLING_MANAGE);
-  const state = usePlatformData(loadEvents);
+  const [page, setPage] = useState(1);
+  const state = usePlatformQuery(loadEvents, { page, pageSize: 50 });
   const [notice, setNotice] = useState("");
   const [reconciling, setReconciling] = useState(false);
   const [reconResult, setReconResult] = useState<{
@@ -148,57 +151,86 @@ export default function PaymentDiagnosticsPage() {
 
       <PlatformState
         loading={state.loading}
+        refreshing={state.refreshing}
         error={state.error}
         onRetry={state.reload}
       />
 
-      {state.data ? (
-        <PlatformTable
-          headers={[
-            "Event ID",
-            "Type",
-            "Status",
-            "Errors",
-            "Processed",
-            "Actions",
-          ]}
-          minWidth="900px"
-        >
-          {state.data.events.map((event) => (
-            <tr key={event._id}>
-              <td className="cell max-w-[200px] truncate font-mono text-xs">
-                {event.eventId}
-              </td>
-              <td className="cell">{event.eventType}</td>
-              <td className="cell">
-                <StatusPill value={event.status} />
-              </td>
-              <td className="cell max-w-[200px] truncate text-xs">
-                {event.processingErrors?.length
-                  ? event.processingErrors.join("; ")
-                  : "—"}
-              </td>
-              <td className="cell text-xs">
-                {event.processedAt
-                  ? new Date(event.processedAt).toLocaleString()
-                  : "—"}
-              </td>
-              <td className="cell">
-                {canManage && event.status === "failed" ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleReprocess(event.eventId)}
-                    className="rounded bg-primary px-2 py-1 text-xs font-bold text-on-primary"
-                  >
-                    Reprocess
-                  </button>
-                ) : (
-                  <span className="text-xs text-on-surface-variant">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </PlatformTable>
+      {state.data && state.data.events.length === 0 ? (
+        <DashboardPanel>
+          <p>No payment events found.</p>
+        </DashboardPanel>
+      ) : state.data ? (
+        <>
+          <PlatformTable
+            headers={[
+              "Event ID",
+              "Type",
+              "Status",
+              "Errors",
+              "Processed",
+              "Actions",
+            ]}
+            minWidth="900px"
+          >
+            {state.data.events.map((event) => (
+              <tr key={event._id}>
+                <td className="cell max-w-[200px] truncate font-mono text-xs">
+                  {event.eventId}
+                </td>
+                <td className="cell">{event.eventType}</td>
+                <td className="cell">
+                  <StatusPill value={event.status} />
+                </td>
+                <td className="cell max-w-[200px] truncate text-xs">
+                  {event.processingErrors?.length
+                    ? event.processingErrors.join("; ")
+                    : "—"}
+                </td>
+                <td className="cell text-xs">
+                  {event.processedAt
+                    ? new Date(event.processedAt).toLocaleString()
+                    : "—"}
+                </td>
+                <td className="cell">
+                  {canManage && event.status === "failed" ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleReprocess(event.eventId)}
+                      className="rounded bg-primary px-2 py-1 text-xs font-bold text-on-primary"
+                    >
+                      Reprocess
+                    </button>
+                  ) : (
+                    <span className="text-xs text-on-surface-variant">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </PlatformTable>
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => value - 1)}
+              className="rounded border px-3 py-2 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span>
+              Page {state.data.pagination.page} of{" "}
+              {state.data.pagination.totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= state.data.pagination.totalPages}
+              onClick={() => setPage((value) => value + 1)}
+              className="rounded border px-3 py-2 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </>
       ) : null}
     </DashboardPage>
   );
