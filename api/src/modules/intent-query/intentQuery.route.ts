@@ -8,6 +8,9 @@ import type { IntentClassValue, QueryRouteValue } from "./intentQuery.types.js";
  */
 export function deriveQueryRoute(intent: IntentClassValue | unknown, clarificationNeeded: boolean): QueryRouteValue {
   switch (intent) {
+    case "assistant_identity":
+    case "assistant_capabilities":
+      return "assistant";
     case "social":
       return "social";
     case "unsafe":

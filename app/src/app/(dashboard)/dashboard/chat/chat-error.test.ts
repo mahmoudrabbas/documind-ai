@@ -44,7 +44,7 @@ describe("chat provider error presentation", () => {
     const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
     expect(source).toContain("isTyping || retryAfterSeconds !== null");
     expect(source).toContain("disabled={!input.trim() || isTyping || retryAfterSeconds !== null}");
-    expect(source).toContain('tPlural("chat.retryInSeconds", retryAfterSeconds)');
+    expect(source).toContain('t("chat.error.retryCountdown"');
   });
 
   it("surfaces entitlement denials with an UpgradePrompt banner that keeps the conversation intact", async () => {

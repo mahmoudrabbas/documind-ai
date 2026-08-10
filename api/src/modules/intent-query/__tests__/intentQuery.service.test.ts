@@ -99,6 +99,23 @@ function scriptedIntentModel(
   };
 }
 
+function malformedIntentModel(output: string | Error): ModelAdapter {
+  const base = new FakeModelAdapter();
+  return {
+    providerKey: "malformed-intent",
+    async complete(params) {
+      if (output instanceof Error) throw output;
+      const response = await base.complete(params);
+      return {
+        ...response,
+        choices: response.choices.map((choice, index) => index === 0
+          ? { ...choice, message: { ...choice.message, content: output } }
+          : choice),
+      };
+    },
+  };
+}
+
 async function createTestDocWithPolicy(
   forTenantId: string,
   userId: string,
@@ -592,6 +609,60 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
     assert.equal(plan.clarification, null);
     assert.equal(plan.route, "unsupported");
     assert.equal(plan.detectedIntent, "unsupported");
+  });
+
+  await t.test("recovers obvious enterprise intent across provider failure shapes", async () => {
+    const cases: ReadonlyArray<readonly [string, string | Error]> = [
+      ["What is the hotel limit?", new Error("simulated timeout")],
+      ["What is the P1 response time?", "{not-json"],
+      ["Is MFA mandatory for VPN?", JSON.stringify({ detectedIntent: "enterprise_fact" })],
+      ["When is a purchase order required?", JSON.stringify({ detectedIntent: "knowledge_question" })],
+      ["ما زمن الاستجابة الأولية لـ P1؟", "{malformed"],
+      ["شكرا، كام حد الفندق؟", new Error("provider unavailable")],
+    ];
+
+    for (const [question, output] of cases) {
+      const fallbackService = new IntentQueryService(
+        malformedIntentModel(output),
+        fakeConvoAdapter,
+      );
+      const plan = await fallbackService.analyzeQuery(
+        { question },
+        companyAdminContext,
+      );
+      assert.equal(plan.processingMetadata.fallbackUsed, true, question);
+      assert.equal(plan.detectedIntent, "knowledge_question", question);
+      assert.equal(plan.route, "rag", question);
+      assert.ok(plan.semanticQueries.length > 0, question);
+    }
+  });
+
+  await t.test("provider failure remains source-less for general, social, and assistant turns", async () => {
+    for (const question of ["What is VPN?", "What is procurement?", "asdasdasd"]) {
+      const fallbackService = new IntentQueryService(
+        malformedIntentModel(new Error("provider unavailable")),
+        fakeConvoAdapter,
+      );
+      const plan = await fallbackService.analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.route, "unsupported", question);
+      assert.deepEqual(plan.semanticQueries, [], question);
+    }
+
+    for (const question of ["Thanks", "شجرا", "?! 🎉"]) {
+      const plan = await new IntentQueryService(
+        malformedIntentModel(new Error("must not be called")),
+        fakeConvoAdapter,
+      ).analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.route, "social", question);
+    }
+
+    for (const question of ["Who are you?", "انت مين؟"]) {
+      const plan = await new IntentQueryService(
+        malformedIntentModel(new Error("must not be called")),
+        fakeConvoAdapter,
+      ).analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.route, "assistant", question);
+    }
   });
 
   await t.test("should preserve a clear authorized document constraint when the LLM fails", async () => {

@@ -112,13 +112,13 @@ describe("ConflictDetector", () => {
     assert.equal(conflicts[0]!.itemIndices.length, 2);
   });
 
-  it("does not flag different documents as conflicting", () => {
+  it("detects aligned opposing assertions across different documents", () => {
     const items = [
       { text: "Overtime is paid at 1.5x rate", documentId: "d1", documentVersionId: "v1" },
       { text: "Overtime is not paid at any rate", documentId: "d2", documentVersionId: "v1" },
     ];
     const conflicts = detectConflicts(items);
-    assert.equal(conflicts.length, 0);
+    assert.equal(conflicts.length, 1);
   });
 
   it("detects value contradictions", () => {
@@ -130,7 +130,7 @@ describe("ConflictDetector", () => {
     assert.ok(conflicts.length > 0);
   });
 
-  it("detects version conflicts with topic overlap", () => {
+  it("detects actual aligned value conflicts across versions", () => {
     const items = [
       { text: "Annual leave is 30 days per year", documentId: "d1", documentVersionId: "v1" },
       { text: "Annual leave is 21 days per year", documentId: "d1", documentVersionId: "v2" },
@@ -356,6 +356,90 @@ describe("FakeRerankerAdapter - Phase 2", () => {
     });
 
     assert.ok(result.scoreExplanation.includes("conflict"));
+  });
+
+  it("keeps same-document unrelated numeric rules sufficient for the target metric", async () => {
+    const candidates = [
+      makeCandidate({
+        chunkId: "hotel",
+        text: "Hotel maximum is USD 180 per night.",
+        score: 0.95,
+      }),
+      makeCandidate({
+        chunkId: "meal",
+        text: "Meal maximum is USD 60 per day.",
+        score: 0.8,
+      }),
+      makeCandidate({
+        chunkId: "receipt",
+        text: "Receipts are required above USD 25.",
+        score: 0.75,
+      }),
+      makeCandidate({
+        chunkId: "deadline",
+        text: "Expense reports must be submitted within 10 days.",
+        score: 0.75,
+      }),
+    ];
+
+    const result = await adapter.rerank({
+      candidates,
+      queryText: "What is the hotel limit?",
+    });
+
+    assert.deepEqual(result.conflictGroups, []);
+    assert.equal(result.sufficiency.level, "SUFFICIENT");
+    assert.equal(result.items[0]?.citationAnchor.chunkId, "hotel");
+  });
+
+  it("marks aligned cross-document numeric rules conflicting", async () => {
+    const result = await adapter.rerank({
+      candidates: [
+        makeCandidate({
+          documentId: "remote-v1",
+          documentVersionId: "v1",
+          text: "Remote work is allowed 1 day per week.",
+          score: 0.9,
+        }),
+        makeCandidate({
+          documentId: "remote-v2",
+          documentVersionId: "v2",
+          text: "Remote work is allowed 2 days per week.",
+          score: 0.9,
+        }),
+      ],
+      queryText: "How many remote work days are allowed?",
+    });
+
+    assert.equal(result.conflictGroups.length, 1);
+    assert.equal(result.sufficiency.level, "CONFLICTING");
+  });
+
+  it("deduplicates normalized-identical evidence across document versions without conflict", async () => {
+    const result = await adapter.rerank({
+      candidates: [
+        makeCandidate({
+          chunkId: "approval-v1",
+          documentId: "policy-v1",
+          documentVersionId: "v1",
+          text: "Manager approval is required.",
+          score: 0.95,
+        }),
+        makeCandidate({
+          chunkId: "approval-v2",
+          documentId: "policy-v2",
+          documentVersionId: "v2",
+          text: " Manager   approval is required!!! ",
+          score: 0.9,
+        }),
+      ],
+      queryText: "Is manager approval required?",
+    });
+
+    assert.deepEqual(result.conflictGroups, []);
+    assert.equal(result.sufficiency.level, "SUFFICIENT");
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0]?.citationAnchor.chunkId, "approval-v1");
   });
 });
 

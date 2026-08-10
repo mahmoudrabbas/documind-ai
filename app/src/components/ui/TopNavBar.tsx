@@ -144,7 +144,6 @@ export function TopNavBar({
       <div className="flex min-w-0 items-center gap-1 sm:gap-md">
         <div className="hidden items-center gap-xs sm:flex lg:me-md">
           <LanguageSwitcher />
-
           <NotificationsBell />
 
           {settingsHref && (

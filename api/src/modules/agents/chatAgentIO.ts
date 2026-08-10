@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AssistantIntentKind,
   ClarificationRequest,
   DetectedEntity,
   IntentClass,
@@ -45,6 +46,7 @@ export const IntentAgentOutputSchema = z
     language: QueryLanguage,
     route: QueryRoute,
     intent: IntentClass,
+    assistantKind: AssistantIntentKind.nullable().default(null),
     intentConfidence: z.number().min(0).max(1),
     referencedDocumentIds: boundedIdArray(20).default([]),
     clarificationNeeded: z.boolean().default(false),
@@ -113,6 +115,7 @@ export const CitationVerifierInputSchema = z
     citedChunkIds: boundedIdArray(50),
     approvedEvidenceIds: boundedIdArray(100).optional(),
     answerText: z.string().max(20_000).optional(),
+    questionText: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 
@@ -122,6 +125,7 @@ export const CitationVerifierReasonCode = z.enum([
   "CITATIONS_VERIFIED",
   "MISSING_CITATIONS",
   "UNSUPPORTED_CLAIMS",
+  "VERIFICATION_BOUNDS_EXCEEDED",
   "CITATIONS_SKIPPED",
 ]);
 export type CitationVerifierReasonCodeValue = z.infer<

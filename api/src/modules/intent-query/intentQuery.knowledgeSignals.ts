@@ -17,9 +17,32 @@ const KNOWLEDGE_TERMS = new Set([
   "procedure", "process", "rule", "rules", "leave", "vacation", "salary",
   "benefit", "benefits", "insurance", "probation", "employee", "employees",
   "contract", "article", "section", "code", "working", "hours", "hr",
+  "limit", "limits", "allowance", "allowances", "eligibility", "requirement",
+  "requirements", "approval", "approvals", "deadline", "deadlines",
+  "reimbursement", "receipt", "receipts", "expense", "expenses", "travel",
+  "purchase", "purchases", "quotation", "quotations", "quote", "quotes", "remote",
   "سياسه", "سياسات", "وثيقه", "وثائق", "مستند", "مستندات", "ملف", "دليل",
-  "اجازه", "اجازات", "راتب", "رواتب", "تامين", "موظف", "موظفين", "عقد",
+  "اجازه", "الاجازه", "اجازات", "الاجازات", "راتب", "رواتب", "تامين", "موظف", "الموظف", "موظفين", "الموظفين", "عقد",
   "ماده", "بند", "لائحه", "لوائح", "دوام", "ساعات", "ترقيه", "تعويض",
+  "حد", "بدل", "اهليه", "شرط", "شروط", "موافقه", "مهله", "مصروفات",
+  "مصروف", "ايصال", "سفر", "فندق", "وجبات", "مشتريات", "شراء", "عروض",
+  "اسعار", "استجابه", "استعاده", "دعم", "حادث", "وصول", "صلاحيات",
+]);
+
+const ENTERPRISE_SUBJECT_TERMS = new Set([
+  "hotel", "meal", "purchase", "procurement", "quotation", "quote", "remote",
+  "work", "leave", "sla", "response", "restoration", "support", "incident",
+  "p1", "p2", "p3", "mfa", "vpn", "password", "security", "access",
+  "فندق", "وجبات", "مشتريات", "شراء", "عروض", "عمل", "العمل", "اجازه", "استجابه",
+  "استعاده", "دعم", "حادث", "امن", "امان", "وصول", "صلاحيات",
+]);
+
+const CONTROL_TERMS = new Set([
+  "policy", "rule", "limit", "allowance", "eligibility", "requirement", "required",
+  "mandatory", "approval", "deadline", "reimbursement", "receipt", "expense",
+  "allowed", "maximum", "minimum", "threshold", "سياسه", "قواعد", "حد", "بدل",
+  "اهليه", "شرط", "موافقه", "مهله", "مصروفات", "ايصال", "اجباري", "الزامي",
+  "لازم", "مسموح", "اقصي", "ادني",
 ]);
 
 const QUESTION_TERMS = new Set([
@@ -29,7 +52,7 @@ const QUESTION_TERMS = new Set([
 
 const REQUEST_TERMS = new Set([
   "show", "find", "explain", "summarize", "compare", "list", "locate", "upload", "delete",
-  "اعرض", "اجد", "اشرح", "لخص", "قارن", "اذكر", "اريد", "عايز", "احذف", "ارفع",
+  "اعرض", "اجد", "اشرح", "لخص", "قارن", "اذكر", "قولي", "اريد", "عايز", "احذف", "ارفع",
 ]);
 
 const CONTEXTUAL_ACKNOWLEDGEMENTS = new Set([
@@ -94,6 +117,21 @@ export function assessPositiveKnowledgeSeeking(raw: string): KnowledgeSignalAsse
   const hasRequestShape = tokens.some((token) => REQUEST_TERMS.has(token));
   const hasDocumentReference = /(?:\.[a-z0-9]{2,8}\b|\bdoc[-_]?\w+\b)/iu.test(stripped.text);
   const hasQuestionMark = /[?؟]/u.test(stripped.text);
+  const hasEnterpriseSubject = tokens.some((token) => ENTERPRISE_SUBJECT_TERMS.has(token));
+  const hasControlTerm = tokens.some((token) => CONTROL_TERMS.has(token));
+  const normalized = prepared.elongationReducedText;
+  const hasStructuredEnterpriseSignal = hasEnterpriseSubject && (
+    hasControlTerm ||
+    /\bp[123]\b.*\b(?:response|restoration)\s+(?:time|target)\b/u.test(normalized) ||
+    /\b(?:is|are|when\s+is|when\s+are)\b.*\b(?:required|mandatory|allowed)\b/u.test(normalized) ||
+    /\bhow\s+(?:many|long)\b.*\b(?:allowed|take|takes|days?|hours?|minutes?)\b/u.test(normalized) ||
+    /(?:زمن|وقت)\s+الاستجابه/u.test(normalized) ||
+    /(?:هل|امتي)\s+.*(?:لازم|اجباري|الزامي|مطلوب|مسموح)/u.test(normalized) ||
+    /(?:كام|كم)\s+(?:هو\s+)?(?:حد|يوم|وقت)/u.test(normalized)
+  );
+  const isBareGeneralDefinition =
+    /^(?:what\s+is|explain|define)\s+(?:a\s+|an\s+|the\s+)?(?:vpn|mfa|procurement|sla|hotel\s+management)(?:\s+in\s+general)?$/u.test(normalized) ||
+    /^(?:ما|ماذا)\s+(?:هو|هي)\s+(?:vpn|mfa|sla|المشتريات)$/u.test(normalized);
   const substantiveTokens = tokens.filter(
     (token) => !QUESTION_TERMS.has(token) && !OVERLAP_STOP_WORDS.has(token),
   );
@@ -103,10 +141,13 @@ export function assessPositiveKnowledgeSeeking(raw: string): KnowledgeSignalAsse
   if (hasDocumentReference) reasons.push("DOCUMENT_REFERENCE");
   if (hasQuestionShape || hasQuestionMark) reasons.push("QUESTION_SHAPE");
   if (hasRequestShape) reasons.push("REQUEST_SHAPE");
+  if (hasStructuredEnterpriseSignal) reasons.push("ENTERPRISE_STRUCTURE");
+  if (isBareGeneralDefinition) reasons.push("GENERAL_DEFINITION");
 
   const positive =
+    !isBareGeneralDefinition &&
     substantiveTokens.length > 0 &&
-    (hasKnowledgeTerm || hasDocumentReference) &&
+    (hasKnowledgeTerm || hasDocumentReference || hasStructuredEnterpriseSignal) &&
     (hasQuestionShape || hasQuestionMark || hasRequestShape);
 
   return {

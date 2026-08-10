@@ -103,6 +103,22 @@ describe("compliance.service — deterministic gate", () => {
     assert.deepEqual(out.sourceIds, []);
   });
 
+  it("semantic verification bounds overflow refuses the candidate and exposes no sources", () => {
+    const out = evaluateCompliance(
+      groundedInput({
+        citationVerification: {
+          verified: false,
+          validatedCitationIds: [],
+          reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
+        },
+      }),
+    );
+    assert.equal(out.action, "refuse");
+    assert.equal(out.reasonCode, "UNVERIFIED_GROUNDED_RESPONSE");
+    assert.equal(out.answer, insufficientEvidenceMessage("en"));
+    assert.deepEqual(out.sourceIds, []);
+  });
+
   it("verified=false + citationsEnabled=true => refuse", () => {
     const out = evaluateCompliance(
       groundedInput({

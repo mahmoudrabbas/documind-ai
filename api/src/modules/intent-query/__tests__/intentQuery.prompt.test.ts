@@ -7,7 +7,7 @@ import {
 } from "../intentQuery.prompt.js";
 
 test("intent prompts distinguish authorized sensitive lookups from malicious requests", () => {
-  assert.equal(INTENT_PROMPT_VERSION, "1.4.0");
+  assert.equal(INTENT_PROMPT_VERSION, "1.5.0");
 
   for (const prompt of [INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR]) {
     assert.match(prompt, /access code|رمز الوصول/);
@@ -47,6 +47,8 @@ test("English and Arabic prompts expose matching social and uncertainty boundari
     assert.match(prompt, /شكرا يا قائد/);
     assert.match(prompt, /thanks يا قائد/);
     assert.match(prompt, /unsupported/);
+    assert.match(prompt, /assistant_identity/);
+    assert.match(prompt, /assistant_capabilities/);
   }
   assert.match(INTENT_SYSTEM_PROMPT_AR, /كام يوم إجازة سنوية/);
   assert.match(INTENT_SYSTEM_PROMPT, /كام يوم إجازة سنوية/);

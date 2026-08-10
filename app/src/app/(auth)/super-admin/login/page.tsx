@@ -11,6 +11,7 @@ import {
 import { AuthHeroPanel } from "@/components/ui/AuthHeroPanel";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 import { useI18n } from "@/providers/i18n-provider";
 
 type Response = {
@@ -87,17 +88,7 @@ export default function SuperAdminLoginPage() {
 
         {/* Brand Header */}
         <div className="mb-12">
-          <div className="mb-sm flex items-center gap-base">
-            <span
-              className="material-symbols-outlined text-3xl text-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              neurology
-            </span>
-            <h1 className="text-headline-md font-bold tracking-tight text-primary">
-              DocuMind AI
-            </h1>
-          </div>
+          <DocuMindLogo className="mb-sm" />
           <p className="max-w-sm text-body-md text-on-surface-variant">
             {t("auth.platformAdmin")}
           </p>

@@ -16,6 +16,7 @@ import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { AuthHeroPanel } from "@/components/ui";
 import { validateEmail, validateCompanySlug } from "@/lib/validation";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 
 type LoginResponse = {
   success: true;
@@ -206,17 +207,7 @@ export default function LoginPage() {
             </span>
             {t("auth.backToHome")}
           </Link>
-          <div className="mb-sm flex items-center gap-base">
-            <span
-              className="material-symbols-outlined text-3xl text-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              neurology
-            </span>
-            <h1 className="text-headline-md font-bold tracking-tight text-primary">
-              DocuMind AI
-            </h1>
-          </div>
+          <DocuMindLogo className="mb-sm" />
           <p className="max-w-sm text-body-md text-on-surface-variant">
             {t("auth.tagline")}
           </p>

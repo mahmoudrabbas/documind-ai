@@ -84,22 +84,23 @@ export function FeedbackWidget({
           <span className="text-[11px] font-medium text-on-surface-variant">
             {t("feedback.wasHelpful")}
           </span>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               id={`thumbs-up-${messageId}`}
               disabled={submitting}
               onClick={() => handleRate("thumbs_up")}
-              aria-label="Thumbs Up"
-              title="Helpful response"
-              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all duration-150 active:scale-95 ${
+              aria-label={t("chat.feedback.thumbsUpAria")}
+              aria-pressed={rating === "thumbs_up"}
+              title={t("chat.feedback.helpfulTitle")}
+              className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${
                 rating === "thumbs_up"
-                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-600 shadow-sm dark:text-emerald-400"
-                  : "border-outline-variant/30 text-on-surface-variant hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high hover:text-on-surface"
               }`}
             >
               <span
-                className="material-symbols-outlined text-[16px]"
+                className="material-symbols-outlined text-[14px]"
                 style={rating === "thumbs_up" ? { fontVariationSettings: "'FILL' 1" } : undefined}
               >
                 thumb_up
@@ -112,16 +113,17 @@ export function FeedbackWidget({
               id={`thumbs-down-${messageId}`}
               disabled={submitting}
               onClick={() => handleRate("thumbs_down")}
-              aria-label="Thumbs Down"
-              title="Not helpful response"
-              className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all duration-150 active:scale-95 ${
+              aria-label={t("chat.feedback.thumbsDownAria")}
+              aria-pressed={rating === "thumbs_down"}
+              title={t("chat.feedback.notHelpfulTitle")}
+              className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10.5px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${
                 rating === "thumbs_down"
-                  ? "border-rose-500/40 bg-rose-500/15 text-rose-600 shadow-sm dark:text-rose-400"
-                  : "border-outline-variant/30 text-on-surface-variant hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400"
+                  ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                  : "border-outline-variant/20 text-on-surface-variant/70 hover:bg-surface-container-high hover:text-on-surface"
               }`}
             >
               <span
-                className="material-symbols-outlined text-[16px]"
+                className="material-symbols-outlined text-[14px]"
                 style={rating === "thumbs_down" ? { fontVariationSettings: "'FILL' 1" } : undefined}
               >
                 thumb_down
@@ -140,13 +142,13 @@ export function FeedbackWidget({
       </div>
 
       {errorMessage && (
-        <p className="mt-1 text-[11px] font-semibold text-error">{errorMessage}</p>
+        <p className="text-[11px] font-medium text-error">{errorMessage}</p>
       )}
 
       {showCategoryMenu && (
         <form
           onSubmit={handleSubmitDetails}
-          className="mt-2 flex flex-col gap-2.5 rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/80 p-3.5 shadow-sm backdrop-blur-sm transition-all"
+          className="flex flex-col gap-2.5 rounded-xl border border-outline-variant/20 bg-surface-container-lowest/80 p-3"
           id={`feedback-form-${messageId}`}
         >
           <div className="flex flex-col gap-1">
@@ -157,7 +159,7 @@ export function FeedbackWidget({
               id={`category-select-${messageId}`}
               value={category}
               onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
-              className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">{t("feedback.selectCategory")}</option>
               <option value="inaccurate">{t("feedback.inaccurate")}</option>
@@ -182,21 +184,21 @@ export function FeedbackWidget({
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex flex-wrap justify-end gap-2 pt-0.5">
             <button
               type="button"
               onClick={() => {
                 setShowCategoryMenu(false);
                 sendFeedback("thumbs_down", undefined, undefined);
               }}
-              className="rounded-xl border border-outline-variant/40 px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container"
+              className="rounded-lg border border-outline-variant/30 px-3 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container"
             >
               {t("feedback.skip")}
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-primary px-4 py-1.5 text-[11px] font-semibold text-on-primary shadow-sm transition-all hover:bg-primary/90 active:scale-95 disabled:opacity-50"
+              className="rounded-lg bg-primary px-3.5 py-1.5 text-[11px] font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {submitting ? t("feedback.submitting") : t("feedback.submit")}
             </button>

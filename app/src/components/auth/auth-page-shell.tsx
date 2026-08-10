@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 
 export function AuthPageShell({
   children,
@@ -29,12 +30,10 @@ export function AuthPageShell({
 export function AuthBrand({ label }: { label?: string }) {
   return (
     <div className="w-full text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-base font-bold text-white shadow-sm">
-        DM
-      </div>
-      <p className="mt-3 text-sm font-bold text-slate-950">
-        {label || "DocuMind AI"}
-      </p>
+      <DocuMindLogo
+        aria-label={label || "DocuMind AI"}
+        className="mx-auto justify-center"
+      />
     </div>
   );
 }
