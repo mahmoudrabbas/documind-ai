@@ -112,7 +112,14 @@ export function useDocuments() {
 
   async function upload(
     file: File,
-    metadata: { title: string; description?: string; tags?: string },
+    metadata: {
+      title: string;
+      description?: string;
+      tags?: string;
+      categoryId?: string;
+      departmentId?: string;
+      classificationId?: string;
+    },
   ) {
     setIsUploading(true);
     setUploadError(null);

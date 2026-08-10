@@ -9,6 +9,7 @@ import { createEntitlementGuard, createEntitlementCheckGuard } from "../entitlem
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadDocumentController,
+  uploadOptionsController,
   listDocumentsController,
   getDocumentController,
   updateDocumentMetadataController,
@@ -258,6 +259,74 @@ const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+
+/**
+ * @openapi
+ * /documents/upload-options:
+ *   get:
+ *     summary: Get upload form options
+ *     description: Returns the active taxonomy options (classifications,
+ *       categories, departments) and the upload limits for the upload form.
+ *       Requires only DOCUMENTS_CREATE; it intentionally does not require
+ *       COMPANY_SETTINGS_READ.
+ *     tags: [Documents]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Upload form options
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     taxonomy:
+ *                       type: object
+ *                       properties:
+ *                         classifications:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                               level: { type: string }
+ *                         categories:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                         departments:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                     upload:
+ *                       type: object
+ *                       properties:
+ *                         maxFileSizeBytes:
+ *                           type: integer
+ *                         allowedMimeTypes:
+ *                           type: array
+ *                           items: { type: string }
+ *                         fileExtensions:
+ *                           type: array
+ *                           items: { type: string }
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get("/upload-options", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), uploadOptionsController);
 
 router.post("/access-policy/batch/preview", authenticate, tenantScoping, requirePolicyManagement, batchPreviewPolicyController);
 router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePolicyManagement, batchApplyPolicyController);

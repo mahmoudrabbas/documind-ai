@@ -31,6 +31,12 @@ import {
   createVersion,
   findVersionsByDocument,
 } from "./documentVersion.repository.js";
+import { resolveUploadTaxonomy } from "./documents.uploadTaxonomy.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
+import { config } from "../../config/index.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   validateUploadDocumentInput,
   validateListDocumentsInput,
@@ -70,6 +76,15 @@ type DocumentActor = {
 function computeChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
+
+/** File extensions surfaced to the upload form for each allowed MIME type. */
+const MIME_TYPE_EXTENSIONS: Record<string, string> = {
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/msword": "doc",
+};
 
 function sanitizeFilename(name: string): string {
   return name
@@ -173,6 +188,7 @@ export function createDocumentServiceProviders(deps: {
     await checkUploadAllowed(tenantId, file.size);
 
     const metadata = validateUploadDocumentInput(metadataInput);
+    const taxonomy = await resolveUploadTaxonomy(tenantId, metadata);
     const safeName = sanitizeFilename(file.originalname);
 
     const checksum = computeChecksum(file.buffer);
@@ -209,9 +225,12 @@ export function createDocumentServiceProviders(deps: {
           description: metadata.description ?? "",
           tags: metadata.tags ?? [],
         },
-        category: null,
-        department: null,
-        classification: "internal",
+        category: taxonomy.category,
+        department: taxonomy.department,
+        classification: taxonomy.classification ?? "internal",
+        categoryId: taxonomy.categoryId ?? undefined,
+        departmentId: taxonomy.departmentId ?? undefined,
+        classificationId: taxonomy.classificationId ?? undefined,
         owner: actor.userId as unknown as DocumentDocument["owner"],
         effectiveDate: null,
         expiryDate: null,
@@ -750,6 +769,43 @@ export function createDocumentServiceProviders(deps: {
     });
   }
 
+  async function uploadOptions(tenantId: string) {
+    const [classifications, categories, departments] = await Promise.all([
+      DocumentClassificationModel.find({ tenantId, status: "active" }).select("name level").sort({ name: 1 }).lean().exec(),
+      DocumentCategoryModel.find({ tenantId, status: "active" }).select("name").sort({ name: 1 }).lean().exec(),
+      DepartmentModel.find({ tenantId, status: "active" }).select("name").sort({ name: 1 }).lean().exec(),
+    ]);
+
+    const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
+    const fileExtensions = allowedMimeTypes
+      .map((mime) => MIME_TYPE_EXTENSIONS[mime])
+      .filter((ext): ext is string => Boolean(ext))
+      .map((ext) => `.${ext}`);
+
+    // The entitlement fileSizeMb limit is authoritative when it is stricter
+    // than the global upload ceiling (multer enforces the global ceiling).
+    let maxFileSizeBytes = config.MAX_FILE_SIZE_BYTES;
+    try {
+      const fileSizeMb = await getEntitlementService().getEffectiveLimit(tenantId, "fileSizeMb");
+      maxFileSizeBytes = Math.min(config.MAX_FILE_SIZE_BYTES, fileSizeMb * 1024 * 1024);
+    } catch {
+      // Fall back to the global upload limit when no entitlement snapshot exists.
+    }
+
+    return {
+      taxonomy: {
+        classifications: classifications.map((c) => ({ id: c._id.toString(), name: c.name, level: c.level })),
+        categories: categories.map((c) => ({ id: c._id.toString(), name: c.name })),
+        departments: departments.map((d) => ({ id: d._id.toString(), name: d.name })),
+      },
+      upload: {
+        maxFileSizeBytes,
+        allowedMimeTypes,
+        fileExtensions,
+      },
+    };
+  }
+
   async function listVersions(
     documentId: string,
     tenantId: string,
@@ -781,5 +837,6 @@ export function createDocumentServiceProviders(deps: {
     softDeleteDocument,
     permanentDeleteDocument,
     listVersions,
+    uploadOptions,
   };
 }

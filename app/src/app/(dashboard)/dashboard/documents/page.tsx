@@ -12,6 +12,8 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Select } from "@/components/ui/Select";
+import { Alert } from "@/components/ui/Alert";
 import {
   DashboardPage,
   DashboardPageHeader,
@@ -25,7 +27,10 @@ import {
   validateFileType,
   validateFileSize,
   getFileSizeLabel,
+  getFileSizeParts,
 } from "@/lib/validation";
+import { getDocumentUploadOptions } from "@/services/documents.service";
+import type { DocumentUploadOptionsResponse } from "@/types/api/documents.types";
 import { formatFileType } from "@/lib/utils";
 
 const STATUS_BADGE_MAP: Record<string, string> = {
@@ -76,7 +81,11 @@ export default function DocumentsPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [tags, setTags] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [classificationId, setClassificationId] = useState("");
+  const [uploadOptions, setUploadOptions] = useState<DocumentUploadOptionsResponse["data"] | null>(null);
+  const [optionsLoadFailed, setOptionsLoadFailed] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -90,6 +99,33 @@ export default function DocumentsPage() {
   const searchParams = useSearchParams();
   const deepLinkId = searchParams.get("id");
   const deepLinkPage = searchParams.get("page");
+
+  useEffect(() => {
+    if (!canCreate) return;
+    let cancelled = false;
+
+    getDocumentUploadOptions()
+      .then((response) => {
+        if (cancelled) return;
+        setUploadOptions(response.data);
+        setOptionsLoadFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setOptionsLoadFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canCreate]);
+
+  function retryLoadUploadOptions() {
+    setOptionsLoadFailed(false);
+    setUploadOptions(null);
+    getDocumentUploadOptions()
+      .then((response) => setUploadOptions(response.data))
+      .catch(() => setOptionsLoadFailed(true));
+  }
 
   useEffect(() => { setSelectedIds([]); setShowBatchPolicy(false); }, [filters, page]);
 
@@ -108,11 +144,26 @@ export default function DocumentsPage() {
     updateFilters({ ...filters, search: searchInput || undefined, isArchived: showArchived });
   }, [searchInput, showArchived, filters, updateFilters]);
 
+  const uploadConfig = uploadOptions?.upload;
+  const maxFileSizeBytes = uploadConfig?.maxFileSizeBytes ?? 50 * 1024 * 1024;
+  const fileExtensions = uploadConfig?.fileExtensions ?? [".pdf", ".docx", ".doc", ".txt", ".md"];
+  const formatsLabel = fileExtensions
+    .map((ext) => ext.replace(/^\./, "").toUpperCase())
+    .join(", ");
+  const maxSizeParts = getFileSizeParts(maxFileSizeBytes);
+  const maxSizeLabel = `${maxSizeParts.value} ${t(maxSizeParts.unitKey)}`;
+  const fileRequirementsText = t("documents.fileRequirements", {
+    formats: formatsLabel,
+    maxSize: maxSizeLabel,
+  });
+
   function resetForm() {
     setSelectedFiles([]);
     setTitle("");
     setDescription("");
-    setTags("");
+    setCategoryId("");
+    setDepartmentId("");
+    setClassificationId("");
     setFileError(null);
     setTitleError(null);
   }
@@ -123,15 +174,17 @@ export default function DocumentsPage() {
 
     setFileError(null);
 
-    const typeErr = validateFileType(file);
+    const typeErr = uploadConfig?.allowedMimeTypes
+      ? validateFileType(file, uploadConfig.allowedMimeTypes)
+      : validateFileType(file);
     if (typeErr) {
       setFileError(t(typeErr));
       return;
     }
 
-    const sizeErr = validateFileSize(file);
+    const sizeErr = validateFileSize(file, maxFileSizeBytes);
     if (sizeErr) {
-      setFileError(t(sizeErr));
+      setFileError(t(sizeErr, { maxSize: maxSizeLabel }));
       return;
     }
 
@@ -153,15 +206,12 @@ export default function DocumentsPage() {
       return;
     }
 
-    const tagsArray = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-
     await upload(file, {
       title: title.trim(),
       description: description.trim(),
-      tags: tagsArray.join(","),
+      categoryId: categoryId || undefined,
+      departmentId: departmentId || undefined,
+      classificationId: classificationId || undefined,
     });
   }
 
@@ -199,14 +249,24 @@ export default function DocumentsPage() {
               <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">{t("documents.newUpload")}</div>
             </div>
 
+            {optionsLoadFailed && !uploadOptions ? (
+              <Alert variant="warning" title={t("documents.taxonomyOptionsErrorTitle")} className="mb-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{t("documents.taxonomyOptionsError")}</span>
+                  <Button variant="outline" size="sm" onClick={retryLoadUploadOptions}>{t("documents.retryUploadOptions")}</Button>
+                </div>
+              </Alert>
+            ) : null}
+
             <FileDropzone
               onFilesSelected={handleFilesSelected}
               disabled={isUploading}
               error={fileError}
+              accept={fileExtensions.join(",")}
               dragDropText={t("documents.dragDropText")}
               dragDropActiveText={t("documents.dragDropActive")}
               browseText={t("documents.browseFiles")}
-              fileRequirementsText={t("documents.fileRequirements")}
+              fileRequirementsText={fileRequirementsText}
             />
 
             {selectedFiles.length > 0 && !isUploading ? (
@@ -235,18 +295,40 @@ export default function DocumentsPage() {
                     className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
-                <div>
-                  <label htmlFor="doc-tags" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataTags")}</label>
-                  <input
-                    id="doc-tags"
-                    type="text"
-                    value={tags}
-                    onChange={(e) => setTags(e.target.value)}
-                    placeholder={t("documents.metadataTagsPlaceholder")}
-                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                  />
-                  <p className="mt-1 text-xs text-outline">{t("documents.metadataTagsHint")}</p>
-                </div>
+                {uploadOptions ? (
+                  <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
+                    <div className="mb-3">
+                      <p className="text-label-md font-bold text-on-surface">{t("documents.uploadTaxonomyTitle")}</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">{t("documents.uploadTaxonomyHint")}</p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <Select
+                        label={t("documents.classificationSensitivity")}
+                        value={classificationId}
+                        onChange={(e) => setClassificationId(e.target.value)}
+                        placeholder={t("documents.notAssigned")}
+                        options={uploadOptions.taxonomy.classifications.map((item) => ({
+                          value: item.id,
+                          label: item.level ? `${item.name} (${codeLabel(t, "documents.classificationLevel", item.level)})` : item.name,
+                        }))}
+                      />
+                      <Select
+                        label={t("documents.categoryLabel")}
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        placeholder={t("documents.notAssigned")}
+                        options={uploadOptions.taxonomy.categories.map((item) => ({ value: item.id, label: item.name }))}
+                      />
+                      <Select
+                        label={t("documents.departmentLabel")}
+                        value={departmentId}
+                        onChange={(e) => setDepartmentId(e.target.value)}
+                        placeholder={t("documents.notAssigned")}
+                        options={uploadOptions.taxonomy.departments.map((item) => ({ value: item.id, label: item.name }))}
+                      />
+                    </div>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap gap-3 pt-2">
                   <Button onClick={handleUpload}>{t("documents.upload")}</Button>
                   <Button variant="ghost" onClick={resetForm}>{t("common.cancel")}</Button>

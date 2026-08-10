@@ -57,6 +57,14 @@ export async function uploadDocumentController(req: Request, res: Response, next
   } catch (error) { handleDocumentError(error, res, next); }
 }
 
+export async function uploadOptionsController(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const result = await service.uploadOptions(req.tenantId);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) { handleDocumentError(error, res, next); }
+}
+
 export async function listDocumentsController(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");

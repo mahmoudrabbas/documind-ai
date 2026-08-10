@@ -117,15 +117,21 @@ export function validateDocumentDescription(description: string): string | null 
   return null;
 }
 
-export function validateFileType(file: File): string | null {
-  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+export function validateFileType(
+  file: File,
+  allowedMimeTypes: readonly string[] = ALLOWED_MIME_TYPES,
+): string | null {
+  if (!allowedMimeTypes.includes(file.type)) {
     return "documents.fileTypeNotSupported";
   }
   return null;
 }
 
-export function validateFileSize(file: File): string | null {
-  if (file.size > MAX_FILE_SIZE_BYTES) {
+export function validateFileSize(
+  file: File,
+  maxSizeBytes: number = MAX_FILE_SIZE_BYTES,
+): string | null {
+  if (file.size > maxSizeBytes) {
     return "documents.fileTooLarge";
   }
   return null;
