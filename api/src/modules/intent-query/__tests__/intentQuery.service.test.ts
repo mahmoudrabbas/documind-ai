@@ -638,7 +638,7 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
   });
 
   await t.test("provider failure remains source-less for general, social, and assistant turns", async () => {
-    for (const question of ["What is VPN?", "What is procurement?", "asdasdasd", "?! 🎉"]) {
+    for (const question of ["What is VPN?", "What is procurement?", "asdasdasd"]) {
       const fallbackService = new IntentQueryService(
         malformedIntentModel(new Error("provider unavailable")),
         fakeConvoAdapter,
@@ -648,7 +648,7 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
       assert.deepEqual(plan.semanticQueries, [], question);
     }
 
-    for (const question of ["Thanks", "شجرا"]) {
+    for (const question of ["Thanks", "شجرا", "?! 🎉"]) {
       const plan = await new IntentQueryService(
         malformedIntentModel(new Error("must not be called")),
         fakeConvoAdapter,
