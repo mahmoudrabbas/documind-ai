@@ -80,6 +80,20 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         ? (auth.tenant?.name ?? null)
         : null;
 
+  const navLinkClassName = (isActive: boolean) =>
+    `flex min-w-0 items-center gap-3 px-4 py-3 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
+      isActive
+        ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
+        : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+    }`;
+
+  const secondaryLinkClassName = (tone: "muted" | "error") =>
+    `flex items-center gap-3 px-4 py-2 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
+      tone === "error"
+        ? "text-error hover:text-on-surface disabled:opacity-60"
+        : "text-on-surface-variant hover:text-on-surface"
+    }`;
+
   return (
     <>
       <button
@@ -93,14 +107,23 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
       />
       <aside
         aria-label="Primary navigation"
-        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[280px] ${
+        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[72px] xl:w-[280px] ${
           open
             ? "translate-x-0"
             : "max-md:ltr:-translate-x-full max-md:rtl:translate-x-full"
         }`}
       >
-        <div className="flex items-center gap-3 p-lg">
-          <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3 p-lg md:justify-center md:px-0 xl:justify-start xl:px-lg">
+          <div
+            data-testid="app-nav-brand-icon"
+            className="hidden shrink-0 md:flex xl:hidden"
+          >
+            <DocuMindLogo variant="icon" />
+          </div>
+          <div
+            data-testid="app-nav-brand-full"
+            className="min-w-0 flex-1 md:hidden xl:block"
+          >
             <DocuMindLogo variant="full" className="max-w-full" />
             <p className="text-label-sm text-on-surface-variant">
               {companyName || "Enterprise Knowledge"}
@@ -115,7 +138,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <nav className="mt-md flex-1 space-y-1 px-md">
+        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto px-md md:px-0 xl:px-md">
           {links.map(({ label, href, icon }) => {
             const allHrefs = links.map((l) => l.href);
             const isActive =
@@ -134,35 +157,41 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                 key={href}
                 href={href}
                 onClick={onClose}
+                title={label}
+                aria-label={label}
                 aria-current={isActive ? "page" : undefined}
-                className={`flex min-w-0 items-center gap-3 px-4 py-3 transition-colors ${
-                  isActive
-                    ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
-                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                }`}
+                className={navLinkClassName(isActive)}
               >
                 <span className="material-symbols-outlined shrink-0">{icon}</span>
-                <span className="min-w-0 truncate text-body-md">{label}</span>
+                <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
+                  {label}
+                </span>
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto border-t border-outline-variant p-md">
+        <div className="mt-auto border-t border-outline-variant p-md md:px-0 xl:px-md">
           <div className="space-y-1">
             <Link
               href="#"
-              className="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
+              title="Help Center"
+              aria-label="Help Center"
+              className={`w-full ${secondaryLinkClassName("muted")}`}
             >
               <span className="material-symbols-outlined">help</span>
-              <span className="text-body-sm">Help Center</span>
+              <span className="text-body-sm md:hidden xl:inline">
+                Help Center
+              </span>
             </Link>
             <button
               onClick={() => void handleLogout()}
               disabled={loggingOut}
-              className="flex w-full items-center gap-3 px-4 py-2 text-error hover:text-on-surface disabled:opacity-60"
+              title={loggingOut ? "Logging out…" : "Logout"}
+              aria-label={loggingOut ? "Logging out…" : "Logout"}
+              className={`w-full ${secondaryLinkClassName("error")}`}
             >
               <span className="material-symbols-outlined">logout</span>
-              <span className="text-body-sm">
+              <span className="text-body-sm md:hidden xl:inline">
                 {loggingOut ? "Logging out…" : "Logout"}
               </span>
             </button>

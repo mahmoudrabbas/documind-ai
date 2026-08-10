@@ -23,7 +23,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             open={navigationOpen}
             onClose={() => setNavigationOpen(false)}
           />
-          <div className="flex min-w-0 flex-1 flex-col md:ms-[280px]">
+          <div className="flex min-w-0 flex-1 flex-col md:ms-[72px] xl:ms-[280px]">
             <TopNavBar onNavigationOpen={() => setNavigationOpen(true)} />
             <main className="flex min-w-0 flex-1 flex-col">{children}</main>
           </div>

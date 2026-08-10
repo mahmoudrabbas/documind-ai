@@ -139,14 +139,14 @@ export function TopNavBar({
       </div>
 
       <div className="flex min-w-0 items-center gap-1 sm:gap-md">
-        <div className="hidden items-center gap-xs sm:flex lg:me-md">
+        <div className="flex items-center gap-xs lg:me-md">
           <NotificationsBell />
 
           {settingsHref && (
             <Link
               href={settingsHref}
               aria-label="Settings"
-              className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
+              className="hidden rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high sm:flex"
             >
               <span className="material-symbols-outlined">settings</span>
             </Link>
