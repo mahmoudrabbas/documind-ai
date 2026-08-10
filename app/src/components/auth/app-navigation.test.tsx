@@ -7,6 +7,7 @@ import { render, screen, within, cleanup, act } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { Permission, type PermissionValue } from "@/types/api/permissions.types";
 import { TENANT_SIDEBAR_LINKS, PLATFORM_SIDEBAR_LINKS } from "@/constants/routes";
+import { I18nProvider } from "@/providers/i18n-provider";
 
 const state = vi.hoisted(() => {
   const permissionSet = new Set<PermissionValue>();
@@ -68,7 +69,11 @@ function grantOnly(...permissions: PermissionValue[]) {
 
 function renderNav(open = false) {
   const onClose = vi.fn();
-  render(<AppNavigation open={open} onClose={onClose} />);
+  render(
+    <I18nProvider>
+      <AppNavigation open={open} onClose={onClose} />
+    </I18nProvider>,
+  );
   return onClose;
 }
 
@@ -252,7 +257,11 @@ describe("mobile drawer behavior", () => {
   });
 
   it("restores body scroll when unmounted", () => {
-    const view = render(<AppNavigation open={true} onClose={vi.fn()} />);
+    const view = render(
+      <I18nProvider>
+        <AppNavigation open={true} onClose={vi.fn()} />
+      </I18nProvider>,
+    );
     expect(document.body.style.overflow).toBe("hidden");
     act(() => view.unmount());
     expect(document.body.style.overflow).toBe("");
