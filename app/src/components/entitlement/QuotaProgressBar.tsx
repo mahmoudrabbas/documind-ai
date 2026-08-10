@@ -9,6 +9,12 @@ export interface QuotaProgressBarProps {
   label: string;
   current: number;
   limit: number;
+  /**
+   * Machine dimension code (e.g. "storageMb"). Kept for callers and
+   * analytics; it is deliberately NOT rendered — `label` carries the
+   * translated text, and printing the raw code beside it leaked English
+   * like "2 / 5 employees" into the Arabic UI.
+   */
   dimension: string;
   periodReset?: string;
   /** @default 0.8 — reserved for customising the warning threshold. */
@@ -40,7 +46,6 @@ export function QuotaProgressBar({
   label,
   current,
   limit,
-  dimension,
   periodReset,
   className,
   dir: dirProp,
@@ -153,8 +158,7 @@ export function QuotaProgressBar({
               {" / "}
               {formatNumber(safeLimit, intlLocale)}
             </>
-          )}{" "}
-          {dimension}
+          )}
         </span>
         {periodReset && (
           <span className="text-label-sm text-on-surface-variant">

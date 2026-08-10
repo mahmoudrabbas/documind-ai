@@ -551,6 +551,33 @@ const enDashboard: TranslationDictionary = {
   "dashboard.import.noImportsFound": "No imports found.",
   "dashboard.import.previous": "Previous",
   "dashboard.import.showingImports": "Showing {{shown}} of {{total}} imports",
+
+  /* ── Overview — AI suggestion banner ───────────────────── */
+  "dashboard.overview.aiSuggestionEyebrow": "AI SUGGESTION",
+  "dashboard.overview.gapsDetectedTitle": "Knowledge Gaps Detected",
+  /* Count-bearing: the open-gap tally drives the plural category, and
+     {{total}} rides along as a plain parameter. English repeats the same
+     wording across all six CLDR categories; Arabic does not. Both
+     sentences live inside the key so no fragment is ever concatenated. */
+  "dashboard.overview.gapsDetectedBody.zero":
+    "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
+  "dashboard.overview.gapsDetectedBody.one":
+    "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
+  "dashboard.overview.gapsDetectedBody.two":
+    "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
+  "dashboard.overview.gapsDetectedBody.few":
+    "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
+  "dashboard.overview.gapsDetectedBody.many":
+    "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
+  "dashboard.overview.gapsDetectedBody.other":
+    "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
+  "dashboard.overview.reviewGaps": "Review Gaps",
+  "dashboard.overview.summaryError": "Failed to load dashboard summary",
+
+  /* ── Overview — footer ─────────────────────────────────── */
+  "dashboard.footer.copyright": "© {{year}} DocuMind AI Enterprise. All rights reserved.",
+  "dashboard.footer.tenantPlan": "{{tenant}} · {{plan}} plan",
+  "dashboard.footer.fallback": "System overview",
 };
 
 export default enDashboard;

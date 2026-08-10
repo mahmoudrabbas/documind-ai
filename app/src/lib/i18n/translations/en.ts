@@ -840,14 +840,20 @@ const en: TranslationDictionary = {
   "usage.emptyDescription": "Usage information will appear here once your organization starts using DocuMind AI.",
   "usage.readOnlyNote": "You are viewing usage data in read-only mode.",
   "usage.resetsOn": "Resets on",
+  /* Dimension labels are read through `codeLabel(t, "usage.dimension", code)`,
+     which lowercases the incoming code before lookup — so these suffixes must
+     stay lowercase even though the machine codes are camelCase. */
   "usage.dimension.employees": "Employees",
   "usage.dimension.admins": "Admins",
   "usage.dimension.documents": "Documents",
-  "usage.dimension.storageMb": "Storage",
-  "usage.dimension.fileSizeMb": "File Size Limit",
-  "usage.dimension.queriesPerMonth": "Queries / Month",
-  "usage.dimension.tokensPerMonth": "Tokens / Month",
-  "usage.dimension.ocrPagesPerMonth": "OCR Pages / Month",
+  "usage.dimension.storagemb": "Storage",
+  "usage.dimension.filesizemb": "File Size Limit",
+  "usage.dimension.queriespermonth": "Queries / Month",
+  "usage.dimension.tokenspermonth": "Tokens / Month",
+  "usage.dimension.ocrpagespermonth": "OCR Pages / Month",
+  /* Not real counters — fallbacks the entitlement denial mapper emits. */
+  "usage.dimension.quota": "Quota",
+  "usage.dimension.subscription": "Subscription",
 
   /* ── dashboard (system overview) ─────────────────────── */
   "dashboard.title": "System Overview",
@@ -943,6 +949,20 @@ const en: TranslationDictionary = {
   "entitlement.denial.quotaDescription":
     "Upgrade your plan to continue using DocuMind AI.",
 
+  /* ── UpgradePrompt defaults (quota threshold banner) ──────────────
+     One whole sentence per key: Arabic puts the percentage and the
+     dimension in a different order than English, so the copy can never
+     be assembled from fragments at the call site. */
+  "entitlement.upgrade.limitReachedTitle": "{{dimension}} limit reached",
+  "entitlement.upgrade.nearlyFullTitle": "{{dimension}} nearly full",
+  "entitlement.upgrade.limitReachedDescription":
+    "You have used {{percent}}% of your {{dimension}} quota. Some actions may be blocked.",
+  "entitlement.upgrade.nearlyFullDescription":
+    "You have used {{percent}}% of your {{dimension}} capacity.",
+  "entitlement.upgrade.usageAria": "{{dimension}} usage: {{percent}}%",
+  "entitlement.upgrade.cta": "Upgrade",
+  "entitlement.upgrade.hint": "Contact your admin to upgrade",
+
   /* ── analytics ─────────────────────────────────────────── */
   "analytics.title": "Token, Cost & Quality Analytics",
   "analytics.description": "Real-time operational telemetry, LLM token expenditure, and AI quality metrics across your organization.",
@@ -1007,6 +1027,24 @@ const en: TranslationDictionary = {
   "chat.voiceInput": "Voice input",
   "chat.stopVoice": "Stop recording",
   "chat.uploadError": "Failed to process attachment",
+  "chat.disclaimer":
+    "AI responses are based on your company documents. Always verify critical information.",
+  "chat.sourceDocumentFallback": "Document",
+  "chat.sourcePage": "(p.{{page}})",
+  /* Suggested starter questions. Resolved at render from
+     SUGGESTED_QUESTION_KEYS in chat-client.tsx — a module-level constant
+     cannot call the hook, so it holds keys rather than text. */
+  "chat.suggestion.holidaySchedule": "What is the company holidays schedule?",
+  "chat.suggestion.requestTimeOff": "How do I request time off?",
+  "chat.suggestion.securityGuidelines": "What are the IT security guidelines?",
+  /* Retry countdown after a rate-limited send. Seconds are a count, so all
+     six CLDR categories are defined. */
+  "chat.retryInSeconds.zero": "Retry in {{count}}s.",
+  "chat.retryInSeconds.one": "Retry in {{count}}s.",
+  "chat.retryInSeconds.two": "Retry in {{count}}s.",
+  "chat.retryInSeconds.few": "Retry in {{count}}s.",
+  "chat.retryInSeconds.many": "Retry in {{count}}s.",
+  "chat.retryInSeconds.other": "Retry in {{count}}s.",
 
   /* ── feedback ───────────────────────────────────────────── */
   "feedback.wasHelpful": "Was this answer helpful?",
@@ -1231,6 +1269,11 @@ const en: TranslationDictionary = {
   "chat.removeImage": "Remove image",
   "chat.attachmentPreview": "Attachment preview",
   "chat.selectedImagePreview": "Selected image preview",
+  "chat.stopVoiceRecording": "Stop voice recording",
+  "chat.error.microphoneDenied":
+    "Microphone access denied. Please allow microphone permissions.",
+  "chat.error.microphoneUnavailable":
+    "Microphone access denied or unsupported browser. Please check microphone permissions.",
   "chat.error.rateLimited":
     "The AI provider is temporarily rate-limited. Please try again shortly.",
   "chat.error.providerUnavailable":

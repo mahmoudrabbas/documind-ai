@@ -476,6 +476,72 @@ const arSuperAdmin: TranslationDictionary = {
     "أرسل رسالة اختبارية للتأكد من عمل المعالج وإعدادات SMTP بشكل صحيح.",
   "superAdmin.platformEmails.sendTest": "إرسال رسالة اختبارية",
   "superAdmin.platformEmails.notImplemented": "غير مُنفَّذ بعد.",
+
+  /* ── قائمة الشركات (المستأجرون) ────────────────────────── */
+  "superAdmin.tenants.eyebrow": "المسؤول العام",
+  "superAdmin.tenants.title": "الشركات",
+  "superAdmin.tenants.description":
+    "ابحث في المؤسسات عبر DocuMind AI وراجعها وأدرها.",
+  "superAdmin.tenants.loadingCount": "جارٍ تحميل عدد المستأجرين…",
+  "superAdmin.tenants.count.zero": "لا يوجد مستأجرون",
+  "superAdmin.tenants.count.one": "مستأجر واحد",
+  "superAdmin.tenants.count.two": "مستأجران",
+  "superAdmin.tenants.count.few": "{{count}} مستأجرين",
+  "superAdmin.tenants.count.many": "{{count}} مستأجرًا",
+  "superAdmin.tenants.count.other": "{{count}} مستأجر",
+  "superAdmin.tenants.filtersLabel": "عوامل تصفية المستأجرين",
+  "superAdmin.tenants.searchLabel": "البحث عن المستأجرين",
+  "superAdmin.tenants.searchPlaceholder": "الاسم أو المعرّف",
+  "superAdmin.tenants.allStatuses": "جميع الحالات",
+  "superAdmin.tenants.planLegacy": "الخطة (قديمة)",
+  "superAdmin.tenants.allPlans": "جميع الخطط",
+  "superAdmin.tenants.clearFilters": "مسح عوامل التصفية",
+  "superAdmin.tenants.loading": "جارٍ تحميل المستأجرين",
+  "superAdmin.tenants.noPermission": "ليس لديك إذن لإدارة المستأجرين.",
+  "superAdmin.tenants.loadError":
+    "تعذّر تحميل المستأجرين. يرجى المحاولة مرة أخرى.",
+  "superAdmin.tenants.noMatch": "لا يوجد مستأجرون مطابقون لعوامل التصفية",
+  "superAdmin.tenants.noMatchHint": "جرّب مسح عوامل التصفية أو تغييرها.",
+  "superAdmin.tenants.noneYet": "لا يوجد مستأجرون بعد",
+  "superAdmin.tenants.noneYetHint": "سيظهر المستأجرون هنا عند توفّرهم.",
+  "superAdmin.tenants.colEffectivePlan": "الخطة الفعلية",
+  "superAdmin.tenants.colPeriodStart": "بداية الفترة",
+  "superAdmin.tenants.colPeriodEnd": "نهاية الفترة",
+  "superAdmin.tenants.deprecated": "مهمل",
+  "superAdmin.tenants.legacySuffix": "(قديمة)",
+  "superAdmin.tenants.open": "فتح",
+  "superAdmin.tenants.manageTenant": "إدارة {{name}}",
+  "superAdmin.tenants.paginationLabel": "تنقّل صفحات المستأجرين",
+  "superAdmin.tenants.rowsPerPage": "الصفوف في الصفحة",
+  "superAdmin.tenants.statusChangeNote": "تسري تغييرات الحالة فورًا.",
+  "superAdmin.tenants.subscriptionManagedNote":
+    "تُجرى تغييرات الاشتراك من صفحة الاشتراكات.",
+  "superAdmin.tenants.subscriptionsLink": "الانتقال إلى الاشتراكات",
+  "superAdmin.tenants.noSubscriptionNote":
+    "لا يوجد اشتراك نشط. يمكن تعيين اشتراك من صفحة الاشتراكات.",
+  "superAdmin.tenants.confirmSuspend": "تأكيد الإيقاف",
+  "superAdmin.tenants.confirmActivate": "تأكيد التنشيط",
+  "superAdmin.tenants.updateSuccess": "تم تحديث المستأجر بنجاح.",
+  "superAdmin.tenants.updateError":
+    "تعذّر تحديث المستأجر. يرجى التحقق من التغيير المطلوب والمحاولة مرة أخرى.",
+
+  /* ── نموذج إعدادات المنصة وتهيئة الذكاء الاصطناعي ──────── */
+  "superAdmin.platformSettings.supportEmail": "بريد الدعم",
+  "superAdmin.platformSettings.maintenanceMode": "وضع الصيانة",
+  "superAdmin.platformSettings.allowRegistrations": "السماح بالتسجيل",
+  "superAdmin.platformSettings.defaultTrialDays": "أيام التجربة الافتراضية",
+  "superAdmin.platformSettings.dataRetentionDays": "أيام الاحتفاظ بالبيانات",
+  "superAdmin.platformSettings.aiProvider": "المزوّد",
+  "superAdmin.platformSettings.aiChatModel": "نموذج المحادثة",
+  "superAdmin.platformSettings.aiEmbeddingModel": "نموذج التضمين",
+  "superAdmin.platformSettings.aiMaxOutputTokens": "الحد الأقصى لرموز المخرجات",
+  "superAdmin.platformSettings.aiTemperature": "درجة التنويع",
+  "superAdmin.platformSettings.wholeNumber":
+    "«{{field}}» يجب أن يكون رقمًا صحيحًا.",
+  "superAdmin.platformSettings.saveSuccess": "تم حفظ الإعدادات بنجاح.",
+  "superAdmin.platformSettings.saveError": "تعذّر حفظ الإعدادات.",
+  "superAdmin.platformSettings.saving": "جارٍ الحفظ…",
+  "superAdmin.platformSettings.saveSettings": "حفظ الإعدادات",
 };
 
 export default arSuperAdmin;

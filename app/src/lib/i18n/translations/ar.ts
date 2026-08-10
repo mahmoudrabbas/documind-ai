@@ -839,14 +839,20 @@ const ar: TranslationDictionary = {
   "usage.emptyDescription": "ستظهر معلومات الاستخدام هنا بمجرد أن تبدأ مؤسستك في استخدام DocuMind AI.",
   "usage.readOnlyNote": "أنت تشاهد بيانات الاستخدام في وضع القراءة فقط.",
   "usage.resetsOn": "إعادة التعيين في",
+  /* تُقرأ تسميات الأبعاد عبر `codeLabel(t, "usage.dimension", code)` التي
+     تحوّل الرمز إلى أحرف صغيرة قبل البحث، لذا يجب أن تبقى هذه اللواحق
+     بأحرف صغيرة رغم أن الرموز البرمجية بصيغة camelCase. */
   "usage.dimension.employees": "الموظفون",
   "usage.dimension.admins": "المسؤولون",
   "usage.dimension.documents": "المستندات",
-  "usage.dimension.storageMb": "سعة التخزين",
-  "usage.dimension.fileSizeMb": "الحد الأقصى لحجم الملف",
-  "usage.dimension.queriesPerMonth": "الاستعلامات / الشهر",
-  "usage.dimension.tokensPerMonth": "الرموز / الشهر",
-  "usage.dimension.ocrPagesPerMonth": "صفحات OCR / الشهر",
+  "usage.dimension.storagemb": "سعة التخزين",
+  "usage.dimension.filesizemb": "الحد الأقصى لحجم الملف",
+  "usage.dimension.queriespermonth": "الاستعلامات / الشهر",
+  "usage.dimension.tokenspermonth": "الرموز / الشهر",
+  "usage.dimension.ocrpagespermonth": "صفحات OCR / الشهر",
+  /* ليست عدّادات فعلية — قيم احتياطية يُصدرها مُحوِّل رفض الصلاحيات. */
+  "usage.dimension.quota": "الحصة",
+  "usage.dimension.subscription": "الاشتراك",
 
   /* ── dashboard (system overview) ─────────────────────── */
   "dashboard.title": "نظرة عامة على النظام",
@@ -941,6 +947,19 @@ const ar: TranslationDictionary = {
   "entitlement.denial.quotaDescription":
     "قم بترقية خطتك لمواصلة استخدام DocuMind AI.",
 
+  /* ── القيم الافتراضية لتنبيه الترقية (تجاوز حدّ الحصة) ──────────
+     كل مفتاح جملة كاملة: يختلف ترتيب النسبة المئوية واسم البعد بين
+     العربية والإنجليزية، لذا لا يجوز تركيب النص من أجزاء في الواجهة. */
+  "entitlement.upgrade.limitReachedTitle": "بلغتَ الحد الأقصى لـ{{dimension}}",
+  "entitlement.upgrade.nearlyFullTitle": "أوشك {{dimension}} على النفاد",
+  "entitlement.upgrade.limitReachedDescription":
+    "لقد استهلكت {{percent}}% من حصة {{dimension}}. قد يتعذّر تنفيذ بعض الإجراءات.",
+  "entitlement.upgrade.nearlyFullDescription":
+    "لقد استهلكت {{percent}}% من سعة {{dimension}}.",
+  "entitlement.upgrade.usageAria": "استهلاك {{dimension}}: {{percent}}%",
+  "entitlement.upgrade.cta": "ترقية الخطة",
+  "entitlement.upgrade.hint": "تواصل مع مسؤول النظام لترقية الخطة",
+
   /* ── analytics ─────────────────────────────────────────── */
   "analytics.title": "تحليلات الرموز والتكلفة والجودة",
   "analytics.description": "القياس التلقائي عن بُعد في الوقت الفعلي، وإنفاق رموز نموذج اللغة الكبير، ومقاييس جودة الذكاء الاصطناعي عبر مؤسستك.",
@@ -1005,6 +1024,24 @@ const ar: TranslationDictionary = {
   "chat.voiceInput": "إدخال صوتي",
   "chat.stopVoice": "إيقاف التسجيل",
   "chat.uploadError": "فشل في معالجة المرفق",
+  "chat.disclaimer":
+    "تستند إجابات الذكاء الاصطناعي إلى مستندات شركتك. تحقّق دائمًا من المعلومات المهمة.",
+  "chat.sourceDocumentFallback": "مستند",
+  "chat.sourcePage": "(ص. {{page}})",
+  /* أسئلة مقترحة للبدء. تُترجم عند العرض انطلاقًا من
+     SUGGESTED_QUESTION_KEYS في chat-client.tsx، لأن الثابت على مستوى
+     الوحدة لا يمكنه استدعاء الخطّاف فيحمل المفاتيح بدل النص. */
+  "chat.suggestion.holidaySchedule": "ما هو جدول العطلات الرسمية في الشركة؟",
+  "chat.suggestion.requestTimeOff": "كيف أقدّم طلب إجازة؟",
+  "chat.suggestion.securityGuidelines": "ما هي إرشادات أمن المعلومات؟",
+  /* العدّ التنازلي لإعادة المحاولة بعد تجاوز حدّ الإرسال. الثواني عدد،
+     لذا عُرِّفت فئات الجمع الست جميعها. */
+  "chat.retryInSeconds.zero": "أعد المحاولة الآن.",
+  "chat.retryInSeconds.one": "أعد المحاولة خلال ثانية واحدة.",
+  "chat.retryInSeconds.two": "أعد المحاولة خلال ثانيتين.",
+  "chat.retryInSeconds.few": "أعد المحاولة خلال {{count}} ثوانٍ.",
+  "chat.retryInSeconds.many": "أعد المحاولة خلال {{count}} ثانية.",
+  "chat.retryInSeconds.other": "أعد المحاولة خلال {{count}} ثانية.",
 
   /* ── feedback ───────────────────────────────────────────── */
   "feedback.wasHelpful": "هل كانت هذه الإجابة مفيدة؟",
@@ -1225,6 +1262,11 @@ const ar: TranslationDictionary = {
   "chat.removeImage": "إزالة الصورة",
   "chat.attachmentPreview": "معاينة المرفق",
   "chat.selectedImagePreview": "معاينة الصورة المحددة",
+  "chat.stopVoiceRecording": "إيقاف التسجيل الصوتي",
+  "chat.error.microphoneDenied":
+    "تم رفض الوصول إلى الميكروفون. يرجى السماح بأذونات الميكروفون.",
+  "chat.error.microphoneUnavailable":
+    "تم رفض الوصول إلى الميكروفون أو أن المتصفح غير مدعوم. يرجى التحقق من أذونات الميكروفون.",
   "chat.error.rateLimited":
     "مزوّد الذكاء الاصطناعي محدود مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
   "chat.error.providerUnavailable":

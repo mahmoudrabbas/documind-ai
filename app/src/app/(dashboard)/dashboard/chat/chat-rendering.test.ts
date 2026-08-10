@@ -33,7 +33,7 @@ describe("chat assistant rendering (markdown + safety)", () => {
     const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
     expect(source).toContain("msg.sources && msg.sources.length > 0");
     expect(source).toContain("setPdfViewer({");
-    expect(source).toContain("src.documentTitle ?? \"Document\"");
+    expect(source).toContain("src.documentTitle ?? t(\"chat.sourceDocumentFallback\")");
     expect(source).toContain("<PdfViewerModal");
   });
 

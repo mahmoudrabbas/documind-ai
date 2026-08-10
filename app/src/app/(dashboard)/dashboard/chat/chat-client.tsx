@@ -27,6 +27,7 @@ import type {
   ConversationListItem,
 } from "@/types/api/chat.types";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
@@ -65,23 +66,16 @@ function formatDuration(seconds: number): string {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
-const SUGGESTED_QUESTIONS = [
-  "What is the company holidays schedule?",
-  "How do I request time off?",
-  "What are the IT security guidelines?",
+/**
+ * Starter question chips. A module-level constant cannot call `useI18n()`,
+ * so it holds dictionary keys and the component resolves each with `t()`
+ * at render time.
+ */
+const SUGGESTED_QUESTION_KEYS = [
+  "chat.suggestion.holidaySchedule",
+  "chat.suggestion.requestTimeOff",
+  "chat.suggestion.securityGuidelines",
 ];
-
-function resolveDimensionLabel(
-  t: (key: string) => string,
-  dimension: string,
-): string {
-  const key = `usage.dimension.${dimension}`;
-  const label = t(key);
-  if (label !== key) return label;
-  return dimension
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^[a-z]/, (c) => c.toUpperCase());
-}
 
 function isVisionResponse(
   response: ChatResponse | ChatVisionResponse,
@@ -148,7 +142,7 @@ interface WindowWithSpeech {
 }
 
 export function ChatClient() {
-  const { t } = useI18n();
+  const { t, tPlural } = useI18n();
   const permissions = usePermissions();
   const router = useRouter();
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -247,7 +241,7 @@ export function ChatClient() {
 
           recognition.onerror = (event: { error: string }) => {
             if (event.error === "not-allowed") {
-              setError("Microphone access denied. Please allow microphone permissions.");
+              setError(t("chat.error.microphoneDenied"));
             }
           };
 
@@ -265,9 +259,7 @@ export function ChatClient() {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch {
-      setError(
-        "Microphone access denied or unsupported browser. Please check microphone permissions.",
-      );
+      setError(t("chat.error.microphoneUnavailable"));
     }
   };
 
@@ -644,7 +636,7 @@ export function ChatClient() {
       {/* Sidebar */}
       <aside className="hidden w-72 shrink-0 flex-col border-e border-outline-variant/30 bg-surface-container-low md:flex">
         <div className="border-b border-outline-variant/30 p-4">
-          <h2 className="text-title-sm font-bold text-on-surface">Conversations</h2>
+          <h2 className="text-title-sm font-bold text-on-surface">{t("chat.conversations")}</h2>
           <button
             onClick={() => handleNewConversation()}
             className="mt-3 flex w-full items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
@@ -721,16 +713,19 @@ export function ChatClient() {
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTED_QUESTIONS.map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => handleSend(q)}
-                    disabled={isTyping || retryAfterSeconds !== null}
-                    className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
-                  >
-                    {q}
-                  </button>
-                ))}
+                {SUGGESTED_QUESTION_KEYS.map((questionKey) => {
+                  const question = t(questionKey);
+                  return (
+                    <button
+                      key={questionKey}
+                      onClick={() => handleSend(question)}
+                      disabled={isTyping || retryAfterSeconds !== null}
+                      className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                    >
+                      {question}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : loadingMessages ? (
@@ -812,7 +807,7 @@ export function ChatClient() {
                                 description
                               </span>
                               <span className="underline-offset-2 hover:underline">
-                                {src.documentTitle ?? "Document"}
+                                {src.documentTitle ?? t("chat.sourceDocumentFallback")}
                               </span>
                               {src.sectionTitle && (
                                 <span className="text-outline">
@@ -821,7 +816,9 @@ export function ChatClient() {
                               )}
                               {src.pageNumber && (
                                 <span className="text-outline">
-                                  (p.{src.pageNumber})
+                                  {t("chat.sourcePage", {
+                                    page: String(src.pageNumber),
+                                  })}
                                 </span>
                               )}
                               <span className="ms-1 text-outline">
@@ -873,7 +870,8 @@ export function ChatClient() {
         {error && (
           <div className="border-t border-error/20 bg-error/5 px-4 py-2 text-center text-xs text-error">
             {error}
-            {retryAfterSeconds !== null && ` Retry in ${retryAfterSeconds}s.`}
+            {retryAfterSeconds !== null &&
+              ` ${tPlural("chat.retryInSeconds", retryAfterSeconds)}`}
           </div>
         )}
 
@@ -896,8 +894,9 @@ export function ChatClient() {
                 />
               ) : (
                 <UpgradePrompt
-                  dimension={resolveDimensionLabel(
+                  dimension={codeLabel(
                     t,
+                    "usage.dimension",
                     entitlementBanner.dimension,
                   )}
                   current={entitlementBanner.current}
@@ -906,8 +905,9 @@ export function ChatClient() {
                   hasBillingPermission={permissions.can(Permission.BILLING_MANAGE)}
                   warningThreshold={0}
                   title={t("entitlement.denial.quotaTitle", {
-                    dimension: resolveDimensionLabel(
+                    dimension: codeLabel(
                       t,
+                      "usage.dimension",
                       entitlementBanner.dimension,
                     ),
                   })}
@@ -968,7 +968,7 @@ export function ChatClient() {
                     ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
                     : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
                 } disabled:cursor-not-allowed disabled:opacity-40`}
-                title={isRecording ? "Stop Voice Recording" : "Voice Input"}
+                title={isRecording ? t("chat.stopVoiceRecording") : t("chat.voiceInput")}
               >
                 {isTranscribing ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -995,7 +995,7 @@ export function ChatClient() {
                   }
                 }}
                 disabled={retryAfterSeconds !== null}
-                placeholder="Ask about your documents..."
+                placeholder={t("chat.inputPlaceholder")}
                 rows={1}
                 className="max-h-32 min-h-[24px] flex-1 resize-none bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/50"
               />
@@ -1010,8 +1010,7 @@ export function ChatClient() {
               </button>
             </div>
             <p className="mt-2 text-center text-[11px] text-outline">
-              AI responses are based on your company documents. Always verify
-              critical information.
+              {t("chat.disclaimer")}
             </p>
           </div>
         </div>

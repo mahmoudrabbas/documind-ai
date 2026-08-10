@@ -480,6 +480,73 @@ const enSuperAdmin: TranslationDictionary = {
     "Send a test email to verify that the worker and SMTP configuration are functioning correctly.",
   "superAdmin.platformEmails.sendTest": "Send Test Email",
   "superAdmin.platformEmails.notImplemented": "Not implemented yet.",
+
+  /* ── Companies list (tenants) ──────────────────────────── */
+  "superAdmin.tenants.eyebrow": "Super Admin",
+  "superAdmin.tenants.title": "Companies",
+  "superAdmin.tenants.description":
+    "Search, review, and manage organizations across DocuMind AI.",
+  "superAdmin.tenants.loadingCount": "Loading tenant count…",
+  "superAdmin.tenants.count.zero": "{{count}} tenants",
+  "superAdmin.tenants.count.one": "{{count}} tenant",
+  "superAdmin.tenants.count.two": "{{count}} tenants",
+  "superAdmin.tenants.count.few": "{{count}} tenants",
+  "superAdmin.tenants.count.many": "{{count}} tenants",
+  "superAdmin.tenants.count.other": "{{count}} tenants",
+  "superAdmin.tenants.filtersLabel": "Tenant filters",
+  "superAdmin.tenants.searchLabel": "Search tenants",
+  "superAdmin.tenants.searchPlaceholder": "Name or slug",
+  "superAdmin.tenants.allStatuses": "All statuses",
+  "superAdmin.tenants.planLegacy": "Plan (legacy)",
+  "superAdmin.tenants.allPlans": "All plans",
+  "superAdmin.tenants.clearFilters": "Clear filters",
+  "superAdmin.tenants.loading": "Loading tenants",
+  "superAdmin.tenants.noPermission":
+    "You do not have permission to manage tenants.",
+  "superAdmin.tenants.loadError": "Unable to load tenants. Please try again.",
+  "superAdmin.tenants.noMatch": "No tenants match these filters",
+  "superAdmin.tenants.noMatchHint": "Try clearing or changing the filters.",
+  "superAdmin.tenants.noneYet": "No tenants yet",
+  "superAdmin.tenants.noneYetHint": "Tenants will appear here when available.",
+  "superAdmin.tenants.colEffectivePlan": "Effective Plan",
+  "superAdmin.tenants.colPeriodStart": "Period Start",
+  "superAdmin.tenants.colPeriodEnd": "Period End",
+  "superAdmin.tenants.deprecated": "Deprecated",
+  "superAdmin.tenants.legacySuffix": "(old)",
+  "superAdmin.tenants.open": "Open",
+  "superAdmin.tenants.manageTenant": "Manage {{name}}",
+  "superAdmin.tenants.paginationLabel": "Tenant pagination",
+  "superAdmin.tenants.rowsPerPage": "Rows per page",
+  "superAdmin.tenants.statusChangeNote":
+    "Status changes take effect immediately.",
+  "superAdmin.tenants.subscriptionManagedNote":
+    "Subscription changes are made on the Subscriptions page.",
+  "superAdmin.tenants.subscriptionsLink": "Go to Subscriptions",
+  "superAdmin.tenants.noSubscriptionNote":
+    "No active subscription. Assign one on the Subscriptions page.",
+  "superAdmin.tenants.confirmSuspend": "Confirm suspend",
+  "superAdmin.tenants.confirmActivate": "Confirm activate",
+  "superAdmin.tenants.updateSuccess": "Tenant updated successfully.",
+  "superAdmin.tenants.updateError":
+    "The tenant could not be updated. Please verify the requested change and try again.",
+
+  /* ── Platform settings + AI configuration form ─────────── */
+  "superAdmin.platformSettings.supportEmail": "Support Email",
+  "superAdmin.platformSettings.maintenanceMode": "Maintenance Mode",
+  "superAdmin.platformSettings.allowRegistrations": "Allow Registrations",
+  "superAdmin.platformSettings.defaultTrialDays": "Default Trial Days",
+  "superAdmin.platformSettings.dataRetentionDays": "Data Retention Days",
+  "superAdmin.platformSettings.aiProvider": "Provider",
+  "superAdmin.platformSettings.aiChatModel": "Chat Model",
+  "superAdmin.platformSettings.aiEmbeddingModel": "Embedding Model",
+  "superAdmin.platformSettings.aiMaxOutputTokens": "Max Output Tokens",
+  "superAdmin.platformSettings.aiTemperature": "Temperature",
+  "superAdmin.platformSettings.wholeNumber":
+    "“{{field}}” must be a whole number.",
+  "superAdmin.platformSettings.saveSuccess": "Settings saved successfully.",
+  "superAdmin.platformSettings.saveError": "Unable to save settings.",
+  "superAdmin.platformSettings.saving": "Saving…",
+  "superAdmin.platformSettings.saveSettings": "Save settings",
 };
 
 export default enSuperAdmin;

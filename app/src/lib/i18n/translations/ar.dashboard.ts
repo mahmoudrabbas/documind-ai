@@ -552,6 +552,32 @@ const arDashboard: TranslationDictionary = {
   "dashboard.import.previous": "السابق",
   "dashboard.import.showingImports":
     "عرض {{shown}} من إجمالي {{total}} عملية استيراد",
+
+  /* ── النظرة العامة — شريط اقتراح الذكاء الاصطناعي ──────── */
+  "dashboard.overview.aiSuggestionEyebrow": "اقتراح من الذكاء الاصطناعي",
+  "dashboard.overview.gapsDetectedTitle": "تم رصد فجوات معرفية",
+  /* مفتاح مرتبط بالعدد: عدد الفجوات المفتوحة يحدّد فئة الجمع، ويُمرَّر
+     {{total}} كمعامل عادي. الجملتان داخل المفتاح نفسه حتى لا تُركَّب
+     أجزاء النص في الواجهة. */
+  "dashboard.overview.gapsDetectedBody.zero":
+    "لا توجد فجوات معرفية مفتوحة من بين {{total}} فجوة متتبَّعة لديك. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
+  "dashboard.overview.gapsDetectedBody.one":
+    "لا تزال فجوة معرفية واحدة من بين {{total}} فجوة متتبَّعة لديك مفتوحة. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
+  "dashboard.overview.gapsDetectedBody.two":
+    "لا تزال فجوتان معرفيتان من بين {{total}} فجوة متتبَّعة لديك مفتوحتين. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
+  "dashboard.overview.gapsDetectedBody.few":
+    "لا تزال {{count}} فجوات معرفية من بين {{total}} فجوة متتبَّعة لديك مفتوحة. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
+  "dashboard.overview.gapsDetectedBody.many":
+    "لا تزال {{count}} فجوة معرفية من بين {{total}} فجوة متتبَّعة لديك مفتوحة. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
+  "dashboard.overview.gapsDetectedBody.other":
+    "لا تزال {{count}} فجوة معرفية من بين {{total}} فجوة متتبَّعة لديك مفتوحة. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
+  "dashboard.overview.reviewGaps": "مراجعة الفجوات",
+  "dashboard.overview.summaryError": "تعذّر تحميل ملخّص لوحة التحكم",
+
+  /* ── النظرة العامة — تذييل الصفحة ──────────────────────── */
+  "dashboard.footer.copyright": "© {{year}} DocuMind AI Enterprise. جميع الحقوق محفوظة.",
+  "dashboard.footer.tenantPlan": "{{tenant}} · خطة {{plan}}",
+  "dashboard.footer.fallback": "نظرة عامة على النظام",
 };
 
 export default arDashboard;
