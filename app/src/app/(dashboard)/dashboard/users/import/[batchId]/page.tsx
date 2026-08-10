@@ -15,6 +15,8 @@ import type {
   ImportRowView,
   ImportRowState,
 } from "@/types/api/imports.types";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import {
   DashboardPageHeader,
   DashboardPanel,
@@ -61,6 +63,8 @@ export default function BatchDetailPage() {
   const params = useParams();
   const batchId = params.batchId as string;
   const router = useRouter();
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
 
   const [batch, setBatch] = useState<ImportBatchView | null>(null);
   const [rows, setRows] = useState<ImportRowView[]>([]);
@@ -92,12 +96,12 @@ export default function BatchDetailPage() {
       setRows(res.data.rows ?? []);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Failed to load batch details.",
+        err instanceof ApiError ? err.message : t("dashboard.import.loadBatchError"),
       );
     } finally {
       setLoading(false);
     }
-  }, [batchId]);
+  }, [batchId, t]);
 
   useEffect(() => {
     void loadData();
@@ -125,7 +129,7 @@ export default function BatchDetailPage() {
       setBatch(res.data);
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Failed to cancel import.",
+        err instanceof ApiError ? err.message : t("dashboard.import.cancelBatchError"),
       );
     } finally {
       setCancelling(false);
@@ -142,7 +146,7 @@ export default function BatchDetailPage() {
       await loadData();
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Failed to retry failed rows.",
+        err instanceof ApiError ? err.message : t("dashboard.import.retryRowsError"),
       );
     } finally {
       setRetrying(false);
@@ -160,7 +164,7 @@ export default function BatchDetailPage() {
 
   function formatTiming(dateStr?: string): string {
     if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("en-US", {
+    return new Date(dateStr).toLocaleDateString(intlLocale, {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -176,7 +180,7 @@ export default function BatchDetailPage() {
             <span className="material-symbols-outlined animate-spin">
               progress_activity
             </span>
-            Loading batch details...
+            {t("dashboard.import.loadingBatchDetails")}
           </div>
         </DashboardPanel>
     );
@@ -190,7 +194,7 @@ export default function BatchDetailPage() {
               error
             </span>
             <h2 className="text-title-lg font-bold text-on-surface">
-              Batch not found
+              {t("dashboard.import.batchNotFound")}
             </h2>
             {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
             <button
@@ -198,7 +202,7 @@ export default function BatchDetailPage() {
               className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-md font-bold text-on-primary shadow-sm transition-all hover:opacity-90"
               onClick={() => router.push("/dashboard/users/import/history")}
             >
-              Back to history
+              {t("dashboard.import.backToHistory")}
             </button>
           </div>
         </DashboardPanel>
@@ -228,7 +232,7 @@ export default function BatchDetailPage() {
             <span className="material-symbols-outlined text-[16px]">
               description
             </span>
-            Import batch
+            {t("dashboard.import.batchEyebrow")}
           </div>
         }
         title={
@@ -240,12 +244,7 @@ export default function BatchDetailPage() {
                 "bg-surface-container text-on-surface-variant"
               }`}
             >
-              {batch.status === "PENDING_MAPPING"
-                ? "Pending mapping"
-                : batch.status === "PARTIALLY_COMPLETED"
-                  ? "Partially completed"
-                  : batch.status.charAt(0) +
-                    batch.status.slice(1).toLowerCase()}
+              {codeLabel(t, "dashboard.importStatus", batch.status)}
             </span>
           </span>
         }
@@ -255,10 +254,10 @@ export default function BatchDetailPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
             onClick={() => router.push("/dashboard/users/import/history")}
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
               arrow_back
             </span>
-            Back to history
+            {t("dashboard.import.backToHistory")}
           </button>
         }
       />
@@ -276,7 +275,7 @@ export default function BatchDetailPage() {
               progress_activity
             </span>
             <p className="text-sm font-medium text-on-surface">
-              This import is currently processing. Data refreshes automatically.
+              {t("dashboard.import.processingNotice")}
             </p>
           </div>
         </DashboardPanel>
@@ -285,18 +284,18 @@ export default function BatchDetailPage() {
       {/* Summary cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
-          { label: "Total rows", value: batch.summary.totalRows, color: "" },
-          { label: "Valid", value: batch.summary.validRows, color: "text-emerald-700" },
-          { label: "Warnings", value: batch.summary.warningRows, color: "text-amber-700" },
-          { label: "Invalid", value: batch.summary.invalidRows, color: "text-red-700" },
-          { label: "Created", value: batch.summary.createdCount, color: "text-emerald-700" },
-          { label: "Failed", value: batch.summary.failedCount, color: "text-red-700" },
+          { labelKey: "dashboard.import.totalRows", value: batch.summary.totalRows, color: "" },
+          { labelKey: "dashboard.import.valid", value: batch.summary.validRows, color: "text-emerald-700" },
+          { labelKey: "dashboard.import.warnings", value: batch.summary.warningRows, color: "text-amber-700" },
+          { labelKey: "dashboard.import.invalid", value: batch.summary.invalidRows, color: "text-red-700" },
+          { labelKey: "dashboard.import.created", value: batch.summary.createdCount, color: "text-emerald-700" },
+          { labelKey: "dashboard.import.failed", value: batch.summary.failedCount, color: "text-red-700" },
         ].map((stat) => (
-          <DashboardPanel key={stat.label} padding="compact" className="text-center">
+          <DashboardPanel key={stat.labelKey} padding="compact" className="text-center">
             <p className={`text-2xl font-bold ${stat.color || "text-on-surface"}`}>
               {stat.value}
             </p>
-            <p className="mt-1 text-xs text-on-surface-variant">{stat.label}</p>
+            <p className="mt-1 text-xs text-on-surface-variant">{t(stat.labelKey)}</p>
           </DashboardPanel>
         ))}
       </div>
@@ -305,18 +304,24 @@ export default function BatchDetailPage() {
       <DashboardPanel className="mb-6">
         <div className="flex flex-wrap gap-6 text-sm">
           <div>
-            <span className="font-medium text-on-surface-variant">Created:</span>{" "}
+            <span className="font-medium text-on-surface-variant">
+              {t("dashboard.import.createdAtLabel")}
+            </span>{" "}
             <span className="text-on-surface">{formatTiming(batch.createdAt)}</span>
           </div>
           {batch.completedAt && (
             <div>
-              <span className="font-medium text-on-surface-variant">Completed:</span>{" "}
+              <span className="font-medium text-on-surface-variant">
+                {t("dashboard.import.completedAtLabel")}
+              </span>{" "}
               <span className="text-on-surface">{formatTiming(batch.completedAt)}</span>
             </div>
           )}
           {batch.errorMessage && (
             <div className="w-full">
-              <span className="font-medium text-red-700">Error:</span>{" "}
+              <span className="font-medium text-red-700">
+                {t("dashboard.import.errorLabel")}
+              </span>{" "}
               <span className="text-red-600">{batch.errorMessage}</span>
             </div>
           )}
@@ -336,7 +341,9 @@ export default function BatchDetailPage() {
               <span className="material-symbols-outlined text-[18px]">
                 cancel
               </span>
-              {cancelling ? "Cancelling..." : "Cancel import"}
+              {cancelling
+                ? t("dashboard.import.cancelling")
+                : t("dashboard.import.cancelImport")}
             </button>
           )}
 
@@ -350,7 +357,9 @@ export default function BatchDetailPage() {
               <span className="material-symbols-outlined text-[18px]">
                 refresh
               </span>
-              {retrying ? "Retrying..." : "Retry failed rows"}
+              {retrying
+                ? t("dashboard.import.retrying")
+                : t("dashboard.import.retryFailedRows")}
             </button>
           )}
 
@@ -364,7 +373,7 @@ export default function BatchDetailPage() {
                 <span className="material-symbols-outlined text-[18px]">
                   file_download
                 </span>
-                Export CSV
+                {t("dashboard.import.exportCsv")}
               </button>
               <button
                 type="button"
@@ -374,7 +383,7 @@ export default function BatchDetailPage() {
                 <span className="material-symbols-outlined text-[18px]">
                   file_download
                 </span>
-                Export XLSX
+                {t("dashboard.import.exportXlsx")}
               </button>
             </>
           )}
@@ -385,11 +394,11 @@ export default function BatchDetailPage() {
       <DashboardPanel>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-title-md font-bold text-primary">
-            Row Breakdown
+            {t("dashboard.import.rowBreakdown")}
           </h3>
           <div className="flex items-center gap-2">
             <span className="text-label-sm text-on-surface-variant">
-              Show:
+              {t("dashboard.import.showLabel")}
             </span>
             <select
               className="rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -398,8 +407,8 @@ export default function BatchDetailPage() {
                 setRowFilter(event.target.value as RowFilter)
               }
             >
-              <option value="ALL">All rows</option>
-              <option value="FAILED">Failed only</option>
+              <option value="ALL">{t("dashboard.import.filterAllRows")}</option>
+              <option value="FAILED">{t("dashboard.import.filterFailedOnly")}</option>
             </select>
           </div>
         </div>
@@ -412,13 +421,13 @@ export default function BatchDetailPage() {
                   #
                 </th>
                 <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                  State
+                  {t("dashboard.import.colState")}
                 </th>
                 <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                  Data
+                  {t("dashboard.import.colData")}
                 </th>
                 <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                  Messages
+                  {t("dashboard.import.colMessages")}
                 </th>
               </tr>
             </thead>
@@ -444,7 +453,7 @@ export default function BatchDetailPage() {
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${ROW_STATE_BADGE[row.state]}`}
                       >
-                        {row.state}
+                        {codeLabel(t, "dashboard.importRowState", row.state)}
                       </span>
                     </td>
                     <td className="max-w-[300px] px-4 py-3 text-on-surface-variant">
@@ -487,8 +496,8 @@ export default function BatchDetailPage() {
                     className="px-4 py-8 text-center text-sm text-on-surface-variant"
                   >
                     {rowFilter === "FAILED"
-                      ? "No failed rows."
-                      : "No rows available."}
+                      ? t("dashboard.import.noFailedRows")
+                      : t("dashboard.import.noRowsAvailable")}
                   </td>
                 </tr>
               )}
@@ -502,12 +511,19 @@ export default function BatchDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="mx-4 w-full max-w-md rounded-2xl bg-surface-container-lowest p-6 shadow-xl">
             <h3 className="text-title-md font-bold text-on-surface">
-              Retry failed rows?
+              {t("dashboard.import.retryConfirmTitle")}
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-              This will re-attempt importing {batch.summary.invalidRows} invalid
-              row(s) and {batch.summary.failedCount} failed row(s). Any
-              previously created records will not be duplicated.
+              {t("dashboard.import.retryConfirmBody", {
+                invalid: tPlural(
+                  "dashboard.import.invalidRowsPhrase",
+                  batch.summary.invalidRows,
+                ),
+                failed: tPlural(
+                  "dashboard.import.failedRowsPhrase",
+                  batch.summary.failedCount,
+                ),
+              })}
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -515,14 +531,14 @@ export default function BatchDetailPage() {
                 className="rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
                 onClick={() => setShowRetryConfirm(false)}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
                 className="rounded-lg bg-secondary px-4 py-2 text-label-md font-bold text-on-secondary shadow-sm transition-colors hover:bg-secondary-container hover:text-on-secondary-container"
                 onClick={() => void handleRetry()}
               >
-                Retry
+                {t("common.retry")}
               </button>
             </div>
           </div>

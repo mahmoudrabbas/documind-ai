@@ -12,31 +12,43 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { getPlatformOverview } from "@/services/super-admin.service";
-
-const metrics = [
-  ["companies", "Total Companies", "business"],
-  ["activeCompanies", "Active Companies", "domain_verification"],
-  ["users", "Platform Users", "group"],
-  ["documents", "Documents", "description"],
-  ["questions", "Queries", "forum"],
-  ["estimatedCost", "Estimated Cost", "payments"],
-  ["failedJobs", "Failed Jobs", "error"],
-  ["storageBytes", "Storage", "database"],
-] as const;
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function SuperAdminOverviewPage() {
+  const { t, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const state = usePlatformData(getPlatformOverview);
+
+  const metrics: readonly [string, string, string][] = [
+    ["companies", t("superAdmin.companies"), "business"],
+    ["activeCompanies", t("superAdmin.activeCompanies"), "domain_verification"],
+    ["users", t("superAdmin.users"), "group"],
+    ["documents", t("superAdmin.documents"), "description"],
+    ["questions", t("superAdmin.queries"), "forum"],
+    ["estimatedCost", t("superAdmin.estimatedCost"), "payments"],
+    ["failedJobs", t("superAdmin.failedJobs"), "error"],
+    ["storageBytes", t("superAdmin.storage"), "database"],
+  ];
+
   const format = (key: string, value: number) =>
     key === "estimatedCost"
-      ? `$${value.toFixed(2)}`
+      ? new Intl.NumberFormat(intlLocale, {
+          style: "currency",
+          currency: "USD",
+        }).format(value)
       : key === "storageBytes"
-        ? `${(value / 1024 / 1024).toFixed(1)} MB`
-        : value.toLocaleString();
+        ? `${(value / 1024 / 1024).toLocaleString(intlLocale, {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          })} ${t("common.unitMB")}`
+        : value.toLocaleString(intlLocale);
+
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
-        title="Platform Overview"
-        description="Monitor companies, usage, processing, and operational activity across DocuMind AI."
+        title={t("superAdmin.title")}
+        description={t("superAdmin.description")}
       />
       <PlatformState
         loading={state.loading}
@@ -74,7 +86,10 @@ export default function SuperAdminOverviewPage() {
                         {item.actorEmail} · {item.resourceType}
                       </p>
                     </div>
-                    <StatusPill value={item.actorRole ?? "N/A"} />
+                    <StatusPill
+                      value={item.actorRole ?? "unknown"}
+                      label={codeLabel(t, "audit.actorRole", item.actorRole ?? "unknown")}
+                    />
                   </div>
                 ))
               ) : (

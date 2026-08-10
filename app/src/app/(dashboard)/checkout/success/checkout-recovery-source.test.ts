@@ -13,8 +13,16 @@ describe("checkout return recovery flow", () => {
 
   it("keeps provider failures recoverable and does not call them payment failures", async () => {
     const source = await readFile(new URL("./page.tsx", import.meta.url), "utf8");
-    expect(source).toContain("Provider temporarily unavailable");
-    expect(source).toContain("Your completed payment has not been marked as failed");
+    expect(source).toContain("billing.providerUnavailableTitle");
+    expect(source).toContain("billing.providerUnavailableMessage");
     expect(source).not.toContain("Payment failed");
+
+    const en = await readFile(
+      new URL("../../../../lib/i18n/translations/en.ts", import.meta.url),
+      "utf8",
+    );
+    expect(en).toContain("Provider temporarily unavailable");
+    expect(en).toContain("Your completed payment has not been marked as failed");
+    expect(en).not.toContain('"billing.providerUnavailableTitle": "Payment failed"');
   });
 });

@@ -1,24 +1,14 @@
 "use client";
 
 import { ProgressBar } from "@/components/ui";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/providers/i18n-provider";
 import type {
   ProcessingRunView,
   ProcessingStageView,
   ProcessingStageStatus,
 } from "@/types/api/processingProgress.types";
-
-const STAGE_LABELS: Record<string, string> = {
-  security_scanning: "Security Scan",
-  extraction: "Text Extraction",
-  ocr: "OCR",
-  quality_review: "Quality Review",
-  metadata_review: "Metadata Review",
-  chunking: "Chunking",
-  embedding: "Embedding",
-  indexing: "Indexing",
-  finalization: "Finalization",
-};
 
 const STAGE_ICONS: Record<string, string> = {
   security_scanning: "shield",
@@ -56,7 +46,8 @@ interface StageRowProps {
 }
 
 function StageRow({ stage, isCurrent }: StageRowProps) {
-  const label = STAGE_LABELS[stage.stageName] ?? stage.stageName;
+  const { t } = useI18n();
+  const label = codeLabel(t, "documents.stage", stage.stageName);
   const iconName = STAGE_ICONS[stage.stageName] ?? "circle";
 
   return (
@@ -84,7 +75,9 @@ function StageRow({ stage, isCurrent }: StageRowProps) {
         <div className="flex items-center gap-2">
           <span className="text-sm text-slate-700">{label}</span>
           {stage.attempt > 1 && (
-            <span className="text-xs text-slate-400">(attempt {stage.attempt})</span>
+            <span className="text-xs text-slate-400">
+              {t("documents.attempt", { count: String(stage.attempt) })}
+            </span>
           )}
         </div>
 
@@ -117,6 +110,11 @@ interface ProcessingTimelineProps {
 }
 
 export function ProcessingTimeline({ run, className }: ProcessingTimelineProps) {
+  const { t } = useI18n();
+  const currentStageLabel = run.currentStage
+    ? codeLabel(t, "documents.stage", run.currentStage)
+    : "—";
+
   return (
     <div className={cn("w-full", className)}>
       <div className="mb-3">
@@ -124,7 +122,7 @@ export function ProcessingTimeline({ run, className }: ProcessingTimelineProps) 
           value={run.progress}
           showPercentage
           size="md"
-          label={`Overall progress — stage: ${run.currentStage ? (STAGE_LABELS[run.currentStage] ?? run.currentStage) : "—"}`}
+          label={t("documents.overallProgress", { stage: currentStageLabel })}
         />
       </div>
 
@@ -140,7 +138,7 @@ export function ProcessingTimeline({ run, className }: ProcessingTimelineProps) 
 
       {run.durationMs != null && (
         <p className="mt-3 text-xs text-slate-400">
-          Total duration: {formatDuration(run.durationMs)}
+          {t("documents.totalDuration", { duration: formatDuration(run.durationMs) ?? "" })}
         </p>
       )}
     </div>

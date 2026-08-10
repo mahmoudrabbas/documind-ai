@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
 
@@ -65,7 +65,7 @@ function HeroSection() {
               className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
             >
               {t("landing.heroCta")}
-              <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+              <span className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
                 arrow_forward
               </span>
             </Link>
@@ -245,27 +245,56 @@ function formatCurrency(amount: number, currency: string): string {
   return formatMoneyMinor(amount, currency);
 }
 
-function formatEntitlementLabel(key: string, value: number): string {
+type TranslateFn = (key: string, params?: Record<string, string>) => string;
+type PluralFn = (key: string, count: number, params?: Record<string, string>) => string;
+
+/**
+ * Render one entitlement row.
+ *
+ * Counts go through `tPlural` rather than an `n !== 1` suffix: Arabic
+ * selects six plural categories, so English's singular/plural pair is
+ * simply wrong for it. `{{count}}` is overridden with the locale-formatted
+ * number wherever the original formatted the count for display.
+ */
+function formatEntitlementLabel(
+  key: string,
+  value: number,
+  t: TranslateFn,
+  tPlural: PluralFn,
+  intlLocale: string,
+): string {
   switch (key) {
     case "employees":
-      return `${value} user${value !== 1 ? "s" : ""}`;
+      return tPlural("billing.entitlementUsers", value);
     case "documents":
-      return `${value.toLocaleString()} document${value !== 1 ? "s" : ""}`;
+      return tPlural("billing.entitlementDocuments", value, {
+        count: value.toLocaleString(intlLocale),
+      });
     case "queriesPerMonth":
-      return `${value.toLocaleString()} questions/mo`;
+      return tPlural("billing.entitlementQuestionsPerMonth", value, {
+        count: value.toLocaleString(intlLocale),
+      });
     case "storageMb":
       return value >= 1024
-        ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)} GB storage`
-        : `${value} MB storage`;
+        ? t("billing.entitlementStorageGb", {
+            value: (value / 1024).toFixed(value % 1024 === 0 ? 0 : 1),
+          })
+        : t("billing.entitlementStorageMb", { value: String(value) });
     case "admins":
-      return `${value} admin${value !== 1 ? "s" : ""}`;
+      return tPlural("billing.entitlementAdmins", value);
     case "fileSizeMb":
-      return `Up to ${value} MB per file`;
+      return t("billing.entitlementFileSize", { value: String(value) });
     case "tokensPerMonth":
-      return `${(value / 1_000_000).toFixed(0)}M tokens/mo`;
+      return t("billing.entitlementTokensPerMonth", {
+        value: (value / 1_000_000).toFixed(0),
+      });
     case "ocrPagesPerMonth":
-      return `${value.toLocaleString()} OCR pages/mo`;
+      return tPlural("billing.entitlementOcrPagesPerMonth", value, {
+        count: value.toLocaleString(intlLocale),
+      });
     default:
+      // Unmapped machine key — surfaced verbatim so a new entitlement is
+      // visible rather than silently dropped. Never user-facing copy.
       return `${key}: ${value}`;
   }
 }
@@ -273,12 +302,16 @@ function formatEntitlementLabel(key: string, value: number): string {
 function PricingCard({
   pkg,
   t,
+  tPlural,
+  intlLocale,
   annual,
   isRecommended,
   isFree,
 }: {
   pkg: PackageData;
-  t: (key: string) => string;
+  t: TranslateFn;
+  tPlural: PluralFn;
+  intlLocale: string;
   annual: boolean;
   isRecommended?: boolean;
   isFree?: boolean;
@@ -319,7 +352,7 @@ function PricingCard({
             >
               star
             </span>
-            Most Popular
+            {t("landing.pricingMostPopular")}
           </span>
         </div>
       )}
@@ -327,7 +360,7 @@ function PricingCard({
       {hasTrial && (
         <div className={cn("mb-3", isRecommended && "mt-1")}>
           <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
-            {pkg.trialDays}-day free trial
+            {tPlural("billing.entitlementTrialDays", pkg.trialDays ?? 0)}
           </span>
         </div>
       )}
@@ -357,17 +390,22 @@ function PricingCard({
           {isFree ? "$0" : formatCurrency(effectivePrice, pkg.currency)}
         </span>
         {!isFree && (
-          <span className="text-body-sm text-on-surface-variant">/month</span>
+          <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
         )}
       </div>
 
       {annual && annualSavings > 0 && pkg.annualPrice ? (
         <p className="mt-1 text-label-xs text-tertiary">
-          Billed annually at {formatCurrency(pkg.annualPrice, pkg.currency)}/yr — save {annualSavings}%
+          {t("landing.pricingBilledAnnuallySave", {
+            price: formatCurrency(pkg.annualPrice, pkg.currency),
+            percent: annualSavings.toLocaleString(intlLocale),
+          })}
         </p>
       ) : annual && pkg.annualPrice ? (
         <p className="mt-1 text-label-xs text-on-surface-variant">
-          Billed annually at {formatCurrency(pkg.annualPrice, pkg.currency)}/yr
+          {t("landing.pricingBilledAnnually", {
+            price: formatCurrency(pkg.annualPrice, pkg.currency),
+          })}
         </p>
       ) : null}
 
@@ -388,7 +426,7 @@ function PricingCard({
             >
               check_circle
             </span>
-            {formatEntitlementLabel(key, value)}
+            {formatEntitlementLabel(key, value, t, tPlural, intlLocale)}
           </li>
         ))}
 
@@ -403,7 +441,7 @@ function PricingCard({
             >
               check_circle
             </span>
-            {pkg.supportedModels.length} AI model{pkg.supportedModels.length !== 1 ? "s" : ""}
+            {tPlural("billing.entitlementAiModels", pkg.supportedModels.length)}
           </li>
         )}
 
@@ -418,7 +456,7 @@ function PricingCard({
             >
               check_circle
             </span>
-            {pkg.supportLevel} support
+            {t("billing.entitlementSupport", { level: pkg.supportLevel })}
           </li>
         )}
 
@@ -433,7 +471,7 @@ function PricingCard({
             >
               check_circle
             </span>
-            {pkg.retentionDays}-day data retention
+            {tPlural("billing.entitlementRetentionDays", pkg.retentionDays)}
           </li>
         )}
       </ul>
@@ -454,7 +492,8 @@ function PricingCard({
 }
 
 function PricingSection() {
-  const { t, dir } = useI18n();
+  const { t, tPlural, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [annual, setAnnual] = useState(false);
@@ -506,7 +545,7 @@ function PricingSection() {
                   : "text-on-surface-variant hover:text-primary",
               )}
             >
-              Monthly
+              {t("billing.monthly")}
             </button>
             <button
               type="button"
@@ -518,9 +557,9 @@ function PricingSection() {
                   : "text-on-surface-variant hover:text-primary",
               )}
             >
-              Annual
+              {t("billing.annual")}
               <span className="rounded-full bg-tertiary/10 px-2 py-0.5 text-label-xs text-tertiary">
-                Save
+                {t("landing.pricingSaveBadge")}
               </span>
             </button>
           </div>
@@ -531,15 +570,26 @@ function PricingSection() {
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
           </div>
         ) : packages.length === 0 ? (
-          <p className="py-12 text-center text-on-surface-variant">No packages are currently available.</p>
+          <p className="py-12 text-center text-on-surface-variant">{t("billing.empty")}</p>
         ) : (
           <div className={cn("grid items-stretch gap-6 lg:gap-8", gridCols)}>
-            {freePkg ? <PricingCard pkg={freePkg} t={t} annual={annual} isFree /> : null}
+            {freePkg ? (
+              <PricingCard
+                pkg={freePkg}
+                t={t}
+                tPlural={tPlural}
+                intlLocale={intlLocale}
+                annual={annual}
+                isFree
+              />
+            ) : null}
             {paidPackages.map((pkg) => (
               <PricingCard
                 key={pkg.id}
                 pkg={pkg}
                 t={t}
+                tPlural={tPlural}
+                intlLocale={intlLocale}
                 annual={annual}
                 isRecommended={pkg.code === recommendedCode}
               />
@@ -572,7 +622,7 @@ function FaqSection() {
             <div key={i} className="overflow-hidden rounded-xl border border-outline-variant">
               <button
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="flex w-full items-center justify-between gap-4 bg-surface px-6 py-5 text-left transition-colors hover:bg-surface-container-high"
+                className="flex w-full items-center justify-between gap-4 bg-surface px-6 py-5 text-start transition-colors hover:bg-surface-container-high"
                 aria-expanded={openIndex === i}
               >
                 <span className="text-title-lg text-primary">{faq.q}</span>
@@ -606,7 +656,7 @@ function CtaSection() {
             className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
           >
             {t("landing.ctaButton")}
-            <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+            <span className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
               arrow_forward
             </span>
           </Link>

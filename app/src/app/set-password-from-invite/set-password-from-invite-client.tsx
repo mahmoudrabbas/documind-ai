@@ -23,11 +23,11 @@ type PageState = {
 type FieldErrors = Partial<Record<"password" | "confirmPassword", string>>;
 
 const rules = [
-  ["At least 8 characters", (value: string) => value.length >= 8],
-  ["An uppercase letter", (value: string) => /[A-Z]/.test(value)],
-  ["A lowercase letter", (value: string) => /[a-z]/.test(value)],
-  ["A number", (value: string) => /[0-9]/.test(value)],
-  ["No leading or trailing spaces", (value: string) => value === value.trim()],
+  ["auth.ruleMinLength", (value: string) => value.length >= 8],
+  ["auth.ruleUppercase", (value: string) => /[A-Z]/.test(value)],
+  ["auth.ruleLowercase", (value: string) => /[a-z]/.test(value)],
+  ["auth.ruleNumber", (value: string) => /[0-9]/.test(value)],
+  ["auth.ruleNoTrimSpaces", (value: string) => value === value.trim()],
 ] as const;
 
 export default function SetPasswordFromInviteClient() {
@@ -43,12 +43,12 @@ export default function SetPasswordFromInviteClient() {
     token
       ? {
           status: "loading",
-          message: "Checking your invitation...",
+          message: t("auth.inviteChecking"),
         }
       : {
           status: "error",
           code: "INVITE_INVALID",
-          message: "This invitation link is incomplete.",
+          message: t("auth.inviteIncomplete"),
         },
   );
   const [details, setDetails] = useState<InviteDetails | null>(null);
@@ -79,7 +79,7 @@ export default function SetPasswordFromInviteClient() {
           setDetails(response.data);
           setState({
             status: "form",
-            message: "Create a password to activate your account.",
+            message: t("auth.inviteFormMessage"),
           });
         }
       })
@@ -92,13 +92,13 @@ export default function SetPasswordFromInviteClient() {
             message:
               error instanceof ApiError
                 ? error.message
-                : "We could not check this invitation.",
+                : t("auth.inviteCheckFailed"),
           });
       });
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, t]);
 
   const passwordValid =
     password.length <= 128 && rules.every(([, check]) => check(password));
@@ -108,22 +108,21 @@ export default function SetPasswordFromInviteClient() {
   function validateFields() {
     const next: FieldErrors = {};
     if (!passwordValid)
-      next.password =
-        "Use 8-128 characters with uppercase, lowercase, and a number, without surrounding spaces.";
-    if (!confirmPassword) next.confirmPassword = "Confirm your password.";
+      next.password = t("auth.setPasswordHelpText");
+    if (!confirmPassword) next.confirmPassword = t("auth.confirmPasswordHelp");
     else if (confirmPassword !== password)
-      next.confirmPassword = "Passwords do not match.";
+      next.confirmPassword = t("auth.passwordsDoNotMatch");
     setErrors(next);
     return Object.keys(next).length === 0;
   }
 
   function messageForError(error: unknown) {
     if (!(error instanceof ApiError)) {
-      return "We could not save your password. Please try again.";
+      return t("auth.savePasswordError");
     }
     switch (error.code) {
       default:
-        return error.message || "We could not save your password. Please try again.";
+        return error.message || t("auth.savePasswordError");
     }
   }
 
@@ -138,7 +137,7 @@ export default function SetPasswordFromInviteClient() {
     setState((current) => ({
       ...current,
       status: "form",
-      message: "Setting your password...",
+      message: t("auth.settingPasswordState"),
     }));
     try {
       await apiClient("/users/set-password-from-invite", {
@@ -149,7 +148,7 @@ export default function SetPasswordFromInviteClient() {
       });
       setState({
         status: "success",
-        message: "Your password is ready. You can now sign in.",
+        message: t("auth.setPasswordSuccessState"),
       });
       window.setTimeout(() => {
         router.replace("/login");
@@ -171,12 +170,11 @@ export default function SetPasswordFromInviteClient() {
           : undefined;
         setErrors({
           password:
-            detail?.message ??
-            "The password does not meet the security requirements.",
+            detail?.message ?? t("auth.passwordRequirementsFailed"),
         });
         setState({
           status: "form",
-          message: "Review the highlighted field and try again.",
+          message: t("auth.reviewHighlightedField"),
         });
       } else if (
         error instanceof ApiError &&
@@ -214,30 +212,33 @@ export default function SetPasswordFromInviteClient() {
       <AuthBrand label={t("landing.appName") || "DocuMind AI"} />
       <h1 id="invite-title" className="mt-2 text-center text-3xl font-bold">
         {state.status === "success"
-          ? "Account activated"
+          ? t("auth.accountActivated")
           : state.status === "error"
-            ? "Invitation unavailable"
-            : "Set up your account"}
+            ? t("auth.inviteUnavailable")
+            : t("auth.setUpAccount")}
       </h1>
       <p
         className="mx-auto mt-3 max-w-[32rem] text-center text-sm leading-6 text-slate-600"
         role={state.status === "error" ? "alert" : "status"}
       >
         {state.status === "form" && details
-          ? `You have been invited to join ${details.companyName} as ${details.role.replaceAll("_", " ").toLowerCase()}.`
+          ? t("auth.invitedJoinText", {
+              companyName: details.companyName,
+              role: details.role.replaceAll("_", " ").toLowerCase(),
+            })
           : state.message}
       </p>
       {state.status === "loading" ? (
         <div
           className="mx-auto mt-8 h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"
-          aria-label="Checking invitation"
+          aria-label={t("auth.inviteChecking")}
         />
       ) : null}
       {state.status === "form" && details ? (
         <>
           <dl className="mt-6 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
             <div className="min-w-0">
-              <dt className="text-slate-500">Invited email</dt>
+              <dt className="text-slate-500">{t("auth.invitedEmailLabel")}</dt>
               <dd className="mt-1 break-words font-semibold">
                 {details.email}
               </dd>
@@ -262,7 +263,7 @@ export default function SetPasswordFromInviteClient() {
               ) : null}
             </div>
             <label className="block text-sm font-semibold" htmlFor="password">
-              Password
+              {t("auth.passwordLabel")}
               <div className="relative mt-2">
                 <input
                   id="password"
@@ -285,9 +286,13 @@ export default function SetPasswordFromInviteClient() {
                   onClick={() => setShowPassword((value) => !value)}
                   disabled={isSubmitting || rateLimitRetryAfter !== null}
                   className="absolute inset-y-0 end-2 px-2 text-xs font-semibold text-blue-700"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={
+                    showPassword
+                      ? t("auth.hidePassword")
+                      : t("auth.showPassword")
+                  }
                 >
-                  {showPassword ? "Hide" : "Show"}
+                  {showPassword ? t("auth.hide") : t("auth.show")}
                 </button>
               </div>
             </label>
@@ -304,14 +309,16 @@ export default function SetPasswordFromInviteClient() {
               id="password-help"
               className="grid gap-1 text-sm sm:grid-cols-2"
             >
-              {rules.map(([label, check]) => (
+              {rules.map(([ruleKey, check]) => (
                 <li
-                  key={label}
+                  key={ruleKey}
                   className={
                     check(password) ? "text-emerald-700" : "text-slate-500"
                   }
                 >
-                  {check(password) ? "Passed:" : "Required:"} {label}
+                  {check(password)
+                    ? `${t("auth.passedPrefix")} ${t(ruleKey)}`
+                    : `${t("auth.requiredPrefix")} ${t(ruleKey)}`}
                 </li>
               ))}
             </ul>
@@ -319,7 +326,7 @@ export default function SetPasswordFromInviteClient() {
               className="block text-sm font-semibold"
               htmlFor="confirmPassword"
             >
-              Confirm password
+              {t("auth.confirmPasswordLabel")}
               <input
                 id="confirmPassword"
                 type={showPassword ? "text" : "password"}
@@ -350,7 +357,9 @@ export default function SetPasswordFromInviteClient() {
               disabled={!formValid || isSubmitting || rateLimitRetryAfter !== null}
               className="flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {isSubmitting ? "Setting password..." : "Set password"}
+              {isSubmitting
+                ? t("auth.settingPassword")
+                : t("auth.setPasswordAction")}
             </button>
           </form>
         </>
@@ -360,7 +369,7 @@ export default function SetPasswordFromInviteClient() {
           href="/login"
           className="mt-8 flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
         >
-          Go to sign in
+          {t("auth.goToSignIn")}
         </Link>
       ) : null}
     </AuthPageShell>

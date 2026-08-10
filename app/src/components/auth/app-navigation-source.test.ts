@@ -9,7 +9,7 @@ describe("authenticated navigation source", () => {
     expect(source).toContain("logoutPending.current");
     expect(source).toContain("await auth.logout()");
     expect(source).toContain('router.replace("/login")');
-    expect(source).toContain("Logging out…");
+    expect(source).toContain('t("shell.loggingOut")');
   });
   it("filters shell-specific navigation through effective permissions", async () => {
     const source = await readFile(sourceUrl, "utf8");

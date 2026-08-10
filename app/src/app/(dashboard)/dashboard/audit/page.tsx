@@ -3,11 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPage";
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { getAuditLogs, type AuditLog, type AuditQueryFilter } from "@/services/audit.service";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { actionLabel, resourceLabel, describeChanges } from "@/lib/audit-formatters";
 
 export default function TenantAuditPage() {
-  const { t } = useI18n();
+  const { t, tPlural, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export default function TenantAuditPage() {
   }, [loadLogs]);
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
         title={t("audit.title")}
         description={t("audit.description")}
@@ -44,43 +46,53 @@ export default function TenantAuditPage() {
       )}
 
       {loading ? (
-        <div className="p-8 text-center text-sm text-on-surface-variant">Loading...</div>
+        <div className="p-8 text-center text-sm text-on-surface-variant">{t("common.loading")}</div>
       ) : logs.length === 0 ? (
-        <div className="p-8 text-center text-sm text-on-surface-variant">No audit logs found.</div>
+        <div className="p-8 text-center text-sm text-on-surface-variant">{t("audit.noLogs")}</div>
       ) : (
         <PlatformTable
-          headers={["Action", "Actor", "Role", "Resource", "Details", "Time"]}
+          headers={[
+            t("audit.tableAction"),
+            t("audit.tableActor"),
+            t("audit.tableRole"),
+            t("audit.tableResource"),
+            t("audit.tableDetails"),
+            t("audit.tableTime"),
+          ]}
           minWidth="920px"
         >
           {logs.map((log) => {
-            const changeDesc = describeChanges(log.action, log.changes);
+            const changeDesc = describeChanges(log.action, log.changes, { t, tPlural });
             return (
               <tr key={log._id}>
                 <td className={cell}>
                   <strong className="text-on-surface">
-                    {actionLabel(log.action)}
+                    {actionLabel(log.action, t)}
                   </strong>
                   {log.outcome !== "SUCCESS" && (
-                    <span className="ml-2 text-xs text-red-500">[{log.outcome}]</span>
+                    <span className="ms-2 text-xs text-red-500">[{log.outcome}]</span>
                   )}
                 </td>
-                <td className={cell}>{log.actorEmail ?? "Unauthenticated"}</td>
+                <td className={cell}>{log.actorEmail ?? t("audit.unauthenticated")}</td>
                 <td className={cell}>
-                  <StatusPill value={log.actorRole ?? "N/A"} />
+                  <StatusPill
+                    value={log.actorRole ?? "unknown"}
+                    label={codeLabel(t, "audit.actorRole", log.actorRole ?? "unknown")}
+                  />
                 </td>
                 <td className={cell}>
-                  <span className="text-on-surface">{resourceLabel(log.resourceType)}</span>
+                  <span className="text-on-surface">{resourceLabel(log.resourceType, t)}</span>
                   <p className="max-w-44 truncate text-xs text-on-surface-variant">{log.resourceId}</p>
                 </td>
                 <td className={cell}>
                   {changeDesc ? (
                     <span className="text-xs">{changeDesc}</span>
                   ) : (
-                    <span className="text-xs text-on-surface-variant italic">No changes</span>
+                    <span className="text-xs text-on-surface-variant italic">{t("audit.noChanges")}</span>
                   )}
                 </td>
                 <td className={cell}>
-                  {new Date(log.createdAt).toLocaleString()}
+                  {new Date(log.createdAt).toLocaleString(intlLocale)}
                 </td>
               </tr>
             );

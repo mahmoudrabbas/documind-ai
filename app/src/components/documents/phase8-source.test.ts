@@ -34,30 +34,30 @@ describe("Phase 8 safety source contracts", () => {
   it("preselects current taxonomy and supports clearing optional assignments", () => { expect(editor).toContain("currentTaxonomy.classificationId"); expect(editor).toContain('categoryId: event.target.value || null'); expect(editor).toContain('departmentId: event.target.value || null'); });
   it("binds taxonomy to preview and apply", () => { expect(editor).toContain("pointer.policyVersion, draft, taxonomy"); expect(editor).toContain("confirmSensitive, taxonomy"); });
   it("invalidates a preview after taxonomy changes", () => { expect(editor).toContain("function editTaxonomy"); expect(editor).toContain("setPreview(null)"); });
-  it("protects owner rules for non-owner users", () => { expect(editor).toContain("ownerReadOnly"); expect(editor).toContain("Protected owner rule"); expect(editor).toContain("Protected owner rule — only the document owner can modify it."); });
+  it("protects owner rules for non-owner users", () => { expect(editor).toContain("ownerReadOnly"); expect(editor).toContain("protectedOwnerRule"); expect(editor).toContain("protectedOwnerRuleDesc"); });
   it("compares current user with document owner for owner-rule read-only", () => { expect(editor).toContain("currentUserId === documentOwnerId"); });
-  it("enforces minimum actions for owner rules owned by the document owner", () => { expect(editor).toContain("isOwnerRule && OWNER_MINIMUM_ACTIONS.has(action)"); expect(editor).toContain("(required)"); });
+  it("enforces minimum actions for owner rules owned by the document owner", () => { expect(editor).toContain("isOwnerRule && OWNER_MINIMUM_ACTIONS.has(action)"); expect(editor).toContain("requiredAction"); });
   it("prevents subject type change only for the immutable owner rule", () => { expect(editor).toContain("disabled={isOwnerRule}"); expect(editor).toContain("rule.ruleId === ownerRuleId"); });
-  it("protects taxonomy for delegated non-owner managers", () => { expect(editor).toContain("taxonomyEditable"); expect(editor).toContain("Document taxonomy can only be changed by the document owner or a Company Admin."); });
+  it("protects taxonomy for delegated non-owner managers", () => { expect(editor).toContain("taxonomyEditable"); expect(editor).toContain("taxonomyOwnerOnly"); });
   it("disables taxonomy controls when not editable", () => { expect(editor).toContain("disabled={!taxonomyEditable}"); });
   it("shows owner-rule-protected error message", () => { expect(editor).toContain("owner_rule_protected"); expect(editor).toContain("Only the document owner may modify the owner rule."); });
   it("shows taxonomy-protected error message", () => { expect(editor).toContain("taxonomy_protected"); expect(editor).toContain("Only the document owner or a Company Admin may change document taxonomy."); });
-  it("shows options loading, error, and taxonomy empty states", () => { expect(editor).toContain("Loading policy editor options"); expect(editor).toContain("No active classifications are available"); expect(editor).toContain("Taxonomy options could not be loaded"); expect(editor).toContain("Policy editor options could not be loaded"); });
-  it("shows a retry button for failed options loading", () => { expect(editor).toContain("Retry loading options"); expect(editor).toContain("Retry taxonomy"); });
+  it("shows options loading, error, and taxonomy empty states", () => { expect(editor).toContain("loadingPolicyEditorOptions"); expect(editor).toContain("noActiveClassifications"); expect(editor).toContain("taxonomyOptionsError"); expect(editor).toContain("policyEditorOptionsError"); });
+  it("shows a retry button for failed options loading", () => { expect(editor).toContain("retryLoadingOptions"); expect(editor).toContain("retryTaxonomy"); });
   it("uses the backend-selected sensitivity for confirmation", () => expect(editor).toContain("preview.taxonomy.classificationLevel"));
   it("does not auto-confirm sensitive broadening", () => expect(editor).toContain("setAcknowledged(false)"));
   it("sends sensitive confirmation only from the explicit dialog", () => expect(editor).toContain("doApply(true)"));
-  it("preserves draft while reloading a stale pointer", () => expect(editor).toContain("Reload pointer and preserve draft"));
+  it("preserves draft while reloading a stale pointer", () => expect(editor).toContain("reloadPointerAndPreserveDraft"));
   it("preserves taxonomy selections while reloading a stale pointer", () => {
     const reload = editor.slice(editor.indexOf("async function reloadPointer"), editor.indexOf("async function doApply"));
     expect(reload).not.toContain("setTaxonomy(");
   });
 
   it("shows deny assignments instead of omitting them", () => expect(panel).toContain('assignment.effect === "deny"'));
-  it("shows stale references safely", () => expect(panel).toContain("Unavailable principal"));
-  it("sorts history newest first and marks it read-only", () => { expect(panel).toContain("b.policyVersion - a.policyVersion"); expect(panel).toContain("Read only"); });
-  it("keeps history failures out of the panel-wide error state", () => { expect(panel).toContain("setHistoryError(policyApi.classifyPolicyError(cause))"); expect(panel).toContain("Other policy data remains available"); });
-  it("shows a History-tab retry action", () => { expect(panel).toContain("<HistoryLoadError"); expect(panel).toContain("Retry history"); });
+  it("shows stale references safely", () => expect(panel).toContain("unavailablePrincipal"));
+  it("sorts history newest first and marks it read-only", () => { expect(panel).toContain("b.policyVersion - a.policyVersion"); expect(panel).toContain("readOnly"); });
+  it("keeps history failures out of the panel-wide error state", () => { expect(panel).toContain("setHistoryError(policyApi.classifyPolicyError(cause))"); expect(panel).toContain("historyLoadErrorText"); });
+  it("shows a History-tab retry action", () => { expect(panel).toContain("<HistoryLoadError"); expect(panel).toContain("retryHistory"); });
   it("retries only history after an isolated failure", () => {
     const retry = panel.match(/function HistoryLoadError[^\n]+/)?.[0] ?? "";
     expect(retry).toContain("retry");
@@ -70,10 +70,10 @@ describe("Phase 8 safety source contracts", () => {
   it("does not expose a propagation retry button", () => expect(panel).toContain("No retry action is exposed"));
   it("clears prior-document policy data before refresh", () => expect(panel).toContain("setActive(null)"));
 
-  it("uses only the backend-supported shared batch template", () => expect(batch).toContain("Shared change reason"));
+  it("uses only the backend-supported shared batch template", () => expect(batch).toContain("sharedChangeReason"));
   it("shows authoritative aggregate and per-document impact", () => { expect(batch).toContain("preview.aggregate"); expect(batch).toContain("preview.results.map"); });
   it("requires sensitive confirmation for a nonzero backend count", () => expect(batch).toContain("sensitiveCount ? setConfirm(true)"));
-  it("does not claim total success for partial results", () => expect(batch).toContain("Partial batch result"));
+  it("does not claim total success for partial results", () => expect(batch).toContain("partialBatchResult"));
   it("prevents successful results from being applied twice in one dialog", () => expect(batch).toContain("Boolean(result)"));
   it("keeps tenant identity out of the batch payload", () => expect(batch).not.toContain("tenantId"));
   it("keeps policy dialogs within the mobile viewport", () => { expect(editor).toContain("max-h-[calc(100vh-1rem)]"); expect(batch).toContain("max-h-[calc(100vh-1.5rem)]"); });
@@ -81,10 +81,10 @@ describe("Phase 8 safety source contracts", () => {
 
   it("uses semantic error/alert components instead of raw divs", () => { expect(editor).toContain('import { Alert }'); expect(panel).toContain('import { Alert }'); expect(batch).toContain('import { Alert }'); });
   it("uses proper ARIA for tabs and dialogs", () => { expect(editor).toContain("role=\"dialog\""); expect(editor).toContain("aria-modal"); expect(panel).toContain("import { Tabs, Tab, TabPanel }"); expect(panel).toContain("<Tabs"); });
-  it("uses grouped action labels for better scannability", () => { expect(editor).toContain("ACTION_LABELS"); expect(editor).toContain("ACTION_GROUPS"); expect(editor).toContain("Visibility"); });
+  it("uses grouped action labels for better scannability", () => { expect(editor).toContain("ACTION_GROUPS"); expect(editor).toContain("visibilityAndConsumption"); });
   it("uses warning variant for sensitive confirmation (not danger)", () => { expect(editor).toContain('variant="warning"'); expect(batch).toContain('variant="warning"'); });
-  it("uses danger variant only for destructive actions", () => { expect(editor).toContain("Remove rule"); expect(editor.indexOf("Remove rule")).toBeGreaterThan(0); });
-  it("includes lock icon for protected owner rule", () => { expect(editor).toContain("lock"); expect(editor).toContain("Protected owner rule"); });
+  it("uses danger variant only for destructive actions", () => { expect(editor).toContain("removeRule"); expect(editor.indexOf("removeRule")).toBeGreaterThan(0); });
+  it("includes lock icon for protected owner rule", () => { expect(editor).toContain("lock"); expect(editor).toContain("protectedOwnerRule"); });
   it("shows sticky footer in editor", () => expect(editor).toContain("sticky bottom-0"));
   it("shows sticky footer in batch dialog", () => expect(batch).toContain("sticky bottom-0"));
 });

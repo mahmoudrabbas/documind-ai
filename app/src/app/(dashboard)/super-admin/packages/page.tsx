@@ -19,23 +19,27 @@ import { Permission } from "@/types/api/permissions.types";
 import { usePermissions } from "@/providers/permission-provider";
 import { resolvePackageEntitlement } from "@/components/super-admin/package-display.contract";
 import { formatMoneyMinor } from "@/lib/money";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function PackagesPage() {
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const state = usePlatformData(listPackages);
   const denied = permissions.status === "ready" && !permissions.can(Permission.BILLING_READ);
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Packages"
-        description="Create versioned SaaS packages and manage platform limits."
+        title={t("superAdmin.packages.title")}
+        description={t("superAdmin.packages.desc")}
         actions={
           <PermissionAction permissions={[Permission.BILLING_MANAGE]}>
           <Link
             href="/super-admin/packages/new"
             className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 font-bold text-on-primary sm:w-auto"
           >
-            <span className="material-symbols-outlined">add</span>New package
+            <span className="material-symbols-outlined">add</span>{t("superAdmin.packages.new")}
           </Link>
           </PermissionAction>
         }
@@ -46,22 +50,22 @@ export default function PackagesPage() {
         onRetry={state.reload}
       />
       {denied ? (
-        <DashboardPanel><p role="alert">You do not have permission to view packages.</p></DashboardPanel>
+        <DashboardPanel><p role="alert">{t("superAdmin.packages.noPermission")}</p></DashboardPanel>
       ) : state.data?.length === 0 ? (
-        <DashboardPanel><p>No packages have been created yet.</p></DashboardPanel>
+        <DashboardPanel><p>{t("superAdmin.packages.none")}</p></DashboardPanel>
       ) : state.data ? (
         <PlatformTable
           headers={[
-            "Package",
-            "Version",
-            "Monthly",
-            "Annual",
-            "Trial",
-            "Employees",
-            "Queries/mo",
-            "Visibility",
-            "Status",
-            "Actions",
+            t("superAdmin.subsTablePackage"),
+            t("superAdmin.subsTableVersion"),
+            t("superAdmin.packages.monthly"),
+            t("superAdmin.packages.annual"),
+            t("superAdmin.packages.trial"),
+            t("superAdmin.packages.employees"),
+            t("superAdmin.packages.queriesPerMonthShort"),
+            t("superAdmin.packages.visibility"),
+            t("superAdmin.tableStatus"),
+            t("superAdmin.packages.actions"),
           ]}
           minWidth="1100px"
         >
@@ -71,23 +75,23 @@ export default function PackagesPage() {
                 <p className="font-bold text-on-surface">{pkg.name}</p>
                 <p className="text-xs">{pkg.code}</p>
               </td>
-              <td className={cell}>v{pkg.version}</td>
+              <td className={cell}>{t("superAdmin.packages.versionLabel", { version: String(pkg.version) })}</td>
               <td className={cell}>
-                {formatMoneyMinor(pkg.monthlyPriceCents ?? pkg.monthlyPrice, pkg.currency)}
+                {formatMoneyMinor(pkg.monthlyPriceCents ?? pkg.monthlyPrice, pkg.currency, intlLocale)}
               </td>
               <td className={cell}>
                 {pkg.annualPrice > 0
-                  ? formatMoneyMinor(pkg.annualPriceCents ?? pkg.annualPrice, pkg.currency)
+                  ? formatMoneyMinor(pkg.annualPriceCents ?? pkg.annualPrice, pkg.currency, intlLocale)
                   : "—"}
               </td>
               <td className={cell}>
-                {pkg.trialDays > 0 ? `${pkg.trialDays}d` : "—"}
+                {pkg.trialDays > 0 ? tPlural("superAdmin.packages.daysCompact", pkg.trialDays) : "—"}
               </td>
               <td className={cell}>
-                {resolvePackageEntitlement(pkg, "employees", "users")?.toLocaleString() ?? "—"}
+                {resolvePackageEntitlement(pkg, "employees", "users")?.toLocaleString(intlLocale) ?? "—"}
               </td>
               <td className={cell}>
-                {resolvePackageEntitlement(pkg, "queriesPerMonth", "questionsPerMonth")?.toLocaleString() ?? "—"}
+                {resolvePackageEntitlement(pkg, "queriesPerMonth", "questionsPerMonth")?.toLocaleString(intlLocale) ?? "—"}
               </td>
               <td className={cell}>
                 <span
@@ -104,18 +108,21 @@ export default function PackagesPage() {
                         : "bg-on-surface-variant"
                     }`}
                   />
-                  {pkg.visibility}
+                  {codeLabel(t, "superAdmin.packageVisibility", pkg.visibility)}
                 </span>
               </td>
               <td className={cell}>
-                <StatusPill value={pkg.active ? "active" : "inactive"} />
+                <StatusPill
+                  value={pkg.active ? "active" : "inactive"}
+                  label={codeLabel(t, "superAdmin.packageState", pkg.active ? "active" : "inactive")}
+                />
               </td>
               <td className={cell}>
                 <Link
                   href={`/super-admin/packages/${pkg._id}`}
                   className="font-bold text-secondary"
                 >
-                  Manage
+                  {t("superAdmin.packages.manage")}
                 </Link>
               </td>
             </tr>

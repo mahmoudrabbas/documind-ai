@@ -21,29 +21,48 @@ import {
   SUBSCRIPTION_STATUS_COLORS,
 } from "@/types/api/super-admin.types";
 import { listSubscriptions } from "@/services/super-admin.service";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 
-const label = (value: string) =>
-  value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const date = (value: string) =>
-  new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+/** Translation keys for the tenant table headers, in column order. */
+const TABLE_HEADER_KEYS = [
+  "superAdmin.tableTenant",
+  "superAdmin.tableStatus",
+  "superAdmin.companies.subscription",
+  "superAdmin.tenants.colEffectivePlan",
+  "superAdmin.tenants.colPeriodStart",
+  "superAdmin.tenants.colPeriodEnd",
+  "superAdmin.tenants.planLegacy",
+  "superAdmin.companies.users",
+  "superAdmin.documents",
+  "superAdmin.platformTenants.questions",
+  "superAdmin.tableCreated",
+  "superAdmin.tableActions",
+];
+
+const formatDate = (value: string, locale?: string) =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
     new Date(value),
   );
 
 /** Map subscription statuses to their Tailwind badge classes. */
 function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
+  const { t } = useI18n();
   const colorClass = SUBSCRIPTION_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-800";
   return (
     <span
       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${colorClass}`}
     >
-      {label(status)}
+      {codeLabel(t, "superAdmin.subsStatus", status)}
     </span>
   );
 }
 
 export function TenantsClient() {
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canReadBilling = permissions.can(Permission.BILLING_READ);
   const canManageTenant =
@@ -67,6 +86,8 @@ export function TenantsClient() {
     totalRecords: 0,
   });
   const [loading, setLoading] = useState(true);
+  /* `error` and `notice` hold translation keys, not sentences — they are
+     rendered through `t()` so the message follows the active locale. */
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<PlatformTenant | null>(null);
   const [pending, setPending] = useState(false);
@@ -117,8 +138,8 @@ export function TenantsClient() {
         if (signal?.aborted) return;
         setError(
           caught instanceof ApiError && caught.status === 403
-            ? "You do not have permission to manage tenants."
-            : "Unable to load tenants. Please try again.",
+            ? "superAdmin.tenants.noPermission"
+            : "superAdmin.tenants.loadError",
         );
       } finally {
         if (!signal?.aborted) setLoading(false);
@@ -172,12 +193,10 @@ export function TenantsClient() {
     try {
       await updateTenant(editing.id, update);
       setEditing(null);
-      setNotice("Tenant updated successfully.");
+      setNotice("superAdmin.tenants.updateSuccess");
       await load();
     } catch {
-      setNotice(
-        "The tenant could not be updated. Please verify the requested change and try again.",
-      );
+      setNotice("superAdmin.tenants.updateError");
     } finally {
       setPending(false);
     }
@@ -187,36 +206,38 @@ export function TenantsClient() {
   return (
     <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-4 py-6 sm:px-5 lg:px-8 lg:py-8 2xl:px-10">
       <header>
-        <p className="text-sm font-semibold text-secondary">Super Admin</p>
+        <p className="text-sm font-semibold text-secondary">
+          {t("superAdmin.tenants.eyebrow")}
+        </p>
         <h1 className="mt-1 text-headline-lg-mobile font-bold text-primary sm:text-headline-lg">
-          Companies
+          {t("superAdmin.tenants.title")}
         </h1>
         <p className="mt-2 text-sm text-on-surface-variant">
-          Search, review, and manage organizations across DocuMind AI.
+          {t("superAdmin.tenants.description")}
         </p>
       </header>
       <p className="mt-6 font-semibold text-slate-800" aria-live="polite">
         {loading
-          ? "Loading tenant count…"
-          : `${pagination.totalRecords} tenant${pagination.totalRecords === 1 ? "" : "s"}`}
+          ? t("superAdmin.tenants.loadingCount")
+          : tPlural("superAdmin.tenants.count", pagination.totalRecords)}
       </p>
       <section
-        aria-label="Tenant filters"
+        aria-label={t("superAdmin.tenants.filtersLabel")}
         className="mt-4 grid gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 sm:gap-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end"
       >
         <label className="text-sm font-medium text-slate-700">
-          Search tenants
+          {t("superAdmin.tenants.searchLabel")}
           <input
-            aria-label="Search tenants"
+            aria-label={t("superAdmin.tenants.searchLabel")}
             value={searchDraft}
             maxLength={120}
             onChange={(e) => setSearchDraft(e.target.value)}
-            placeholder="Name or slug"
+            placeholder={t("superAdmin.tenants.searchPlaceholder")}
             className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:ring-2 focus:ring-blue-500"
           />
         </label>
         <label className="text-sm font-medium text-slate-700">
-          Status
+          {t("superAdmin.tableStatus")}
           <select
             value={query.status}
             onChange={(e) =>
@@ -227,17 +248,17 @@ export function TenantsClient() {
             }
             className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">All statuses</option>
+            <option value="">{t("superAdmin.tenants.allStatuses")}</option>
             {TENANT_STATUSES.map((v) => (
               <option key={v} value={v}>
-                {label(v)}
+                {codeLabel(t, "superAdmin.tenantStatus", v)}
               </option>
             ))}
           </select>
         </label>
         <label className="text-sm font-medium text-slate-700">
           {/* @deprecated tenant.plan — kept for backward compatibility */}
-          Plan (legacy)
+          {t("superAdmin.tenants.planLegacy")}
           <select
             value={query.plan}
             onChange={(e) =>
@@ -248,10 +269,10 @@ export function TenantsClient() {
             }
             className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">All plans</option>
+            <option value="">{t("superAdmin.tenants.allPlans")}</option>
             {(["free", "trial", "pro"] as const).map((v) => (
               <option key={v} value={v}>
-                {label(v)}
+                {codeLabel(t, "superAdmin.tenantPlan", v)}
               </option>
             ))}
           </select>
@@ -265,11 +286,11 @@ export function TenantsClient() {
           disabled={!filtered}
           className="h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-50"
         >
-          Clear filters
+          {t("superAdmin.tenants.clearFilters")}
         </button>
       </section>
       <div aria-live="polite" className="mt-4 min-h-6 text-sm text-slate-700">
-        {notice}
+        {notice ? t(notice) : null}
       </div>
       {loading ? (
         <div role="status" className="mt-4 space-y-3">
@@ -279,30 +300,32 @@ export function TenantsClient() {
               className="h-20 animate-pulse rounded-xl bg-slate-100"
             />
           ))}
-          <span className="sr-only">Loading tenants</span>
+          <span className="sr-only">{t("superAdmin.tenants.loading")}</span>
         </div>
       ) : error ? (
         <div
           role="alert"
           className="mt-4 rounded-xl border border-red-200 bg-red-50 p-6"
         >
-          <p className="text-red-800">{error}</p>
+          <p className="text-red-800">{t(error)}</p>
           <button
             onClick={() => void load()}
             className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-semibold text-white"
           >
-            Retry
+            {t("common.retry")}
           </button>
         </div>
       ) : tenants.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-10 text-center">
           <h2 className="font-semibold text-slate-900">
-            {filtered ? "No tenants match these filters" : "No tenants yet"}
+            {filtered
+              ? t("superAdmin.tenants.noMatch")
+              : t("superAdmin.tenants.noneYet")}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             {filtered
-              ? "Try clearing or changing the filters."
-              : "Tenants will appear here when available."}
+              ? t("superAdmin.tenants.noMatchHint")
+              : t("superAdmin.tenants.noneYetHint")}
           </p>
         </div>
       ) : (
@@ -310,22 +333,9 @@ export function TenantsClient() {
           <table className="w-full min-w-[1200px] border-collapse text-start text-sm">
             <thead className="bg-slate-50 text-slate-700">
               <tr>
-                {[
-                  "Tenant",
-                  "Status",
-                  "Subscription",
-                  "Effective Plan",
-                  "Period Start",
-                  "Period End",
-                  "Plan (legacy)",
-                  "Users",
-                  "Documents",
-                  "Questions",
-                  "Created",
-                  "Actions",
-                ].map((h) => (
-                  <th key={h} scope="col" className="px-4 py-3 font-semibold whitespace-nowrap">
-                    {h}
+                {TABLE_HEADER_KEYS.map((headerKey) => (
+                  <th key={headerKey} scope="col" className="px-4 py-3 font-semibold whitespace-nowrap">
+                    {t(headerKey)}
                   </th>
                 ))}
               </tr>
@@ -343,12 +353,15 @@ export function TenantsClient() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
-                        {label(tenant.status)}
+                        {codeLabel(t, "superAdmin.tenantStatus", tenant.status)}
                       </span>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {sub ? (
-                        <SubscriptionBadge status={sub.status} />
+                        (() => {
+                          const subStatus = sub.status;
+                          return <SubscriptionBadge status={subStatus} />;
+                        })()
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
@@ -364,29 +377,32 @@ export function TenantsClient() {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-slate-600">
                       {sub?.currentPeriodStart
-                        ? date(sub.currentPeriodStart)
+                        ? formatDate(sub.currentPeriodStart, intlLocale)
                         : sub?.periodStart
-                          ? date(sub.periodStart)
+                          ? formatDate(sub.periodStart, intlLocale)
                           : "—"}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-slate-600">
                       {sub?.currentPeriodEnd
-                        ? date(sub.currentPeriodEnd)
+                        ? formatDate(sub.currentPeriodEnd, intlLocale)
                         : sub?.periodEnd
-                          ? date(sub.periodEnd)
+                          ? formatDate(sub.periodEnd, intlLocale)
                           : "—"}
                     </td>
                     <td className="px-4 py-4 text-slate-500">
-                      {label(tenant.plan)}
-                      <span className="ml-1 text-[10px] text-slate-400" title="Deprecated">
-                        (old)
+                      {codeLabel(t, "superAdmin.tenantPlan", tenant.plan)}
+                      <span
+                        className="ms-1 text-[10px] text-slate-400"
+                        title={t("superAdmin.tenants.deprecated")}
+                      >
+                        {t("superAdmin.tenants.legacySuffix")}
                       </span>
                     </td>
                     <td className="px-4 py-4">{tenant.stats.users}</td>
                     <td className="px-4 py-4">{tenant.stats.documents}</td>
                     <td className="px-4 py-4">{tenant.stats.questions}</td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      {date(tenant.createdAt)}
+                      {formatDate(tenant.createdAt, intlLocale)}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex gap-2">
@@ -394,7 +410,7 @@ export function TenantsClient() {
                           href={`/super-admin/companies/${tenant.id}`}
                           className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white"
                         >
-                          Open
+                          {t("superAdmin.tenants.open")}
                         </a>
                         {canManageTenant ? (
                         <button
@@ -402,10 +418,10 @@ export function TenantsClient() {
                             setNotice("");
                             setEditing(tenant);
                           }}
-                          aria-label={`Manage ${tenant.name}`}
+                          aria-label={t("superAdmin.tenants.manageTenant", { name: tenant.name })}
                           className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
                         >
-                          Manage
+                          {t("superAdmin.packages.manage")}
                         </button>
                         ) : null}
                       </div>
@@ -419,11 +435,11 @@ export function TenantsClient() {
       )}
       {!loading && !error && pagination.totalRecords > 0 ? (
         <nav
-          aria-label="Tenant pagination"
+          aria-label={t("superAdmin.tenants.paginationLabel")}
           className="mt-5 flex flex-wrap items-center justify-between gap-4"
         >
           <label className="text-sm">
-            Rows per page{" "}
+            {t("superAdmin.tenants.rowsPerPage")}{" "}
             <select
               value={query.pageSize}
               onChange={(e) =>
@@ -449,17 +465,20 @@ export function TenantsClient() {
               onClick={() => navigate({ page: query.page - 1 })}
               className="rounded-lg border px-3 py-2 disabled:opacity-40"
             >
-              Previous
+              {t("common.previous")}
             </button>
             <span className="text-sm">
-              Page {pagination.page} of {Math.max(1, pagination.totalPages)}
+              {t("common.pageOf", {
+                page: String(pagination.page),
+                totalPages: String(Math.max(1, pagination.totalPages)),
+              })}
             </span>
             <button
               disabled={query.page >= pagination.totalPages}
               onClick={() => navigate({ page: query.page + 1 })}
               className="rounded-lg border px-3 py-2 disabled:opacity-40"
             >
-              Next
+              {t("common.next")}
             </button>
           </div>
         </nav>
@@ -480,42 +499,43 @@ export function TenantsClient() {
             className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl outline-none sm:p-6"
           >
             <h2 id="tenant-dialog-title" className="text-xl font-bold">
-              Manage {editing.name}
+              {t("superAdmin.tenants.manageTenant", { name: editing.name })}
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Status changes take effect immediately.
+              {t("superAdmin.tenants.statusChangeNote")}
             </p>
             <div className="mt-5 grid gap-3">
               {subscriptionByTenant.has(editing.id) ? (
                 <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
-                  <strong className="font-semibold">Subscription:</strong>{" "}
+                  <strong className="font-semibold">
+                    {t("superAdmin.companies.subscriptionLabel")}
+                  </strong>{" "}
                   {subscriptionByTenant.get(editing.id)!.packageId?.name ??
                     "—"}{" "}
                   &middot;{" "}
-                  <SubscriptionBadge
-                    status={subscriptionByTenant.get(editing.id)!.status}
-                  />
+                  {(() => {
+                    const editingSubStatus = subscriptionByTenant.get(editing.id)!.status;
+                    return <SubscriptionBadge status={editingSubStatus} />;
+                  })()}
                   <p className="mt-1 text-blue-700">
-                    Subscription managed via{" "}
+                    {t("superAdmin.tenants.subscriptionManagedNote")}{" "}
                     <a
                       href="/super-admin/subscriptions"
                       className="underline font-semibold"
                     >
-                      Subscriptions page
+                      {t("superAdmin.tenants.subscriptionsLink")}
                     </a>
-                    .
                   </p>
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">
-                  No active subscription. Assign one via the{" "}
+                  {t("superAdmin.tenants.noSubscriptionNote")}{" "}
                   <a
                     href="/super-admin/subscriptions"
                     className="underline font-semibold"
                   >
-                    Subscriptions page
+                    {t("superAdmin.tenants.subscriptionsLink")}
                   </a>
-                  .
                 </p>
               )}
               <div className="flex flex-wrap gap-2 pt-2">
@@ -524,21 +544,21 @@ export function TenantsClient() {
                   onClick={() => void save({ status: "suspended" })}
                   className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-40"
                 >
-                  Confirm suspend
+                  {t("superAdmin.tenants.confirmSuspend")}
                 </button>
                 <button
                   disabled={pending || editing.status === "active"}
                   onClick={() => void save({ status: "active" })}
                   className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-40"
                 >
-                  Confirm activate
+                  {t("superAdmin.tenants.confirmActivate")}
                 </button>
                 <button
                   disabled={pending}
                   onClick={() => setEditing(null)}
                   className="rounded-lg border px-4 py-2 font-semibold"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
               </div>
             </div>

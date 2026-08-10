@@ -14,33 +14,9 @@ import { mapEntitlementError } from "@/lib/entitlement-errors";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { Permission } from "@/types/api/permissions.types";
 import type { EntitlementUsageResponse } from "@/types/api/entitlement.types";
-
-/* ── Dimension label resolution ──────────────────────────────────── */
-
-const DIMENSION_LABEL_KEYS: Record<string, string> = {
-  employees: "usage.dimension.employees",
-  admins: "usage.dimension.admins",
-  documents: "usage.dimension.documents",
-  storageMb: "usage.dimension.storageMb",
-  fileSizeMb: "usage.dimension.fileSizeMb",
-  queriesPerMonth: "usage.dimension.queriesPerMonth",
-  tokensPerMonth: "usage.dimension.tokensPerMonth",
-  ocrPagesPerMonth: "usage.dimension.ocrPagesPerMonth",
-};
-
-function resolveDimensionLabel(t: (key: string) => string, dimension: string): string {
-  const key = DIMENSION_LABEL_KEYS[dimension];
-  if (key) {
-    const label = t(key);
-    if (label !== key) return label;
-  }
-  /* Fallback: camelCase → Title Case */
-  return dimension
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^[a-z]/, (c) => c.toUpperCase());
-}
 
 /* ── Skeleton loading card ──────────────────────────────────────── */
 
@@ -79,7 +55,7 @@ function UsageCard({
   dir: "ltr" | "rtl";
   t: (key: string) => string;
 }) {
-  const label = resolveDimensionLabel(t, dimension);
+  const label = codeLabel(t, "usage.dimension", dimension);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-col gap-3">

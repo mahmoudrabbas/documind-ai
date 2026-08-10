@@ -1,6 +1,8 @@
 "use client";
 
 import { Badge } from "@/components/ui";
+import { codeLabel } from "@/lib/i18n/code-label";
+import { useI18n } from "@/providers/i18n-provider";
 import type { ProcessingRunStatus } from "@/types/api/processingProgress.types";
 
 const STATUS_CONFIG: Record<ProcessingRunStatus, { badgeStatus: string; icon: string }> = {
@@ -18,12 +20,11 @@ interface ProcessingStatusBadgeProps {
 }
 
 export function ProcessingStatusBadge({ status, className }: ProcessingStatusBadgeProps) {
+  const { t } = useI18n();
   const config = STATUS_CONFIG[status] ?? { badgeStatus: "neutral", icon: "help" };
-  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  const labelText = codeLabel(t, "documents.processingStatus", status);
 
   return (
-    <Badge status={config.badgeStatus} icon={config.icon} className={className}>
-      {label}
-    </Badge>
+    <Badge status={config.badgeStatus} icon={config.icon} className={className} label={labelText} />
   );
 }

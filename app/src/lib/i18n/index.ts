@@ -34,5 +34,8 @@ export {
   type ContentDirection,
 } from "./content-direction";
 
+/* ── status code labels ──────────────────────────────────────────── */
+export { codeLabel, humanizeCode } from "./code-label";
+
 /* ── translations ─────────────────────────────────────────────────── */
 export { default as dictionaries } from "./translations";

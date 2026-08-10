@@ -45,7 +45,9 @@ describe("package management state contracts", () => {
     const detail = await readFile(new URL("../../app/(dashboard)/super-admin/packages/[packageId]/page.tsx", import.meta.url), "utf8");
     expect(form).toContain('caught.code === "PACKAGE_VERSION_CONFLICT"');
     expect(form).toContain("await onSaved?.()");
-    expect(form).toContain("You do not have permission to create or version packages.");
+    /* The no-permission notice is translated, so the guard is asserted via
+       its dictionary key rather than the English sentence it renders. */
+    expect(form).toContain('t("superAdmin.packageForm.noPermission")');
     expect(detail).toContain("onSaved={state.reload}");
   });
 

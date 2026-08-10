@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import { useI18n } from "@/providers/i18n-provider";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -23,6 +24,8 @@ export function PdfViewerModal({
   documentTitle,
   onClose,
 }: PdfViewerModalProps) {
+  const { t } = useI18n();
+
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -53,7 +56,12 @@ export function PdfViewerModal({
           return;
         }
 
-        const loadingTask = pdfjsLib.getDocument(blobUrl);
+        const loadingTask = pdfjsLib.getDocument({
+          url: blobUrl,
+          standardFontDataUrl: "/pdfjs/standard_fonts/",
+          cMapUrl: "/pdfjs/cmaps/",
+          cMapPacked: true,
+        });
         const doc = await loadingTask.promise;
         if (cancelled) {
           doc.destroy();
@@ -69,7 +77,7 @@ export function PdfViewerModal({
         setLoading(false);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load PDF");
+          setError(err instanceof Error ? err.message : t("documents.failedToLoadPdf"));
           setLoading(false);
         }
       }
@@ -81,7 +89,7 @@ export function PdfViewerModal({
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [documentId, initialPage]);
+  }, [documentId, initialPage, t]);
 
   const renderPage = useCallback(
     async (pageNum: number, generation: number) => {
@@ -195,24 +203,26 @@ export function PdfViewerModal({
     }
   }
 
+  const docTitle = documentTitle ?? t("documents.documentFallbackTitle");
+
   return (
     <div
       className="fixed inset-0 z-[80] flex flex-col bg-surface"
       role="dialog"
       aria-modal="true"
-      aria-label={`PDF viewer: ${documentTitle ?? "Document"}`}
+      aria-label={t("documents.pdfViewerTitle", { title: docTitle })}
     >
       <div className="flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-low px-4 py-2">
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onClose}
             className="shrink-0 rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
-            aria-label="Close"
+            aria-label={t("common.close")}
           >
             <span className="material-symbols-outlined">close</span>
           </button>
           <h2 className="truncate text-title-md font-semibold text-on-surface">
-            {documentTitle ?? "Document"}
+            {docTitle}
           </h2>
         </div>
 
@@ -220,7 +230,7 @@ export function PdfViewerModal({
           <button
             onClick={() => setScale((s) => Math.max(0.5, s - 0.2))}
             className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
-            aria-label="Zoom out"
+            aria-label={t("documents.zoomOut")}
           >
             <span className="material-symbols-outlined">zoom_out</span>
           </button>
@@ -230,7 +240,7 @@ export function PdfViewerModal({
           <button
             onClick={() => setScale((s) => Math.min(3, s + 0.2))}
             className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
-            aria-label="Zoom in"
+            aria-label={t("documents.zoomIn")}
           >
             <span className="material-symbols-outlined">zoom_in</span>
           </button>
@@ -241,9 +251,9 @@ export function PdfViewerModal({
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage <= 1}
             className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-30"
-            aria-label="Previous page"
+            aria-label={t("documents.previousPage")}
           >
-            <span className="material-symbols-outlined">chevron_left</span>
+            <span className="material-symbols-outlined rtl:rotate-180">chevron_left</span>
           </button>
 
           <div className="flex items-center gap-1 text-sm text-on-surface">
@@ -266,9 +276,9 @@ export function PdfViewerModal({
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage >= totalPages}
             className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-30"
-            aria-label="Next page"
+            aria-label={t("documents.nextPage")}
           >
-            <span className="material-symbols-outlined">chevron_right</span>
+            <span className="material-symbols-outlined rtl:rotate-180">chevron_right</span>
           </button>
         </div>
       </div>
@@ -277,7 +287,7 @@ export function PdfViewerModal({
         {loading && (
           <div className="flex flex-col items-center justify-center gap-3 pt-32 text-on-surface-variant">
             <span className="h-8 w-8 animate-spin rounded-full border-3 border-primary border-t-transparent" />
-            <p className="text-sm">Loading document...</p>
+            <p className="text-sm">{t("documents.loadingDocument")}</p>
           </div>
         )}
         {error && (
@@ -288,7 +298,7 @@ export function PdfViewerModal({
               onClick={onClose}
               className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary/90"
             >
-              Close
+              {t("common.close")}
             </button>
           </div>
         )}
@@ -305,15 +315,15 @@ export function PdfViewerModal({
       </div>
 
       <div className="flex items-center justify-center border-t border-outline-variant/30 bg-surface-container-low px-4 py-2 text-xs text-on-surface-variant">
-        <span>Arrow keys to navigate</span>
+        <span>{t("documents.arrowKeysNav")}</span>
         <span className="mx-2">·</span>
-        <span>ESC to close</span>
+        <span>{t("documents.escToClose")}</span>
         {highlightText && (
           <>
             <span className="mx-2">·</span>
             <span className="flex items-center gap-1">
               <span className="inline-block h-2.5 w-2.5 rounded-sm bg-yellow-300" />
-              Highlighted text
+              {t("documents.highlightedText")}
             </span>
           </>
         )}

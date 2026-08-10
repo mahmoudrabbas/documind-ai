@@ -3,9 +3,12 @@ import { useState, useCallback } from "react";
 import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPage";
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { searchRetrievalDebug } from "@/services/super-admin.service";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import type { RetrievalDebugResult } from "@/types/api/super-admin.types";
 
 export default function RetrievalDebugPage() {
+  const { t } = useI18n();
   const [queryText, setQueryText] = useState("");
   const [topK, setTopK] = useState(10);
   const [method, setMethod] = useState<"hybrid" | "vector" | "keyword">("hybrid");
@@ -21,11 +24,11 @@ export default function RetrievalDebugPage() {
       const data = await searchRetrievalDebug({ queryText: queryText.trim(), topK, method });
       setResult(data.data);
     } catch {
-      setError("Failed to execute retrieval search");
+      setError(t("superAdmin.retrievalDebug.searchError"));
     } finally {
       setLoading(false);
     }
-  }, [queryText, topK, method]);
+  }, [queryText, t, topK, method]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -39,8 +42,8 @@ export default function RetrievalDebugPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Retrieval Debug"
-        description="Inspect and debug the hybrid retrieval pipeline"
+        title={t("superAdmin.retrievalDebug.title")}
+        description={t("superAdmin.retrievalDebug.desc")}
       />
 
       {error && (
@@ -56,7 +59,7 @@ export default function RetrievalDebugPage() {
             value={queryText}
             onChange={(e) => setQueryText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Enter search query..."
+            placeholder={t("superAdmin.retrievalDebug.queryPlaceholder")}
             disabled={loading}
             className="w-full rounded-lg border border-outline-variant bg-surface px-4 py-2.5 text-sm text-on-surface outline-none transition-all focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
           />
@@ -64,21 +67,31 @@ export default function RetrievalDebugPage() {
 
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-label-sm text-on-surface-variant">Method</label>
+            <label className="text-label-sm text-on-surface-variant">
+              {t("superAdmin.retrievalDebug.method")}
+            </label>
             <select
               value={method}
               onChange={(e) => setMethod(e.target.value as "hybrid" | "vector" | "keyword")}
               disabled={loading}
               className="rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface outline-none transition-all focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <option value="hybrid">Hybrid</option>
-              <option value="vector">Vector</option>
-              <option value="keyword">Keyword</option>
+              <option value="hybrid">
+                {codeLabel(t, "superAdmin.retrievalMethod", "hybrid")}
+              </option>
+              <option value="vector">
+                {codeLabel(t, "superAdmin.retrievalMethod", "vector")}
+              </option>
+              <option value="keyword">
+                {codeLabel(t, "superAdmin.retrievalMethod", "keyword")}
+              </option>
             </select>
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-label-sm text-on-surface-variant">Top K</label>
+            <label className="text-label-sm text-on-surface-variant">
+              {t("superAdmin.retrievalDebug.topK")}
+            </label>
             <input
               type="number"
               min={1}
@@ -96,14 +109,16 @@ export default function RetrievalDebugPage() {
             disabled={loading || !queryText.trim()}
             className="rounded-lg bg-primary px-6 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            {loading ? "Searching..." : "Search"}
+            {loading
+              ? t("superAdmin.retrievalDebug.searching")
+              : t("common.search")}
           </button>
         </div>
       </div>
 
       {loading && (
         <div className="p-8 text-center text-sm text-on-surface-variant">
-          Searching...
+          {t("superAdmin.retrievalDebug.searching")}
         </div>
       )}
 
@@ -111,25 +126,35 @@ export default function RetrievalDebugPage() {
         <>
           <div className="mb-4 flex flex-wrap gap-3">
             <div className="rounded-lg bg-surface-container p-3 text-xs">
-              <span className="block text-on-surface-variant">Total Latency</span>
+              <span className="block text-on-surface-variant">
+                {t("superAdmin.retrievalDebug.totalLatency")}
+              </span>
               <span className="text-title-md font-bold text-on-surface">
-                {result.diagnostics.totalLatencyMs}ms
+                {t("superAdmin.retrievalDebug.latencyMs", {
+                  value: String(result.diagnostics.totalLatencyMs),
+                })}
               </span>
             </div>
             <div className="rounded-lg bg-surface-container p-3 text-xs">
-              <span className="block text-on-surface-variant">Vector Candidates</span>
+              <span className="block text-on-surface-variant">
+                {t("superAdmin.retrievalDebug.vectorCandidates")}
+              </span>
               <span className="text-title-md font-bold text-on-surface">
                 {result.diagnostics.vectorCandidateCount}
               </span>
             </div>
             <div className="rounded-lg bg-surface-container p-3 text-xs">
-              <span className="block text-on-surface-variant">Keyword Candidates</span>
+              <span className="block text-on-surface-variant">
+                {t("superAdmin.retrievalDebug.keywordCandidates")}
+              </span>
               <span className="text-title-md font-bold text-on-surface">
                 {result.diagnostics.keywordCandidateCount}
               </span>
             </div>
             <div className="rounded-lg bg-surface-container p-3 text-xs">
-              <span className="block text-on-surface-variant">Trace ID</span>
+              <span className="block text-on-surface-variant">
+                {t("superAdmin.retrievalDebug.traceId")}
+              </span>
               <span className="font-mono text-title-sm text-on-surface">
                 {result.diagnostics.traceId}
               </span>
@@ -138,33 +163,50 @@ export default function RetrievalDebugPage() {
 
           <div className="mb-4 flex flex-wrap gap-2">
             <span className="rounded bg-surface-container p-2 text-xs">
-              Tenant filter: {result.filterSummary.tenantFilter ? "ON" : "OFF"}
+              {t("superAdmin.retrievalDebug.tenantFilter", {
+                state: result.filterSummary.tenantFilter
+                  ? t("superAdmin.retrievalDebug.filterOn")
+                  : t("superAdmin.retrievalDebug.filterOff"),
+              })}
             </span>
             <span className="rounded bg-surface-container p-2 text-xs">
-              Role filter: {result.filterSummary.roleFilter}
+              {t("superAdmin.retrievalDebug.roleFilter", {
+                role: result.filterSummary.roleFilter,
+              })}
             </span>
             <span className="rounded bg-surface-container p-2 text-xs">
-              Version filter: {result.filterSummary.versionFilter ? "ON" : "OFF"}
+              {t("superAdmin.retrievalDebug.versionFilter", {
+                state: result.filterSummary.versionFilter
+                  ? t("superAdmin.retrievalDebug.filterOn")
+                  : t("superAdmin.retrievalDebug.filterOff"),
+              })}
             </span>
             {result.filterSummary.permissionScopes.map((scope) => (
               <span key={scope} className="rounded bg-surface-container p-2 text-xs">
-                Scope: {scope}
+                {t("superAdmin.retrievalDebug.scope", { scope })}
               </span>
             ))}
             {result.filterSummary.explicitFilters.map((filter) => (
               <span key={filter} className="rounded bg-surface-container p-2 text-xs">
-                Filter: {filter}
+                {t("superAdmin.retrievalDebug.filter", { filter })}
               </span>
             ))}
           </div>
 
           {result.candidates.length === 0 ? (
             <div className="p-8 text-center text-sm text-on-surface-variant">
-              No matching chunks found
+              {t("superAdmin.retrievalDebug.noChunks")}
             </div>
           ) : (
             <PlatformTable
-              headers={["Score", "Method", "Page", "Section", "Classification", "Snippet"]}
+              headers={[
+                t("superAdmin.retrievalDebug.tableScore"),
+                t("superAdmin.retrievalDebug.method"),
+                t("superAdmin.retrievalDebug.tablePage"),
+                t("superAdmin.retrievalDebug.tableSection"),
+                t("superAdmin.retrievalDebug.tableClassification"),
+                t("superAdmin.retrievalDebug.tableSnippet"),
+              ]}
               minWidth="920px"
             >
               {result.candidates.map((candidate, index) => (
@@ -175,7 +217,14 @@ export default function RetrievalDebugPage() {
                     </span>
                   </td>
                   <td className={cell}>
-                    <StatusPill value={candidate.retrievalMethod} />
+                    <StatusPill
+                      value={candidate.retrievalMethod}
+                      label={codeLabel(
+                        t,
+                        "superAdmin.retrievalMethod",
+                        candidate.retrievalMethod,
+                      )}
+                    />
                   </td>
                   <td className={cell}>
                     {candidate.pageNumber ?? "-"}
@@ -187,7 +236,14 @@ export default function RetrievalDebugPage() {
                   </td>
                   <td className={cell}>
                     {candidate.classification ? (
-                      <StatusPill value={candidate.classification} />
+                      <StatusPill
+                        value={candidate.classification}
+                        label={codeLabel(
+                          t,
+                          "documents.classificationLevel",
+                          candidate.classification,
+                        )}
+                      />
                     ) : (
                       <span className="text-xs text-on-surface-variant">-</span>
                     )}
@@ -206,41 +262,60 @@ export default function RetrievalDebugPage() {
 
           {result.evidenceBundle && (
             <div className="mt-6">
-              <h3 className="text-title-sm font-semibold text-on-surface mb-3">Evidence Bundle</h3>
+              <h3 className="text-title-sm font-semibold text-on-surface mb-3">
+                {t("superAdmin.retrievalDebug.evidenceBundle")}
+              </h3>
 
               <div className="mb-4 flex flex-wrap gap-3">
                 <div className="rounded-lg bg-surface-container p-3 text-xs">
-                  <span className="block text-on-surface-variant">Sufficiency</span>
+                  <span className="block text-on-surface-variant">
+                    {t("superAdmin.retrievalDebug.sufficiency")}
+                  </span>
                   <span className={`text-title-md font-bold ${
                     result.evidenceBundle.sufficiency.level === "SUFFICIENT" ? "text-green-700" :
                     result.evidenceBundle.sufficiency.level === "CONFLICTING" ? "text-red-700" :
                     result.evidenceBundle.sufficiency.level === "WEAK" ? "text-yellow-700" :
                     "text-gray-700"
                   }`}>
-                    {result.evidenceBundle.sufficiency.level}
+                    {codeLabel(
+                      t,
+                      "superAdmin.sufficiencyLevel",
+                      result.evidenceBundle.sufficiency.level,
+                    )}
                   </span>
                 </div>
                 <div className="rounded-lg bg-surface-container p-3 text-xs">
-                  <span className="block text-on-surface-variant">Input Candidates</span>
+                  <span className="block text-on-surface-variant">
+                    {t("superAdmin.retrievalDebug.inputCandidates")}
+                  </span>
                   <span className="text-title-md font-bold text-on-surface">
                     {result.evidenceBundle.inputCandidateCount}
                   </span>
                 </div>
                 <div className="rounded-lg bg-surface-container p-3 text-xs">
-                  <span className="block text-on-surface-variant">Output Items</span>
+                  <span className="block text-on-surface-variant">
+                    {t("superAdmin.retrievalDebug.outputItems")}
+                  </span>
                   <span className="text-title-md font-bold text-on-surface">
                     {result.evidenceBundle.items.length}
                   </span>
                 </div>
                 <div className="rounded-lg bg-surface-container p-3 text-xs">
-                  <span className="block text-on-surface-variant">Token Budget</span>
+                  <span className="block text-on-surface-variant">
+                    {t("superAdmin.retrievalDebug.tokenBudget")}
+                  </span>
                   <span className="text-title-md font-bold text-on-surface">
-                    {result.evidenceBundle.totalTokenCount} / {result.evidenceBundle.maxTokenCount}
+                    {t("superAdmin.retrievalDebug.tokenBudgetValue", {
+                      used: String(result.evidenceBundle.totalTokenCount),
+                      max: String(result.evidenceBundle.maxTokenCount),
+                    })}
                   </span>
                 </div>
                 {result.evidenceBundle.conflictGroups.length > 0 && (
                   <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs">
-                    <span className="block text-red-600">Conflicts Detected</span>
+                    <span className="block text-red-600">
+                      {t("superAdmin.retrievalDebug.conflictsDetected")}
+                    </span>
                     <span className="text-title-md font-bold text-red-700">
                       {result.evidenceBundle.conflictGroups.length}
                     </span>
@@ -250,20 +325,33 @@ export default function RetrievalDebugPage() {
 
               {result.evidenceBundle.sufficiency.reasons.length > 0 && (
                 <div className="mb-4 rounded-lg bg-surface-container p-3 text-xs text-on-surface-variant">
-                  <span className="font-medium text-on-surface">Reasons: </span>
+                  <span className="font-medium text-on-surface">
+                    {t("superAdmin.retrievalDebug.reasonsLabel")}{" "}
+                  </span>
                   {result.evidenceBundle.sufficiency.reasons.join("; ")}
                 </div>
               )}
 
               <PlatformTable
-                headers={["Rank", "Total", "Rerank", "Semantic", "Exact", "Authority", "Version", "Text Excerpt"]}
+                headers={[
+                  t("superAdmin.retrievalDebug.tableRank"),
+                  t("superAdmin.retrievalDebug.tableTotal"),
+                  t("superAdmin.retrievalDebug.tableRerank"),
+                  t("superAdmin.retrievalDebug.tableSemantic"),
+                  t("superAdmin.retrievalDebug.tableExact"),
+                  t("superAdmin.retrievalDebug.tableAuthority"),
+                  t("superAdmin.subsTableVersion"),
+                  t("superAdmin.retrievalDebug.tableExcerpt"),
+                ]}
                 minWidth="1000px"
               >
                 {result.evidenceBundle.items.map((item) => (
                   <tr key={item.rank}>
                     <td className={cell}>
                       <span className="font-mono text-sm font-bold text-on-surface">
-                        #{item.rank}
+                        {t("superAdmin.retrievalDebug.rankValue", {
+                          rank: String(item.rank),
+                        })}
                       </span>
                     </td>
                     <td className={cell}>
@@ -309,18 +397,25 @@ export default function RetrievalDebugPage() {
 
               {result.evidenceBundle.conflictGroups.length > 0 && (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-                  <h4 className="text-sm font-semibold text-red-800 mb-2">Conflict Groups</h4>
+                  <h4 className="text-sm font-semibold text-red-800 mb-2">
+                    {t("superAdmin.retrievalDebug.conflictGroups")}
+                  </h4>
                   {result.evidenceBundle.conflictGroups.map((group) => (
                     <div key={group.conflictId} className="mb-2 text-xs text-red-700">
                       <span className="font-mono">{group.conflictId}:</span>{" "}
-                      {group.description} (items: {group.itemIndices.join(", ")})
+                      {t("superAdmin.retrievalDebug.conflictDetail", {
+                        description: group.description,
+                        items: group.itemIndices.join(", "),
+                      })}
                     </div>
                   ))}
                 </div>
               )}
 
               <div className="mt-4 rounded-lg bg-surface-container p-3 text-xs text-on-surface-variant">
-                <span className="font-medium text-on-surface">Score Explanation: </span>
+                <span className="font-medium text-on-surface">
+                  {t("superAdmin.retrievalDebug.scoreExplanation")}{" "}
+                </span>
                 {result.evidenceBundle.scoreExplanation}
               </div>
             </div>

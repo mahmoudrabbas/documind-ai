@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { submitFeedback } from "@/services/feedback.service";
 import type { FeedbackCategory, FeedbackRating } from "@/types/api/feedback.types";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface FeedbackWidgetProps {
   messageId: string;
@@ -17,6 +18,7 @@ export function FeedbackWidget({
   initialRating = null,
   onFeedbackSubmitted,
 }: FeedbackWidgetProps) {
+  const { t } = useI18n();
   const [rating, setRating] = useState<FeedbackRating | null>(initialRating);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [category, setCategory] = useState<FeedbackCategory | "">("");
@@ -62,7 +64,7 @@ export function FeedbackWidget({
       setSubmitted(true);
       if (onFeedbackSubmitted) onFeedbackSubmitted();
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to save feedback");
+      setErrorMessage(err instanceof Error ? err.message : t("feedback.saveError"));
     } finally {
       setSubmitting(false);
     }
@@ -80,7 +82,7 @@ export function FeedbackWidget({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-medium text-on-surface-variant">
-            Was this answer helpful?
+            {t("feedback.wasHelpful")}
           </span>
           <div className="flex items-center gap-1.5">
             <button
@@ -102,7 +104,7 @@ export function FeedbackWidget({
               >
                 thumb_up
               </span>
-              <span className="text-[11px]">Yes</span>
+              <span className="text-[11px]">{t("feedback.yes")}</span>
             </button>
 
             <button
@@ -124,7 +126,7 @@ export function FeedbackWidget({
               >
                 thumb_down
               </span>
-              <span className="text-[11px]">No</span>
+              <span className="text-[11px]">{t("feedback.no")}</span>
             </button>
           </div>
         </div>
@@ -132,7 +134,7 @@ export function FeedbackWidget({
         {submitted && !showCategoryMenu && (
           <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
             <span className="material-symbols-outlined text-[14px]">check_circle</span>
-            <span>Thank you for your feedback!</span>
+            <span>{t("feedback.thankYou")}</span>
           </div>
         )}
       </div>
@@ -149,7 +151,7 @@ export function FeedbackWidget({
         >
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface" htmlFor={`category-select-${messageId}`}>
-              What was the issue? (Optional)
+              {t("feedback.issueLabel")}
             </label>
             <select
               id={`category-select-${messageId}`}
@@ -157,25 +159,25 @@ export function FeedbackWidget({
               onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
               className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="">Select category...</option>
-              <option value="inaccurate">Inaccurate / Incorrect information</option>
-              <option value="incomplete">Incomplete answer</option>
-              <option value="irrelevant">Irrelevant / Off-topic answer</option>
-              <option value="harmful">Harmful / Unsafe content</option>
-              <option value="other">Other issue</option>
+              <option value="">{t("feedback.selectCategory")}</option>
+              <option value="inaccurate">{t("feedback.inaccurate")}</option>
+              <option value="incomplete">{t("feedback.incomplete")}</option>
+              <option value="irrelevant">{t("feedback.irrelevant")}</option>
+              <option value="harmful">{t("feedback.harmful")}</option>
+              <option value="other">{t("feedback.other")}</option>
             </select>
           </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface" htmlFor={`comment-input-${messageId}`}>
-              Additional details (Optional)
+              {t("feedback.detailsLabel")}
             </label>
             <textarea
               id={`comment-input-${messageId}`}
               rows={2}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Tell us what was missing or incorrect..."
+              placeholder={t("feedback.detailsPlaceholder")}
               className="w-full rounded-xl border border-outline-variant/40 bg-surface p-2.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
@@ -189,14 +191,14 @@ export function FeedbackWidget({
               }}
               className="rounded-xl border border-outline-variant/40 px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:bg-surface-container"
             >
-              Skip
+              {t("feedback.skip")}
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="rounded-xl bg-primary px-4 py-1.5 text-[11px] font-semibold text-on-primary shadow-sm transition-all hover:bg-primary/90 active:scale-95 disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit Feedback"}
+              {submitting ? t("feedback.submitting") : t("feedback.submit")}
             </button>
           </div>
         </form>
