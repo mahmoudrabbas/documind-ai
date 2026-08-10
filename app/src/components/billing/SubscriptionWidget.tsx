@@ -8,53 +8,84 @@ import { Permission } from "@/types/api/permissions.types";
 import { getSubscriptionStatus } from "@/services/billing.service";
 import type { SubscriptionStatus } from "@/types/api/billing.types";
 import { ApiError } from "@/lib/api-client";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import {
-  formatSubscriptionStatus,
   formatPrice,
   formatNullableDate,
   getDaysRemaining,
-  pluralize,
 } from "@/lib/billing.helpers";
 import { DashboardPanel, Badge, Skeleton, Button } from "@/components/ui";
+import { SUBSCRIPTION_BADGE_STATUS } from "@/components/ui/variants";
 
 /* ── State machine ─────────────────────────────────────────────────── */
 
 type WidgetState =
   | { phase: "loading" }
+  /** `message` holds a translation key, not a sentence — it is resolved
+      through `t()` at render time so the copy follows the active locale
+      without the fetch effect having to depend on `t`. */
   | { phase: "error"; message: string; isNotFound: boolean }
   | { phase: "active"; subscription: SubscriptionStatus };
 
 /* ── Entitlement grid helpers ──────────────────────────────────────── */
 
-function formatStorage(mb: number): string {
+type TranslateFn = (key: string, params?: Record<string, string>) => string;
+type PluralFn = (key: string, count: number, params?: Record<string, string>) => string;
+
+function formatStorage(mb: number, t: TranslateFn): string {
   if (mb >= 1024) {
     const gb = mb / 1024;
-    return `${gb % 1 === 0 ? gb : gb.toFixed(1)} GB`;
+    return `${gb % 1 === 0 ? gb : gb.toFixed(1)} ${t("common.unitGB")}`;
   }
-  return `${mb} MB`;
+  return `${mb} ${t("common.unitMB")}`;
 }
 
 interface EntitlementRow {
+  /** Untranslated row identifier — used as the React key so the list
+      stays keyed on a machine code rather than on display text. */
+  id: string;
   label: string;
   value: string;
 }
 
 function getEntitlementRows(
   e: SubscriptionStatus["packageId"]["entitlements"],
+  t: TranslateFn,
+  tPlural: PluralFn,
+  intlLocale: string,
 ): EntitlementRow[] {
   return [
-    { label: "Employees", value: pluralize(e.employees, "employee") },
-    { label: "Documents", value: e.documents.toLocaleString() },
-    { label: "Storage", value: formatStorage(e.storageMb) },
-    { label: "Queries", value: `${e.queriesPerMonth.toLocaleString()}/mo` },
+    {
+      id: "employees",
+      label: t("billing.entitlementLabelEmployees"),
+      value: tPlural("billing.entitlementEmployees", e.employees),
+    },
+    {
+      id: "documents",
+      label: t("billing.entitlementLabelDocuments"),
+      value: e.documents.toLocaleString(intlLocale),
+    },
+    {
+      id: "storage",
+      label: t("billing.entitlementLabelStorage"),
+      value: formatStorage(e.storageMb, t),
+    },
+    {
+      id: "queries",
+      label: t("billing.entitlementLabelQueries"),
+      value: t("billing.entitlementQueriesShort", {
+        count: e.queriesPerMonth.toLocaleString(intlLocale),
+      }),
+    },
   ];
 }
 
 /* ── Component ─────────────────────────────────────────────────────── */
 
 export function SubscriptionWidget() {
-  const { t } = useI18n();
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
   const auth = useAuth();
   const permissions = usePermissions();
 
@@ -84,8 +115,8 @@ export function SubscriptionWidget() {
         setState({
           phase: "error",
           message: isNotFound
-            ? "No active subscription"
-            : "Could not load subscription data",
+            ? "billing.noActiveSubscription"
+            : "billing.subscriptionLoadError",
           isNotFound,
         });
       });
@@ -112,7 +143,7 @@ export function SubscriptionWidget() {
           <Skeleton className="h-6 w-48 rounded-lg" />
           <Skeleton className="h-4 w-32 rounded-lg" />
           <Skeleton className="h-16 w-full rounded-xl" />
-          <span className="sr-only">Loading subscription&hellip;</span>
+          <span className="sr-only">{t("billing.loadingSubscription")}</span>
         </div>
       </DashboardPanel>
     );
@@ -130,15 +161,15 @@ export function SubscriptionWidget() {
             </span>
             <div>
               <h3 className="text-title-lg font-bold text-on-surface">
-                No active subscription
+                {t("billing.noActiveSubscription")}
               </h3>
               <p className="mt-1 text-body-sm text-on-surface-variant">
-                You don&apos;t currently have an active subscription plan.
+                {t("billing.noActiveSubscriptionDesc")}
               </p>
             </div>
             <Link href="/checkout">
               <Button variant="primary" size="md">
-                View Plans
+                {t("billing.viewPlans")}
               </Button>
             </Link>
           </div>
@@ -153,10 +184,10 @@ export function SubscriptionWidget() {
             error
           </span>
           <p className="text-body-sm text-on-surface-variant">
-            {state.message}
+            {t(state.message)}
           </p>
           <Button variant="outline" size="sm" onClick={handleRetry}>
-            Retry
+            {t("common.retry")}
           </Button>
         </div>
       </DashboardPanel>
@@ -167,7 +198,13 @@ export function SubscriptionWidget() {
 
   const { subscription: sub } = state;
   const pkg = sub.packageId;
-  const entitlements = getEntitlementRows(pkg.entitlements);
+  const entitlements = getEntitlementRows(
+    pkg.entitlements,
+    t,
+    tPlural,
+    intlLocale,
+  );
+  const trialDaysLeft = getDaysRemaining(sub.trialEnd);
 
   return (
     <DashboardPanel padding="compact">
@@ -187,13 +224,17 @@ export function SubscriptionWidget() {
               {pkg.name}
             </h3>
             <p className="text-label-sm text-on-surface-variant truncate">
-              Payment: {formatSubscriptionStatus(sub.paymentState)}
+              {t("billing.paymentLabel", {
+                state: codeLabel(t, "billing.paymentState", sub.paymentState),
+              })}
             </p>
           </div>
         </div>
-        <Badge status={sub.status} className="shrink-0">
-          {formatSubscriptionStatus(sub.status)}
-        </Badge>
+        <Badge
+          status={SUBSCRIPTION_BADGE_STATUS[sub.status] ?? "neutral"}
+          label={codeLabel(t, "billing.subscriptionStatus", sub.status)}
+          className="shrink-0"
+        />
       </div>
 
       {/* Divider */}
@@ -206,14 +247,10 @@ export function SubscriptionWidget() {
             calendar_month
           </span>
           <span className="truncate text-label-md">
-            Billing Period:{" "}
-            <span className="font-medium text-on-surface">
-              {formatNullableDate(sub.periodStart)}
-            </span>
-            <span className="mx-1">&mdash;</span>
-            <span className="font-medium text-on-surface">
-              {formatNullableDate(sub.periodEnd)}
-            </span>
+            {t("billing.billingPeriod", {
+              start: formatNullableDate(sub.periodStart, intlLocale),
+              end: formatNullableDate(sub.periodEnd, intlLocale),
+            })}
           </span>
         </div>
 
@@ -224,24 +261,29 @@ export function SubscriptionWidget() {
               schedule
             </span>
             <span className="truncate text-label-md">
-              Trial: {formatNullableDate(sub.trialStart)}&nbsp;&mdash;
-              {formatNullableDate(sub.trialEnd)}
-              {getDaysRemaining(sub.trialEnd) !== null && (
-                <span className="ml-1 font-medium">
-                  ({getDaysRemaining(sub.trialEnd)}d left)
+              {t("billing.trialPeriod", {
+                start: formatNullableDate(sub.trialStart, intlLocale),
+                end: formatNullableDate(sub.trialEnd, intlLocale),
+              })}
+              {trialDaysLeft !== null && (
+                <span className="ms-1 font-medium">
+                  {tPlural("billing.trialDaysLeft", trialDaysLeft)}
                 </span>
               )}
             </span>
           </div>
         ) : null}
 
-        {/* Cancel at period end warning */}
+        {/* Cancel at period end warning. Reuses the existing subscription
+            status label — the copy is identical and already translated. */}
         {sub.cancelAtPeriodEnd ? (
           <div className="flex items-center gap-1.5 text-body-sm text-warning">
             <span className="material-symbols-outlined text-[16px] shrink-0">
               warning
             </span>
-            <span className="font-medium text-label-md">Cancels at period end</span>
+            <span className="font-medium text-label-md">
+              {t("billingAdmin.status.cancel_at_period_end")}
+            </span>
           </div>
         ) : null}
       </div>
@@ -252,7 +294,7 @@ export function SubscriptionWidget() {
       {/* Entitlements grid */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {entitlements.map((item) => (
-          <div key={item.label} className="min-w-0">
+          <div key={item.id} className="min-w-0">
             <p className="text-label-sm text-on-surface-variant truncate">
               {item.label}
             </p>
@@ -269,19 +311,14 @@ export function SubscriptionWidget() {
       {/* Footer: price + manage billing */}
       <div className="flex flex-col gap-3">
         <p className="text-body-sm text-on-surface-variant">
-          <span className="font-semibold text-on-surface">
-            {formatPrice(pkg.monthlyPrice, pkg.currency)}
-          </span>
-          /mo
-          {pkg.annualPrice > 0 ? (
-            <span>
-              {" "}or{" "}
-              <span className="font-semibold text-on-surface">
-                {formatPrice(pkg.annualPrice, pkg.currency)}
-              </span>
-              /yr
-            </span>
-          ) : null}
+          {pkg.annualPrice > 0
+            ? t("billing.priceMonthlyOrAnnual", {
+                monthly: formatPrice(pkg.monthlyPrice, pkg.currency, intlLocale),
+                annual: formatPrice(pkg.annualPrice, pkg.currency, intlLocale),
+              })
+            : t("billing.priceMonthly", {
+                price: formatPrice(pkg.monthlyPrice, pkg.currency, intlLocale),
+              })}
         </p>
 
         {sub.canOpenPortal ? (

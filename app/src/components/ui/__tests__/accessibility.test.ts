@@ -42,8 +42,8 @@ describe("Accessibility and visual contract tests", () => {
     it("PolicyEditor preserves owner rule protection text", async () => {
       const fs = await import("node:fs");
       const editor = fs.readFileSync(new URL("../../documents/PolicyEditor.tsx", import.meta.url), "utf8");
-      expect(editor).toContain("Protected owner rule");
-      expect(editor).toContain("Only the document owner can modify optional owner permissions.");
+      expect(editor).toContain("protectedOwnerRule");
+      expect(editor).toContain("protectedOwnerRuleNote");
       expect(editor).toContain("OWNER_MINIMUM_ACTIONS");
       expect(editor).toContain('"discover", "read", "download"');
     });
@@ -66,10 +66,10 @@ describe("Accessibility and visual contract tests", () => {
       const fs = await import("node:fs");
       const editor = fs.readFileSync(new URL("../../documents/PolicyEditor.tsx", import.meta.url), "utf8");
       expect(editor).toContain("ACTION_GROUPS");
-      expect(editor).toContain("Visibility & consumption");
-      expect(editor).toContain("Content lifecycle");
-      expect(editor).toContain("Document state");
-      expect(editor).toContain("Administration");
+      expect(editor).toContain("visibilityAndConsumption");
+      expect(editor).toContain("contentLifecycle");
+      expect(editor).toContain("documentState");
+      expect(editor).toContain("administration");
     });
 
     it("PolicyEditor uses Checkbox component for action toggles", async () => {
@@ -97,18 +97,18 @@ describe("Accessibility and visual contract tests", () => {
       const fs = await import("node:fs");
       const editor = fs.readFileSync(new URL("../../documents/PolicyEditor.tsx", import.meta.url), "utf8");
       expect(editor).toContain('variant="warning"');
-      expect(editor).toContain("Confirm and apply");
+      expect(editor).toContain("confirmAndApply");
     });
 
     it("PolicyEditor impact summary uses structured cards", async () => {
       const fs = await import("node:fs");
       const editor = fs.readFileSync(new URL("../../documents/PolicyEditor.tsx", import.meta.url), "utf8");
-      expect(editor).toContain("Version transition");
-      expect(editor).toContain("Users gaining access");
-      expect(editor).toContain("Users losing access");
-      expect(editor).toContain("Rule delta");
-      expect(editor).toContain("Preview expires");
-      expect(editor).toContain("Per-action changes");
+      expect(editor).toContain("versionTransition");
+      expect(editor).toContain("usersGainingAccess");
+      expect(editor).toContain("usersLosingAccess");
+      expect(editor).toContain("ruleDelta");
+      expect(editor).toContain("previewExpires");
+      expect(editor).toContain("perActionChanges");
     });
 
     it("DocumentDetailDrawer action bar separates destructive actions", async () => {
@@ -148,8 +148,8 @@ describe("Accessibility and visual contract tests", () => {
       const batch = fs.readFileSync(new URL("../../documents/BatchPolicyDialog.tsx", import.meta.url), "utf8");
       expect(batch).toContain('import { Alert }');
       expect(batch).toContain('variant="error"');
-      expect(batch).toContain("Broadening");
-      expect(batch).toContain("Tightening");
+      expect(batch).toContain("documents.broadening");
+      expect(batch).toContain("documents.tightening");
     });
 
     it("BatchPolicyDialog sticky footer remains visible", async () => {

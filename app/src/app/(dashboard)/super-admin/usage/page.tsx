@@ -12,7 +12,10 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { getPlatformUsage } from "@/services/super-admin.service";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 export default function UsagePage() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const state = usePlatformData(getPlatformUsage);
   const total =
     state.data?.byTenant.reduce((sum, item) => sum + item.questions, 0) ?? 0;
@@ -22,8 +25,8 @@ export default function UsagePage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Usage & Costs"
-        description="Track query volume, storage consumption, and estimated AI cost across tenants."
+        title={t("superAdmin.usageTitle")}
+        description={t("superAdmin.usageDesc")}
       />
       <PlatformState
         loading={state.loading}
@@ -33,31 +36,45 @@ export default function UsagePage() {
       {state.data ? (
         <>
           <div className="mb-5 grid auto-rows-auto items-start gap-3 sm:grid-cols-3 sm:gap-4">
-            <StatCard label="Queries" value={total.toLocaleString()} />
-            <StatCard label="Estimated cost" value={`$${cost.toFixed(2)}`} />
             <StatCard
-              label="Storage"
+              label={t("superAdmin.usageQueries")}
+              value={total.toLocaleString(intlLocale)}
+            />
+            <StatCard
+              label={t("superAdmin.usageEstimatedCost")}
+              value={`$${cost.toFixed(2)}`}
+            />
+            <StatCard
+              label={t("superAdmin.usageStorage")}
               value={`${(state.data.storage.storageBytes / 1024 / 1024).toFixed(1)} MB`}
             />
           </div>
-          <PlatformTable headers={["Company", "Queries", "Estimated cost"]}>
+          <PlatformTable
+            headers={[
+              t("superAdmin.tableCompany"),
+              t("superAdmin.usageQueries"),
+              t("superAdmin.usageEstimatedCost"),
+            ]}
+          >
             {state.data.byTenant.map((item) => (
               <tr key={item.tenantId}>
                 <td className={cell}>
                   <strong className="text-on-surface">{item.tenantName}</strong>
                 </td>
-                <td className={cell}>{item.questions.toLocaleString()}</td>
+                <td className={cell}>
+                  {item.questions.toLocaleString(intlLocale)}
+                </td>
                 <td className={cell}>${item.estimatedCost.toFixed(2)}</td>
               </tr>
             ))}
           </PlatformTable>
           <DashboardPanel className="mt-5">
             <h2 className="text-title-lg font-bold text-primary">
-              Daily query volume
+              {t("superAdmin.usageDailyVolume")}
             </h2>
             <div
               className="mt-4 flex h-48 items-end gap-1 overflow-x-auto"
-              aria-label="Daily query volume chart"
+              aria-label={t("superAdmin.usageDailyVolumeChart")}
             >
               {state.data.byDay.map((item) => {
                 const max = Math.max(
@@ -74,7 +91,9 @@ export default function UsagePage() {
                       style={{
                         height: `${Math.max(4, (item.questions / max) * 160)}px`,
                       }}
-                      title={`${item.questions} queries`}
+                      title={t("superAdmin.usageQueriesTooltip", {
+                        count: String(item.questions),
+                      })}
                     />
                     <span className="text-[10px] text-on-surface-variant">
                       {item._id.slice(5)}

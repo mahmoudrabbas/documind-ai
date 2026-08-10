@@ -169,10 +169,32 @@ export function getBadgeClasses(status: BadgeStatus | (string & {})): string {
   return [BADGE_BASE_CLASSES, BADGE_STATUS_CLASSES[resolvedStatus]].join(" ");
 }
 
+/**
+ * Subscription status code -> semantic badge status.
+ *
+ * Keyed on the API's machine codes rather than on display text, so a
+ * translated label can never change which colour the pill resolves to.
+ * Unknown codes fall back to "neutral" at the call site.
+ */
+export const SUBSCRIPTION_BADGE_STATUS: Record<string, BadgeStatus> = {
+  ACTIVE: "success",
+  TRIALING: "info",
+  INCOMPLETE: "warning",
+  PAST_DUE: "error",
+  PAUSED: "neutral",
+  CANCEL_AT_PERIOD_END: "warning",
+  CANCELED: "error",
+  EXPIRED: "neutral",
+  UNPAID: "error",
+};
+
 /* ---- Select, Checkbox, Modal, Alert class helpers ---- */
 
+/* The chevron is a background image, so its position is physical and does
+   not follow `pe-10`. The `rtl:` variant moves it to the left edge in
+   Arabic so it stays on the same side as the reserved padding. */
 export const SELECT_CLASSES =
-  "h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface placeholder:text-outline disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2373777d%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px] bg-[right_8px_center] bg-no-repeat pe-10";
+  "h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface placeholder:text-outline disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2373777d%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px] bg-[right_8px_center] rtl:bg-[left_8px_center] bg-no-repeat pe-10";
 
 export const CHECKBOX_CLASSES =
   "h-4 w-4 rounded border-outline-variant text-primary focus:ring-2 focus:ring-primary/30 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50";

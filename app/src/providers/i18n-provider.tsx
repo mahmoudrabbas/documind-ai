@@ -6,9 +6,10 @@
  * Wraps the application to provide `locale`, `dir`, `t()`, and
  * `setLocale()` to all descendant components via `useI18n()`.
  *
- * On mount it reads the persisted locale from the `documind-locale`
- * cookie and applies `lang` / `dir` attributes to `<html>`.  On
- * locale change the same attributes and cookie are updated.
+ * The root layout resolves the locale from the `documind-locale` cookie
+ * on the server and passes it as `initialLocale`, so the first render
+ * already matches the persisted preference. On locale change the
+ * `<html>` attributes and cookie are updated client-side.
  */
 
 import {
@@ -22,9 +23,10 @@ import {
 } from "react";
 
 import type { Direction, I18nContextValue, Locale } from "@/lib/i18n/i18n.types";
-import { getDirection } from "@/lib/i18n/i18n.config";
+import { getDirection, INTL_LOCALES } from "@/lib/i18n/i18n.config";
 import {
   t as translateKey,
+  tPlural as pluralizeKey,
   getLocaleFromCookie,
   setLocaleCookie,
 } from "@/lib/i18n/i18n.utils";
@@ -36,14 +38,27 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 /* ── Provider ────────────────────────────────────────────────────── */
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    const persisted = getLocaleFromCookie();
-    return persisted;
-  });
+export function I18nProvider({
+  children,
+  initialLocale,
+}: {
+  children: ReactNode;
+  /**
+   * Locale resolved from the cookie on the server. Seeding state with it
+   * keeps the first client render identical to the server HTML; without
+   * it the cookie is only read after mount, which flashes the wrong
+   * direction. Falls back to reading the cookie directly when absent.
+   */
+  initialLocale?: Locale;
+}) {
+  const [locale, setLocaleState] = useState<Locale>(
+    () => initialLocale ?? getLocaleFromCookie(),
+  );
   const dir: Direction = getDirection(locale);
 
-  /* Sync <html> attributes whenever locale changes. */
+  /* Sync <html> attributes whenever locale changes. The server already
+     set these for the initial locale, so this is a no-op on first paint
+     and only does work when the user actually switches language. */
   useEffect(() => {
     const html = document.documentElement;
     html.lang = locale;
@@ -61,9 +76,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     [locale],
   );
 
+  const tPlural = useCallback(
+    (key: string, count: number, params?: Record<string, string>) =>
+      pluralizeKey(dictionaries[locale], locale, key, count, params),
+    [locale],
+  );
+
   const value = useMemo<I18nContextValue>(
-    () => ({ locale, dir, t, setLocale }),
-    [locale, dir, t, setLocale],
+    () => ({ locale, dir, t, tPlural, setLocale }),
+    [locale, dir, t, tPlural, setLocale],
   );
 
   return <I18nContext value={value}>{children}</I18nContext>;
@@ -88,4 +109,15 @@ export function useI18n(): I18nContextValue {
 /** Convenience hook returning only the current text direction. */
 export function useDirection(): Direction {
   return useI18n().dir;
+}
+
+/**
+ * BCP-47 tag for the active locale, for use with `Intl` APIs and
+ * `toLocaleDateString` / `toLocaleString`.
+ *
+ * Pass this wherever a date or number is formatted so output follows the
+ * selected language rather than the browser's own locale.
+ */
+export function useIntlLocale(): string {
+  return INTL_LOCALES[useI18n().locale];
 }

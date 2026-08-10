@@ -1,7 +1,7 @@
 "use client";
 
 import type { DashboardSummary } from "@/types/api/dashboard.types";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 
 /* ------------------------------------------------------------------ */
 /*  Card definitions                                                   */
@@ -40,14 +40,18 @@ const STAT_DEFS = [
 
 type StatKey = (typeof STAT_DEFS)[number]["key"];
 
-function statValue(summary: DashboardSummary, key: StatKey): string {
+function statValue(
+  summary: DashboardSummary,
+  key: StatKey,
+  locale: string,
+): string {
   switch (key) {
     case "users":
       return `${summary.users.active}/${summary.users.total}`;
     case "documents":
-      return summary.documents.processed.toLocaleString();
+      return summary.documents.processed.toLocaleString(locale);
     case "questions":
-      return summary.usage.questionsAsked30d.toLocaleString();
+      return summary.usage.questionsAsked30d.toLocaleString(locale);
     case "gaps":
       return `${summary.knowledgeGaps.open}/${summary.knowledgeGaps.total}`;
   }
@@ -85,6 +89,7 @@ export default function SummaryStats({
   summary: DashboardSummary | null;
 }) {
   const { t } = useI18n();
+  const intlLocale = useIntlLocale();
 
   if (!summary) {
     return (
@@ -129,7 +134,7 @@ export default function SummaryStats({
             {t(def.labelKey)}
           </p>
           <h3 className="break-words text-headline-lg font-bold leading-none text-primary sm:text-display-lg">
-            {statValue(summary, def.key)}
+            {statValue(summary, def.key, intlLocale)}
           </h3>
           <p className="mt-2 text-label-sm text-on-surface-variant">
             {statSub(summary, def.key, t)}

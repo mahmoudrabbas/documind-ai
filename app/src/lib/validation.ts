@@ -138,6 +138,29 @@ export function getFileSizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Split a byte count into its numeric part and a translation key for the
+ * unit, so the unit can be localized.
+ *
+ * The thresholds and rounding are identical to {@link getFileSizeLabel};
+ * only the unit moves into the dictionary. Callers render
+ * `` `${value} ${t(unitKey)}` ``.
+ */
+export function getFileSizeParts(bytes: number): {
+  value: string;
+  unitKey: string;
+} {
+  if (bytes < 1024) return { value: String(bytes), unitKey: "common.unitBytes" };
+  if (bytes < 1024 * 1024) {
+    return { value: (bytes / 1024).toFixed(1), unitKey: "common.unitKB" };
+  }
+
+  return {
+    value: (bytes / (1024 * 1024)).toFixed(1),
+    unitKey: "common.unitMB",
+  };
+}
+
 export function generateCompanySlug(name: string): string {
   return name
     .toLowerCase()

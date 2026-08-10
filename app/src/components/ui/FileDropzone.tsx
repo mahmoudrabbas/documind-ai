@@ -2,13 +2,16 @@
 
 import { useRef, useState, type DragEvent } from "react";
 import { cn } from "@/lib/utils";
-import { getFileSizeLabel } from "@/lib/validation";
+import { getFileSizeParts } from "@/lib/validation";
+import { useI18n } from "@/providers/i18n-provider";
 
 export interface FileDropzoneProps {
   onFilesSelected: (files: File[]) => void;
   accept?: string;
   disabled?: boolean;
   error?: string | null;
+  /* Each label falls back to its translation for the active locale when
+     the prop is not supplied. */
   dragDropText?: string;
   dragDropActiveText?: string;
   browseText?: string;
@@ -21,12 +24,13 @@ export function FileDropzone({
   accept = ".pdf,.docx,.doc,.txt,.md",
   disabled = false,
   error = null,
-  dragDropText = "Drag and drop your file here, or",
-  dragDropActiveText = "Drop your file here",
-  browseText = "browse files",
-  fileRequirementsText = "PDF, DOCX, TXT or MD — max 50 MB",
-  selectedFileLabel = "Selected file",
+  dragDropText,
+  dragDropActiveText,
+  browseText,
+  fileRequirementsText,
+  selectedFileLabel,
 }: FileDropzoneProps) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -108,10 +112,13 @@ export function FileDropzone({
               📄
             </span>
             <p className="text-sm font-medium text-slate-900">
-              {selectedFileLabel}: {selectedFile.name}
+              {selectedFileLabel ?? t("shell.selectedFile")}: {selectedFile.name}
             </p>
             <p className="text-xs text-slate-500">
-              {getFileSizeLabel(selectedFile.size)}
+              {(() => {
+                const { value, unitKey } = getFileSizeParts(selectedFile.size);
+                return `${value} ${t(unitKey)}`;
+              })()}
             </p>
           </div>
         ) : (
@@ -120,10 +127,16 @@ export function FileDropzone({
               📁
             </span>
             <p className="text-sm text-slate-600">
-              {isDragOver ? dragDropActiveText : dragDropText}{" "}
-              <span className="font-semibold text-blue-600">{browseText}</span>
+              {isDragOver
+                ? (dragDropActiveText ?? t("shell.dropFileHere"))
+                : (dragDropText ?? t("shell.dragAndDropFile"))}{" "}
+              <span className="font-semibold text-blue-600">
+                {browseText ?? t("shell.browseFiles")}
+              </span>
             </p>
-            <p className="text-xs text-slate-400">{fileRequirementsText}</p>
+            <p className="text-xs text-slate-400">
+              {fileRequirementsText ?? t("shell.fileRequirements")}
+            </p>
           </div>
         )}
       </div>

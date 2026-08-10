@@ -109,7 +109,7 @@ export default function ForgotPasswordPage() {
       {/* Left panel (Form Panel) */}
       <section className="z-10 flex min-h-screen w-full flex-col border-r border-outline-variant p-lg md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
         {/* Language switcher */}
-        <div className="absolute top-6 right-6 z-20">
+        <div className="absolute top-6 end-6 z-20">
           <LanguageSwitcher />
         </div>
 

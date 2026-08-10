@@ -20,6 +20,9 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui";
+import { SUBSCRIPTION_BADGE_STATUS } from "@/components/ui/variants";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
 import {
@@ -60,26 +63,23 @@ function usePublicPackages() {
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
-function formatPrice(price: number, currency: string): string {
-  if (price <= 0) return "Free";
+function formatPrice(
+  price: number,
+  currency: string,
+  t: (key: string) => string,
+): string {
+  if (price <= 0) return t("billing.freePrice");
   return formatMoneyMinor(price, currency || "USD");
-}
-
-function statusLabel(status: string): string {
-  return status
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 const ENTITLEMENT_ITEMS: {
   key: keyof PublicPackage["entitlements"];
-  label: string;
   icon: string;
 }[] = [
-  { key: "employees", label: "employees", icon: "group" },
-  { key: "documents", label: "documents", icon: "description" },
-  { key: "storageMb", label: "storage", icon: "cloud" },
-  { key: "queriesPerMonth", label: "queries / month", icon: "search" },
+  { key: "employees", icon: "group" },
+  { key: "documents", icon: "description" },
+  { key: "storageMb", icon: "cloud" },
+  { key: "queriesPerMonth", icon: "search" },
 ];
 
 /* ── Page ───────────────────────────────────────────────────────────────── */
@@ -87,6 +87,7 @@ const ENTITLEMENT_ITEMS: {
 export default function CheckoutPage() {
   const router = useRouter();
   const auth = useAuth();
+  const { t, dir } = useI18n();
   const permissions = usePermissions();
   const canReadBilling =
     auth.status === "authenticated" && permissions.can(Permission.BILLING_READ);
@@ -145,11 +146,11 @@ export default function CheckoutPage() {
         }
       }
       setCheckoutConflict(null);
-      setSubmitError("Failed to create checkout session. Please try again.");
+      setSubmitError(t("billing.checkoutError"));
     } finally {
       setSubmitting(false);
     }
-  }, [billingInterval, canManageBilling, providerCheckoutBlocked, selectedPkg, selectedPrice]);
+  }, [billingInterval, canManageBilling, providerCheckoutBlocked, selectedPkg, selectedPrice, t]);
 
   const handleManageBilling = useCallback(async () => {
     setPortalLoading(true);
@@ -160,20 +161,20 @@ export default function CheckoutPage() {
         window.location.href = result.data.url;
       }
     } catch {
-      setPortalError("Failed to open billing portal. Please try again.");
+      setPortalError(t("billing.failedToOpenBillingPortal"));
     } finally {
       setPortalLoading(false);
     }
-  }, []);
+  }, [t]);
 
   /* ── Loading state ───────────────────────────────────────────────────── */
 
   if (loading) {
     return (
-      <DashboardPage>
+      <DashboardPage dir={dir}>
         <DashboardPageHeader
-          title="Billing & Plans"
-          description="Manage your subscription and explore available plans."
+          title={t("billing.titleBillingPlans")}
+          description={t("billing.descBillingPlans")}
         />
         <div className="space-y-6">
           <Skeleton className="h-28 w-full rounded-2xl" />
@@ -192,22 +193,24 @@ export default function CheckoutPage() {
 
   if (error) {
     return (
-      <DashboardPage>
+      <DashboardPage dir={dir}>
         <DashboardPageHeader
-          title="Billing & Plans"
-          description="Manage your subscription and explore available plans."
+          title={t("billing.titleBillingPlans")}
+          description={t("billing.descBillingPlans")}
         />
         <DashboardPanel className="flex flex-col items-center gap-4 py-16 text-center">
           <span className="material-symbols-outlined text-[48px] text-error">
             error
           </span>
-          <p className="text-body-lg text-on-surface-variant">{error}</p>
+          <p className="text-body-lg text-on-surface-variant">
+            {t("billing.error")}
+          </p>
           <Button
             variant="outline"
             onClick={() => window.location.reload()}
             className="mt-2"
           >
-            Retry
+            {t("billing.tryAgain")}
           </Button>
         </DashboardPanel>
       </DashboardPage>
@@ -218,17 +221,17 @@ export default function CheckoutPage() {
 
   if (!packages.length) {
     return (
-      <DashboardPage>
+      <DashboardPage dir={dir}>
         <DashboardPageHeader
-          title="Billing & Plans"
-          description="Manage your subscription and explore available plans."
+          title={t("billing.titleBillingPlans")}
+          description={t("billing.descBillingPlans")}
         />
         <DashboardPanel className="flex flex-col items-center gap-4 py-16 text-center">
           <span className="material-symbols-outlined text-[48px] text-on-surface-variant">
             inventory_2
           </span>
           <p className="text-body-lg text-on-surface-variant">
-            No packages are currently available.
+            {t("billing.empty")}
           </p>
         </DashboardPanel>
       </DashboardPage>
@@ -238,22 +241,22 @@ export default function CheckoutPage() {
   /* ── Main render ─────────────────────────────────────────────────────── */
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       {/* Back to Dashboard */}
       <button
         type="button"
         onClick={() => router.push("/dashboard")}
         className="mb-5 inline-flex items-center gap-1.5 self-start text-label-md text-on-surface-variant transition-colors hover:text-primary"
       >
-        <span className="material-symbols-outlined text-[18px]">
+        <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
           arrow_back
         </span>
-        Dashboard
+        {t("billing.backDashboard")}
       </button>
 
       <DashboardPageHeader
-        title="Billing & Plans"
-        description="Manage your subscription and explore available plans."
+        title={t("billing.titleBillingPlans")}
+        description={t("billing.descBillingPlans")}
         actions={
           currentSub?.canOpenPortal && canManageBilling ? (
             <Button
@@ -265,7 +268,7 @@ export default function CheckoutPage() {
               <span className="material-symbols-outlined text-[18px]">
                 account_balance
               </span>
-              Manage Billing
+              {t("billing.manageBilling")}
             </Button>
           ) : undefined
         }
@@ -286,10 +289,10 @@ export default function CheckoutPage() {
               </div>
               <div>
                 <p className="text-label-sm text-on-surface-variant">
-                  Current Plan
+                  {t("billing.currentPlanHeader")}
                 </p>
                 <h2 className="text-title-lg font-bold text-on-surface">
-                  {currentPackageName || "Unknown Plan"}
+                  {currentPackageName || t("billing.unknownPlan")}
                 </h2>
                 {currentSub.billingInterval ? (
                   <p className="text-body-sm text-on-surface-variant">
@@ -298,15 +301,19 @@ export default function CheckoutPage() {
                         ? currentSub.packageId.annualPriceCents
                         : currentSub.packageId.monthlyPriceCents,
                       currentSub.packageId.currency,
-                    )}/{currentSub.billingInterval === "annual" ? "year" : "month"}
+                    )}
+                    {currentSub.billingInterval === "annual"
+                      ? t("billing.perYear")
+                      : t("billing.perMonth")}
                   </p>
                 ) : null}
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Badge status={currentSub.status}>
-                {statusLabel(currentSub.status)}
-              </Badge>
+              <Badge
+                status={SUBSCRIPTION_BADGE_STATUS[currentSub.status] ?? "neutral"}
+                label={codeLabel(t, "billing.subscriptionStatus", currentSub.status)}
+              />
             </div>
           </div>
         </DashboardPanel>
@@ -325,7 +332,7 @@ export default function CheckoutPage() {
                 : "text-on-surface-variant hover:text-on-surface",
             )}
           >
-            Monthly
+            {t("billing.monthly")}
           </button>
           <button
             type="button"
@@ -337,9 +344,9 @@ export default function CheckoutPage() {
                 : "text-on-surface-variant hover:text-on-surface",
             )}
           >
-            Annual
-            <span className="ml-1.5 inline-block rounded-full bg-tertiary-container px-2 py-0.5 text-[10px] font-bold text-on-tertiary-container">
-              Save
+            {t("billing.annual")}
+            <span className="ms-1.5 inline-block rounded-full bg-tertiary-container px-2 py-0.5 text-[10px] font-bold text-on-tertiary-container">
+              {t("billing.saveBadge")}
             </span>
           </button>
         </div>
@@ -369,7 +376,7 @@ export default function CheckoutPage() {
             >
               {/* Selected indicator */}
               {isSelected && (
-                <div className="absolute right-4 top-4 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-on-primary">
+                <div className="absolute end-4 top-4 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-on-primary">
                   <span className="material-symbols-outlined text-[18px]">
                     check
                   </span>
@@ -377,13 +384,13 @@ export default function CheckoutPage() {
               )}
 
               {isCurrentPlan && (
-                <div className="absolute left-4 top-4">
-                  <Badge status="success">Current plan</Badge>
+                <div className="absolute start-4 top-4">
+                  <Badge status="success" label={t("billingAdmin.currentPlan")} />
                 </div>
               )}
 
               {/* Plan name & description */}
-              <h3 className="pr-10 text-title-lg font-bold text-on-surface">
+              <h3 className="pe-10 text-title-lg font-bold text-on-surface">
                 {pkg.name}
               </h3>
               <p className="mt-1.5 line-clamp-2 text-body-sm leading-relaxed text-on-surface-variant">
@@ -393,11 +400,13 @@ export default function CheckoutPage() {
               {/* Price */}
               <div className="mt-6 flex items-baseline gap-1.5">
                 <span className="text-headline-md font-bold text-primary">
-                  {formatPrice(price, pkg.currency)}
+                  {formatPrice(price, pkg.currency, t)}
                 </span>
                 {price > 0 && (
                   <span className="text-body-sm text-on-surface-variant">
-                    /{billingInterval === "annual" ? "year" : "month"}
+                    {billingInterval === "annual"
+                      ? t("billing.perYear")
+                      : t("billing.perMonth")}
                   </span>
                 )}
               </div>
@@ -414,7 +423,9 @@ export default function CheckoutPage() {
               {pkg.trialDays > 0 && (
                 <div className="mt-5 rounded-xl bg-tertiary-container/30 px-4 py-2.5 text-center">
                   <span className="text-label-sm font-bold text-tertiary">
-                    {pkg.trialDays}-day free trial
+                    {t("billing.trialDaysBadge", {
+                      days: String(pkg.trialDays),
+                    })}
                   </span>
                 </div>
               )}
@@ -426,7 +437,7 @@ export default function CheckoutPage() {
       {/* Submit error */}
       {providerCheckoutBlocked ? (
         <div className="mt-6 rounded-xl border border-outline-variant bg-surface-container px-5 py-3.5 text-body-sm text-on-surface-variant">
-          Your current subscription is managed by Stripe. Use Manage Billing instead of creating another checkout.
+          {t("billing.stripeManagedNotice")}
         </div>
       ) : null}
 
@@ -450,7 +461,7 @@ export default function CheckoutPage() {
               window.location.href = checkoutConflict.reusableCheckoutUrl ?? "";
             }}
           >
-            Continue checkout
+            {t("billing.continueCheckout")}
           </Button>
         </div>
       ) : null}
@@ -463,7 +474,7 @@ export default function CheckoutPage() {
             isLoading={portalLoading}
             onClick={() => void handleManageBilling()}
           >
-            Manage Billing
+            {t("billing.manageBilling")}
           </Button>
         </div>
       ) : null}
@@ -489,7 +500,7 @@ export default function CheckoutPage() {
             onClick={() => router.push("/login?returnTo=%2Fcheckout")}
             className="min-h-12 px-8"
           >
-            Sign in to continue
+            {t("billing.signInToContinue")}
           </Button>
         ) : canManageBilling ? (
           providerCheckoutBlocked ? (
@@ -500,7 +511,7 @@ export default function CheckoutPage() {
               onClick={() => void handleManageBilling()}
               className="min-h-12 px-8"
             >
-              Manage Billing
+              {t("billing.manageBilling")}
             </Button>
           ) : (
             <Button
@@ -511,16 +522,15 @@ export default function CheckoutPage() {
               className="min-h-12 px-8"
             >
               {submitting
-                ? "Redirecting to payment…"
-                : "Proceed to checkout"}
+                ? t("billing.redirecting")
+                : t("billing.proceed")}
             </Button>
           )
         ) : null}
 
         {auth.status === "authenticated" && !canManageBilling && (
           <p className="text-body-sm text-on-surface-variant">
-            You don&apos;t have permission to manage billing. Contact your
-            administrator.
+            {t("billing.noPermissionNotice")}
           </p>
         )}
       </div>
@@ -531,6 +541,29 @@ export default function CheckoutPage() {
 /* ── Entitlement list item ──────────────────────────────────────────────── */
 
 function EntitlementList({ pkg }: { pkg: PublicPackage }) {
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
+
+  /* Each row is a single interpolated key rather than a number glued to a
+     noun: Arabic inflects the noun with the count and orders the phrase
+     differently, so the fragments cannot be concatenated. */
+  const entitlementLabel = (
+    key: keyof PublicPackage["entitlements"],
+  ): string => {
+    const value = pkg.entitlements[key];
+    const count = { count: value.toLocaleString(intlLocale) };
+    switch (key) {
+      case "storageMb":
+        return t("billing.entitlementStorageMb", { value: String(value) });
+      case "queriesPerMonth":
+        return tPlural("billing.entitlementQueriesPerMonth", value, count);
+      case "documents":
+        return tPlural("billing.entitlementDocuments", value, count);
+      default:
+        return tPlural("billing.entitlementEmployees", value, count);
+    }
+  };
+
   return (
     <>
       {ENTITLEMENT_ITEMS.map((item) => (
@@ -541,13 +574,7 @@ function EntitlementList({ pkg }: { pkg: PublicPackage }) {
           <span className="material-symbols-outlined text-[16px] text-secondary">
             {item.icon}
           </span>
-          <span>
-            {item.key === "storageMb"
-              ? `${pkg.entitlements[item.key]} MB storage`
-              : item.key === "queriesPerMonth"
-                ? `${pkg.entitlements[item.key].toLocaleString()} queries / month`
-                : `${pkg.entitlements[item.key].toLocaleString()} ${item.label}`}
-          </span>
+          <span>{entitlementLabel(item.key)}</span>
         </li>
       ))}
     </>

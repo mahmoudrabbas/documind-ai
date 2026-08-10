@@ -7,7 +7,9 @@ import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useOcr } from "@/hooks/features/useOcr";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { getRetryableOcrPageNumbers } from "@/lib/ocr-page-state";
+import { useI18n } from "@/providers/i18n-provider";
 import type { OcrLanguage, OcrPageResultView, QualityStatus } from "@/types/api/processing.types";
 
 const QUALITY_STATUS_MAP: Record<QualityStatus, string> = {
@@ -40,6 +42,8 @@ export function DocumentQualityPanel({
   canReviewQuality,
   highlightPage,
 }: DocumentQualityPanelProps) {
+  const { t } = useI18n();
+
   const {
     ocrPages,
     quality,
@@ -122,30 +126,30 @@ export function DocumentQualityPanel({
     <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-          Document Quality & OCR
+          {t("documents.qualityAndOcr")}
         </h3>
         {canProcessOcr && (
           <div className="flex flex-wrap items-end justify-end gap-2">
             <Select
-              label="OCR language"
+              label={t("documents.ocrLanguage")}
               value={runOcrLanguage}
               options={[
-                { value: "ar+en", label: "Arabic + English" },
-                { value: "ar", label: "Arabic" },
-                { value: "en", label: "English" },
+                { value: "ar+en", label: t("documents.arabicAndEnglish") },
+                { value: "ar", label: t("documents.arabic") },
+                { value: "en", label: t("documents.english") },
               ]}
               onChange={(event) => setRunOcrLanguage(event.target.value as OcrLanguage)}
               className="w-40"
             />
             <Input
-              label="Page"
+              label={t("documents.page")}
               type="number"
               min={1}
               step={1}
               value={runOcrPage}
               onChange={(event) => setRunOcrPage(event.target.value)}
-              helperText="Clear to run all pages"
-              errorMessage={hasInvalidRunOcrPage ? "Enter a positive page number" : undefined}
+              helperText={t("documents.clearToRunAll")}
+              errorMessage={hasInvalidRunOcrPage ? t("documents.enterPositivePage") : undefined}
               className="w-28"
             />
             <Button
@@ -156,7 +160,7 @@ export function DocumentQualityPanel({
               isLoading={isTriggeringOcr}
             >
               <span className="material-symbols-outlined me-1 text-[14px]">document_scanner</span>
-              Run OCR
+              {t("documents.runOcr")}
             </Button>
             {retryablePageNumbers.length > 0 && (
               <Button
@@ -167,7 +171,7 @@ export function DocumentQualityPanel({
                 isLoading={isRetryingOcr}
               >
                 <span className="material-symbols-outlined me-1 text-[14px]">refresh</span>
-                Retry
+                {t("common.retry")}
               </Button>
             )}
           </div>
@@ -183,14 +187,18 @@ export function DocumentQualityPanel({
       {hasQuality && quality && (
         <div className="mt-3 space-y-3">
           <div className="flex items-center gap-2">
-            <Badge status={QUALITY_STATUS_MAP[quality.qualityStatus] as "success" | "warning" | "error" | undefined}>
-              {quality.qualityStatus}
-            </Badge>
+            {(() => {
+              const qualBadgeStatus = QUALITY_STATUS_MAP[quality.qualityStatus] as "success" | "warning" | "error" | undefined;
+              const qualLabelText = codeLabel(t, "documents.qualityStatus", quality.qualityStatus);
+              return (
+                <Badge status={qualBadgeStatus} label={qualLabelText} />
+              );
+            })()}
             <span className="text-xs text-on-surface-variant font-medium">
-              {Math.round(quality.overallConfidence * 100)}% confidence
+              {t("documents.confidencePercent", { percent: String(Math.round(quality.overallConfidence * 100)) })}
             </span>
             {quality.requiresReview && (
-              <Badge status="error">Review Required</Badge>
+              <Badge status="error" label={t("documents.reviewRequired")} />
             )}
           </div>
 
@@ -198,11 +206,11 @@ export function DocumentQualityPanel({
 
           {quality.issues.length > 0 && (
             <div className="rounded bg-warning/10 p-2 text-xs text-warning">
-              <p className="font-bold">Issues:</p>
+              <p className="font-bold">{t("documents.issues")}</p>
               <ul className="list-disc ps-4 space-y-1">
                 {quality.issues.map((issue, idx) => (
                   <li key={idx}>
-                    <span className="font-medium">[{issue.severity}]</span> Page {issue.pageNumber}: {issue.message}
+                    <span className="font-medium">[{issue.severity}]</span> {t("documents.pageNumberIssue", { page: String(issue.pageNumber) })}: {issue.message}
                   </li>
                 ))}
               </ul>
@@ -211,7 +219,7 @@ export function DocumentQualityPanel({
 
           {quality.reviewDecision && (
             <div className="rounded bg-info/10 p-2 text-xs text-info">
-              <p className="font-bold">Review Decision: {quality.reviewDecision}</p>
+              <p className="font-bold">{t("documents.reviewDecision", { decision: quality.reviewDecision })}</p>
               {quality.reviewNotes && <p className="mt-1">{quality.reviewNotes}</p>}
             </div>
           )}
@@ -223,7 +231,7 @@ export function DocumentQualityPanel({
               onClick={() => setShowReviewForm(true)}
             >
               <span className="material-symbols-outlined me-1 text-[14px]">rate_review</span>
-              Review Quality
+              {t("documents.reviewQuality")}
             </Button>
           )}
 
@@ -232,7 +240,7 @@ export function DocumentQualityPanel({
               <textarea
                 value={reviewNotes}
                 onChange={(e) => setReviewNotes(e.target.value)}
-                placeholder="Add review notes (optional)"
+                placeholder={t("documents.addReviewNotesPlaceholder")}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm"
                 rows={3}
               />
@@ -243,7 +251,7 @@ export function DocumentQualityPanel({
                   disabled={isReviewing}
                   isLoading={isReviewing}
                 >
-                  Approve
+                  {t("documents.approve")}
                 </Button>
                 <Button
                   size="sm"
@@ -252,7 +260,7 @@ export function DocumentQualityPanel({
                   disabled={isReviewing}
                   isLoading={isReviewing}
                 >
-                  Reject
+                  {t("documents.reject")}
                 </Button>
                 <Button
                   size="sm"
@@ -261,14 +269,14 @@ export function DocumentQualityPanel({
                   disabled={isReviewing}
                   isLoading={isReviewing}
                 >
-                  Retry
+                  {t("common.retry")}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => { setShowReviewForm(false); setReviewNotes(""); }}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </div>
             </div>
@@ -278,10 +286,10 @@ export function DocumentQualityPanel({
 
       {!hasQuality && !hasOcrPages && (
         <div className="mt-3 text-center">
-          <p className="text-sm text-on-surface-variant">No OCR processing or quality assessment yet.</p>
+          <p className="text-sm text-on-surface-variant">{t("documents.noOcrOrQualityYet")}</p>
           {canProcessOcr && (
             <p className="mt-2 text-xs text-on-surface-variant">
-              Click &quot;Run OCR&quot; to process this document and assess its quality.
+              {t("documents.clickRunOcrInstructions")}
             </p>
           )}
         </div>
@@ -290,7 +298,7 @@ export function DocumentQualityPanel({
       {hasOcrPages && (
         <div className="mt-3 space-y-2">
           <h4 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-            Page Results
+            {t("documents.pageResults")}
           </h4>
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {ocrPages.map((page) => (
@@ -304,6 +312,8 @@ export function DocumentQualityPanel({
 }
 
 function OcrPageRow({ page, highlight }: { page: OcrPageResultView; highlight?: boolean }) {
+  const { t } = useI18n();
+
   const [expanded, setExpanded] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -335,11 +345,17 @@ function OcrPageRow({ page, highlight }: { page: OcrPageResultView; highlight?: 
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-medium text-on-surface">Page {page.pageNumber}</span>
-          <Badge status={statusBadge}>{page.status}</Badge>
+          <span className="text-xs font-medium text-on-surface">
+            {t("documents.pageNumberLabel", { page: String(page.pageNumber) })}
+          </span>
+          <Badge status={statusBadge} label={codeLabel(t, "documents.ocrStatus", page.status)} />
           <span className="text-xs text-on-surface-variant">{confidencePercent}%</span>
-          <span className="text-xs text-on-surface-variant">{page.text.length} chars</span>
-          <span className="text-xs text-on-surface-variant">{wordCount} words</span>
+          <span className="text-xs text-on-surface-variant">
+            {t("documents.chars", { count: String(page.text.length) })}
+          </span>
+          <span className="text-xs text-on-surface-variant">
+            {t("documents.words", { count: String(wordCount) })}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-on-surface-variant">{page.provider}</span>
@@ -362,13 +378,13 @@ function OcrPageRow({ page, highlight }: { page: OcrPageResultView; highlight?: 
               onClick={() => setExpanded(!expanded)}
               className="mt-1 text-xs font-medium text-primary hover:text-primary/80"
             >
-              {expanded ? "Show less" : "Show full text"}
+              {expanded ? t("documents.showLess") : t("documents.showFullText")}
             </button>
           )}
         </div>
       )}
       {!hasPreview && page.status === "completed" && (
-        <p className="mt-2 text-xs text-on-surface-variant/50 italic">No text extracted</p>
+        <p className="mt-2 text-xs text-on-surface-variant/50 italic">{t("documents.noTextExtracted")}</p>
       )}
     </div>
   );

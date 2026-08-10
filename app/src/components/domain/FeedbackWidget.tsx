@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { submitFeedback } from "@/services/feedback.service";
-import { useI18n } from "@/providers/i18n-provider";
 import type { FeedbackCategory, FeedbackRating } from "@/types/api/feedback.types";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface FeedbackWidgetProps {
   messageId: string;
@@ -64,9 +64,7 @@ export function FeedbackWidget({
       setSubmitted(true);
       if (onFeedbackSubmitted) onFeedbackSubmitted();
     } catch (err: unknown) {
-      setErrorMessage(
-        err instanceof Error ? err.message : t("chat.feedback.error"),
-      );
+      setErrorMessage(err instanceof Error ? err.message : t("feedback.saveError"));
     } finally {
       setSubmitting(false);
     }
@@ -80,11 +78,11 @@ export function FeedbackWidget({
   };
 
   return (
-    <div className="mt-3.5 flex flex-col gap-1.5 text-xs" id={`feedback-widget-${messageId}`}>
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10.5px] text-on-surface-variant/70">
-            {t("chat.feedback.prompt")}
+    <div className="mt-3 border-t border-outline-variant/20 pt-2 text-xs" id={`feedback-widget-${messageId}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium text-on-surface-variant">
+            {t("feedback.wasHelpful")}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -107,7 +105,7 @@ export function FeedbackWidget({
               >
                 thumb_up
               </span>
-              <span>{t("chat.feedback.yes")}</span>
+              <span className="text-[11px]">{t("feedback.yes")}</span>
             </button>
 
             <button
@@ -130,15 +128,15 @@ export function FeedbackWidget({
               >
                 thumb_down
               </span>
-              <span>{t("chat.feedback.no")}</span>
+              <span className="text-[11px]">{t("feedback.no")}</span>
             </button>
           </div>
         </div>
 
         {submitted && !showCategoryMenu && (
-          <div className="inline-flex items-center gap-1 rounded-full bg-emerald-500/5 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-600/80 dark:text-emerald-400">
-            <span className="material-symbols-outlined text-[12px]">check_circle</span>
-            <span>{t("chat.feedback.thanks")}</span>
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <span className="material-symbols-outlined text-[14px]">check_circle</span>
+            <span>{t("feedback.thankYou")}</span>
           </div>
         )}
       </div>
@@ -154,8 +152,8 @@ export function FeedbackWidget({
           id={`feedback-form-${messageId}`}
         >
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-on-surface-variant" htmlFor={`category-select-${messageId}`}>
-              {t("chat.feedback.issuePrompt")}
+            <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface" htmlFor={`category-select-${messageId}`}>
+              {t("feedback.issueLabel")}
             </label>
             <select
               id={`category-select-${messageId}`}
@@ -163,26 +161,26 @@ export function FeedbackWidget({
               onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
               className="w-full rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="">{t("chat.feedback.selectCategory")}</option>
-              <option value="inaccurate">{t("chat.feedback.category.inaccurate")}</option>
-              <option value="incomplete">{t("chat.feedback.category.incomplete")}</option>
-              <option value="irrelevant">{t("chat.feedback.category.irrelevant")}</option>
-              <option value="harmful">{t("chat.feedback.category.harmful")}</option>
-              <option value="other">{t("chat.feedback.category.other")}</option>
+              <option value="">{t("feedback.selectCategory")}</option>
+              <option value="inaccurate">{t("feedback.inaccurate")}</option>
+              <option value="incomplete">{t("feedback.incomplete")}</option>
+              <option value="irrelevant">{t("feedback.irrelevant")}</option>
+              <option value="harmful">{t("feedback.harmful")}</option>
+              <option value="other">{t("feedback.other")}</option>
             </select>
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-on-surface-variant" htmlFor={`comment-input-${messageId}`}>
-              {t("chat.feedback.detailsPrompt")}
+            <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface" htmlFor={`comment-input-${messageId}`}>
+              {t("feedback.detailsLabel")}
             </label>
             <textarea
               id={`comment-input-${messageId}`}
               rows={2}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder={t("chat.feedback.detailsPlaceholder")}
-              className="w-full rounded-lg border border-outline-variant/30 bg-surface p-2 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder={t("feedback.detailsPlaceholder")}
+              className="w-full rounded-xl border border-outline-variant/40 bg-surface p-2.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 
@@ -195,14 +193,14 @@ export function FeedbackWidget({
               }}
               className="rounded-lg border border-outline-variant/30 px-3 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container"
             >
-              {t("chat.feedback.skip")}
+              {t("feedback.skip")}
             </button>
             <button
               type="submit"
               disabled={submitting}
               className="rounded-lg bg-primary px-3.5 py-1.5 text-[11px] font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {submitting ? t("chat.feedback.submitting") : t("chat.feedback.submit")}
+              {submitting ? t("feedback.submitting") : t("feedback.submit")}
             </button>
           </div>
         </form>

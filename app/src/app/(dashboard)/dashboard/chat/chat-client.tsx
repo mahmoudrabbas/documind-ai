@@ -32,6 +32,7 @@ import type {
   ConversationListItem,
 } from "@/types/api/chat.types";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
@@ -80,18 +81,6 @@ const SUGGESTED_QUESTION_KEYS = [
   "chat.suggestedQuestion2",
   "chat.suggestedQuestion3",
 ];
-
-function resolveDimensionLabel(
-  t: (key: string) => string,
-  dimension: string,
-): string {
-  const key = `usage.dimension.${dimension}`;
-  const label = t(key);
-  if (label !== key) return label;
-  return dimension
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^[a-z]/, (c) => c.toUpperCase());
-}
 
 function isVisionResponse(
   response: ChatResponse | ChatVisionResponse,
@@ -1002,8 +991,9 @@ export function ChatClient() {
                 />
               ) : (
                 <UpgradePrompt
-                  dimension={resolveDimensionLabel(
+                  dimension={codeLabel(
                     t,
+                    "usage.dimension",
                     entitlementBanner.dimension,
                   )}
                   current={entitlementBanner.current}
@@ -1012,8 +1002,9 @@ export function ChatClient() {
                   hasBillingPermission={permissions.can(Permission.BILLING_MANAGE)}
                   warningThreshold={0}
                   title={t("entitlement.denial.quotaTitle", {
-                    dimension: resolveDimensionLabel(
+                    dimension: codeLabel(
                       t,
+                      "usage.dimension",
                       entitlementBanner.dimension,
                     ),
                   })}
