@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, Suspense } from "react";
 
 import { useI18n } from "@/providers/i18n-provider";
-import { AuthPageShell } from "@/components/auth/auth-page-shell";
+import { AuthBrand, AuthPageShell } from "@/components/auth/auth-page-shell";
 
 import { API_BASE_URL } from "../../constants/api";
 import {
@@ -56,20 +56,7 @@ function VerifyEmailContent() {
 
   return (
     <AuthPageShell dir={dir} labelledBy="verify-email-title">
-      <div className="flex flex-col items-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-950">
-          <span
-            className="material-symbols-outlined text-2xl text-white"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-            aria-hidden="true"
-          >
-            neurology
-          </span>
-        </span>
-        <p className="mt-2 text-sm font-bold text-slate-950">
-          {t("landing.appName") || "DocuMind AI"}
-        </p>
-      </div>
+      <AuthBrand label={t("landing.appName") || "DocuMind AI"} />
 
       <div
         className={`mx-auto mt-7 flex h-14 w-14 items-center justify-center rounded-full border-4 ${

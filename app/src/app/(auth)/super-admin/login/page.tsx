@@ -10,6 +10,7 @@ import {
 } from "@/providers/auth-provider";
 import { AuthHeroPanel } from "@/components/ui/AuthHeroPanel";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 
 type Response = {
   success: true;
@@ -75,17 +76,7 @@ export default function SuperAdminLoginPage() {
       <section className="z-10 flex h-full w-full flex-col p-lg shadow-xl md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
         {/* Brand Header */}
         <div className="mb-12">
-          <div className="mb-sm flex items-center gap-base">
-            <span
-              className="material-symbols-outlined text-3xl text-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              neurology
-            </span>
-            <h1 className="text-headline-md font-bold tracking-tight text-primary">
-              DocuMind AI
-            </h1>
-          </div>
+          <DocuMindLogo className="mb-sm" />
           <p className="max-w-sm text-body-md text-on-surface-variant">
             Platform administration
           </p>

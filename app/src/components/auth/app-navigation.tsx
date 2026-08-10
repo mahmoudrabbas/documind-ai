@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { useTenantSettings } from "@/providers/tenant-provider";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 import {
   getAppContext,
   filterNavigationLinks,
@@ -99,18 +100,8 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         }`}
       >
         <div className="flex items-center gap-3 p-lg">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <span
-              className="material-symbols-outlined text-on-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              psychology
-            </span>
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-headline-md font-bold text-primary">
-              DocuMind AI
-            </h1>
+          <div className="min-w-0 flex-1">
+            <DocuMindLogo variant="full" className="max-w-full" />
             <p className="text-label-sm text-on-surface-variant">
               {companyName || "Enterprise Knowledge"}
             </p>
