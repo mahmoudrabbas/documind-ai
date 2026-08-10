@@ -21,7 +21,7 @@ import {
   DashboardPanel,
 } from "@/components/ui";
 import { SUBSCRIPTION_BADGE_STATUS } from "@/components/ui/variants";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
@@ -70,13 +70,12 @@ function formatPrice(price: number, currency: string): string {
 
 const ENTITLEMENT_ITEMS: {
   key: keyof PublicPackage["entitlements"];
-  label: string;
   icon: string;
 }[] = [
-  { key: "employees", label: "employees", icon: "group" },
-  { key: "documents", label: "documents", icon: "description" },
-  { key: "storageMb", label: "storage", icon: "cloud" },
-  { key: "queriesPerMonth", label: "queries / month", icon: "search" },
+  { key: "employees", icon: "group" },
+  { key: "documents", icon: "description" },
+  { key: "storageMb", icon: "cloud" },
+  { key: "queriesPerMonth", icon: "search" },
 ];
 
 /* ── Page ───────────────────────────────────────────────────────────────── */
@@ -530,6 +529,29 @@ export default function CheckoutPage() {
 /* ── Entitlement list item ──────────────────────────────────────────────── */
 
 function EntitlementList({ pkg }: { pkg: PublicPackage }) {
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
+
+  /* Each row is a single interpolated key rather than a number glued to a
+     noun: Arabic inflects the noun with the count and orders the phrase
+     differently, so the fragments cannot be concatenated. */
+  const entitlementLabel = (
+    key: keyof PublicPackage["entitlements"],
+  ): string => {
+    const value = pkg.entitlements[key];
+    const count = { count: value.toLocaleString(intlLocale) };
+    switch (key) {
+      case "storageMb":
+        return t("billing.entitlementStorageMb", { value: String(value) });
+      case "queriesPerMonth":
+        return tPlural("billing.entitlementQueriesPerMonth", value, count);
+      case "documents":
+        return tPlural("billing.entitlementDocuments", value, count);
+      default:
+        return tPlural("billing.entitlementEmployees", value, count);
+    }
+  };
+
   return (
     <>
       {ENTITLEMENT_ITEMS.map((item) => (
@@ -540,13 +562,7 @@ function EntitlementList({ pkg }: { pkg: PublicPackage }) {
           <span className="material-symbols-outlined text-[16px] text-secondary">
             {item.icon}
           </span>
-          <span>
-            {item.key === "storageMb"
-              ? `${pkg.entitlements[item.key]} MB storage`
-              : item.key === "queriesPerMonth"
-                ? `${pkg.entitlements[item.key].toLocaleString()} queries / month`
-                : `${pkg.entitlements[item.key].toLocaleString()} ${item.label}`}
-          </span>
+          <span>{entitlementLabel(item.key)}</span>
         </li>
       ))}
     </>

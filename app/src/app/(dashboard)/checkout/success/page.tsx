@@ -8,6 +8,7 @@ import {
   synchronizeCheckoutSession,
 } from "@/services/billing.service";
 import { ApiError } from "@/lib/api-client";
+import { useI18n } from "@/providers/i18n-provider";
 import {
   CHECKOUT_SYNC_BACKOFF_MS,
   CHECKOUT_SYNC_WINDOW_MS,
@@ -18,6 +19,7 @@ import {
 } from "./checkout-sync";
 
 function CheckoutSuccessContent() {
+  const { t } = useI18n();
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionId = searchParams.get("session_id");
@@ -95,29 +97,31 @@ function CheckoutSuccessContent() {
   const synchronizing = phase === "synchronizing";
   const retryable = ["pending", "provider-unavailable", "payment-incomplete"].includes(phase);
   const title = synchronizing
-    ? "Payment completed"
+    ? t("billing.syncTitle")
     : phase === "active"
-      ? "Your subscription is active!"
+      ? t("billing.successTitle")
       : phase === "pending"
-        ? "Synchronization pending"
+        ? t("billing.syncPendingTitle")
         : phase === "provider-unavailable"
-          ? "Provider temporarily unavailable"
+          ? t("billing.providerUnavailableTitle")
           : phase === "payment-incomplete"
-            ? "Payment incomplete"
-            : "Checkout session unavailable";
+            ? t("billing.paymentIncompleteTitle")
+            : t("billing.sessionUnavailableTitle");
   const message = synchronizing
-    ? "Payment completed. Synchronizing your subscription."
+    ? t("billing.syncMessage")
     : phase === "active"
-      ? `${packageName ? `${packageName} is synchronized. ` : ""}You can now use all the features of your plan.`
+      ? packageName
+        ? t("billing.successDescriptionWithPlan", { packageName })
+        : t("billing.successDescription")
       : phase === "pending"
-        ? "Payment was received, but subscription synchronization is still pending."
+        ? t("billing.syncPendingMessage")
         : phase === "provider-unavailable"
-          ? "Stripe is temporarily unavailable. Your completed payment has not been marked as failed; retry synchronization shortly."
+          ? t("billing.providerUnavailableMessage")
           : phase === "payment-incomplete"
-            ? "Stripe has not confirmed a completed payment for this Checkout Session."
+            ? t("billing.paymentIncompleteMessage")
             : phase === "session-not-found"
-              ? "This Checkout Session is not available for your company."
-              : "The Checkout Session ID is missing or invalid.";
+              ? t("billing.sessionNotFoundMessage")
+              : t("billing.invalidSessionMessage");
 
   return (
     <div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">
@@ -133,16 +137,16 @@ function CheckoutSuccessContent() {
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         {phase === "active" ? (
           <button type="button" onClick={() => router.push("/checkout")} className="min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary">
-            View Billing
+            {t("billing.viewBilling")}
           </button>
         ) : retryable ? (
           <button type="button" onClick={() => setRetryKey((value) => value + 1)} className="min-h-11 rounded-xl bg-primary px-6 font-bold text-on-primary">
-            Retry
+            {t("common.retry")}
           </button>
         ) : null}
         {manageBillingAvailable ? (
           <button type="button" disabled={portalPending} onClick={() => void manageBilling()} className="min-h-11 rounded-xl border border-outline px-6 font-bold disabled:opacity-50">
-            {portalPending ? "Opening…" : "Manage Billing"}
+            {portalPending ? t("billingAdmin.opening") : t("billing.manageBilling")}
           </button>
         ) : null}
       </div>
@@ -151,9 +155,10 @@ function CheckoutSuccessContent() {
 }
 
 export default function CheckoutSuccessPage() {
+  const { t } = useI18n();
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
-      <Suspense fallback={<div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">Loading payment details…</div>}>
+      <Suspense fallback={<div className="max-w-md rounded-2xl bg-surface p-8 text-center shadow-lg">{t("billing.loadingPaymentDetails")}</div>}>
         <CheckoutSuccessContent />
       </Suspense>
     </div>

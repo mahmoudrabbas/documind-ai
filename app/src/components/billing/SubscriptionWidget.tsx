@@ -8,13 +8,12 @@ import { Permission } from "@/types/api/permissions.types";
 import { getSubscriptionStatus } from "@/services/billing.service";
 import type { SubscriptionStatus } from "@/types/api/billing.types";
 import { ApiError } from "@/lib/api-client";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import {
   formatPrice,
   formatNullableDate,
   getDaysRemaining,
-  pluralize,
 } from "@/lib/billing.helpers";
 import { DashboardPanel, Badge, Skeleton, Button } from "@/components/ui";
 import { SUBSCRIPTION_BADGE_STATUS } from "@/components/ui/variants";
@@ -28,34 +27,62 @@ type WidgetState =
 
 /* ── Entitlement grid helpers ──────────────────────────────────────── */
 
-function formatStorage(mb: number): string {
+type TranslateFn = (key: string, params?: Record<string, string>) => string;
+type PluralFn = (key: string, count: number, params?: Record<string, string>) => string;
+
+function formatStorage(mb: number, t: TranslateFn): string {
   if (mb >= 1024) {
     const gb = mb / 1024;
-    return `${gb % 1 === 0 ? gb : gb.toFixed(1)} GB`;
+    return `${gb % 1 === 0 ? gb : gb.toFixed(1)} ${t("common.unitGB")}`;
   }
-  return `${mb} MB`;
+  return `${mb} ${t("common.unitMB")}`;
 }
 
 interface EntitlementRow {
+  /** Untranslated row identifier — used as the React key so the list
+      stays keyed on a machine code rather than on display text. */
+  id: string;
   label: string;
   value: string;
 }
 
 function getEntitlementRows(
   e: SubscriptionStatus["packageId"]["entitlements"],
+  t: TranslateFn,
+  tPlural: PluralFn,
+  intlLocale: string,
 ): EntitlementRow[] {
   return [
-    { label: "Employees", value: pluralize(e.employees, "employee") },
-    { label: "Documents", value: e.documents.toLocaleString() },
-    { label: "Storage", value: formatStorage(e.storageMb) },
-    { label: "Queries", value: `${e.queriesPerMonth.toLocaleString()}/mo` },
+    {
+      id: "employees",
+      label: t("billing.entitlementLabelEmployees"),
+      value: tPlural("billing.entitlementEmployees", e.employees),
+    },
+    {
+      id: "documents",
+      label: t("billing.entitlementLabelDocuments"),
+      value: e.documents.toLocaleString(intlLocale),
+    },
+    {
+      id: "storage",
+      label: t("billing.entitlementLabelStorage"),
+      value: formatStorage(e.storageMb, t),
+    },
+    {
+      id: "queries",
+      label: t("billing.entitlementLabelQueries"),
+      value: t("billing.entitlementQueriesShort", {
+        count: e.queriesPerMonth.toLocaleString(intlLocale),
+      }),
+    },
   ];
 }
 
 /* ── Component ─────────────────────────────────────────────────────── */
 
 export function SubscriptionWidget() {
-  const { t } = useI18n();
+  const { t, tPlural } = useI18n();
+  const intlLocale = useIntlLocale();
   const auth = useAuth();
   const permissions = usePermissions();
 
@@ -168,7 +195,12 @@ export function SubscriptionWidget() {
 
   const { subscription: sub } = state;
   const pkg = sub.packageId;
-  const entitlements = getEntitlementRows(pkg.entitlements);
+  const entitlements = getEntitlementRows(
+    pkg.entitlements,
+    t,
+    tPlural,
+    intlLocale,
+  );
 
   return (
     <DashboardPanel padding="compact">
@@ -257,7 +289,7 @@ export function SubscriptionWidget() {
       {/* Entitlements grid */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {entitlements.map((item) => (
-          <div key={item.label} className="min-w-0">
+          <div key={item.id} className="min-w-0">
             <p className="text-label-sm text-on-surface-variant truncate">
               {item.label}
             </p>

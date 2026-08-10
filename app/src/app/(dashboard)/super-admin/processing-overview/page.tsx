@@ -9,8 +9,10 @@ import { ProcessingStatusBadge } from "@/components/documents/ProcessingStatusBa
 import { ProcessingTimeline } from "@/components/documents/ProcessingTimeline";
 import { RetryConfirmDialog, ReprocessConfirmDialog } from "@/components/documents/ProcessingConfirmDialogs";
 import { ApiError } from "@/lib/api-client";
+import { useIntlLocale } from "@/providers/i18n-provider";
 
 export default function SuperAdminProcessingOverviewPage() {
+  const intlLocale = useIntlLocale();
   const [runs, setRuns] = useState<ProcessingRunView[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -189,7 +191,7 @@ export default function SuperAdminProcessingOverviewPage() {
                       </td>
                       <td className="px-4 py-4 text-sm text-slate-500">
                         {run.failedAt
-                          ? new Date(run.failedAt).toLocaleString()
+                          ? new Date(run.failedAt).toLocaleString(intlLocale)
                           : "—"}
                       </td>
                       <td className="px-4 py-4">

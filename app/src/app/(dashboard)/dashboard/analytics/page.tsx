@@ -18,7 +18,7 @@ import {
   type QualityMetricsData,
   type InsightProposal,
 } from "@/services/analytics.service";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { MetricCard } from "./components/MetricCard";
 import { TimeSeriesChart } from "./components/TimeSeriesChart";
 import { CostBreakdownChart } from "./components/CostBreakdownChart";
@@ -52,6 +52,7 @@ function getLocalStartDateString(daysAgo = 30): string {
 
 export default function AnalyticsPage() {
   const { t, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const [filters, setFilters] = useState({
     startDate: getLocalStartDateString(30),
     endDate: getLocalDateString(),
@@ -165,7 +166,7 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <MetricCard
               title={t("analytics.totalQueries")}
-              value={overview?.totalQueries?.toLocaleString() || "0"}
+              value={overview?.totalQueries?.toLocaleString(intlLocale) || "0"}
               changePct={overview?.trends?.queriesChangePct}
               subtitle={t("analytics.totalQueriesDesc")}
               icon="quiz"

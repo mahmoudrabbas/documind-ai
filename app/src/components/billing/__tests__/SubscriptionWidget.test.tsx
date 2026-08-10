@@ -11,7 +11,25 @@ import { SubscriptionWidget } from "../SubscriptionWidget";
 
 vi.mock("@/providers/auth-provider", () => ({ useAuth: vi.fn() }));
 vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
-vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: "en", dir: "ltr", t: (key: string) => key === "billingAdmin.title" ? "Billing & invoices" : key, tPlural: (key: string) => key, setLocale: vi.fn() }) }));
+/* Resolve against the real English dictionary rather than echoing keys, so
+   the entitlement-grid assertions below verify the rendered copy (including
+   `tPlural` category selection) instead of a passthrough stub. */
+vi.mock("@/providers/i18n-provider", async () => {
+  const { default: dictionaries } = await import("@/lib/i18n/translations");
+  const utils = await import("@/lib/i18n/i18n.utils");
+  return {
+    useI18n: () => ({
+      locale: "en" as const,
+      dir: "ltr" as const,
+      t: (key: string, params?: Record<string, string>) =>
+        utils.t(dictionaries.en, key, params),
+      tPlural: (key: string, count: number, params?: Record<string, string>) =>
+        utils.tPlural(dictionaries.en, "en", key, count, params),
+      setLocale: vi.fn(),
+    }),
+    useIntlLocale: () => "en-US",
+  };
+});
 vi.mock("@/services/billing.service", () => ({
   getSubscriptionStatus: vi.fn(),
   createBillingPortalSession: vi.fn(),

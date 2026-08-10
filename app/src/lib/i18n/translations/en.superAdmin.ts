@@ -447,6 +447,16 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.packageForm.newTitle": "New Package",
   "superAdmin.packageForm.newDescription":
     "Define pricing and usage limits for a new package.",
+
+  /* Platform email diagnostics. "SMTP" is a protocol name and stays as-is. */
+  "superAdmin.platformEmails.title": "Email Infrastructure Diagnostics",
+  "superAdmin.platformEmails.description":
+    "Monitor the global email queue and test provider connectivity.",
+  "superAdmin.platformEmails.smtpTitle": "SMTP Connection",
+  "superAdmin.platformEmails.smtpDescription":
+    "Send a test email to verify that the worker and SMTP configuration are functioning correctly.",
+  "superAdmin.platformEmails.sendTest": "Send Test Email",
+  "superAdmin.platformEmails.notImplemented": "Not implemented yet.",
 };
 
 export default enSuperAdmin;

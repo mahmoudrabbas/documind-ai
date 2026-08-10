@@ -443,6 +443,16 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.packageForm.newTitle": "حزمة جديدة",
   "superAdmin.packageForm.newDescription":
     "حدّد الأسعار وحدود الاستخدام للحزمة الجديدة.",
+
+  /* تشخيص البريد على مستوى المنصة. "SMTP" اسم بروتوكول ويبقى كما هو. */
+  "superAdmin.platformEmails.title": "تشخيص بنية البريد الإلكتروني",
+  "superAdmin.platformEmails.description":
+    "راقب طابور البريد العام واختبر الاتصال بمزوّد الخدمة.",
+  "superAdmin.platformEmails.smtpTitle": "اتصال SMTP",
+  "superAdmin.platformEmails.smtpDescription":
+    "أرسل رسالة اختبارية للتأكد من عمل المعالج وإعدادات SMTP بشكل صحيح.",
+  "superAdmin.platformEmails.sendTest": "إرسال رسالة اختبارية",
+  "superAdmin.platformEmails.notImplemented": "غير مُنفَّذ بعد.",
 };
 
 export default arSuperAdmin;

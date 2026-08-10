@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api-client";
 import { getTenantById } from "@/services/platform.service";
+import { useIntlLocale } from "@/providers/i18n-provider";
 import type { PlatformTenant } from "@/types/api/platform.types";
 
 const format = (value: string) =>
@@ -12,6 +13,7 @@ const format = (value: string) =>
 
 export default function PlatformTenantDetailPage() {
   const id = String(useParams<{ id: string }>().id ?? "");
+  const intlLocale = useIntlLocale();
   const [tenant, setTenant] = useState<PlatformTenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -83,7 +85,10 @@ export default function PlatformTenantDetailPage() {
             {[
               ["Status", format(tenant.status)],
               ["Plan", format(tenant.plan)],
-              ["Created", new Date(tenant.createdAt).toLocaleDateString()],
+              [
+                "Created",
+                new Date(tenant.createdAt).toLocaleDateString(intlLocale),
+              ],
               ["Users", tenant.stats.users],
               ["Documents", tenant.stats.documents],
               ["Questions", tenant.stats.questions],
