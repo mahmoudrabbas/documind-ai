@@ -9,7 +9,10 @@ import {
   type AuthUser,
 } from "@/providers/auth-provider";
 import { AuthHeroPanel } from "@/components/ui/AuthHeroPanel";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
+import { useI18n } from "@/providers/i18n-provider";
 
 type Response = {
   success: true;
@@ -19,6 +22,7 @@ type Response = {
 export default function SuperAdminLoginPage() {
   const router = useRouter();
   const auth = useAuth();
+  const { t, dir, locale } = useI18n();
   const pending = useRef(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,9 +32,9 @@ export default function SuperAdminLoginPage() {
 
   function messageForError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
-      return "Invalid email or password.";
+      return t("auth.errorInvalidEmailOrPassword");
     }
-    return "Unable to sign in. Please try again.";
+    return t("auth.errorGeneric");
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -70,34 +74,33 @@ export default function SuperAdminLoginPage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest">
+    <main
+      key={locale}
+      dir={dir}
+      className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
+    >
       {/* Left panel (Form Panel) */}
       <section className="z-10 flex h-full w-full flex-col p-lg shadow-xl md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
+        {/* Language switcher */}
+        <div className="absolute top-6 end-6 z-20">
+          <LanguageSwitcher />
+        </div>
+
         {/* Brand Header */}
         <div className="mb-12">
-          <div className="mb-sm flex items-center gap-base">
-            <span
-              className="material-symbols-outlined text-3xl text-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              neurology
-            </span>
-            <h1 className="text-headline-md font-bold tracking-tight text-primary">
-              DocuMind AI
-            </h1>
-          </div>
+          <DocuMindLogo className="mb-sm" />
           <p className="max-w-sm text-body-md text-on-surface-variant">
-            Platform administration
+            {t("auth.platformAdmin")}
           </p>
         </div>
 
         {/* Login Form */}
         <div className="flex flex-grow flex-col justify-center">
           <h2 className="mb-base text-headline-lg font-bold text-primary">
-            Super Admin Sign In
+            {t("auth.superAdminSignIn")}
           </h2>
           <p className="mb-xl text-body-md text-on-surface-variant">
-            Use your platform administrator credentials.
+            {t("auth.superAdminCredentials")}
           </p>
 
           <form className="space-y-md w-full" onSubmit={submit} noValidate>
@@ -124,7 +127,7 @@ export default function SuperAdminLoginPage() {
                 htmlFor="email"
                 className="mb-xs block text-label-md text-on-surface-variant"
               >
-                Email
+                {t("auth.email")}
               </label>
               <input
                 id="email"
@@ -133,7 +136,7 @@ export default function SuperAdminLoginPage() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="email"
-                placeholder="name@company.com"
+                placeholder={t("auth.emailPlaceholder")}
                 disabled={submitting}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
@@ -144,7 +147,7 @@ export default function SuperAdminLoginPage() {
                 htmlFor="password"
                 className="mb-xs block text-label-md text-on-surface-variant"
               >
-                Password
+                {t("auth.password")}
               </label>
               <input
                 id="password"
@@ -153,7 +156,7 @@ export default function SuperAdminLoginPage() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="current-password"
-                placeholder="••••••••"
+                placeholder={t("auth.passwordPlaceholder")}
                 disabled={submitting}
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
               />
@@ -169,7 +172,7 @@ export default function SuperAdminLoginPage() {
                   progress_activity
                 </span>
               ) : null}
-              {submitting ? "Signing in…" : "Sign in"}
+              {submitting ? t("auth.signingIn") : t("auth.signIn")}
             </button>
           </form>
         </div>
@@ -184,12 +187,11 @@ export default function SuperAdminLoginPage() {
               verified_user
             </span>
             <span className="text-label-sm text-on-surface-variant">
-              AES-256 Encrypted & SOC2 Compliant
+              {t("auth.encryptedBadge")}
             </span>
           </div>
           <p className="text-body-sm text-outline">
-            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
-            rights reserved.
+            {t("auth.rightsReserved", { year: String(new Date().getFullYear()) })}
           </p>
         </div>
       </section>

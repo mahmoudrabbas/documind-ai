@@ -21,9 +21,14 @@ export function usePlatformQuery<TParams, TData>(
 
   const loaderRef = useRef(loader);
   const paramsRef = useRef(params);
-  loaderRef.current = loader;
-  paramsRef.current = params;
   const hasData = useRef(false);
+
+  // Post-commit ref sync (react-hooks/refs); must precede the [key, run]
+  // effect so refetches observe the latest loader/params.
+  useEffect(() => {
+    loaderRef.current = loader;
+    paramsRef.current = params;
+  });
 
   const run = useCallback(async (signal?: AbortSignal) => {
     if (hasData.current) setRefreshing(true);

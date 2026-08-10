@@ -21,6 +21,44 @@ test("positive knowledge signals require both enterprise/document scope and a re
   }
 });
 
+test("bounded enterprise structures survive intent-provider failure", () => {
+  for (const input of [
+    "What is the hotel limit?",
+    "What is the P1 response time?",
+    "Is MFA mandatory for VPN?",
+    "When is a purchase order required?",
+    "How many remote days are allowed?",
+    "ما زمن الاستجابة الأولية لـ P1؟",
+    "هل MFA إجباري للـ VPN؟",
+    "كام حد الفندق؟",
+    "امتى لازم Purchase Order؟",
+    "شكرا، كام حد الفندق؟",
+    "p1 response time كام؟",
+    "محتاج 3 quotations لو السعر 1500؟",
+    "هل الموظف اللي اشتغل 30 يوم يقدر يطلب العمل عن بعد؟",
+  ]) {
+    assert.equal(assessPositiveKnowledgeSeeking(input).positive, true, input);
+  }
+});
+
+test("enterprise vocabulary does not turn bare definitions or arbitrary input into RAG", () => {
+  for (const input of [
+    "Thanks",
+    "شجرا",
+    "Who are you?",
+    "انت مين؟",
+    "What is VPN?",
+    "What is procurement?",
+    "Explain MFA.",
+    "What is an SLA?",
+    "What is hotel management?",
+    "asdasdasd",
+    "?! 🎉",
+  ]) {
+    assert.equal(assessPositiveKnowledgeSeeking(input).positive, false, input);
+  }
+});
+
 test("verified social prefixes are removed without consuming the knowledge remainder", () => {
   assert.deepEqual(stripLeadingSocialExpression("شكرا، كام يوم الإجازة السنوية؟"), {
     text: "كام يوم الإجازة السنوية؟",

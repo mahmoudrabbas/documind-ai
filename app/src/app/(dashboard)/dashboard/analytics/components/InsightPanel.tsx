@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { InsightProposal } from "@/services/analytics.service";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface InsightPanelProps {
   insights: InsightProposal[];
@@ -10,6 +11,8 @@ interface InsightPanelProps {
 }
 
 export function InsightPanel({ insights, loading, onRefresh }: InsightPanelProps) {
+  const { t } = useI18n();
+
   const categoryBadgeColors: Record<string, string> = {
     cost: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200/50",
     quality: "bg-primary/10 text-primary border-primary/20",
@@ -25,13 +28,13 @@ export function InsightPanel({ insights, loading, onRefresh }: InsightPanelProps
           <div>
             <h3 className="text-title-md font-bold text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-xl">auto_awesome</span>
-              <span>Operational & Quality Insight Agent</span>
+              <span>{t("analytics.insightAgentTitle")}</span>
               <span className="rounded-full bg-gradient-to-r from-primary to-tertiary px-2.5 py-0.5 text-label-xs font-bold text-on-primary">
-                AI Powered
+                {t("analytics.aiPowered")}
               </span>
             </h3>
             <p className="text-body-xs text-on-surface-variant mt-0.5">
-              Automated findings generated from aggregated operational telemetry
+              {t("analytics.insightAgentSubtitle")}
             </p>
           </div>
 
@@ -40,12 +43,12 @@ export function InsightPanel({ insights, loading, onRefresh }: InsightPanelProps
               type="button"
               onClick={onRefresh}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-surface px-3.5 py-1.5 text-label-sm font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-label-sm font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
             >
               <span className={`material-symbols-outlined text-sm ${loading ? "animate-spin" : ""}`}>
                 {loading ? "sync" : "refresh"}
               </span>
-              <span>{loading ? "Analyzing..." : "Re-Analyze"}</span>
+              <span>{loading ? t("analytics.analyzing") : t("analytics.reAnalyze")}</span>
             </button>
           )}
         </div>
@@ -54,7 +57,7 @@ export function InsightPanel({ insights, loading, onRefresh }: InsightPanelProps
           <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-outline-variant/30 bg-surface/50 p-6">
             <span className="material-symbols-outlined text-primary text-3xl animate-spin">progress_activity</span>
             <span className="text-body-xs font-medium text-on-surface-variant">
-              Running AI Insight Agent analysis...
+              {t("analytics.runningAnalysis")}
             </span>
           </div>
         ) : !insights || insights.length === 0 ? (
@@ -62,9 +65,9 @@ export function InsightPanel({ insights, loading, onRefresh }: InsightPanelProps
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary mb-2">
               <span className="material-symbols-outlined text-xl">check_circle</span>
             </div>
-            <p className="text-body-sm font-semibold text-on-surface">System Running Smoothly</p>
+            <p className="text-body-sm font-semibold text-on-surface">{t("analytics.systemRunningSmoothly")}</p>
             <p className="text-body-xs text-on-surface-variant mt-1 max-w-sm">
-              No operational anomalies or performance bottlenecks detected at this time.
+              {t("analytics.noAnomalies")}
             </p>
           </div>
         ) : (
@@ -86,12 +89,12 @@ export function InsightPanel({ insights, loading, onRefresh }: InsightPanelProps
                 </div>
 
                 <p className="mt-2 text-body-xs text-on-surface-variant">
-                  <strong className="text-on-surface font-semibold">Recommended Action:</strong> {item.recommendedAction}
+                  <strong className="text-on-surface font-semibold">{t("analytics.recommendedAction")}</strong> {item.recommendedAction}
                 </p>
 
                 <div className="mt-2.5 flex items-center justify-between border-t border-outline-variant/20 pt-2 text-label-xs text-outline">
-                  <span>Reasoning: {item.reasoning}</span>
-                  <span className="font-mono font-medium">Confidence: {item.confidence}</span>
+                  <span>{t("analytics.reasoning", { reasoning: item.reasoning })}</span>
+                  <span className="font-mono font-medium">{t("analytics.confidence", { confidence: item.confidence })}</span>
                 </div>
               </div>
             ))}

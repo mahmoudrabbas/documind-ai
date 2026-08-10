@@ -15,7 +15,14 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 export type AppContext = "tenant" | "platform";
 
 export type NavLink = {
+  /** English label. Retained as the fallback when `labelKey` is absent. */
   label: string;
+  /**
+   * Translation key for the displayed label. Consumers render
+   * `labelKey ? t(labelKey) : label`, so links without a key still show
+   * their English text rather than a raw dotted key.
+   */
+  labelKey?: string;
   href: string;
   icon: string;
   context: AppContext;
@@ -25,6 +32,7 @@ export type NavLink = {
 export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   {
     label: "Overview",
+    labelKey: "nav.overview",
     href: "/dashboard",
     icon: "dashboard",
     context: "tenant",
@@ -32,6 +40,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Documents",
+    labelKey: "nav.documents",
     href: "/dashboard/documents",
     icon: "description",
     context: "tenant",
@@ -39,6 +48,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Users",
+    labelKey: "nav.users",
     href: "/dashboard/users",
     icon: "group",
     context: "tenant",
@@ -46,6 +56,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Roles",
+    labelKey: "nav.roles",
     href: "/dashboard/roles",
     icon: "manage_accounts",
     context: "tenant",
@@ -53,6 +64,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Billing",
+    labelKey: "nav.billing",
     href: "/dashboard/settings/billing",
     icon: "payments",
     context: "tenant",
@@ -60,6 +72,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Usage & Limits",
+    labelKey: "nav.usageLimits",
     href: "/company/usage",
     icon: "speed",
     context: "tenant",
@@ -67,6 +80,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Settings",
+    labelKey: "nav.settings",
     href: "/dashboard/settings",
     icon: "settings",
     context: "tenant",
@@ -74,6 +88,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Document Taxonomy",
+    labelKey: "nav.documentTaxonomy",
     href: "/dashboard/settings/document-taxonomy",
     icon: "category",
     context: "tenant",
@@ -81,6 +96,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Audit Log",
+    labelKey: "nav.auditLog",
     href: "/dashboard/audit",
     icon: "policy",
     context: "tenant",
@@ -88,6 +104,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Email Log",
+    labelKey: "nav.emailLog",
     href: "/dashboard/emails",
     icon: "mail",
     context: "tenant",
@@ -95,6 +112,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Chat",
+    labelKey: "nav.chat",
     href: "/dashboard/chat",
     icon: "chat",
     context: "tenant",
@@ -102,6 +120,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Knowledge Gaps",
+    labelKey: "nav.knowledgeGaps",
     href: "/dashboard/knowledge-gaps",
     icon: "search_insights",
     context: "tenant",
@@ -109,6 +128,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Analytics & Insights",
+    labelKey: "nav.analyticsInsights",
     href: "/dashboard/analytics",
     icon: "analytics",
     context: "tenant",
@@ -116,6 +136,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Failed Processing",
+    labelKey: "nav.failedProcessing",
     href: "/dashboard/processing-failed",
     icon: "error",
     context: "tenant",

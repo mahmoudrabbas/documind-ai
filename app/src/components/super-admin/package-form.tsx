@@ -20,6 +20,8 @@ import { ApiError } from "@/lib/api-client";
 import { validatePackageInput } from "./package-form.contract";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 const MODEL_SUGGESTIONS = [
   "gpt-4o",
@@ -38,6 +40,7 @@ export function PackageForm({ existing, onSaved }: {
   existing?: PlatformPackage;
   onSaved?: () => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const permissions = usePermissions();
   const canManage = permissions.can(Permission.BILLING_MANAGE);
   const router = useRouter();
@@ -112,10 +115,10 @@ export function PackageForm({ existing, onSaved }: {
       }
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === "PACKAGE_VERSION_CONFLICT") {
-        setError("This package changed in another session. Current data has been reloaded; review it before saving again.");
+        setError(t("superAdmin.packageForm.versionConflict"));
         await onSaved?.();
       } else {
-        setError(caught instanceof ApiError ? caught.message : "Unable to save this package. Check the values and try again.");
+        setError(caught instanceof ApiError ? caught.message : t("superAdmin.packageForm.saveError"));
       }
     } finally {
       setPending(false);
@@ -129,7 +132,7 @@ export function PackageForm({ existing, onSaved }: {
   if (!canManage) {
     return (
       <DashboardPanel>
-        <p role="alert">You do not have permission to create or version packages.</p>
+        <p role="alert">{t("superAdmin.packageForm.noPermission")}</p>
       </DashboardPanel>
     );
   }
@@ -143,22 +146,21 @@ export function PackageForm({ existing, onSaved }: {
             role="alert"
             className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
           >
-            <strong className="block font-bold">Version bump</strong>
-            <p className="mt-1">
-              Editing will create a new version. Existing subscriptions retain
-              the current snapshot.
-            </p>
+            <strong className="block font-bold">
+              {t("superAdmin.packageForm.versionBumpTitle")}
+            </strong>
+            <p className="mt-1">{t("superAdmin.packageForm.versionBumpBody")}</p>
           </div>
         ) : null}
 
         {/* ─── Basic info ─── */}
         <fieldset>
           <legend className="mb-3 text-title-sm font-bold text-primary">
-            Basic Information
+            {t("superAdmin.packageForm.basicInfo")}
           </legend>
           <div className="grid min-w-0 gap-4 md:grid-cols-2">
             <label className={labelClass}>
-              Name
+              {t("superAdmin.packageForm.name")}
               <input
                 name="name"
                 required
@@ -168,7 +170,7 @@ export function PackageForm({ existing, onSaved }: {
               />
             </label>
             <label className={labelClass}>
-              Code
+              {t("superAdmin.packageForm.code")}
               <input
                 name="code"
                 required={!existing}
@@ -179,7 +181,7 @@ export function PackageForm({ existing, onSaved }: {
               />
             </label>
             <label className={`${labelClass} md:col-span-2`}>
-              Description
+              {t("superAdmin.packageForm.description")}
               <textarea
                 name="description"
                 rows={3}
@@ -194,11 +196,11 @@ export function PackageForm({ existing, onSaved }: {
         {/* ─── Pricing ─── */}
         <fieldset>
           <legend className="mb-3 text-title-sm font-bold text-primary">
-            Pricing
+            {t("superAdmin.packages.pricing")}
           </legend>
           <div className="grid min-w-0 gap-4 md:grid-cols-4">
             <label className={labelClass}>
-              Monthly price (minor units)
+              {t("superAdmin.packageForm.monthlyPriceMinor")}
               <input
                 name="monthlyPrice"
                 type="number"
@@ -210,7 +212,7 @@ export function PackageForm({ existing, onSaved }: {
               />
             </label>
             <label className={labelClass}>
-              Annual price (minor units)
+              {t("superAdmin.packageForm.annualPriceMinor")}
               <input
                 name="annualPrice"
                 type="number"
@@ -221,7 +223,7 @@ export function PackageForm({ existing, onSaved }: {
               />
             </label>
             <label className={labelClass}>
-              Currency
+              {t("superAdmin.packages.currency")}
               <input
                 name="currency"
                 required
@@ -231,7 +233,7 @@ export function PackageForm({ existing, onSaved }: {
               />
             </label>
             <label className={labelClass}>
-              Trial (days)
+              {t("superAdmin.packageForm.trialDays")}
               <input
                 name="trialDays"
                 type="number"
@@ -248,19 +250,19 @@ export function PackageForm({ existing, onSaved }: {
         {/* ─── Entitlements ─── */}
         <fieldset>
           <legend className="mb-3 text-title-sm font-bold text-primary">
-            Entitlements
+            {t("superAdmin.packages.entitlements")}
           </legend>
           <div className="grid min-w-0 gap-4 md:grid-cols-4">
             {([
-              ["entitlements.employees", "Employees"],
-              ["entitlements.admins", "Admins"],
-              ["entitlements.documents", "Documents"],
-              ["entitlements.storageMb", "Storage (MB)"],
-              ["entitlements.fileSizeMb", "Max file size (MB)"],
-              ["entitlements.queriesPerMonth", "Queries / month"],
-              ["entitlements.tokensPerMonth", "Tokens / month"],
-              ["entitlements.ocrPagesPerMonth", "OCR pages / month"],
-            ] as const).map(([name, label]) => {
+              ["entitlements.employees", "superAdmin.packages.employees"],
+              ["entitlements.admins", "superAdmin.packages.admins"],
+              ["entitlements.documents", "superAdmin.documents"],
+              ["entitlements.storageMb", "superAdmin.packageForm.storageMb"],
+              ["entitlements.fileSizeMb", "superAdmin.packageForm.maxFileSizeMb"],
+              ["entitlements.queriesPerMonth", "superAdmin.packages.queriesPerMonth"],
+              ["entitlements.tokensPerMonth", "superAdmin.packages.tokensPerMonth"],
+              ["entitlements.ocrPagesPerMonth", "superAdmin.packages.ocrPagesPerMonth"],
+            ] as const).map(([name, labelKey]) => {
               const existingVal = existing?.entitlements
                 ? existing.entitlements[
                     name.split(".")[1] as keyof typeof existing.entitlements
@@ -281,7 +283,7 @@ export function PackageForm({ existing, onSaved }: {
                   )[name.split(".")[1] ?? ""] ?? 0;
               return (
                 <label key={name} className={labelClass}>
-                  {label}
+                  {t(labelKey)}
                   <input
                     name={name}
                     type="number"
@@ -300,11 +302,11 @@ export function PackageForm({ existing, onSaved }: {
         {/* ─── Features ─── */}
         <fieldset>
           <legend className="mb-3 text-title-sm font-bold text-primary">
-            Features
+            {t("superAdmin.packages.features")}
           </legend>
           <div className="grid min-w-0 gap-4 md:grid-cols-2">
             <label className={labelClass}>
-              Supported models
+              {t("superAdmin.packages.supportedModels")}
               <input
                 value={modelsInput}
                 onChange={(e) => setModelsInput(e.target.value)}
@@ -312,13 +314,15 @@ export function PackageForm({ existing, onSaved }: {
                 className={input}
               />
               <span className="mt-1 block text-xs text-on-surface-variant">
-                Comma-separated. Suggestions:{" "}
-                {MODEL_SUGGESTIONS.slice(0, 4).join(", ")}
-                {MODEL_SUGGESTIONS.length > 4 ? "…" : ""}
+                {t("superAdmin.packageForm.modelsHint", {
+                  models:
+                    MODEL_SUGGESTIONS.slice(0, 4).join(", ") +
+                    (MODEL_SUGGESTIONS.length > 4 ? "…" : ""),
+                })}
               </span>
             </label>
             <label className={labelClass}>
-              Analytics level
+              {t("superAdmin.packages.analyticsLevel")}
               <select
                 name="analyticsLevel"
                 defaultValue={existing?.analyticsLevel ?? "basic"}
@@ -326,13 +330,13 @@ export function PackageForm({ existing, onSaved }: {
               >
                 {ANALYTICS_LEVELS.map((level) => (
                   <option key={level} value={level}>
-                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                    {codeLabel(t, "superAdmin.analyticsLevel", level)}
                   </option>
                 ))}
               </select>
             </label>
             <label className={labelClass}>
-              Retention (days)
+              {t("superAdmin.packageForm.retentionDays")}
               <input
                 name="retentionDays"
                 type="number"
@@ -344,7 +348,7 @@ export function PackageForm({ existing, onSaved }: {
               />
             </label>
             <label className={labelClass}>
-              Support level
+              {t("superAdmin.packages.supportLevel")}
               <select
                 name="supportLevel"
                 defaultValue={existing?.supportLevel ?? "community"}
@@ -352,7 +356,7 @@ export function PackageForm({ existing, onSaved }: {
               >
                 {SUPPORT_LEVELS.map((level) => (
                   <option key={level} value={level}>
-                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                    {codeLabel(t, "superAdmin.supportLevel", level)}
                   </option>
                 ))}
               </select>
@@ -363,7 +367,7 @@ export function PackageForm({ existing, onSaved }: {
         {/* ─── Visibility ─── */}
         <fieldset>
           <legend className="mb-3 text-title-sm font-bold text-primary">
-            Visibility
+            {t("superAdmin.packages.visibility")}
           </legend>
           <div className="flex flex-wrap gap-4">
             {(["public", "internal"] as const).map((value) => (
@@ -377,13 +381,18 @@ export function PackageForm({ existing, onSaved }: {
                   }
                   className="h-4 w-4 accent-primary"
                 />
-                {value.charAt(0).toUpperCase() + value.slice(1)}
+                {codeLabel(t, "superAdmin.packageVisibility", value)}
               </label>
             ))}
             <p className="w-full text-xs text-on-surface-variant">
-              <strong>Public</strong> — visible to all companies during
-              provisioning. <strong>Internal</strong> — only the super admin
-              can assign it.
+              <strong>
+                {codeLabel(t, "superAdmin.packageVisibility", "public")}
+              </strong>{" "}
+              {t("superAdmin.packageForm.visibilityPublicHelp")}{" "}
+              <strong>
+                {codeLabel(t, "superAdmin.packageVisibility", "internal")}
+              </strong>{" "}
+              {t("superAdmin.packageForm.visibilityInternalHelp")}
             </p>
           </div>
         </fieldset>
@@ -402,13 +411,17 @@ export function PackageForm({ existing, onSaved }: {
             onClick={() => router.back()}
             className="min-h-10 rounded-lg border px-4 py-2 font-bold"
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             disabled={pending}
             className="min-h-10 rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:opacity-50"
           >
-            {pending ? "Saving…" : existing ? "Update package" : "Save package"}
+            {pending
+              ? t("superAdmin.packageForm.saving")
+              : existing
+                ? t("superAdmin.packageForm.updatePackage")
+                : t("superAdmin.packageForm.savePackage")}
           </button>
         </div>
       </form>

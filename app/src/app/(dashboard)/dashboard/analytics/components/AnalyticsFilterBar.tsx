@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface AnalyticsFilterBarProps {
   startDate: string;
@@ -30,12 +31,14 @@ export function AnalyticsFilterBar({
   model,
   onFilterChange,
 }: AnalyticsFilterBarProps) {
+  const { t } = useI18n();
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-4">
         <div>
           <label className="block text-label-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-            Start Date
+            {t("analytics.startDate")}
           </label>
           <input
             type="date"
@@ -47,7 +50,7 @@ export function AnalyticsFilterBar({
 
         <div>
           <label className="block text-label-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-            End Date
+            {t("analytics.endDate")}
           </label>
           <input
             type="date"
@@ -59,14 +62,14 @@ export function AnalyticsFilterBar({
 
         <div>
           <label className="block text-label-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-            Provider
+            {t("analytics.provider")}
           </label>
           <select
             value={provider}
             onChange={(e) => onFilterChange({ startDate, endDate, provider: e.target.value, model })}
             className="rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-body-sm text-on-surface focus:border-primary focus:outline-none"
           >
-            <option value="">All Providers</option>
+            <option value="">{t("analytics.allProviders")}</option>
             <option value="groq">Groq</option>
             <option value="bedrock">AWS</option>
           </select>
@@ -74,14 +77,14 @@ export function AnalyticsFilterBar({
 
         <div>
           <label className="block text-label-xs font-semibold uppercase tracking-wider text-on-surface-variant mb-1">
-            Model
+            {t("analytics.model")}
           </label>
           <select
             value={model}
             onChange={(e) => onFilterChange({ startDate, endDate, provider, model: e.target.value })}
             className="rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-body-sm text-on-surface focus:border-primary focus:outline-none"
           >
-            <option value="">All Models</option>
+            <option value="">{t("analytics.allModels")}</option>
             <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
             <option value="amazon.titan-embed-text-v2:0">amazon.titan-embed-text-v2:0</option>
             <option value="amazon.titan-text-express-v1">amazon.titan-text-express-v1</option>
@@ -100,9 +103,9 @@ export function AnalyticsFilterBar({
               model: "",
             })
           }
-          className="rounded-xl border border-outline-variant/40 bg-surface px-3.5 py-1.5 text-label-sm font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors"
+          className="rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-label-sm font-semibold text-on-surface-variant hover:bg-surface-container-high transition-colors"
         >
-          Reset Filters
+          {t("analytics.resetFilters")}
         </button>
       </div>
     </div>

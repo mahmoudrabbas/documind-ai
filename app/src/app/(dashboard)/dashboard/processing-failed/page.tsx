@@ -9,35 +9,41 @@ import { ProcessingStatusBadge } from "@/components/documents/ProcessingStatusBa
 import { ProcessingTimeline } from "@/components/documents/ProcessingTimeline";
 import { RetryConfirmDialog, ReprocessConfirmDialog } from "@/components/documents/ProcessingConfirmDialogs";
 import { ApiError } from "@/lib/api-client";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
-function getSafeErrorDisplay(errorCode: string | null, errorMessage: string | null): { title: string; description: string; retryable: boolean } {
+type Translate = (key: string, params?: Record<string, string>) => string;
+
+function getSafeErrorDisplay(t: Translate, errorCode: string | null, errorMessage: string | null): { title: string; description: string; retryable: boolean } {
   if (!errorCode) {
-    return { title: "Unknown error", description: errorMessage || "An unknown error occurred.", retryable: true };
+    return { title: t("dashboard.processingFailed.unknownErrorTitle"), description: errorMessage || t("dashboard.processingFailed.unknownErrorDesc"), retryable: true };
   }
   const map: Record<string, { title: string; description: string; retryable: boolean }> = {
-    extraction_failed: { title: "Text extraction failed", description: "The document could not be parsed.", retryable: true },
-    ocr_failed: { title: "OCR processing failed", description: "Text recognition could not complete.", retryable: true },
-    ocr_timeout: { title: "OCR timed out", description: "The OCR service took too long.", retryable: true },
-    quality_review_required: { title: "Quality review required", description: "Human review needed.", retryable: false },
-    encrypted_document: { title: "Encrypted document", description: "Cannot process encrypted files.", retryable: false },
-    unsupported_format: { title: "Unsupported format", description: "File format not supported.", retryable: false },
-    file_not_found: { title: "File not found", description: "Source file could not be located.", retryable: false },
-    quota_exceeded: { title: "Quota exceeded", description: "Processing quota reached.", retryable: false },
-    resource_limit: { title: "Resource limit", description: "System resource limit reached.", retryable: true },
+    extraction_failed: { title: t("documents.errorCode.extraction_failed"), description: t("dashboard.processingFailed.errorDesc.extraction_failed"), retryable: true },
+    ocr_failed: { title: t("documents.errorCode.ocr_failed"), description: t("dashboard.processingFailed.errorDesc.ocr_failed"), retryable: true },
+    ocr_timeout: { title: t("documents.errorCode.ocr_timeout"), description: t("dashboard.processingFailed.errorDesc.ocr_timeout"), retryable: true },
+    quality_review_required: { title: t("documents.errorCode.quality_review_required"), description: t("dashboard.processingFailed.errorDesc.quality_review_required"), retryable: false },
+    encrypted_document: { title: t("documents.errorCode.encrypted_document"), description: t("dashboard.processingFailed.errorDesc.encrypted_document"), retryable: false },
+    unsupported_format: { title: t("documents.errorCode.unsupported_format"), description: t("dashboard.processingFailed.errorDesc.unsupported_format"), retryable: false },
+    file_not_found: { title: t("documents.errorCode.file_not_found"), description: t("dashboard.processingFailed.errorDesc.file_not_found"), retryable: false },
+    quota_exceeded: { title: t("documents.errorCode.quota_exceeded"), description: t("dashboard.processingFailed.errorDesc.quota_exceeded"), retryable: false },
+    resource_limit: { title: t("documents.errorCode.resource_limit"), description: t("dashboard.processingFailed.errorDesc.resource_limit"), retryable: true },
   };
-  return map[errorCode] || { title: errorCode.replace(/_/g, " "), description: errorMessage || "Unexpected error.", retryable: true };
+  return map[errorCode] || { title: codeLabel(t, "documents.errorCode", errorCode), description: errorMessage || t("dashboard.processingFailed.unexpectedErrorDesc"), retryable: true };
 }
 
-function formatDuration(ms: number | null): string {
+function formatDuration(t: Translate, ms: number | null): string {
   if (!ms) return "—";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 1000) return t("dashboard.processingFailed.durationMs", { value: String(ms) });
+  if (ms < 60000) return t("dashboard.processingFailed.durationSeconds", { value: (ms / 1000).toFixed(1) });
   const m = Math.floor(ms / 60000);
   const s = Math.round((ms % 60000) / 1000);
-  return `${m}m ${s}s`;
+  return t("dashboard.processingFailed.durationMinutes", { minutes: String(m), seconds: String(s) });
 }
 
 export default function CompanyFailedProcessingPage() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const [runs, setRuns] = useState<ProcessingRunView[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -60,11 +66,11 @@ export default function CompanyFailedProcessingPage() {
       setRuns(res.data.runs);
       setTotal(res.data.pagination.totalRecords);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load failed processing jobs");
+      setError(err instanceof ApiError ? err.message : t("dashboard.processingFailed.loadError"));
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, t]);
 
   useEffect(() => {
     void load();
@@ -78,11 +84,11 @@ export default function CompanyFailedProcessingPage() {
       setRetryDialogRun(null);
       await load();
     } catch (err) {
-      setRetryActionError(err instanceof Error ? err.message : "Failed to retry");
+      setRetryActionError(err instanceof Error ? err.message : t("dashboard.processingFailed.retryError"));
     } finally {
       setIsRetrying(false);
     }
-  }, [load]);
+  }, [load, t]);
 
   const handleReprocess = useCallback(async (run: ProcessingRunView) => {
     setIsReprocessing(true);
@@ -92,17 +98,17 @@ export default function CompanyFailedProcessingPage() {
       setReprocessDialogRun(null);
       await load();
     } catch (err) {
-      setReprocessActionError(err instanceof Error ? err.message : "Failed to reprocess");
+      setReprocessActionError(err instanceof Error ? err.message : t("dashboard.processingFailed.reprocessError"));
     } finally {
       setIsReprocessing(false);
     }
-  }, [load]);
+  }, [load, t]);
 
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Failed Processing Jobs"
-        description="Documents that failed during processing. Retry or reprocess to resolve issues."
+        title={t("dashboard.processingFailed.title")}
+        description={t("dashboard.processingFailed.description")}
       />
 
       {loading && (
@@ -111,7 +117,7 @@ export default function CompanyFailedProcessingPage() {
             {[1, 2, 3].map((n) => (
               <div key={n} className="h-14 animate-pulse rounded-xl bg-slate-100" />
             ))}
-            <span className="sr-only">Loading</span>
+            <span className="sr-only">{t("common.loading")}</span>
           </div>
         </DashboardPanel>
       )}
@@ -125,7 +131,7 @@ export default function CompanyFailedProcessingPage() {
               onClick={() => void load()}
               className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white"
             >
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         </DashboardPanel>
@@ -134,7 +140,7 @@ export default function CompanyFailedProcessingPage() {
       {!loading && !error && runs.length === 0 && (
         <DashboardPanel>
           <p className="text-center text-sm text-slate-500 py-8">
-            No failed processing jobs. All documents are processing successfully.
+            {t("dashboard.processingFailed.noFailedDocs")}
           </p>
         </DashboardPanel>
       )}
@@ -147,52 +153,59 @@ export default function CompanyFailedProcessingPage() {
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Document
+                      {t("dashboard.processingFailed.colDocument")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Status
+                      {t("dashboard.processingFailed.colStatus")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Failed Stage
+                      {t("dashboard.processingFailed.colFailedStage")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Error
+                      {t("dashboard.processingFailed.colError")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Duration
+                      {t("dashboard.processingFailed.colDuration")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Retries
+                      {t("dashboard.processingFailed.colRetries")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Failed At
+                      {t("dashboard.processingFailed.colFailedAt")}
                     </th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Actions
+                      {t("dashboard.processingFailed.colActions")}
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {runs.map((run) => {
-                    const errorDisplay = getSafeErrorDisplay(run.errorCode, run.errorMessage);
+                    const errorDisplay = getSafeErrorDisplay(t, run.errorCode, run.errorMessage);
                     return (
                       <tr key={run.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-4">
                           <button
                             type="button"
                             onClick={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
-                            className="text-sm font-medium text-blue-600 hover:underline text-left"
+                            className="text-sm font-medium text-blue-600 hover:underline text-start"
                           >
                             {run.documentId.slice(0, 12)}...
                           </button>
-                          <p className="text-xs text-slate-400 mt-0.5">v{run.documentVersion}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {t("dashboard.processingFailed.documentVersion", {
+                              version: String(run.documentVersion),
+                            })}
+                          </p>
                         </td>
                         <td className="px-4 py-4">
-                          <ProcessingStatusBadge status={run.status} />
+                          {(() => {
+                            const runStatus = run.status;
+                            return <ProcessingStatusBadge status={runStatus} />;
+                          })()}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-600">
                           {run.currentStage
-                            ? run.currentStage.replace(/_/g, " ")
+                            ? codeLabel(t, "documents.stage", run.currentStage)
                             : "—"}
                         </td>
                         <td className="px-4 py-4 max-w-[220px]">
@@ -202,14 +215,14 @@ export default function CompanyFailedProcessingPage() {
                           </p>
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-500">
-                          {formatDuration(run.durationMs)}
+                          {formatDuration(t, run.durationMs)}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-500">
                           {run.retryCount} / {run.maxRetries}
                         </td>
                         <td className="px-4 py-4 text-sm text-slate-500">
                           {run.failedAt
-                            ? new Date(run.failedAt).toLocaleString()
+                            ? new Date(run.failedAt).toLocaleString(intlLocale)
                             : "—"}
                         </td>
                         <td className="px-4 py-4">
@@ -220,7 +233,7 @@ export default function CompanyFailedProcessingPage() {
                               onClick={() => setRetryDialogRun(run)}
                             >
                               <span className="material-symbols-outlined me-1 text-[14px]">refresh</span>
-                              Retry
+                              {t("documents.retry")}
                             </Button>
                             <Button
                               size="sm"
@@ -228,7 +241,7 @@ export default function CompanyFailedProcessingPage() {
                               onClick={() => setReprocessDialogRun(run)}
                             >
                               <span className="material-symbols-outlined me-1 text-[14px]">replay</span>
-                              Reprocess
+                              {t("documents.reprocess")}
                             </Button>
                           </div>
                         </td>
@@ -243,13 +256,13 @@ export default function CompanyFailedProcessingPage() {
           {expandedRunId && (
             <DashboardPanel>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-slate-700">Processing Timeline</h3>
+                <h3 className="text-sm font-semibold text-slate-700">{t("dashboard.processingFailed.timelineTitle")}</h3>
                 <button
                   type="button"
                   onClick={() => setExpandedRunId(null)}
                   className="text-xs text-slate-400 hover:text-slate-600"
                 >
-                  Close
+                  {t("common.close")}
                 </button>
               </div>
               {runs
@@ -267,17 +280,20 @@ export default function CompanyFailedProcessingPage() {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
               >
-                Previous
+                {t("dashboard.processingFailed.previous")}
               </Button>
               <span className="text-sm text-slate-500">
-                Page {page} of {Math.ceil(total / limit)}
+                {t("dashboard.processingFailed.pageOf", {
+                  page: String(page),
+                  totalPages: String(Math.ceil(total / limit)),
+                })}
               </span>
               <Button
                 variant="secondary"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page >= Math.ceil(total / limit)}
               >
-                Next
+                {t("dashboard.processingFailed.next")}
               </Button>
             </div>
           )}

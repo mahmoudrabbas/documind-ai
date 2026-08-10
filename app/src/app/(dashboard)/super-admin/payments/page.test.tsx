@@ -7,6 +7,22 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import PaymentDiagnosticsPage from "./page";
 import { Permission } from "@/types/api/permissions.types";
 
+const localeState = vi.hoisted(() => ({ locale: "en" as "en" | "ar", t: (key: string) => key }));
+vi.mock("@/providers/i18n-provider", async () => {
+  const { t: translate, tPlural: pluralize } = await import("@/lib/i18n/i18n.utils");
+  const dictionaries = (await import("@/lib/i18n/translations")).default;
+  return {
+    useI18n: () => ({
+      locale: localeState.locale,
+      dir: localeState.locale === "ar" ? "rtl" : "ltr",
+      t: (key: string, params?: Record<string, string>) => translate(dictionaries[localeState.locale], key, params),
+      tPlural: (key: string, count: number) => pluralize(dictionaries[localeState.locale], localeState.locale, key, count),
+      setLocale: vi.fn(),
+    }),
+    useIntlLocale: () => "en",
+  };
+});
+vi.mock("@/lib/i18n/code-label", () => ({ codeLabel: (_t: unknown, _namespace: string, code: string) => code.replaceAll("_", " "), humanizeCode: (code: string) => code.replaceAll("_", " ") }));
 vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
 vi.mock("@/services/billing.service", () => ({
   listPaymentEvents: vi.fn(),

@@ -11,10 +11,35 @@ import type {
   ResolvedPermissions,
 } from "../../permissions/permissions.types.js";
 import {
+  buildAuthorizedSearchQueryText,
   ChatWorkflowService,
   type ChatWorkflowRepository,
   type ChatWorkflowServiceDependencies,
 } from "../chatWorkflowService.js";
+
+describe("buildAuthorizedSearchQueryText", () => {
+  it("prioritizes a bounded English expansion for an Arabic search", () => {
+    const question = "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟";
+    expect(buildAuthorizedSearchQueryText({
+      normalizedQuestion: question,
+      language: "ar",
+      semanticQueries: [
+        { text: question, language: "ar", weight: 1 },
+        { text: "employee employment remote work", language: "en", weight: 0.7 },
+      ],
+    })).toBe(`employee employment remote work\n${question}`);
+  });
+
+  it("does not append same-language provider paraphrases", () => {
+    expect(buildAuthorizedSearchQueryText({
+      normalizedQuestion: "trusted normalized question",
+      language: "en",
+      semanticQueries: [
+        { text: "provider rewrite", language: "en", weight: 1 },
+      ],
+    })).toBe("trusted normalized question");
+  });
+});
 
 const tenantId = "64b000000000000000000001";
 const actorId = "64b000000000000000000002";
@@ -29,6 +54,8 @@ const versionB = "64b000000000000000000032";
 
 type Scenario =
   | "grounded"
+  | "assistant_identity"
+  | "assistant_capabilities"
   | "social"
   | "analytics"
   | "insufficient"
@@ -105,12 +132,18 @@ function intentOutput(
 ): Record<string, unknown> {
   const intentRoute = ["analytics", "grounded", "insufficient", "weak"].includes(route)
     ? "rag"
-    : route;
+    : route.startsWith("assistant_") ? "assistant" : route;
+  const assistantKind = route === "assistant_identity"
+    ? "identity"
+    : route === "assistant_capabilities" ? "capabilities" : null;
   return {
     normalizedQuestion,
     language,
     route: intentRoute,
-    intent: intentRoute === "social" ? "social" : "knowledge_question",
+    intent: assistantKind
+      ? route
+      : intentRoute === "social" ? "social" : "knowledge_question",
+    assistantKind,
     intentConfidence: 0.99,
     referencedDocumentIds,
     clarificationNeeded: intentRoute === "clarification",
@@ -434,7 +467,7 @@ function makeHarness(options: HarnessOptions = {}) {
         }
       }
 
-      if (!["social", "analytics"].includes(scenario)) {
+      if (!["assistant_identity", "assistant_capabilities", "social", "analytics"].includes(scenario)) {
         const complianceInput = hooks.resolveHandoffPayload?.({
           workflowId: "chat-rag-v1",
           fromAgent: "chat-supervisor",
@@ -841,6 +874,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     const verifier = harness.observations.handoffs.find((entry) => entry.agent === "citation-verification-agent");
     expect(verifier?.payload).toMatchObject({
       answerText: "WRITER_DRAFT",
+      questionText: "trusted normalized question",
       citedChunkIds: [chunkA],
       approvedEvidenceIds: [chunkA],
     });
@@ -1273,6 +1307,25 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(harness.observations.tools).toEqual([]);
     expect(harness.observations.complianceInput).toBeUndefined();
     expect(harness.messages.at(-1)?.sources).toEqual([]);
+  });
+
+  it("returns deterministic DocuMind identity and capabilities with no retrieval, Compliance, or sources", async () => {
+    const identity = makeHarness({ scenario: "assistant_identity", intentLanguage: "ar" });
+    const identityResponse = await executeHarness(identity, "انت مين؟");
+    expect(identityResponse.answer).toContain("DocuMind AI");
+    expect(identityResponse.answer).toContain("مستندات الشركة");
+    expect(identityResponse.sources).toEqual([]);
+    expect(identity.observations.tools).toEqual([]);
+    expect(identity.observations.complianceInput).toBeUndefined();
+    expect(identity.messages.at(-1)?.sources).toEqual([]);
+
+    const capabilities = makeHarness({ scenario: "assistant_capabilities", citationsEnabled: false });
+    const capabilitiesResponse = await executeHarness(capabilities, "What can you do?");
+    expect(capabilitiesResponse.answer).toContain("Arabic or English");
+    expect(capabilitiesResponse.answer).toContain("authorized to access");
+    expect(capabilitiesResponse.sources).toEqual([]);
+    expect(capabilities.observations.tools).toEqual([]);
+    expect(capabilities.observations.complianceInput).toBeUndefined();
   });
 
   it("routes analytics through one controlled tool and deterministic formatter", async () => {

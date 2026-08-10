@@ -72,20 +72,14 @@ test("citations enabled uses the citing system prompt and instructs to always ci
   assert.match(messages[0].content, /"citedChunkIds"/);
   assert.match(messages[0].content, /grounded_answer/);
 
+  assert.match(messages[0].content, /untrusted reference data/);
   const contextMsg = messages[1];
-  assert.equal(contextMsg.role, "system");
-  assert.match(contextMsg.content, /Always cite your sources/);
-  assert.match(contextMsg.content, /Context:/);
-  assert.match(
-    contextMsg.content,
-    /\[Source 1: id:[^\s\]]+ doc:[^\s\]]+ title:Company Handbook — Protected Values \(p\.3\)\]/,
-  );
+  assert.equal(contextMsg.role, "user");
+  assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
+  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
+  assert.match(contextMsg.content, /"documentId":"doc-1"/);
   assert.match(contextMsg.content, /The protected value is 42/);
-
-  assert.deepEqual(messages[messages.length - 1], {
-    role: "user",
-    content: "What is the protected value?",
-  });
+  assert.match(contextMsg.content, /"currentQuestion":"What is the protected value\?"/);
 });
 
 test("Arabic language uses Arabic RAG system prompt and context instructions", () => {
@@ -104,19 +98,12 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
   assert.match(messages[0].content, /قيمة answer بالكامل باللغة العربية/);
   assert.match(messages[0].content, /معرفات المقاطع المقدمة التي استُخدمت فعلياً/);
 
+  assert.match(messages[0].content, /بيانات غير موثوقة/);
   const contextMsg = messages[1];
-  assert.equal(contextMsg.role, "system");
-  assert.match(contextMsg.content, /اذكر دائماً مصادرك/);
-  assert.match(contextMsg.content, /السياق:/);
-  assert.match(
-    contextMsg.content,
-    /\[المصدر 1: id:chunk-1 doc:doc-1 العنوان:Company Handbook — Protected Values \(صفحة 3\)\]/,
-  );
-
-  assert.deepEqual(messages[messages.length - 1], {
-    role: "user",
-    content: "ما هي القيمة المحمية؟",
-  });
+  assert.equal(contextMsg.role, "user");
+  assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
+  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
+  assert.match(contextMsg.content, /"currentQuestion":"ما هي القيمة المحمية؟"/);
 });
 
 test("Arabic language with citations disabled uses Arabic no-citations prompt", () => {
@@ -134,7 +121,9 @@ test("Arabic language with citations disabled uses Arabic no-citations prompt", 
   assert.match(messages[0].content, /citedChunkIds مطلوبة للتتبع الداخلي/);
 
   const contextMsg = messages[1];
-  assert.match(contextMsg.content, /لا تذكر أو تستشهد بمصادرك/);
+  assert.equal(contextMsg.role, "user");
+  assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
+  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
 });
 
 test("mixed language is treated as Arabic context", () => {
@@ -149,7 +138,8 @@ test("mixed language is treated as Arabic context", () => {
   assert.match(messages[0].content, /أنت DocuMind AI/);
 
   const contextMsg = messages[1];
-  assert.match(contextMsg.content, /\[المصدر 1:/);
+  assert.equal(contextMsg.role, "user");
+  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
 });
 
 test("mixed language insufficient evidence returns Arabic response", () => {
@@ -174,8 +164,8 @@ test("citations disabled uses the non-citing system prompt and forbids source me
   assert.match(messages[0].content, /citedChunkIds remains required for internal provenance/);
 
   const contextMsg = messages[1];
-  assert.match(contextMsg.content, /Do not mention or cite your sources/);
-  assert.doesNotMatch(contextMsg.content, /Always cite your sources/);
+  assert.equal(contextMsg.role, "user");
+  assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
 
   assert.ok(messages[1].content.includes(SOURCE.text), "retrieved context is still provided");
 });
@@ -202,12 +192,12 @@ test("answer generation contains only the current resolved user turn", () => {
     userMessage: "Can a full-time employee use annual leave during probation?",
   });
 
-  assert.deepEqual(messages.filter((message) => message.role === "user"), [
-    {
-      role: "user",
-      content: "Can a full-time employee use annual leave during probation?",
-    },
-  ]);
+  const userMessages = messages.filter((message) => message.role === "user");
+  assert.equal(userMessages.length, 1);
+  assert.match(
+    userMessages[0]?.content ?? "",
+    /"currentQuestion":"Can a full-time employee use annual leave during probation\?"/,
+  );
   assert.equal(messages.some((message) => /EGP 7,500|Department Head/.test(message.content)), false);
 });
 
@@ -220,5 +210,7 @@ test("no context block when no sources are retrieved", () => {
 
   assert.equal(messages.length, 2);
   assert.equal(messages[0].role, "system");
-  assert.deepEqual(messages[1], { role: "user", content: "hello" });
+  assert.equal(messages[1].role, "user");
+  assert.match(messages[1].content, /"currentQuestion":"hello"/);
+  assert.match(messages[1].content, /"authorizedEvidence":\[\]/);
 });

@@ -8,6 +8,8 @@ import { Alert } from "@/components/ui/Alert";
 import { Tabs, Tab, TabPanel } from "@/components/ui/Tabs";
 import { ClassificationBadge } from "@/components/documents/ClassificationBadge";
 import { PolicyEditor } from "@/components/documents/PolicyEditor";
+import { codeLabel } from "@/lib/i18n/code-label";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { DOCUMENT_ACCESS_ACTIONS, type ActivePolicy, type EffectiveAccessUser, type PolicyAssignment, type PolicyHistoryItem, type PolicyTaxonomySummary, type PropagationStatus } from "@/types/api/document-policy.types";
@@ -17,16 +19,18 @@ import { listUsers } from "@/services/users.service";
 import * as policyApi from "@/services/document-policy.service";
 
 type TabId = "overview" | "active" | "assignments" | "effective" | "history" | "propagation";
-const TABS: { id: TabId; label: string; icon?: string }[] = [
-  { id: "overview", label: "Overview", icon: "info" },
-  { id: "active", label: "Active", icon: "check_circle" },
-  { id: "assignments", label: "Assignments", icon: "group" },
-  { id: "effective", label: "Effective", icon: "shield" },
-  { id: "history", label: "History", icon: "history" },
-  { id: "propagation", label: "Propagation", icon: "sync" },
+const TABS: { id: TabId; icon?: string }[] = [
+  { id: "overview", icon: "info" },
+  { id: "active", icon: "check_circle" },
+  { id: "assignments", icon: "group" },
+  { id: "effective", icon: "shield" },
+  { id: "history", icon: "history" },
+  { id: "propagation", icon: "sync" },
 ];
 
 export function DocumentPolicyPanel({ document: doc }: { document: DocumentView }) {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canManage = permissions.can(Permission.DOCUMENTS_MANAGE_ACCESS);
   const [tab, setTab] = useState<TabId>("overview");
@@ -53,6 +57,7 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
     } catch (cause) { if (!signal?.aborted) setHistoryError(policyApi.classifyPolicyError(cause)); }
     finally { if (!signal?.aborted) setHistoryLoading(false); }
   }, [doc.id]);
+
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null); setHistoryError(null); setActive(null); setTaxonomy(null); setAssignments([]); setHistory([]); setHistoryCursor(null); setPropagation(null); setDecisions([]);
     try {
@@ -66,6 +71,7 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
     } catch (cause) { if (!signal?.aborted) setError(policyApi.classifyPolicyError(cause)); }
     finally { if (!signal?.aborted) setLoading(false); }
   }, [doc.id, refreshHistory]);
+
   useEffect(() => { const controller = new AbortController(); if (canManage) void refresh(controller.signal); else setLoading(false); return () => controller.abort(); }, [canManage, refresh]);
   useEffect(() => { if (tab !== "effective" || users.length) return; const controller = new AbortController(); void listUsers(1, 100, controller.signal).then((result) => setUsers(result.data.users.filter((user) => user.status === "active"))).catch((cause) => setError(policyApi.classifyPolicyError(cause))); return () => controller.abort(); }, [tab, users.length]);
 
@@ -81,56 +87,58 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
     (result[assignment.subjectType] ??= []).push(assignment); return result;
   }, {}), [assignments]);
 
-  if (!canManage) return <section className="mt-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4"><h4 className="font-bold">Access policy</h4><p className="mt-1 text-body-sm text-on-surface-variant">Policy management controls are hidden because your coarse permissions do not include manage access. This does not describe effective document access.</p></section>;
+  if (!canManage) return <section className="mt-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4"><h4 className="font-bold">{t("documents.accessPolicyTitle")}</h4><p className="mt-1 text-body-sm text-on-surface-variant">{t("documents.noAccessManagement")}</p></section>;
   return <section className="mt-6 border-t border-outline-variant/30 pt-5" aria-labelledby="access-policy-title">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 id="access-policy-title" className="text-title-md font-bold">Document access policy</h4><p className="text-body-sm text-on-surface-variant">Only backend effective-access results describe user access.</p></div>{active && <Button size="sm" onClick={() => setEditing(true)}><span className="material-symbols-outlined me-1 text-[16px]" aria-hidden="true">manage_accounts</span>Manage access</Button>}</div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 id="access-policy-title" className="text-title-md font-bold">{t("documents.accessPolicyTitle")}</h4><p className="text-body-sm text-on-surface-variant">{t("documents.accessPolicyNote")}</p></div>{active && <Button size="sm" onClick={() => setEditing(true)}><span className="material-symbols-outlined me-1 text-[16px]" aria-hidden="true">manage_accounts</span>{t("documents.manageAccess")}</Button>}</div>
 
-    <Tabs active={tab} onChange={(id) => setTab(id as TabId)} ariaLabel="Policy sections" className="mt-4"
+    <Tabs active={tab} onChange={(id) => setTab(id as TabId)} ariaLabel={t("documents.accessPolicyTitle")} className="mt-4"
       panels={<>
         {loading && <div className="mt-4 space-y-3" role="status"><Skeleton className="h-12 w-full rounded-lg" /><Skeleton className="h-12 w-full rounded-lg" /><Skeleton className="h-12 w-full rounded-lg" /></div>}
         {!loading && error && <PolicyLoadError kind={error} retry={() => void refresh()} />}
         {!loading && !error && active && <div className="mt-4">
           <TabPanel id="overview">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Info label="Sensitivity"><ClassificationBadge level={taxonomy?.classificationLevel ?? doc.classification} /></Info>
-              <Info label="Category">{taxonomy?.categoryName ?? "Not assigned"}</Info>
-              <Info label="Department">{taxonomy?.departmentName ?? "Not assigned"}</Info>
-              <Info label="Owner">{doc.owner ?? "Unavailable"}</Info>
-              <Info label="Active policy version">{active.policyVersion}</Info>
-              <Info label="Propagation">{propagation?.status ?? "Unavailable"}</Info>
+              <Info label={t("documents.sensitivity")}><ClassificationBadge level={taxonomy?.classificationLevel ?? doc.classification} /></Info>
+              <Info label={t("documents.category")}>{taxonomy?.categoryName ?? t("documents.notAssigned")}</Info>
+              <Info label={t("documents.department")}>{taxonomy?.departmentName ?? t("documents.notAssigned")}</Info>
+              <Info label={t("documents.owner")}>{doc.owner ?? t("documents.unavailable")}</Info>
+              <Info label={t("documents.activePolicyVersion")}>{active.policyVersion}</Info>
+              <Info label={t("documents.propagationLabel")}>{propagation ? codeLabel(t, "documents.propagationStatus", propagation.status) : t("documents.unavailable")}</Info>
             </div>
           </TabPanel>
           <TabPanel id="active">
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Info label="Policy family"><code title={active.policyId} className="text-body-sm">{active.policyId.slice(0, 8)}…</code></Info>
-                <Info label="Version / status">v{active.policyVersion} · {active.status}</Info>
-                <Info label="Effective from">{new Date(active.effectiveFrom).toLocaleString()}</Info>
-                <Info label="Effective until">{active.effectiveUntil ? new Date(active.effectiveUntil).toLocaleString() : "No expiry"}</Info>
-                <Info label="Inheritance">{active.inherits ? `v${active.inherits.policyVersion}` : "None"}</Info>
-                <Info label="Reason">{active.provenance.reason ?? "Not provided"}</Info>
+                <Info label={t("documents.policyFamily")}><code title={active.policyId} className="text-body-sm">{active.policyId.slice(0, 8)}…</code></Info>
+                <Info label={t("documents.versionStatus")}>v{active.policyVersion} · {active.status}</Info>
+                <Info label={t("documents.effectiveFrom")}>{new Date(active.effectiveFrom).toLocaleString(intlLocale)}</Info>
+                <Info label={t("documents.effectiveUntil")}>{active.effectiveUntil ? new Date(active.effectiveUntil).toLocaleString(intlLocale) : t("documents.noExpiry")}</Info>
+                <Info label={t("documents.inheritance")}>{active.inherits ? `v${active.inherits.policyVersion}` : t("documents.none")}</Info>
+                <Info label={t("documents.reason")}>{active.provenance.reason ?? t("documents.notProvided")}</Info>
               </div>
               <SafeRules rules={active.rules} />
             </div>
           </TabPanel>
           <TabPanel id="assignments">
             {assignments.length === 0 ? (
-              <Empty>No explicit assignments.</Empty>
+              <Empty>{t("documents.noExplicitAssignments")}</Empty>
             ) : (
               <div className="space-y-4">
                 {Object.entries(groups).map(([subject, rows]) => (
                   <div key={subject}>
-                    <h5 className="text-label-md font-semibold capitalize text-on-surface">{subject.replaceAll("_", " ")}</h5>
+                    <h5 className="text-label-md font-semibold capitalize text-on-surface">{codeLabel(t, "documents.subjectType", subject)}</h5>
                     <ul className="mt-2 space-y-2">
                       {rows?.map((assignment, index) => (
                         <li key={`${subject}-${assignment.subjectId ?? index}`} className={`rounded-lg border p-3 ${assignment.effect === "deny" ? "border-error/30 bg-error-container/30" : "border-outline-variant/30 bg-surface-container-low"}`}>
                           <div className="flex flex-wrap items-center gap-2">
-                            <strong className="text-body-sm">{assignment.stale ? "Stale reference" : assignment.displayLabel}</strong>
-                            <Badge status={assignment.effect === "deny" ? "error" : "success"}>{assignment.effect === "deny" ? "Denied" : "Allowed"}</Badge>
-                            {assignment.inherited && <Badge status="info">Inherited</Badge>}
-                            {assignment.stale && <Badge status="warning">Unavailable principal</Badge>}
+                            <strong className="text-body-sm">{assignment.stale ? t("documents.staleReference") : assignment.displayLabel}</strong>
+                            <Badge status={assignment.effect === "deny" ? "error" : "success"} label={assignment.effect === "deny" ? t("documents.denied") : t("documents.allowed")} />
+                            {assignment.inherited && <Badge status="info" label={t("documents.inherited")} />}
+                            {assignment.stale && <Badge status="warning" label={t("documents.unavailablePrincipal")} />}
                           </div>
-                          <p className="mt-1 text-body-sm text-on-surface-variant">{assignment.actions.join(", ")}</p>
+                          <p className="mt-1 text-body-sm text-on-surface-variant">
+                            {assignment.actions.map((act) => codeLabel(t, "documents.accessAction", act)).join(", ")}
+                          </p>
                         </li>
                       ))}
                     </ul>
@@ -142,24 +150,24 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
           <TabPanel id="effective">
             <div>
               <label className="block text-label-md font-semibold text-on-surface-variant">
-                Select up to 100 active users
+                {t("documents.selectActiveUsers")}
                 <select multiple size={Math.min(8, Math.max(3, users.length))} value={selectedUsers} onChange={(event) => setSelectedUsers(Array.from(event.target.selectedOptions, (option) => option.value).slice(0, 100))} className="mt-2 w-full rounded-lg border border-outline-variant bg-surface-container-lowest p-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
                   {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
                 </select>
               </label>
               <Button className="mt-3" disabled={!selectedUsers.length} onClick={() => void inspectAccess()}>
                 <span className="material-symbols-outlined me-1 text-[16px]" aria-hidden="true">shield</span>
-                Inspect effective access
+                {t("documents.inspectEffectiveAccess")}
               </Button>
               {!decisions.length ? (
-                <Empty>No effective-access results selected.</Empty>
+                <Empty>{t("documents.noEffectiveResults")}</Empty>
               ) : (
                 <div className="mt-4 overflow-x-auto rounded-xl border border-outline-variant/30">
                   <table className="min-w-[1000px] text-body-sm">
                     <thead className="bg-surface-container-low">
                       <tr>
-                        <th className="p-3 text-start text-label-md font-semibold">User</th>
-                        {DOCUMENT_ACCESS_ACTIONS.map((action) => <th key={action} className="p-3 text-center text-label-sm font-semibold text-on-surface-variant">{action.replaceAll("_", " ")}</th>)}
+                        <th className="p-3 text-start text-label-md font-semibold">{t("documents.user")}</th>
+                        {DOCUMENT_ACCESS_ACTIONS.map((action) => <th key={action} className="p-3 text-center text-label-sm font-semibold text-on-surface-variant">{codeLabel(t, "documents.accessAction", action)}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -168,7 +176,7 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
                           <th className="p-3 text-start font-medium">{user.displayName}</th>
                           {DOCUMENT_ACCESS_ACTIONS.map((action) => (
                             <td key={action} className="p-3 text-center">
-                              <span className={user.actions[action] ? "text-success" : "text-error"} aria-label={`${action}: ${user.actions[action] ? "allowed" : "denied"}`}>
+                              <span className={user.actions[action] ? "text-success" : "text-error"} aria-label={`${codeLabel(t, "documents.accessAction", action)}: ${user.actions[action] ? t("documents.allowed") : t("documents.denied")}`}>
                                 {user.actions[action] ? "✓" : "✕"}
                               </span>
                             </td>
@@ -187,22 +195,22 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
             ) : historyError ? (
               <HistoryLoadError retry={() => void refreshHistory()} />
             ) : history.length === 0 ? (
-              <Empty>No policy history.</Empty>
+              <Empty>{t("documents.noPolicyHistory")}</Empty>
             ) : (
               <div>
                 <ol className="space-y-2">
                   {[...history].sort((a, b) => b.policyVersion - a.policyVersion).map((item) => (
                     <li key={`${item.policyId}-${item.policyVersion}`} className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
                       <div className="flex items-center gap-2">
-                        <strong className="text-body-sm">Version {item.policyVersion}</strong>
-                        {item.policyVersion === active.policyVersion && <Badge status="success">Active</Badge>}
-                        <Badge status="neutral">Read only</Badge>
+                        <strong className="text-body-sm">{t("documents.versionNumberLabel", { version: String(item.policyVersion) })}</strong>
+                        {item.policyVersion === active.policyVersion && <Badge status="success" label={t("documents.statusActive")} />}
+                        <Badge status="neutral" label={t("documents.readOnly")} />
                       </div>
-                      <p className="mt-1 text-body-sm text-on-surface-variant">{item.reason ?? "No change reason"} · {new Date(item.createdAt).toLocaleString()}</p>
+                      <p className="mt-1 text-body-sm text-on-surface-variant">{item.reason ?? t("documents.noChangeReason")} · {new Date(item.createdAt).toLocaleString(intlLocale)}</p>
                     </li>
                   ))}
                 </ol>
-                {historyCursor && <Button className="mt-3" variant="outline" disabled={historyLoading} onClick={() => void loadMoreHistory()}>{historyLoading ? "Loading…" : "Load older versions"}</Button>}
+                {historyCursor && <Button className="mt-3" variant="outline" disabled={historyLoading} onClick={() => void loadMoreHistory()}>{historyLoading ? t("common.loading") : t("documents.loadOlderVersions")}</Button>}
               </div>
             )}
           </TabPanel>
@@ -212,7 +220,7 @@ export function DocumentPolicyPanel({ document: doc }: { document: DocumentView 
         </div>}
       </>}
     >
-      {TABS.map((item) => <Tab key={item.id} id={item.id} icon={item.icon}>{item.label}</Tab>)}
+      {TABS.map((item) => <Tab key={item.id} id={item.id} icon={item.icon}>{t(`documents.tab.${item.id}`)}</Tab>)}
     </Tabs>
 
     {editing && active && taxonomy && <PolicyEditor documentId={doc.id} active={active} taxonomy={taxonomy} onClose={() => setEditing(false)} onApplied={async () => { setEditing(false); await refresh(); }} />}
@@ -233,19 +241,21 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 function SafeRules({ rules }: { rules: ActivePolicy["rules"] }) {
+  const { t } = useI18n();
+
   return (
     <div>
-      <h5 className="text-label-md font-semibold text-on-surface">Rule summaries</h5>
+      <h5 className="text-label-md font-semibold text-on-surface">{t("documents.ruleSummaries")}</h5>
       {rules.length === 0 ? (
-        <Empty>No local rules.</Empty>
+        <Empty>{t("documents.noLocalRules")}</Empty>
       ) : (
         <ul className="mt-2 space-y-2">
           {rules.map((rule) => (
             <li key={rule.ruleId} className="flex items-center gap-2 rounded-lg bg-surface-container-low p-3 text-body-sm">
-              <Badge status={rule.effect === "deny" ? "error" : "success"}>{rule.effect === "deny" ? "Deny" : "Allow"}</Badge>
-              <span className="text-on-surface-variant">{rule.subject.type.replaceAll("_", " ")}</span>
+              <Badge status={rule.effect === "deny" ? "error" : "success"} label={rule.effect === "deny" ? t("documents.deny") : t("documents.allow")} />
+              <span className="text-on-surface-variant">{codeLabel(t, "documents.subjectType", rule.subject.type)}</span>
               <span className="text-on-surface-variant">·</span>
-              <span>{rule.actions.join(", ")}</span>
+              <span>{rule.actions.map((act) => codeLabel(t, "documents.accessAction", act)).join(", ")}</span>
             </li>
           ))}
         </ul>
@@ -255,40 +265,43 @@ function SafeRules({ rules }: { rules: ActivePolicy["rules"] }) {
 }
 
 function PolicyLoadError({ kind, retry }: { kind: string; retry: () => void }) {
+  const { t } = useI18n();
   const text = kind === "unavailable" ? "This document or policy is unavailable." : kind === "denied" ? "The backend denied this policy request." : "Policy data could not be loaded safely.";
   return (
-    <Alert variant="error" title="Policy load error">
+    <Alert variant="error" title={t("documents.policyLoadError")}>
       <p>{text}</p>
-      <Button className="mt-3" size="sm" variant="secondary" onClick={retry}>Retry</Button>
+      <Button className="mt-3" size="sm" variant="secondary" onClick={retry}>{t("common.retry")}</Button>
     </Alert>
   );
 }
 
 function HistoryLoadError({ retry }: { retry: () => void }) {
+  const { t } = useI18n();
   return (
-    <Alert variant="error" title="History load error">
-      <p>Policy history could not be loaded. Other policy data remains available.</p>
-      <Button className="mt-3" size="sm" variant="secondary" onClick={retry}>Retry history</Button>
+    <Alert variant="error" title={t("documents.historyLoadError")}>
+      <p>{t("documents.historyLoadErrorText")}</p>
+      <Button className="mt-3" size="sm" variant="secondary" onClick={retry}>{t("documents.retryHistory")}</Button>
     </Alert>
   );
 }
 
 function PropagationView({ status }: { status: PropagationStatus }) {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
+
   const current = status.status === "current" && status.appliedPolicyVersion === status.desiredPolicyVersion;
   const statusBadge = current ? "success" : status.status === "failed" || status.status === "dead_letter" ? "error" : "warning";
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge status={statusBadge} icon={current ? "check_circle" : "sync"}>
-          {current ? "Current" : status.status.replaceAll("_", " ")}
-        </Badge>
-        {status.reindexRequired && <Badge status="warning" icon="warning">Reindex required</Badge>}
+        <Badge status={statusBadge} icon={current ? "check_circle" : "sync"} label={current ? t("documents.propagationStatus.current") : codeLabel(t, "documents.propagationStatus", status.status)} />
+        {status.reindexRequired && <Badge status="warning" icon="warning" label={t("documents.reindexRequired")} />}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label="Desired policy version">{status.desiredPolicyVersion}</Info>
-        <Info label="Applied/indexed version">{status.appliedPolicyVersion ?? "Not applied"}</Info>
-        <Info label="Attempts">{status.attempts}</Info>
-        <Info label="Completed">{status.completedAt ? new Date(status.completedAt).toLocaleString() : "Pending"}</Info>
+        <Info label={t("documents.desiredPolicyVersion")}>{status.desiredPolicyVersion}</Info>
+        <Info label={t("documents.appliedIndexedVersion")}>{status.appliedPolicyVersion ?? t("documents.notApplied")}</Info>
+        <Info label={t("documents.attempts")}>{status.attempts}</Info>
+        <Info label={t("documents.completedLabel")}>{status.completedAt ? new Date(status.completedAt).toLocaleString(intlLocale) : t("documents.statusPending")}</Info>
       </div>
       {status.failureCode && (
         <Alert variant="error">
@@ -297,7 +310,7 @@ function PropagationView({ status }: { status: PropagationStatus }) {
       )}
       <div className="rounded-lg bg-primary/[0.04] p-3 text-body-sm text-on-surface-variant">
         <span className="material-symbols-outlined me-1 align-middle text-[16px]" aria-hidden="true">info</span>
-        Synchronous API access follows the active policy immediately. Propagation status describes derived metadata and indexing; pending or failed propagation does not revert API enforcement.
+        {t("documents.propagationSyncNote")}
       </div>
     </div>
   );

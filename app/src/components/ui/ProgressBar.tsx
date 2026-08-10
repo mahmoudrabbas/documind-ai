@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/providers/i18n-provider";
 
 export interface ProgressBarProps {
   value: number;
@@ -25,6 +26,7 @@ export function ProgressBar({
   size = "md",
   className,
 }: ProgressBarProps) {
+  const { t, dir } = useI18n();
   const percent = Math.min(Math.round((value / max) * 100), 100);
 
   return (
@@ -41,12 +43,16 @@ export function ProgressBar({
           )}
         </div>
       )}
+      {/* The fill is sized with an inline percentage width, which always grows
+          from the inline-start edge. Marking the track RTL anchors it to the
+          right edge in Arabic. */}
       <div
         role="progressbar"
         aria-valuenow={value}
         aria-valuemin={0}
         aria-valuemax={max}
-        aria-label={label ?? "Progress"}
+        aria-label={label ?? t("shell.progress")}
+        dir={dir === "rtl" ? "rtl" : undefined}
         className={cn(
           "w-full overflow-hidden rounded-full bg-slate-200",
           SIZE_CLASSES[size],

@@ -10,6 +10,7 @@ import {
   updateAiConfiguration,
 } from "@/services/super-admin.service";
 import type { GlobalSettings } from "@/types/api/super-admin.types";
+import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { ApiError } from "@/lib/api-client";
@@ -32,17 +33,18 @@ const globalSettingsDefaults: GlobalSettings = {
 
 const globalSettingsFields: Array<{
   key: keyof GlobalSettings;
+  /** Translation key — resolved through `t()` at render time. */
   label: string;
   type: "email" | "checkbox" | "number";
   min?: number;
   max?: number;
   step?: number;
 }> = [
-  { key: "supportEmail", label: "Support Email", type: "email" },
-  { key: "maintenanceMode", label: "Maintenance Mode", type: "checkbox" },
-  { key: "allowRegistrations", label: "Allow Registrations", type: "checkbox" },
-  { key: "defaultTrialDays", label: "Default Trial Days", type: "number", min: 0, max: 3650, step: 1 },
-  { key: "dataRetentionDays", label: "Data Retention Days", type: "number", min: 1, max: 36500, step: 1 },
+  { key: "supportEmail", label: "superAdmin.platformSettings.supportEmail", type: "email" },
+  { key: "maintenanceMode", label: "superAdmin.platformSettings.maintenanceMode", type: "checkbox" },
+  { key: "allowRegistrations", label: "superAdmin.platformSettings.allowRegistrations", type: "checkbox" },
+  { key: "defaultTrialDays", label: "superAdmin.platformSettings.defaultTrialDays", type: "number", min: 0, max: 3650, step: 1 },
+  { key: "dataRetentionDays", label: "superAdmin.platformSettings.dataRetentionDays", type: "number", min: 1, max: 36500, step: 1 },
 ];
 
 const defaultsByKind = {
@@ -56,8 +58,18 @@ const loaders = {
   settings: (signal?: AbortSignal) => getGlobalSettings(signal),
 };
 
-export function formatSettingsError(error: unknown): string {
-  if (!(error instanceof ApiError)) return "Unable to save settings.";
+/**
+ * Format a save failure for display.
+ *
+ * The API's `message` is passed through untranslated — localizing backend
+ * errors is a server concern. `genericMessage` is the only English literal
+ * here, so callers hand in the translated string.
+ */
+export function formatSettingsError(
+  error: unknown,
+  genericMessage = "Unable to save settings.",
+): string {
+  if (!(error instanceof ApiError)) return genericMessage;
   return `${error.message}${error.code ? ` (${error.code})` : ""}`;
 }
 
@@ -66,11 +78,25 @@ export function PlatformSettingsForm({
 }: {
   kind: keyof typeof defaultsByKind;
 }) {
+  const { t } = useI18n();
   const permissions = usePermissions();
   const canUpdate = permissions.can(Permission.COMPANY_SETTINGS_UPDATE);
   const state = usePlatformData<GlobalSettings | Record<string, string | number | boolean | null>>(loaders[kind]);
   const [pending, setPending] = useState(false);
+  /* Holds already-rendered text: either a translated notice or an
+     untranslated message straight from the API. */
   const [notice, setNotice] = useState("");
+
+  /* AI configuration fields are discovered from the API response, so only
+     the known defaults get an authored label; anything else keeps the
+     previous camelCase-to-words rendering. */
+  const aiFieldLabels: Record<string, string> = {
+    provider: t("superAdmin.platformSettings.aiProvider"),
+    chatModel: t("superAdmin.platformSettings.aiChatModel"),
+    embeddingModel: t("superAdmin.platformSettings.aiEmbeddingModel"),
+    maxOutputTokens: t("superAdmin.platformSettings.aiMaxOutputTokens"),
+    temperature: t("superAdmin.platformSettings.aiTemperature"),
+  };
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,7 +114,11 @@ export function PlatformSettingsForm({
         } else if (field.type === "number") {
           const parsed = Number(raw);
           if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
-            setNotice(`"${field.label}" must be a whole number.`);
+            setNotice(
+              t("superAdmin.platformSettings.wholeNumber", {
+                field: t(field.label),
+              }),
+            );
             setPending(false);
             return;
           }
@@ -99,10 +129,12 @@ export function PlatformSettingsForm({
       }
       try {
         await updateGlobalSettings(body as Partial<GlobalSettings>);
-        setNotice("Settings saved successfully.");
+        setNotice(t("superAdmin.platformSettings.saveSuccess"));
         await state.reload();
       } catch (caught) {
-        setNotice(formatSettingsError(caught));
+        setNotice(
+          formatSettingsError(caught, t("superAdmin.platformSettings.saveError")),
+        );
       } finally {
         setPending(false);
       }
@@ -115,10 +147,12 @@ export function PlatformSettingsForm({
       }
       try {
         await updateAiConfiguration(body);
-        setNotice("Settings saved successfully.");
+        setNotice(t("superAdmin.platformSettings.saveSuccess"));
         await state.reload();
       } catch (caught) {
-        setNotice(formatSettingsError(caught));
+        setNotice(
+          formatSettingsError(caught, t("superAdmin.platformSettings.saveError")),
+        );
       } finally {
         setPending(false);
       }
@@ -149,7 +183,7 @@ export function PlatformSettingsForm({
                           key={field.key}
                           className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-outline-variant/30 p-3 text-sm font-bold"
                         >
-                          <span>{field.label}</span>
+                          <span>{t(field.label)}</span>
                           <input
                             name={field.key}
                             type="checkbox"
@@ -161,7 +195,7 @@ export function PlatformSettingsForm({
                     }
                     return (
                       <label key={field.key} className="min-w-0 text-sm font-bold">
-                        {field.label}
+                        {t(field.label)}
                         <input
                           name={field.key}
                           type={field.type}
@@ -181,7 +215,10 @@ export function PlatformSettingsForm({
                         key={key}
                         className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-outline-variant/30 p-3 text-sm font-bold"
                       >
-                        <span>{key.replaceAll(/([A-Z])/g, " $1")}</span>
+                        <span>
+                          {aiFieldLabels[key] ??
+                            key.replaceAll(/([A-Z])/g, " $1")}
+                        </span>
                         <input
                           name={key}
                           type="checkbox"
@@ -191,7 +228,8 @@ export function PlatformSettingsForm({
                       </label>
                     ) : (
                       <label key={key} className="min-w-0 text-sm font-bold">
-                        {key.replaceAll(/([A-Z])/g, " $1")}
+                        {aiFieldLabels[key] ??
+                          key.replaceAll(/([A-Z])/g, " $1")}
                         <input
                           name={key}
                           type={typeof value === "number" ? "number" : "text"}
@@ -213,7 +251,9 @@ export function PlatformSettingsForm({
                 disabled={pending}
                 className="min-h-10 w-full rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:opacity-50 sm:w-auto"
               >
-                {pending ? "Saving…" : "Save settings"}
+                {pending
+                  ? t("superAdmin.platformSettings.saving")
+                  : t("superAdmin.platformSettings.saveSettings")}
               </button>
             </div>
             ) : null}

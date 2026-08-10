@@ -12,6 +12,7 @@ import type {
 import { EVIDENCE_ITEM_MIN_TOTAL_SCORE } from "./reranker.types.js";
 import { selectDiverse, areRedundant, type ScoredItem } from "./diversity.js";
 import {
+  areEquivalentEvidenceAssertions,
   detectConflicts,
   type ConflictDetectorInput,
 } from "./conflictDetector.js";
@@ -96,10 +97,15 @@ export class FakeRerankerAdapter implements RerankerAdapter {
         text: c.text,
         documentId: c.documentId,
         documentVersionId: c.documentVersionId,
+        tenantId: c.tenantId,
         sectionTitle: c.sectionTitle,
       }),
     );
-    const conflictGroups = detectConflicts(preConflictInputs);
+    const conflictGroups = detectConflicts(
+      preConflictInputs,
+      undefined,
+      queryText,
+    );
     const conflictingIndices = new Set<number>();
     for (const group of conflictGroups) {
       for (const idx of group.itemIndices) {
@@ -121,6 +127,9 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       const isDup = dedupedIndices.some((existingIdx) => {
         if (conflictingIndices.has(existingIdx)) return false;
         const existing = scored.find((s) => s.index === existingIdx)!;
+        if (areEquivalentEvidenceAssertions(existing.text, item.text)) {
+          return true;
+        }
         return areRedundant(
           { text: existing.text, documentId: existing.documentId },
           { text: item.text, documentId: item.documentId },

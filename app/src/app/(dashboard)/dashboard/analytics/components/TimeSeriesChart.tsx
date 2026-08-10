@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { TimeSeriesPoint } from "@/services/analytics.service";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 
 interface TimeSeriesChartProps {
   data: TimeSeriesPoint[];
@@ -12,12 +13,16 @@ interface TimeSeriesChartProps {
 export function TimeSeriesChart({
   data,
   metricKey = "queries",
-  title = "Usage & Activity Over Time",
+  title,
 }: TimeSeriesChartProps) {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
+  const chartTitle = title ?? t("analytics.dailyVolumeTitle");
+
   if (!data || data.length === 0) {
     return (
       <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-outline-variant/40 bg-surface-container-lowest p-6 text-center">
-        <p className="text-body-md text-on-surface-variant">No time-series activity data available for the selected period.</p>
+        <p className="text-body-md text-on-surface-variant">{t("analytics.noTimeSeriesData")}</p>
       </div>
     );
   }
@@ -37,10 +42,19 @@ export function TimeSeriesChart({
     })
     .join(" ");
 
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "";
+    try {
+      return new Date(dateStr).toLocaleDateString(intlLocale, { month: "short", day: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-title-md font-bold text-on-surface">{title}</h3>
+        <h3 className="text-title-md font-bold text-on-surface">{chartTitle}</h3>
         <span className="rounded bg-surface-container-high px-2 py-0.5 font-mono text-label-xs text-on-surface-variant">
           Metric: {metricKey === "costUsd" ? "Cost (USD)" : metricKey}
         </span>
@@ -91,9 +105,9 @@ export function TimeSeriesChart({
       </div>
 
       <div className="mt-3 flex items-center justify-between text-label-xs text-outline font-mono">
-        <span>{data[0]?.date}</span>
-        <span>{data[Math.floor(data.length / 2)]?.date}</span>
-        <span>{data[data.length - 1]?.date}</span>
+        <span>{formatDate(data[0]?.date)}</span>
+        <span>{formatDate(data[Math.floor(data.length / 2)]?.date)}</span>
+        <span>{formatDate(data[data.length - 1]?.date)}</span>
       </div>
     </div>
   );

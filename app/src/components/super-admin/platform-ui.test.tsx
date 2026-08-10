@@ -6,6 +6,25 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { PlatformState } from "./platform-ui";
 
+const localeState = vi.hoisted(() => ({ locale: "en" as "en" | "ar", t: (key: string) => key }));
+vi.mock("@/providers/i18n-provider", async () => {
+  const { t: translate, tPlural: pluralize } = await import("@/lib/i18n/i18n.utils");
+  const dictionaries = (await import("@/lib/i18n/translations")).default;
+  return {
+    useI18n: () => ({
+      locale: localeState.locale,
+      dir: localeState.locale === "ar" ? "rtl" : "ltr",
+      t: (key: string, params?: Record<string, string>) => {
+        if (key === "common.loading") return "Loading";
+        return translate(dictionaries[localeState.locale], key, params);
+      },
+      tPlural: (key: string, count: number) => pluralize(dictionaries[localeState.locale], localeState.locale, key, count),
+      setLocale: vi.fn(),
+    }),
+    useIntlLocale: () => "en",
+  };
+});
+
 function renderState(overrides: {
   loading?: boolean;
   refreshing?: boolean;

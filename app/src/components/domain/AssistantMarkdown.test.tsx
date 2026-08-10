@@ -132,6 +132,45 @@ describe("AssistantMarkdown", () => {
     expect(html).not.toContain("| --- |");
   });
 
+  it("wraps tables in a horizontal overflow container so the page never scrolls", () => {
+    const html = render(
+      "| A | B | C | D |\n| --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 |",
+    );
+    const wrapper = html.match(/<div class="([^"]*overflow-x-auto[^"]*)">/);
+    expect(wrapper).toBeTruthy();
+    expect(wrapper![1]).toContain("max-w-full");
+    expect(wrapper![1]).toContain("overflow-x-auto");
+  });
+
+  it("keeps code blocks in a horizontal overflow container", () => {
+    const html = render(
+      "```ts\nconst long = 'line with lots of content';\n```",
+    );
+    const pre = html.match(/<pre class="([^"]+)"/);
+    expect(pre).toBeTruthy();
+    expect(pre![1]).toContain("overflow-x-auto");
+    expect(pre![1]).toContain("max-w-full");
+    expect(pre![1]).toContain("[&amp;&gt;code]:whitespace-pre");
+    expect(pre![1]).toContain("[&amp;&gt;code]:break-normal");
+  });
+
+  it("lets long URLs wrap safely instead of widening the bubble", () => {
+    const html = render(
+      "[docs](https://example.com/a/very/long/path?query=with=parameters&more=stuff)",
+    );
+    expect(html).toContain("break-words");
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  it("bounds the markdown root so narrow chat columns do not overflow", () => {
+    const html = render("A very long paragraph " + "x".repeat(200));
+    const root = html.match(/^<div dir="ltr" lang="en" class="([^"]+)"/);
+    expect(root).toBeTruthy();
+    expect(root![1]).toContain("min-w-0");
+    expect(root![1]).toContain("overflow-hidden");
+    expect(root![1]).toContain("break-words");
+  });
+
   it("renders Arabic headings", () => {
     const html = render("## العنوان الرئيسي\n\nنص توضيحي.");
     expect(html).toContain("<h2");

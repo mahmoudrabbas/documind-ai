@@ -6,7 +6,7 @@ import { PermissionBoundary } from "@/components/auth/permission-boundary";
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { ApiError } from "@/lib/api-client";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import {
   createBillingPortalSession,
@@ -46,6 +46,7 @@ export function CompanyBillingPage() {
 
 function BillingContent() {
   const { t, locale, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canRead = permissions.can(Permission.BILLING_READ);
   const canManage = permissions.can(Permission.BILLING_MANAGE);
@@ -549,7 +550,7 @@ function BillingContent() {
         footer={(
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setRefundDialogInvoice(null)} className="rounded-lg border px-4 py-2 font-semibold">{t("common.cancel")}</button>
-            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || refundEligibility?.kind !== "ready" || refundEligibility.data.maximumEligibleRefundMinor <= 0} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : refundEligibility?.kind === "ready" ? `${t("billingAdmin.refundRemainingAction")} ${new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en-US", { style: "currency", currency: refundEligibility.data.currency }).format(refundEligibility.data.maximumEligibleRefundMinor / 100)}` : t("billingAdmin.submitRefund")}</button>
+            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || refundEligibility?.kind !== "ready" || refundEligibility.data.maximumEligibleRefundMinor <= 0} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : refundEligibility?.kind === "ready" ? `${t("billingAdmin.refundRemainingAction")} ${new Intl.NumberFormat(intlLocale, { style: "currency", currency: refundEligibility.data.currency }).format(refundEligibility.data.maximumEligibleRefundMinor / 100)}` : t("billingAdmin.submitRefund")}</button>
           </div>
         )}
       >
@@ -594,7 +595,8 @@ function SubscriptionDetails({
   reactivationError: string;
   operationState: BillingOperationStatus | null;
 }) {
-  const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium" }).format(new Date(value)) : t("billingAdmin.notAvailable");
+  const currentLocale = useIntlLocale();
+  const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(new Date(value)) : t("billingAdmin.notAvailable");
   const pending = operationState ?? summary.pendingOperation;
   const currentOperationStatus = pending ? t(`billingAdmin.operationStatus.${pending.status.toLowerCase()}`) : null;
 
@@ -628,7 +630,7 @@ function SubscriptionDetails({
 }
 
 function PreviewSummary({ preview, locale, t }: { preview: BillingChangePreview; locale: string; t: (key: string) => string }) {
-  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const currentLocale = useIntlLocale();
   const money = (minor: number) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: preview.currency }).format(minor / 100);
   const date = (value: string | null) => value ? new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(new Date(value)) : t("billingAdmin.notAvailable");
   return (
@@ -661,7 +663,7 @@ function PreviewSummary({ preview, locale, t }: { preview: BillingChangePreview;
 }
 
 function InvoiceHistory({ invoices, pagination, locale, t, onLinks, onRefund, setPage, canManage }: { invoices: BillingInvoice[]; pagination: Pagination; locale: string; t: (key: string) => string; onLinks: (invoice: BillingInvoice) => void; onRefund: (invoice: BillingInvoice) => void; setPage: (page: number) => void; canManage: boolean }) {
-  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const currentLocale = useIntlLocale();
   const money = (invoice: BillingInvoice) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(invoice.amountPaidMinor / 100);
   const date = (value: string) => new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium" }).format(new Date(value));
 const refundLabel = (invoice: BillingInvoice) => invoice.reservedRefundAmountMinor > 0 ? t("billingAdmin.invoicePaidRefundPending") : invoice.refundedAmountMinor <= 0 ? t("billingAdmin.status.paid") : invoice.refundedAmountMinor >= invoice.amountPaidMinor ? t("billingAdmin.invoiceFullyRefunded") : t("billingAdmin.invoicePartiallyRefunded");
@@ -681,7 +683,7 @@ function InvoiceAction({ invoice, t, onLinks, onRefund, canManage }: { invoice: 
   );
 }
 function RefundRequestForm({ invoice, locale, t, eligibility, error }: { invoice: BillingInvoice; locale: string; t: (key: string) => string; eligibility: Loadable<RefundEligibilityPreview> | null; error: string }) {
-  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const currentLocale = useIntlLocale();
   const money = (minor: number) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(minor / 100);
   return <div className="space-y-4">
     <Detail label={t("billingAdmin.invoiceNumber")} value={invoice.invoiceNumber || t("billingAdmin.invoice")} />
@@ -699,7 +701,7 @@ function RefundRequestForm({ invoice, locale, t, eligibility, error }: { invoice
   </div>;
 }
 function RefundHistory({ refunds, locale, t }: { refunds: BillingRefund[]; locale: string; t: (key: string) => string }) {
-  const currentLocale = locale === "ar" ? "ar-EG" : "en-US";
+  const currentLocale = useIntlLocale();
   const money = (amountMinor: number, currency: string) => new Intl.NumberFormat(currentLocale, { style: "currency", currency }).format(amountMinor / 100);
   const date = (value: string) => new Intl.DateTimeFormat(currentLocale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   const message = (refund: BillingRefund) => {

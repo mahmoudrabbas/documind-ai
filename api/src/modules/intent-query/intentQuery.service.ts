@@ -11,6 +11,7 @@ import type { QueryPlan } from "./intentQuery.types.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
+import { detectAssistantIntent } from "./intentQuery.assistantDetector.js";
 import { preprocessIntentText } from "./intentQuery.preprocessor.js";
 import {
   assessPositiveKnowledgeSeeking,
@@ -95,11 +96,13 @@ export class IntentQueryService {
     }
 
     // 4. Determine language and entities early to handle fallback/clarification deterministically if needed
+    const assistantIntent = detectAssistantIntent(input.question);
+    const routingQuestion = assistantIntent.knowledgeRemainder ?? input.question;
     const preprocessed = preprocessIntentText(input.question);
     const language = preprocessed.language;
-    const localEntities = extractEntities(input.question, language);
-    const localTemporalConstraints = extractTemporalConstraints(input.question);
-    const deterministicTitleHints = extractNaturalDocumentTitleHints(input.question);
+    const localEntities = extractEntities(routingQuestion, language);
+    const localTemporalConstraints = extractTemporalConstraints(routingQuestion);
+    const deterministicTitleHints = extractNaturalDocumentTitleHints(routingQuestion);
 
     // Check for prompt injections/unsafe inputs upfront deterministically
     const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
@@ -149,7 +152,70 @@ export class IntentQueryService {
       return unsafePlan;
     }
 
-    // 4b. Deterministic social fast-path — pure social exchanges never enter
+    // 4b. Deterministic assistant identity/capabilities route. This is a
+    // product-owned response boundary: it executes no model, retrieval,
+    // evidence, answer-writer, citation, or compliance work. Mixed turns are
+    // deliberately excluded and continue below with their knowledge remainder.
+    if (assistantIntent.isAssistantOnly && assistantIntent.kind) {
+      const assistantPlan = validateAndNormalizeQueryPlan(
+        {
+          detectedIntent:
+            assistantIntent.kind === "identity"
+              ? "assistant_identity"
+              : "assistant_capabilities",
+          assistantKind: assistantIntent.kind,
+          intentConfidence: 0.99,
+          language,
+          entities: [],
+          temporalConstraints: [],
+          referencedDocumentIds: [],
+          referencedDocumentTitles: [],
+          departments: [],
+          categories: [],
+          exactTerms: [],
+          semanticQueries: [],
+          keywordQueries: [],
+          clarificationNeeded: false,
+          clarification: null,
+          isFollowUp: false,
+          conversationContextUsed: false,
+          normalizedQuestion: input.question.trim(),
+        },
+        input.question,
+        language,
+        INTENT_PROMPT_VERSION,
+        this.modelAdapter.providerKey,
+        Date.now() - start,
+        0,
+        0,
+        false,
+      );
+
+      recordIntentQueryMetrics(metricRecorder, assistantPlan, traceId);
+      try {
+        await IntentQueryTraceModel.create({
+          traceId,
+          tenantId: actor.tenantId,
+          queryPlan: assistantPlan,
+          timing: {
+            totalMs: Date.now() - start,
+            languageDetectionMs: 1,
+            entityExtractionMs: 0,
+            llmMs: 0,
+            postProcessingMs: 1,
+          },
+          promptVersion: INTENT_PROMPT_VERSION,
+          modelVersion: this.modelAdapter.providerKey,
+          rawEntities: [],
+          fallbackUsed: false,
+        });
+      } catch (err) {
+        logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+      }
+      return assistantPlan;
+    }
+
+    // 4c. Deterministic social fast-path — pure social exchanges never enter
     // retrieval, so no sources are ever attached to the response. Substantive
     // questions (including social-prefixed ones) are never classified here.
     const social = detectSocialMessage(input.question);
@@ -368,7 +434,7 @@ export class IntentQueryService {
     // Append the current question
     messagesPayload.push({
       role: "user",
-      content: input.question,
+      content: routingQuestion,
     });
 
     // 6. Call ModelAdapter (LLM) with timeout and fallback logic
@@ -586,13 +652,18 @@ export class IntentQueryService {
       }
 
       const rawDetectedIntent = rawOutput.detectedIntent;
+      if (rawDetectedIntent === "assistant_identity") {
+        rawOutput.assistantKind = "identity";
+      } else if (rawDetectedIntent === "assistant_capabilities") {
+        rawOutput.assistantKind = "capabilities";
+      }
       if (
         isRetrievableIntent(rawDetectedIntent) &&
-        isLikelyGibberish(input.question)
+        isLikelyGibberish(routingQuestion)
       ) {
         rawOutput = {
           detectedIntent: "unsupported",
-          normalizedQuestion: input.question.trim(),
+          normalizedQuestion: routingQuestion.trim(),
           intentConfidence: 0.99,
           language,
           entities: [],
@@ -608,7 +679,7 @@ export class IntentQueryService {
 
       // If semanticQueries/keywordQueries are empty, use local bilingual expansion
       if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
-        const expansion = expandBilingual(input.question, language, localEntities);
+        const expansion = expandBilingual(routingQuestion, language, localEntities);
         rawOutput.semanticQueries = expansion.semanticQueries;
         rawOutput.keywordQueries = expansion.keywordQueries;
       }
@@ -650,19 +721,19 @@ export class IntentQueryService {
         clarificationNeeded = true;
         clarification = {
           reason: "missing_context",
-          suggestedQuestions: [input.question],
+          suggestedQuestions: [routingQuestion],
           messageEn: "Could you restate the question with the subject you mean?",
           messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
         };
       } else if (
         isFollowUp &&
         (!normalizedQuestion ||
-          normalizedQuestion === input.question.trim())
+          normalizedQuestion === routingQuestion.trim())
       ) {
         clarificationNeeded = true;
         clarification = {
           reason: "missing_context",
-          suggestedQuestions: [input.question],
+          suggestedQuestions: [routingQuestion],
           messageEn: "Could you restate the question with the subject you mean?",
           messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
         };
@@ -715,7 +786,7 @@ export class IntentQueryService {
           (input.referencedDocumentIds?.length ?? 0) > 0;
         const safeRetrievalQuestion = isRetrievableIntent(detectedIntent)
           ? selectSafeRetrievalQuestion(
-              input.question,
+              routingQuestion,
               normalizedQuestion,
               [
                 ...localEntities
@@ -724,7 +795,7 @@ export class IntentQueryService {
                 ...deterministicTitleHints,
               ],
             )
-          : input.question.trim();
+          : routingQuestion.trim();
         const currentExpansion = expandBilingual(
           safeRetrievalQuestion,
           language,
@@ -758,57 +829,58 @@ export class IntentQueryService {
         false
       );
 
-      // A model may express a positive, known knowledge intent but omit or
-      // mistype another required schema field. Recover only when the current
-      // turn independently has strong document-knowledge signals. Unknown
-      // intent labels never receive this recovery path.
+      // A provider plan is non-authoritative when it would suppress a current
+      // turn that independently has strong, bounded enterprise/document
+      // knowledge signals. This applies to valid-but-wrong classifications and
+      // low-confidence clarification as well as schema-invalid output. Unsafe
+      // remains a hard boundary; deterministic assistant-only, social-only and
+      // external-current requests already returned before the provider call.
+      const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       if (
-        validatedPlan.processingMetadata.fallbackUsed &&
-        isRetrievableIntent(rawDetectedIntent)
+        knowledgeSignals.positive &&
+        validatedPlan.route !== "rag" &&
+        validatedPlan.route !== "unsafe"
       ) {
-        const knowledgeSignals = assessPositiveKnowledgeSeeking(input.question);
-        if (knowledgeSignals.positive) {
-          const fallbackQuestion = knowledgeSignals.retrievalText;
-          const expansion = expandBilingual(
-            fallbackQuestion,
+        const fallbackQuestion = knowledgeSignals.retrievalText;
+        const expansion = expandBilingual(
+          fallbackQuestion,
+          language,
+          localEntities,
+        );
+        validatedPlan = validateAndNormalizeQueryPlan(
+          {
+            detectedIntent: "knowledge_question",
+            intentConfidence: 0.75,
+            normalizedQuestion: fallbackQuestion,
             language,
-            localEntities,
-          );
-          validatedPlan = validateAndNormalizeQueryPlan(
-            {
-              detectedIntent: "knowledge_question",
-              intentConfidence: 0.75,
-              normalizedQuestion: fallbackQuestion,
-              language,
-              entities: localEntities,
-              temporalConstraints: localTemporalConstraints,
-              exactTerms: localEntities
-                .filter((entity) => entity.preserveExact)
-                .map((entity) => entity.text),
-              semanticQueries: expansion.semanticQueries,
-              keywordQueries: expansion.keywordQueries,
-              clarificationNeeded: false,
-              clarification: null,
-              isFollowUp: false,
-              conversationContextUsed: false,
-              referencedDocumentIds: hints.referencedDocumentIds,
-              referencedDocumentTitles: hints.referencedDocumentTitles,
-            },
-            input.question,
-            language,
-            INTENT_PROMPT_VERSION,
-            this.modelAdapter.providerKey,
-            Date.now() - start,
-            tokensUsed,
-            estimatedCost,
-            true,
-          );
-        }
+            entities: localEntities,
+            temporalConstraints: localTemporalConstraints,
+            exactTerms: localEntities
+              .filter((entity) => entity.preserveExact)
+              .map((entity) => entity.text),
+            semanticQueries: expansion.semanticQueries,
+            keywordQueries: expansion.keywordQueries,
+            clarificationNeeded: false,
+            clarification: null,
+            isFollowUp: false,
+            conversationContextUsed: false,
+            referencedDocumentIds: hints.referencedDocumentIds,
+            referencedDocumentTitles: hints.referencedDocumentTitles,
+          },
+          input.question,
+          language,
+          INTENT_PROMPT_VERSION,
+          this.modelAdapter.providerKey,
+          Date.now() - start,
+          tokensUsed,
+          estimatedCost,
+          validatedPlan.processingMetadata.fallbackUsed,
+        );
       }
     } else {
       // Deterministic fallback execution
-      const knowledgeSignals = assessPositiveKnowledgeSeeking(input.question);
-      const fallbackQuestion = knowledgeSignals.retrievalText || input.question.trim();
+      const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
+      const fallbackQuestion = knowledgeSignals.retrievalText || routingQuestion.trim();
       const expansion = knowledgeSignals.positive
         ? expandBilingual(fallbackQuestion, language, localEntities)
         : { semanticQueries: [], keywordQueries: [] };
@@ -858,7 +930,19 @@ export class IntentQueryService {
       );
     }
 
-    // 7b. Social subtype resolution: the deterministic detector is the
+    // 7b. Assistant plans are source-less by contract even if a provider
+    // recognized a natural variant outside the deterministic fast path.
+    if (validatedPlan.route === "assistant") {
+      validatedPlan.semanticQueries = [];
+      validatedPlan.keywordQueries = [];
+      validatedPlan.exactTerms = [];
+      validatedPlan.referencedDocumentIds = [];
+      validatedPlan.referencedDocumentTitles = [];
+      validatedPlan.departments = [];
+      validatedPlan.categories = [];
+    }
+
+    // 7c. Social subtype resolution: the deterministic detector is the
     // authority on social subtype; an LLM-reported social route gets its
     // subtype from the detector when available, otherwise keeps the
     // validated subtype (never fabricate a subtype).
@@ -870,7 +954,7 @@ export class IntentQueryService {
           : validatedPlan.socialSubtype;
     }
 
-    // 7c. Title-hint ambiguity/unresolved references force a clarification.
+    // 7d. Title-hint ambiguity/unresolved references force a clarification.
     if (titleClarificationNeeded) {
       validatedPlan.route = "clarification";
       validatedPlan.clarificationNeeded = true;

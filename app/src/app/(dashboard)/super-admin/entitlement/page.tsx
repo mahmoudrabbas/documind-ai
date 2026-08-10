@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/DashboardPage";
 import { Button, ConfirmDialog, Input, Select } from "@/components/ui";
 import { cell, PlatformTable } from "@/components/super-admin/platform-ui";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { ApiError } from "@/lib/api-client";
 import {
   listOverrides,
@@ -42,6 +42,7 @@ function humanizeDimension(key: string): string {
 
 export default function SuperAdminEntitlementPage() {
   const { dir, t } = useI18n();
+  const intlLocale = useIntlLocale();
 
   /* ── Overrides list state ───────────────────────────────────────── */
   const [overrides, setOverrides] = useState<QuotaOverride[]>([]);
@@ -284,7 +285,9 @@ export default function SuperAdminEntitlementPage() {
                     <td className={cell}>
                       {humanizeDimension(override.dimension)}
                     </td>
-                    <td className={cell}>{override.limit.toLocaleString()}</td>
+                    <td className={cell}>
+                      {override.limit.toLocaleString(intlLocale)}
+                    </td>
                     <td className={cell}>{override.reason}</td>
                     <td className={cell}>
                       {override.enabled
@@ -293,7 +296,9 @@ export default function SuperAdminEntitlementPage() {
                     </td>
                     <td className={cell}>{override.createdBy}</td>
                     <td className={cell}>
-                      {new Date(override.createdAt).toLocaleDateString()}
+                      {new Date(override.createdAt).toLocaleDateString(
+                        intlLocale,
+                      )}
                     </td>
                     <td className={cell}>
                       <div className="flex gap-2">
@@ -496,7 +501,7 @@ export default function SuperAdminEntitlementPage() {
                   {t("entitlement.reconcileTenants")}
                 </p>
                 <p className="mt-1 text-title-lg font-bold text-primary">
-                  {reconcileResult.totalTenants.toLocaleString()}
+                  {reconcileResult.totalTenants.toLocaleString(intlLocale)}
                 </p>
               </div>
               <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-sm">
@@ -504,7 +509,9 @@ export default function SuperAdminEntitlementPage() {
                   {t("entitlement.reconcileDiscrepancies")}
                 </p>
                 <p className="mt-1 text-title-lg font-bold text-primary">
-                  {reconcileResult.totalDiscrepancies.toLocaleString()}
+                  {reconcileResult.totalDiscrepancies.toLocaleString(
+                    intlLocale,
+                  )}
                 </p>
               </div>
             </div>
@@ -539,13 +546,13 @@ export default function SuperAdminEntitlementPage() {
                           {humanizeDimension(report.dimension)}
                         </td>
                         <td className={cell}>
-                          {report.authoritative.toLocaleString()}
+                          {report.authoritative.toLocaleString(intlLocale)}
                         </td>
                         <td className={cell}>
-                          {report.current.toLocaleString()}
+                          {report.current.toLocaleString(intlLocale)}
                         </td>
                         <td className={cell}>
-                          {report.discrepancy.toLocaleString()}
+                          {report.discrepancy.toLocaleString(intlLocale)}
                         </td>
                         <td className={cell}>
                           {report.fixed
@@ -563,7 +570,7 @@ export default function SuperAdminEntitlementPage() {
                       {t("entitlement.reconcileFixed")}
                     </p>
                     <p className="mt-1 text-title-lg font-bold text-primary">
-                      {reconcileResult.totalFixed.toLocaleString()}
+                      {reconcileResult.totalFixed.toLocaleString(intlLocale)}
                     </p>
                   </div>
                 </div>

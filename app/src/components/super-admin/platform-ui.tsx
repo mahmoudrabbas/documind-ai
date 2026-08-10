@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { DashboardPanel } from "@/components/ui/DashboardPage";
+import { useI18n } from "@/providers/i18n-provider";
 
 export function usePlatformData<T>(
   loader: (signal?: AbortSignal) => Promise<{ data: T }>,
 ) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
+  /* Holds a translation key, not a sentence — `PlatformState` renders it
+     through `t()` so the message follows the active locale. */
   const [error, setError] = useState("");
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -16,8 +19,7 @@ export function usePlatformData<T>(
       try {
         setData((await loader(signal)).data);
       } catch {
-        if (!signal?.aborted)
-          setError("Unable to load platform data. Please try again.");
+        if (!signal?.aborted) setError("superAdmin.loadError");
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -46,6 +48,8 @@ export function PlatformState({
   error: string;
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
+
   if (loading)
     return (
       <DashboardPanel>
@@ -56,7 +60,7 @@ export function PlatformState({
               className="h-14 animate-pulse rounded-xl bg-surface-container"
             />
           ))}
-          <span className="sr-only">Loading</span>
+          <span className="sr-only">{t("common.loading")}</span>
         </div>
       </DashboardPanel>
     );
@@ -79,13 +83,13 @@ export function PlatformState({
           role="alert"
           className="rounded-xl border border-error/20 bg-error-container p-4 text-on-error-container"
         >
-          <p>{error}</p>
+          <p>{t(error)}</p>
           <button
             type="button"
             onClick={onRetry}
             className="mt-3 min-h-10 rounded-lg bg-error px-4 py-2 font-bold text-on-error"
           >
-            Retry
+            {t("common.retry")}
           </button>
         </div>
       </DashboardPanel>
@@ -130,7 +134,16 @@ export function PlatformTable({
   );
 }
 
-export function StatusPill({ value }: { value: string }) {
+/**
+ * Status pill for platform tables.
+ *
+ * `value` is the untranslated machine code — it drives the colour and must
+ * never receive a translated string, exactly as with `<Badge status>`.
+ * Pass display text through `label` (typically `codeLabel(t, ns, value)`);
+ * it falls back to the humanised code so untranslated call sites are
+ * unchanged.
+ */
+export function StatusPill({ value, label }: { value: string; label?: ReactNode }) {
   const positive = ["active", "healthy", "processed", "connected"].includes(
     value,
   );
@@ -145,7 +158,7 @@ export function StatusPill({ value }: { value: string }) {
     <span
       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${positive ? "bg-tertiary-container/20 text-on-tertiary-container" : negative ? "bg-error-container text-on-error-container" : "bg-surface-container text-on-surface-variant"}`}
     >
-      {value.replaceAll("_", " ")}
+      {label ?? value.replaceAll("_", " ")}
     </span>
   );
 }

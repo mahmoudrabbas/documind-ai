@@ -17,7 +17,7 @@ import {
 } from "./chatAgentIO.js";
 
 export const INTENT_QUERY_AGENT_ID = "intent-query-agent";
-export const INTENT_QUERY_AGENT_VERSION = "1.0.0";
+export const INTENT_QUERY_AGENT_VERSION = "1.1.0";
 
 /**
  * Deterministic reason code per route, mirroring the canonical codes used by
@@ -25,6 +25,7 @@ export const INTENT_QUERY_AGENT_VERSION = "1.0.0";
  * taxonomy, never a parallel one.
  */
 export const INTENT_QUERY_ROUTE_REASON_CODES: Record<QueryRouteValue, string> = {
+  assistant: "ASSISTANT_INTENT",
   rag: "RAG_REQUIRED",
   social: "SOCIAL_INTENT",
   clarification: "CLARIFICATION_REQUIRED",
@@ -46,6 +47,7 @@ export function mapQueryPlanToAgentOutput(plan: QueryPlan): IntentAgentOutput {
     language: plan.language,
     route,
     intent: plan.detectedIntent,
+    assistantKind: plan.assistantKind,
     intentConfidence: plan.intentConfidence,
     referencedDocumentIds: plan.referencedDocumentIds,
     clarificationNeeded: plan.clarificationNeeded,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AssistantIntentKind,
   IntentClass,
   QueryLanguage,
   QueryRoute,
@@ -64,6 +65,7 @@ export const ChatWorkflowStateSchema = z
     language: QueryLanguage.optional(),
     route: QueryRoute.optional(),
     intent: IntentClass.optional(),
+    assistantKind: AssistantIntentKind.nullable().optional(),
     referencedDocumentIds: boundedIdArray(20).optional(),
     retrievalCandidateIds: boundedIdArray(100).optional(),
     approvedEvidenceIds: boundedIdArray(100).optional(),

@@ -16,6 +16,7 @@ import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { AuthHeroPanel } from "@/components/ui";
 import { validateEmail, validateCompanySlug } from "@/lib/validation";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 
 type LoginResponse = {
   success: true;
@@ -53,13 +54,14 @@ function PasswordVisibilityToggle({
   onToggle: () => void;
   disabled?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onToggle}
       disabled={disabled}
       tabIndex={-1}
-      aria-label={visible ? "Hide password" : "Show password"}
+      aria-label={visible ? t("auth.hidePassword") : t("auth.showPassword")}
       className="absolute inset-y-0 end-0 flex items-center px-md text-on-surface-variant transition-colors hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span className="material-symbols-outlined text-xl" aria-hidden="true">
@@ -189,7 +191,7 @@ export default function LoginPage() {
       {/* Left panel (Form Panel) */}
       <section className="z-10 flex min-h-screen w-full flex-col border-r border-outline-variant p-lg md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
         {/* Language switcher */}
-        <div className="absolute top-6 right-6 z-20">
+        <div className="absolute top-6 end-6 z-20">
           <LanguageSwitcher />
         </div>
 
@@ -200,34 +202,24 @@ export default function LoginPage() {
             aria-label={t("auth.backToHome")}
             className="mb-lg inline-flex items-center gap-xs text-label-md font-semibold text-primary transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
           >
-            <span className="material-symbols-outlined text-lg" aria-hidden="true">
+            <span className="material-symbols-outlined text-lg rtl:rotate-180" aria-hidden="true">
               arrow_back
             </span>
             {t("auth.backToHome")}
           </Link>
-          <div className="mb-sm flex items-center gap-base">
-            <span
-              className="material-symbols-outlined text-3xl text-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              neurology
-            </span>
-            <h1 className="text-headline-md font-bold tracking-tight text-primary">
-              DocuMind AI
-            </h1>
-          </div>
+          <DocuMindLogo className="mb-sm" />
           <p className="max-w-sm text-body-md text-on-surface-variant">
-            Private AI Knowledge Assistant for Company Documents
+            {t("auth.tagline")}
           </p>
         </div>
 
         {/* Login Form */}
         <div className="flex flex-grow flex-col justify-start">
           <h2 className="mb-base text-headline-lg font-bold text-primary">
-            Welcome Back
+            {t("auth.welcomeBack")}
           </h2>
           <p className="mb-xl text-body-md text-on-surface-variant">
-            Access your enterprise intelligence portal.
+            {t("auth.portalAccess")}
           </p>
 
           <form
@@ -353,7 +345,7 @@ export default function LoginPage() {
                   className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary"
                 />
                 <span className="text-label-md text-on-surface-variant">
-                  Remember me
+                  {t("auth.rememberMe")}
                 </span>
               </label>
               <Link
@@ -408,12 +400,11 @@ export default function LoginPage() {
               verified_user
             </span>
             <span className="text-label-sm text-on-surface-variant">
-              AES-256 Encrypted & SOC2 Compliant
+              {t("auth.encryptedBadge")}
             </span>
           </div>
           <p className="text-body-sm text-outline">
-            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
-            rights reserved.
+            {t("auth.rightsReserved", { year: String(new Date().getFullYear()) })}
           </p>
         </div>
       </section>

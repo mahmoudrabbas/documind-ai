@@ -6,7 +6,7 @@ import { validateAndNormalizeQueryPlan } from "../intentQuery.validator.js";
 test("QueryPlanSchema validation", async (t) => {
   await t.test("should validate a valid QueryPlan structure", () => {
     const validPlan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: "What is the policy for maternal leave?",
       originalQuestion: "What is the policy for maternal leave?",
       language: "en",
@@ -55,7 +55,7 @@ test("QueryPlanSchema validation", async (t) => {
 
   await t.test("should reject missing required properties", () => {
     const invalidPlan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: "Invalid question",
       // missing language, detectedIntent, etc.
     };
@@ -66,7 +66,7 @@ test("QueryPlanSchema validation", async (t) => {
 
   await t.test("should reject invalid intent class types", () => {
     const invalidIntentPlan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: "Hi",
       originalQuestion: "Hi",
       language: "en",

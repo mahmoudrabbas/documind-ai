@@ -10,14 +10,24 @@ import {
   usePlatformData,
 } from "@/components/super-admin/platform-ui";
 import { getPlatformHealth } from "@/services/super-admin.service";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 export default function SystemHealthPage() {
+  const { t } = useI18n();
   const state = usePlatformData(getPlatformHealth);
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="System Health"
-        description="Review live readiness signals for core DocuMind AI services."
-        actions={state.data ? <StatusPill value={state.data.status} /> : null}
+        title={t("superAdmin.systemHealthTitle")}
+        description={t("superAdmin.systemHealthDesc")}
+        actions={
+          state.data ? (
+            <StatusPill
+              value={state.data.status}
+              label={codeLabel(t, "superAdmin.serviceStatus", state.data.status)}
+            />
+          ) : null
+        }
       />
       <PlatformState
         loading={state.loading}
@@ -35,7 +45,10 @@ export default function SystemHealthPage() {
                   </span>
                   <strong>{service.name}</strong>
                 </div>
-                <StatusPill value={service.status} />
+                <StatusPill
+                  value={service.status}
+                  label={codeLabel(t, "superAdmin.serviceStatus", service.status)}
+                />
               </div>
             </DashboardPanel>
           ))}
