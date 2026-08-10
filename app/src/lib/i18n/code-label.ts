@@ -46,7 +46,14 @@ export function codeLabel(
   namespace: string,
   code: string,
 ): string {
-  const key = `${namespace}.${code.toLowerCase()}`;
+  const normalized = code.trim().toLowerCase().replaceAll(" ", "_");
+  const key = `${namespace}.${normalized}`;
   const value = t(key);
-  return value === key ? humanizeCode(code) : value;
+  if (value !== key) return value;
+
+  const rawKey = `${namespace}.${code.toLowerCase()}`;
+  const rawValue = t(rawKey);
+  if (rawValue !== rawKey) return rawValue;
+
+  return humanizeCode(code);
 }

@@ -121,7 +121,11 @@ export default function RecentActivityFeed({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-body-sm leading-relaxed text-on-surface">
-              <span className="font-bold">{item.actorEmail || t("dashboard.system")}</span>{" "}
+              <span className="font-bold">
+                {!item.actorEmail || item.actorEmail.toLowerCase() === "system"
+                  ? t("dashboard.system")
+                  : item.actorEmail}
+              </span>{" "}
               <span className="text-on-surface-variant">
                 {codeLabel(t, "audit.action", item.action)}
               </span>

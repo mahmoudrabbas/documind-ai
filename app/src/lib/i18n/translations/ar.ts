@@ -1159,6 +1159,8 @@ const ar: TranslationDictionary = {
   "audit.action.audit_exported": "تم تصدير سجل التدقيق",
   "audit.action.permission_denied": "تم رفض الصلاحية",
   "audit.action.quota_denied": "تم تجاوز الحد المسموح",
+  "audit.action.billing_summary_accessed": "تم الوصول لملخص الفوترة",
+  "audit.action.notification_dispatched": "تم إرسال الإشعار",
 
   /* AuditOutcome — SUCCESS | FAILURE | DENIED بحروف صغيرة من أجل codeLabel. */
   "audit.outcome.success": "نجحت",

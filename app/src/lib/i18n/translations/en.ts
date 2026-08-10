@@ -1164,6 +1164,8 @@ const en: TranslationDictionary = {
   "audit.action.audit_exported": "Audit log exported",
   "audit.action.permission_denied": "Permission denied",
   "audit.action.quota_denied": "Quota exceeded",
+  "audit.action.billing_summary_accessed": "Billing summary accessed",
+  "audit.action.notification_dispatched": "Notification dispatched",
 
   /* AuditOutcome — SUCCESS | FAILURE | DENIED, lowercased for codeLabel. */
   "audit.outcome.success": "Succeeded",
