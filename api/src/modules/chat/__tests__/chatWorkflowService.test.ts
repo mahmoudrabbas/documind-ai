@@ -1527,3 +1527,60 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(harness.messages.at(-1)?.role).toBe("assistant");
   });
 });
+
+describe("ChatWorkflowService stage progress emission", () => {
+  async function executeWithStages(
+    harness: ReturnType<typeof makeHarness>,
+    onStage: (stage: string) => void,
+    message = "What is the policy?",
+  ) {
+    return harness.service.execute(
+      { message, conversationId },
+      {
+        tenantId: "client-tenant-is-ignored",
+        actorId: "client-actor-is-ignored",
+        actorEmail: "client@example.com",
+        actorRole: "SUPER_ADMIN",
+        traceId: "trace-1",
+        requestId: "request-1",
+        onStage,
+      },
+    );
+  }
+
+  it("emits the full RAG stage sequence in order", async () => {
+    const harness = makeHarness({ scenario: "grounded" });
+    const stages: string[] = [];
+    await executeWithStages(harness, (stage) => stages.push(stage));
+    expect(stages).toEqual([
+      "intent",
+      "search",
+      "evidence",
+      "answer",
+      "verify",
+      "finalize",
+    ]);
+  });
+
+  it("skips answer and verify on the insufficient-evidence path", async () => {
+    const harness = makeHarness({ scenario: "insufficient" });
+    const stages: string[] = [];
+    await executeWithStages(harness, (stage) => stages.push(stage));
+    expect(stages).toEqual(["intent", "search", "evidence", "finalize"]);
+  });
+
+  it("emits only intent for the social short path", async () => {
+    const harness = makeHarness({ scenario: "social" });
+    const stages: string[] = [];
+    await executeWithStages(harness, (stage) => stages.push(stage), "hello");
+    expect(stages).toEqual(["intent"]);
+  });
+
+  it("completes the run when the stage listener throws", async () => {
+    const harness = makeHarness({ scenario: "grounded" });
+    const response = await executeWithStages(harness, () => {
+      throw new Error("listener exploded");
+    });
+    expect(response.answer).toBe("SAFE_FINAL");
+  });
+});

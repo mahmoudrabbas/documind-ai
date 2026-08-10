@@ -1,4 +1,6 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, API_BASE_URL } from "@/lib/api-client";
+import { getAccessToken } from "@/lib/auth-tokens";
+import { getLocaleFromCookie } from "@/lib/i18n/i18n.utils";
 import type {
   ChatResponse,
   ChatVisionResponse,
@@ -11,6 +13,26 @@ interface ChatSendRequest {
   conversationId?: string;
 }
 
+export type ChatProgressStage =
+  | "intent"
+  | "search"
+  | "evidence"
+  | "answer"
+  | "verify"
+  | "finalize";
+
+export class ChatStreamError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly statusCode: number,
+    public readonly receivedAnyEvent: boolean,
+  ) {
+    super(message);
+    this.name = "ChatStreamError";
+  }
+}
+
 export async function sendMessage(input: ChatSendRequest): Promise<ChatResponse> {
   const response = await apiClient<{
     success: boolean;
@@ -21,6 +43,96 @@ export async function sendMessage(input: ChatSendRequest): Promise<ChatResponse>
   });
 
   return response.data;
+}
+
+export async function sendMessageStream(
+  input: ChatSendRequest,
+  options: { onStage?: (stage: ChatProgressStage) => void },
+): Promise<ChatResponse> {
+  const token = getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/chat/send/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      Authorization: `Bearer ${token}`,
+      "Accept-Language": getLocaleFromCookie(),
+    },
+    body: JSON.stringify(input),
+    credentials: "include",
+  });
+
+  if (!response.ok || !response.body) {
+    // Failure before any SSE event: the caller can safely fall back to the
+    // plain JSON endpoint because the workflow never started.
+    throw new ChatStreamError(
+      `Chat stream failed with status ${response.status}`,
+      "STREAM_UNAVAILABLE",
+      response.status,
+      false,
+    );
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let receivedAnyEvent = false;
+  let result: ChatResponse | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIndex = buffer.indexOf("\n\n");
+    while (separatorIndex !== -1) {
+      const frame = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      separatorIndex = buffer.indexOf("\n\n");
+
+      let eventName = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith(":")) continue;
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+
+      const payload = JSON.parse(data) as {
+        stage?: ChatProgressStage;
+        data?: ChatResponse;
+        message?: string;
+        error?: string;
+        statusCode?: number;
+      };
+
+      if (eventName === "stage" && payload.stage) {
+        receivedAnyEvent = true;
+        options.onStage?.(payload.stage);
+      } else if (eventName === "done" && payload.data) {
+        receivedAnyEvent = true;
+        result = payload.data;
+      } else if (eventName === "error") {
+        throw new ChatStreamError(
+          payload.message ?? "Chat request failed",
+          payload.error ?? "CHAT_STREAM_FAILED",
+          payload.statusCode ?? 502,
+          receivedAnyEvent,
+        );
+      }
+    }
+  }
+
+  if (!result) {
+    throw new ChatStreamError(
+      "Chat stream ended without a result",
+      "STREAM_INCOMPLETE",
+      502,
+      receivedAnyEvent,
+    );
+  }
+  return result;
 }
 
 export interface ChatVisionSendRequest {

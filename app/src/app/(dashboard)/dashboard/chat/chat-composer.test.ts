@@ -75,8 +75,10 @@ describe("chat composer (phase 3)", () => {
     expect(source).toContain("MAX_TEXTAREA_HEIGHT");
   });
 
-  it("adds no streaming transport or fake pipeline stage labels", async () => {
+  it("keeps browser-push transports out of the chat stage progress", async () => {
     const source = await readClient();
+    // Stage progress uses a fetch + body reader SSE stream; EventSource and
+    // WebSocket transports remain forbidden.
     for (const forbidden of [
       "EventSource",
       "WebSocket",
@@ -86,6 +88,23 @@ describe("chat composer (phase 3)", () => {
       "Generating...",
     ]) {
       expect(source).not.toContain(forbidden);
+    }
+    expect(source).toContain("sendMessageStream");
+  });
+
+  it("localizes every SSE progress stage in both locales", () => {
+    for (const stage of [
+      "intent",
+      "search",
+      "evidence",
+      "answer",
+      "verify",
+      "finalize",
+    ]) {
+      const key = `chat.progress.${stage}`;
+      expect(en[key]).not.toBe("");
+      expect(ar[key]).not.toBe("");
+      expect(ar[key]).not.toBe(en[key]);
     }
   });
 
