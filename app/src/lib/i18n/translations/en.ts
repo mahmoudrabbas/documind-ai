@@ -471,7 +471,7 @@ const en: TranslationDictionary = {
   "billing.currentPlanHeader": "Current Plan",
   "billing.unknownPlan": "Unknown Plan",
   "billing.saveBadge": "Save",
-  "billing.trialDaysBadge": "{days}-day free trial",
+  "billing.trialDaysBadge": "{{days}}-day free trial",
   "billing.stripeManagedNotice": "Your current subscription is managed by Stripe. Use Manage Billing instead of creating another checkout.",
   "billing.continueCheckout": "Continue checkout",
   "billing.failedToOpenBillingPortal": "Failed to open billing portal. Please try again.",

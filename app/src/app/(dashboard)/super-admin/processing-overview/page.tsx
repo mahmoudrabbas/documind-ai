@@ -13,7 +13,7 @@ import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function SuperAdminProcessingOverviewPage() {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
   const intlLocale = useIntlLocale();
   const [runs, setRuns] = useState<ProcessingRunView[]>([]);
   const [total, setTotal] = useState(0);
@@ -76,7 +76,7 @@ export default function SuperAdminProcessingOverviewPage() {
   }, [load, t]);
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
         title={t("superAdmin.processingOverviewTitle")}
         description={t("superAdmin.processingOverviewDesc")}

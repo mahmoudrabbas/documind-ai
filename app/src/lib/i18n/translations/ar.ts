@@ -471,7 +471,7 @@ const ar: TranslationDictionary = {
   "billing.currentPlanHeader": "الخطة الحالية",
   "billing.unknownPlan": "خطة غير معروفة",
   "billing.saveBadge": "وفر",
-  "billing.trialDaysBadge": "تجربة مجانية لمدة {days} أيام",
+  "billing.trialDaysBadge": "تجربة مجانية لمدة {{days}} أيام",
   "billing.stripeManagedNotice": "اشتراكك الحالي يُدار بواسطة Stripe. استخدم إدارة الفواتير بدلاً من إنشاء جلسة دفع جديدة.",
   "billing.continueCheckout": "متابعة الدفع",
   "billing.failedToOpenBillingPortal": "فشل فتح بوابة الفواتير. يرجى المحاولة مرة أخرى.",
@@ -1336,7 +1336,7 @@ const ar: TranslationDictionary = {
   "qualityPanel.relevancyDesc": "الإجابة تعالج السؤال",
   "qualityPanel.coherence": "الترابط",
   "qualityPanel.coherenceDesc": "الإجابة واضحة ومنسقة جيدًا",
-  "qualityPanel.overall": "الإجمالي",
+  "qualityPanel.overall": "الدرجة الكلية",
   "qualityPanel.overallDesc": "درجة الجودة الموزونة",
 
   /* ── Set Password / Invite ───────────────────────────────── */
