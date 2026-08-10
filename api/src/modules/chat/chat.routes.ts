@@ -263,7 +263,8 @@ export function createChatRoutes(service: ChatService): Router {
    * /chat/send/stream:
    *   post:
    *     summary: Send a chat question and stream stage progress (SSE)
-   *     description: Same request/response contract as /chat/send, but the
+   *     description: |
+   *       Same request/response contract as /chat/send, but the
    *       reply is a Server-Sent Events stream. Events - `stage` with
    *       {"stage":"intent|search|evidence|answer|verify|finalize"}, `done`
    *       with {"success":true,"data":<same payload as /chat/send>}, and

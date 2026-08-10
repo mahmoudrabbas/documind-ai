@@ -893,10 +893,7 @@ export class IntentQueryService {
     } else {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
-      const domainAgnosticQuestion =
-        hasDomainAgnosticQuestionShape(routingQuestion) &&
-        !isLikelyGibberish(routingQuestion);
-      const isKnowledgeQuestion = knowledgeSignals.positive || domainAgnosticQuestion;
+      const isKnowledgeQuestion = knowledgeSignals.positive;
       const fallbackQuestion = knowledgeSignals.retrievalText || routingQuestion.trim();
       const expansion = isKnowledgeQuestion
         ? expandBilingual(fallbackQuestion, language, localEntities)
@@ -921,11 +918,7 @@ export class IntentQueryService {
       validatedPlan = validateAndNormalizeQueryPlan(
         {
           detectedIntent: isKnowledgeQuestion ? "knowledge_question" : "unsupported",
-          intentConfidence: knowledgeSignals.positive
-            ? 0.75
-            : domainAgnosticQuestion
-              ? 0.6
-              : 0,
+          intentConfidence: knowledgeSignals.positive ? 0.75 : 0,
           normalizedQuestion: fallbackQuestion,
           language,
           entities: localEntities,
