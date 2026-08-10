@@ -29,6 +29,13 @@ import { PERMISSION_CONTRACT_VERSION, Permission } from "../permissions/permissi
 import { assertDelegableGrants, authorizePermission } from "../permissions/permissions.authorization.js";
 import { normalizeRoleGrants } from "../permissions/permissions.grants.js";
 import {
+  assertTaxonomyScopeValues,
+  collectExistingScopeValues,
+  fetchRoleScopeOptions,
+  type RoleScopeOptions,
+  type RoleScopeOptionsInput,
+} from "./roles.taxonomy.js";
+import {
   validateAssignRoleInput,
   validateChangeRoleStatusInput,
   validateCloneRoleInput,
@@ -77,6 +84,7 @@ export async function createRole(input: unknown, contextOrTenant: RoleOperationC
     await withTenantRoleTransaction(context.tenantId, async (session) => {
       await authorizePermission(context, Permission.ROLES_CREATE);
       await auditEscalationFailure(context, undefined, () => assertDelegableGrants(context, payload.grants));
+      await assertTaxonomyScopeValues(context, payload.grants, collectExistingScopeValues([]));
       if (await RoleModel.exists({ tenantId: context.tenantId, normalizedName }).session(session)) throw duplicateNameError();
       const [role] = await RoleModel.create([{ ...payload, tenantId: context.tenantId, name: payload.name.trim(), normalizedName, createdBy: context.actorId, updatedBy: context.actorId }], { session });
       result = { role: serializeRole(role.toObject() as RoleRecord) };
@@ -120,6 +128,15 @@ export async function getRoleUsage(context: RoleOperationContext, roleId: string
   return { roleId: role.id, assignedUserCount: role.userCount };
 }
 
+export async function getRoleScopeOptions(
+  context: RoleOperationContext,
+  input: RoleScopeOptionsInput,
+): Promise<RoleScopeOptions> {
+  const resolved = await resolveRoleOperationContext(context);
+  await authorizePermission(resolved, Permission.ROLES_READ);
+  return fetchRoleScopeOptions(resolved.tenantId, input);
+}
+
 export async function updateRole(
   input: unknown,
   contextOrTenant: RoleOperationContext | string,
@@ -155,6 +172,9 @@ export async function updateRole(
         roleId,
         () => assertDelegableGrants(context, resultingGrants),
       );
+      if (payload.grants !== undefined) {
+        await assertTaxonomyScopeValues(context, payload.grants, collectExistingScopeValues(role.grants));
+      }
       const beforePermissions = role.grants.map((grant) => grant.permission);
       const beforeStatus = role.status;
       const userCount = await UserModel.countDocuments({ tenantId: context.tenantId, customRoleId: roleId }).session(session);
@@ -204,6 +224,7 @@ export async function cloneRole(input: unknown, inputContext: RoleOperationConte
         () => assertRoleIntegrity(source, session, true),
       );
       await auditEscalationFailure(context, roleId, () => assertDelegableGrants(context, source.grants));
+      await assertTaxonomyScopeValues(context, source.grants, collectExistingScopeValues([]));
       if (await RoleModel.exists({ tenantId: context.tenantId, normalizedName }).session(session)) throw duplicateNameError();
       const [created] = await RoleModel.create([{
         tenantId: context.tenantId,

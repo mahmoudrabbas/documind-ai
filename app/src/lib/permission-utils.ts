@@ -7,6 +7,7 @@ import type {
   PermissionScopes,
 } from "@/types/api/permissions.types";
 import { Permission } from "@/types/api/permissions.types";
+import type { RoleScopeOption } from "@/types/api/users.types";
 
 export type ActorGrantMap = Record<
   string,
@@ -147,6 +148,85 @@ export function emptyPermissionScopes(): PermissionScopes {
     documentCategories: [],
     documentClassifications: [],
   };
+}
+
+/**
+ * Mirrors the API's taxonomy name normalization so the editor can match
+ * categories/classifications by their canonical key.
+ */
+export function normalizeTaxonomyName(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+/**
+ * Collects every taxonomy-backed scope value already stored on a role so the
+ * scope-options endpoint can resolve archived records the editor must preserve.
+ */
+export function collectRoleScopeResolution(
+  grants: readonly PermissionGrant[],
+): {
+  departments: string[];
+  categories: string[];
+  classifications: string[];
+} {
+  const departments = new Set<string>();
+  const categories = new Set<string>();
+  const classifications = new Set<string>();
+  for (const grant of grants) {
+    if (!grant.scopes) continue;
+    for (const id of grant.scopes.departmentIds) departments.add(id);
+    for (const name of grant.scopes.documentCategories) {
+      categories.add(normalizeTaxonomyName(name));
+    }
+    for (const name of grant.scopes.documentClassifications) {
+      classifications.add(normalizeTaxonomyName(name));
+    }
+  }
+  return {
+    departments: [...departments],
+    categories: [...categories],
+    classifications: [...classifications],
+  };
+}
+
+/**
+ * Restricts the taxonomy options offered by the scope editor to the values the
+ * actor may actually delegate. An empty actor dimension means unrestricted, so
+ * every active option stays available.
+ */
+export function filterScopeOptionsByActorScope(input: {
+  dimension: "departmentIds" | "documentCategories" | "documentClassifications";
+  options: readonly RoleScopeOption[];
+  actorScope: PermissionScopes | null;
+}): RoleScopeOption[] {
+  const { dimension, options, actorScope } = input;
+  const allowed = actorScope?.[dimension] ?? [];
+  if (allowed.length === 0) return [...options];
+  if (dimension === "departmentIds") {
+    const allowedIds = new Set(allowed as string[]);
+    return options.filter((option) => allowedIds.has(option.id));
+  }
+  const allowedNames = new Set(
+    (allowed as string[]).map((value) => normalizeTaxonomyName(value)),
+  );
+  return options.filter((option) => allowedNames.has(option.normalizedName));
+}
+
+export function isScopeValueInActorScope(input: {
+  dimension: "departmentIds" | "documentCategories" | "documentClassifications";
+  value: string;
+  actorScope: PermissionScopes | null;
+}): boolean {
+  const { dimension, value, actorScope } = input;
+  const allowed = actorScope?.[dimension] ?? [];
+  if (allowed.length === 0) return true;
+  if (dimension === "departmentIds") {
+    return (allowed as string[]).includes(value);
+  }
+  return (allowed as string[]).some(
+    (candidate) =>
+      normalizeTaxonomyName(candidate) === normalizeTaxonomyName(value),
+  );
 }
 
 export function permissionScopesAreEmpty(

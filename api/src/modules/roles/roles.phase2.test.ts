@@ -13,6 +13,9 @@ import AuditLogModel from "../../db/models/auditLog.model.js";
 import RoleModel from "../../db/models/role.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { assertDelegableGrants } from "../permissions/permissions.authorization.js";
 import {
@@ -22,6 +25,7 @@ import {
   createRole,
   deleteRole,
   getRole,
+  getRoleScopeOptions,
   getRoleUsage,
   migrateRoleUsers,
   removeRoleAssignment,
@@ -52,6 +56,9 @@ beforeEach(async () => {
     TenantModel.deleteMany({}),
     UserModel.deleteMany({}),
     RoleModel.deleteMany({}),
+    DepartmentModel.deleteMany({}),
+    DocumentCategoryModel.deleteMany({}),
+    DocumentClassificationModel.deleteMany({}),
     AuditLogModel.deleteMany({}),
   ]);
   audit = new InMemoryAuditWriter();
@@ -328,8 +335,17 @@ test("direct services enforce authorization, delegation, archive state, and tena
 });
 
 test("delegation rejects scope widening and direct-service crafted grants", async () => {
-  const { context, employee, tenant } = await fixture();
-  const departmentId = new mongoose.Types.ObjectId().toString();
+  const { context, employee, tenant, admin } = await fixture();
+  const finance = await DepartmentModel.create({
+    tenantId: tenant._id,
+    name: "Finance",
+    normalizedName: "finance",
+    status: "active",
+    version: 1,
+    createdBy: admin._id,
+    updatedBy: admin._id,
+  });
+  const departmentId = finance._id.toString();
   const otherDepartmentId = new mongoose.Types.ObjectId().toString();
   const scoped = await createRole({
     name: "Scoped Delegator",
@@ -357,6 +373,120 @@ test("delegation rejects scope widening and direct-service crafted grants", asyn
     baseRole: "EMPLOYEE",
     grants: [{ permission: Permission.DOCUMENTS_UPDATE }],
   }, employeeActor), (error: unknown) => (error as { code?: string }).code === "PERMISSION_REQUIRED");
+});
+
+test("scope options return active taxonomy plus archived resolutions", async () => {
+  const { context, tenant, admin, employee } = await fixture("scope-options");
+  const activeDept = await DepartmentModel.create({ tenantId: tenant._id, name: "Engineering", normalizedName: "engineering", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
+  const archivedDept = await DepartmentModel.create({ tenantId: tenant._id, name: "Legacy Dept", normalizedName: "legacy dept", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+  const activeCategory = await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Policies", normalizedName: "policies", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
+  const archivedCategory = await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Old Category", normalizedName: "old category", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+  const activeClassification = await DocumentClassificationModel.create({ tenantId: tenant._id, name: "Confidential", normalizedName: "confidential", level: "confidential", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
+  const archivedClassification = await DocumentClassificationModel.create({ tenantId: tenant._id, name: "Legacy Class", normalizedName: "legacy class", level: "internal", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+
+  const result = await getRoleScopeOptions(context, {
+    departments: [activeDept.id, archivedDept.id, new mongoose.Types.ObjectId().toString()],
+    categories: ["policies", "old category", "never-existed"],
+    classifications: ["confidential", "legacy class"],
+  });
+
+  assert.deepEqual(result.departments.map((item) => item.id), [activeDept.id]);
+  assert.deepEqual(result.departments.map((item) => item.name), ["Engineering"]);
+  assert.deepEqual(result.archived.departments.map((item) => item.name), ["Legacy Dept"]);
+  assert.deepEqual(result.categories.map((item) => item.name), ["Policies"]);
+  assert.deepEqual(result.archived.categories.map((item) => item.name), ["Old Category"]);
+  assert.deepEqual(result.classifications.map((item) => item.name), ["Confidential"]);
+  assert.deepEqual(result.archived.classifications.map((item) => item.name), ["Legacy Class"]);
+
+  await assert.rejects(
+    getRoleScopeOptions({
+      tenantId: tenant.id,
+      actorId: employee.id,
+      actorEmail: employee.email,
+      actorRole: employee.role,
+      traceId: "trace-scope-options",
+      requestId: "request-scope-options",
+    }, {
+      departments: [],
+      categories: [],
+      classifications: [],
+    }),
+    (error: unknown) => (error as { code?: string }).code === "PERMISSION_REQUIRED",
+  );
+});
+
+test("createRole rejects unknown or archived taxonomy scope values", async () => {
+  const { context, tenant, admin } = await fixture("scope-validation");
+  const activeDept = await DepartmentModel.create({ tenantId: tenant._id, name: "Operations", normalizedName: "operations", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
+  const archivedDept = await DepartmentModel.create({ tenantId: tenant._id, name: "Sunset", normalizedName: "sunset", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+
+  await assert.rejects(
+    createRole({ name: "Unknown Department", baseRole: "EMPLOYEE", grants: [{ permission: Permission.DOCUMENTS_READ, scopes: { departmentIds: [new mongoose.Types.ObjectId().toString()] } }] }, context),
+    (error: unknown) => (error as { code?: string }).code === "VALIDATION_ERROR",
+  );
+  await assert.rejects(
+    createRole({ name: "Archived Department", baseRole: "EMPLOYEE", grants: [{ permission: Permission.DOCUMENTS_READ, scopes: { departmentIds: [archivedDept.id] } }] }, context),
+    (error: unknown) => (error as { code?: string }).code === "VALIDATION_ERROR",
+  );
+  await assert.rejects(
+    createRole({ name: "Unknown Category", baseRole: "EMPLOYEE", grants: [{ permission: Permission.DOCUMENTS_READ, scopes: { documentCategories: ["nope"] } }] }, context),
+    (error: unknown) => (error as { code?: string }).code === "VALIDATION_ERROR",
+  );
+  await assert.rejects(
+    createRole({ name: "Unknown Classification", baseRole: "EMPLOYEE", grants: [{ permission: Permission.DOCUMENTS_READ, scopes: { documentClassifications: ["nope"] } }] }, context),
+    (error: unknown) => (error as { code?: string }).code === "VALIDATION_ERROR",
+  );
+
+  const created = await createRole({
+    name: "Valid Scope",
+    baseRole: "EMPLOYEE",
+    grants: [{ permission: Permission.DOCUMENTS_READ, scopes: { departmentIds: [activeDept.id] } }],
+  }, context);
+  assert.equal(created.role.name, "Valid Scope");
+  assert.equal(await RoleModel.countDocuments({}), 1);
+});
+
+test("updateRole preserves archived taxonomy values already assigned", async () => {
+  const { context, tenant, admin } = await fixture("scope-preserve");
+  await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Legacy Cat", normalizedName: "legacy cat", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+  await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Other Legacy", normalizedName: "other legacy", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+
+  const role = await RoleModel.create({
+    tenantId: tenant._id,
+    name: "Legacy",
+    normalizedName: "legacy",
+    baseRole: "EMPLOYEE",
+    grants: [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: { selfOnly: false, departmentIds: [], documentCategories: ["legacy cat"], documentClassifications: [] },
+    }],
+    contractVersion: 1,
+    status: "active",
+    version: 1,
+    migrationState: "complete",
+    createdBy: admin._id,
+    updatedBy: admin._id,
+  });
+
+  const preserved = await updateRole({
+    version: role.version,
+    grants: [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: { selfOnly: false, departmentIds: [], documentCategories: ["legacy cat"], documentClassifications: [] },
+    }],
+  }, context, role.id);
+  assert.equal(preserved.role.version, role.version + 1);
+
+  await assert.rejects(
+    updateRole({
+      version: preserved.role.version,
+      grants: [{
+        permission: Permission.DOCUMENTS_READ,
+        scopes: { selfOnly: false, departmentIds: [], documentCategories: ["legacy cat", "other legacy"], documentClassifications: [] },
+      }],
+    }, context, role.id),
+    (error: unknown) => (error as { code?: string }).code === "VALIDATION_ERROR",
+  );
 });
 
 test("concurrent assignment retries produce one change and one idempotent result", async () => {
