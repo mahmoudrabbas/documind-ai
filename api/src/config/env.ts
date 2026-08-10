@@ -147,7 +147,7 @@ const envSchema = z
     ALLOWED_MIME_TYPES: z
       .string()
       .default(
-        "application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword",
+        "application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       ),
 
     IMPORT_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),

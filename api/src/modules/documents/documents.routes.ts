@@ -23,22 +23,9 @@ import {
   listDocumentVersionsController,
 } from "./documents.controller.js";
 
-const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: config.MAX_FILE_SIZE_BYTES },
-  fileFilter: (_req, file, callback) => {
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      callback(null, true);
-    } else {
-      callback(
-        Object.assign(new Error(`File type ${file.mimetype} is not supported`), {
-          code: "UNSUPPORTED_FILE_TYPE",
-        }) as Error & { code: string },
-      );
-    }
-  },
 });
 
 import {
@@ -258,7 +245,7 @@ const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
  */
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
-router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentsController);
 
 /**
  * @openapi
@@ -339,11 +326,11 @@ router.post("/:id/access-policy/effective-access", authenticate, tenantScoping, 
 router.post("/:id/access-policy/preview", authenticate, tenantScoping, requirePolicyManagement, previewPolicyController);
 router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePolicyManagement, applyPolicyController);
 
-router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
+router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentExtractionStatusController);
 
 router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
 
-router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
+router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentController);
 
 router.get(
   "/:id/download",
@@ -362,11 +349,11 @@ router.get(
   "/:id/preview",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   previewDocumentController,
 );
 
-router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
+router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentVersionsController);
 
 router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
 

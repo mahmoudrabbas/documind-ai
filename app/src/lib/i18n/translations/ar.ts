@@ -416,6 +416,8 @@ const ar: TranslationDictionary = {
   "documents.fileRequirements": "{{formats}} — بحد أقصى {{maxSize}}",
   "documents.fileTooLarge": "الملف كبير جداً. الحد الأقصى {{maxSize}}.",
   "documents.fileTypeNotSupported": "نوع الملف غير مدعوم.",
+  "documents.fileEmpty": "الملف فارغ.",
+  "documents.fileContentsMismatch": "محتوى الملف لا يتطابق مع نوع الملف. يرجى التحقق من الملف والمحاولة مرة أخرى.",
   "documents.fileRequired": "يرجى اختيار ملف.",
   "documents.metadataTitle": "عنوان المستند",
   "documents.metadataTitlePlaceholder": "أدخل عنواناً وصفياً",

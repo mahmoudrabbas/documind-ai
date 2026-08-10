@@ -92,12 +92,22 @@ export function validateConfirmPassword(password: string, confirm: string): stri
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
   "text/plain",
-  "text/markdown",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
 ];
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: "application/pdf",
+  txt: "text/plain",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
+
+const DOCUMENT_ALLOWED_FILE_EXTENSIONS = Object.keys(DOCUMENT_MIME_BY_EXTENSION).map(
+  (extension) => `.${extension}`,
+);
+
+export { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, DOCUMENT_ALLOWED_FILE_EXTENSIONS };
 
 export function validateDocumentTitle(title: string): string | null {
   const trimmed = title.trim();
@@ -134,6 +144,64 @@ export function validateFileSize(
   if (file.size > maxSizeBytes) {
     return "documents.fileTooLarge";
   }
+  return null;
+}
+
+/** Lower-cased file extension without the leading dot. */
+export function getFileExtension(fileName: string): string {
+  const lastDot = fileName.lastIndexOf(".");
+  if (lastDot <= 0) return "";
+  return fileName.slice(lastDot + 1).toLowerCase();
+}
+
+export interface ValidateDocumentFileOptions {
+  maxSizeBytes?: number;
+  allowedMimeTypes?: readonly string[];
+  fileExtensions?: readonly string[];
+}
+
+/**
+ * Client-side document file validation that mirrors the server's authoritative
+ * `validateDocumentFile` check (size, extension allowlist, MIME-vs-extension
+ * match). The server still re-validates every upload and performs the
+ * content-signature checks; this helper only gives early, localized feedback.
+ *
+ * Returns a translation key, or `null` when the file is acceptable.
+ */
+export function validateDocumentFile(
+  file: File,
+  {
+    maxSizeBytes = MAX_FILE_SIZE_BYTES,
+    allowedMimeTypes = ALLOWED_MIME_TYPES,
+    fileExtensions = DOCUMENT_ALLOWED_FILE_EXTENSIONS,
+  }: ValidateDocumentFileOptions = {},
+): string | null {
+  if (file.size === 0) {
+    return "documents.fileEmpty";
+  }
+  if (file.size > maxSizeBytes) {
+    return "documents.fileTooLarge";
+  }
+
+  const extension = getFileExtension(file.name);
+  const normalizedExtensions = fileExtensions.map((ext) =>
+    ext.startsWith(".") ? ext : `.${ext}`,
+  );
+  if (!normalizedExtensions.includes(`.${extension}`)) {
+    return "documents.fileTypeNotSupported";
+  }
+
+  const declaredMimeType = file.type.trim().toLowerCase();
+  if (declaredMimeType) {
+    if (!allowedMimeTypes.includes(declaredMimeType)) {
+      return "documents.fileTypeNotSupported";
+    }
+    const expectedMimeType = DOCUMENT_MIME_BY_EXTENSION[extension];
+    if (expectedMimeType && declaredMimeType !== expectedMimeType) {
+      return "documents.fileContentsMismatch";
+    }
+  }
+
   return null;
 }
 

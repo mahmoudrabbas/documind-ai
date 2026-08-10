@@ -34,7 +34,7 @@ export function createRetrievalRoutes(
     "/search",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.DOCUMENTS_READ),
+    requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
     controller.hybridSearch,
   );
 

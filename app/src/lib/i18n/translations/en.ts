@@ -416,6 +416,8 @@ const en: TranslationDictionary = {
   "documents.fileRequirements": "{{formats}} — max {{maxSize}}",
   "documents.fileTooLarge": "File is too large. Maximum size is {{maxSize}}.",
   "documents.fileTypeNotSupported": "File type is not supported.",
+  "documents.fileEmpty": "The file is empty.",
+  "documents.fileContentsMismatch": "The file contents do not match the file type. Please check the file and try again.",
   "documents.fileRequired": "Please select a file.",
   "documents.metadataTitle": "Document title",
   "documents.metadataTitlePlaceholder": "Enter a descriptive title",

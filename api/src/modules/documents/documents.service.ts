@@ -6,7 +6,6 @@ import {
   DOCUMENT_ALREADY_ARCHIVED,
   DOCUMENT_NOT_ARCHIVED,
   DOCUMENT_NOT_SOFT_DELETED,
-  FILE_ZERO_BYTES,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
@@ -32,6 +31,10 @@ import {
   findVersionsByDocument,
 } from "./documentVersion.repository.js";
 import { resolveUploadTaxonomy } from "./documents.uploadTaxonomy.js";
+import {
+  getFileExtensionsForMimeTypes,
+  validateDocumentFile,
+} from "./documentFileValidator.js";
 import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
 import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
 import DepartmentModel from "../../db/models/department.model.js";
@@ -78,13 +81,6 @@ function computeChecksum(buffer: Buffer): string {
 }
 
 /** File extensions surfaced to the upload form for each allowed MIME type. */
-const MIME_TYPE_EXTENSIONS: Record<string, string> = {
-  "application/pdf": "pdf",
-  "text/plain": "txt",
-  "text/markdown": "md",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-  "application/msword": "doc",
-};
 
 function sanitizeFilename(name: string): string {
   return name
@@ -181,9 +177,9 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, "BAD_REQUEST", "File is required");
     }
 
-    if (file.size === 0) {
-      throw new AppError(400, FILE_ZERO_BYTES, "File is empty (zero bytes)");
-    }
+    const validatedFile = validateDocumentFile(file, {
+      maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
+    });
 
     await checkUploadAllowed(tenantId, file.size);
 
@@ -216,7 +212,7 @@ export function createDocumentServiceProviders(deps: {
         fileName: safeName,
         originalFileName: file.originalname,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         storageKey,
         checksum,
         status: "uploaded",
@@ -251,7 +247,7 @@ export function createDocumentServiceProviders(deps: {
         uploadedBy: actor.userId as unknown as DocumentDocument["uploadedBy"],
       } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">, {
         tenantId: tenantId as unknown as DocumentVersionDocument["tenantId"],
-        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: file.mimetype,
+        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: validatedFile.mimeType,
         checksum, storageKey, uploadedBy: actor.userId as unknown as DocumentVersionDocument["uploadedBy"],
         uploadReason: "initial", changeDescription: null,
       } as unknown as Omit<DocumentVersionDocument, "_id" | "documentId" | "createdAt">);
@@ -272,7 +268,7 @@ export function createDocumentServiceProviders(deps: {
       changes: {
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         title: metadata.title,
         checksum,
       },
@@ -504,9 +500,9 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, "BAD_REQUEST", "File is required for replacement");
     }
 
-    if (file.size === 0) {
-      throw new AppError(400, FILE_ZERO_BYTES, "Replacement file is empty (zero bytes)");
-    }
+    const validatedFile = validateDocumentFile(file, {
+      maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
+    });
 
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "replace");
     const existing = await findDocumentByTenantAndId(tenantId, documentId);
@@ -545,7 +541,7 @@ export function createDocumentServiceProviders(deps: {
       await updateDocumentByTenantAndId(tenantId, documentId, {
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         storageKey: newStorageKey,
         checksum,
         version: newVersion,
@@ -566,7 +562,7 @@ export function createDocumentServiceProviders(deps: {
         versionLabel: newVersionLabel,
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         checksum,
         storageKey: newStorageKey,
         uploadedBy: existing.uploadedBy.toString(),
@@ -777,9 +773,7 @@ export function createDocumentServiceProviders(deps: {
     ]);
 
     const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
-    const fileExtensions = allowedMimeTypes
-      .map((mime) => MIME_TYPE_EXTENSIONS[mime])
-      .filter((ext): ext is string => Boolean(ext))
+    const fileExtensions = getFileExtensionsForMimeTypes(allowedMimeTypes)
       .map((ext) => `.${ext}`);
 
     // The entitlement fileSizeMb limit is authoritative when it is stricter

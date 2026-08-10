@@ -21,7 +21,7 @@ export interface FileDropzoneProps {
 
 export function FileDropzone({
   onFilesSelected,
-  accept = ".pdf,.docx,.doc,.txt,.md",
+  accept = ".pdf,.docx,.txt",
   disabled = false,
   error = null,
   dragDropText,

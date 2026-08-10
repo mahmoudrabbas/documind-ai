@@ -24,8 +24,7 @@ import { ClassificationBadge } from "@/components/documents/ClassificationBadge"
 import { BatchPolicyDialog } from "@/components/documents/BatchPolicyDialog";
 import {
   validateDocumentTitle,
-  validateFileType,
-  validateFileSize,
+  validateDocumentFile,
   getFileSizeLabel,
   getFileSizeParts,
 } from "@/lib/validation";
@@ -146,7 +145,7 @@ export default function DocumentsPage() {
 
   const uploadConfig = uploadOptions?.upload;
   const maxFileSizeBytes = uploadConfig?.maxFileSizeBytes ?? 50 * 1024 * 1024;
-  const fileExtensions = uploadConfig?.fileExtensions ?? [".pdf", ".docx", ".doc", ".txt", ".md"];
+  const fileExtensions = uploadConfig?.fileExtensions ?? [".pdf", ".docx", ".txt"];
   const formatsLabel = fileExtensions
     .map((ext) => ext.replace(/^\./, "").toUpperCase())
     .join(", ");
@@ -174,17 +173,17 @@ export default function DocumentsPage() {
 
     setFileError(null);
 
-    const typeErr = uploadConfig?.allowedMimeTypes
-      ? validateFileType(file, uploadConfig.allowedMimeTypes)
-      : validateFileType(file);
-    if (typeErr) {
-      setFileError(t(typeErr));
-      return;
-    }
-
-    const sizeErr = validateFileSize(file, maxFileSizeBytes);
-    if (sizeErr) {
-      setFileError(t(sizeErr, { maxSize: maxSizeLabel }));
+    const fileErr = validateDocumentFile(file, {
+      maxSizeBytes: maxFileSizeBytes,
+      allowedMimeTypes: uploadConfig?.allowedMimeTypes,
+      fileExtensions,
+    });
+    if (fileErr) {
+      setFileError(
+        fileErr === "documents.fileTooLarge"
+          ? t(fileErr, { maxSize: maxSizeLabel })
+          : t(fileErr),
+      );
       return;
     }
 
@@ -343,7 +342,7 @@ export default function DocumentsPage() {
             ) : null}
 
             {uploadError ? (
-              <p className="mt-4 rounded-xl border border-error/20 bg-error-container p-3 text-sm text-on-error-container" role="alert">{uploadError}</p>
+              <p className="mt-4 rounded-xl border border-error/20 bg-error-container p-3 text-sm text-on-error-container" role="alert">{t(uploadError)}</p>
             ) : null}
 
             {duplicateWarning ? (

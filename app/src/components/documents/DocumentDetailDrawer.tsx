@@ -8,7 +8,7 @@ import { Permission } from "@/types/api/permissions.types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { getFileSizeLabel } from "@/lib/validation";
+import { getFileSizeLabel, validateDocumentFile } from "@/lib/validation";
 import { formatFileType } from "@/lib/utils";
 import * as documentsService from "@/services/documents.service";
 import * as processingProgressService from "@/services/processingProgress.service";
@@ -80,6 +80,7 @@ export function DocumentDetailDrawer({
 
   const [showReplaceForm, setShowReplaceForm] = useState(false);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [replaceError, setReplaceError] = useState<string | null>(null);
   const [replaceDesc, setReplaceDesc] = useState("");
   const [isReplacing, setIsReplacing] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"archive" | "restore" | "softDelete" | "permanentDelete" | null>(null);
@@ -184,6 +185,23 @@ export function DocumentDetailDrawer({
       // error handled by parent
     }
   }, [canDownload, doc.id]);
+
+  function handleReplaceFileSelect(selected: File | null) {
+    setReplaceError(null);
+    if (!selected) {
+      setReplaceFile(null);
+      return;
+    }
+
+    const fileErr = validateDocumentFile(selected);
+    if (fileErr) {
+      setReplaceFile(null);
+      setReplaceError(t(fileErr));
+      return;
+    }
+
+    setReplaceFile(selected);
+  }
 
   async function handleReplace() {
     if (!canUpdate || !replaceFile) return;
@@ -461,11 +479,14 @@ export function DocumentDetailDrawer({
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-6 py-4">
           {showReplaceForm && canUpdate ? (
             <div className="space-y-3">
-              <input type="file" accept=".pdf,.docx,.doc,.txt,.md" onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)} className="w-full text-body-sm" />
+              <div>
+                <input type="file" accept=".pdf,.docx,.txt" onChange={(e) => handleReplaceFileSelect(e.target.files?.[0] ?? null)} className="w-full text-body-sm" />
+                {replaceError ? <p className="mt-1 text-xs text-error" role="alert">{replaceError}</p> : null}
+              </div>
               <input type="text" value={replaceDesc} onChange={(e) => setReplaceDesc(e.target.value)} placeholder={t("documents.changeDescription")} className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
               <div className="flex gap-2">
-                <Button size="sm" isLoading={isReplacing} disabled={!replaceFile} onClick={handleReplace}>{t("documents.replace")}</Button>
-                <Button size="sm" variant="ghost" onClick={() => { setShowReplaceForm(false); setReplaceFile(null); setReplaceDesc(""); }}>{t("common.cancel")}</Button>
+                <Button size="sm" isLoading={isReplacing} disabled={!replaceFile || Boolean(replaceError)} onClick={handleReplace}>{t("documents.replace")}</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setShowReplaceForm(false); setReplaceFile(null); setReplaceError(null); setReplaceDesc(""); }}>{t("common.cancel")}</Button>
               </div>
             </div>
           ) : (
