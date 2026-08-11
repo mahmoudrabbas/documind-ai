@@ -206,6 +206,7 @@ export function createDocumentEmbeddingJobHandler(
                 .update(chunk.text as string)
                 .digest("hex"),
               department: chunk.department ?? null,
+              category: chunk.category ?? null,
               classification: chunk.classification ?? null,
               accessPolicyVersion: null,
               language: chunk.language || "en",
