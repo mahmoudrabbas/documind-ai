@@ -11,10 +11,14 @@ const mockReconcileAll = vi.hoisted(() => vi.fn());
 const mockAuditWrite = vi.hoisted(() => vi.fn());
 const mockExecReports = vi.hoisted(() => vi.fn());
 const mockExecCount = vi.hoisted(() => vi.fn());
+const mockExecTenants = vi.hoisted(() => vi.fn());
 
 // Mock the service singleton accessor and the audit writer so no real Mongo
 // connection is required. The report model is mocked with a fluent query
-// chain so the reports list controller can be exercised too.
+// chain so the reports list controller can be exercised too. The tenant
+// model must also be mocked: reconcileController resolves tenant names via
+// TenantModel.find(...).select(...).lean().exec(), and an unmocked model
+// would open a real (10s-timeout) Mongo connection in these unit tests.
 vi.mock("../reconciliation.service.js", () => ({
   getReconciliationService: () => ({
     reconcile: mockReconcile,
@@ -25,6 +29,19 @@ vi.mock("../reconciliation.service.js", () => ({
 vi.mock("../../../common/observability/index.js", () => ({
   getAuditWriter: () => ({ write: mockAuditWrite }),
 }));
+
+vi.mock("../../../db/models/tenant.model.js", () => {
+  const chain = {
+    select: () => chain,
+    lean: () => chain,
+    exec: mockExecTenants,
+  };
+  return {
+    default: {
+      find: () => chain,
+    },
+  };
+});
 
 vi.mock("../../../db/models/entitlementReconciliationReport.model.js", () => {
   const chain = {
@@ -116,16 +133,30 @@ describe("POST /super-admin/entitlement/reconcile", () => {
     mockAuditWrite.mockResolvedValue(true);
     mockExecReports.mockResolvedValue([]);
     mockExecCount.mockResolvedValue(0);
+    mockExecTenants.mockResolvedValue([]);
   });
 
   it("reconciles a single tenant and writes an audit event", async () => {
     const report = {
       tenantId: TENANT_A,
       mode: "execute",
+      timestamp: "2026-01-01T00:00:00.000Z",
       totalDiscrepancies: 2,
       totalFixed: 1,
+      results: [
+        {
+          dimension: "employees",
+          authoritative: 10,
+          current: 8,
+          discrepancy: 2,
+          fixed: true,
+        },
+      ],
     };
     mockReconcile.mockResolvedValue(report);
+    mockExecTenants.mockResolvedValue([
+      { _id: TENANT_A, name: "Acme Inc", slug: "acme" },
+    ]);
 
     const req = makeReq({ mode: "execute", tenantId: TENANT_A });
     const { res, json, status, next } = makeRes();
@@ -135,7 +166,28 @@ describe("POST /super-admin/entitlement/reconcile", () => {
     expect(mockReconcile).toHaveBeenCalledWith(TENANT_A, "execute");
     expect(mockReconcileAll).not.toHaveBeenCalled();
     expect(status).toHaveBeenCalledWith(200);
-    expect(json).toHaveBeenCalledWith({ success: true, data: report });
+    expect(json).toHaveBeenCalledWith({
+      success: true,
+      data: {
+        mode: "execute",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        totalTenants: 1,
+        totalDiscrepancies: 2,
+        totalFixed: 1,
+        reports: [
+          {
+            tenantId: TENANT_A,
+            tenantName: "Acme Inc",
+            tenantSlug: "acme",
+            dimension: "employees",
+            authoritative: 10,
+            current: 8,
+            discrepancy: 2,
+            fixed: true,
+          },
+        ],
+      },
+    });
     expect(mockAuditWrite).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "ENTITLEMENT_RECONCILE",

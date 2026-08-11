@@ -28,6 +28,7 @@
     "migrate:billing:issue29:apply": "tsx src/scripts/migrate-issue29-billing-indexes.ts --apply",
     "migrate:subscription-history-index": "tsx src/scripts/migrate-subscription-history-index.ts.runner.ts --dry-run",
     "migrate:subscription-history-index:apply": "tsx src/scripts/migrate-subscription-history-index.ts.runner.ts --apply",
+    "audit:subscriptions": "node scripts/audit-null-tenant-subscriptions.mjs",
     "migrate:document-policy:v1": "tsx src/scripts/migrate-document-access-policy-v1.ts",
     "migrate:document-policy:v1:apply": "tsx src/scripts/migrate-document-access-policy-v1.ts --apply",
     "pretypecheck": "npm run build --workspace workers",
