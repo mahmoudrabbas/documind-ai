@@ -224,9 +224,18 @@ export interface ChatWorkflowServiceDependencies {
   };
 }
 
+export type ChatStageId =
+  | "intent"
+  | "search"
+  | "evidence"
+  | "answer"
+  | "verify"
+  | "finalize";
+
 export interface ChatWorkflowExecutionContext
   extends OperationAuthorizationContext {
   readonly locale?: string;
+  readonly onStage?: (stage: ChatStageId) => void;
 }
 
 interface CatalogCandidate {
@@ -363,7 +372,17 @@ function createChatRuntimePolicy(input: {
   readonly conversationId: string;
   readonly citationsEnabled: boolean;
   readonly maxTokens: number;
+  readonly onStage?: (stage: ChatStageId) => void;
 }): { hooks: SupervisorRuntimeHooks; artifacts: ChatRunArtifacts } {
+  // Hook exceptions abort the run, so progress emission must never throw.
+  const emitStage = (stage: ChatStageId): void => {
+    try {
+      input.onStage?.(stage);
+    } catch {
+      // Progress observers are advisory; ignore listener failures.
+    }
+  };
+
   const artifacts: ChatRunArtifacts = {
     intent: null,
     writer: null,
@@ -618,6 +637,7 @@ function createChatRuntimePolicy(input: {
       }
       if (args.toAgent === "intent-query-agent") {
         if (artifacts.intent) failClosed("Intent Agent may execute only once");
+        emitStage("intent");
         resolved = {
           conversationId: input.conversationId,
           question: input.question,
@@ -631,6 +651,7 @@ function createChatRuntimePolicy(input: {
           { detectedIntent: intent.intent },
           intent.normalizedQuestion,
         );
+        emitStage("answer");
         resolved = {
           conversationId: input.conversationId,
           question: intent.normalizedQuestion,
@@ -650,6 +671,7 @@ function createChatRuntimePolicy(input: {
         if (!isSubset(writer.citedChunkIds, artifacts.approvedEvidenceIds)) {
           failClosed("Writer citations exceed approved evidence");
         }
+        emitStage("verify");
         resolved = {
           decision: writer.decision,
           citedChunkIds: [...writer.citedChunkIds],
@@ -662,6 +684,7 @@ function createChatRuntimePolicy(input: {
         if (artifacts.analyticsRequest || intent.route === "assistant" || intent.route === "social") {
           failClosed("Compliance is not valid for analytics, assistant, or social paths");
         }
+        emitStage("finalize");
 
         let answerDecision: AnswerWriterOutput["decision"];
         let answer = "";
@@ -721,6 +744,7 @@ function createChatRuntimePolicy(input: {
         if (!artifacts.analyticsRequest) {
           failClosed("Analytics tool requires trusted deterministic analytics detection");
         }
+        emitStage("search");
         return {
           metric: artifacts.analyticsRequest.metric,
           period: artifacts.analyticsRequest.period,
@@ -736,6 +760,7 @@ function createChatRuntimePolicy(input: {
         if (intent.referencedDocumentTitles.length === 0) {
           failClosed("No trusted document titles require resolution");
         }
+        emitStage("search");
         return { titles: [...intent.referencedDocumentTitles] };
       }
       if (args.toolName === "authorized_hybrid_search") {
@@ -757,6 +782,7 @@ function createChatRuntimePolicy(input: {
           { detectedIntent: intent.intent },
           intent.normalizedQuestion,
         );
+        emitStage("search");
         return {
           queryText,
           topK: task === "document_summary" ? SUMMARY_TOP_K : DIRECT_TOP_K,
@@ -768,6 +794,7 @@ function createChatRuntimePolicy(input: {
         const candidateIds = [...batch.candidates.keys()];
         if (candidateIds.length === 0) failClosed("Evidence evaluation requires non-empty search candidates");
         artifacts.evidenceSearchBatch = batch;
+        emitStage("evidence");
         return {
           question: intent.normalizedQuestion,
           candidateIds,
@@ -954,6 +981,7 @@ export class ChatWorkflowService {
       conversationId,
       citationsEnabled: settings.citationsEnabled,
       maxTokens: settings.maxTokens,
+      onStage: context.onStage,
     });
 
     const run = await this.deps.createRun({

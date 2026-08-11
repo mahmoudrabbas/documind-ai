@@ -853,6 +853,77 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.deepEqual(plan.referencedDocumentIds, []);
   });
 
+  await t.test("valid unsupported verdict on non-policy domain questions is overridden to RAG", async () => {
+    const suppressingProvider = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      fakeConvoAdapter,
+    );
+    for (const question of [
+      "What is the primary key in a relational database?",
+      "How do I create an index in a database?",
+      "ما هي انواع الفهارس في قواعد البيانات؟",
+    ]) {
+      const plan = await suppressingProvider.analyzeQuery(
+        { question },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "rag", question);
+      assert.equal(plan.detectedIntent, "knowledge_question", question);
+      assert.equal(plan.clarificationNeeded, false, question);
+      assert.ok(plan.semanticQueries.length > 0, question);
+    }
+  });
+
+  await t.test("unsupported override stays closed for degraded output and non-questions", async () => {
+    const suppressingProvider = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      fakeConvoAdapter,
+    );
+    assert.equal(
+      (await suppressingProvider.analyzeQuery({ question: "unclear input here" }, companyAdminContext)).route,
+      "unsupported",
+    );
+
+    const invalidSchema = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", entities: "not-an-array" }),
+      fakeConvoAdapter,
+    );
+    assert.equal(
+      (await invalidSchema.analyzeQuery({ question: "What is the primary key in a relational database?" }, companyAdminContext)).route,
+      "unsupported",
+    );
+  });
+
+  await t.test("provider failure stays fail-closed for out-of-vocabulary domain questions", async () => {
+    const failingService = new IntentQueryService({
+      providerKey: "failing-provider",
+      async complete() { throw new Error("Provider Offline"); },
+    }, fakeConvoAdapter);
+    const plan = await failingService.analyzeQuery(
+      { question: "What is the primary key in a relational database?" },
+      companyAdminContext,
+    );
+    assert.equal(plan.route, "unsupported");
+    assert.equal(plan.processingMetadata.fallbackUsed, true);
+  });
+
+  await t.test("external-data short-circuit uses word boundaries, not substrings", async () => {
+    // "now" inside "knowledge" must not trigger the temporal marker regex.
+    const substringService = new IntentQueryService(planAdapter(), fakeConvoAdapter);
+    const substringPlan = await substringService.analyzeQuery(
+      { question: "What is the knowledge score?" },
+      companyAdminContext,
+    );
+    assert.equal(substringPlan.route, "rag");
+
+    const externalService = new IntentQueryService(planAdapter(), fakeConvoAdapter);
+    const externalPlan = await externalService.analyzeQuery(
+      { question: "What is the latest news today?" },
+      companyAdminContext,
+    );
+    assert.equal(externalPlan.route, "unsupported");
+  });
+
   await t.test("foreign/unauthorized title hint is not exposed and routes to clarification", async () => {
     const anotherTenant = await TenantModel.create({ name: "Foreign Corp", slug: "foreign-corp", status: "active", plan: "free" });
     const foreignUser = await UserModel.create({

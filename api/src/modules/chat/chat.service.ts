@@ -56,6 +56,7 @@ import { storageProvider } from "../../providers/storage/index.js";
 import type { StorageProvider } from "../../providers/storage/types.js";
 import { validateVisionFile } from "./chat.vision.js";
 import { VoxtralSttAdapter } from "../../providers/stt/voxtralStt.adapter.js";
+import type { ChatWorkflowExecutionContext } from "./chatWorkflowService.js";
 
 const SUMMARY_MAX_SOURCES = 8;
 const SUMMARY_CONTEXT_CHARS = 24_000;
@@ -199,6 +200,20 @@ export class ChatService {
   async sendMessage(
     rawInput: unknown,
     context: OperationAuthorizationContext,
+  ): Promise<ChatResponse> {
+    if (!this.standardChatWorkflow) {
+      throw new AppError(
+        503,
+        "CHAT_WORKFLOW_UNAVAILABLE",
+        "Controlled chat workflow is unavailable",
+      );
+    }
+    return this.standardChatWorkflow.execute(rawInput, context);
+  }
+
+  async sendMessageStream(
+    rawInput: unknown,
+    context: ChatWorkflowExecutionContext,
   ): Promise<ChatResponse> {
     if (!this.standardChatWorkflow) {
       throw new AppError(

@@ -45,9 +45,9 @@ export interface CitationSemanticVerificationResult {
   readonly unsupportedClaims: readonly string[];
   readonly supportingEvidenceIds: readonly string[];
   readonly reasonCode?:
-    | "SEMANTIC_VERIFIED"
-    | "VERIFICATION_BOUNDS_EXCEEDED"
-    | "SEMANTIC_VERIFICATION_FAILED";
+  | "SEMANTIC_VERIFIED"
+  | "VERIFICATION_BOUNDS_EXCEEDED"
+  | "SEMANTIC_VERIFICATION_FAILED";
   readonly coverage?: SemanticClaimCoverageDiagnostics;
   readonly providerKey?: string;
   readonly modelName?: string;
@@ -186,7 +186,7 @@ export function buildSemanticVerificationMessages(input: {
  * every claim unsupported so grounded output fails closed.
  */
 export class CitationSemanticVerificationService implements CitationSemanticVerifier {
-  constructor(private readonly model: ModelAdapter) {}
+  constructor(private readonly model: ModelAdapter) { }
 
   async verify(input: CitationSemanticVerificationInput): Promise<CitationSemanticVerificationResult> {
     const extraction = extractSemanticClaimCoverage(input.answerText);
@@ -259,15 +259,15 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       const mappingsValid = complete && parsed.judgments.every((judgment) =>
         judgment.verdict === "supported"
           ? judgment.supportingChunkIds.length > 0 &&
-            judgment.supportingChunkIds.every((id) => evidenceIds.has(id))
+          judgment.supportingChunkIds.every((id) => evidenceIds.has(id))
           : judgment.supportingChunkIds.length === 0,
       );
       const unsupportedIndices = new Set(
         claims.flatMap((_claim, index) =>
           !complete ||
-          deterministicContradictions.has(index) ||
-          !mappingsValid ||
-          !["supported", "not_factual"].includes(byIndex.get(index) ?? "unsupported")
+            deterministicContradictions.has(index) ||
+            !mappingsValid ||
+            !["supported", "not_factual"].includes(byIndex.get(index) ?? "unsupported")
             ? [index]
             : [],
         ),
@@ -277,10 +277,10 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       );
       const supportingEvidenceIds = mappingsValid
         ? [...new Set(parsed.judgments.flatMap((judgment) =>
-            judgment.verdict === "supported" && !unsupportedIndices.has(judgment.claimIndex)
-              ? judgment.supportingChunkIds
-              : [],
-          ))]
+          judgment.verdict === "supported" && !unsupportedIndices.has(judgment.claimIndex)
+            ? judgment.supportingChunkIds
+            : [],
+        ))]
         : [];
 
       return {

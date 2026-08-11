@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   assessPositiveKnowledgeSeeking,
+  hasDomainAgnosticQuestionShape,
   isLikelyGibberish,
   selectSafeRetrievalQuestion,
   stripLeadingSocialExpression,
@@ -114,4 +115,31 @@ test("short random input is gibberish but social and policy questions are not", 
   assert.equal(isLikelyGibberish("qwerty zxcvb"), true);
   assert.equal(isLikelyGibberish("شجرا"), false);
   assert.equal(isLikelyGibberish("ما سياسة الإجازات؟"), false);
+});
+
+test("question shape is domain-agnostic but never promotes greetings, gibberish or bare definitions", () => {
+  for (const input of [
+    "What is the primary key in a relational database?",
+    "How do I create an index in a database?",
+    "ما هي انواع الفهارس في قواعد البيانات؟",
+    "Explain the replication setup in the lecture",
+    "What is our leave policy?",
+  ]) {
+    assert.equal(hasDomainAgnosticQuestionShape(input), true, input);
+  }
+  for (const input of [
+    "Thanks",
+    "شكرا",
+    "شجرا",
+    "asdasd",
+    "asdasdasd",
+    "?! 🎉",
+    "unclear input here",
+    "hello",
+    "What is VPN?",
+    "Explain MFA.",
+    "What is hotel management?",
+  ]) {
+    assert.equal(hasDomainAgnosticQuestionShape(input), false, input);
+  }
 });

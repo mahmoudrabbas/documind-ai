@@ -18,6 +18,9 @@ import {
 } from "@/lib/entitlement-errors";
 import {
   sendMessage,
+  sendMessageStream,
+  ChatStreamError,
+  type ChatProgressStage,
   sendVisionMessage,
   transcribeAudio,
   listConversations,
@@ -238,6 +241,7 @@ export function ChatClient() {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [progressStage, setProgressStage] = useState<ChatProgressStage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [entitlementBanner, setEntitlementBanner] =
     useState<EntitlementDenial | null>(null);
@@ -612,6 +616,29 @@ export function ChatClient() {
     });
   }, []);
 
+  async function sendTextMessageWithProgress(
+    question: string,
+    convId: string,
+  ): Promise<ChatResponse> {
+    try {
+      return await sendMessageStream(
+        { message: question, conversationId: convId || undefined },
+        { onStage: (stage) => setProgressStage(stage) },
+      );
+    } catch (err) {
+      // Fallback only when the stream failed before the workflow started;
+      // after any event the server already persists the message, so a retry
+      // would duplicate the exchange and re-consume entitlement quota.
+      if (err instanceof ChatStreamError && !err.receivedAnyEvent) {
+        return sendMessage({
+          message: question,
+          conversationId: convId || undefined,
+        });
+      }
+      throw err;
+    }
+  }
+
   async function handleSend(text?: string) {
     const question = (text || input).trim();
     if (!question || isTyping || retryAfterSeconds !== null) return;
@@ -666,10 +693,7 @@ export function ChatClient() {
             clientMessageId,
             image: selectedFile,
           })
-        : await sendMessage({
-            message: question,
-            conversationId: convId || undefined,
-          });
+        : await sendTextMessageWithProgress(question, convId);
 
       const actualConvId = response.conversationId;
       const aiMsg: Message = {
@@ -758,6 +782,7 @@ export function ChatClient() {
       }
     } finally {
       setIsTyping(false);
+      setProgressStage(null);
     }
   }
 
@@ -952,7 +977,14 @@ export function ChatClient() {
                     </span>
                   </div>
                   <div className="rounded-2xl rounded-ss-md border border-outline-variant/20 bg-surface px-4 py-3">
-                    <ThinkingIndicator label={t("chat.thinking")} />
+                    <ThinkingIndicator
+                      label={
+                        progressStage &&
+                        t(`chat.progress.${progressStage}`) !== `chat.progress.${progressStage}`
+                          ? t(`chat.progress.${progressStage}`)
+                          : t("chat.thinking")
+                      }
+                    />
                   </div>
                 </div>
               )}
