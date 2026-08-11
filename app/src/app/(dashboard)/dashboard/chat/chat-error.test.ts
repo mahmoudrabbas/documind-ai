@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import { ApiError } from "@/lib/api-client";
 import { t as translateKey } from "@/lib/i18n/i18n.utils";
 import ar from "@/lib/i18n/translations/ar";
 import en from "@/lib/i18n/translations/en";
-import { ChatStreamError } from "@/services/chat.service";
+import { ChatStreamError, sendMessageStream } from "@/services/chat.service";
 import { getChatErrorPresentation } from "./chat-error";
 
 const translate = (key: string) => translateKey(en, key);
@@ -32,6 +32,18 @@ describe("chat provider error presentation", () => {
     expect(getChatErrorPresentation(new ApiError({ status: 503, code, message: "ignored" }), translate)).toEqual({
       message,
       retryAfterSeconds: null,
+    });
+  });
+
+  it("maps the canonical entitlement quota denial", () => {
+    expect(getChatErrorPresentation(new ApiError({
+      status: 429,
+      code: "ENTITLEMENT_EXCEEDED",
+      message: "quota exhausted",
+      retryAfterSeconds: 60,
+    }), translate)).toEqual({
+      message: "The AI service quota has been exhausted. Please try again later or contact your administrator.",
+      retryAfterSeconds: 60,
     });
   });
 
@@ -68,6 +80,10 @@ describe("chat provider error presentation", () => {
       "LLM_TIMEOUT",
       "استغرقت خدمة الذكاء الاصطناعي وقتًا أطول من المتوقع. يرجى المحاولة مرة أخرى.",
     ],
+    [
+      "ENTITLEMENT_EXCEEDED",
+      "تم استنفاد حصة خدمة الذكاء الاصطناعي. يرجى المحاولة لاحقًا أو التواصل مع المسؤول.",
+    ],
   ])("localizes Arabic stream error %s", (code, message) => {
     expect(getChatErrorPresentation(
       new ChatStreamError("raw backend message", code, 503, true),
@@ -83,6 +99,24 @@ describe("chat provider error presentation", () => {
       message: "Failed to get a response. Please try again.",
       retryAfterSeconds: null,
     });
+  });
+
+  it("preserves a canonical code supplied in the SSE code field", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      [
+        'event: stage\ndata: {"stage":"intent"}\n\n',
+        'event: error\ndata: {"code":"LLM_TIMEOUT","message":"safe","statusCode":503}\n\n',
+      ].join(""),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    )));
+    try {
+      await expect(sendMessageStream({ message: "hello" }, {})).rejects.toMatchObject({
+        code: "LLM_TIMEOUT",
+        statusCode: 503,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("does not display arbitrary provider payload text", () => {

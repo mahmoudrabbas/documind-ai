@@ -27,6 +27,11 @@ export function getChatErrorPresentation(
           message: t("chat.error.timedOut"),
           retryAfterSeconds: null,
         };
+      case "ENTITLEMENT_EXCEEDED":
+        return {
+          message: t("chat.error.quotaExhausted"),
+          retryAfterSeconds: null,
+        };
     }
   }
 
@@ -46,6 +51,11 @@ export function getChatErrorPresentation(
         return {
           message: t("chat.error.timedOut"),
           retryAfterSeconds: null,
+        };
+      case "ENTITLEMENT_EXCEEDED":
+        return {
+          message: t("chat.error.quotaExhausted"),
+          retryAfterSeconds: error.retryAfterSeconds,
         };
       case "RETRIEVAL_UNAVAILABLE":
         return {

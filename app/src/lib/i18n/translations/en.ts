@@ -1345,6 +1345,8 @@ const en: TranslationDictionary = {
   "chat.error.providerUnavailable":
     "The AI service is temporarily unavailable. Please try again shortly.",
   "chat.error.timedOut": "The AI service took too long to respond. Please try again.",
+  "chat.error.quotaExhausted":
+    "The AI service quota has been exhausted. Please try again later or contact your administrator.",
   "chat.error.retrievalUnavailable":
     "Document search is temporarily unavailable. Please try again shortly.",
   "chat.error.visionUnavailable":
