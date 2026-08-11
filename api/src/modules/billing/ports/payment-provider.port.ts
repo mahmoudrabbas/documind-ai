@@ -175,6 +175,12 @@ export interface InvoiceRetrieveParams { invoiceId: string; expectedCustomerId: 
 export interface SubscriptionReadParams { subscriptionId: string; expectedCustomerId: string }
 export interface SubscriptionChangeParams extends SubscriptionReadParams {
   targetPriceReference: string;
+  targetPackage?: {
+    packageId: string;
+    packageVersionId: string;
+    packageVersion: number;
+    billingInterval: "monthly" | "annual";
+  };
   previewReference?: string;
   operationContext: ProviderOperationContext;
 }

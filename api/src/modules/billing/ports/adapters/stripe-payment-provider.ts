@@ -336,11 +336,21 @@ export class StripePaymentProvider implements PaymentProvider {
   async updateSubscription(params: SubscriptionChangeParams): Promise<ProviderSubscriptionMutationResult> {
     const stripe = await this.client();
     const current = await this.retrieveCurrentSubscriptionState(params);
+    const metadata: Record<string, string> = {
+      ...current.metadata,
+      tenantReference: params.operationContext.tenantReference,
+      operationReference: params.operationContext.operationReference,
+    };
+    if (params.targetPackage) {
+      metadata.packageId = params.targetPackage.packageId;
+      metadata.packageVersionId = params.targetPackage.packageVersionId;
+      metadata.packageVersion = String(params.targetPackage.packageVersion);
+      metadata.billingInterval = params.targetPackage.billingInterval;
+    }
     const updated = await stripe.subscriptions.update(current.id, {
       items: [{ id: await this.subscriptionItemId(stripe, current.id), price: params.targetPriceReference }],
       proration_behavior: "create_prorations",
-      metadata: { ...current.metadata, tenantReference: params.operationContext.tenantReference,
-        operationReference: params.operationContext.operationReference },
+      metadata,
     }, requestOptions(params.operationContext));
     return this.mutationResult(updated, params.operationContext, params.expectedCustomerId);
   }

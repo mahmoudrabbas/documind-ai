@@ -6,7 +6,6 @@ import { apiClient, ApiError } from "@/lib/api-client";
 import {
   createCheckoutSession,
   getSubscriptionStatus,
-  createBillingPortalSession,
 } from "@/services/billing.service";
 import type { PublicPackage, SubscriptionStatus } from "@/types/api/billing.types";
 import { useAuth } from "@/providers/auth-provider";
@@ -102,8 +101,6 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [checkoutConflict, setCheckoutConflict] = useState<ReturnType<typeof classifyCheckoutError> | null>(null);
-  const [portalLoading, setPortalLoading] = useState(false);
-  const [portalError, setPortalError] = useState("");
   const [currentSub, setCurrentSub] = useState<SubscriptionStatus | null>(null);
 
   useEffect(() => {
@@ -132,6 +129,15 @@ export default function CheckoutPage() {
     setSubmitError("");
     setCheckoutConflict(null);
     try {
+      const payload = {
+        packageId: selectedPkg,
+        billingInterval,
+      };
+      console.log("[checkout] Proceed payload", {
+        packageId: selectedPkg,
+        billingPeriod: billingInterval,
+        fullPayload: payload,
+      });
       const result = await createCheckoutSession(selectedPkg, billingInterval);
       if (result.data.sessionUrl) {
         window.location.href = result.data.sessionUrl;
@@ -150,22 +156,11 @@ export default function CheckoutPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [billingInterval, canManageBilling, providerCheckoutBlocked, selectedPkg, selectedPrice, t]);
+  }, [billingInterval, canManageBilling, currentSub, providerCheckoutBlocked, selectedPkg, selectedPrice, t]);
 
-  const handleManageBilling = useCallback(async () => {
-    setPortalLoading(true);
-    setPortalError("");
-    try {
-      const result = await createBillingPortalSession();
-      if (result.data.url) {
-        window.location.href = result.data.url;
-      }
-    } catch {
-      setPortalError(t("billing.failedToOpenBillingPortal"));
-    } finally {
-      setPortalLoading(false);
-    }
-  }, [t]);
+  const handleManageBilling = useCallback(() => {
+    router.push("/dashboard/settings/billing");
+  }, [router]);
 
   /* ── Loading state ───────────────────────────────────────────────────── */
 
@@ -262,7 +257,6 @@ export default function CheckoutPage() {
             <Button
               variant="outline"
               size="md"
-              isLoading={portalLoading}
               onClick={() => void handleManageBilling()}
             >
               <span className="material-symbols-outlined text-[18px]">
@@ -471,25 +465,12 @@ export default function CheckoutPage() {
           <Button
             variant="outline"
             size="md"
-            isLoading={portalLoading}
             onClick={() => void handleManageBilling()}
           >
             {t("billing.manageBilling")}
           </Button>
         </div>
       ) : null}
-
-      {/* Portal error */}
-      {portalError && (
-        <div className="mt-6 flex items-center gap-3 rounded-xl border border-error/20 bg-error-container px-5 py-3.5">
-          <span className="material-symbols-outlined text-[20px] text-on-error-container">
-            warning
-          </span>
-          <p className="text-body-sm text-on-error-container" role="alert">
-            {portalError}
-          </p>
-        </div>
-      )}
 
       {/* Action buttons */}
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -507,7 +488,6 @@ export default function CheckoutPage() {
             <Button
               variant="primary"
               size="lg"
-              isLoading={portalLoading}
               onClick={() => void handleManageBilling()}
               className="min-h-12 px-8"
             >
