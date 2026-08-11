@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   type PaymentProvider,
   type CreateCustomerParams,
+  type ProviderCustomer,
   type CreateCheckoutSessionParams,
   type CheckoutSession,
   type CreateBillingPortalSessionParams,
@@ -64,6 +65,17 @@ export class StripePaymentProvider implements PaymentProvider {
       metadata: { tenantId: params.tenantId },
     }, requestOptions(params.operationContext));
     return customer.id;
+  }
+
+  async retrieveCustomer(customerId: string): Promise<ProviderCustomer> {
+    const stripe = await this.client();
+    const customer = await stripe.customers.retrieve(customerId);
+    if (customer.deleted) {
+      const error = new Error(`Stripe customer ${customerId} is deleted`);
+      Object.assign(error, { status: 404, code: "resource_missing" });
+      throw error;
+    }
+    return { id: customer.id };
   }
 
   async createCheckoutSession(

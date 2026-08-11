@@ -1,5 +1,5 @@
 import { Types } from "mongoose";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import CheckoutSessionModel from "../../db/models/checkoutSession.model.js";
@@ -328,6 +328,24 @@ export async function createCheckoutSession(
         { $set: { providerCustomerId } },
       );
     }
+  } else {
+    try {
+      await provider.retrieveCustomer(providerCustomerId);
+    } catch (error) {
+      if (!isProviderNotFound(error)) throw error;
+      providerCustomerId = await provider.createCustomer({
+        tenantId,
+        email: actor.actorEmail,
+        name: actor.actorEmail,
+        operationContext: providerOperationContext(tenantId, "checkout-customer", { tenantId }, actor),
+      });
+      if (currentSubscription) {
+        await SubscriptionModel.updateOne(
+          { _id: currentSubscription._id, tenantId },
+          { $set: { providerCustomerId } },
+        );
+      }
+    }
   }
 
   const returnUrl = successUrl;
@@ -343,14 +361,13 @@ export async function createCheckoutSession(
     billingInterval,
   };
 
-  // Stripe replays idempotent requests for 24h, so a deterministic key would
-  // resurrect an expired session and collide with its stored providerSessionId.
-  // Each new attempt (any previously stored session) therefore gets a new key.
-  const priorSessionCount = await CheckoutSessionModel.countDocuments({
-    tenantId: new Types.ObjectId(tenantId),
-    packageId: new Types.ObjectId(packageId),
-    billingInterval,
-  });
+  // The attempt identity distinguishes provider attempts even when Stripe
+  // fails before a local CheckoutSession can be persisted. Include the
+  // requestId for traceability, but always add a fresh nonce so a caller that
+  // reuses an HTTP request ID cannot indefinitely reuse a stale Stripe key.
+  // Duplicate successful requests remain guarded by pending-session
+  // reconciliation above rather than relying on a random provider key alone.
+  const attemptReference = `${actor.requestId ?? "request"}:${randomUUID()}`;
 
   const session = await provider.createCheckoutSession({
     customerId: providerCustomerId,
@@ -360,7 +377,14 @@ export async function createCheckoutSession(
     metadata,
     subscriptionMetadata: metadata,
     clientReferenceId: tenantId,
-    operationContext: providerOperationContext(tenantId, "checkout-session", { tenantId, packageId, packageVersionId: version.packageVersionId, billingInterval, attempt: String(priorSessionCount) }, actor),
+    operationContext: providerOperationContext(tenantId, "checkout-session", {
+      tenantId,
+      packageId,
+      packageVersionId: version.packageVersionId,
+      billingInterval,
+      providerPriceId: priceId,
+      attemptReference,
+    }, actor),
   });
 
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);

@@ -1,6 +1,7 @@
 import {
   type PaymentProvider,
   type CreateCustomerParams,
+  type ProviderCustomer,
   type CreateCheckoutSessionParams,
   type CheckoutSession,
   type CreateBillingPortalSessionParams,
@@ -133,6 +134,16 @@ export class FakePaymentProvider implements PaymentProvider {
     void _operationContext;
     this.customers.push({ id, ...customer });
     return id;
+  }
+
+  async retrieveCustomer(customerId: string): Promise<ProviderCustomer> {
+    const customer = this.customers.find((item) => item.id === customerId);
+    if (!customer) {
+      const error = new Error(`Fake provider: customer ${customerId} not found`);
+      Object.assign(error, { status: 404, code: "resource_missing" });
+      throw error;
+    }
+    return { id: customer.id };
   }
 
   async createCheckoutSession(
