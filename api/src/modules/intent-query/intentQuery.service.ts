@@ -17,6 +17,7 @@ import {
   assessPositiveKnowledgeSeeking,
   assistantRequestsUserResponse,
   hasDomainAgnosticQuestionShape,
+  hasSemanticRetrievalSubject,
   isContextualAcknowledgement,
   isLikelyGibberish,
   isRetrievableIntent,
@@ -666,17 +667,31 @@ export class IntentQueryService {
       rawOutput.referencedDocumentIds = hints.referencedDocumentIds;
       rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
 
+      const providerIntent = rawOutput.detectedIntent;
+      const semanticTopicWithoutExplicitTitle =
+        (providerIntent === "summarization" || providerIntent === "knowledge_question") &&
+        deterministicTitleHints.length === 0 &&
+        hasSemanticRetrievalSubject(routingQuestion);
+
       // Deterministic title resolution governs explicit document references:
       // a title hint that resolves to more than one authorized document, or to
       // none at all, is a signal to clarify — never fabricate a match.
       if (
-        titleHints.length > 0 &&
+        deterministicTitleHints.length > 0 &&
         (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
       ) {
         titleClarificationNeeded = true;
       }
 
-      const rawDetectedIntent = rawOutput.detectedIntent;
+      if (
+        !semanticTopicWithoutExplicitTitle &&
+        deterministicTitleHints.length === 0 &&
+        (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
+      ) {
+        titleClarificationNeeded = true;
+      }
+
+      const rawDetectedIntent = providerIntent;
       if (rawDetectedIntent === "assistant_identity") {
         rawOutput.assistantKind = "identity";
       } else if (rawDetectedIntent === "assistant_capabilities") {
@@ -872,7 +887,32 @@ export class IntentQueryService {
         !validatedPlan.processingMetadata.fallbackUsed &&
         !isLikelyGibberish(routingQuestion) &&
         hasDomainAgnosticQuestionShape(routingQuestion);
-      if (
+      const semanticSummarizationOverride =
+        validatedPlan.detectedIntent === "summarization" &&
+        validatedPlan.clarificationNeeded &&
+        !titleClarificationNeeded &&
+        hasSemanticRetrievalSubject(routingQuestion);
+      const bareSummarizationClarification =
+        validatedPlan.detectedIntent === "summarization" &&
+        validatedPlan.clarificationNeeded &&
+        !hasSemanticRetrievalSubject(routingQuestion);
+
+      if (semanticSummarizationOverride) {
+        rawOutput.clarificationNeeded = false;
+        rawOutput.clarification = null;
+        validatedPlan = validateAndNormalizeQueryPlan(
+          rawOutput,
+          input.question,
+          language,
+          INTENT_PROMPT_VERSION,
+          this.modelAdapter.providerKey,
+          Date.now() - start,
+          tokensUsed,
+          estimatedCost,
+          false,
+        );
+      } else if (
+        !bareSummarizationClarification &&
         (knowledgeSignals.positive || unsupportedQuestionOverride) &&
         validatedPlan.route !== "rag" &&
         validatedPlan.route !== "unsafe"
@@ -993,6 +1033,31 @@ export class IntentQueryService {
     }
 
     // 7d. Title-hint ambiguity/unresolved references force a clarification.
+    // A provider may label a semantic summarization subject as an exact title
+    // and set clarificationNeeded=true when that title is not found. For a
+    // normal topic request, the retrieval pipeline is the resolver; only
+    // explicit filename/document-marker hints are allowed to force title
+    // clarification.
+    const semanticClarificationEligible = new Set([
+      "knowledge_question",
+      "document_specific",
+      "comparison",
+      "summarization",
+      "navigation",
+    ]).has(validatedPlan.detectedIntent);
+    if (
+      semanticClarificationEligible &&
+      validatedPlan.clarificationNeeded &&
+      !titleClarificationNeeded &&
+      hasSemanticRetrievalSubject(routingQuestion)
+    ) {
+      validatedPlan.clarificationNeeded = false;
+      validatedPlan.clarification = null;
+      validatedPlan.route = "rag";
+    }
+
+    // 7e. Explicit title-hint ambiguity/unresolved references force a
+    // clarification after the semantic safeguard above.
     if (titleClarificationNeeded) {
       validatedPlan.route = "clarification";
       validatedPlan.clarificationNeeded = true;
