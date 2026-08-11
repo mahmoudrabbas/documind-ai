@@ -69,11 +69,135 @@ const leaveEvidence = [{
   text: "Employees are entitled to 21 days of annual leave.",
 }];
 
+const remoteSynthesisSentence =
+  "In summary, employees who have passed the 90-day mark can work remotely up to two days a week, adhering to the specified core hours, equipment provisions, security rules, and location restrictions.";
+
+const remotePolicyEvidence = [{
+  chunkId: "remote-policy",
+  text: [
+    "Employees who have completed at least 90 days of employment may request regular remote work.",
+    "Regular remote work is limited to two days per week.",
+    "Remote employees must be available during core hours.",
+    "The company provides approved equipment for remote work.",
+    "Remote employees must follow security rules.",
+    "Remote work is allowed only from approved locations.",
+  ].join(" "),
+}];
+
+const runtimeRemoteAnswer = [
+  "The remote-work policy outlines the following key provisions: 1) Eligibility - employees become eligible after completing at least 90 days of employment and may request a regular remote arrangement.",
+  "2) Standard Remote Schedule - eligible staff may work remotely up to two days per week, subject to manager approval.",
+  "3) Core Hours - remote workers must be reachable between 10:00 AM and 3:00 PM local time on workdays.",
+  "4) Equipment - the company supplies one laptop and one headset, but does not reimburse home internet costs.",
+  "5) Security - confidential information may not be printed at home without written approval, and all company systems must be accessed via approved security controls.",
+  "6) Location - remote work must be performed from the employee's registered country unless an exception is approved by HR and Legal.",
+  "In summary, the policy sets clear eligibility, scheduling, availability, equipment, security, and location requirements for remote work.",
+].join(" ");
+
+const runtimeRemoteEvidence = [{
+  chunkId: "remote-policy",
+  text: [
+    "Eligibility",
+    "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+    "Standard Remote Schedule",
+    "Eligible employees may work remotely up to 2 days per week with manager approval.",
+    "Core Hours",
+    "Remote employees must be available from 10:00 AM to 3:00 PM local time on working days.",
+    "Equipment",
+    "The company provides one laptop and one headset for approved remote workers.",
+    "The company does not reimburse home internet costs.",
+    "Security",
+    "Confidential company information must not be printed at home unless written approval is provided.",
+    "Company systems must be accessed through approved security controls.",
+    "Location",
+    "Regular remote work must be performed from the employee's registered country unless HR and Legal approve an exception.",
+  ].join(" "),
+}];
+
+function remoteEvidenceAwareModel(malformed = false): ModelAdapter {
+  return {
+    providerKey: "remote-evidence-aware",
+    async complete(params) {
+      const payload = parseSemanticData(params.messages.at(-1)?.content ?? "");
+      if (malformed) {
+        return {
+          id: "remote-aware-malformed",
+          provider: "remote-evidence-aware",
+          model: "remote-evidence-aware",
+          choices: [{
+            index: 0,
+            finishReason: "stop",
+            message: { role: "assistant", content: JSON.stringify({ judgments: [] }) },
+          }],
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          latencyMs: 2,
+          estimatedCost: 0,
+        };
+      }
+      const evidenceText = payload.authorizedEvidence.map((item) => item.text).join("\n").toLowerCase();
+      const supports = (claim: string): boolean => {
+        const text = claim.toLowerCase();
+        if (text.includes("monthly stipend") || text.includes("four days")) return false;
+        if (text.includes("90 days")) return evidenceText.includes("90 days");
+        if (text.includes("two days") || text.includes("2 days")) return /(?:two|2) days per week/u.test(evidenceText);
+        if (text.includes("10:00 am") || text.includes("3:00 pm")) return evidenceText.includes("10:00 am") && evidenceText.includes("3:00 pm");
+        if (text.includes("laptop") || text.includes("headset")) return evidenceText.includes("laptop") && evidenceText.includes("headset");
+        if (text.includes("internet")) return evidenceText.includes("does not reimburse home internet costs");
+        if (text.includes("core hours")) return /core hours|10:00 am/u.test(evidenceText);
+        if (text.includes("equipment provisions")) return /equipment|laptop|headset/u.test(evidenceText);
+        if (text.includes("security rules")) return /security|confidential|security controls/u.test(evidenceText);
+        if (text.includes("location restrictions")) return /location|registered country/u.test(evidenceText);
+        if (text.includes("printed")) return evidenceText.includes("must not be printed");
+        if (text.includes("security controls")) return evidenceText.includes("approved security controls");
+        if (text.includes("registered country") || text.includes("hr and legal")) return evidenceText.includes("registered country") && evidenceText.includes("hr and legal");
+        if (text.includes("eligibility requirements")) return evidenceText.includes("eligibility") && evidenceText.includes("90 days");
+        if (text.includes("scheduling requirements")) return /(?:schedule|2 days per week)/u.test(evidenceText);
+        if (text.includes("availability requirements")) return /(?:core hours|available|10:00 am)/u.test(evidenceText);
+        if (text.includes("equipment requirements")) return evidenceText.includes("equipment") || evidenceText.includes("laptop");
+        if (text.includes("security requirements")) return evidenceText.includes("security") || evidenceText.includes("security controls");
+        if (text.includes("location requirements")) return evidenceText.includes("location") || evidenceText.includes("registered country");
+        return false;
+      };
+      return {
+        id: "remote-aware",
+        provider: "remote-evidence-aware",
+        model: "remote-evidence-aware",
+        choices: [{
+          index: 0,
+          finishReason: "stop",
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              judgments: payload.claims.map((claim, claimIndex) => {
+                const supported = supports(claim);
+                return {
+                  claimIndex,
+                  verdict: supported ? "supported" : "unsupported",
+                  supportingChunkIds: supported ? [payload.authorizedEvidence[0]?.chunkId].filter(Boolean) : [],
+                };
+              }),
+            }),
+          },
+        }],
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        latencyMs: 2,
+        estimatedCost: 0,
+      };
+    },
+  };
+}
+
 test("extracts full claims without deleting or shortening released text", () => {
   assert.deepEqual(
     extractBoundedFactualClaims("- Employees receive 21 days [leave-chunk].\nFamily cover is included."),
     ["- Employees receive 21 days [leave-chunk].", "Family cover is included."],
   );
+});
+
+test("claim extraction keeps a compound synthesis sentence as one released claim", () => {
+  assert.deepEqual(extractBoundedFactualClaims(remoteSynthesisSentence), [
+    remoteSynthesisSentence,
+  ]);
 });
 
 test("exactly MAX_SEMANTIC_CLAIMS full claims may be verified", async () => {
@@ -245,6 +369,182 @@ test("passes an exact supported claim", async () => {
   });
   assert.deepEqual(result.unsupportedClaims, []);
   assert.deepEqual(result.supportingEvidenceIds, ["leave-chunk"]);
+});
+
+test("passes a compound synthesis when every atomic component is supported", async () => {
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: remoteSynthesisSentence,
+    evidence: remotePolicyEvidence,
+  });
+
+  assert.deepEqual(result.claims, [remoteSynthesisSentence]);
+  assert.deepEqual(result.unsupportedClaims, []);
+  assert.deepEqual(result.supportingEvidenceIds, ["remote-policy"]);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+});
+
+test("fails a compound synthesis when one atomic component is unsupported", async () => {
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: "In summary, employees who have passed the 90-day mark can work remotely four days a week, adhering to the specified core hours, equipment provisions, security rules, and location restrictions.",
+    evidence: remotePolicyEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, [
+    "In summary, employees who have passed the 90-day mark can work remotely four days a week, adhering to the specified core hours, equipment provisions, security rules, and location restrictions.",
+  ]);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+});
+
+test("malformed compound component verification remains fail-closed", async () => {
+  let callIndex = 0;
+  const malformedComponentModel: ModelAdapter = {
+    providerKey: "malformed-component-test",
+    async complete(params) {
+      const payload = parseSemanticData(params.messages.at(-1)?.content ?? "");
+      callIndex += 1;
+      return {
+        id: `malformed-component-${callIndex}`,
+        provider: "malformed-component-test",
+        model: "malformed-component-test",
+        choices: [{
+          index: 0,
+          finishReason: "stop",
+          message: {
+            role: "assistant",
+            content: callIndex === 1
+              ? JSON.stringify({
+                  judgments: [{
+                    claimIndex: 0,
+                    verdict: "unsupported",
+                    supportingChunkIds: [],
+                  }],
+                })
+              : JSON.stringify({
+                  judgments: payload.claims.slice(0, 1).map((_claim, claimIndex) => ({
+                    claimIndex,
+                    verdict: "supported",
+                    supportingChunkIds: ["remote-policy"],
+                  })),
+                }),
+          },
+        }],
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        latencyMs: 2,
+        estimatedCost: 0,
+      };
+    },
+  };
+  const result = await new CitationSemanticVerificationService(malformedComponentModel).verify({
+    answerText: remoteSynthesisSentence,
+    evidence: remotePolicyEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, [remoteSynthesisSentence]);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
+});
+
+test("fails a genuinely unsupported summary sentence", async () => {
+  const summary = "In summary, employees receive a monthly remote-work stipend.";
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: summary,
+    evidence: remotePolicyEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, [summary]);
+});
+
+test("realistic remote-work evidence supports all six simple facts", async () => {
+  const answerText = runtimeRemoteAnswer
+    .split(" In summary,")[0]!;
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText,
+    questionText: "Please provide a summary of the remote work file.",
+    evidence: runtimeRemoteEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, []);
+  assert.deepEqual(result.supportingEvidenceIds, ["remote-policy"]);
+});
+
+test("realistic remote-work evidence plus supported synthesis verifies", async () => {
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: runtimeRemoteAnswer,
+    questionText: "Please provide a summary of the remote work file.",
+    evidence: runtimeRemoteEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, []);
+  assert.deepEqual(result.supportingEvidenceIds, ["remote-policy"]);
+});
+
+test("realistic remote-work evidence keeps one fabricated fact unsupported", async () => {
+  const fabricated = `${runtimeRemoteAnswer} Employees also receive a monthly stipend.`;
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: fabricated,
+    evidence: runtimeRemoteEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, ["Employees also receive a monthly stipend."]);
+});
+
+test("correct citation id with semantically unrelated evidence remains unsupported", async () => {
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: "Employees may work remotely up to two days per week.",
+    evidence: [{ chunkId: "remote-policy", text: "Employees receive 21 days of annual leave." }],
+  });
+
+  assert.deepEqual(result.unsupportedClaims, ["Employees may work remotely up to two days per week."]);
+  assert.deepEqual(result.supportingEvidenceIds, []);
+});
+
+test("truncated remote-work evidence fails closed for missing facts", async () => {
+  const result = await new CitationSemanticVerificationService(remoteEvidenceAwareModel()).verify({
+    answerText: runtimeRemoteAnswer,
+    evidence: [{
+      chunkId: "remote-policy",
+      text: "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+    }],
+  });
+
+  assert.deepEqual(result.unsupportedClaims, extractBoundedFactualClaims(runtimeRemoteAnswer).slice(1));
+});
+
+test("schema-compatible semantic variants are normalized", async () => {
+  const variantModel: ModelAdapter = {
+    providerKey: "variant-model",
+    async complete(params) {
+      const payload = parseSemanticData(params.messages.at(-1)?.content ?? "");
+      return {
+        id: "variant",
+        provider: "variant-model",
+        model: "variant-model",
+        choices: [{
+          index: 0,
+          finishReason: "stop",
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              judgments: payload.claims.map((_claim, index) => ({
+                claim_index: String(index),
+                verdict: index === 0 ? "Supported" : "non-factual",
+                supporting_evidence_ids: index === 0 ? ["remote-policy"] : [],
+              })),
+            }),
+          },
+        }],
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        latencyMs: 1,
+        estimatedCost: 0,
+      };
+    },
+  };
+  const result = await new CitationSemanticVerificationService(variantModel).verify({
+    answerText: "Employees may work remotely up to two days per week. Summary.",
+    evidence: runtimeRemoteEvidence,
+  });
+
+  assert.deepEqual(result.unsupportedClaims, []);
+  assert.deepEqual(result.supportingEvidenceIds, ["remote-policy"]);
 });
 
 test("fails a contradicted numeric claim even if the model labels it supported", async () => {

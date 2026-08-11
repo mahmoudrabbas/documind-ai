@@ -349,6 +349,39 @@ class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
   }
 }
 
+class CompoundRecoveryRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isSemanticCitationRequest(params)) return response;
+    const payload = semanticRequestData(params);
+    const supportingChunkIds = payload.authorizedEvidence.map((item) => item.chunkId);
+    const claims = payload.claims.map((claim) => String(claim));
+    const isOriginalCompound = claims.some((claim) => /^In summary,/u.test(claim));
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) =>
+        index === 0
+          ? {
+              ...choice,
+              message: {
+                ...choice.message,
+                content: JSON.stringify({
+                  judgments: claims.map((_claim, claimIndex) => ({
+                    claimIndex,
+                    verdict: isOriginalCompound ? "unsupported" : "supported",
+                    supportingChunkIds: isOriginalCompound ? [] : supportingChunkIds,
+                  })),
+                }),
+              },
+            }
+          : choice,
+      ),
+    };
+  }
+}
+
 class WriterSourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
   constructor(
     answers: ReadonlyMap<string, string>,
@@ -1219,6 +1252,75 @@ test(
       );
     }
     assertPersistenceSafety({ run, steps, toolCalls });
+  },
+);
+
+test(
+  "production-composed workflow releases a grounded answer with fully supported compound synthesis",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Summarize the remote work policy.";
+    const answer = [
+      "The remote-work policy outlines the following key provisions: 1) Eligibility - employees become eligible after completing at least 90 days of employment and may request a regular remote arrangement.",
+      "2) Standard Remote Schedule - eligible staff may work remotely up to two days per week, subject to manager approval.",
+      "3) Core Hours - remote workers must be reachable between 10:00 AM and 3:00 PM local time on workdays.",
+      "4) Equipment - the company supplies one laptop and one headset, but does not reimburse home internet costs.",
+      "5) Security - confidential information may not be printed at home without written approval, and all company systems must be accessed via approved security controls.",
+      "6) Location - remote work must be performed from the employee's registered country unless an exception is approved by HR and Legal.",
+      "In summary, the policy sets clear eligibility, scheduling, availability, equipment, security, and location requirements for remote work.",
+    ].join(" ");
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-policy-synthesis.pdf",
+      title: "Remote Work Policy",
+      question,
+      text: [
+        "Employees who have completed at least 90 days of employment may request regular remote work.",
+        "Regular remote work is limited to two days per week.",
+        "Remote employees must be available from 10:00 AM to 3:00 PM local time on working days.",
+        "The company provides one laptop and one headset for approved remote workers.",
+        "The company does not reimburse home internet costs.",
+        "Confidential company information must not be printed at home unless written approval is provided.",
+        "Company systems must be accessed through approved security controls.",
+        "Regular remote work must be performed from the employee's registered country unless HR and Legal approve an exception.",
+      ].join(" "),
+      sectionTitle: "Remote work rules",
+      pageNumber: 4,
+    });
+    const requestId = "request-compound-synthesis-release";
+    const model = new CompoundRecoveryRecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+    );
+    const service = await productionService(fixture, {
+      evidence: [evidence],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [
+      evidence.chunkId,
+    ]);
+    const verifierStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "citation-verification-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.equal(verifierStep?.output?.reasonCode, "CITATIONS_VERIFIED");
+    assert.deepEqual(verifierStep?.output?.validatedCitationIds, [evidence.chunkId]);
+    assert.deepEqual(verifierStep?.output?.unsupportedClaims, []);
+    const complianceStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "compliance-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(complianceStep?.output?.action, "release");
+    assert.deepEqual(complianceStep?.output?.sourceIds, [evidence.chunkId]);
   },
 );
 
