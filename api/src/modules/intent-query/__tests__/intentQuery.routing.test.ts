@@ -832,7 +832,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.deepEqual(plan.referencedDocumentIds, []);
   });
 
-  await t.test("unknown title hint degrades to RAG, no fabricated ID", async () => {
+  await t.test("unknown title hint routes to clarification, no fabricated ID", async () => {
     const llmTitleService = new IntentQueryService(
       planAdapter({
         detectedIntent: "document_specific",
@@ -848,8 +848,8 @@ test("IntentQueryService - query routing contract", async (t) => {
       companyAdminContext,
     );
 
-    assert.equal(plan.route, "rag");
-    assert.equal(plan.clarificationNeeded, false);
+    assert.equal(plan.route, "clarification");
+    assert.equal(plan.clarificationNeeded, true);
     assert.deepEqual(plan.referencedDocumentIds, []);
   });
 
@@ -956,8 +956,8 @@ test("IntentQueryService - query routing contract", async (t) => {
       companyAdminContext,
     );
 
-    assert.equal(plan.route, "rag");
-    assert.equal(plan.clarificationNeeded, false);
+    assert.equal(plan.route, "clarification");
+    assert.equal(plan.clarificationNeeded, true);
     assert.ok(!plan.referencedDocumentIds.includes(foreignDoc.id));
   });
 
