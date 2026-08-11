@@ -3,7 +3,12 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
+import {
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_RATE_LIMITED,
+  LLM_TIMEOUT,
+  VALIDATION_ERROR,
+} from "../../common/errors/errorCodes.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import DocumentModel from "../../db/models/document.model.js";
@@ -71,6 +76,28 @@ const DIRECT_TOP_K = 5;
 const SUMMARY_TOP_K = 12;
 const SUMMARY_MAX_TOKENS = 2048;
 const MAX_SEARCH_QUERY_CHARS = 2_000;
+
+const SAFE_RUNTIME_PROVIDER_ERRORS = {
+  [LLM_RATE_LIMITED]: {
+    statusCode: 429,
+    message: "The AI service is temporarily rate-limited. Please try again shortly.",
+  },
+  [LLM_PROVIDER_UNAVAILABLE]: {
+    statusCode: 503,
+    message: "The AI service is temporarily unavailable. Please try again shortly.",
+  },
+  [LLM_TIMEOUT]: {
+    statusCode: 503,
+    message: "The AI service took too long to respond. Please try again.",
+  },
+} as const;
+
+function safeRuntimeProviderError(code: unknown): AppError | null {
+  if (typeof code !== "string") return null;
+  const safe = SAFE_RUNTIME_PROVIDER_ERRORS[code as keyof typeof SAFE_RUNTIME_PROVIDER_ERRORS];
+  if (!safe) return null;
+  return new AppError(safe.statusCode, code, safe.message);
+}
 
 /**
  * For Arabic questions, prioritize one validated English semantic expansion
@@ -1021,6 +1048,8 @@ export class ChatWorkflowService {
     );
 
     if (runtimeResult.status !== "completed" || !runtimeResult.output) {
+      const providerError = safeRuntimeProviderError(runtimeResult.error?.code);
+      if (providerError) throw providerError;
       throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Controlled chat workflow failed");
     }
     const terminal = this.validateTerminal(runtimeResult.output, artifacts);

@@ -1322,10 +1322,10 @@ const en: TranslationDictionary = {
   "chat.error.microphoneUnavailable":
     "Microphone access denied or unsupported browser. Please check microphone permissions.",
   "chat.error.rateLimited":
-    "The AI provider is temporarily rate-limited. Please try again shortly.",
+    "The AI service is temporarily rate-limited. Please try again shortly.",
   "chat.error.providerUnavailable":
-    "The AI provider is temporarily unavailable. Please try again shortly.",
-  "chat.error.timedOut": "The AI provider timed out. Please try again.",
+    "The AI service is temporarily unavailable. Please try again shortly.",
+  "chat.error.timedOut": "The AI service took too long to respond. Please try again.",
   "chat.error.retrievalUnavailable":
     "Document search is temporarily unavailable. Please try again shortly.",
   "chat.error.visionUnavailable":
