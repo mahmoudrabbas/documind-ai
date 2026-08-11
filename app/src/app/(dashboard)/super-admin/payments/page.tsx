@@ -33,7 +33,7 @@ export default function PaymentDiagnosticsPage() {
   const permissions = usePermissions();
   const canManage = permissions.can(Permission.BILLING_MANAGE);
   const [page, setPage] = useState(1);
-  const state = usePlatformQuery(loadEvents, { page, pageSize: 50 });
+  const state = usePlatformQuery(loadEvents, { page, pageSize: 20 });
   const [notice, setNotice] = useState("");
   const [reconciling, setReconciling] = useState(false);
   const [reconResult, setReconResult] = useState<{

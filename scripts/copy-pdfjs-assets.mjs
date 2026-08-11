@@ -1,38 +1,91 @@
-// Copies pdfjs-dist runtime assets (cmaps + standard fonts) from node_modules
-// into app/public/pdfjs/, where the PDF viewer serves them at runtime
-// (see app/src/components/documents/PdfViewerModal.tsx).
-//
-// These are third-party binaries; they are deliberately not committed to git
-// (see .gitignore) and are restored by this script via `predev`/`prebuild`
-// hooks in app/package.json.
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const pdfjsRoot = resolve(root, "app", "node_modules", "pdfjs-dist");
-const destRoot = resolve(root, "app", "public", "pdfjs");
+const scriptPath = fileURLToPath(import.meta.url);
+const root = resolve(dirname(scriptPath), "..");
+const appRoot = resolve(root, "app");
+const destRoot = resolve(appRoot, "public", "pdfjs");
+const markerName = ".asset-version.json";
+const assets = ["cmaps", "standard_fonts"];
 
-const assets = [
-  { source: "cmaps", target: "cmaps" },
-  { source: "standard_fonts", target: "standard_fonts" },
-];
-
-for (const { source, target } of assets) {
-  const src = resolve(pdfjsRoot, source);
-  const dest = resolve(destRoot, target);
-
-  if (!existsSync(src)) {
-    console.error(
-      `[copy-pdfjs-assets] Missing source ${src}. ` +
-        "Run `npm ci` in the app workspace first.",
-    );
-    process.exit(1);
-  }
-
-  mkdirSync(destRoot, { recursive: true });
-  cpSync(src, dest, { recursive: true, force: true });
-  console.log(`[copy-pdfjs-assets] ${src} -> ${dest}`);
+function installedPdfjsRoot() {
+  const appRequire = createRequire(resolve(appRoot, "package.json"));
+  return dirname(appRequire.resolve("pdfjs-dist/package.json"));
 }
 
-console.log("[copy-pdfjs-assets] pdfjs assets ready.");
+function readVersion(pdfjsRoot) {
+  const packageJson = JSON.parse(
+    readFileSync(resolve(pdfjsRoot, "package.json"), "utf8"),
+  );
+
+  if (typeof packageJson.version !== "string" || packageJson.version === "") {
+    throw new Error(`Invalid pdfjs-dist package metadata at ${pdfjsRoot}`);
+  }
+
+  return packageJson.version;
+}
+
+function markerMatches(targetRoot, version) {
+  const markerPath = resolve(targetRoot, markerName);
+  if (!existsSync(markerPath) || assets.some((asset) => !existsSync(resolve(targetRoot, asset)))) {
+    return false;
+  }
+
+  try {
+    const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+    return marker.version === version;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export function syncPdfjsAssets({ pdfjsRoot, destRoot: targetRoot }) {
+  const version = readVersion(pdfjsRoot);
+  if (markerMatches(targetRoot, version)) {
+    return { skipped: true, version };
+  }
+
+  mkdirSync(targetRoot, { recursive: true });
+  for (const asset of assets) {
+    const source = resolve(pdfjsRoot, asset);
+    const target = resolve(targetRoot, asset);
+    if (!existsSync(source)) {
+      throw new Error(`Missing pdfjs-dist asset directory: ${source}`);
+    }
+
+    rmSync(target, { recursive: true, force: true });
+    cpSync(source, target, { recursive: true });
+  }
+
+  const markerPath = resolve(targetRoot, markerName);
+  const temporaryMarkerPath = `${markerPath}.tmp`;
+  writeFileSync(temporaryMarkerPath, `${JSON.stringify({ version })}\n`);
+  renameSync(temporaryMarkerPath, markerPath);
+  return { skipped: false, version };
+}
+
+function main() {
+  const result = syncPdfjsAssets({
+    pdfjsRoot: installedPdfjsRoot(),
+    destRoot,
+  });
+  const action = result.skipped ? "already current" : "copied";
+  console.log(`[copy-pdfjs-assets] pdfjs-dist ${result.version} assets ${action}.`);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
+  main();
+}

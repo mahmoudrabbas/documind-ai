@@ -73,7 +73,7 @@ describe("PaymentDiagnosticsPage", () => {
       can: vi.fn((permission: string) => permission === Permission.BILLING_READ || permission === Permission.BILLING_MANAGE),
       refreshPermissions: vi.fn(),
     });
-    (listPaymentEvents as Mock).mockResolvedValue({ success: true, data: { events: [event], pagination: { page: 1, pageSize: 50, totalRecords: 1, totalPages: 1 } } });
+    (listPaymentEvents as Mock).mockResolvedValue({ success: true, data: { events: [event], pagination: { page: 1, pageSize: 20, totalRecords: 1, totalPages: 1 } } });
     (reprocessPaymentEvent as Mock).mockResolvedValue({ success: true, data: { reprocessed: true } });
     (triggerReconciliation as Mock).mockResolvedValue({ success: true, data: { subscriptions: { examined: 0, mismatched: [] }, invoices: { examined: 0, created: 0, updated: 0, failed: 0 }, refundSettlements: { indexInvariant: { status: "READY", issues: [], effectiveDuplicateTenantCount: 0 }, examined: 0, eligibleForTransitionRepair: 0, transitionOperationsCreated: 0, transitionsCompleted: 0, transitionsRetryable: 0, failed: 0 }, subscriptionIndex: { status: "READY", issues: [], effectiveDuplicateTenantCount: 0 }, providerCancellations: { created: 0, confirmed: 0, retryable: 0 } } });
   });
@@ -95,7 +95,7 @@ describe("PaymentDiagnosticsPage", () => {
   });
 
   it("disables Previous on page 1 and keeps Next enabled", async () => {
-    (listPaymentEvents as Mock).mockResolvedValue({ success: true, data: { events: [event], pagination: { page: 1, pageSize: 50, totalRecords: 51, totalPages: 2 } } });
+    (listPaymentEvents as Mock).mockResolvedValue({ success: true, data: { events: [event], pagination: { page: 1, pageSize: 20, totalRecords: 51, totalPages: 2 } } });
     const container = await renderPage();
     expect(buttonByText(container, "Previous").disabled).toBe(true);
     expect(buttonByText(container, "Next").disabled).toBe(false);
@@ -104,13 +104,13 @@ describe("PaymentDiagnosticsPage", () => {
   it("pages to the last page and disables Next there", async () => {
     (listPaymentEvents as Mock).mockImplementation(async (params: { page?: number }) => ({
       success: true,
-      data: { events: [event], pagination: { page: params.page ?? 1, pageSize: 50, totalRecords: 51, totalPages: 2 } },
+      data: { events: [event], pagination: { page: params.page ?? 1, pageSize: 20, totalRecords: 51, totalPages: 2 } },
     }));
     const container = await renderPage();
     const next = buttonByText(container, "Next");
     await act(async () => { next.click(); });
     await settle();
-    expect(listPaymentEvents).toHaveBeenLastCalledWith({ page: 2, pageSize: 50 }, expect.any(AbortSignal));
+    expect(listPaymentEvents).toHaveBeenLastCalledWith({ page: 2, pageSize: 20 }, expect.any(AbortSignal));
     expect(container.textContent).toContain("Page 2 of 2");
     expect(buttonByText(container, "Next").disabled).toBe(true);
     expect(buttonByText(container, "Previous").disabled).toBe(false);
@@ -118,7 +118,7 @@ describe("PaymentDiagnosticsPage", () => {
 
   it("reprocesses a failed event and reloads the list", async () => {
     const failedEvent = { ...event, _id: "evt-2", eventId: "evt_failed", status: "failed", processingErrors: ["webhook timeout"] };
-    (listPaymentEvents as Mock).mockResolvedValue({ success: true, data: { events: [failedEvent], pagination: { page: 1, pageSize: 50, totalRecords: 1, totalPages: 1 } } });
+    (listPaymentEvents as Mock).mockResolvedValue({ success: true, data: { events: [failedEvent], pagination: { page: 1, pageSize: 20, totalRecords: 1, totalPages: 1 } } });
     const container = await renderPage();
     const reprocess = buttonByText(container, "Reprocess");
     await act(async () => { reprocess.click(); });
