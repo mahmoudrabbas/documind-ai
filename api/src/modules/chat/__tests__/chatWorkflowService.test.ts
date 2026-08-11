@@ -88,6 +88,7 @@ interface HarnessOptions {
   approvedIds?: string[];
   writerCitations?: string[];
   verifierIds?: string[];
+  verifierAnswer?: string;
   complianceSourceIds?: string[];
   complianceAnswer?: string;
   searchCandidates?: Array<{
@@ -486,6 +487,10 @@ function makeHarness(options: HarnessOptions = {}) {
             validatedCitationIds: verifierIds,
             rejectedCitationIds: [chunkC],
             unsupportedClaims: [],
+            unknownClaims: [],
+            ...(verifierIds.length > 0
+              ? { verifiedAnswer: options.verifierAnswer ?? "WRITER_DRAFT" }
+              : {}),
             reasonCode: verifierIds.length > 0 ? "CITATIONS_VERIFIED" : "MISSING_CITATIONS",
           };
         }
@@ -977,6 +982,15 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     });
     expect(harness.observations.complianceInput).not.toHaveProperty("rejectedCitationIds");
     expect(harness.observations.complianceInput).not.toHaveProperty("candidates");
+  });
+
+  it("hands Compliance the exact final-verified salvage instead of the writer draft", async () => {
+    const harness = makeHarness({ verifierAnswer: "SUPPORTED FACTS ONLY" });
+    await executeHarness(harness);
+    expect(harness.observations.complianceInput).toMatchObject({
+      answer: "SUPPORTED FACTS ONLY",
+      citationVerification: { verified: true },
+    });
   });
 
   it("uses the standalone normalized question and server topK for search", async () => {

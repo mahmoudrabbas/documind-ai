@@ -38,6 +38,8 @@ import {
 
 export interface ProductionChatSupervisorDependencies {
   readonly model: ModelAdapter;
+  /** Optional dedicated verifier model; must implement the same provider-neutral contract. */
+  readonly citationVerifierModel?: ModelAdapter;
   readonly intentQueryService: IntentQueryService;
   readonly authorizedRetrieval: AuthorizedRetrievalDependencies;
   readonly analyticsService?: AnalyticsService;
@@ -86,7 +88,9 @@ export function createProductionChatSupervisorComposition(
     executorRegistry,
     {
       ...evidenceDependencies,
-      semanticVerifier: new CitationSemanticVerificationService(deps.model),
+      semanticVerifier: new CitationSemanticVerificationService(
+        deps.citationVerifierModel ?? deps.model,
+      ),
     },
   );
   registerComplianceAgentExecutor(executorRegistry, {

@@ -125,6 +125,7 @@ export const CitationVerifierReasonCode = z.enum([
   "CITATIONS_VERIFIED",
   "MISSING_CITATIONS",
   "UNSUPPORTED_CLAIMS",
+  "UNRESOLVED_CLAIMS",
   "VERIFICATION_BOUNDS_EXCEEDED",
   "CITATIONS_SKIPPED",
 ]);
@@ -143,6 +144,13 @@ export const CitationVerifierOutputSchema = z
       .array(z.string().trim().min(1).max(500))
       .max(20)
       .default([]),
+    unknownClaims: z
+      .array(z.string().trim().min(1).max(500))
+      .max(20)
+      .optional(),
+    // The exact answer that passed the mandatory final semantic gate. The
+    // workflow never substitutes this unless verified is true.
+    verifiedAnswer: z.string().trim().min(1).max(20_000).optional(),
     reasonCode: CitationVerifierReasonCode,
   })
   .strict();

@@ -376,6 +376,8 @@ function capturePendingAgent(
         "validatedCitationIds",
         "rejectedCitationIds",
         "unsupportedClaims",
+        "unknownClaims",
+        "verifiedAnswer",
         "reasonCode",
       ]),
     );
@@ -742,6 +744,9 @@ function createChatRuntimePolicy(input: {
               validatedCitationIds: [...verifier.validatedCitationIds],
               reasonCode: verifier.reasonCode,
             };
+            if (verifier.verified) {
+              answer = verifier.verifiedAnswer ?? failClosed("Verified citations require the final verified answer");
+            }
           }
         }
 
