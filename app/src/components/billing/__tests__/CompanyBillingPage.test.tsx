@@ -190,6 +190,25 @@ describe("CompanyBillingPage", () => {
     expect(choosePlan?.getAttribute("href")).toBe("/checkout");
   });
 
+  it("shows checkout entry for Free plan with a provider customer but no subscription", async () => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+        status: "ACTIVE",
+        paymentState: "pending",
+        transitionState: "ACTIVE",
+        providerManaged: true,
+        providerLinked: false,
+        pendingOperation: null,
+      },
+    });
+    const { container } = await render();
+    const choosePlan = Array.from(container.querySelectorAll("a")).find((link) => link.textContent === "billingAdmin.choosePlan");
+    expect(choosePlan?.getAttribute("href")).toBe("/checkout");
+  });
+
   it("shows an active provider-less Free plan without paid billing controls", async () => {
     (getBillingSummary as Mock).mockResolvedValueOnce({
       success: true,

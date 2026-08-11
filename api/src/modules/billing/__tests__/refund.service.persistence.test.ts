@@ -22,6 +22,8 @@ const invoiceId = new Types.ObjectId();
 const companyAdminId = new Types.ObjectId();
 const superAdminId = new Types.ObjectId();
 
+const requestProvider = new FakePaymentProvider();
+
 const tenantContext = {
   tenantId: String(tenantId),
   actorId: String(companyAdminId),
@@ -231,6 +233,7 @@ refundPersistence("refund service persistence", () => {
 
   it("replays the same refund request for the same idempotency key", async () => {
     const first = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "FULL",
@@ -239,6 +242,7 @@ refundPersistence("refund service persistence", () => {
       context: tenantContext,
     });
     const second = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "FULL",
@@ -256,6 +260,7 @@ refundPersistence("refund service persistence", () => {
 
   it("rejects same-key requests with a different normalized payload without changing the reservation", async () => {
     await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -266,6 +271,7 @@ refundPersistence("refund service persistence", () => {
     });
 
     await expect(createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -282,6 +288,7 @@ refundPersistence("refund service persistence", () => {
   it("prevents concurrent partial refund requests from exceeding the refundable balance", async () => {
     const results = await Promise.allSettled([
       createRefundRequest({
+        provider: requestProvider,
         tenantId: String(tenantId),
         invoiceId: String(invoiceId),
         mode: "PARTIAL",
@@ -291,6 +298,7 @@ refundPersistence("refund service persistence", () => {
         context: tenantContext,
       }),
       createRefundRequest({
+        provider: requestProvider,
         tenantId: String(tenantId),
         invoiceId: String(invoiceId),
         mode: "PARTIAL",
@@ -313,6 +321,7 @@ refundPersistence("refund service persistence", () => {
   it("keeps the refund pending until provider-authoritative synchronization confirms it", async () => {
     const provider = seededProvider();
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -350,6 +359,7 @@ refundPersistence("refund service persistence", () => {
   it("moves reserved balance to refunded exactly once when synchronization is replayed", async () => {
     const provider = seededProvider();
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -385,6 +395,7 @@ refundPersistence("refund service persistence", () => {
   it("creates one durable cancellation impact under concurrent webhook and reconciliation", async () => {
     const provider = seededProvider();
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId), invoiceId: String(invoiceId), mode: "PARTIAL", amountMinor: 200,
       reason: "service_issue", idempotencyKey: "refund-impact-concurrency", context: tenantContext,
     });
@@ -416,6 +427,7 @@ refundPersistence("refund service persistence", () => {
   it("preserves a pending refund when provider confirmation returns a mismatched amount", async () => {
     const provider = seededProvider();
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -459,6 +471,7 @@ refundPersistence("refund service persistence", () => {
   it("tracks multiple partial refunds before the final remaining refund exactly", async () => {
     const provider = seededProvider();
     const first = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -481,6 +494,7 @@ refundPersistence("refund service persistence", () => {
     expect(invoice?.reservedRefundAmountMinor).toBe(0);
 
     const second = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "FULL",
@@ -505,6 +519,7 @@ refundPersistence("refund service persistence", () => {
 
   it("releases the reservation on rejection without calling the provider", async () => {
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -527,6 +542,7 @@ refundPersistence("refund service persistence", () => {
 
   it("keeps the reservation during retryable provider timeouts and reuses the same refund on retry", async () => {
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -567,6 +583,7 @@ refundPersistence("refund service persistence", () => {
   it("rolls back reservation and operation creation when refund creation fails after the reservation step", async () => {
     const createSpy = vi.spyOn(RefundModel, "create").mockRejectedValueOnce(new Error("write failed"));
     await expect(createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
@@ -584,6 +601,7 @@ refundPersistence("refund service persistence", () => {
 
   it("fails safely for foreign tenant refund access", async () => {
     const requested = await createRefundRequest({
+      provider: requestProvider,
       tenantId: String(tenantId),
       invoiceId: String(invoiceId),
       mode: "PARTIAL",
