@@ -45,6 +45,22 @@ test("discover pipeline joins exact policy before matching and facets remain rep
   assert.equal(serialized.includes("$skip"), false);
 });
 
+test("discover category scopes resolve active tenant taxonomy before matching", () => {
+  const pipeline = buildDiscoverPolicyPipeline(tenantAActor, {
+    selfOnly: false,
+    departmentIds: [],
+    documentCategories: [" Finance "],
+    documentClassifications: [],
+  });
+  const serialized = JSON.stringify(pipeline);
+  assert.match(serialized, /documentcategories/);
+  assert.match(serialized, /normalizedName/);
+  assert.match(serialized, /"\$status","active"/);
+  assert.match(serialized, /_categoryScopeName/);
+  assert.match(serialized, /finance/);
+  assert.equal(serialized.includes("$regexReplace"), false);
+});
+
 test("deny-all coarse query produces an impossible match", () => {
   assert.equal(DOCUMENT_ACCESS_FIXTURE_IDS.tenantA, tenantAActor.tenantId);
   const impossible = [{ $match: { _id: { $exists: false } } }];

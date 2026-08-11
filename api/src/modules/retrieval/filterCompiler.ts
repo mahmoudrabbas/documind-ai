@@ -94,10 +94,23 @@ export function compileAccessFilters(context: AccessContext): AdapterFilter {
     filter.department = { $in: context.resolvedDepartmentFilter };
   }
 
-  // Category scope — only restrict when non-empty scopes are present.
-  const documentCategories = context.permissionScopes?.documentCategories;
-  if (documentCategories !== undefined && documentCategories.length > 0) {
-    filter.category = { $in: documentCategories };
+  // Category scope — only the server-side `resolvedCategoryFilter` is used. It
+  // carries the display names AND normalized names of the tenant-scoped active
+  // DocumentCategory records that the scope's canonical category names resolve
+  // to (mirroring `resolvedDepartmentFilter`), so both legacy normalized
+  // storage ("policies") and display-cased storage ("Policies") match.
+  //
+  // Semantics:
+  //   undefined -> no category restriction
+  //   ["Finance","finance"] -> restrict to that canonical category
+  //   []        -> fail-closed (no categories match; {$in: []} matches nothing)
+  if (context.resolvedCategoryFilter != null) {
+    filter.category = { $in: context.resolvedCategoryFilter };
+  } else if (context.permissionScopes?.documentCategories?.length) {
+    // Defensive fail-closed: a category scope was declared but server-side
+    // taxonomy resolution did not run or produced nothing. Never silently
+    // drop the scope (that would broaden retrieval); match nothing instead.
+    filter.category = { $in: [] };
   }
 
   // selfOnly is handled at the query layer (appended as ownerId) — not a

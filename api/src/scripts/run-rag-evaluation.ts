@@ -42,7 +42,10 @@ import { createEvaluationDocumentAccessAuthorizationService } from "../modules/d
 import { getPermissionEvaluator } from "../modules/permissions/permissions.evaluator.js";
 import { Permission } from "../modules/permissions/permissions.catalog.js";
 import { authorizeTenantOperation } from "../modules/permissions/permissions.operation.js";
-import { resolveDepartmentNames } from "../modules/roles/roles.taxonomy.js";
+import {
+  resolveCategoryScopeValues,
+  resolveDepartmentNames,
+} from "../modules/roles/roles.taxonomy.js";
 import { resolveAuthorizedDocumentHints } from "../modules/intent-query/intentQuery.documentHints.js";
 import { createIntentQueryService } from "../modules/intent-query/intentQuery.factory.js";
 import { FakeConversationContextAdapter } from "../modules/intent-query/adapters/conversationContext.fakeAdapter.js";
@@ -225,6 +228,14 @@ async function run(options: CliOptions): Promise<number> {
         const departmentIds = scope?.departmentIds.length
           ? [...scope.departmentIds]
           : undefined;
+        const categoryNames = scope?.documentCategories.length
+          ? [...scope.documentCategories]
+          : undefined;
+        const resolvedCategory = await resolveCategoryScopeValues(categoryNames, context.tenantId);
+        const resolvedCategoryFilter =
+          resolvedCategory === undefined
+            ? undefined
+            : [...new Set([...resolvedCategory.names, ...resolvedCategory.normalizedNames])].sort();
         return {
           ...context,
           baseRole: persisted.baseRole,
@@ -235,6 +246,7 @@ async function run(options: CliOptions): Promise<number> {
             departmentIds,
             context.tenantId,
           ),
+          resolvedCategoryFilter,
           requiredAction: "use_in_ai",
         };
       },

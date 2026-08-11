@@ -79,7 +79,24 @@ describe("FilterCompiler", () => {
       assert.equal(filter.department, undefined);
     });
 
-    it("EMPLOYEE with category scopes restricts category", () => {
+    it("EMPLOYEE with category scopes restricts category via resolved display names", () => {
+      const ctx: AccessContext = {
+        tenantId: "t5",
+        actorId: "a5",
+        baseRole: "EMPLOYEE",
+        permissionScopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: ["hr", "finance"],
+          documentClassifications: [],
+        },
+        resolvedCategoryFilter: ["Finance", "finance", "HR", "hr"],
+      };
+      const filter = compileAccessFilters(ctx);
+      assert.deepEqual(filter.category, { $in: ["Finance", "finance", "HR", "hr"] });
+    });
+
+    it("EMPLOYEE with category scopes but no server-side resolution fails closed", () => {
       const ctx: AccessContext = {
         tenantId: "t5",
         actorId: "a5",
@@ -92,7 +109,7 @@ describe("FilterCompiler", () => {
         },
       };
       const filter = compileAccessFilters(ctx);
-      assert.deepEqual(filter.category, { $in: ["hr", "finance"] });
+      assert.deepEqual(filter.category, { $in: [] });
     });
 
     it("explicit permissionScopes override role defaults for classification", () => {

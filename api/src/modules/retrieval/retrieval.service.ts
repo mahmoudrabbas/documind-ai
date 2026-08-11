@@ -312,6 +312,46 @@ function retainAuthorized<T extends { chunkId: string }>(candidates: T[], author
   return candidates.filter((candidate) => authorizedChunkIds.has(candidate.chunkId));
 }
 
+/**
+ * Reauthorize only the final hydrated documents immediately before their
+ * content can leave the retrieval service. Raw candidates are authorized
+ * earlier for efficient filtering; this second check closes the revocation
+ * window between candidate authorization and final content return.
+ */
+async function reauthorizeFinalCandidates(
+  deps: RetrievalServiceDeps,
+  context: AccessContext,
+  candidates: RetrievalCandidate[],
+  traceId: string,
+): Promise<RetrievalCandidate[]> {
+  if (candidates.length === 0) return [];
+
+  const documentIds = [...new Set(candidates.map((candidate) => candidate.documentId))];
+  const authorizedDocumentIds = new Set<string>();
+  await Promise.all(documentIds.map(async (documentId) => {
+    try {
+      await deps.authorizeDocumentForAi(context, documentId);
+      authorizedDocumentIds.add(documentId);
+    } catch (error) {
+      const reasonCode = error instanceof AppError ? error.code : "AUTHORIZATION_FAILED";
+      logger.info(
+        {
+          traceId,
+          userId: context.actorId,
+          tenantId: context.tenantId,
+          documentId,
+          requiredAction: "use_in_ai",
+          authorizationResult: "denied",
+          reasonCode,
+        },
+        "Final RAG document authorization",
+      );
+    }
+  }));
+
+  return candidates.filter((candidate) => authorizedDocumentIds.has(candidate.documentId));
+}
+
 async function resolveAuthorizationContext(deps: RetrievalServiceDeps, context: AccessContext): Promise<AccessContext> {
   const resolved = await deps.resolveAccessContext(context);
   return { ...resolved, requiredAction: "use_in_ai" };
@@ -525,12 +565,18 @@ export function createRetrievalService(
       const fusionLatencyMs = Date.now() - fusionStartTime;
 
       // Re-validate and hydrate
-      const hydrated = await revalidateAndHydrate(
+      let hydrated = await revalidateAndHydrate(
         deps,
         authorizationContext.tenantId,
         fused,
         mandatory,
         authorizationContext,
+      );
+      hydrated = await reauthorizeFinalCandidates(
+        deps,
+        authorizationContext,
+        hydrated,
+        traceId,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
@@ -670,12 +716,18 @@ export function createRetrievalService(
       const fusionLatencyMs = Date.now() - fusionStartTime;
 
       // Re-validate and hydrate
-      const hydrated = await revalidateAndHydrate(
+      let hydrated = await revalidateAndHydrate(
         deps,
         authorizationContext.tenantId,
         fused,
         mandatory,
         authorizationContext,
+      );
+      hydrated = await reauthorizeFinalCandidates(
+        deps,
+        authorizationContext,
+        hydrated,
+        traceId,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
@@ -752,12 +804,18 @@ export function createRetrievalService(
       const fusionLatencyMs = Date.now() - fusionStartTime;
 
       // Re-validate and hydrate
-      const hydrated = await revalidateAndHydrate(
+      let hydrated = await revalidateAndHydrate(
         deps,
         authorizationContext.tenantId,
         fused,
         mandatory,
         authorizationContext,
+      );
+      hydrated = await reauthorizeFinalCandidates(
+        deps,
+        authorizationContext,
+        hydrated,
+        traceId,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;

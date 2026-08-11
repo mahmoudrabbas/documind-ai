@@ -3,7 +3,11 @@ import test, { after, before, beforeEach } from "node:test";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import DepartmentModel from "../../db/models/department.model.js";
-import { resolveDepartmentNames } from "./roles.taxonomy.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import {
+  resolveCategoryScopeValues,
+  resolveDepartmentNames,
+} from "./roles.taxonomy.js";
 
 let mongoServer: MongoMemoryServer | null = null;
 
@@ -17,6 +21,7 @@ before(async () => {
 
 beforeEach(async () => {
   await DepartmentModel.deleteMany({});
+  await DocumentCategoryModel.deleteMany({});
 });
 
 after(async () => {
@@ -132,4 +137,89 @@ test("resolveDepartmentNames fails closed when a department is archived", async 
     tenantId.toString(),
   );
   assert.deepEqual(result, []);
+});
+
+function categoryDoc(overrides: Partial<{ name: string; normalizedName: string; status: "active" | "archived" }> = {}): {
+  tenantId: mongoose.Types.ObjectId;
+  name: string;
+  normalizedName: string;
+  description: string | null;
+  status: "active" | "archived";
+  version: number;
+  createdBy: mongoose.Types.ObjectId;
+  updatedBy: mongoose.Types.ObjectId;
+} {
+  const tenantId = new mongoose.Types.ObjectId();
+  return {
+    tenantId,
+    name: "Finance",
+    normalizedName: "finance",
+    description: null,
+    status: "active",
+    version: 1,
+    createdBy: new mongoose.Types.ObjectId(),
+    updatedBy: new mongoose.Types.ObjectId(),
+    ...overrides,
+  };
+}
+
+test("resolveCategoryScopeValues returns undefined when no names provided", async () => {
+  assert.equal(await resolveCategoryScopeValues(undefined, "tenant-1"), undefined);
+  assert.equal(await resolveCategoryScopeValues([], "tenant-1"), undefined);
+});
+
+test("resolveCategoryScopeValues resolves scope names to ids, display names and normalized names", async () => {
+  const doc = await DocumentCategoryModel.create(categoryDoc());
+  const tenantId = doc.tenantId.toString();
+
+  const result = await resolveCategoryScopeValues(["finance"], tenantId);
+  assert.deepEqual(result, {
+    ids: [doc._id.toString()],
+    names: ["Finance"],
+    normalizedNames: ["finance"],
+  });
+});
+
+test("resolveCategoryScopeValues normalizes input names before matching", async () => {
+  const doc = await DocumentCategoryModel.create(categoryDoc());
+  const tenantId = doc.tenantId.toString();
+
+  const result = await resolveCategoryScopeValues(["  Finance  "], tenantId);
+  assert.deepEqual(result?.ids, [doc._id.toString()]);
+});
+
+test("resolveCategoryScopeValues fails closed when a name does not exist", async () => {
+  const doc = await DocumentCategoryModel.create(categoryDoc());
+  const tenantId = doc.tenantId.toString();
+
+  const result = await resolveCategoryScopeValues(["finance", "contracts"], tenantId);
+  assert.deepEqual(result, { ids: [], names: [], normalizedNames: [] });
+});
+
+test("resolveCategoryScopeValues fails closed when a category belongs to another tenant", async () => {
+  await DocumentCategoryModel.create(categoryDoc());
+  const otherTenant = new mongoose.Types.ObjectId().toString();
+
+  const result = await resolveCategoryScopeValues(["finance"], otherTenant);
+  assert.deepEqual(result, { ids: [], names: [], normalizedNames: [] });
+});
+
+test("resolveCategoryScopeValues fails closed when a category is archived", async () => {
+  const doc = await DocumentCategoryModel.create(categoryDoc({ status: "archived" }));
+  const tenantId = doc.tenantId.toString();
+
+  const result = await resolveCategoryScopeValues(["finance"], tenantId);
+  assert.deepEqual(result, { ids: [], names: [], normalizedNames: [] });
+});
+
+test("resolveCategoryScopeValues fails closed when tenantId is invalid or missing", async () => {
+  await DocumentCategoryModel.create(categoryDoc());
+  assert.deepEqual(
+    await resolveCategoryScopeValues(["finance"], "not-a-valid-tenant"),
+    { ids: [], names: [], normalizedNames: [] },
+  );
+  assert.deepEqual(
+    await resolveCategoryScopeValues(["finance"], undefined),
+    { ids: [], names: [], normalizedNames: [] },
+  );
 });

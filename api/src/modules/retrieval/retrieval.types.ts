@@ -40,6 +40,19 @@ export interface AccessContext {
    * `['HR', 'IT']` = restrict to those departments.
    */
   resolvedDepartmentFilter?: string[] | null;
+  /**
+   * Category names resolved server-side from the DOCUMENTS_USE_IN_AI grant
+   * scope's `documentCategories` (canonical taxonomy names) to the display
+   * names AND normalized names of the tenant-scoped active DocumentCategory
+   * records they resolve to, so they can be compared against the `category`
+   * field stored on document/chunk records.
+   *
+   * Populated by `resolveAccessContext` in `app.ts`.
+   * `undefined` = no category restriction.
+   * `[]` = fail-closed (restrictive scope failed resolution; match nothing).
+   * `['Finance', 'finance']` = restrict to that canonical category.
+   */
+  resolvedCategoryFilter?: string[] | null;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }

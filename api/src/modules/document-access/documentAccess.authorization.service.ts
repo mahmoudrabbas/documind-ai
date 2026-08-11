@@ -4,6 +4,7 @@ import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
 import DepartmentModel from "../../db/models/department.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { normalizeTaxonomyName } from "../document-taxonomy/documentTaxonomy.normalization.js";
@@ -29,7 +30,7 @@ export class DocumentAccessAuthorizationService {
       if (!actor) return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
       if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING");
       if (document.deletedAt && action !== "restore" && action !== "delete") return this.deny(context, documentId, action, "DOCUMENT_DELETED");
-      const resource = resourceContext(document);
+      const resource = await this.withCanonicalCategory(resourceContext(document));
 
       // Control-plane recovery does not imply permission to use document content in AI.
       if (
@@ -100,6 +101,20 @@ export class DocumentAccessAuthorizationService {
     return DocumentModel.findOne({ _id: documentId, tenantId }).select("tenantId owner uploadedBy category department classification categoryId departmentId classificationId status isArchived deletedAt activePolicyId activePolicyVersion").lean().exec();
   }
 
+  /**
+   * Populates `canonicalCategoryName` when the document references a real
+   * DocumentCategory record (`categoryId`) but carries no `category` text. The
+   * capability adapter compares category scope values (canonical normalized
+   * names) against a category NAME, never a category ObjectId; resolving the
+   * canonical name here keeps the canonical category ID path authorizable.
+   */
+  private async withCanonicalCategory(resource: DocumentAccessResourceContext): Promise<DocumentAccessResourceContext> {
+    if (resource.canonicalCategoryName || resource.legacyCategory || !resource.categoryId) return resource;
+    if (!mongoose.isObjectIdOrHexString(resource.categoryId)) return resource;
+    const category = await DocumentCategoryModel.findOne({ _id: resource.categoryId, tenantId: resource.tenantId, status: "active" }).select("normalizedName").lean().exec();
+    return { ...resource, canonicalCategoryName: category?.normalizedName ?? null };
+  }
+
   private async deny(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction, reasonCode: string): Promise<never> {
     await this.auditWriter.write({ action: "DOCUMENT_ACCESS_DENIED", resourceType: "Document", resourceId: documentId,
       tenantId: context.tenantId, actorId: context.actorId, outcome: "DENIED", metadata: { documentId, action, reasonCode } });
@@ -118,6 +133,25 @@ function resourceContext(document: NonNullable<Awaited<ReturnType<DocumentAccess
 
 export function buildDiscoverPolicyPipeline(actor: DocumentAccessActorContext, scopes: PermissionScopes | null): PipelineStage[] {
   const now = new Date();
+  const categoryScopeNames = [...new Set((scopes?.documentCategories ?? []).map(normalizeTaxonomyName).filter(Boolean))];
+  const categoryScopeStages: PipelineStage[] = categoryScopeNames.length ? [
+    { $lookup: { from: "documentcategories", let: { tenant: "$tenantId", categoryId: "$categoryId" }, pipeline: [
+      { $match: { $expr: { $and: [
+        { $eq: ["$tenantId", "$$tenant"] }, { $eq: ["$status", "active"] },
+        { $in: ["$normalizedName", categoryScopeNames] },
+        { $or: [
+          { $and: [{ $ne: ["$$categoryId", null] }, { $eq: ["$_id", "$$categoryId"] }] },
+          { $and: [{ $eq: ["$$categoryId", null] }, { $in: ["$normalizedName", categoryScopeNames] }] },
+        ] },
+      ] } } },
+      { $project: { _id: 1, normalizedName: 1 } },
+    ], as: "_categoryScopeTaxonomy" } },
+    { $set: { _categoryScopeName: { $cond: [
+      { $ne: ["$categoryId", null] },
+      { $arrayElemAt: ["$_categoryScopeTaxonomy.normalizedName", 0] },
+      { $toLower: { $trim: { input: { $ifNull: ["$category", ""] } } } },
+    ] } } },
+  ] : [];
   const subject = (rule: string): Record<string, unknown> => ({ $or: [
     { $and: [{ $eq: [`${rule}.subject.type`, "user"] }, { $eq: [`${rule}.subject.id`, actor.actorId] }] },
     { $and: [{ $eq: [`${rule}.subject.type`, "custom_role"] }, { $eq: [`${rule}.subject.id`, actor.customRoleId ?? null] }] },
@@ -128,9 +162,13 @@ export function buildDiscoverPolicyPipeline(actor: DocumentAccessActorContext, s
   const scopeMatch: Record<string, unknown>[] = [];
   if (scopes?.selfOnly) scopeMatch.push({ owner: new mongoose.Types.ObjectId(actor.actorId) });
   if (scopes?.departmentIds.length) scopeMatch.push({ departmentId: { $in: scopes.departmentIds.map((id) => new mongoose.Types.ObjectId(id)) } });
-  if (scopes?.documentCategories.length) scopeMatch.push({ $or: [{ categoryId: { $in: scopes.documentCategories.filter(mongoose.isObjectIdOrHexString).map((id) => new mongoose.Types.ObjectId(id)) } }, { category: { $in: scopes.documentCategories } }] });
+  if (categoryScopeNames.length) scopeMatch.push({ $expr: { $and: [
+    { $gt: [{ $size: "$_categoryScopeTaxonomy" }, 0] },
+    { $in: ["$_categoryScopeName", categoryScopeNames] },
+  ] } });
   if (scopes?.documentClassifications.length) scopeMatch.push({ $or: [{ classificationId: { $in: scopes.documentClassifications.filter(mongoose.isObjectIdOrHexString).map((id) => new mongoose.Types.ObjectId(id)) } }, { classification: { $in: scopes.documentClassifications } }] });
   return [
+    ...categoryScopeStages,
     ...(scopeMatch.length ? [{ $match: { $and: scopeMatch } } as PipelineStage] : []),
     { $lookup: { from: "documentaccesspolicies", let: { tenant: "$tenantId", doc: "$_id", policy: "$activePolicyId", version: "$activePolicyVersion" }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ["$tenantId", "$$tenant"] }, { $eq: ["$documentId", "$$doc"] }, { $eq: ["$policyId", "$$policy"] }, { $eq: ["$policyVersion", "$$version"] }] } } }], as: "_accessPolicy" } },
     { $unwind: "$_accessPolicy" },
@@ -152,7 +190,7 @@ export function buildDiscoverPolicyPipeline(actor: DocumentAccessActorContext, s
     ] } },
     { $set: { _matchingRules: { $filter: { input: "$_rules", as: "rule", cond: { $and: [{ $in: ["discover", "$$rule.actions"] }, subject("$$rule")] } } } } },
     { $match: { $expr: { $and: [{ $gt: [{ $size: { $filter: { input: "$_matchingRules", as: "rule", cond: { $eq: ["$$rule.effect", "allow"] } } } }, 0] }, { $eq: [{ $size: { $filter: { input: "$_matchingRules", as: "rule", cond: { $eq: ["$$rule.effect", "deny"] } } } }, 0] }] } } },
-    { $unset: ["_accessPolicy", "_inheritedPolicy", "_parent", "_inheritValid", "_rules", "_matchingRules"] },
+    { $unset: ["_accessPolicy", "_inheritedPolicy", "_parent", "_inheritValid", "_rules", "_matchingRules", "_categoryScopeTaxonomy", "_categoryScopeName"] },
   ];
 }
 

@@ -297,3 +297,75 @@ export async function resolveDepartmentNames(
 
   return records.map((rec) => rec.name).filter(Boolean);
 }
+
+export interface ResolvedCategoryScopeValues {
+  /** Canonical DocumentCategory ObjectIds (strings) that the scope names resolved to. */
+  ids: string[];
+  /** Display names (`DocumentCategoryModel.name`) for matching persisted text metadata. */
+  names: string[];
+  /** Canonical normalized taxonomy names (`DocumentCategoryModel.normalizedName`). */
+  normalizedNames: string[];
+}
+
+/**
+ * Resolves document category scope names (canonical taxonomy names from a role
+ * grant's `documentCategories`) to the tenant-scoped active DocumentCategory
+ * records they refer to.
+ *
+ * Mirrors `resolveDepartmentNames` but returns the canonical ids as well as the
+ * display and normalized names, so callers can authorize via canonical
+ * taxonomy identity when it is available and via text metadata otherwise.
+ *
+ * **Fails closed:**
+ * - If `tenantId` is missing or invalid, returns an empty result
+ *   (`{ ids: [], names: [], normalizedNames: [] }`).
+ * - If ANY scope name does not normalize, or does not resolve to an active
+ *   DocumentCategory record in the SAME tenant (including archived or
+ *   foreign-tenant categories), returns an empty result.
+ *
+ * The caller must treat an empty result as "no categories are allowed",
+ * never as "all categories are allowed".
+ *
+ * @param documentCategories Canonical category names from a permission grant.
+ * @param tenantId           Tenant context used to confirm each category belongs to the tenant.
+ * @returns                  `undefined` when no names were provided (no restriction),
+ *                           a resolved result on success,
+ *                           or an empty result on any resolution failure (fail-closed).
+ */
+export async function resolveCategoryScopeValues(
+  documentCategories: string[] | undefined,
+  tenantId: string | undefined,
+): Promise<ResolvedCategoryScopeValues | undefined> {
+  if (!documentCategories?.length) return undefined;
+  if (!tenantId) return { ids: [], names: [], normalizedNames: [] };
+
+  let tenantObjectId: Types.ObjectId;
+  try {
+    tenantObjectId = new Types.ObjectId(tenantId);
+  } catch {
+    return { ids: [], names: [], normalizedNames: [] };
+  }
+
+  const normalizedNames = [
+    ...new Set(documentCategories.map(normalizeTaxonomyName).filter(Boolean)),
+  ];
+  if (normalizedNames.length === 0) return { ids: [], names: [], normalizedNames: [] };
+
+  const records = await DocumentCategoryModel.find({
+    tenantId: tenantObjectId,
+    normalizedName: { $in: normalizedNames },
+    status: "active",
+  })
+    .select("name normalizedName")
+    .lean();
+
+  if (records.length !== normalizedNames.length) {
+    return { ids: [], names: [], normalizedNames: [] };
+  }
+
+  return {
+    ids: records.map((rec) => rec._id.toString()).sort(),
+    names: records.map((rec) => rec.name).filter(Boolean).sort(),
+    normalizedNames: records.map((rec) => rec.normalizedName).sort(),
+  };
+}

@@ -55,6 +55,7 @@ import {
   permissionScopesAreEmpty,
   prepareCreateRoleSubmission,
   prepareUpdateRoleSubmission,
+  replacePermissionGrant,
   type ActorGrantMap,
 } from "@/lib/permission-utils";
 import {
@@ -133,29 +134,49 @@ function grantsEqual(a: PermissionGrant[], b: PermissionGrant[]): boolean {
 function formatScope(
   scopes: PermissionScopes | null | undefined,
   t: (key: string, params?: Record<string, string>) => string,
+  options: RoleScopeOptions,
 ): string {
   if (!scopes || permissionScopesAreEmpty(scopes))
     return t("dashboard.roles.scopeUnrestricted");
   const parts: string[] = [];
+  const displayValues = (
+    values: string[],
+    dimension: "departments" | "categories" | "classifications",
+    valueKey: "id" | "name",
+  ) => {
+    const available = [...options[dimension], ...options.archived[dimension]];
+    const byKey = new Map(
+      available.map((option) => [
+        valueKey === "id" ? option.id : normalizeTaxonomyName(option.normalizedName),
+        option.name,
+      ]),
+    );
+    return values
+      .map((value) => {
+        const key = valueKey === "id" ? value : normalizeTaxonomyName(value);
+        return byKey.get(key) ?? `${value} (unknown)`;
+      })
+      .join(", ");
+  };
   if (scopes.selfOnly) parts.push(t("dashboard.roles.scopeSelfOnly"));
   if (scopes.departmentIds.length > 0) {
     parts.push(
       t("dashboard.roles.scopeDepartments", {
-        departments: scopes.departmentIds.join(", "),
+        departments: displayValues(scopes.departmentIds, "departments", "id"),
       }),
     );
   }
   if (scopes.documentCategories.length > 0) {
     parts.push(
       t("dashboard.roles.scopeCategories", {
-        categories: scopes.documentCategories.join(", "),
+        categories: displayValues(scopes.documentCategories, "categories", "name"),
       }),
     );
   }
   if (scopes.documentClassifications.length > 0) {
     parts.push(
       t("dashboard.roles.scopeClassifications", {
-        classifications: scopes.documentClassifications.join(", "),
+        classifications: displayValues(scopes.documentClassifications, "classifications", "name"),
       }),
     );
   }
@@ -1171,7 +1192,7 @@ function CreateRolePanel({
   baseRole: TenantBaseRole;
   onBaseRoleChange: (value: TenantBaseRole) => void;
   grants: PermissionGrant[];
-  onGrantsChange: (value: PermissionGrant[]) => void;
+  onGrantsChange: (value: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   inheritedIds: string[];
   catalogEntries: PermissionCatalogEntry[];
   selectableGroups: PermissionCatalogGroup[];
@@ -1718,7 +1739,7 @@ function PermissionEditor({
   actorGrants: ActorGrantMap;
   inheritedIds: string[];
   selectedGrants: PermissionGrant[];
-  onChange: (grants: PermissionGrant[]) => void;
+  onChange: (grants: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   loading: boolean;
   scopeOptions: RoleScopeOptions;
   scopeOptionsLoading: boolean;
@@ -1757,10 +1778,7 @@ function PermissionEditor({
     .filter((group) => group.permissions.length > 0);
 
   const updateGrant = (permission: string, next: PermissionGrant | null) => {
-    const without = selectedGrants.filter(
-      (grant) => grant.permission !== permission,
-    );
-    onChange(next ? [...without, next] : without);
+    onChange((current) => replacePermissionGrant(current, permission, next));
   };
 
   if (loading)
@@ -1920,7 +1938,7 @@ function PermissionEditor({
                                   source:
                                     actorGrant?.source ??
                                     t("dashboard.roles.actorSourceUnavailable"),
-                                  scope: formatScope(actorGrant?.scope, t),
+                                  scope: formatScope(actorGrant?.scope, t, scopeOptions),
                                 })}
                               </span>
                             </span>
@@ -1986,7 +2004,7 @@ function ScopeControls({
       </legend>
       <p className="text-[11px] text-on-surface-variant">
         {t("dashboard.roles.submittedScopeHelp", {
-          scope: formatScope(actorScope, t),
+          scope: formatScope(actorScope, t, scopeOptions),
         })}
       </p>
       {control("selfOnly") ? (
@@ -2104,7 +2122,7 @@ function RoleDetailsDialog({
   onCancelEdit: () => void;
   onEditNameChange: (value: string) => void;
   onEditBaseRoleChange: (value: TenantBaseRole) => void;
-  onEditGrantsChange: (value: PermissionGrant[]) => void;
+  onEditGrantsChange: (value: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   onSave: () => void;
   onReloadLatest: () => void;
 }) {
@@ -2327,7 +2345,7 @@ function RoleDetailsDialog({
                                 grant.permission}
                             </p>
                             <p className="mt-1 text-xs text-on-surface-variant">
-                              {formatScope(grant.scopes, t)}
+                              {formatScope(grant.scopes, t, scopeOptions)}
                             </p>
                           </li>
                         ))}

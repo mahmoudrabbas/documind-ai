@@ -66,7 +66,13 @@ The filter compiler has two phases:
       `[]` means fail-closed (match nothing); `undefined` means no restriction.
       Raw ObjectIds from `permissionScopes.departmentIds` are never placed
       directly into the adapter filter.
-   - `category` — only when `permissionScopes.documentCategories` is non-empty
+   - `category` — only when `resolvedCategoryFilter` is set (display and
+     normalized names resolved from `permissionScopes.documentCategories` via
+     `resolveCategoryScopeValues`, mirroring `resolvedDepartmentFilter`).
+     `[]` means fail-closed (match nothing); `undefined` means no restriction.
+     Raw canonical scope names from `permissionScopes.documentCategories` are
+     never placed directly into the adapter filter — they would not match the
+     display-cased `category` text persisted on document/chunk records.
 
 2. **Query filters** (`compileQueryFilters`) — optional user narrowing (documentIds, classifications, departments, categories).
 

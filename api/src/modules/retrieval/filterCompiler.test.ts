@@ -149,13 +149,33 @@ describe("compileAccessFilters", () => {
     assert.deepEqual(f.department, { $in: ["HR", "IT"] });
   });
 
-  it("adds category filter when scope present", () => {
+  it("uses resolved category filter (display + normalized names) when scope present", () => {
+    const f = compileAccessFilters(
+      ctx({
+        permissionScopes: scopes({ documentCategories: ["finance", "hr"] }),
+        resolvedCategoryFilter: ["Finance", "finance", "HR", "hr"],
+      })
+    );
+    assert.deepEqual(f.category, { $in: ["Finance", "finance", "HR", "hr"] });
+  });
+
+  it("fails closed (matches nothing) when category scope is declared but not resolved", () => {
     const f = compileAccessFilters(
       ctx({
         permissionScopes: scopes({ documentCategories: ["finance", "hr"] }),
       })
     );
-    assert.deepEqual(f.category, { $in: ["finance", "hr"] });
+    assert.deepEqual(f.category, { $in: [] });
+  });
+
+  it("fails closed when category scope resolution produces an empty result", () => {
+    const f = compileAccessFilters(
+      ctx({
+        permissionScopes: scopes({ documentCategories: ["finance"] }),
+        resolvedCategoryFilter: [],
+      })
+    );
+    assert.deepEqual(f.category, { $in: [] });
   });
 
   it("does NOT add category filter when scope is empty array", () => {
@@ -189,6 +209,7 @@ describe("compileAccessFilters", () => {
       ctx({
         baseRole: "COMPANY_ADMIN",
         resolvedDepartmentFilter: ["finance"],
+        resolvedCategoryFilter: ["Finance", "finance"],
         permissionScopes: scopes({
           documentClassifications: ["confidential"],
           departmentIds: ["d1"],
@@ -198,7 +219,7 @@ describe("compileAccessFilters", () => {
     );
     assert.deepEqual(f.classification, { $in: ["confidential"] });
     assert.deepEqual(f.department, { $in: ["finance"] });
-    assert.deepEqual(f.category, { $in: ["finance"] });
+    assert.deepEqual(f.category, { $in: ["Finance", "finance"] });
   });
 });
 

@@ -14,6 +14,15 @@ export type ActorGrantMap = Record<
   { source: PermissionSource; scope: PermissionScopes | null }
 >;
 
+export function replacePermissionGrant(
+  grants: PermissionGrant[],
+  permission: string,
+  next: PermissionGrant | null,
+): PermissionGrant[] {
+  const without = grants.filter((grant) => grant.permission !== permission);
+  return next ? [...without, next] : without;
+}
+
 export function deriveInheritedPermissionIds(
   baseRoleDefaults: Record<string, string[]>,
   baseRole: "COMPANY_ADMIN" | "EMPLOYEE",
