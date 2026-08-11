@@ -145,7 +145,7 @@ describe("document_uploaded trigger producer", () => {
     expect(documentUploadedMetadataSchema.safeParse(envelope.payload.metadata).success).toBe(true);
   });
 
-  it("publishes nothing when the upload fails (quarantined file)", async () => {
+  it("publishes nothing when the upload fails with a signature mismatch", async () => {
     const port = new FakeTriggerPort();
     const service = makeService(port);
 
@@ -156,7 +156,7 @@ describe("document_uploaded trigger producer", () => {
         "tenant-1",
         ACTOR,
       ),
-    ).rejects.toThrow(/quarantined/i);
+    ).rejects.toThrow(/File contents do not match the declared file type/i);
 
     expect(port.envelopes).toHaveLength(0);
   });
