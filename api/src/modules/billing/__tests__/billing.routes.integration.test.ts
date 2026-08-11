@@ -52,6 +52,10 @@ const ids = {
 
 const secretPasswordHash = "not-used";
 
+// Refund eligibility enforces a 7-day window from invoice payment, so seeded
+// payments must stay recent relative to the test run.
+const recentPaidAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
 beforeAll(async () => {
   if (mongoose.connection.readyState === 0) {
     await mongoose.connect(process.env.MONGODB_URI!);
@@ -339,23 +343,84 @@ describe("billing route integration", () => {
       previewId: firstEligibilityId,
       idempotencyKey: "refund-platform-list-001",
     });
-    const refundId = String((await requested.json()).data.refund.id);
+    const requestedBody = await requested.json();
+    const refundId = String(requestedBody.data.refund.id);
+    // Self-serve refunds inside the 7-day window auto-execute without admin
+    // confirmation, so the platform confirm route must reject them.
+    expect(requestedBody.data.refund.status).toBe("SUCCEEDED");
+
+    // Historical requested refunds remain reviewable even though new customer
+    // requests reserve the invoice's entire system-calculated balance. The
+    // reviewable refund targets its own invoice because the auto-executed
+    // refund above already consumed invoiceA's balance.
+    const reviewInvoiceId = new Types.ObjectId();
+    await InvoiceModel.create({
+      _id: reviewInvoiceId,
+      tenantId: ids.tenantA,
+      subscriptionId: ids.subscriptionA,
+      provider: "fake",
+      providerInvoiceId: "in_review_fixture",
+      paymentReference: "ch_review_fixture",
+      invoiceNumber: "INV-REVIEW-1",
+      status: "paid",
+      currency: "USD",
+      amountDueMinor: 500,
+      amountPaidMinor: 500,
+      amountRemainingMinor: 0,
+      refundedAmountMinor: 0,
+      reservedRefundAmountMinor: 25,
+      subtotalMinor: 500,
+      taxMinor: 0,
+      createdAtProvider: recentPaidAt,
+      dueAt: null,
+      paidAt: recentPaidAt,
+      periodStart: new Date("2026-07-01T00:00:00.000Z"),
+      periodEnd: new Date("2099-08-01T00:00:00.000Z"),
+      synchronizedAt: recentPaidAt,
+      providerVersion: "v1",
+    });
+    fakeProvider.seedInvoice({
+      id: "in_review_fixture",
+      customerId: "cus_tenant_a",
+      subscriptionId: "sub_tenant_a",
+      paymentReference: "ch_review_fixture",
+      number: "INV-REVIEW-1",
+      status: "paid",
+      currency: "USD",
+      amountDueMinor: 500,
+      amountPaidMinor: 500,
+      amountRemainingMinor: 0,
+      refundedAmountMinor: 0,
+      subtotalMinor: 500,
+      taxMinor: 0,
+      createdAt: recentPaidAt,
+      dueAt: null,
+      paidAt: recentPaidAt,
+      periodStart: new Date("2026-07-01T00:00:00.000Z"),
+      periodEnd: new Date("2099-08-01T00:00:00.000Z"),
+      providerVersion: "v1",
+    });
+    const reviewableRefundId = await seedRequestedRefund(String(ids.companyAdminA), {
+      invoiceId: reviewInvoiceId,
+      paymentReference: "ch_review_fixture",
+    });
 
     const list = await api("GET", `/super-admin/refunds?page=1&pageSize=10&tenantId=${ids.tenantA}`, superAdmin.token);
     expect(list.status).toBe(200);
     const listBody = await list.json();
-    expect(listBody.data.refunds).toHaveLength(1);
+    expect(listBody.data.refunds).toHaveLength(2);
     expect(JSON.stringify(listBody)).not.toMatch(/providerRefundId|paymentReference|cus_|re_/i);
 
     const detail = await api("GET", `/super-admin/refunds/${refundId}`, superAdmin.token);
     expect(detail.status).toBe(200);
 
     const confirm = await api("POST", `/super-admin/refunds/${refundId}/confirm`, superAdmin.token, {});
-    expect(confirm.status).toBe(200);
-    expect((await confirm.json()).data.refund.status).toBe("PROVIDER_PENDING");
+    expect(confirm.status).toBe(409);
 
-    // Historical requested refunds remain reviewable even though new customer
-    // requests reserve the invoice's entire system-calculated balance.
+    const confirmReviewable = await api("POST", `/super-admin/refunds/${reviewableRefundId}/confirm`, superAdmin.token, {});
+    expect(confirmReviewable.status).toBe(200);
+    expect((await confirmReviewable.json()).data.refund.status).toBe("PROVIDER_PENDING");
+
     const rejectedRefundId = await seedRequestedRefund(String(ids.companyAdminA));
     const reject = await api("POST", `/super-admin/refunds/${rejectedRefundId}/reject`, superAdmin.token, { reason: "policy decision" });
     expect(reject.status).toBe(200);
@@ -488,10 +553,6 @@ async function seedBaseState() {
     paymentState: "paid",
     revision: 3,
   });
-
-  // Refund eligibility enforces a 7-day window from invoice payment, so the
-  // seeded payment must stay recent relative to the test run.
-  const recentPaidAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
   await InvoiceModel.create({
     _id: ids.invoiceA,
@@ -730,7 +791,10 @@ async function seedRetryableRefund(): Promise<string> {
   return String(refund._id);
 }
 
-async function seedRequestedRefund(requestedBy: string): Promise<string> {
+async function seedRequestedRefund(
+  requestedBy: string,
+  target: { invoiceId: Types.ObjectId; paymentReference: string } = { invoiceId: ids.invoiceA, paymentReference: "ch_tenant_a_1" },
+): Promise<string> {
   const operationId = new Types.ObjectId();
   const actorRole = requestedBy === String(ids.superAdminA) ? "SUPER_ADMIN" : "COMPANY_ADMIN";
   await BillingOperationModel.create({
@@ -747,8 +811,8 @@ async function seedRequestedRefund(requestedBy: string): Promise<string> {
   });
   const refund = await RefundModel.create({
     tenantId: ids.tenantA,
-    invoiceId: ids.invoiceA,
-    paymentReference: "ch_tenant_a_1",
+    invoiceId: target.invoiceId,
+    paymentReference: target.paymentReference,
     subscriptionId: ids.subscriptionA,
     operationId,
     amountMinor: 25,
