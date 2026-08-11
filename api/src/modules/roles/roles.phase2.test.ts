@@ -379,10 +379,10 @@ test("scope options return active taxonomy plus archived resolutions", async () 
   const { context, tenant, admin, employee } = await fixture("scope-options");
   const activeDept = await DepartmentModel.create({ tenantId: tenant._id, name: "Engineering", normalizedName: "engineering", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
   const archivedDept = await DepartmentModel.create({ tenantId: tenant._id, name: "Legacy Dept", normalizedName: "legacy dept", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
-  const activeCategory = await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Policies", normalizedName: "policies", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
-  const archivedCategory = await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Old Category", normalizedName: "old category", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
-  const activeClassification = await DocumentClassificationModel.create({ tenantId: tenant._id, name: "Confidential", normalizedName: "confidential", level: "confidential", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
-  const archivedClassification = await DocumentClassificationModel.create({ tenantId: tenant._id, name: "Legacy Class", normalizedName: "legacy class", level: "internal", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+  await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Policies", normalizedName: "policies", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
+  await DocumentCategoryModel.create({ tenantId: tenant._id, name: "Old Category", normalizedName: "old category", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
+  await DocumentClassificationModel.create({ tenantId: tenant._id, name: "Confidential", normalizedName: "confidential", level: "confidential", status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id });
+  await DocumentClassificationModel.create({ tenantId: tenant._id, name: "Legacy Class", normalizedName: "legacy class", level: "internal", status: "archived", version: 2, createdBy: admin._id, updatedBy: admin._id });
 
   const result = await getRoleScopeOptions(context, {
     departments: [activeDept.id, archivedDept.id, new mongoose.Types.ObjectId().toString()],
