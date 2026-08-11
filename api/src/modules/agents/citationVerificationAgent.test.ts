@@ -6,6 +6,7 @@ import {
   AGENT_CONTRACT_INVALID,
   AGENT_PROVIDER_ERROR,
   FORBIDDEN,
+  LLM_RATE_LIMITED,
 } from "../../common/errors/errorCodes.js";
 import { toAgentId } from "./agentContracts.js";
 import type { DocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
@@ -414,6 +415,26 @@ describe("CitationVerificationAgentExecutor", () => {
     if (!result.ok) {
       assert.equal(result.status, "failed");
       assert.equal(result.error.code, AGENT_PROVIDER_ERROR);
+    }
+  });
+
+  it("preserves a controlled citation-verifier provider error instead of collapsing to AGENT_PROVIDER_ERROR", async () => {
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async () => {
+          throw new AppError(429, LLM_RATE_LIMITED, "rate limited");
+        },
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      ...VALID_INPUT,
+      answerText: "Employees receive 21 days of annual leave.",
+      questionText: "How much annual leave do employees receive?",
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, "failed");
+      assert.equal(result.error.code, LLM_RATE_LIMITED);
     }
   });
 

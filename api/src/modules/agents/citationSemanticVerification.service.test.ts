@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AppError } from "../../common/errors/AppError.js";
+import {
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_RATE_LIMITED,
+  LLM_TIMEOUT,
+} from "../../common/errors/errorCodes.js";
 import type { ModelAdapter } from "./agents.types.js";
 import {
   buildSemanticVerificationMessages,
@@ -396,7 +402,7 @@ test("preserves multiple supporting chunks when distinct claims require them", a
   assert.deepEqual(result.supportingEvidenceIds, ["remote-work", "expense-policy"]);
 });
 
-test("malformed, incomplete, and failed judgments fail closed", async () => {
+test("malformed and incomplete judgments fail closed", async () => {
   const incomplete = await new CitationSemanticVerificationService(judgmentModel(["supported"])).verify({
     answerText: "Claim one. Claim two.",
     evidence: leaveEvidence,
@@ -404,16 +410,106 @@ test("malformed, incomplete, and failed judgments fail closed", async () => {
   assert.deepEqual(incomplete.unsupportedClaims, ["Claim one.", "Claim two."]);
   assert.equal(incomplete.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
 
-  const failingModel: ModelAdapter = {
-    providerKey: "failed-semantic-test",
+  const malformedModel: ModelAdapter = {
+    providerKey: "malformed-test",
     async complete() {
-      throw new Error("provider unavailable");
+      return {
+        id: "malformed-1",
+        provider: "malformed-test",
+        model: "malformed-test",
+        choices: [{
+          index: 0,
+          finishReason: "stop",
+          message: { role: "assistant", content: "this is not json" },
+        }],
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        latencyMs: 1,
+        estimatedCost: 0,
+      };
     },
   };
-  const failed = await new CitationSemanticVerificationService(failingModel).verify({
+  const malformed = await new CitationSemanticVerificationService(malformedModel).verify({
     answerText: "Employees receive 21 days of annual leave.",
     evidence: leaveEvidence,
   });
-  assert.deepEqual(failed.unsupportedClaims, ["Employees receive 21 days of annual leave."]);
-  assert.equal(failed.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
+  assert.deepEqual(malformed.unsupportedClaims, ["Employees receive 21 days of annual leave."]);
+  assert.equal(malformed.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
+});
+
+async function assertProviderError(
+  model: ModelAdapter,
+  expected: { code: string; statusCode: number; details?: unknown },
+): Promise<void> {
+  let thrown: unknown;
+  try {
+    await new CitationSemanticVerificationService(model).verify({
+      answerText: "Employees receive 21 days of annual leave.",
+      evidence: leaveEvidence,
+    });
+    assert.fail("verify must propagate the provider error instead of returning a semantic verdict");
+  } catch (error: unknown) {
+    thrown = error;
+  }
+  assert.ok(thrown instanceof AppError);
+  assert.equal(thrown.code, expected.code);
+  assert.equal(thrown.statusCode, expected.statusCode);
+  if (expected.details !== undefined) {
+    assert.deepEqual(thrown.details, expected.details);
+  }
+}
+
+test("a provider rate-limit (429) propagates as a controlled LLM_RATE_LIMITED error, not a fail-closed verdict", async () => {
+  const rateLimitedModel: ModelAdapter = {
+    providerKey: "groq",
+    async complete() {
+      const error = Object.assign(new Error("rate limit exceeded"), {
+        status: 429,
+        code: "rate_limit_exceeded",
+        headers: { "retry-after": "2" },
+      });
+      throw error;
+    },
+  };
+  await assertProviderError(rateLimitedModel, {
+    code: LLM_RATE_LIMITED,
+    statusCode: 429,
+    details: { retryAfterSeconds: 2 },
+  });
+});
+
+test("provider downtime (503) propagates as LLM_PROVIDER_UNAVAILABLE, not insufficient evidence", async () => {
+  const downModel: ModelAdapter = {
+    providerKey: "groq",
+    async complete() {
+      throw Object.assign(new Error("service unavailable"), { status: 503 });
+    },
+  };
+  await assertProviderError(downModel, {
+    code: LLM_PROVIDER_UNAVAILABLE,
+    statusCode: 503,
+  });
+});
+
+test("a provider timeout propagates as LLM_TIMEOUT", async () => {
+  const timeoutModel: ModelAdapter = {
+    providerKey: "groq",
+    async complete() {
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    },
+  };
+  await assertProviderError(timeoutModel, { code: LLM_TIMEOUT, statusCode: 503 });
+});
+
+test("a pre-mapped provider AppError propagates unchanged, preserving its code and status", async () => {
+  const appErrorModel: ModelAdapter = {
+    providerKey: "groq",
+    async complete() {
+      throw new AppError(429, LLM_RATE_LIMITED, "rate limited", { retryAfterSeconds: 5 });
+    },
+  };
+  await assertProviderError(appErrorModel, {
+    code: LLM_RATE_LIMITED,
+    statusCode: 429,
+    details: { retryAfterSeconds: 5 },
+  });
 });

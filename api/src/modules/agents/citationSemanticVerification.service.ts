@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../common/logger/logger.js";
-import type { ModelAdapter } from "./agents.types.js";
+import { mapLlmProviderError } from "../../providers/llm/providerError.js";
+import type { ModelAdapter, ModelCompletionResponse } from "./agents.types.js";
 import {
   formatThresholdComparisons,
   hasNumericConsistencyViolation,
@@ -234,22 +235,38 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
         .filter((index) => index >= 0),
     );
 
+    const thresholdComparisonItems = thresholdComparisons
+      ? JSON.parse(thresholdComparisons)
+      : [];
+
+    let response: ModelCompletionResponse;
     try {
-      const response = await this.model.complete({
+      response = await this.model.complete({
         messages: buildSemanticVerificationMessages({
           claims,
           evidence,
           currentQuestion: input.questionText ?? "",
-          thresholdComparisons: thresholdComparisons
-            ? JSON.parse(thresholdComparisons)
-            : [],
+          thresholdComparisons: thresholdComparisonItems,
         }),
         temperature: 0,
         maxTokens: 1_200,
         structuredOutput: { type: "json_object" },
       });
-      const raw = response.choices[0]?.message.content ?? "";
-      const parsed = SemanticJudgmentsSchema.parse(JSON.parse(raw));
+    } catch (error) {
+      // A provider/infrastructure availability failure (rate limit, timeout,
+      // outage) means no semantic judgment was obtained — it is NOT a content
+      // verdict and must not be mislabelled as insufficient evidence. Propagate
+      // the controlled provider error (mirrors answerWriter.service.ts).
+      throw mapLlmProviderError(error);
+    }
+
+    // The provider responded. Malformed JSON, schema-invalid judgments, or
+    // incomplete/inconsistent verdicts are a deterministic fail-closed
+    // verification failure (claims could not be validated against evidence).
+    let parsed: z.infer<typeof SemanticJudgmentsSchema>;
+    const raw = response.choices[0]?.message.content ?? "";
+    try {
+      parsed = SemanticJudgmentsSchema.parse(JSON.parse(raw));
       const byIndex = new Map(parsed.judgments.map((item) => [item.claimIndex, item.verdict]));
       const evidenceIds = new Set(evidence.map((item) => item.chunkId));
       const complete =

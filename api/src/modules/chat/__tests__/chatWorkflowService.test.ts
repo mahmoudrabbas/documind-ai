@@ -82,6 +82,7 @@ interface HarnessOptions {
   permissionState?: ResolvedPermissions["customRoleState"];
   permissions?: readonly string[];
   runtimeFailure?: boolean;
+  verifierError?: string;
   approvedIds?: string[];
   writerCitations?: string[];
   verifierIds?: string[];
@@ -456,6 +457,24 @@ function makeHarness(options: HarnessOptions = {}) {
             proposedPayload: { citedChunkIds: [chunkC], answerText: "forged" },
           }) ?? {};
           observations.handoffs.push({ agent: "citation-verification-agent", payload: verifierInput });
+          if (options.verifierError) {
+            const code = options.verifierError;
+            return {
+              runId: runInput.runId,
+              workflowId: "chat-rag-v1" as const,
+              status: "failed" as const,
+              output: null,
+              error: { code, message: "citation verification provider error" },
+              totalSteps: observations.handoffs.length,
+              totalToolCalls: observations.tools.length,
+              totalTokensUsed: 0,
+              estimatedCost: 0,
+              latencyMs: 0,
+              handoffsCount: observations.handoffs.length,
+              approvalsCount: 0,
+              guardrailResult: null,
+            };
+          }
           state = {
             ...state,
             verified: verifierIds.length > 0,
@@ -821,6 +840,20 @@ describe("ChatWorkflowService lifecycle and trusted context", () => {
   it("does not persist assistant success when runtime infrastructure fails", async () => {
     const harness = makeHarness({ runtimeFailure: true });
     await expect(executeHarness(harness)).rejects.toMatchObject({ code: "CHAT_WORKFLOW_FAILED" });
+    expect(harness.messages.filter((message) => message.role === "assistant")).toHaveLength(0);
+  });
+
+  it("fails the workflow on a citation-verification provider error instead of emitting an insufficient-evidence answer", async () => {
+    const harness = makeHarness({ verifierError: "LLM_RATE_LIMITED" });
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "CHAT_WORKFLOW_FAILED",
+      statusCode: 502,
+    });
+    expect(harness.observations.handoffs).toContainEqual(
+      expect.objectContaining({ agent: "citation-verification-agent" }),
+    );
+    // The verifier failure must not degrade into an insufficient-evidence
+    // refusal: no assistant answer (refuse or release) is persisted.
     expect(harness.messages.filter((message) => message.role === "assistant")).toHaveLength(0);
   });
 });
