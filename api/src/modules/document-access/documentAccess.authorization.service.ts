@@ -2,6 +2,7 @@ import mongoose, { type PipelineStage } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
+import type { AuditWriter } from "../../common/observability/auditWriter.js";
 import DepartmentModel from "../../db/models/department.model.js";
 import DocumentModel from "../../db/models/document.model.js";
 import UserModel from "../../db/models/user.model.js";
@@ -19,6 +20,8 @@ export interface DocumentAuthorizationContext { tenantId: string; actorId: strin
 
 export class DocumentAccessAuthorizationService {
   private readonly policies = new MongoDocumentAccessPolicyRepository();
+
+  constructor(private readonly auditWriter: AuditWriter = getAuditWriter()) {}
 
   async authorizeDocumentAction(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction): Promise<void> {
     try {
@@ -98,7 +101,7 @@ export class DocumentAccessAuthorizationService {
   }
 
   private async deny(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction, reasonCode: string): Promise<never> {
-    await getAuditWriter().write({ action: "DOCUMENT_ACCESS_DENIED", resourceType: "Document", resourceId: documentId,
+    await this.auditWriter.write({ action: "DOCUMENT_ACCESS_DENIED", resourceType: "Document", resourceId: documentId,
       tenantId: context.tenantId, actorId: context.actorId, outcome: "DENIED", metadata: { documentId, action, reasonCode } });
     return hidden();
   }
@@ -157,3 +160,8 @@ function hidden(): never { throw new AppError(404, DOCUMENT_NOT_FOUND, "Document
 
 let singleton: DocumentAccessAuthorizationService | null = null;
 export function getDocumentAccessAuthorizationService(): DocumentAccessAuthorizationService { singleton ??= new DocumentAccessAuthorizationService(); return singleton; }
+
+/** Same DAP decision path with an explicitly non-durable denial-audit sink. */
+export function createEvaluationDocumentAccessAuthorizationService(): DocumentAccessAuthorizationService {
+  return new DocumentAccessAuthorizationService({ write: async () => true });
+}

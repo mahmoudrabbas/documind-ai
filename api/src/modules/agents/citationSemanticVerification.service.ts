@@ -8,6 +8,7 @@ import {
 } from "./thresholdSemantics.js";
 
 export const MAX_SEMANTIC_CLAIMS = 20;
+export const CITATION_SEMANTIC_PROMPT_VERSION = "citation-semantic-v1";
 export const MAX_SEMANTIC_CLAIM_LENGTH = 500;
 export const MAX_UNKNOWN_RETRIES = 1;
 const MAX_EVIDENCE_CHARS = 30_000;

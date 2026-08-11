@@ -82,6 +82,7 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
   readonly providerKey = "student-bedrock";
 
   readonly model: string;
+  readonly runtimeIdentity;
   readonly dimensions: number;
 
   private readonly config: SBGConfig;
@@ -107,6 +108,15 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
     this.audioModel = audioModel;
 
     this.model = chatModels.primary[0] ?? chatModels.fast[0] ?? "anthropic.claude-sonnet-4-6";
+    this.runtimeIdentity = Object.freeze({
+      provider: this.providerKey,
+      model: this.model,
+      modelRevisionStatus: "unavailable" as const,
+      componentVersion: "student-bedrock-provider-v1",
+      chain: Object.freeze([...chatModels.primary, ...chatModels.fast].map((model) =>
+        Object.freeze({ provider: this.providerKey, model, modelRevisionStatus: "unavailable" as const, componentVersion: "student-bedrock-provider-v1" }),
+      )),
+    });
     this.dimensions = 1024;
   }
 

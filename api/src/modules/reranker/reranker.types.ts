@@ -97,6 +97,7 @@ export interface RerankResponse {
 
 export interface RerankerAdapter {
   readonly providerKey: string;
+  readonly runtimeIdentity?: import("../agents/agents.types.js").RuntimeComponentIdentity;
   rerank(request: RerankRequest): Promise<RerankResponse>;
 }
 

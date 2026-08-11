@@ -46,6 +46,25 @@ export interface RetrievalServiceDeps {
   ) => Promise<string[]>;
   resolveAccessContext: (context: AccessContext) => Promise<AccessContext>;
   authorizeDocumentForAi: (context: AccessContext, documentId: string) => Promise<void>;
+  /** Optional request-local diagnostics seam; never changes retrieval output. */
+  onHybridRetrievalArtifacts?: (artifacts: HybridRetrievalArtifacts) => void;
+  /** Suppresses durable audit writes for isolated evaluation composition only. */
+  persistenceMode?: "production" | "ephemeral";
+}
+
+export interface RankedRetrievalArtifact {
+  readonly rank: number;
+  readonly chunkId: string;
+  readonly score: number;
+}
+
+export interface HybridRetrievalArtifacts {
+  readonly rawVectorCandidates: readonly RankedRetrievalArtifact[];
+  readonly rawKeywordCandidates: readonly RankedRetrievalArtifact[];
+  readonly postAuthorizationVectorCandidates: readonly RankedRetrievalArtifact[];
+  readonly postAuthorizationKeywordCandidates: readonly RankedRetrievalArtifact[];
+  readonly fusedCandidateIds: readonly string[];
+  readonly hydratedCandidateIds: readonly string[];
 }
 
 export interface HybridRetrievalService {
@@ -473,6 +492,16 @@ export function createRetrievalService(
 
       const rawVectorCandidateCount = vectorResults.length;
       const rawKeywordCandidateCount = keywordResults.length;
+      const rawVectorCandidates = vectorResults.map((candidate, index) => ({
+        rank: index + 1,
+        chunkId: candidate.chunkId,
+        score: candidate.score,
+      }));
+      const rawKeywordCandidates = keywordResults.map((candidate, index) => ({
+        rank: index + 1,
+        chunkId: candidate.chunkId,
+        score: candidate.score,
+      }));
 
       const authorizedChunkIds = await authorizeCandidateIds(
         deps,
@@ -536,6 +565,31 @@ export function createRetrievalService(
         zeroCandidateReason,
       });
 
+      try {
+        deps.onHybridRetrievalArtifacts?.({
+          rawVectorCandidates,
+          rawKeywordCandidates,
+          postAuthorizationVectorCandidates: vectorResults.map(
+            (candidate, index) => ({
+              rank: index + 1,
+              chunkId: candidate.chunkId,
+              score: candidate.score,
+            }),
+          ),
+          postAuthorizationKeywordCandidates: keywordResults.map(
+            (candidate, index) => ({
+              rank: index + 1,
+              chunkId: candidate.chunkId,
+              score: candidate.score,
+            }),
+          ),
+          fusedCandidateIds: fused.map((candidate) => candidate.chunkId),
+          hydratedCandidateIds: hydrated.map((candidate) => candidate.chunkId),
+        });
+      } catch {
+        // Diagnostics observers are advisory and cannot affect retrieval.
+      }
+
       logger.info(
         {
           traceId,
@@ -552,7 +606,7 @@ export function createRetrievalService(
         "Hybrid retrieval stage counts",
       );
 
-      void emitRetrievalAudit({
+      if (deps.persistenceMode !== "ephemeral") void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context: authorizationContext,
         traceId,
@@ -637,7 +691,7 @@ export function createRetrievalService(
 
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
-      void emitRetrievalAudit({
+      if (deps.persistenceMode !== "ephemeral") void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context: authorizationContext,
         traceId,
@@ -719,7 +773,7 @@ export function createRetrievalService(
 
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
-      void emitRetrievalAudit({
+      if (deps.persistenceMode !== "ephemeral") void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context: authorizationContext,
         traceId,

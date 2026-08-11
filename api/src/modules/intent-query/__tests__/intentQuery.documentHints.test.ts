@@ -13,6 +13,11 @@ import {
   extractNaturalDocumentTitleHints,
   resolveAuthorizedDocumentHints,
 } from "../intentQuery.documentHints.js";
+import { InMemoryAuditWriter } from "../../../common/observability/auditWriter.js";
+import {
+  DocumentAccessAuthorizationService,
+  createEvaluationDocumentAccessAuthorizationService,
+} from "../../document-access/documentAccess.authorization.service.js";
 
 test("extractNaturalDocumentTitleHints only extracts explicit document references", () => {
   assert.deepEqual(
@@ -487,6 +492,19 @@ test("title hints never resolve documents without use_in_ai", async () => {
 
   assert.deepEqual(result.referencedDocumentIds, []);
   assert.deepEqual(result.unresolvedTitleHints, ["Secret Title"]);
+});
+
+test("title denial decisions are identical while evaluation injection suppresses durable audit", async () => {
+  await createDoc({ tenantId, ownerId: actorId, fileName: "audit-denial.pdf", title: "Audit Denial", withPolicy: false });
+  const durable = new InMemoryAuditWriter();
+  const production = await resolveAuthorizedDocumentHints([], hintContext(), ["Audit Denial"], {
+    authorizationService: new DocumentAccessAuthorizationService(durable),
+  });
+  const evaluation = await resolveAuthorizedDocumentHints([], hintContext(), ["Audit Denial"], {
+    authorizationService: createEvaluationDocumentAccessAuthorizationService(),
+  });
+  assert.deepEqual(evaluation, production);
+  assert.equal(durable.events.filter((event) => event.action === "DOCUMENT_ACCESS_DENIED").length, 1);
 });
 
 test("title hints never resolve archived, deleted, or failed documents", async () => {

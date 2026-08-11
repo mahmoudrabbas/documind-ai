@@ -104,6 +104,7 @@ interface CachedAvailability {
  */
 export class FailoverModelAdapter implements ModelAdapter {
   readonly providerKey: string;
+  readonly runtimeIdentity;
 
   private readonly adapters: ModelAdapter[];
   private readonly probeEnabled: boolean;
@@ -120,6 +121,20 @@ export class FailoverModelAdapter implements ModelAdapter {
     this.probeTtlMs = config.probeTtlMs ?? DEFAULT_PROBE_TTL_MS;
     this.probeTimeoutMs = config.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
     this.providerKey = `failover(${adapters.map((adapter) => adapter.providerKey).join(",")})`;
+    this.runtimeIdentity = Object.freeze({
+      provider: "failover",
+      componentVersion: "failover-model-adapter-v1",
+      chain: Object.freeze(adapters.flatMap((adapter) => {
+        const identities = adapter.runtimeIdentity?.chain ?? [adapter.runtimeIdentity ?? { provider: adapter.providerKey }];
+        return identities.map((identity) => Object.freeze({
+          provider: identity.provider ?? adapter.providerKey,
+          ...(identity.model ? { model: identity.model } : {}),
+          ...(identity.modelRevision !== undefined ? { modelRevision: identity.modelRevision } : {}),
+          ...(identity.modelRevisionStatus ? { modelRevisionStatus: identity.modelRevisionStatus } : {}),
+          ...(identity.componentVersion ? { componentVersion: identity.componentVersion } : {}),
+        }));
+      })),
+    });
   }
 
   async complete(params: ModelCompletionParams): Promise<ModelCompletionResponse> {

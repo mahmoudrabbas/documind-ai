@@ -93,6 +93,7 @@ interface OpenAIChatResponse {
 export class ItiBedrockChatAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "iti-bedrock";
   readonly model: string;
+  readonly runtimeIdentity;
 
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -113,6 +114,7 @@ export class ItiBedrockChatAdapter implements AvailabilityProbeModelAdapter {
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.model = config.model?.trim() || DEFAULT_MODEL;
+    this.runtimeIdentity = Object.freeze({ provider: this.providerKey, model: this.model, modelRevisionStatus: "unavailable" as const, componentVersion: "iti-bedrock-chat-adapter-v1" });
   }
 
   async complete(params: {
