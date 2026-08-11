@@ -10,6 +10,7 @@ import {
   cloneRoleController,
   deleteRoleController,
   getRoleController,
+  getRoleScopeOptionsController,
   getRoleUsageController,
   listRolesController,
   migrateRoleUsersController,
@@ -42,6 +43,14 @@ router.get(
   tenantScoping,
   requirePermission(Permission.ROLES_READ),
   listRolesController,
+);
+
+router.get(
+  "/scope-options",
+  authenticate,
+  tenantScoping,
+  requirePermission(Permission.ROLES_READ),
+  getRoleScopeOptionsController,
 );
 
 router.post(

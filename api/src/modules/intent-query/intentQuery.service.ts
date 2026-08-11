@@ -17,6 +17,7 @@ import {
   assessPositiveKnowledgeSeeking,
   assistantRequestsUserResponse,
   hasDomainAgnosticQuestionShape,
+  hasSemanticRetrievalSubject,
   isContextualAcknowledgement,
   isLikelyGibberish,
   isRetrievableIntent,
@@ -31,7 +32,10 @@ import { INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION } 
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { recordIntentQueryMetrics } from "./intentQuery.metrics.js";
-import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
+import {
+  getDocumentAccessAuthorizationService,
+  type DocumentAccessAuthorizationService,
+} from "../document-access/documentAccess.authorization.service.js";
 import { ENTITLEMENT_EXCEEDED } from "../../common/errors/errorCodes.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import { buildQuotaExceededError, resolvePeriodReset } from "../entitlement/middlewares/entitlement.middleware.js";
@@ -57,7 +61,12 @@ export class IntentQueryService {
 
   constructor(
     private readonly modelAdapter: ModelAdapter,
-    private readonly conversationContextAdapter: ConversationContextPort
+    private readonly conversationContextAdapter: ConversationContextPort,
+    private readonly options: {
+      /** Suppresses durable side effects only; authorization remains mandatory. */
+      persistenceMode?: "production" | "ephemeral";
+      authorizationService?: DocumentAccessAuthorizationService;
+    } = {},
   ) {}
 
   /**
@@ -74,6 +83,7 @@ export class IntentQueryService {
     const auditWriter = getAuditWriter();
     const metricRecorder = getMetricRecorder();
     const entitlementService = getEntitlementService();
+    const persistRuntimeArtifacts = this.options.persistenceMode !== "ephemeral";
 
     // 1. Input Validation
     const input = validateAnalyzeQuery(rawInput);
@@ -86,7 +96,7 @@ export class IntentQueryService {
     if (input.referencedDocumentIds && input.referencedDocumentIds.length > 0) {
       try {
         await authorizeExplicitIntentDocuments(
-          getDocumentAccessAuthorizationService(), { tenantId: tenantIdStr, actorId: actor.actorId }, input.referencedDocumentIds,
+          this.options.authorizationService ?? getDocumentAccessAuthorizationService(), { tenantId: tenantIdStr, actorId: actor.actorId }, input.referencedDocumentIds,
         );
       } catch (error) {
         if (error instanceof AppError) {
@@ -108,7 +118,7 @@ export class IntentQueryService {
     // Check for prompt injections/unsafe inputs upfront deterministically
     const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
     if (hasUnsafeKeywords) {
-      await auditWriter.write({
+      if (persistRuntimeArtifacts) await auditWriter.write({
         action: "INTENT_QUERY_UNSAFE_BLOCKED",
         resourceType: "IntentQuery",
         resourceId: "none",
@@ -149,7 +159,9 @@ export class IntentQueryService {
         false
       );
 
-      recordIntentQueryMetrics(metricRecorder, unsafePlan, traceId);
+      if (persistRuntimeArtifacts) {
+        recordIntentQueryMetrics(metricRecorder, unsafePlan, traceId);
+      }
       return unsafePlan;
     }
 
@@ -192,26 +204,30 @@ export class IntentQueryService {
         false,
       );
 
-      recordIntentQueryMetrics(metricRecorder, assistantPlan, traceId);
-      try {
-        await IntentQueryTraceModel.create({
-          traceId,
-          tenantId: actor.tenantId,
-          queryPlan: assistantPlan,
-          timing: {
-            totalMs: Date.now() - start,
-            languageDetectionMs: 1,
-            entityExtractionMs: 0,
-            llmMs: 0,
-            postProcessingMs: 1,
-          },
-          promptVersion: INTENT_PROMPT_VERSION,
-          modelVersion: this.modelAdapter.providerKey,
-          rawEntities: [],
-          fallbackUsed: false,
-        });
-      } catch (err) {
-        logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+      if (persistRuntimeArtifacts) {
+        recordIntentQueryMetrics(metricRecorder, assistantPlan, traceId);
+      }
+      if (persistRuntimeArtifacts) {
+        try {
+          await IntentQueryTraceModel.create({
+            traceId,
+            tenantId: actor.tenantId,
+            queryPlan: assistantPlan,
+            timing: {
+              totalMs: Date.now() - start,
+              languageDetectionMs: 1,
+              entityExtractionMs: 0,
+              llmMs: 0,
+              postProcessingMs: 1,
+            },
+            promptVersion: INTENT_PROMPT_VERSION,
+            modelVersion: this.modelAdapter.providerKey,
+            rawEntities: [],
+            fallbackUsed: false,
+          });
+        } catch (err) {
+          logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+        }
       }
       return assistantPlan;
     }
@@ -257,27 +273,31 @@ export class IntentQueryService {
         false
       );
 
-      recordIntentQueryMetrics(metricRecorder, socialPlan, traceId);
+      if (persistRuntimeArtifacts) {
+        recordIntentQueryMetrics(metricRecorder, socialPlan, traceId);
+      }
 
-      try {
-        await IntentQueryTraceModel.create({
-          traceId,
-          tenantId: actor.tenantId,
-          queryPlan: socialPlan,
-          timing: {
-            totalMs: Date.now() - start,
-            languageDetectionMs: 2,
-            entityExtractionMs: 0,
-            llmMs: 0,
-            postProcessingMs: 1,
-          },
-          promptVersion: INTENT_PROMPT_VERSION,
-          modelVersion: this.modelAdapter.providerKey,
-          rawEntities: localEntities,
-          fallbackUsed: false,
-        });
-      } catch (err) {
-        logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+      if (persistRuntimeArtifacts) {
+        try {
+          await IntentQueryTraceModel.create({
+            traceId,
+            tenantId: actor.tenantId,
+            queryPlan: socialPlan,
+            timing: {
+              totalMs: Date.now() - start,
+              languageDetectionMs: 2,
+              entityExtractionMs: 0,
+              llmMs: 0,
+              postProcessingMs: 1,
+            },
+            promptVersion: INTENT_PROMPT_VERSION,
+            modelVersion: this.modelAdapter.providerKey,
+            rawEntities: localEntities,
+            fallbackUsed: false,
+          });
+        } catch (err) {
+          logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+        }
       }
 
       return socialPlan;
@@ -339,27 +359,31 @@ export class IntentQueryService {
           false,
         );
 
-        recordIntentQueryMetrics(metricRecorder, unsupportedPlan, traceId);
+        if (persistRuntimeArtifacts) {
+          recordIntentQueryMetrics(metricRecorder, unsupportedPlan, traceId);
+        }
 
-        try {
-          await IntentQueryTraceModel.create({
-            traceId,
-            tenantId: actor.tenantId,
-            queryPlan: unsupportedPlan,
-            timing: {
-              totalMs: Date.now() - start,
-              languageDetectionMs: 1,
-              entityExtractionMs: 1,
-              llmMs: 0,
-              postProcessingMs: 1,
-            },
-            promptVersion: INTENT_PROMPT_VERSION,
-            modelVersion: this.modelAdapter.providerKey,
-            rawEntities: localEntities,
-            fallbackUsed: false,
-          });
-        } catch (err) {
-          logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+        if (persistRuntimeArtifacts) {
+          try {
+            await IntentQueryTraceModel.create({
+              traceId,
+              tenantId: actor.tenantId,
+              queryPlan: unsupportedPlan,
+              timing: {
+                totalMs: Date.now() - start,
+                languageDetectionMs: 1,
+                entityExtractionMs: 1,
+                llmMs: 0,
+                postProcessingMs: 1,
+              },
+              promptVersion: INTENT_PROMPT_VERSION,
+              modelVersion: this.modelAdapter.providerKey,
+              rawEntities: localEntities,
+              fallbackUsed: false,
+            });
+          } catch (err) {
+            logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+          }
         }
 
         return unsupportedPlan;
@@ -486,7 +510,7 @@ export class IntentQueryService {
     // token count is only known once the LLM response arrives. The
     // deterministic fallback path leaves tokensUsed = 0, so nothing is
     // consumed there.
-    if (tokensUsed > 0) {
+    if (tokensUsed > 0 && persistRuntimeArtifacts) {
       // Fire-and-forget analytics usage event tracking
       // traceId alone is the idempotency key — unique per request, stable across retries
       const eventWriter = new MongoUsageEventWriter();
@@ -639,21 +663,35 @@ export class IntentQueryService {
         tenantId: tenantIdStr,
         actorId: actor.actorId,
         tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
-      }, titleHints);
+      }, titleHints, { authorizationService: this.options.authorizationService });
       rawOutput.referencedDocumentIds = hints.referencedDocumentIds;
       rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
+
+      const providerIntent = rawOutput.detectedIntent;
+      const semanticTopicWithoutExplicitTitle =
+        (providerIntent === "summarization" || providerIntent === "knowledge_question") &&
+        deterministicTitleHints.length === 0 &&
+        hasSemanticRetrievalSubject(routingQuestion);
 
       // Deterministic title resolution governs explicit document references:
       // a title hint that resolves to more than one authorized document, or to
       // none at all, is a signal to clarify — never fabricate a match.
       if (
-        titleHints.length > 0 &&
+        deterministicTitleHints.length > 0 &&
         (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
       ) {
         titleClarificationNeeded = true;
       }
 
-      const rawDetectedIntent = rawOutput.detectedIntent;
+      if (
+        !semanticTopicWithoutExplicitTitle &&
+        deterministicTitleHints.length === 0 &&
+        (hints.ambiguousTitleMatches || hints.unresolvedTitleHints.length > 0)
+      ) {
+        titleClarificationNeeded = true;
+      }
+
+      const rawDetectedIntent = providerIntent;
       if (rawDetectedIntent === "assistant_identity") {
         rawOutput.assistantKind = "identity";
       } else if (rawDetectedIntent === "assistant_capabilities") {
@@ -849,7 +887,32 @@ export class IntentQueryService {
         !validatedPlan.processingMetadata.fallbackUsed &&
         !isLikelyGibberish(routingQuestion) &&
         hasDomainAgnosticQuestionShape(routingQuestion);
-      if (
+      const semanticSummarizationOverride =
+        validatedPlan.detectedIntent === "summarization" &&
+        validatedPlan.clarificationNeeded &&
+        !titleClarificationNeeded &&
+        hasSemanticRetrievalSubject(routingQuestion);
+      const bareSummarizationClarification =
+        validatedPlan.detectedIntent === "summarization" &&
+        validatedPlan.clarificationNeeded &&
+        !hasSemanticRetrievalSubject(routingQuestion);
+
+      if (semanticSummarizationOverride) {
+        rawOutput.clarificationNeeded = false;
+        rawOutput.clarification = null;
+        validatedPlan = validateAndNormalizeQueryPlan(
+          rawOutput,
+          input.question,
+          language,
+          INTENT_PROMPT_VERSION,
+          this.modelAdapter.providerKey,
+          Date.now() - start,
+          tokensUsed,
+          estimatedCost,
+          false,
+        );
+      } else if (
+        !bareSummarizationClarification &&
         (knowledgeSignals.positive || unsupportedQuestionOverride) &&
         validatedPlan.route !== "rag" &&
         validatedPlan.route !== "unsafe"
@@ -907,6 +970,7 @@ export class IntentQueryService {
           tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
         },
         deterministicTitleHints,
+        { authorizationService: this.options.authorizationService },
       );
       if (
         deterministicTitleHints.length > 0 &&
@@ -969,6 +1033,31 @@ export class IntentQueryService {
     }
 
     // 7d. Title-hint ambiguity/unresolved references force a clarification.
+    // A provider may label a semantic summarization subject as an exact title
+    // and set clarificationNeeded=true when that title is not found. For a
+    // normal topic request, the retrieval pipeline is the resolver; only
+    // explicit filename/document-marker hints are allowed to force title
+    // clarification.
+    const semanticClarificationEligible = new Set([
+      "knowledge_question",
+      "document_specific",
+      "comparison",
+      "summarization",
+      "navigation",
+    ]).has(validatedPlan.detectedIntent);
+    if (
+      semanticClarificationEligible &&
+      validatedPlan.clarificationNeeded &&
+      !titleClarificationNeeded &&
+      hasSemanticRetrievalSubject(routingQuestion)
+    ) {
+      validatedPlan.clarificationNeeded = false;
+      validatedPlan.clarification = null;
+      validatedPlan.route = "rag";
+    }
+
+    // 7e. Explicit title-hint ambiguity/unresolved references force a
+    // clarification after the semantic safeguard above.
     if (titleClarificationNeeded) {
       validatedPlan.route = "clarification";
       validatedPlan.clarificationNeeded = true;
@@ -988,7 +1077,7 @@ export class IntentQueryService {
       auditAction = "INTENT_QUERY_CLARIFICATION_REQUESTED";
     }
 
-    await auditWriter.write({
+    if (persistRuntimeArtifacts) await auditWriter.write({
       action: auditAction,
       resourceType: "IntentQuery",
       resourceId: "none",
@@ -1009,38 +1098,44 @@ export class IntentQueryService {
     // Keep the tenant's historical question total in sync with successful
     // query responses. Quota enforcement remains separate and is handled by
     // the route guard/counter.
-    try {
-      await recordQuestionAsked({
-        tenantId: tenantIdStr,
-        requestId: context.requestId,
-      });
-    } catch (err) {
-      logger.error({ err, traceId }, "Failed to record question usage");
+    if (persistRuntimeArtifacts) {
+      try {
+        await recordQuestionAsked({
+          tenantId: tenantIdStr,
+          requestId: context.requestId,
+        });
+      } catch (err) {
+        logger.error({ err, traceId }, "Failed to record question usage");
+      }
     }
 
     // 9. Record Prometheus metrics
-    recordIntentQueryMetrics(metricRecorder, validatedPlan, traceId);
+    if (persistRuntimeArtifacts) {
+      recordIntentQueryMetrics(metricRecorder, validatedPlan, traceId);
+    }
 
     // Save trace for the debug endpoint in MongoDB
-    try {
-      await IntentQueryTraceModel.create({
-        traceId,
-        tenantId: actor.tenantId,
-        queryPlan: validatedPlan,
-        timing: {
-          totalMs: Date.now() - start,
-          languageDetectionMs: 2,
-          entityExtractionMs: 3,
-          llmMs: fallbackUsed ? 0 : Math.max(0, Date.now() - start - 5),
-          postProcessingMs: 1,
-        },
-        promptVersion: INTENT_PROMPT_VERSION,
-        modelVersion: this.modelAdapter.providerKey,
-        rawEntities: localEntities,
-        fallbackUsed: validatedPlan.processingMetadata.fallbackUsed,
-      });
-    } catch (err) {
-      logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+    if (persistRuntimeArtifacts) {
+      try {
+        await IntentQueryTraceModel.create({
+          traceId,
+          tenantId: actor.tenantId,
+          queryPlan: validatedPlan,
+          timing: {
+            totalMs: Date.now() - start,
+            languageDetectionMs: 2,
+            entityExtractionMs: 3,
+            llmMs: fallbackUsed ? 0 : Math.max(0, Date.now() - start - 5),
+            postProcessingMs: 1,
+          },
+          promptVersion: INTENT_PROMPT_VERSION,
+          modelVersion: this.modelAdapter.providerKey,
+          rawEntities: localEntities,
+          fallbackUsed: validatedPlan.processingMetadata.fallbackUsed,
+        });
+      } catch (err) {
+        logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+      }
     }
 
     return validatedPlan;

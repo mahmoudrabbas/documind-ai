@@ -36,6 +36,7 @@ import {
  */
 export class FakeRerankerAdapter implements RerankerAdapter {
   readonly providerKey = "fake";
+  readonly runtimeIdentity = Object.freeze({ provider: "fake", model: "deterministic-reranker", modelRevisionStatus: "unavailable" as const, componentVersion: "deterministic-reranker-v1" });
 
   async rerank(request: RerankRequest): Promise<RerankResponse> {
     const { candidates, queryText, maxItems = 10, maxTokenBudget = 4000 } = request;

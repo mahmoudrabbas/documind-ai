@@ -206,8 +206,24 @@ export interface ModelStructuredOutput {
   type: "json_object";
 }
 
+export interface RuntimeComponentIdentity {
+  /** Provider or local implementation family that supplied the component. */
+  readonly provider?: string;
+  /** Provider model name; required for model-backed components. */
+  readonly model?: string;
+  /** Provider revision, when the provider exposes one. */
+  readonly modelRevision?: string | null;
+  /** Explicitly distinguishes unavailable provider revisions from omissions. */
+  readonly modelRevisionStatus?: "provided" | "unavailable";
+  /** Version of the instantiated local adapter/component implementation. */
+  readonly promptVersion?: string;
+  readonly componentVersion?: string;
+  readonly chain?: readonly RuntimeComponentIdentity[];
+}
+
 export interface ModelAdapter {
   readonly providerKey: string;
+  readonly runtimeIdentity?: RuntimeComponentIdentity;
   complete(params: {
     messages: ModelCompletionMessage[];
     tools?: Record<string, unknown>[];
@@ -222,6 +238,7 @@ export interface ModelAdapter {
 
 export interface EmbeddingAdapter {
   readonly providerKey: string;
+  readonly runtimeIdentity?: RuntimeComponentIdentity;
   embed(params: { inputs: string[]; signal?: AbortSignal }): Promise<{ vectors: number[][]; usage: { totalTokens: number } }>;
 }
 

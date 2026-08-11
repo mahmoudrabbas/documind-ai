@@ -12,6 +12,7 @@ export interface ChunkEmbeddingDocument extends mongoose.Document {
   vector: number[];
   embeddingChecksum: string;
   department: string | null;
+  category: string | null;
   classification: string | null;
   accessPolicyVersion: string | null;
   language: string;
@@ -50,6 +51,7 @@ const chunkEmbeddingSchema = new Schema<ChunkEmbeddingDocument>(
     vector: { type: [Number], required: true },
     embeddingChecksum: { type: String, required: true },
     department: { type: String, default: null },
+    category: { type: String, default: null },
     classification: { type: String, default: null },
     accessPolicyVersion: { type: String, default: null },
     language: { type: String, required: true },

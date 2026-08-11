@@ -4,6 +4,7 @@ import { FakeConversationContextAdapter } from "./adapters/conversationContext.f
 import { MongoConversationContextAdapter } from "./adapters/conversationContext.mongoAdapter.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
+import type { DocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 import { logger } from "../../common/logger/logger.js";
 
 export const fakeConversationContextAdapter = new FakeConversationContextAdapter();
@@ -16,12 +17,17 @@ const mongoConversationContextAdapter = new MongoConversationContextAdapter();
 export function createIntentQueryService(options?: {
   modelAdapter?: ModelAdapter;
   conversationContextAdapter?: ConversationContextPort;
+  persistenceMode?: "production" | "ephemeral";
+  authorizationService?: DocumentAccessAuthorizationService;
 }): IntentQueryService {
   const modelAdapter = options?.modelAdapter ?? new FakeModelAdapter();
   const conversationContextAdapter =
     options?.conversationContextAdapter ?? fakeConversationContextAdapter;
 
-  return new IntentQueryService(modelAdapter, conversationContextAdapter);
+  return new IntentQueryService(modelAdapter, conversationContextAdapter, {
+    persistenceMode: options?.persistenceMode,
+    authorizationService: options?.authorizationService,
+  });
 }
 
 // Mutable singleton — swapped in by initializeIntentQueryService() at startup

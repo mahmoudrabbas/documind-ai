@@ -6,6 +6,7 @@ import {
   AGENT_CONTRACT_INVALID,
   AGENT_PROVIDER_ERROR,
   FORBIDDEN,
+  LLM_RATE_LIMITED,
 } from "../../common/errors/errorCodes.js";
 import { toAgentId } from "./agentContracts.js";
 import type { DocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
@@ -91,7 +92,10 @@ function makeDeps(overrides: Partial<CitationVerificationAgentDependencies> = {}
     verify: async ({ answerText, evidence }) => ({
       claims: answerText ? [answerText] : [],
       unsupportedClaims: [],
+      unknownClaims: [],
       supportingEvidenceIds: evidence.map((item) => item.chunkId),
+      releasedAnswerText: answerText,
+      reasonCode: "SEMANTIC_VERIFIED",
     }),
   };
 
@@ -117,6 +121,7 @@ const VALID_INPUT = {
   decision: "grounded_answer" as const,
   citedChunkIds: [CHUNK_ID],
   approvedEvidenceIds: [CHUNK_ID],
+  answerText: "The remote work policy allows three days per week.",
 };
 
 // ── schema + registration ───────────────────────────────────────────────────
@@ -204,6 +209,7 @@ describe("CitationVerificationAgentExecutor", () => {
     const { deps, loadChunksCalls } = makeDeps();
     const result = await makeExecutor(deps).execute(runContext(), {
       decision: "grounded_answer",
+      answerText: "The remote work policy allows three days per week.",
       citedChunkIds: [CHUNK_ID, INVENTED_ID],
       approvedEvidenceIds: [CHUNK_ID],
     });
@@ -224,7 +230,10 @@ describe("CitationVerificationAgentExecutor", () => {
         verify: async ({ answerText }) => ({
           claims: answerText ? [answerText] : [],
           unsupportedClaims: [],
+          unknownClaims: [],
           supportingEvidenceIds: [CHUNK_ID],
+          releasedAnswerText: answerText,
+          reasonCode: "SEMANTIC_VERIFIED",
         }),
       },
     });
@@ -248,7 +257,10 @@ describe("CitationVerificationAgentExecutor", () => {
         verify: async ({ answerText }) => ({
           claims: answerText ? [answerText] : [],
           unsupportedClaims: [],
+          unknownClaims: [],
           supportingEvidenceIds: [CHUNK_ID, INVENTED_ID],
+          releasedAnswerText: answerText,
+          reasonCode: "SEMANTIC_VERIFIED",
         }),
       },
     });
@@ -275,7 +287,9 @@ describe("CitationVerificationAgentExecutor", () => {
           return {
             claims: ["Employees receive 30 days of annual leave."],
             unsupportedClaims: ["Employees receive 30 days of annual leave."],
+            unknownClaims: [],
             supportingEvidenceIds: [],
+            reasonCode: "SEMANTIC_VERIFICATION_FAILED",
           };
         },
       },
@@ -289,7 +303,7 @@ describe("CitationVerificationAgentExecutor", () => {
     if (result.ok) {
       assert.equal(result.output.verified, false);
       assert.equal(result.output.reasonCode, "UNSUPPORTED_CLAIMS");
-      assert.deepEqual(result.output.validatedCitationIds, [CHUNK_ID]);
+      assert.deepEqual(result.output.validatedCitationIds, []);
       assert.deepEqual(result.output.unsupportedClaims, [
         "Employees receive 30 days of annual leave.",
       ]);
@@ -307,6 +321,7 @@ describe("CitationVerificationAgentExecutor", () => {
         verify: async ({ answerText }) => ({
           claims: answerText ? [answerText] : [],
           unsupportedClaims: [],
+          unknownClaims: answerText ? [answerText] : [],
           supportingEvidenceIds: [],
           reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
           coverage: {
@@ -417,6 +432,26 @@ describe("CitationVerificationAgentExecutor", () => {
     }
   });
 
+  it("preserves a controlled citation-verifier provider error instead of collapsing to AGENT_PROVIDER_ERROR", async () => {
+    const { deps } = makeDeps({
+      semanticVerifier: {
+        verify: async () => {
+          throw new AppError(429, LLM_RATE_LIMITED, "rate limited");
+        },
+      },
+    });
+    const result = await makeExecutor(deps).execute(runContext(), {
+      ...VALID_INPUT,
+      answerText: "Employees receive 21 days of annual leave.",
+      questionText: "How much annual leave do employees receive?",
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, "failed");
+      assert.equal(result.error.code, LLM_RATE_LIMITED);
+    }
+  });
+
   it("surfaces 403 authorization errors as unauthorized", async () => {
     const { deps } = makeDeps({
       loadEligibleDocumentIds: async () => {
@@ -437,7 +472,10 @@ describe("CitationVerificationAgentExecutor", () => {
         verify: async () => ({
           claims: ["Supported."],
           unsupportedClaims: [],
+          unknownClaims: [],
           supportingEvidenceIds: [CHUNK_ID],
+          releasedAnswerText: "Supported.",
+          reasonCode: "SEMANTIC_VERIFIED",
           providerKey: "semantic-provider",
           modelName: "semantic-model",
           totalTokens: 12,

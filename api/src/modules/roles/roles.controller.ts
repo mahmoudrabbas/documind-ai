@@ -10,6 +10,7 @@ import {
   createRole,
   deleteRole,
   getRole,
+  getRoleScopeOptions,
   getRoleUsage,
   listRoles,
   migrateRoleUsers,
@@ -17,7 +18,7 @@ import {
   updateRole,
   type RoleOperationContext,
 } from "./roles.service.js";
-import { validateDeleteRoleInput } from "./roles.validator.js";
+import { validateDeleteRoleInput, validateScopeOptionsInput } from "./roles.validator.js";
 
 function context(req: Request): RoleOperationContext {
   if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
@@ -56,6 +57,14 @@ function handler(operation: (req: Request) => Promise<unknown>, status = 200, me
 export const listRolesController = handler((req) => listRoles(context(req)));
 export const getRoleController = handler((req) => getRole(context(req), roleId(req)));
 export const getRoleUsageController = handler((req) => getRoleUsage(context(req), roleId(req)));
+export const getRoleScopeOptionsController = handler((req) => {
+  const query = {
+    departments: splitCommaQuery(req.query.departments),
+    categories: splitCommaQuery(req.query.categories),
+    classifications: splitCommaQuery(req.query.classifications),
+  };
+  return getRoleScopeOptions(context(req), validateScopeOptionsInput(query));
+});
 export const createRoleController = handler((req) => createRole(req.body, context(req)), 201, "Role created successfully");
 export const updateRoleController = handler((req) => updateRole(req.body, context(req), roleId(req)), 200, "Role updated successfully");
 export const cloneRoleController = handler((req) => cloneRole(req.body, context(req), roleId(req)), 201, "Role cloned successfully");
@@ -69,3 +78,13 @@ export const deleteRoleController = handler((req) => {
   const { version } = validateDeleteRoleInput(req.body);
   return deleteRole(context(req), id, version);
 }, 200, "Role deleted successfully");
+
+function splitCommaQuery(value: unknown): string[] {
+  if (typeof value !== "string" || value.trim() === "") return [];
+  return [...new Set(
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )];
+}

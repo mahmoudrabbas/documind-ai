@@ -10,6 +10,10 @@ import {
   validateDocumentTitle,
   validateFileType,
   validateFileSize,
+  validateDocumentFile,
+  getFileExtension,
+  ALLOWED_MIME_TYPES,
+  DOCUMENT_ALLOWED_FILE_EXTENSIONS,
   getFileSizeLabel,
 } from "../validation";
 
@@ -185,6 +189,72 @@ describe("validation helpers", () => {
     it("rejects unsupported types", () => {
       expect(validateFileType(mockFile("image/png"))).toBe("documents.fileTypeNotSupported");
       expect(validateFileType(mockFile("video/mp4"))).toBe("documents.fileTypeNotSupported");
+      expect(validateFileType(mockFile("text/markdown"))).toBe("documents.fileTypeNotSupported");
+      expect(validateFileType(mockFile("application/msword"))).toBe("documents.fileTypeNotSupported");
+    });
+  });
+
+  describe("getFileExtension", () => {
+    it("extracts the lower-cased extension", () => {
+      expect(getFileExtension("report.pdf")).toBe("pdf");
+      expect(getFileExtension("REPORT.PDF")).toBe("pdf");
+      expect(getFileExtension("a.b.c.docx")).toBe("docx");
+    });
+
+    it("returns empty for files without an extension", () => {
+      expect(getFileExtension("archive")).toBe("");
+      expect(getFileExtension(".hidden")).toBe("");
+    });
+  });
+
+  describe("validateDocumentFile", () => {
+    function mockFile(name: string, type: string, size = 1024): File {
+      return new File([new ArrayBuffer(size)], name, { type });
+    }
+
+    it("exposes the narrowed PDF/DOCX/TXT allowlist", () => {
+      expect(ALLOWED_MIME_TYPES).toEqual([
+        "application/pdf",
+        "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ]);
+      expect(DOCUMENT_ALLOWED_FILE_EXTENSIONS).toEqual([".pdf", ".txt", ".docx"]);
+    });
+
+    it("accepts PDF, TXT and DOCX by extension", () => {
+      expect(validateDocumentFile(mockFile("report.pdf", "application/pdf"))).toBe(null);
+      expect(validateDocumentFile(mockFile("notes.txt", "text/plain"))).toBe(null);
+      expect(validateDocumentFile(mockFile("notes.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))).toBe(null);
+    });
+
+    it("accepts a valid file when the client omits the MIME type", () => {
+      expect(validateDocumentFile(mockFile("report.pdf", ""))).toBe(null);
+    });
+
+    it("rejects empty files", () => {
+      expect(validateDocumentFile(new File([], "empty.pdf", { type: "application/pdf" }))).toBe("documents.fileEmpty");
+    });
+
+    it("rejects oversized files", () => {
+      expect(validateDocumentFile(mockFile("big.pdf", "application/pdf", 512), { maxSizeBytes: 256 })).toBe("documents.fileTooLarge");
+    });
+
+    it("rejects unsupported extensions (.md and .doc)", () => {
+      expect(validateDocumentFile(mockFile("README.md", "text/markdown"))).toBe("documents.fileTypeNotSupported");
+      expect(validateDocumentFile(mockFile("legacy.doc", "application/msword"))).toBe("documents.fileTypeNotSupported");
+      expect(validateDocumentFile(mockFile("script.exe", "application/octet-stream"))).toBe("documents.fileTypeNotSupported");
+    });
+
+    it("rejects a MIME type that is clearly not a document type", () => {
+      expect(validateDocumentFile(mockFile("report.pdf", "image/png"))).toBe("documents.fileTypeNotSupported");
+    });
+
+    it("rejects a MIME type that does not match the extension", () => {
+      expect(validateDocumentFile(mockFile("report.pdf", "text/plain"))).toBe("documents.fileContentsMismatch");
+    });
+
+    it("honors allowedMimeTypes and fileExtensions overrides", () => {
+      expect(validateDocumentFile(mockFile("report.pdf", "application/pdf"), { allowedMimeTypes: ["text/plain"], fileExtensions: [".pdf"] })).toBe("documents.fileTypeNotSupported");
     });
   });
 

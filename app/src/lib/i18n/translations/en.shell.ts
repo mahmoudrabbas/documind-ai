@@ -68,7 +68,7 @@ const enShell: TranslationDictionary = {
   "shell.dragAndDropFile": "Drag and drop your file here, or",
   "shell.dropFileHere": "Drop your file here",
   "shell.browseFiles": "browse files",
-  "shell.fileRequirements": "PDF, DOCX, TXT or MD — max 50 MB",
+  "shell.fileRequirements": "PDF, DOCX or TXT — max 50 MB",
   "shell.selectedFile": "Selected file",
 };
 

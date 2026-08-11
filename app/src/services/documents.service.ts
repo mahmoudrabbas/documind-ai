@@ -5,7 +5,17 @@ import type {
   DeleteDocumentResponse,
   DocumentVersionsResponse,
   DocumentExtractionStatusResponse,
+  DocumentUploadOptionsResponse,
 } from "@/types/api/documents.types";
+
+export interface UploadDocumentMetadata {
+  title: string;
+  description?: string;
+  tags?: string;
+  categoryId?: string;
+  departmentId?: string;
+  classificationId?: string;
+}
 
 export async function listDocuments(
   page = 1,
@@ -36,9 +46,13 @@ export async function listDocuments(
   return api.get<DocumentListResponse>(`/documents?${params.toString()}`);
 }
 
+export async function getDocumentUploadOptions(): Promise<DocumentUploadOptionsResponse> {
+  return api.get<DocumentUploadOptionsResponse>("/documents/upload-options");
+}
+
 export async function uploadDocument(
   file: File,
-  metadata: { title: string; description?: string; tags?: string },
+  metadata: UploadDocumentMetadata,
   onProgress?: (progress: number) => void,
 ): Promise<SingleDocumentResponse> {
   return uploadFile<SingleDocumentResponse>(
@@ -48,6 +62,9 @@ export async function uploadDocument(
       title: metadata.title,
       description: metadata.description ?? "",
       tags: metadata.tags ?? "",
+      categoryId: metadata.categoryId ?? "",
+      departmentId: metadata.departmentId ?? "",
+      classificationId: metadata.classificationId ?? "",
     },
     onProgress,
   );

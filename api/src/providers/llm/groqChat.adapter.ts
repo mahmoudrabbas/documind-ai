@@ -11,15 +11,17 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 export class GroqChatAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "groq";
+  readonly runtimeIdentity;
 
   private client: OpenAI;
-  private model: string;
+  readonly model: string;
   private apiKey: string;
 
   constructor(apiKey: string, model: string) {
     this.apiKey = apiKey;
     this.client = new OpenAI({ apiKey, baseURL: GROQ_BASE_URL });
     this.model = model;
+    this.runtimeIdentity = Object.freeze({ provider: this.providerKey, model, modelRevisionStatus: "unavailable" as const, componentVersion: "groq-chat-adapter-v1" });
   }
 
   /**

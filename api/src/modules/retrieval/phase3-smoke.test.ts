@@ -51,6 +51,7 @@ describe("FilterCompiler", () => {
         tenantId: "t4",
         actorId: "a4",
         baseRole: "EMPLOYEE",
+        resolvedDepartmentFilter: ["d1", "d2"],
         permissionScopes: {
           selfOnly: false,
           departmentIds: ["d1", "d2"],
@@ -62,7 +63,40 @@ describe("FilterCompiler", () => {
       assert.deepEqual(filter.department, { $in: ["d1", "d2"] });
     });
 
-    it("EMPLOYEE with category scopes restricts category", () => {
+    it("EMPLOYEE with empty permissionScopes but no resolvedDepartmentFilter has no department filter", () => {
+      const ctx: AccessContext = {
+        tenantId: "t4",
+        actorId: "a4",
+        baseRole: "EMPLOYEE",
+        permissionScopes: {
+          selfOnly: false,
+          departmentIds: ["raw-object-id-123"],
+          documentCategories: [],
+          documentClassifications: [],
+        },
+      };
+      const filter = compileAccessFilters(ctx);
+      assert.equal(filter.department, undefined);
+    });
+
+    it("EMPLOYEE with category scopes restricts category via resolved display names", () => {
+      const ctx: AccessContext = {
+        tenantId: "t5",
+        actorId: "a5",
+        baseRole: "EMPLOYEE",
+        permissionScopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: ["hr", "finance"],
+          documentClassifications: [],
+        },
+        resolvedCategoryFilter: ["Finance", "finance", "HR", "hr"],
+      };
+      const filter = compileAccessFilters(ctx);
+      assert.deepEqual(filter.category, { $in: ["Finance", "finance", "HR", "hr"] });
+    });
+
+    it("EMPLOYEE with category scopes but no server-side resolution fails closed", () => {
       const ctx: AccessContext = {
         tenantId: "t5",
         actorId: "a5",
@@ -75,7 +109,7 @@ describe("FilterCompiler", () => {
         },
       };
       const filter = compileAccessFilters(ctx);
-      assert.deepEqual(filter.category, { $in: ["hr", "finance"] });
+      assert.deepEqual(filter.category, { $in: [] });
     });
 
     it("explicit permissionScopes override role defaults for classification", () => {

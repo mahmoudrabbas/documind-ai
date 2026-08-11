@@ -6,7 +6,6 @@ import {
   DOCUMENT_ALREADY_ARCHIVED,
   DOCUMENT_NOT_ARCHIVED,
   DOCUMENT_NOT_SOFT_DELETED,
-  FILE_ZERO_BYTES,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
@@ -31,6 +30,16 @@ import {
   createVersion,
   findVersionsByDocument,
 } from "./documentVersion.repository.js";
+import { resolveUploadTaxonomy } from "./documents.uploadTaxonomy.js";
+import {
+  getFileExtensionsForMimeTypes,
+  validateDocumentFile,
+} from "./documentFileValidator.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
+import { config } from "../../config/index.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   validateUploadDocumentInput,
   validateListDocumentsInput,
@@ -70,6 +79,8 @@ type DocumentActor = {
 function computeChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
+
+/** File extensions surfaced to the upload form for each allowed MIME type. */
 
 function sanitizeFilename(name: string): string {
   return name
@@ -166,13 +177,14 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, "BAD_REQUEST", "File is required");
     }
 
-    if (file.size === 0) {
-      throw new AppError(400, FILE_ZERO_BYTES, "File is empty (zero bytes)");
-    }
+    const validatedFile = validateDocumentFile(file, {
+      maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
+    });
 
     await checkUploadAllowed(tenantId, file.size);
 
     const metadata = validateUploadDocumentInput(metadataInput);
+    const taxonomy = await resolveUploadTaxonomy(tenantId, metadata);
     const safeName = sanitizeFilename(file.originalname);
 
     const checksum = computeChecksum(file.buffer);
@@ -200,7 +212,7 @@ export function createDocumentServiceProviders(deps: {
         fileName: safeName,
         originalFileName: file.originalname,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         storageKey,
         checksum,
         status: "uploaded",
@@ -209,9 +221,12 @@ export function createDocumentServiceProviders(deps: {
           description: metadata.description ?? "",
           tags: metadata.tags ?? [],
         },
-        category: null,
-        department: null,
-        classification: "internal",
+        category: taxonomy.category,
+        department: taxonomy.department,
+        classification: taxonomy.classification ?? "internal",
+        categoryId: taxonomy.categoryId ?? undefined,
+        departmentId: taxonomy.departmentId ?? undefined,
+        classificationId: taxonomy.classificationId ?? undefined,
         owner: actor.userId as unknown as DocumentDocument["owner"],
         effectiveDate: null,
         expiryDate: null,
@@ -232,7 +247,7 @@ export function createDocumentServiceProviders(deps: {
         uploadedBy: actor.userId as unknown as DocumentDocument["uploadedBy"],
       } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">, {
         tenantId: tenantId as unknown as DocumentVersionDocument["tenantId"],
-        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: file.mimetype,
+        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: validatedFile.mimeType,
         checksum, storageKey, uploadedBy: actor.userId as unknown as DocumentVersionDocument["uploadedBy"],
         uploadReason: "initial", changeDescription: null,
       } as unknown as Omit<DocumentVersionDocument, "_id" | "documentId" | "createdAt">);
@@ -253,7 +268,7 @@ export function createDocumentServiceProviders(deps: {
       changes: {
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         title: metadata.title,
         checksum,
       },
@@ -485,9 +500,9 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, "BAD_REQUEST", "File is required for replacement");
     }
 
-    if (file.size === 0) {
-      throw new AppError(400, FILE_ZERO_BYTES, "Replacement file is empty (zero bytes)");
-    }
+    const validatedFile = validateDocumentFile(file, {
+      maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
+    });
 
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "replace");
     const existing = await findDocumentByTenantAndId(tenantId, documentId);
@@ -526,7 +541,7 @@ export function createDocumentServiceProviders(deps: {
       await updateDocumentByTenantAndId(tenantId, documentId, {
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         storageKey: newStorageKey,
         checksum,
         version: newVersion,
@@ -547,7 +562,7 @@ export function createDocumentServiceProviders(deps: {
         versionLabel: newVersionLabel,
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         checksum,
         storageKey: newStorageKey,
         uploadedBy: existing.uploadedBy.toString(),
@@ -750,6 +765,41 @@ export function createDocumentServiceProviders(deps: {
     });
   }
 
+  async function uploadOptions(tenantId: string) {
+    const [classifications, categories, departments] = await Promise.all([
+      DocumentClassificationModel.find({ tenantId, status: "active" }).select("name level").sort({ name: 1 }).lean().exec(),
+      DocumentCategoryModel.find({ tenantId, status: "active" }).select("name").sort({ name: 1 }).lean().exec(),
+      DepartmentModel.find({ tenantId, status: "active" }).select("name").sort({ name: 1 }).lean().exec(),
+    ]);
+
+    const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
+    const fileExtensions = getFileExtensionsForMimeTypes(allowedMimeTypes)
+      .map((ext) => `.${ext}`);
+
+    // The entitlement fileSizeMb limit is authoritative when it is stricter
+    // than the global upload ceiling (multer enforces the global ceiling).
+    let maxFileSizeBytes = config.MAX_FILE_SIZE_BYTES;
+    try {
+      const fileSizeMb = await getEntitlementService().getEffectiveLimit(tenantId, "fileSizeMb");
+      maxFileSizeBytes = Math.min(config.MAX_FILE_SIZE_BYTES, fileSizeMb * 1024 * 1024);
+    } catch {
+      // Fall back to the global upload limit when no entitlement snapshot exists.
+    }
+
+    return {
+      taxonomy: {
+        classifications: classifications.map((c) => ({ id: c._id.toString(), name: c.name, level: c.level })),
+        categories: categories.map((c) => ({ id: c._id.toString(), name: c.name })),
+        departments: departments.map((d) => ({ id: d._id.toString(), name: d.name })),
+      },
+      upload: {
+        maxFileSizeBytes,
+        allowedMimeTypes,
+        fileExtensions,
+      },
+    };
+  }
+
   async function listVersions(
     documentId: string,
     tenantId: string,
@@ -781,5 +831,6 @@ export function createDocumentServiceProviders(deps: {
     softDeleteDocument,
     permanentDeleteDocument,
     listVersions,
+    uploadOptions,
   };
 }

@@ -1,7 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import multer from "multer";
 import { AppError } from "../errors/AppError.js";
-import { BAD_REQUEST, INTERNAL_SERVER_ERROR } from "../errors/errorCodes.js";
+import { BAD_REQUEST, FILE_SIZE_LIMIT_EXCEEDED, INTERNAL_SERVER_ERROR } from "../errors/errorCodes.js";
 import { logger } from "../logger/logger.js";
 
 interface ErrorEnvelope {
@@ -84,6 +84,8 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
 
     switch (err.code) {
       case "LIMIT_FILE_SIZE":
+        statusCode = 413;
+        code = FILE_SIZE_LIMIT_EXCEEDED;
         message = "File size exceeds the maximum allowed limit";
         break;
       case "LIMIT_UNEXPECTED_FILE":

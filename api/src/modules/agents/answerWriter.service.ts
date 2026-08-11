@@ -17,6 +17,8 @@ import {
   normalizeNumericText,
 } from "./thresholdSemantics.js";
 
+export const ANSWER_WRITER_PROMPT_VERSION = "answer-writer-v1";
+
 // ── Answer task classification ─────────────────────────────────────────────
 
 /**

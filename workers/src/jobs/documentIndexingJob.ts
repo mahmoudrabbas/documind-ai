@@ -118,6 +118,10 @@ export function createDocumentIndexingJobHandler(): JobHandlerDefinition<Indexin
                 },
                 {
                   type: "filter",
+                  path: "category",
+                },
+                {
+                  type: "filter",
                   path: "classification",
                 },
                 {

@@ -13,6 +13,8 @@
     "test": "node ../scripts/run-api-tests.mjs",
     "evaluate:fixture": "tsx src/scripts/run-evaluation.ts --fixture",
     "evaluate:live-rag": "tsx src/scripts/run-evaluation.ts --live-rag",
+    "evaluate:rag": "tsx src/scripts/run-rag-evaluation.ts",
+    "evaluate:rag:compare": "tsx src/scripts/compare-rag-evaluations.ts",
     "seed:super-admin": "tsx src/scripts/seed-super-admin.ts",
     "seed:default-package": "tsx src/scripts/seed-default-package.ts",
     "stripe:resync-prices": "tsx src/scripts/resync-stripe-prices.ts",
