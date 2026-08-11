@@ -21,7 +21,10 @@ export interface CheckoutConflictState {
 type SubscriptionLike = Pick<
   SubscriptionStatus,
   "status" | "providerLinked" | "providerManaged" | "packageId"
->;
+> & {
+  periodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+};
 
 function resolvePackageId(pkg: SubscriptionLike["packageId"]): string | null {
   if (typeof pkg === "string") {
@@ -49,13 +52,45 @@ function resolvePackageName(pkg: SubscriptionLike["packageId"]): string | null {
   return null;
 }
 
+/**
+ * A scheduled cancellation whose period end has already passed is effective:
+ * the tenant is effectively back on the Free/Canceled plan even though the
+ * local subscription row has not yet been transitioned to CANCELED. Such a
+ * subscription must not block a new checkout, otherwise the tenant could not
+ * resubscribe to any paid plan (including their previously subscribed one).
+ */
+function isEffectiveScheduledCancellation(sub: {
+  status: string;
+  periodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+}): boolean {
+  if (
+    sub.status !== "CANCEL_AT_PERIOD_END" &&
+    !(sub.status === "ACTIVE" && sub.cancelAtPeriodEnd)
+  ) {
+    return false;
+  }
+  const periodEnd = sub.periodEnd ? new Date(sub.periodEnd) : null;
+  return (
+    periodEnd !== null &&
+    !Number.isNaN(periodEnd.getTime()) &&
+    periodEnd.getTime() <= Date.now()
+  );
+}
+
 export function hasBlockingProviderSubscription(
-  subscription: Pick<SubscriptionStatus, "status" | "providerLinked"> | null | undefined,
+  subscription: (Pick<SubscriptionStatus, "status" | "providerLinked"> & {
+    periodEnd?: string | null;
+    cancelAtPeriodEnd?: boolean;
+  }) | null | undefined,
 ): boolean {
   if (!subscription?.providerLinked) {
     return false;
   }
-  return BLOCKING_PROVIDER_SUBSCRIPTION_STATUSES.has(subscription.status);
+  if (!BLOCKING_PROVIDER_SUBSCRIPTION_STATUSES.has(subscription.status)) {
+    return false;
+  }
+  return !isEffectiveScheduledCancellation(subscription);
 }
 
 export function getCurrentPackageId(subscription: SubscriptionLike | null | undefined): string | null {

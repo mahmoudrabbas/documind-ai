@@ -378,6 +378,17 @@ export class FakePaymentProvider implements PaymentProvider {
       await this.maybeFail();
       const subscription = await this.ownedSubscription(params);
       subscription.priceId = params.targetPriceReference;
+      subscription.metadata = {
+        ...subscription.metadata,
+        tenantReference: params.operationContext.tenantReference,
+        operationReference: params.operationContext.operationReference,
+      };
+      if (params.targetPackage) {
+        subscription.metadata.packageId = params.targetPackage.packageId;
+        subscription.metadata.packageVersionId = params.targetPackage.packageVersionId;
+        subscription.metadata.packageVersion = String(params.targetPackage.packageVersion);
+        subscription.metadata.billingInterval = params.targetPackage.billingInterval;
+      }
       return { operationReference: params.operationContext.operationReference, state: this.state(subscription), idempotentReplay: false };
     });
   }

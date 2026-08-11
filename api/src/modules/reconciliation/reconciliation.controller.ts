@@ -7,7 +7,8 @@ import { AppError } from "../../common/errors/AppError.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import { reconcilePlatformInvoices, reconcileTenantInvoices } from "../billing/invoice-synchronization.service.js";
-import { reconcileSucceededSystemRefundSettlements } from "../billing/refund.service.js";
+import { reconcileSucceededSystemRefundSettlements, reconcilePendingRefundSettlements } from "../billing/refund.service.js";
+import { reconcileProviderPendingOperations } from "../billing/billing-operation-reconciliation.service.js";
 import { authorizePlatformOperation } from "../permissions/permissions.operation.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 
@@ -45,10 +46,14 @@ export async function reconciliationController(
     const provider = await getPaymentProvider();
     const invoices = await reconcilePlatformInvoices({ provider, maxRecords: 200, context: actor });
     const refundSettlements = await reconcileSucceededSystemRefundSettlements({ provider, maxRecords: 200 });
+    const pendingRefunds = await reconcilePendingRefundSettlements({ provider, limit: 200 });
+    const pendingOperations = await reconcileProviderPendingOperations({ provider, limit: 200 });
     res.json({ success: true, data: {
       subscriptions: { examined: result.totalSubscriptions, mismatched: result.mismatched },
       invoices: { examined: invoices.examined, created: invoices.created, updated: invoices.updated, failed: invoices.failed, failures: invoices.failures, retry: invoices.retry },
       refundSettlements,
+      pendingRefunds,
+      pendingOperations,
       subscriptionIndex: refundSettlements.indexInvariant,
       providerCancellations: {
         created: refundSettlements.providerCancellationsCreated,
