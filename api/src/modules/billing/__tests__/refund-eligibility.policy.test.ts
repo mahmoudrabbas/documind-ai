@@ -60,6 +60,12 @@ describe("RefundEligibilityPolicy", () => {
     });
     expect(decision({ reason: "GOODWILL_CREDIT" }).maximumEligibleRefundMinor).toBe(0);
   });
+  it("limits system remaining-balance refunds to 7 days after the invoice payment", () => {
+    const system = (invoicePaidAt: Date) => decision({ reason: "SYSTEM_REMAINING_BALANCE_REFUND", invoicePaidAt });
+    expect(system(new Date("2025-12-28T00:00:00.000Z"))).toMatchObject({ decisionReason: "USAGE_PROPORTIONAL", maximumEligibleRefundMinor: 160 });
+    expect(system(new Date("2025-12-27T00:00:00.000Z"))).toMatchObject({ decisionReason: "USAGE_PROPORTIONAL", maximumEligibleRefundMinor: 160 });
+    expect(system(new Date("2025-12-26T23:59:59.999Z"))).toMatchObject({ decisionReason: "REFUND_WINDOW_EXPIRED", maximumEligibleRefundMinor: 0, reviewRequired: false });
+  });
   it("uses integer minor units and honors a reliable direct-cost floor only when supplied", () => {
     expect(decision({ amountPaidMinor: 201, measuredAt: new Date("2026-01-01T00:00:00.001Z") }).maximumEligibleRefundMinor).toBe(200);
     expect(decision({ directProviderCostMinor: 150 }).maximumEligibleRefundMinor).toBe(50);

@@ -270,7 +270,24 @@ function assertNoAuditSessionFields(value: unknown) {
   );
 }
 
+function assertDisposableDatabase(): void {
+  const uri = process.env.MONGODB_URI ?? "";
+  let dbName = "";
+  try {
+    dbName = new URL(uri).pathname.replace(/^\//, "");
+  } catch {
+    dbName = "";
+  }
+  if (!/test/i.test(dbName) && process.env.ALLOW_DESTRUCTIVE_APP_TESTS !== "true") {
+    throw new Error(
+      `app.test.ts wipes collections via deleteMany({}) and refuses to run against database "${dbName || "<none>"}". ` +
+        `Point MONGODB_URI at a disposable database (name containing "test") or set ALLOW_DESTRUCTIVE_APP_TESTS=true to override.`,
+    );
+  }
+}
+
 before(async () => {
+  assertDisposableDatabase();
   await connectDB();
   await connectRedis();
   await UsageLogModel.syncIndexes();

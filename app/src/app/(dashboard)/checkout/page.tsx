@@ -533,8 +533,12 @@ function EntitlementList({ pkg }: { pkg: PublicPackage }) {
     const value = pkg.entitlements[key];
     const count = { count: value.toLocaleString(intlLocale) };
     switch (key) {
-      case "storageMb":
-        return t("billing.entitlementStorageMb", { value: String(value) });
+      case "storageMb": {
+        const gbVal = Math.round(value % 1000 === 0 ? value / 1000 : value / 1024);
+        return value >= 1000
+          ? t("billing.entitlementStorageGb", { value: String(gbVal) })
+          : t("billing.entitlementStorageMb", { value: String(value) });
+      }
       case "queriesPerMonth":
         return tPlural("billing.entitlementQueriesPerMonth", value, count);
       case "documents":
