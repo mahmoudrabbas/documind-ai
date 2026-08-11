@@ -3,6 +3,7 @@ import {
   type PermissionValue,
 } from "@/types/api/permissions.types";
 import { isStandardUserRole } from "@/lib/role-home";
+import { PLATFORM_NAV_ITEMS } from "@/constants/platform-navigation";
 
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
@@ -143,28 +144,22 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
 ];
 
-export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
-  { label: "Overview", labelKey: "nav.overview", href: "/super-admin", icon: "dashboard", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
-  { label: "Companies", labelKey: "nav.companies", href: "/super-admin/companies", icon: "business", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Packages", labelKey: "nav.packages", href: "/super-admin/packages", icon: "inventory_2", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Subscriptions", labelKey: "nav.subscriptions", href: "/super-admin/subscriptions", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Platform Users", labelKey: "nav.platformUsers", href: "/super-admin/users", icon: "group", context: "platform", requiredPermissions: [Permission.USERS_READ] },
-  { label: "Usage & Costs", labelKey: "nav.usageCosts", href: "/super-admin/usage", icon: "monitoring", context: "platform", requiredPermissions: [Permission.ANALYTICS_READ] },
-  { label: "Processing Jobs", labelKey: "nav.processingJobs", href: "/super-admin/jobs", icon: "manufacturing", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
-  { label: "Processing Overview", labelKey: "nav.processingOverview", href: "/super-admin/processing-overview", icon: "monitoring", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
-  { label: "System Health", labelKey: "nav.systemHealth", href: "/super-admin/system-health", icon: "health_and_safety", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Retrieval Debug", labelKey: "nav.retrievalDebug", href: "/super-admin/retrieval-debug", icon: "search", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "AI Configuration", labelKey: "nav.aiConfiguration", href: "/super-admin/ai-configuration", icon: "psychology", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Security & Audit", labelKey: "nav.securityAudit", href: "/super-admin/audit", icon: "policy", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
-  { label: "Global Settings", labelKey: "nav.globalSettings", href: "/super-admin/settings", icon: "settings", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Payment Diagnostics", labelKey: "nav.paymentDiagnostics", href: "/super-admin/payments", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Refund Reviews", labelKey: "nav.refundReviews", href: "/super-admin/refunds", icon: "currency_exchange", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Quota Overrides", labelKey: "nav.quotaOverrides", href: "/super-admin/entitlement", icon: "tune", context: "platform", requiredPermissions: [Permission.BILLING_MANAGE] },
-  { label: "AI Analytics Deep Dive", labelKey: "nav.aiAnalyticsDeepDive", href: "/super-admin/analytics", icon: "analytics", context: "platform", requiredPermissions: [Permission.ANALYTICS_READ] },
-];
+/** Flat view derived from the grouped platform nav (see platform-navigation.ts). */
+export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = PLATFORM_NAV_ITEMS.map(
+  (item) => ({ ...item, context: "platform" as const }),
+);
 
 export const TENANT_TOPBAR_LINKS = TENANT_SIDEBAR_LINKS.slice(0, 3);
-export const PLATFORM_TOPBAR_LINKS = PLATFORM_SIDEBAR_LINKS.slice(0, 3);
+
+/** Pinned by href — regrouping PLATFORM_NAV_GROUPS must not change the top bar. */
+const PLATFORM_TOPBAR_HREFS = [
+  "/super-admin",
+  "/super-admin/companies",
+  "/super-admin/packages",
+] as const;
+export const PLATFORM_TOPBAR_LINKS: readonly NavLink[] = PLATFORM_TOPBAR_HREFS.flatMap(
+  (href) => PLATFORM_SIDEBAR_LINKS.find((link) => link.href === href) ?? [],
+);
 
 export function isKnownRole(role: string): role is Role {
   return Object.values(ROLES).includes(role as Role);

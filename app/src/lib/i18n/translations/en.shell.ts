@@ -42,6 +42,11 @@ const enShell: TranslationDictionary = {
   "nav.refundReviews": "Refund Reviews",
   "nav.quotaOverrides": "Quota Overrides",
   "nav.aiAnalyticsDeepDive": "AI Analytics Deep Dive",
+  "nav.groupCustomers": "Customers",
+  "nav.groupBillingPlans": "Billing & Plans",
+  "nav.groupOperations": "Operations",
+  "nav.groupAiAnalytics": "AI & Analytics",
+  "nav.groupGovernance": "Governance",
 
   /* ── Shell chrome ──────────────────────────────────────────────── */
   "shell.openNavigation": "Open navigation",

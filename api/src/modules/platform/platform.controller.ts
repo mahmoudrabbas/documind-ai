@@ -133,7 +133,9 @@ export const activatePackageController = endpoint((req) =>
     auditContext(req),
   ),
 );
-export const subscriptionsController = endpoint((req) => listSubscriptions(auditContext(req)));
+export const subscriptionsController = endpoint((req) =>
+  listSubscriptions(parse(listSchema, req.query), auditContext(req)),
+);
 const idempotencyKey = (req: Request) => {
   const value = req.header("Idempotency-Key")?.trim();
   if (!value || value.length < 8 || value.length > 200) {

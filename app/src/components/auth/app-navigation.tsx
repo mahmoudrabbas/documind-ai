@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
 import { useTenantSettings } from "@/providers/tenant-provider";
@@ -11,9 +11,12 @@ import {
   getAppContext,
   filterNavigationLinks,
   isKnownRole,
-  PLATFORM_SIDEBAR_LINKS,
   TENANT_SIDEBAR_LINKS,
 } from "@/constants/routes";
+import {
+  PLATFORM_NAV_GROUPS,
+  type PlatformNavGroup,
+} from "@/constants/platform-navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
 
@@ -21,6 +24,62 @@ type AppNavigationProps = {
   open: boolean;
   onClose: () => void;
 };
+
+function isItemActive(
+  pathname: string,
+  href: string,
+  allHrefs: readonly string[],
+): boolean {
+  return (
+    pathname === href ||
+    (href !== "/dashboard" &&
+      href !== "/super-admin" &&
+      pathname.startsWith(`${href}/`) &&
+      !allHrefs.some(
+        (other) =>
+          other !== href &&
+          other.startsWith(`${href}/`) &&
+          pathname.startsWith(other),
+      ))
+  );
+}
+
+function NavItem({
+  href,
+  label,
+  labelKey,
+  icon,
+  isActive,
+  onClose,
+}: {
+  href: string;
+  label: string;
+  labelKey?: string;
+  icon: string;
+  isActive: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <Link
+      href={href}
+      onClick={onClose}
+      title={label}
+      aria-label={label}
+      aria-current={isActive ? "page" : undefined}
+      className={`flex min-w-0 items-center gap-3 px-4 py-3 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
+        isActive
+          ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
+          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+      }`}
+    >
+      <span className="material-symbols-outlined shrink-0">{icon}</span>
+      <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
+        {labelKey ? t(labelKey) : label}
+      </span>
+    </Link>
+  );
+}
 
 export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const auth = useAuth();
@@ -31,6 +90,18 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutPending = useRef(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [groupsHydrated, setGroupsHydrated] = useState(false);
+  const pathnameRef = useRef(pathname);
+  // Post-commit ref sync (react-hooks/refs); only read by the
+  // `[appContext]` effect below, which runs after this one.
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  });
+  const appContext =
+    auth.status === "authenticated" && isKnownRole(auth.user.role)
+      ? getAppContext(auth.user.role)
+      : null;
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +117,59 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
     };
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (appContext !== "platform") return;
+    const currentPath = pathnameRef.current;
+    const stored: Record<string, boolean> = {};
+    for (const group of PLATFORM_NAV_GROUPS) {
+      const hasActiveItem = group.items.some(
+        (item) =>
+          currentPath === item.href || currentPath.startsWith(`${item.href}/`),
+      );
+      if (hasActiveItem) {
+        stored[group.id] = false;
+        continue;
+      }
+      try {
+        stored[group.id] =
+          window.localStorage.getItem(`platform-nav:${group.id}`) ===
+          "collapsed";
+      } catch {
+        stored[group.id] = false;
+      }
+    }
+    setCollapsedGroups(stored);
+    setGroupsHydrated(true);
+  }, [appContext]);
+
+  const tenantLinks = filterNavigationLinks(
+    TENANT_SIDEBAR_LINKS,
+    permissions.status,
+    permissions.can,
+    auth.user?.role,
+  );
+
+  const visibleGroups = useMemo(() => {
+    if (appContext !== "platform") return [];
+    return PLATFORM_NAV_GROUPS.map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        item.requiredPermissions.every((permission) =>
+          permissions.can(permission),
+        ),
+      ),
+    })).filter((group) => group.items.length > 0);
+  }, [appContext, permissions.can]);
+
+  const groupedAllHrefs = useMemo(
+    () => visibleGroups.flatMap((group) => group.items.map((item) => item.href)),
+    [visibleGroups],
+  );
+  const tenantAllHrefs = useMemo(
+    () => tenantLinks.map((link) => link.href),
+    [tenantLinks],
+  );
+
   if (auth.status !== "authenticated") return null;
 
   async function handleLogout() {
@@ -60,21 +184,27 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
     }
   }
 
-  const appContext = isKnownRole(auth.user.role)
-    ? getAppContext(auth.user.role)
-    : null;
-  const candidateLinks =
-    appContext === "platform"
-      ? PLATFORM_SIDEBAR_LINKS
-      : appContext === "tenant"
-        ? TENANT_SIDEBAR_LINKS
-        : [];
-  const links = filterNavigationLinks(
-    candidateLinks,
-    permissions.status,
-    permissions.can,
-    auth.user.role,
-  );
+  const isGroupCollapsed = (group: PlatformNavGroup): boolean => {
+    if (!groupsHydrated) return !group.defaultOpen;
+    return collapsedGroups[group.id] ?? !group.defaultOpen;
+  };
+
+  const toggleGroup = (id: string) => {
+    const group = PLATFORM_NAV_GROUPS.find((entry) => entry.id === id);
+    if (!group) return;
+    setCollapsedGroups((previous) => {
+      const nextCollapsed = !(previous[id] ?? !group.defaultOpen);
+      try {
+        window.localStorage.setItem(
+          `platform-nav:${id}`,
+          nextCollapsed ? "collapsed" : "expanded",
+        );
+      } catch {
+        // localStorage unavailable — in-memory state still applies
+      }
+      return { ...previous, [id]: nextCollapsed };
+    });
+  };
 
   const companyName =
     tenant.status === "ready" && tenant.settings.profile.companyName
@@ -83,19 +213,126 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         ? (auth.tenant?.name ?? null)
         : null;
 
-  const navLinkClassName = (isActive: boolean) =>
-    `flex min-w-0 items-center gap-3 px-4 py-3 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
-      isActive
-        ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
-        : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-    }`;
-
   const secondaryLinkClassName = (tone: "muted" | "error") =>
     `flex items-center gap-3 px-4 py-2 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
       tone === "error"
         ? "text-error hover:text-on-surface disabled:opacity-60"
         : "text-on-surface-variant hover:text-on-surface"
     }`;
+
+  let navContent: ReactNode;
+  if (permissions.status === "loading" || permissions.status === "idle") {
+    navContent = (
+      <div className="space-y-2 px-md" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map((index) => (
+          <div
+            key={index}
+            className="h-12 animate-pulse rounded-lg bg-surface-container-high"
+          />
+        ))}
+      </div>
+    );
+  } else if (
+    permissions.status === "denied" ||
+    permissions.status === "error" ||
+    permissions.status === "maintenance"
+  ) {
+    navContent = (
+      <div
+        role="alert"
+        className="mx-md rounded-xl border border-error/20 bg-error-container p-4 text-on-error-container"
+      >
+        <p className="text-body-sm">Navigation is unavailable right now.</p>
+        <button
+          type="button"
+          onClick={() => void permissions.refreshPermissions()}
+          className="mt-3 min-h-10 rounded-lg bg-error px-4 py-2 font-bold text-on-error"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  } else if (appContext === "platform") {
+    navContent =
+      visibleGroups.length === 0 ? (
+        <p className="px-md text-body-sm text-on-surface-variant">
+          No navigation items available.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {visibleGroups.map((group) => {
+            const collapsed = isGroupCollapsed(group);
+            return (
+              <div key={group.id}>
+                {group.label ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={!collapsed}
+                    aria-controls={`nav-group-${group.id}`}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-4"
+                  >
+                    {group.icon ? (
+                      <span className="material-symbols-outlined text-[18px]">
+                        {group.icon}
+                      </span>
+                    ) : null}
+                    <span className="min-w-0 flex-1 truncate text-start md:hidden xl:inline">
+                      {group.labelKey ? t(group.labelKey) : group.label}
+                    </span>
+                    <span
+                      className={`material-symbols-outlined text-[18px] transition-transform md:hidden xl:inline ${collapsed ? "" : "rotate-180"}`}
+                    >
+                      expand_more
+                    </span>
+                  </button>
+                ) : null}
+                {!collapsed ? (
+                  <div id={`nav-group-${group.id}`} className="space-y-1">
+                    {group.items.map((item) => (
+                      <NavItem
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        labelKey={item.labelKey}
+                        icon={item.icon}
+                        isActive={isItemActive(
+                          pathname,
+                          item.href,
+                          groupedAllHrefs,
+                        )}
+                        onClose={onClose}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      );
+  } else {
+    navContent =
+      tenantLinks.length === 0 ? (
+        <p className="px-md text-body-sm text-on-surface-variant">
+          No navigation items available.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {tenantLinks.map(({ href, label, labelKey, icon }) => (
+            <NavItem
+              key={href}
+              href={href}
+              label={label}
+              labelKey={labelKey}
+              icon={icon}
+              isActive={isItemActive(pathname, href, tenantAllHrefs)}
+              onClose={onClose}
+            />
+          ))}
+        </div>
+      );
+  }
 
   return (
     <>
@@ -141,37 +378,8 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto px-md md:px-0 xl:px-md">
-          {links.map(({ label, labelKey, href, icon }) => {
-            const allHrefs = links.map((l) => l.href);
-            const isActive =
-              pathname === href ||
-              (href !== "/dashboard" &&
-                href !== "/super-admin" &&
-                pathname.startsWith(`${href}/`) &&
-                !allHrefs.some(
-                  (other) =>
-                    other !== href &&
-                    other.startsWith(`${href}/`) &&
-                    pathname.startsWith(other),
-                ));
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={onClose}
-                title={label}
-                aria-label={label}
-                aria-current={isActive ? "page" : undefined}
-                className={navLinkClassName(isActive)}
-              >
-                <span className="material-symbols-outlined shrink-0">{icon}</span>
-                <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
-                  {labelKey ? t(labelKey) : label}
-                </span>
-              </Link>
-            );
-          })}
+        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-md md:px-0 xl:px-md">
+          {navContent}
         </nav>
         <div className="mt-auto border-t border-outline-variant p-md md:px-0 xl:px-md">
           <div className="space-y-1">
@@ -180,17 +388,6 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <div className="px-4 pb-2 sm:hidden">
               <LanguageSwitcher className="w-full justify-center" />
             </div>
-            <Link
-              href="#"
-              title="Help Center"
-              aria-label="Help Center"
-              className={`w-full ${secondaryLinkClassName("muted")}`}
-            >
-              <span className="material-symbols-outlined">help</span>
-              <span className="text-body-sm md:hidden xl:inline">
-                {t("shell.helpCenter")}
-              </span>
-            </Link>
             <button
               onClick={() => void handleLogout()}
               disabled={loggingOut}
