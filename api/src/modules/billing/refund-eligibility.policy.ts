@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import type { RefundReasonCode, RefundSubscriptionImpact } from "../../db/models/refundEligibilityPreview.model.js";
 
-export const REFUND_ELIGIBILITY_POLICY_VERSION = "2026-07-usage-v1";
+export const REFUND_ELIGIBILITY_POLICY_VERSION = "2026-08-conservative-attribution-v1";
 export const REFUND_USAGE_DIMENSIONS = ["queriesPerMonth", "tokensPerMonth", "ocrPagesPerMonth"] as const;
 export const REFUND_PREVIEW_TTL_MS = 15 * 60 * 1000;
+export const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface UsageMetricInput { dimension: string; usage: number | null; limit: number }
 export interface RefundEligibilityInput {
@@ -19,6 +20,7 @@ export interface RefundEligibilityInput {
   duplicatePaymentProven?: boolean;
   directProviderCostMinor?: number | null;
   goodwillCapMinor?: number;
+  invoicePaidAt?: Date | null;
 }
 export interface RefundEligibilityDecision {
   policyVersion: string;
@@ -71,6 +73,10 @@ export function evaluateRefundEligibility(input: RefundEligibilityInput): Refund
   if (input.reason === "GOODWILL_CREDIT") {
     const cap = Number.isSafeInteger(input.goodwillCapMinor) ? Math.max(0, input.goodwillCapMinor!) : 0;
     return decision("NONE", elapsedPeriodRatioBps, 0, Math.min(financialRemaining, cap), true, "PLATFORM_ONLY_REASON");
+  }
+  if (input.reason === "SYSTEM_REMAINING_BALANCE_REFUND" && input.invoicePaidAt
+    && input.measuredAt.getTime() > input.invoicePaidAt.getTime() + REFUND_WINDOW_MS) {
+    return decision("NONE", elapsedPeriodRatioBps, 0, 0, false, "REFUND_WINDOW_EXPIRED");
   }
   if (invalidUsage) {
     return decision("CANCEL_AND_MOVE_TO_FREE", elapsedPeriodRatioBps, 0, 0, true, "USAGE_DATA_UNAVAILABLE");

@@ -80,7 +80,10 @@ function formatValue(
 ): string {
   if (value === 0) return "0";
   if (dimension === "storageMb") {
-    if (value >= 1024) return `${(value / 1024).toFixed(1)} ${t("common.unitGB")}`;
+    if (value >= 1000) {
+      const gb = Math.round(value % 1000 === 0 ? value / 1000 : value / 1024);
+      return `${gb} ${t("common.unitGB")}`;
+    }
     return `${value.toLocaleString(locale)} ${t("common.unitMB")}`;
   }
   return value.toLocaleString(locale);
@@ -94,7 +97,10 @@ function formatLimit(
 ): string {
   if (value === 0) return t("common.unlimited");
   if (dimension === "storageMb") {
-    if (value >= 1024) return `${(value / 1024).toFixed(1)} ${t("common.unitGB")}`;
+    if (value >= 1000) {
+      const gb = Math.round(value % 1000 === 0 ? value / 1000 : value / 1024);
+      return `${gb} ${t("common.unitGB")}`;
+    }
     return `${value.toLocaleString(locale)} ${t("common.unitMB")}`;
   }
   return value.toLocaleString(locale);

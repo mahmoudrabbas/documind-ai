@@ -695,7 +695,7 @@ function RefundRequestForm({ invoice, locale, t, eligibility, error }: { invoice
       <Detail label={t("billingAdmin.refundableRemaining")} value={money(eligibility.data.maximumEligibleRefundMinor)} />
       <p className="text-sm">{t("billingAdmin.periodElapsed")}: {eligibility.data.periodElapsedPercent}%</p>
       {eligibility.data.usage.map((metric) => <p key={metric.dimension} className="text-sm">{t(`billingAdmin.entitlement.${metric.dimension}`)}: {metric.percent}%</p>)}
-      {eligibility.data.maximumEligibleRefundMinor > 0 ? <p role="note" className="rounded-xl bg-warning-container p-3 text-sm text-on-warning-container">{t("billingAdmin.systemRefundWarning")}</p> : <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.noRefundableBalance")}</p>}
+      {eligibility.data.decisionReason === "REFUND_WINDOW_EXPIRED" ? <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.refundWindowExpired")}</p> : eligibility.data.maximumEligibleRefundMinor > 0 ? <p role="note" className="rounded-xl bg-warning-container p-3 text-sm text-on-warning-container">{t("billingAdmin.systemRefundWarning")}</p> : <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.noRefundableBalance")}</p>}
     </div> : null}
     {error ? <p role="alert" className="rounded-xl border border-error/40 bg-error-container p-3 text-on-error-container">{error}</p> : null}
   </div>;
@@ -743,7 +743,6 @@ function canStartPaidCheckout(summary: SubscriptionStatus): boolean {
     eligibleState &&
     (summary.transitionState === undefined || summary.transitionState === "ACTIVE") &&
     !summary.providerLinked &&
-    !summary.providerManaged &&
     !summary.pendingOperation &&
     summary.packageId.code === "free" &&
     summary.packageId.monthlyPrice <= 0 &&
