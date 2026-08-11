@@ -34,17 +34,28 @@ const TEST_PASSWORD = "StrongPass123!";
 const UPLOAD_TEST_DIR = path.resolve(process.cwd(), config.UPLOAD_DIR);
 
 let mongoServer: MongoMemoryReplSet | null = null;
+const activeServers = new Set<Server>();
 
 function createServer() {
   return new Promise<Server>((resolve) => {
-    const srv = app.listen(0, () => resolve(srv));
+    const srv = app.listen(0, () => {
+      activeServers.add(srv);
+      resolve(srv);
+    });
   });
 }
 
 function closeServer(server: Server) {
   return new Promise<void>((resolve, reject) => {
     server.closeAllConnections?.();
-    server.close((err) => (err ? reject(err) : resolve()));
+    server.close((err) => {
+      activeServers.delete(server);
+      if (err && (err as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   });
 }
 
@@ -360,6 +371,8 @@ beforeEach(async () => {
   await DocumentModel.deleteMany({});
   await DocumentVersionModel.deleteMany({});
   await DocumentClassificationModel.deleteMany({});
+  await DocumentCategoryModel.deleteMany({});
+  await DepartmentModel.deleteMany({});
   await DocumentAccessPolicyModel.deleteMany({});
   await RoleModel.deleteMany({});
 
@@ -372,6 +385,7 @@ beforeEach(async () => {
 after(async () => {
   await fsp.rm(UPLOAD_TEST_DIR, { recursive: true, force: true }).catch(() => {});
   await disconnectRedis();
+  await Promise.all(Array.from(activeServers, closeServer));
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
@@ -426,6 +440,7 @@ void test("POST /documents — returns 413 FILE_SIZE_LIMIT_EXCEEDED when file ex
   const accessToken = await login(port);
 
   const pdfContent = Buffer.alloc(3 * 1024 * 1024, 0x41); // 3 MB > 2 MB limit
+  pdfContent.write("%PDF-1.4", 0, "ascii");
   const { buffer, boundary } = buildMultipartBody("oversized.pdf", pdfContent, {
     title: "Oversized",
   });
@@ -512,7 +527,7 @@ void test("POST /documents — returns 400 for zero-byte file", async () => {
   await closeServer(server);
 });
 
-void test("POST /documents — quarantines file with signature mismatch", async () => {
+void test("POST /documents — rejects file with signature mismatch", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
   await createActiveTenantAdmin();
@@ -530,10 +545,10 @@ void test("POST /documents — quarantines file with signature mismatch", async 
     body: buffer,
   });
 
-  assert.equal(response.status, 201);
+  assert.equal(response.status, 400);
   const body = (await response.json()) as Record<string, unknown>;
-  const doc = (body.data as Record<string, unknown>).document as Record<string, unknown>;
-  assert.equal(doc.quarantineStatus, "quarantined");
+  assert.equal(body.error, "FILE_SIGNATURE_MISMATCH");
+  assert.equal(await DocumentModel.countDocuments({}), 0);
   await closeServer(server);
 });
 
@@ -1439,7 +1454,7 @@ void test("POST /documents — rejects unsupported MIME type", async () => {
   await closeServer(server);
 });
 
-void test("POST /documents — detects signature mismatch (fake PDF with DOCX bytes)", async () => {
+void test("POST /documents — rejects signature mismatch (fake PDF with DOCX bytes)", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
   await createActiveTenantAdmin();
@@ -1454,10 +1469,10 @@ void test("POST /documents — detects signature mismatch (fake PDF with DOCX by
     body: buffer,
   });
 
-  const body2 = (await response.json()) as Record<string, unknown>;
-  const doc = (body2.data as Record<string, unknown>).document as Record<string, unknown>;
-  assert.equal(doc.quarantineStatus, "quarantined");
-  assert.equal(doc.scanResult && (doc.scanResult as Record<string, unknown>).result, "error");
+  const body = (await response.json()) as Record<string, unknown>;
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "FILE_SIGNATURE_MISMATCH");
+  assert.equal(await DocumentModel.countDocuments({}), 0);
 
   await closeServer(server);
 });
