@@ -489,6 +489,10 @@ async function seedBaseState() {
     revision: 3,
   });
 
+  // Refund eligibility enforces a 7-day window from invoice payment, so the
+  // seeded payment must stay recent relative to the test run.
+  const recentPaidAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
   await InvoiceModel.create({
     _id: ids.invoiceA,
     tenantId: ids.tenantA,
@@ -506,12 +510,12 @@ async function seedBaseState() {
     reservedRefundAmountMinor: 0,
     subtotalMinor: 1000,
     taxMinor: 0,
-    createdAtProvider: new Date("2026-07-02T00:00:00.000Z"),
+    createdAtProvider: recentPaidAt,
     dueAt: null,
-    paidAt: new Date("2026-07-02T00:00:00.000Z"),
+    paidAt: recentPaidAt,
     periodStart: new Date("2026-07-01T00:00:00.000Z"),
     periodEnd: new Date("2099-08-01T00:00:00.000Z"),
-    synchronizedAt: new Date("2026-07-02T00:00:00.000Z"),
+    synchronizedAt: recentPaidAt,
     hostedInvoiceUrl: "https://invoice.stripe.com/i/test_a",
     invoicePdfUrl: "https://pay.stripe.com/invoice/test_a.pdf",
     receiptUrl: "https://pay.stripe.com/receipts/test_a",
@@ -550,9 +554,9 @@ async function seedBaseState() {
     refundedAmountMinor: 0,
     subtotalMinor: 1000,
     taxMinor: 0,
-    createdAt: new Date("2026-07-02T00:00:00.000Z"),
+    createdAt: recentPaidAt,
     dueAt: null,
-    paidAt: new Date("2026-07-02T00:00:00.000Z"),
+    paidAt: recentPaidAt,
     periodStart: new Date("2026-07-01T00:00:00.000Z"),
     periodEnd: new Date("2099-08-01T00:00:00.000Z"),
     providerVersion: "v1",
