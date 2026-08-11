@@ -191,6 +191,7 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.payments.eventStatus.verified": "Verified",
   "superAdmin.payments.eventStatus.processed": "Processed",
   "superAdmin.payments.eventStatus.failed": "Failed",
+  "superAdmin.payments.none": "No payment events found.",
   "superAdmin.indexStatus.ready": "Ready",
   "superAdmin.indexStatus.migration_required": "Migration Required",
 

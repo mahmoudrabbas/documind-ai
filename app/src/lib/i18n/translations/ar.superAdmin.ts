@@ -187,6 +187,7 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.payments.eventStatus.verified": "مُتحقق منه",
   "superAdmin.payments.eventStatus.processed": "تمت المعالجة",
   "superAdmin.payments.eventStatus.failed": "فاشل",
+  "superAdmin.payments.none": "لم يتم العثور على أي أحداث دفع.",
   "superAdmin.indexStatus.ready": "جاهز",
   "superAdmin.indexStatus.migration_required": "يلزم الترحيل",
 

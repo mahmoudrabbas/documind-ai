@@ -22,6 +22,56 @@ describe("permission-driven navigation", () => {
     ).toEqual([]);
   });
 
+  it("platform links require held permissions", () => {
+    const analyticsOnly = filterNavigationLinks(
+      PLATFORM_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(Permission.ANALYTICS_READ),
+    );
+    expect(analyticsOnly.map((link) => link.href)).toEqual([
+      "/super-admin/usage",
+      "/super-admin/analytics",
+    ]);
+    const billingOnly = filterNavigationLinks(
+      PLATFORM_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(Permission.BILLING_READ),
+    );
+    expect(billingOnly.map((link) => link.href)).toEqual([
+      "/super-admin/packages",
+      "/super-admin/subscriptions",
+      "/super-admin/payments",
+      "/super-admin/refunds",
+    ]);
+  });
+
+  it("platform links are labeled correctly", () => {
+    const links = filterNavigationLinks(
+      PLATFORM_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(...Object.values(Permission)),
+    );
+    expect(links.map((link) => link.href)).toEqual([
+      "/super-admin",
+      "/super-admin/companies",
+      "/super-admin/users",
+      "/super-admin/packages",
+      "/super-admin/subscriptions",
+      "/super-admin/payments",
+      "/super-admin/refunds",
+      "/super-admin/entitlement",
+      "/super-admin/jobs",
+      "/super-admin/processing-overview",
+      "/super-admin/system-health",
+      "/super-admin/ai-configuration",
+      "/super-admin/retrieval-debug",
+      "/super-admin/usage",
+      "/super-admin/analytics",
+      "/super-admin/audit",
+      "/super-admin/settings",
+    ]);
+  });
+
   it("shows only tenant links backed by held permissions", () => {
     const links = filterNavigationLinks(
       TENANT_SIDEBAR_LINKS,

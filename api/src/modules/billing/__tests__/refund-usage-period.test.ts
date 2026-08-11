@@ -23,7 +23,7 @@ describe("refund exact-period usage semantics", () => {
     ["Jul 28 to Aug 28", "2026-07-28T00:00:00.000Z", "2026-08-28T00:00:00.000Z"],
     ["Dec 15 to Jan 15", "2026-12-15T00:00:00.000Z", "2027-01-15T00:00:00.000Z"],
     ["annual cross-year", "2026-07-28T00:00:00.000Z", "2027-07-28T00:00:00.000Z"],
-  ])("uses exact ledgers across %s and rejects an unattributable counter surplus", (_label, start, end) => {
+  ])("uses exact ledgers across %s and conservatively attributes an unproven counter surplus", (_label, start, end) => {
     const accepted = resolve(start, end, {
       counters: [{ tenantId, dimension: "queriesPerMonth", periodStart: utcPeriodKey(new Date(start)), value: 6 }],
       exactSourceUsage: { queriesPerMonth: 6, ocrPagesPerMonth: 2 },
@@ -35,7 +35,7 @@ describe("refund exact-period usage semantics", () => {
       counters: [{ tenantId, dimension: "queriesPerMonth", periodStart: utcPeriodKey(new Date(start)), value: 7 }],
       exactSourceUsage: { queriesPerMonth: 6, ocrPagesPerMonth: 2 },
     });
-    expect(unproven.find((metric) => metric.dimension === "queriesPerMonth")?.usage).toBeNull();
+    expect(unproven.find((metric) => metric.dimension === "queriesPerMonth")?.usage).toBe(7);
   });
 
   it("uses UTC period keys consistently", () => {

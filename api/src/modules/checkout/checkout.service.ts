@@ -343,6 +343,15 @@ export async function createCheckoutSession(
     billingInterval,
   };
 
+  // Stripe replays idempotent requests for 24h, so a deterministic key would
+  // resurrect an expired session and collide with its stored providerSessionId.
+  // Each new attempt (any previously stored session) therefore gets a new key.
+  const priorSessionCount = await CheckoutSessionModel.countDocuments({
+    tenantId: new Types.ObjectId(tenantId),
+    packageId: new Types.ObjectId(packageId),
+    billingInterval,
+  });
+
   const session = await provider.createCheckoutSession({
     customerId: providerCustomerId,
     priceId,
@@ -351,7 +360,7 @@ export async function createCheckoutSession(
     metadata,
     subscriptionMetadata: metadata,
     clientReferenceId: tenantId,
-    operationContext: providerOperationContext(tenantId, "checkout-session", { tenantId, packageId, packageVersionId: version.packageVersionId, billingInterval }, actor),
+    operationContext: providerOperationContext(tenantId, "checkout-session", { tenantId, packageId, packageVersionId: version.packageVersionId, billingInterval, attempt: String(priorSessionCount) }, actor),
   });
 
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000);

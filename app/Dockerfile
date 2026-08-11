@@ -10,6 +10,7 @@ COPY workers/package.json workers/package.json
 RUN --mount=type=cache,target=/root/.npm npm ci --workspace app --include-workspace-root --force
 
 COPY tsconfig.base.json eslint.config.mjs ./
+COPY scripts/copy-pdfjs-assets.mjs scripts/copy-pdfjs-assets.mjs
 COPY app/ app/
 
 WORKDIR /repo/app

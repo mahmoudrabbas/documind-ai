@@ -37,6 +37,11 @@ const arShell: TranslationDictionary = {
   "nav.refundReviews": "مراجعات الاسترداد",
   "nav.quotaOverrides": "تجاوزات الحصص",
   "nav.aiAnalyticsDeepDive": "تحليلات الذكاء الاصطناعي المتعمقة",
+  "nav.groupCustomers": "العملاء",
+  "nav.groupBillingPlans": "الفوترة والباقات",
+  "nav.groupOperations": "العمليات",
+  "nav.groupAiAnalytics": "الذكاء الاصطناعي والتحليلات",
+  "nav.groupGovernance": "الحوكمة",
 
   /* ── Shell chrome ──────────────────────────────────────────────── */
   "shell.openNavigation": "فتح القائمة",

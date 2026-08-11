@@ -23,3 +23,18 @@ playwright-report
 test-results
 docker-compose*.yml
 .venv
+
+# Local/generated files that are not Docker build inputs
+.codegraph
+.omo
+.playwright-mcp
+.skills
+artifacts
+repository-security-summary
+*-validation-summary
+compose-summary
+docker-api-summary
+docker-app-summary
+docker-workers-summary
+app/stitch
+app/public/pdfjs

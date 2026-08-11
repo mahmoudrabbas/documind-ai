@@ -23,6 +23,10 @@ api/dist/
 packages/*/dist/
 *.tsbuildinfo
 
+# Third-party pdfjs assets copied from node_modules/pdfjs-dist
+# (restored by scripts/copy-pdfjs-assets.mjs on predev/prebuild)
+app/public/pdfjs/
+
 # Agent working files
 .omo/
 **/.omo/
