@@ -34,9 +34,9 @@ type TranslateFn = (key: string, params?: Record<string, string>) => string;
 type PluralFn = (key: string, count: number, params?: Record<string, string>) => string;
 
 function formatStorage(mb: number, t: TranslateFn): string {
-  if (mb >= 1024) {
-    const gb = mb / 1024;
-    return `${gb % 1 === 0 ? gb : gb.toFixed(1)} ${t("common.unitGB")}`;
+  if (mb >= 1000) {
+    const gb = Math.round(mb % 1000 === 0 ? mb / 1000 : mb / 1024);
+    return `${gb} ${t("common.unitGB")}`;
   }
   return `${mb} ${t("common.unitMB")}`;
 }

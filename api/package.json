@@ -15,6 +15,8 @@
     "evaluate:live-rag": "tsx src/scripts/run-evaluation.ts --live-rag",
     "seed:super-admin": "tsx src/scripts/seed-super-admin.ts",
     "seed:default-package": "tsx src/scripts/seed-default-package.ts",
+    "stripe:resync-prices": "tsx src/scripts/resync-stripe-prices.ts",
+    "stripe:resync-prices:apply": "tsx src/scripts/resync-stripe-prices.ts --apply",
     "migrate:subscriptions": "tsx src/scripts/migrate-subscriptions.ts",
     "migrate:roles:phase1": "tsx src/scripts/migrate-roles-phase1.ts --dry-run",
     "migrate:roles:phase1:apply": "tsx src/scripts/migrate-roles-phase1.ts --apply",
