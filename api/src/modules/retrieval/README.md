@@ -61,7 +61,11 @@ The filter compiler has two phases:
    - Mutable AI-use metadata is not used as a search filter; current active
      policy authorization is applied tenant-safely before fusion and reranking.
    - `classification` — role-based defaults: SUPER_ADMIN (none), COMPANY_ADMIN (public/internal/confidential), EMPLOYEE (public/internal). Overridden by explicit permission scopes.
-   - `department` — only when `permissionScopes.departmentIds` is non-empty
+    - `department` — only when `resolvedDepartmentFilter` is set (text names
+      resolved from `permissionScopes.departmentIds` via `resolveDepartmentNames`).
+      `[]` means fail-closed (match nothing); `undefined` means no restriction.
+      Raw ObjectIds from `permissionScopes.departmentIds` are never placed
+      directly into the adapter filter.
    - `category` — only when `permissionScopes.documentCategories` is non-empty
 
 2. **Query filters** (`compileQueryFilters`) — optional user narrowing (documentIds, classifications, departments, categories).

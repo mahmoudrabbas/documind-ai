@@ -79,22 +79,74 @@ describe("compileAccessFilters", () => {
     assert.deepEqual(f.classification, { $in: ["public", "internal"] });
   });
 
-  it("adds department filter when scope present", () => {
+  it("does NOT add department filter when permissionScopes is absent and resolvedDepartmentFilter is undefined", () => {
     const f = compileAccessFilters(
       ctx({
         permissionScopes: scopes({ departmentIds: ["d1", "d2"] }),
       })
     );
-    assert.deepEqual(f.department, { $in: ["d1", "d2"] });
+    assert.equal(f.department, undefined);
   });
 
-  it("does NOT add department filter when scope is empty array", () => {
+  it("does NOT add department filter when resolvedDepartmentFilter is undefined", () => {
     const f = compileAccessFilters(
       ctx({
         permissionScopes: scopes({ departmentIds: [] }),
       })
     );
     assert.equal(f.department, undefined);
+  });
+
+  it("uses resolvedDepartmentFilter (text names) when present", () => {
+    const f = compileAccessFilters(
+      ctx({
+        resolvedDepartmentFilter: ["HR", "IT"],
+        permissionScopes: scopes({ departmentIds: ["d1", "d2"] }),
+      })
+    );
+    assert.deepEqual(f.department, { $in: ["HR", "IT"] });
+  });
+
+  it("resolvedDepartmentFilter [] means fail-closed (match nothing)", () => {
+    const f = compileAccessFilters(
+      ctx({
+        resolvedDepartmentFilter: [],
+        permissionScopes: scopes({ departmentIds: ["d1", "d2"] }),
+      })
+    );
+    assert.deepEqual(f.department, { $in: [] });
+  });
+
+  it("resolvedDepartmentFilter undefined means no department filter even if permissionScopes has raw ids", () => {
+    const f = compileAccessFilters(
+      ctx({
+        resolvedDepartmentFilter: undefined,
+        permissionScopes: scopes({ departmentIds: ["raw-object-id-123"] }),
+      })
+    );
+    assert.equal(f.department, undefined);
+  });
+
+  it("resolvedDepartmentFilter null means no department filter", () => {
+    const f = compileAccessFilters(
+      ctx({
+        resolvedDepartmentFilter: null,
+        permissionScopes: scopes({ departmentIds: [] }),
+      })
+    );
+    assert.equal(f.department, undefined);
+  });
+
+  it("never places raw ObjectId strings into department filter", () => {
+    const f = compileAccessFilters(
+      ctx({
+        resolvedDepartmentFilter: ["HR", "IT"],
+      })
+    );
+    for (const dept of f.department!.$in) {
+      assert.equal(dept, dept.toLowerCase() === dept ? dept : dept, "values should be text names");
+    }
+    assert.deepEqual(f.department, { $in: ["HR", "IT"] });
   });
 
   it("adds category filter when scope present", () => {
@@ -136,6 +188,7 @@ describe("compileAccessFilters", () => {
     const f = compileAccessFilters(
       ctx({
         baseRole: "COMPANY_ADMIN",
+        resolvedDepartmentFilter: ["finance"],
         permissionScopes: scopes({
           documentClassifications: ["confidential"],
           departmentIds: ["d1"],
@@ -144,7 +197,7 @@ describe("compileAccessFilters", () => {
       })
     );
     assert.deepEqual(f.classification, { $in: ["confidential"] });
-    assert.deepEqual(f.department, { $in: ["d1"] });
+    assert.deepEqual(f.department, { $in: ["finance"] });
     assert.deepEqual(f.category, { $in: ["finance"] });
   });
 });

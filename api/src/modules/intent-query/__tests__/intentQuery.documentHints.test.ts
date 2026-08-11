@@ -27,6 +27,37 @@ test("extractNaturalDocumentTitleHints only extracts explicit document reference
   assert.deepEqual(extractNaturalDocumentTitleHints("how i can install snort"), []);
 });
 
+test("extractNaturalDocumentTitleHints handles polite modal wrappers around summarize", () => {
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("can you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("could you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("would you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("please summarize the remote work file"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("please can you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("summarize the network security guide file in 5 lines"),
+    ["network security guide file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("can you give me a summary of the policy document?"),
+    ["policy document"],
+  );
+});
+
 let mongoServer: MongoMemoryReplSet | null = null;
 const TEST_PASSWORD = "StrongPass123!";
 

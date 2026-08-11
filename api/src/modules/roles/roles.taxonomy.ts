@@ -1,6 +1,7 @@
+import { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
-import DepartmentModel from "../../db/models/department.model.js";
+import DepartmentModel, { DepartmentDocument } from "../../db/models/department.model.js";
 import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
 import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
 import { normalizeTaxonomyName } from "../document-taxonomy/documentTaxonomy.normalization.js";
@@ -233,4 +234,66 @@ function dedupeByName(records: ScopeOptionSource[]): ScopeOptionSource[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * Resolves a list of department ObjectIds to their human-readable names
+ * (the `DepartmentModel.name` field), so they can be compared against
+ * the text values stored on document/chunk records.
+ *
+ * The lookup is a strict AND: `_id IN requestedIds AND tenantId == currentTenant
+ * AND status == active`. There is no `$or` between _id and tenantId.
+ *
+ * **Fails closed:**
+ * - If `tenantId` is missing or invalid, returns `[]` (no departments match).
+ * - If any department id is not a valid ObjectId, returns `[]`.
+ * - If any department id resolves to an archived department or belongs to a
+ *   different tenant (or simply does not exist), returns `[]`.
+ *
+ * The caller must treat an empty array as "no departments are allowed",
+ * never as "all departments are allowed".
+ *
+ * @param departmentIds   Canonical department ObjectIds from a permission grant.
+ * @param tenantId        Tenant context used to confirm each department belongs to the tenant.
+ * @returns               `undefined` when no ids were provided (no restriction),
+ *                        a non-empty array of `DepartmentModel.name` strings on success,
+ *                        or `[]` on any resolution failure (fail-closed).
+ */
+export async function resolveDepartmentNames(
+  departmentIds: string[] | undefined,
+  tenantId: string | undefined,
+): Promise<string[] | undefined> {
+  if (!departmentIds?.length) return undefined;
+
+  const ids = departmentIds.map((id) => {
+    try {
+      return new Types.ObjectId(id);
+    } catch {
+      return null;
+    }
+  });
+  if (ids.some((id) => !id)) return [];
+
+  // Fail closed if tenantId is missing or invalid — a strict AND query
+  // requiring _id IN [...] AND tenantId == currentTenant AND status == active.
+  if (!tenantId) return [];
+
+  let tenantObjectId: Types.ObjectId;
+  try {
+    tenantObjectId = new Types.ObjectId(tenantId);
+  } catch {
+    return [];
+  }
+
+  const query: { _id: { $in: Types.ObjectId[] }; status: "active"; tenantId: Types.ObjectId } = {
+    _id: { $in: ids as Types.ObjectId[] },
+    status: "active",
+    tenantId: tenantObjectId,
+  };
+
+  const records: DepartmentDocument[] = await DepartmentModel.find(query).select("name").lean();
+
+  if (records.length !== ids.length) return [];
+
+  return records.map((rec) => rec.name).filter(Boolean);
 }

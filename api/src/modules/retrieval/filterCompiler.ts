@@ -79,10 +79,19 @@ export function compileAccessFilters(context: AccessContext): AdapterFilter {
     filter.classification = { $in: classifications };
   }
 
-  // Department scope — only restrict when non-empty scopes are present.
-  const departmentIds = context.permissionScopes?.departmentIds;
-  if (departmentIds !== undefined && departmentIds.length > 0) {
-    filter.department = { $in: departmentIds };
+  // Department scope — restricts which department records a document/chunk
+  // may belong to.
+  // Only `resolvedDepartmentFilter` is used — it contains textual department
+  // names (DepartmentModel.name) that match the `department` field stored on
+  // document/chunk records. Raw ObjectIds must NEVER be placed directly into
+  // the adapter filter, as they would never match the stored text values.
+  //
+  // Semantics:
+  //   undefined -> no department restriction
+  //   []        -> fail-closed (no departments match; {$in: []} matches nothing)
+  //   ["HR"]    -> restrict to HR
+  if (context.resolvedDepartmentFilter != null) {
+    filter.department = { $in: context.resolvedDepartmentFilter };
   }
 
   // Category scope — only restrict when non-empty scopes are present.

@@ -28,6 +28,18 @@ export interface AccessContext {
   permissionScopes?: PermissionScopes;
   customRoleId?: string | null;
   departmentIds?: string[];
+  /**
+   * Department names resolved server-side from the DOCUMENTS_USE_IN_AI grant
+   * scope's `departmentIds` (ObjectIds) to `DepartmentModel.name` text values,
+   * so they can be compared against the `department` field stored on
+   * document/chunk records.
+   *
+   * Populated by `resolveAccessContext` in `app.ts`.
+   * `undefined` = no department restriction.
+   * `[]` = fail-closed (restrictive scope failed resolution; match nothing).
+   * `['HR', 'IT']` = restrict to those departments.
+   */
+  resolvedDepartmentFilter?: string[] | null;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }

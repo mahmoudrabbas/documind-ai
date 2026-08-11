@@ -94,7 +94,7 @@ export function extractNaturalDocumentTitleHints(question: string): string[] {
 
   const candidates: string[] = [];
   const summary = normalized.match(
-    /^(?:please\s+)?(?:summarize|give\s+(?:me\s+)?(?:a\s+)?summary\s+of|لخ[ّ]?ص|تلخيص)\s+(?:the\s+)?(.+)$/iu,
+    /^(?:please\s+)?(?:can you|could you|would you|will you)?\s*(?:summarize|give\s+(?:me\s+)?(?:a\s+)?summary\s+of|لخ[ّ]?ص|تلخيص)\s+(?:the\s+)?(.+)$/iu,
   );
   if (summary?.[1]) candidates.push(summary[1]);
 

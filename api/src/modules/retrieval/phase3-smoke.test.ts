@@ -51,6 +51,7 @@ describe("FilterCompiler", () => {
         tenantId: "t4",
         actorId: "a4",
         baseRole: "EMPLOYEE",
+        resolvedDepartmentFilter: ["d1", "d2"],
         permissionScopes: {
           selfOnly: false,
           departmentIds: ["d1", "d2"],
@@ -60,6 +61,22 @@ describe("FilterCompiler", () => {
       };
       const filter = compileAccessFilters(ctx);
       assert.deepEqual(filter.department, { $in: ["d1", "d2"] });
+    });
+
+    it("EMPLOYEE with empty permissionScopes but no resolvedDepartmentFilter has no department filter", () => {
+      const ctx: AccessContext = {
+        tenantId: "t4",
+        actorId: "a4",
+        baseRole: "EMPLOYEE",
+        permissionScopes: {
+          selfOnly: false,
+          departmentIds: ["raw-object-id-123"],
+          documentCategories: [],
+          documentClassifications: [],
+        },
+      };
+      const filter = compileAccessFilters(ctx);
+      assert.equal(filter.department, undefined);
     });
 
     it("EMPLOYEE with category scopes restricts category", () => {
