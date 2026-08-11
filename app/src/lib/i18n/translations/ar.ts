@@ -1086,6 +1086,8 @@ const ar: TranslationDictionary = {
     "تستند إجابات الذكاء الاصطناعي إلى مستندات شركتك. تحقّق دائمًا من المعلومات المهمة.",
   "chat.sourceDocumentFallback": "مستند",
   "chat.sourcePage": "(ص. {{page}})",
+  "chat.sourcePreviewLoading": "جارٍ تحميل المعاينة...",
+  "chat.sourcePreviewUnavailable": "المعاينة غير متاحة لهذا النوع من الملفات.",
   /* أسئلة مقترحة للبدء. تُترجم عند العرض انطلاقًا من
      SUGGESTED_QUESTION_KEYS في chat-client.tsx، لأن الثابت على مستوى
      الوحدة لا يمكنه استدعاء الخطّاف فيحمل المفاتيح بدل النص. */

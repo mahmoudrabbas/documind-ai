@@ -37,7 +37,12 @@ describe("chat assistant rendering (markdown + safety)", () => {
     expect(source).toContain("setPdfViewer({");
     expect(source).toContain('documentId: source.documentId');
     expect(source).toContain('highlightText: source.text');
-    expect(source).toContain('documentTitle: source.documentTitle');
+    expect(source).toContain('documentTitle: title');
+    expect(source).toContain('classifySourceFile(document.mimeType');
+    expect(source).toContain('if (kind === "text")');
+    expect(source).toContain('text: await response.text()');
+    expect(source).toContain('setSourcePreview({ title, documentId: source.documentId });');
+    expect(source).toContain('<SourcePreviewModal');
     expect(source).toContain("<PdfViewerModal");
   });
 

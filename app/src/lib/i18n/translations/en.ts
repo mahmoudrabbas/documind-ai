@@ -1089,6 +1089,8 @@ const en: TranslationDictionary = {
     "AI responses are based on your company documents. Always verify critical information.",
   "chat.sourceDocumentFallback": "Document",
   "chat.sourcePage": "(p.{{page}})",
+  "chat.sourcePreviewLoading": "Loading preview...",
+  "chat.sourcePreviewUnavailable": "Preview not available for this file type.",
   /* Suggested starter questions. Resolved at render from
      SUGGESTED_QUESTION_KEYS in chat-client.tsx — a module-level constant
      cannot call the hook, so it holds keys rather than text. */
