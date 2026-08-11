@@ -38,6 +38,8 @@ import {
   synchronizeInvoiceFromReference,
 } from "../billing/invoice-synchronization.service.js";
 import { synchronizeRefundFromProvider } from "../billing/refund.service.js";
+import { ensureFreeFallbackSubscription } from "../billing/free-fallback.service.js";
+import { EFFECTIVE_SUBSCRIPTION_STATUSES } from "../../db/subscription-index-invariant.js";
 
 const AUTHORITATIVE_SUBSCRIPTION_EVENTS = new Set([
   "checkout.session.completed",
@@ -315,6 +317,21 @@ export async function handlePaymentEvent(
         outcome: "CONFIRMED",
         authoritativeSubscription: synchronized.subscription,
       });
+      if (!EFFECTIVE_SUBSCRIPTION_STATUSES.includes(synchronized.subscription.status as (typeof EFFECTIVE_SUBSCRIPTION_STATUSES)[number])) {
+        try {
+          await ensureFreeFallbackSubscription({
+            tenantId: tenantHint,
+            providerCustomerId: providerSubscription.customerId || undefined,
+            reason: "PROVIDER_SUBSCRIPTION_DELETED",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error(
+            { tenantId: tenantHint, providerEventId: event.id, error: message },
+            "Free fallback subscription could not be provisioned after provider deletion",
+          );
+        }
+      }
       eventRecord.tenantId = new Types.ObjectId(tenantHint);
       const checkoutSessionId = extractCheckoutSessionId(event);
       if (event.type === "checkout.session.completed" && checkoutSessionId) {
@@ -506,6 +523,23 @@ async function handleStaticMappingEvent(
     { _id: sub._id, tenantId },
     { $set: subscriptionUpdate },
   );
+
+  if (event.type === "customer.subscription.deleted") {
+    try {
+      await ensureFreeFallbackSubscription({
+        tenantId: String(tenantId),
+        providerCustomerId:
+          String(subscriptionUpdate.providerCustomerId ?? sub.providerCustomerId ?? "") || undefined,
+        reason: "PROVIDER_SUBSCRIPTION_DELETED",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(
+        { tenantId: String(tenantId), providerEventId: event.id, error: message },
+        "Free fallback subscription could not be provisioned after provider deletion",
+      );
+    }
+  }
 
   const sessionId = extractCheckoutSessionId(event);
   if (sessionId) {

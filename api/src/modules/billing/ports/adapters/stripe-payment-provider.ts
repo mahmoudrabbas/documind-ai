@@ -319,7 +319,7 @@ export class StripePaymentProvider implements PaymentProvider {
       subscription: current.id,
       subscription_details: {
         items: [{ id: await this.subscriptionItemId(stripe, current.id), price: params.targetPriceReference }],
-        proration_behavior: "create_prorations",
+        proration_behavior: "always_invoice",
       },
     });
     assertProviderOwnership(customerId(preview.customer), params.expectedCustomerId);
@@ -349,7 +349,7 @@ export class StripePaymentProvider implements PaymentProvider {
     }
     const updated = await stripe.subscriptions.update(current.id, {
       items: [{ id: await this.subscriptionItemId(stripe, current.id), price: params.targetPriceReference }],
-      proration_behavior: "create_prorations",
+      proration_behavior: "always_invoice",
       metadata,
     }, requestOptions(params.operationContext));
     return this.mutationResult(updated, params.operationContext, params.expectedCustomerId);

@@ -14,6 +14,7 @@ import {
   BILLING_REFUND_DUPLICATE_PAYMENT_NOT_PROVEN,
   BILLING_REFUND_ELIGIBILITY_CHANGED,
   BILLING_REFUND_ELIGIBILITY_EXPIRED,
+  BILLING_REFUND_WINDOW_EXPIRED,
   BILLING_REFUND_USAGE_DATA_UNAVAILABLE,
   NOT_FOUND,
 } from "../../common/errors/errorCodes.js";
@@ -32,6 +33,7 @@ import {
   authorizePlatformOperation,
   authorizeTenantOperation,
   type OperationAuthorizationContext,
+  type ResolvedOperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 import { BillingOperationService, fingerprintBillingRequest, hashIdempotencyKey, mapBillingProviderError } from "./billing-operation.service.js";
 import type { PaymentProvider } from "./ports/payment-provider.port.js";
@@ -480,6 +482,7 @@ export async function createRefundRequest(input: {
   /** @deprecated Internal compatibility only. */
   reason?: string;
   idempotencyKey: string;
+  provider: PaymentProvider;
   context: OperationAuthorizationContext;
 }): Promise<{ refund: RefundDto; replayed: boolean }> {
   const actor = await authorizeTenantOperation(input.context, Permission.BILLING_MANAGE);
@@ -503,6 +506,9 @@ export async function createRefundRequest(input: {
   let maximumEligibleRefundMinor = refundableRemaining(invoice);
   if (preview && !preview.consumedAt) {
     const current = await calculateRefundEligibilitySnapshot({ tenantId: input.tenantId, invoiceId: invoice.id, reason: preview.reason });
+    if (current.decisionReason === "REFUND_WINDOW_EXPIRED") {
+      throw new AppError(409, BILLING_REFUND_WINDOW_EXPIRED, "Refunds are only available within 7 days of the subscription payment");
+    }
     const usageChanged = JSON.stringify(current.includedUsageMetrics) !== JSON.stringify(preview.includedUsageMetrics.map((metric) => ({ dimension: metric.dimension, usage: metric.usage, limit: metric.limit, ratioBps: metric.ratioBps })));
     if (current.subscriptionRevision !== preview.subscriptionRevision || current.amountPaidMinor !== preview.amountPaidMinor || current.currency !== preview.currency || current.maximumEligibleRefundMinor !== preview.maximumEligibleRefundMinor || usageChanged) {
       throw new AppError(409, BILLING_REFUND_ELIGIBILITY_CHANGED, "Refund eligibility changed", { maximumEligibleRefundMinor: current.maximumEligibleRefundMinor });
@@ -649,6 +655,13 @@ export async function createRefundRequest(input: {
       actorRole: actor.actorRole,
       changes: { invoiceId: invoice.id, amountMinor, currency: invoice.currency, reason },
     });
+    if (systemBalanceRefund) {
+      try {
+        return await executeApprovedRefund(createdRefund!, input.provider, actor, input.context.traceId);
+      } catch {
+        return { refund: await toRefundDto(await loadRefundForTenant(String(createdRefund!._id), input.tenantId)), replayed: false };
+      }
+    }
     return { refund: await toRefundDto(createdRefund!), replayed: false };
   } finally {
     await session.endSession();
@@ -892,16 +905,14 @@ async function ensureRefundSubscriptionImpact(refund: RefundDocument, provider: 
   });
 }
 
-export async function confirmRefundRequest(input: {
-  refundId: string;
-  provider: PaymentProvider;
-  context: OperationAuthorizationContext;
-}): Promise<{ refund: RefundDto; replayed: boolean }> {
-  const refund = await loadRefundForPlatform(input.refundId);
-  const actor = await authorizeRefundConfirmation(input.context, String(refund.requestedBy));
-  if (refund.status !== "REQUESTED") throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund can no longer be confirmed");
+async function executeApprovedRefund(
+  refund: RefundDocument,
+  provider: PaymentProvider,
+  actor: Pick<ResolvedOperationAuthorizationContext, "actorId" | "actorEmail" | "actorRole">,
+  traceId?: string,
+): Promise<{ refund: RefundDto; replayed: boolean }> {
   const { invoice, expectedCustomerId } = await loadRefundExecutionContext(refund);
-  const refreshedInvoice = await ensureInvoicePaymentReference(invoice, expectedCustomerId, input.provider);
+  const refreshedInvoice = await ensureInvoicePaymentReference(invoice, expectedCustomerId, provider);
   if (refund.eligibilityPolicyVersion && refund.eligibilityPolicyVersion !== "legacy") {
     const currentEligibility = await calculateRefundEligibilitySnapshot({
       tenantId: String(refund.tenantId), invoiceId: refreshedInvoice.id, reason: refund.reasonCode,
@@ -935,6 +946,7 @@ export async function confirmRefundRequest(input: {
   const operationService = new BillingOperationService();
   const session = await mongoose.startSession();
   let pendingOperationId = String(operation._id);
+  const invoiceForExecution = refreshedInvoice;
   try {
     await session.withTransaction(async () => {
       const pending = await operationService.markProviderPending(operation, { session });
@@ -947,7 +959,7 @@ export async function confirmRefundRequest(input: {
             confirmedBy: new Types.ObjectId(actor.actorId),
             confirmedAt: new Date(),
             failureCode: "",
-            paymentReference: refreshedInvoice.paymentReference,
+            paymentReference: invoiceForExecution.paymentReference,
           },
         },
         { session, returnDocument: "after" },
@@ -972,13 +984,13 @@ export async function confirmRefundRequest(input: {
     reason: refund.reason,
   };
   try {
-    const result = await input.provider.createRefund({
+    const result = await provider.createRefund({
       chargeId: refreshedInvoice.paymentReference,
       expectedCustomerId,
       amountMinor: refund.amountMinor,
       currency: refund.currency,
       reason: refund.reason,
-      operationContext: operationContextFor(String(refund.tenantId), String(refund.operationId), normalizedRequest, input.context.traceId),
+      operationContext: operationContextFor(String(refund.tenantId), String(refund.operationId), normalizedRequest, traceId),
     });
     await operationService.recordProviderResult(pendingOperationId, String(refund.tenantId), {
       operationReference: result.refund.id,
@@ -1022,6 +1034,17 @@ export async function confirmRefundRequest(input: {
     await refund.save();
     throw mapped;
   }
+}
+
+export async function confirmRefundRequest(input: {
+  refundId: string;
+  provider: PaymentProvider;
+  context: OperationAuthorizationContext;
+}): Promise<{ refund: RefundDto; replayed: boolean }> {
+  const refund = await loadRefundForPlatform(input.refundId);
+  const actor = await authorizeRefundConfirmation(input.context, String(refund.requestedBy));
+  if (refund.status !== "REQUESTED") throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund can no longer be confirmed");
+  return executeApprovedRefund(refund, input.provider, actor, input.context.traceId);
 }
 
 export async function retryRefundRequest(input: {

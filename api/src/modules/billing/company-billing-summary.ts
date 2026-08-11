@@ -30,7 +30,7 @@ export function toCompanyBillingSummary(
   const providerManaged = Boolean(subscription.providerCustomerId || subscription.providerSubscriptionId);
   const providerLinked = Boolean(subscription.providerSubscriptionId);
   const pkg = sanitizePackage(subscription.packageId);
-  const paymentState = !providerManaged && pkg?.code === "free"
+  const paymentState = !providerLinked && pkg?.code === "free"
     ? "not_applicable"
     : String(subscription.paymentState ?? "pending");
   const active = ["TRIALING", "ACTIVE", "PAST_DUE", "CANCEL_AT_PERIOD_END"].includes(status);
