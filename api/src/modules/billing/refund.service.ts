@@ -657,7 +657,25 @@ export async function createRefundRequest(input: {
     });
     if (systemBalanceRefund) {
       try {
-        return await executeApprovedRefund(createdRefund!, input.provider, actor, input.context.traceId);
+        await executeApprovedRefund(createdRefund!, input.provider, actor, input.context.traceId);
+        const executed = await loadRefundForTenant(String(createdRefund!._id), input.tenantId);
+        if (executed.status === "PROVIDER_PENDING" && executed.providerRefundId) {
+          // Providers commonly confirm card refunds immediately. Settle inline
+          // so the caller sees the final state; the refund webhook remains the
+          // fallback settlement path when this stays pending.
+          try {
+            await synchronizeRefundFromProvider({
+              provider: input.provider,
+              providerRefundId: String(executed.providerRefundId),
+              operationReference: String(executed.operationId),
+              sourceEventId: `self-serve-refund:${String(executed._id)}`,
+              tenantIdHint: input.tenantId,
+            });
+          } catch {
+            // Webhook/reconciliation will settle the refund later.
+          }
+        }
+        return { refund: await toRefundDto(await loadRefundForTenant(String(createdRefund!._id), input.tenantId)), replayed: false };
       } catch {
         return { refund: await toRefundDto(await loadRefundForTenant(String(createdRefund!._id), input.tenantId)), replayed: false };
       }
