@@ -5,10 +5,14 @@ import { logger } from "../../common/logger/logger.js";
 let vectorAdapter: VectorStoreAdapter | null = null;
 let keywordAdapt: KeywordAdapter | null = null;
 
-function shouldUseRealAdapters(): boolean {
-  if (process.env.NODE_ENV === "test") return false;
-  const aiProvider = process.env.AI_PROVIDER;
-  return !!aiProvider && aiProvider !== "fake";
+export function shouldUseRealAdapters(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  // Search storage is selected independently from the chat/embedding model.
+  // A real MongoDB-backed runtime must query the same Atlas indexes populated
+  // by processing even when the legacy AI_PROVIDER switch is absent. Tests
+  // inject deterministic in-memory adapters explicitly.
+  return env.NODE_ENV !== "test" && Boolean(env.MONGODB_URI?.trim());
 }
 
 export async function getVectorStoreAdapter(): Promise<VectorStoreAdapter> {
@@ -21,7 +25,8 @@ export async function getVectorStoreAdapter(): Promise<VectorStoreAdapter> {
       logger.info("Vector store adapter: Atlas Vector Search");
       return vectorAdapter;
     } catch (err) {
-      logger.warn({ err }, "Failed to load AtlasVectorStoreAdapter, falling back to fake");
+      logger.error({ err }, "Failed to load AtlasVectorStoreAdapter");
+      throw err;
     }
   }
 
@@ -41,7 +46,8 @@ export async function getKeywordAdapter(): Promise<KeywordAdapter> {
       logger.info("Keyword adapter: Atlas Search");
       return keywordAdapt;
     } catch (err) {
-      logger.warn({ err }, "Failed to load AtlasKeywordSearchAdapter, falling back to fake");
+      logger.error({ err }, "Failed to load AtlasKeywordSearchAdapter");
+      throw err;
     }
   }
 

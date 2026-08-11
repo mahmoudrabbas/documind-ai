@@ -11,7 +11,7 @@ describe("invite password page source", () => {
     const source = await readFile(sourceUrl, "utf8");
     expect(source).toContain('code === "PASSWORD_VALIDATION_FAILED"');
     expect(source).toMatch(/setState\(\{\s+status: "form"/);
-    expect(source).toContain("Passwords do not match.");
+    expect(source).toContain('t("auth.passwordsDoNotMatch")');
     expect(source).toContain("disabled={!formValid");
     expect(source).toContain("INVITE_REISSUE_REQUIRED");
     expect(source).toContain("rateLimitRetryAfter !== null");
@@ -24,6 +24,6 @@ describe("invite password page source", () => {
     expect(source).toContain("details.role");
     expect(source).toContain("details.email");
     expect(source).toContain("AuthPageShell");
-    expect(source).toContain("Show password");
+    expect(source).toContain('t("auth.showPassword")');
   });
 });

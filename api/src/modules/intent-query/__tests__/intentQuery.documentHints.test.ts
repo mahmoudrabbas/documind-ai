@@ -9,7 +9,23 @@ import DocumentClassificationModel from "../../../db/models/documentClassificati
 import DocumentAccessPolicyModel from "../../../db/models/documentAccessPolicy.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
-import { resolveAuthorizedDocumentHints } from "../intentQuery.documentHints.js";
+import {
+  extractNaturalDocumentTitleHints,
+  resolveAuthorizedDocumentHints,
+} from "../intentQuery.documentHints.js";
+
+test("extractNaturalDocumentTitleHints only extracts explicit document references", () => {
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("summarize the network security guide file in 5 lines"),
+    ["network security guide file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("What cloud tools are listed in the SecurityManual.pdf?"),
+    ["SecurityManual.pdf"],
+  );
+  assert.deepEqual(extractNaturalDocumentTitleHints("لخص ملف handbook.pdf"), ["ملف handbook.pdf"]);
+  assert.deepEqual(extractNaturalDocumentTitleHints("how i can install snort"), []);
+});
 
 let mongoServer: MongoMemoryReplSet | null = null;
 const TEST_PASSWORD = "StrongPass123!";
@@ -274,6 +290,111 @@ test("title hints resolve by exact normalized metadata.title", async () => {
   assert.deepEqual(result.referencedDocumentTitles, ["Employee Handbook"]);
   assert.equal(result.ambiguousTitleMatches, false);
   assert.deepEqual(result.unresolvedTitleHints, []);
+});
+
+test("natural file wrappers resolve one clear authorized title", async () => {
+  const doc = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "network-security.pdf",
+    title: "Network Security Guide",
+  });
+
+  const result = await resolveAuthorizedDocumentHints(
+    [],
+    hintContext(),
+    ["the network security guide file"],
+  );
+
+  assert.deepEqual(result.referencedDocumentIds, [doc.id]);
+  assert.deepEqual(result.referencedDocumentTitles, ["Network Security Guide"]);
+  assert.deepEqual(result.unresolvedTitleHints, []);
+  assert.equal(result.ambiguousTitleMatches, false);
+});
+
+test("filename extensions and safe spacing differences resolve when unique", async () => {
+  const doc = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "SecurityManual.pdf",
+    title: "Security Manual",
+  });
+
+  const extensionResult = await resolveAuthorizedDocumentHints(
+    [],
+    hintContext(),
+    ["security manual pdf"],
+  );
+  const filenameResult = await resolveAuthorizedDocumentHints(
+    [],
+    hintContext(),
+    ["SecurityManual"],
+  );
+
+  assert.deepEqual(extensionResult.referencedDocumentIds, [doc.id]);
+  assert.deepEqual(filenameResult.referencedDocumentIds, [doc.id]);
+});
+
+test("exact matches outrank wrapper-normalized alternatives", async () => {
+  const exact = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "quarterly-presentation.pdf",
+    title: "Quarterly Presentation",
+  });
+  await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "quarterly.pdf",
+    title: "Quarterly",
+  });
+
+  const result = await resolveAuthorizedDocumentHints(
+    [],
+    hintContext(),
+    ["Quarterly Presentation"],
+  );
+
+  assert.deepEqual(result.referencedDocumentIds, [exact.id]);
+  assert.equal(result.ambiguousTitleMatches, false);
+});
+
+test("wrapper normalization preserves genuine ambiguity", async () => {
+  await createDoc({ tenantId, ownerId: actorId, fileName: "one.pdf", title: "Operations Guide" });
+  await createDoc({ tenantId, ownerId: actorId, fileName: "two.pdf", title: "Operations Guide" });
+
+  const result = await resolveAuthorizedDocumentHints(
+    [],
+    hintContext(),
+    ["the operations guide document"],
+  );
+
+  assert.deepEqual(result.referencedDocumentIds, []);
+  assert.equal(result.ambiguousTitleMatches, true);
+});
+
+test("wrapper normalization never exposes cross-tenant or unauthorized matches", async () => {
+  await createDoc({
+    tenantId: otherTenantId,
+    ownerId: otherActorId,
+    fileName: "foreign-guide.pdf",
+    title: "Foreign Guide",
+  });
+  await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "private-guide.pdf",
+    title: "Private Guide",
+    withPolicy: false,
+  });
+
+  const foreign = await resolveAuthorizedDocumentHints([], hintContext(), ["the foreign guide file"]);
+  const unauthorized = await resolveAuthorizedDocumentHints([], hintContext(), ["private guide document"]);
+
+  assert.deepEqual(foreign.referencedDocumentIds, []);
+  assert.deepEqual(foreign.unresolvedTitleHints, ["the foreign guide file"]);
+  assert.deepEqual(unauthorized.referencedDocumentIds, []);
+  assert.deepEqual(unauthorized.unresolvedTitleHints, ["private guide document"]);
 });
 
 test("title hints resolve by fileName when no metadata.title exists", async () => {

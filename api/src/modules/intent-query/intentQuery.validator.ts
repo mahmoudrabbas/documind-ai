@@ -36,11 +36,12 @@ export function validateAndNormalizeQueryPlan(
   fallbackUsed = false
 ): QueryPlan {
   const rawObject = typeof raw === "object" && raw !== null ? raw : {};
-  const rawIntent = (rawObject as { detectedIntent?: unknown }).detectedIntent ?? "knowledge_question";
+  const rawIntent = (rawObject as { detectedIntent?: unknown }).detectedIntent ?? "unsupported";
   const rawClarification = Boolean((rawObject as { clarificationNeeded?: unknown }).clarificationNeeded);
+  const rawSocialSubtype = (rawObject as { socialSubtype?: unknown }).socialSubtype;
+  const rawAssistantKind = (rawObject as { assistantKind?: unknown }).assistantKind;
 
   const rawWithDefaults = {
-    schemaVersion: "1.0.0",
     normalizedQuestion: originalQuestion.trim(),
     originalQuestion,
     temporalConstraints: [],
@@ -62,6 +63,14 @@ export function validateAndNormalizeQueryPlan(
       fallbackUsed,
     },
     ...rawObject,
+    // The service owns the envelope contract version. Provider output may
+    // contain a stale or fabricated value and is never authoritative.
+    schemaVersion: "1.1.0",
+    // Providers commonly emit null for fields that only apply to another
+    // intent. Treat null like omission so an otherwise valid RAG plan does not
+    // lose its authorized title ids and query expansions wholesale.
+    socialSubtype: rawSocialSubtype == null ? "acknowledgement" : rawSocialSubtype,
+    assistantKind: rawAssistantKind == null ? null : rawAssistantKind,
     // Route is derived deterministically from intent + clarification state and
     // is never taken verbatim from model output.
     route: deriveQueryRoute(rawIntent as IntentClassValue, rawClarification),
@@ -99,11 +108,11 @@ export function validateAndNormalizeQueryPlan(
 
   // Fallback case: schema-invalid LLM response or failure
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     normalizedQuestion: originalQuestion.trim(),
     originalQuestion,
     language: detectedLanguage,
-    detectedIntent: "knowledge_question",
+    detectedIntent: "unsupported",
     intentConfidence: 0.3,
     entities: [],
     temporalConstraints: [],
@@ -112,22 +121,12 @@ export function validateAndNormalizeQueryPlan(
     departments: [],
     categories: [],
     exactTerms: [],
-    semanticQueries: [
-      {
-        text: originalQuestion,
-        language: detectedLanguage,
-        weight: 1.0,
-      },
-    ],
+    semanticQueries: [],
     keywordQueries: [],
-    clarificationNeeded: true,
-    clarification: {
-      reason: "ambiguous_intent",
-      suggestedQuestions: ["Can you please clarify your request?"],
-      messageEn: "We encountered an issue analyzing your query. Please rephrase or try again.",
-      messageAr: "واجهنا مشكلة في تحليل سؤالك. يرجى إعادة الصياغة أو المحاولة مرة أخرى.",
-    },
-    route: "clarification",
+    clarificationNeeded: false,
+    clarification: null,
+    route: "unsupported",
+    assistantKind: null,
     socialSubtype: "acknowledgement",
     isFollowUp: false,
     conversationContextUsed: false,

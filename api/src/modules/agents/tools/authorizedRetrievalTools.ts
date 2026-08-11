@@ -27,6 +27,7 @@ import type {
 import type { DocumentChunkDocument } from "../../../db/models/documentChunk.model.js";
 import DocumentModel from "../../../db/models/document.model.js";
 import { createRetrievalRepository } from "../../retrieval/retrieval.repository.js";
+import { Permission } from "../../permissions/permissions.catalog.js";
 
 /**
  * Trusted dependencies injected from production wiring in app.ts.
@@ -78,7 +79,12 @@ export interface LoadedChunkCandidate {
   pageNumber?: number;
   sectionTitle?: string;
   classification?: string;
-  allowAiUse: boolean;
+  /**
+   * Legacy denormalized hint. Older and newly indexed chunks may omit it and
+   * policy propagation can make it stale, so controlled authorization must
+   * never rely on this field. The active document policy is authoritative.
+   */
+  allowAiUse?: boolean;
   status: string;
   confidenceScore?: number;
 }
@@ -378,7 +384,7 @@ export const authorizedHybridSearchSchema: ToolSchema = {
     "returned.",
   inputSchema: HybridSearchInputSchema,
   outputSchema: HybridSearchOutputSchema,
-  requiredPermission: "documents:use_in_ai",
+  requiredPermission: Permission.DOCUMENTS_USE_IN_AI,
   timeoutMs: 30_000,
 };
 
@@ -393,24 +399,44 @@ export const evaluateEvidenceSchema: ToolSchema = {
     "approves raw similarity matches.",
   inputSchema: EvaluateEvidenceInputSchema,
   outputSchema: EvaluateEvidenceOutputSchema,
-  requiredPermission: "documents:use_in_ai",
+  requiredPermission: Permission.DOCUMENTS_USE_IN_AI,
   timeoutMs: 30_000,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function toRetrievalCandidate(chunk: LoadedChunkCandidate): RetrievalCandidate {
+type TrustedCandidateCatalog = Map<
+  string,
+  Map<string, RetrievalCandidate>
+>;
+
+function catalogKey(context: RunContext): string {
+  return context.runId ?? context.traceId;
+}
+
+function toRetrievalCandidate(
+  chunk: LoadedChunkCandidate,
+  trusted?: RetrievalCandidate,
+): RetrievalCandidate {
+  const trustedMatches =
+    trusted?.chunkId === chunk.chunkId &&
+    trusted.documentId === chunk.documentId &&
+    trusted.documentVersionId === chunk.documentVersionId &&
+    trusted.tenantId === chunk.tenantId;
   return {
     chunkId: chunk.chunkId,
     documentId: chunk.documentId,
     documentVersionId: chunk.documentVersionId,
     tenantId: chunk.tenantId,
     text: chunk.text,
-    score: chunk.confidenceScore ?? 0,
+    score: trustedMatches ? trusted.score : (chunk.confidenceScore ?? 0),
     pageNumber: chunk.pageNumber,
     sectionTitle: chunk.sectionTitle,
     classification: chunk.classification,
-    retrievalMethod: "hybrid",
+    retrievalMethod: trustedMatches ? trusted.retrievalMethod : "hybrid",
+    ...(trustedMatches && trusted.scoreBreakdown
+      ? { scoreBreakdown: { ...trusted.scoreBreakdown } }
+      : {}),
   };
 }
 
@@ -496,6 +522,7 @@ export function createResolveDocumentTitlesTool(
  */
 export function createAuthorizedHybridSearchTool(
   deps: AuthorizedRetrievalDependencies,
+  trustedCandidateCatalog?: TrustedCandidateCatalog,
 ): RegisteredTool {
   const handler = async (
     context: RunContext,
@@ -516,9 +543,38 @@ export function createAuthorizedHybridSearchTool(
       }
 
       const result = await deps.retrieval.hybridSearch(query, accessContext);
+      const candidateDocumentIds = [
+        ...new Set(result.candidates.map((candidate) => candidate.documentId)),
+      ];
+      const eligibleDocumentIds = candidateDocumentIds.length > 0
+        ? new Set(
+            await deps.loadEligibleDocumentIds(
+              actor.tenantId,
+              candidateDocumentIds,
+            ),
+          )
+        : new Set<string>();
+      const eligibleCandidates = result.candidates.filter((candidate) =>
+        eligibleDocumentIds.has(candidate.documentId),
+      );
+      if (trustedCandidateCatalog) {
+        // Bounded, request-private provenance cache. Only the server-produced
+        // and currently retrievable candidates are retained; the model sees
+        // ids and safe metadata only.
+        if (trustedCandidateCatalog.size >= 1_000) {
+          const oldest = trustedCandidateCatalog.keys().next().value;
+          if (oldest) trustedCandidateCatalog.delete(oldest);
+        }
+        trustedCandidateCatalog.set(
+          catalogKey(context),
+          new Map(
+            eligibleCandidates.map((candidate) => [candidate.chunkId, candidate]),
+          ),
+        );
+      }
 
       return {
-        candidates: result.candidates.map((candidate) => ({
+        candidates: eligibleCandidates.map((candidate) => ({
           chunkId: candidate.chunkId,
           documentId: candidate.documentId,
           documentVersionId: candidate.documentVersionId,
@@ -527,9 +583,9 @@ export function createAuthorizedHybridSearchTool(
           sectionTitle: candidate.sectionTitle,
           retrievalMethod: candidate.retrievalMethod,
         })),
-        totalCandidates: result.totalCandidates,
+        totalCandidates: eligibleCandidates.length,
         reasonCode:
-          result.candidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+          eligibleCandidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -559,6 +615,7 @@ export function createAuthorizedHybridSearchTool(
  */
 export function createEvaluateEvidenceTool(
   deps: AuthorizedRetrievalDependencies,
+  trustedCandidateCatalog?: TrustedCandidateCatalog,
 ): RegisteredTool {
   const handler = async (
     context: RunContext,
@@ -569,15 +626,15 @@ export function createEvaluateEvidenceTool(
     const actor = await resolveTrustedActor(context, deps);
 
     const requestedIds = parsed.candidateIds;
+    const runCandidates = trustedCandidateCatalog?.get(catalogKey(context));
+    trustedCandidateCatalog?.delete(catalogKey(context));
 
     // 1. Load candidates server-side by id (tenant-scoped).
     const loaded = await deps.loadChunksByIds(actor.tenantId, requestedIds);
-    const eligibleChunks = loaded.filter(
-      (chunk) =>
-        chunk.allowAiUse &&
-        RETRIEVABLE_CHUNK_STATUSES.includes(
-          chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
-        ),
+    const eligibleChunks = loaded.filter((chunk) =>
+      RETRIEVABLE_CHUNK_STATUSES.includes(
+        chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
+      ),
     );
 
     // 2. Scope to eligible parent documents (archived/deleted/failed/stale).
@@ -606,7 +663,9 @@ export function createEvaluateEvidenceTool(
       } catch {
         continue;
       }
-      authorizedCandidates.push(toRetrievalCandidate(chunk));
+      authorizedCandidates.push(
+        toRetrievalCandidate(chunk, runCandidates?.get(chunk.chunkId)),
+      );
     }
 
     const authorizedIds = new Set(
@@ -695,9 +754,10 @@ export function registerAuthorizedRetrievalTools(
   registry: ToolRegistry,
   deps: AuthorizedRetrievalDependencies,
 ): void {
+  const trustedCandidateCatalog: TrustedCandidateCatalog = new Map();
   registry.register(createResolveDocumentTitlesTool(deps));
-  registry.register(createAuthorizedHybridSearchTool(deps));
-  registry.register(createEvaluateEvidenceTool(deps));
+  registry.register(createAuthorizedHybridSearchTool(deps, trustedCandidateCatalog));
+  registry.register(createEvaluateEvidenceTool(deps, trustedCandidateCatalog));
 }
 
 /**
@@ -707,9 +767,10 @@ export function registerAuthorizedRetrievalTools(
 export function createAuthorizedRetrievalTools(
   deps: AuthorizedRetrievalDependencies,
 ): RegisteredTool[] {
+  const trustedCandidateCatalog: TrustedCandidateCatalog = new Map();
   return [
     createResolveDocumentTitlesTool(deps),
-    createAuthorizedHybridSearchTool(deps),
-    createEvaluateEvidenceTool(deps),
+    createAuthorizedHybridSearchTool(deps, trustedCandidateCatalog),
+    createEvaluateEvidenceTool(deps, trustedCandidateCatalog),
   ];
 }

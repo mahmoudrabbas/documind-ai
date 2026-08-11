@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
 import { getKnowledgeGaps, getKnowledgeGapMetrics } from "@/services/knowledge-gaps.service";
 import { useAuth } from "@/providers/auth-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { formatDate } from "@/lib/utils";
 import type { KnowledgeGap, GapMetrics, GapStatus, GapSeverity } from "@/types/api/knowledge-gaps.types";
 import { GapStatusBadge } from "./components/GapStatusBadge";
 import { GapSeverityBadge } from "./components/GapSeverityBadge";
@@ -12,6 +14,12 @@ import { GapMetricsCards } from "./components/GapMetricsCards";
 
 export default function KnowledgeGapsPage() {
   const auth = useAuth();
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
+  const numberFormat = useMemo(
+    () => new Intl.NumberFormat(intlLocale),
+    [intlLocale],
+  );
   const isEmployee = auth.user?.role === "EMPLOYEE";
   const [gaps, setGaps] = useState<KnowledgeGap[]>([]);
   const [metrics, setMetrics] = useState<GapMetrics | null>(null);
@@ -44,11 +52,11 @@ export default function KnowledgeGapsPage() {
       setTotal(gapsRes.total);
       if (metricsRes.metrics) setMetrics(metricsRes.metrics);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load knowledge gaps");
+      setError(err instanceof Error ? err.message : t("dashboard.gaps.loadError"));
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, severityFilter, search]);
+  }, [page, statusFilter, severityFilter, search, t]);
 
   useEffect(() => {
     fetchGaps();
@@ -60,14 +68,14 @@ export default function KnowledgeGapsPage() {
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">search_insights</span>
-            Knowledge Intelligence
+            {t("dashboard.gaps.eyebrow")}
           </div>
         }
-        title="Knowledge Gaps"
+        title={t("dashboard.gaps.title")}
         description={
           isEmployee
-            ? "Showing Knowledge Gaps assigned to you for resolution."
-            : "Identify unanswered and weak questions, triage high-impact gaps, and assign team resolution."
+            ? t("dashboard.gaps.descriptionEmployee")
+            : t("dashboard.gaps.description")
         }
       />
 
@@ -82,7 +90,7 @@ export default function KnowledgeGapsPage() {
               id="gap-search-input"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search gaps..."
+              placeholder={t("dashboard.gaps.searchPlaceholder")}
               className="w-full rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary sm:w-64"
             />
 
@@ -95,13 +103,13 @@ export default function KnowledgeGapsPage() {
               }}
               className="rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="">All Statuses</option>
-              <option value="open">Open</option>
-              <option value="triaged">Triaged</option>
-              <option value="assigned">Assigned</option>
-              <option value="resolved">Resolved</option>
-              <option value="dismissed">Dismissed</option>
-              <option value="reopened">Reopened</option>
+              <option value="">{t("dashboard.gaps.allStatuses")}</option>
+              <option value="open">{t("dashboard.gapStatus.open")}</option>
+              <option value="triaged">{t("dashboard.gapStatus.triaged")}</option>
+              <option value="assigned">{t("dashboard.gapStatus.assigned")}</option>
+              <option value="resolved">{t("dashboard.gapStatus.resolved")}</option>
+              <option value="dismissed">{t("dashboard.gapStatus.dismissed")}</option>
+              <option value="reopened">{t("dashboard.gapStatus.reopened")}</option>
             </select>
 
             <select
@@ -113,11 +121,11 @@ export default function KnowledgeGapsPage() {
               }}
               className="rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              <option value="">All Severities</option>
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
+              <option value="">{t("dashboard.gaps.allSeverities")}</option>
+              <option value="critical">{t("dashboard.gapSeverity.critical")}</option>
+              <option value="high">{t("dashboard.gapSeverity.high")}</option>
+              <option value="medium">{t("dashboard.gapSeverity.medium")}</option>
+              <option value="low">{t("dashboard.gapSeverity.low")}</option>
             </select>
           </div>
 
@@ -128,7 +136,7 @@ export default function KnowledgeGapsPage() {
             className="inline-flex items-center gap-1 self-end rounded-xl border border-outline-variant/40 bg-surface px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container"
           >
             <span className="material-symbols-outlined text-[16px]">refresh</span>
-            Refresh
+            {t("dashboard.gaps.refresh")}
           </button>
         </div>
 
@@ -148,29 +156,29 @@ export default function KnowledgeGapsPage() {
               onClick={() => fetchGaps()}
               className="mt-3 rounded-lg bg-error px-4 py-1.5 text-xs font-semibold text-on-error hover:bg-error/90"
             >
-              Retry
+              {t("dashboard.gaps.retry")}
             </button>
           </div>
         ) : gaps.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-outline-variant/30 bg-surface p-8 text-center" id="gap-empty-state">
             <span className="material-symbols-outlined text-[40px] text-on-surface-variant">search_off</span>
-            <h3 className="mt-2 text-title-md font-bold text-on-surface">No knowledge gaps found</h3>
+            <h3 className="mt-2 text-title-md font-bold text-on-surface">{t("dashboard.gaps.emptyTitle")}</h3>
             <p className="mt-1 text-sm text-on-surface-variant">
-              Unanswered or negatively-rated questions will automatically appear here as gap candidates.
+              {t("dashboard.gaps.emptyDescription")}
             </p>
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto" id="gap-table-container">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-start text-xs">
               <thead>
                 <tr className="border-b border-outline-variant/30 text-on-surface-variant font-semibold">
-                  <th className="py-3 px-2">Topic & Question</th>
-                  <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2">Severity</th>
-                  <th className="py-3 px-2">Department</th>
-                  <th className="py-3 px-2 text-center">Occurrences</th>
-                  <th className="py-3 px-2">Last Seen</th>
-                  <th className="py-3 px-2 text-right">Action</th>
+                  <th className="py-3 px-2">{t("dashboard.gaps.colTopic")}</th>
+                  <th className="py-3 px-2">{t("dashboard.gaps.colStatus")}</th>
+                  <th className="py-3 px-2">{t("dashboard.gaps.colSeverity")}</th>
+                  <th className="py-3 px-2">{t("dashboard.gaps.colDepartment")}</th>
+                  <th className="py-3 px-2 text-center">{t("dashboard.gaps.colOccurrences")}</th>
+                  <th className="py-3 px-2">{t("dashboard.gaps.colLastSeen")}</th>
+                  <th className="py-3 px-2 text-end">{t("dashboard.gaps.colAction")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/20">
@@ -188,26 +196,29 @@ export default function KnowledgeGapsPage() {
                       </p>
                     </td>
                     <td className="py-3 px-2">
-                      <GapStatusBadge status={gap.status} />
+                      {(() => {
+                        const gapStatus = gap.status;
+                        return <GapStatusBadge status={gapStatus} />;
+                      })()}
                     </td>
                     <td className="py-3 px-2">
                       <GapSeverityBadge severity={gap.severity} />
                     </td>
                     <td className="py-3 px-2 text-on-surface-variant font-medium">
-                      {gap.department || "General"}
+                      {gap.department || t("dashboard.gaps.departmentGeneral")}
                     </td>
                     <td className="py-3 px-2 text-center font-bold text-on-surface">
                       {gap.occurrenceCount}
                     </td>
                     <td className="py-3 px-2 text-on-surface-variant text-[11px]">
-                      {new Date(gap.lastOccurrence).toLocaleDateString()}
+                      {formatDate(gap.lastOccurrence, undefined, intlLocale)}
                     </td>
-                    <td className="py-3 px-2 text-right">
+                    <td className="py-3 px-2 text-end">
                       <Link
                         href={`/dashboard/knowledge-gaps/${gap.id}`}
                         className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
                       >
-                        View Detail
+                        {t("dashboard.gaps.viewDetail")}
                       </Link>
                     </td>
                   </tr>
@@ -219,7 +230,11 @@ export default function KnowledgeGapsPage() {
             {total > 15 && (
               <div className="mt-4 flex items-center justify-between border-t border-outline-variant/30 pt-3 text-xs">
                 <span className="text-on-surface-variant">
-                  Showing {(page - 1) * 15 + 1}–{Math.min(page * 15, total)} of {total} gaps
+                  {t("dashboard.gaps.showingRange", {
+                    from: numberFormat.format((page - 1) * 15 + 1),
+                    to: numberFormat.format(Math.min(page * 15, total)),
+                    total: numberFormat.format(total),
+                  })}
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -228,7 +243,7 @@ export default function KnowledgeGapsPage() {
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     className="rounded-lg border border-outline-variant/40 px-3 py-1 font-semibold text-on-surface disabled:opacity-50"
                   >
-                    Previous
+                    {t("dashboard.gaps.previous")}
                   </button>
                   <button
                     type="button"
@@ -236,7 +251,7 @@ export default function KnowledgeGapsPage() {
                     onClick={() => setPage((p) => p + 1)}
                     className="rounded-lg border border-outline-variant/40 px-3 py-1 font-semibold text-on-surface disabled:opacity-50"
                   >
-                    Next
+                    {t("dashboard.gaps.next")}
                   </button>
                 </div>
               </div>

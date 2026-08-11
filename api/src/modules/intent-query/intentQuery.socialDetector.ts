@@ -1,5 +1,6 @@
 import type { SocialSubtypeValue } from "./intentQuery.types.js";
-import { containsArabic, containsLatin, normalizeArabic } from "./intentQuery.languageDetector.js";
+import { containsArabic, containsLatin } from "./intentQuery.languageDetector.js";
+import { preprocessIntentText } from "./intentQuery.preprocessor.js";
 
 export interface SocialDetection {
   isSocial: boolean;
@@ -42,7 +43,7 @@ const AR_PHRASES: Record<SocialSubtypeValue, readonly string[]> = {
     "بالتوفيق", "حظ موفق",
     "مع السلامة يا باشا", "مع السلامة يا صديقي", "مع السلامة يا غالي",
   ],
-acknowledgement: [
+  acknowledgement: [
     "الحمد لله", "الحمدلله", "الحمد لله رب العالمين",
     "مبروك", "الف مبروك", "الف الف مبروك",
     "عيد مبارك", "كل عام وانت بخير", "كل عام وانتم بخير", "كل عام وانت بالف خير",
@@ -102,7 +103,7 @@ const EN_PHRASES: Record<SocialSubtypeValue, readonly string[]> = {
 // maps to the subtype it expresses; the majority subtype wins.
 const AR_CORE_SUBTYPES: Record<string, SocialSubtypeValue> = {
   // thanks
-  "شكرا": "thanks", "تسلم": "thanks", "تسلمي": "thanks", "مشكور": "thanks", "مشكوره": "thanks", "مشكورين": "thanks",
+  "شكرا": "thanks", "شكر": "thanks", "تسلم": "thanks", "تسلمي": "thanks", "مشكور": "thanks", "مشكوره": "thanks", "مشكورين": "thanks",
   "يعطيك": "thanks", "يعطيكم": "thanks", "العافيه": "thanks", "بارك": "thanks", "الله": "thanks", "فيك": "thanks",
   "فيكم": "thanks", "فيكي": "thanks", "جزاك": "thanks", "جزاكم": "thanks", "خيرا": "thanks", "خير": "thanks",
   "دعواتك": "thanks", "دعواتكم": "thanks",
@@ -115,10 +116,12 @@ const AR_CORE_SUBTYPES: Record<string, SocialSubtypeValue> = {
   "بخير": "wellbeing", "اخبارك": "wellbeing",
   // acknowledgement
   "الحمد": "acknowledgement", "مع": "acknowledgement", "السلامه": "acknowledgement", "تمام": "acknowledgement",
+  "ماشي": "acknowledgement", "اشطا": "acknowledgement", "ايوه": "acknowledgement",
+  "ايوا": "acknowledgement", "نعم": "acknowledgement", "لا": "acknowledgement",
   "اوكي": "acknowledgement", "انشالله": "acknowledgement", "انشاء": "acknowledgement", "باذن": "acknowledgement",
   "شاء": "acknowledgement", "ماشاء": "acknowledgement", "تقبل": "acknowledgement", "يوفقك": "acknowledgement",
   "يسعدك": "acknowledgement", "يحفظك": "acknowledgement", "يعينك": "acknowledgement", "مبروك": "acknowledgement",
-  "الف": "acknowledgement", "عبد": "acknowledgement", "عيد": "acknowledgement", "مبارك": "acknowledgement",
+  "الف": "thanks", "عبد": "acknowledgement", "عيد": "acknowledgement", "مبارك": "acknowledgement",
   "كل": "acknowledgement", "عام": "acknowledgement", "وانت": "acknowledgement", "وانتم": "acknowledgement",
   "طاب": "acknowledgement", "يومك": "acknowledgement", "يومكم": "acknowledgement", "بالتوفيق": "acknowledgement",
   "توفيق": "acknowledgement", "حظ": "acknowledgement", "موفق": "acknowledgement",
@@ -129,14 +132,35 @@ const AR_CORE_SUBTYPES: Record<string, SocialSubtypeValue> = {
 
 const AR_FILLERS = new Set([
   "يا", "لك", "لكي", "لكم", "لكما", "لنا", "جدا", "كتير", "كثيرا", "جزيلا", "ايضا", "فقط", "الي", "و",
-  "باشا", "فندم", "أستاذ", "أستاذة", "ريس", "معلم", "صاحبي", "صديقي", "غالي", "كابتن",
+  "باشا", "فندم", "استاذ", "استاذه", "ريس", "معلم", "قائد", "صاحبي", "صديقي", "غالي", "كابتن",
 ]);
+
+const EN_CORE_SUBTYPES: Record<string, SocialSubtypeValue> = {
+  thanks: "thanks", thank: "thanks", thx: "thanks", tnx: "thanks", thanx: "thanks", ty: "thanks",
+  hi: "greeting", hello: "greeting", hey: "greeting", welcome: "greeting",
+  bye: "farewell", goodbye: "farewell",
+  ok: "acknowledgement", okay: "acknowledgement", sure: "acknowledgement",
+  great: "acknowledgement", perfect: "acknowledgement", nice: "acknowledgement",
+};
+
+const MIXED_FILLERS = new Set([
+  ...AR_FILLERS,
+  "you", "u", "very", "much", "a", "lot", "so", "sir", "boss", "mate", "bro", "friend",
+]);
+
+const FUZZY_SOCIAL_TOKENS: ReadonlyArray<readonly [string, SocialSubtypeValue]> = [
+  ["شكرا", "thanks"],
+  ["تسلم", "thanks"],
+];
 
 // phrase -> subtype lookup built once from the grouped maps.
 const PHRASE_SUBTYPES = new Map<string, SocialSubtypeValue>();
 for (const [subtype, phrases] of [...Object.entries(AR_PHRASES), ...Object.entries(EN_PHRASES)]) {
   for (const phrase of phrases) {
-    PHRASE_SUBTYPES.set(phrase, subtype as SocialSubtypeValue);
+    PHRASE_SUBTYPES.set(
+      preprocessIntentText(phrase).elongationReducedText,
+      subtype as SocialSubtypeValue,
+    );
   }
 }
 
@@ -146,14 +170,41 @@ for (const [subtype, phrases] of [...Object.entries(AR_PHRASES), ...Object.entri
  * applies Arabic normalization.
  */
 function normalizeForSocial(raw: string): string {
-  let text = raw.toLowerCase();
-  // Strip apostrophes/quotes before punctuation removal so English
-  // contractions normalize to their canonical social-phrase form
-  // ("you're welcome" -> "youre welcome", "what's up" -> "whats up").
-  text = text.replace(/['\u2018\u2019\u201A\u201B]/gu, "");
-  text = normalizeArabic(text);
-  text = text.replace(/[\p{P}\p{S}]/gu, " ");
-  return text.replace(/\s+/g, " ").trim();
+  return preprocessIntentText(raw).elongationReducedText;
+}
+
+function boundedEditDistance(left: string, right: string, max: number): number {
+  if (Math.abs(left.length - right.length) > max) return max + 1;
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i];
+    let rowMin = current[0]!;
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      const value = Math.min(
+        previous[j]! + 1,
+        current[j - 1]! + 1,
+        previous[j - 1]! + cost,
+      );
+      current.push(value);
+      rowMin = Math.min(rowMin, value);
+    }
+    if (rowMin > max) return max + 1;
+    previous = current;
+  }
+  return previous[right.length]!;
+}
+
+function subtypeForSocialToken(token: string): SocialSubtypeValue | null {
+  const exact = AR_CORE_SUBTYPES[token] ?? EN_CORE_SUBTYPES[token];
+  if (exact) return exact;
+  // Fuzzy matching is deliberately limited to short Arabic social roots and a
+  // single edit. It never operates on an entire message or arbitrary lexicon.
+  if (!containsArabic(token) || token.length < 4 || token.length > 6) return null;
+  for (const [canonical, subtype] of FUZZY_SOCIAL_TOKENS) {
+    if (boundedEditDistance(token, canonical, 1) <= 1) return subtype;
+  }
+  return null;
 }
 
 /**
@@ -191,20 +242,20 @@ export function detectSocialMessage(raw: string): SocialDetection {
     return { isSocial: true, subtype: phraseSubtype, reasonCode: "SOCIAL_FAST_PATH" };
   }
 
-  // Combination rule (Arabic only): every token must be a social/filler token.
+  // Combination rule: every token must be a bounded social/filler token.
   // The majority token subtype becomes the message subtype; ties resolve to
   // the neutral "acknowledgement".
-  if (containsArabic(normalized)) {
+  if (containsArabic(normalized) || containsLatin(normalized)) {
     const tokens = normalized.split(/\s+/).filter(Boolean);
     if (tokens.length === 0 || tokens.length > 6) return notSocial;
     const counts = new Map<SocialSubtypeValue, number>();
     let hasCore = false;
     for (const token of tokens) {
-      const subtype = AR_CORE_SUBTYPES[token];
+      const subtype = subtypeForSocialToken(token);
       if (subtype) {
         hasCore = true;
         counts.set(subtype, (counts.get(subtype) ?? 0) + 1);
-      } else if (!AR_FILLERS.has(token)) {
+      } else if (!MIXED_FILLERS.has(token)) {
         return notSocial;
       }
     }

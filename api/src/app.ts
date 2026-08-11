@@ -64,8 +64,12 @@ import {
 } from "./modules/agents/agents.service.js";
 import { maintenanceModeGuard } from "./common/middlewares/maintenanceMode.middleware.js";
 import intentQueryRoutes from "./modules/intent-query/intentQuery.routes.js";
-import { initializeIntentQueryService } from "./modules/intent-query/intentQuery.factory.js";
+import {
+  getIntentQueryService,
+  initializeIntentQueryService,
+} from "./modules/intent-query/intentQuery.factory.js";
 import { ChatService } from "./modules/chat/chat.service.js";
+import { createProductionChatWorkflowService } from "./modules/chat/chatWorkflowService.js";
 import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter, getModelAdapterAsync } from "./providers/llm/index.js";
 import { wireFeedbackJudge } from "./modules/feedback/feedback.service.js";
@@ -269,19 +273,33 @@ registerRetrievalService(retrievalService, async ({ tenantId, actorId }) => {
   });
   return { baseRole: actor.baseRole };
 });
-registerAuthorizedRetrievalTools({
+const authorizedRetrievalDependencies = {
   retrieval: retrievalService,
   reranker: rerankerService,
   authorization: getDocumentAccessAuthorizationService(),
   resolveDocumentHints: resolveAuthorizedDocumentHints,
   loadChunksByIds: createDefaultLoadChunksByIds(),
   loadEligibleDocumentIds: createDefaultLoadEligibleDocumentIds(),
-});
+};
+registerAuthorizedRetrievalTools(authorizedRetrievalDependencies);
 
 await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
 
-const chatService = new ChatService(retrievalService, getModelAdapter());
+const modelAdapter = getModelAdapter();
+const chatWorkflowService = createProductionChatWorkflowService({
+  model: modelAdapter,
+  intentQueryService: getIntentQueryService(),
+  authorizedRetrieval: authorizedRetrievalDependencies,
+});
+const chatService = new ChatService(
+  retrievalService,
+  modelAdapter,
+  undefined,
+  undefined,
+  undefined,
+  chatWorkflowService,
+);
 app.use("/chat", createChatRoutes(chatService));
 
 wireFeedbackJudge(getJudgeEvaluationService());

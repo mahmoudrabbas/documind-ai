@@ -1,13 +1,19 @@
+"use client";
+
 // components/ui/AuthHeroPanel.tsx
 //
 // Standalone recreation of the Stitch "floating documents" visual:
 // two floating document cards, a central AI answer bubble, and dashed
 // connector lines drawn between them to suggest the assistant linking
-// evidence across your documents. No client-side JS needed — the drift
-// animation and the "flowing" connector dashes are both pure CSS, so this
-// can stay a server component.
+// evidence across your documents. The drift animation and the "flowing"
+// connector dashes are pure CSS, but the panel renders translated copy via
+// useI18n, so it must be a client component.
+
+import { useI18n } from "@/providers/i18n-provider";
 
 export function AuthHeroPanel() {
+  const { t } = useI18n();
+
   return (
     <aside className="relative hidden flex-1 items-center justify-center overflow-hidden bg-surface-dim p-2xl lg:flex">
       {/* Dot-grid background */}
@@ -83,14 +89,14 @@ export function AuthHeroPanel() {
               <p className="truncate text-label-md text-on-surface">
                 Q4_Market_Report.pdf
               </p>
-              <p className="text-[10px] text-outline">Size: 4.2MB • 82 Pages</p>
+              <p className="text-[10px] text-outline">{t("auth.heroDocSize")}</p>
             </div>
           </div>
           <div className="h-2 w-full rounded-full bg-surface-container">
             <div className="h-full w-3/4 rounded-full bg-on-tertiary-container" />
           </div>
           <p className="mt-xs text-[10px] font-bold text-on-tertiary-container">
-            Parsed &amp; Indexed
+            {t("auth.heroDocParsedIndexed")}
           </p>
         </div>
 
@@ -106,8 +112,7 @@ export function AuthHeroPanel() {
               </span>
             </div>
             <p className="text-body-sm leading-relaxed text-primary">
-              The growth projection for 2024 is estimated at 12.5%, primarily
-              driven by expansion into the EMEA region.
+              {t("auth.heroAiAnswer")}
             </p>
           </div>
           <div className="flex items-center gap-xs rounded-lg border border-secondary-container bg-secondary-container/30 px-sm py-xs">
@@ -115,7 +120,7 @@ export function AuthHeroPanel() {
               description
             </span>
             <span className="text-[11px] font-bold text-on-secondary-container">
-              Source: Annual_Review.pdf (Page 42)
+              {t("auth.heroAiSource")}
             </span>
           </div>
         </div>
@@ -133,7 +138,7 @@ export function AuthHeroPanel() {
               <p className="truncate text-label-md text-on-surface">
                 Legal_Contract_v2.doc
               </p>
-              <p className="text-[10px] text-outline">Added 2h ago</p>
+              <p className="text-[10px] text-outline">{t("auth.heroDocAddedAgo")}</p>
             </div>
           </div>
           <div className="mt-sm flex gap-xs">
@@ -147,11 +152,10 @@ export function AuthHeroPanel() {
       {/* Bottom caption */}
       <div className="absolute bottom-16 left-1/2 max-w-sm -translate-x-1/2 text-center">
         <h3 className="mb-xs text-title-lg text-primary">
-          Enterprise Security First
+          {t("auth.heroSecurityTitle")}
         </h3>
         <p className="text-body-sm text-on-surface-variant">
-          Your documents never leave your secure DocuMind environment. Our AI
-          runs in a sandboxed private cloud.
+          {t("auth.heroSecurityBody")}
         </p>
       </div>
 

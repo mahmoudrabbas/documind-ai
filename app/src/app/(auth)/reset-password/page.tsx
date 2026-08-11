@@ -8,6 +8,7 @@ import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { AuthHeroPanel } from "@/components/ui";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 
 type ResetPasswordResponse = {
   success: boolean;
@@ -158,23 +159,13 @@ export default function ResetPasswordPage() {
       {/* Left panel (Form Panel) */}
       <section className="z-10 flex min-h-screen w-full flex-col border-r border-outline-variant p-lg md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
         {/* Language switcher */}
-        <div className="absolute top-6 right-6 z-20">
+        <div className="absolute top-6 end-6 z-20">
           <LanguageSwitcher />
         </div>
 
         {/* Brand Header */}
         <div className="mb-12">
-          <div className="mb-sm flex items-center gap-base">
-            <span
-              className="material-symbols-outlined text-3xl text-primary"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              neurology
-            </span>
-            <h1 className="text-headline-md font-bold tracking-tight text-primary">
-              DocuMind AI
-            </h1>
-          </div>
+          <DocuMindLogo className="mb-sm" />
           <p className="max-w-sm text-body-md text-on-surface-variant">
             Private AI Knowledge Assistant for Company Documents
           </p>

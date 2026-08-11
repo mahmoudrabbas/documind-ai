@@ -45,8 +45,8 @@ export interface ModelCompletionParams {
 }
 
 const DEFAULT_PROBE_ENABLED = true;
-const DEFAULT_PROBE_TTL_MS = 30_000;
-const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+const DEFAULT_PROBE_TTL_MS = 120_000;
+const DEFAULT_PROBE_TIMEOUT_MS = 2_500;
 
 // Completion errors that mean the provider itself is unhealthy (down/timeout).
 // Rate limits are NOT down: the provider is alive, just asking the caller to

@@ -2,23 +2,27 @@
 
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
 import { Button } from "@/components/ui/Button";
+import { useI18n } from "@/providers/i18n-provider";
 
 export default function PlatformEmailsPage() {
+  const { t } = useI18n();
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Email Infrastructure Diagnostics"
-        description="Monitor the global email queue and test provider connectivity."
+        title={t("superAdmin.platformEmails.title")}
+        description={t("superAdmin.platformEmails.description")}
       />
       <div className="grid gap-6 lg:grid-cols-2">
         <DashboardPanel className="flex flex-col gap-4">
-          <h3 className="text-title-md font-semibold">SMTP Connection</h3>
+          <h3 className="text-title-md font-semibold">
+            {t("superAdmin.platformEmails.smtpTitle")}
+          </h3>
           <p className="text-body-sm text-on-surface-variant">
-            Send a test email to verify that the worker and SMTP configuration are functioning correctly.
+            {t("superAdmin.platformEmails.smtpDescription")}
           </p>
           <div className="mt-4">
-            <Button onClick={() => alert("Not implemented yet.")}>
-              Send Test Email
+            <Button onClick={() => alert(t("superAdmin.platformEmails.notImplemented"))}>
+              {t("superAdmin.platformEmails.sendTest")}
             </Button>
           </div>
         </DashboardPanel>

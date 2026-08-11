@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui";
+import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
 
 function PublicNavbar() {
   const { t, dir } = useI18n();
@@ -16,15 +17,10 @@ function PublicNavbar() {
   };
 
   return (
-    <header className="fixed top-0 right-0 left-0 z-50 border-b border-white/10 bg-primary/95 backdrop-blur-md">
+    <header className="fixed top-0 inset-x-0 z-50 border-b border-white/10 bg-primary/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-2 text-on-primary no-underline">
-          <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-            neurology
-          </span>
-          <span className="text-title-lg font-bold tracking-tight">
-            {t("landing.appName")}
-          </span>
+        <Link href="/" className="no-underline">
+          <DocuMindLogo variant="full" tone="on-primary" />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex" dir={dir}>
@@ -69,16 +65,16 @@ function PublicNavbar() {
       {mobileMenuOpen && (
         <div className="border-t border-white/10 bg-primary md:hidden">
           <div className="flex flex-col gap-2 px-4 py-4" dir={dir}>
-            <button onClick={() => scrollTo("features")} className="rounded-lg px-3 py-2 text-left text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
+            <button onClick={() => scrollTo("features")} className="rounded-lg px-3 py-2 text-start text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
               {t("landing.navFeatures")}
             </button>
-            <button onClick={() => scrollTo("pricing")} className="rounded-lg px-3 py-2 text-left text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
+            <button onClick={() => scrollTo("pricing")} className="rounded-lg px-3 py-2 text-start text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
               {t("landing.navPricing")}
             </button>
-            <button onClick={() => scrollTo("security")} className="rounded-lg px-3 py-2 text-left text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
+            <button onClick={() => scrollTo("security")} className="rounded-lg px-3 py-2 text-start text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
               {t("landing.navSecurity")}
             </button>
-            <button onClick={() => scrollTo("faq")} className="rounded-lg px-3 py-2 text-left text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
+            <button onClick={() => scrollTo("faq")} className="rounded-lg px-3 py-2 text-start text-body-sm text-on-primary/80 transition-colors hover:bg-white/10">
               {t("landing.navFaq")}
             </button>
             <LanguageSwitcher />
@@ -104,14 +100,7 @@ function PublicFooter() {
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-2xl text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                neurology
-              </span>
-              <span className="text-title-lg font-bold text-on-primary">
-                {t("landing.appName")}
-              </span>
-            </div>
+            <DocuMindLogo variant="full" tone="on-primary" />
             <p className="mt-4 max-w-xs text-body-sm text-on-primary/60">
               {t("landing.footerTagline")}
             </p>

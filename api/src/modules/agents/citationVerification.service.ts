@@ -23,8 +23,9 @@ function dedupeInOrder(values: readonly string[]): string[] {
  * from the surviving answer; when NO citation survives, the answer fails
  * closed to MISSING_CITATIONS so the consumer downgrades it.
  * Non-grounded answers carry no claims to validate and are reported as
- * skipped (verified: true, zero citations). Claim-level checks
- * (unsupportedClaims) are an explicit extension point and stay empty.
+ * skipped (verified: true, zero citations). This membership gate deliberately
+ * leaves unsupportedClaims empty; the controlled agent invokes semantic
+ * support verification only after this result succeeds.
  */
 export class CitationVerificationService {
   static verify(request: CitationVerifierInput): CitationVerifierOutput {

@@ -629,6 +629,43 @@ describe("authorizedRetrievalTools — authorized_hybrid_search handler", () => 
 // ── Handler: evaluate_evidence ─────────────────────────────────────────────
 
 describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
+  test("preserves trusted same-run retrieval relevance without exposing it in tool input", async () => {
+    const { deps, rerankerCalls } = makeDeps({
+      retrieval: {
+        hybridSearch: async () => ({
+          candidates: [
+            makeCandidate({
+              score: 0.03,
+              scoreBreakdown: { fusionScore: 0.03, relevanceScore: 0.82 },
+            }),
+          ],
+          totalCandidates: 1,
+          filterSummary: {} as never,
+          diagnostics: {} as never,
+        }),
+        vectorSearch: async () => ({}) as never,
+        keywordSearch: async () => ({}) as never,
+      } as unknown as HybridRetrievalService,
+      loadChunksByIds: async () => [
+        makeLoadedChunk({ confidenceScore: undefined }),
+      ],
+    });
+    const tools = createAuthorizedRetrievalTools(deps);
+    const search = tools.find((tool) => tool.schema.name === "authorized_hybrid_search")!;
+    const evaluate = tools.find((tool) => tool.schema.name === "evaluate_evidence")!;
+    const context = agentRunContext({ runId: "run-provenance" });
+
+    await search.handler(context, { queryText: "install network sensor", topK: 5 });
+    await evaluate.handler(context, { question: "install network sensor", candidateIds: [chunkId] });
+
+    assert.equal(rerankerCalls.length, 1);
+    assert.equal(rerankerCalls[0]!.candidates[0]?.score, 0.03);
+    assert.equal(
+      rerankerCalls[0]!.candidates[0]?.scoreBreakdown?.relevanceScore,
+      0.82,
+    );
+  });
+
   test("loads candidates server-side, reauthorizes, and approves SUFFICIENT evidence", async () => {
     const rerankerCallsLocal: Array<{ candidates: RetrievalCandidate[]; queryText: string }> = [];
     const { deps, loadChunksCalls, loadEligibleCalls, authorizeCalls } = makeDeps({
@@ -897,7 +934,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
     assert.deepEqual(result.rejectedEvidenceIds, [chunkIdB]);
   });
 
-  test("excludes chunks that are not allowAiUse or are non-retrievable status", async () => {
+  test("uses active policy authorization instead of stale allowAiUse metadata", async () => {
     const { deps, rerankerCalls } = makeDeps({
       loadChunksByIds: async (_tenantId, chunkIds) =>
         chunkIds.map((id) =>
@@ -907,6 +944,18 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
             status: id === chunkIdC ? "RETIRED" : "ACTIVE",
           }),
         ),
+      reranker: {
+        buildEvidenceBundle: async (candidates, queryText) => {
+          rerankerCalls.push({ candidates, queryText });
+          return makeBundle("SUFFICIENT", {
+            items: candidates.map((candidate) => ({
+              chunkId: candidate.chunkId,
+              documentId: candidate.documentId,
+              score: 0.9,
+            })),
+          });
+        },
+      } as RerankerService,
     });
     const tool = toolOf("evaluate_evidence", deps);
 
@@ -920,10 +969,10 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
     };
 
     assert.equal(result.sufficiency, "SUFFICIENT");
-    assert.deepEqual(result.approvedEvidenceIds, [chunkId]);
-    assert.deepEqual(result.rejectedEvidenceIds.sort(), [chunkIdB, chunkIdC].sort());
+    assert.deepEqual(result.approvedEvidenceIds.sort(), [chunkId, chunkIdB].sort());
+    assert.deepEqual(result.rejectedEvidenceIds, [chunkIdC]);
     assert.equal(rerankerCalls.length, 1);
-    assert.deepEqual(rerankerCalls[0]!.candidates.map((c) => c.chunkId), [chunkId]);
+    assert.deepEqual(rerankerCalls[0]!.candidates.map((c) => c.chunkId), [chunkId, chunkIdB]);
   });
 
   test("cross-tenant and unauthorized candidates never reach the reranker", async () => {
@@ -983,6 +1032,21 @@ describe("authorizedRetrievalTools — registration", () => {
       "authorized_hybrid_search",
       "evaluate_evidence",
     ]);
+  });
+
+  test("retrieval tools require the canonical use-in-ai permission", () => {
+    const { deps } = makeDeps();
+    const registry = new ToolRegistry();
+    registerAuthorizedRetrievalTools(registry, deps);
+
+    assert.equal(
+      registry.get("authorized_hybrid_search")?.schema.requiredPermission,
+      "documents:use-in-ai",
+    );
+    assert.equal(
+      registry.get("evaluate_evidence")?.schema.requiredPermission,
+      "documents:use-in-ai",
+    );
   });
 
   test("ToolRegistry rejects duplicate registration", () => {

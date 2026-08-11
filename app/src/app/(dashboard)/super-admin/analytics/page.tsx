@@ -25,6 +25,7 @@ import { QualityPanel } from "../../dashboard/analytics/components/QualityPanel"
 import { InsightPanel } from "../../dashboard/analytics/components/InsightPanel";
 import { AnalyticsFilterBar } from "../../dashboard/analytics/components/AnalyticsFilterBar";
 import { ExportButton } from "../../dashboard/analytics/components/ExportButton";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 
 function getLocalDateString(d: Date = new Date()): string {
   const year = d.getFullYear();
@@ -40,6 +41,8 @@ function getLocalStartDateString(daysAgo = 30): string {
 }
 
 export default function SuperAdminAnalyticsPage() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const [filters, setFilters] = useState({
     startDate: getLocalStartDateString(30),
     endDate: getLocalDateString(),
@@ -81,11 +84,11 @@ export default function SuperAdminAnalyticsPage() {
       setCostBreakdown(cbRes.data);
       setQualityMetrics(qmRes.data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load platform analytics");
+      setError(err instanceof Error ? err.message : t("superAdmin.analytics.loadError"));
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, t]);
 
   const loadInsights = useCallback(async () => {
     try {
@@ -110,8 +113,8 @@ export default function SuperAdminAnalyticsPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Platform Analytics & Cross-Tenant Insights"
-        description="Global system telemetry, operational cost analysis, and cross-tenant quality monitoring."
+        title={t("superAdmin.analytics.title")}
+        description={t("superAdmin.analytics.description")}
         actions={<ExportButton filters={{ startDate: filters.startDate, endDate: filters.endDate }} />}
       />
 
@@ -131,7 +134,7 @@ export default function SuperAdminAnalyticsPage() {
               onClick={loadData}
               className="rounded bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-200 dark:bg-rose-900 dark:text-rose-200"
             >
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         </DashboardPanel>
@@ -147,40 +150,40 @@ export default function SuperAdminAnalyticsPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <MetricCard
-              title="Platform Queries"
-              value={overview?.totalQueries?.toLocaleString() || "0"}
+              title={t("superAdmin.analytics.platformQueries")}
+              value={overview?.totalQueries?.toLocaleString(intlLocale) || "0"}
               changePct={overview?.trends?.queriesChangePct}
-              subtitle="All tenants combined"
+              subtitle={t("superAdmin.analytics.allTenantsCombined")}
             />
             <MetricCard
-              title="Platform Tokens"
+              title={t("superAdmin.analytics.platformTokens")}
               value={overview?.totalTokens ? `${(overview.totalTokens / 1000).toFixed(1)}k` : "0"}
               changePct={overview?.trends?.tokensChangePct}
-              subtitle="Global token consumption"
+              subtitle={t("superAdmin.analytics.globalTokenConsumption")}
             />
             <MetricCard
-              title="Provider Cost"
+              title={t("superAdmin.analytics.providerCost")}
               value={`$${overview?.totalCostUsd?.toFixed(2) || "0.00"}`}
               changePct={overview?.trends?.costChangePct}
               costTypeBadge={overview?.costType}
-              freshnessLabel="Reconciled"
+              freshnessLabel={t("superAdmin.analytics.reconciled")}
             />
             <MetricCard
-              title="Avg Latency"
+              title={t("superAdmin.analytics.avgLatency")}
               value={`${overview?.avgLatencyMs || 0}ms`}
               changePct={overview?.trends?.latencyChangePct}
-              subtitle="System-wide SLA"
+              subtitle={t("superAdmin.analytics.systemWideSla")}
             />
             <MetricCard
-              title="Quota Drift"
+              title={t("superAdmin.analytics.quotaDrift")}
               value={overview?.reconciliationDriftCount || 0}
-              subtitle="Entitlement discrepancies"
+              subtitle={t("superAdmin.analytics.entitlementDiscrepancies")}
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <TimeSeriesChart data={timeSeries} metricKey="queries" title="Global Platform Traffic" />
+              <TimeSeriesChart data={timeSeries} metricKey="queries" title={t("superAdmin.analytics.globalTraffic")} />
             </div>
             <div>
               <CostBreakdownChart data={costBreakdown} />

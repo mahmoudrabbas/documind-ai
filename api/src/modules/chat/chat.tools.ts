@@ -91,12 +91,19 @@ const QUERY_COUNT_RE = [
  */
 export function detectAnalyticsRequest(
   message: string,
-  plan?: QueryPlan | null,
+  plan?: Pick<
+    QueryPlan,
+    "referencedDocumentIds" | "referencedDocumentTitles"
+  > | null,
 ): ChatAnalyticsRequest | null {
   const text = message.trim();
   if (!text) return null;
 
-  if (plan && plan.referencedDocumentIds.length > 0) {
+  if (
+    plan &&
+    (plan.referencedDocumentIds.length > 0 ||
+      plan.referencedDocumentTitles.length > 0)
+  ) {
     return null;
   }
 

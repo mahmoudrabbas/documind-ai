@@ -36,8 +36,7 @@ export class MongoUsageEventWriter implements UsageEventWriter {
       success: input.success ?? true,
       errorCode: input.errorCode ?? null,
       traceId: input.traceId ?? null,
-      requestId: input.requestId ?? null,
-      idempotencyKey: input.idempotencyKey ?? null,
+      ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
       metadata: input.metadata ?? {},
     };
 

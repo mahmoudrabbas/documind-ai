@@ -7,15 +7,28 @@ import { logger } from "../../common/logger/logger.js";
 import IntentQueryTraceModel from "../../db/models/intentQueryTrace.model.js";
 import { recordQuestionAsked } from "../usage/usage.service.js";
 
-import type { QueryLanguageValue, QueryPlan } from "./intentQuery.types.js";
-import { detectLanguage } from "./intentQuery.languageDetector.js";
+import type { QueryPlan } from "./intentQuery.types.js";
 import { extractEntities, extractTemporalConstraints } from "./intentQuery.entityExtractor.js";
 import { expandBilingual } from "./intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "./intentQuery.socialDetector.js";
-import { resolveAuthorizedDocumentHints, RETRIEVABLE_DOCUMENT_STATUSES } from "./intentQuery.documentHints.js";
+import { detectAssistantIntent } from "./intentQuery.assistantDetector.js";
+import { preprocessIntentText } from "./intentQuery.preprocessor.js";
+import {
+  assessPositiveKnowledgeSeeking,
+  assistantRequestsUserResponse,
+  hasDomainAgnosticQuestionShape,
+  isContextualAcknowledgement,
+  isLikelyGibberish,
+  isRetrievableIntent,
+  selectSafeRetrievalQuestion,
+} from "./intentQuery.knowledgeSignals.js";
+import {
+  extractNaturalDocumentTitleHints,
+  resolveAuthorizedDocumentHints,
+  RETRIEVABLE_DOCUMENT_STATUSES,
+} from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
 import { buildIntentSystemPrompt, INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION, type DocumentManifestEntry } from "./intentQuery.prompt.js";
-import { translateQuery, buildTranslatedQueries } from "./intentQuery.translator.js";
 import DocumentModel from "../../db/models/document.model.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
@@ -126,59 +139,6 @@ export class IntentQueryService {
   ) {}
 
   /**
-   * Augments the validated query plan with cross-lingual translations of the
-   * user question so retrieval can find content in the complementary language
-   * (e.g. an English question searched against Arabic documents). Fail-open:
-   * any translation failure leaves the plan unchanged.
-   */
-  private async augmentPlanWithTranslation(
-    plan: QueryPlan,
-    question: string,
-    language: QueryLanguageValue,
-    traceId: string,
-  ): Promise<void> {
-    if (plan.detectedIntent === "social" || plan.detectedIntent === "unsafe") {
-      return;
-    }
-    const counterpart = language === "en" ? "ar" : language === "ar" ? "en" : "mixed";
-
-    let translated;
-    try {
-      translated = await translateQuery(
-        this.modelAdapter.complete.bind(this.modelAdapter),
-        question,
-        language,
-      );
-    } catch (err) {
-      logger.warn({ err, traceId }, "Query translation failed, continuing without it");
-      return;
-    }
-
-    const { semanticTexts, keywordTerms } = buildTranslatedQueries(
-      question,
-      language,
-      translated,
-    );
-
-    for (const text of semanticTexts) {
-      if (plan.semanticQueries.length >= 10) break;
-      plan.semanticQueries.push({
-        text,
-        language: counterpart,
-        weight: 0.85,
-      });
-    }
-    for (const terms of keywordTerms) {
-      if (plan.keywordQueries.length >= 10) break;
-      plan.keywordQueries.push({
-        terms,
-        language: counterpart,
-        mustMatch: false,
-      });
-    }
-  }
-
-  /**
    * Orchestrates the query analysis workflow: input validation, authorization,
    * context loading, language detection, entity extraction, LLM query analysis,
    * post-processing/verification, auditing, and metric recording.
@@ -215,9 +175,13 @@ export class IntentQueryService {
     }
 
     // 4. Determine language and entities early to handle fallback/clarification deterministically if needed
-    const language = detectLanguage(input.question);
-    const localEntities = extractEntities(input.question, language);
-    const localTemporalConstraints = extractTemporalConstraints(input.question);
+    const assistantIntent = detectAssistantIntent(input.question);
+    const routingQuestion = assistantIntent.knowledgeRemainder ?? input.question;
+    const preprocessed = preprocessIntentText(input.question);
+    const language = preprocessed.language;
+    const localEntities = extractEntities(routingQuestion, language);
+    const localTemporalConstraints = extractTemporalConstraints(routingQuestion);
+    const deterministicTitleHints = extractNaturalDocumentTitleHints(routingQuestion);
 
     // Check for prompt injections/unsafe inputs upfront deterministically
     const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
@@ -267,11 +231,79 @@ export class IntentQueryService {
       return unsafePlan;
     }
 
-    // 4b. Deterministic social fast-path — pure social exchanges never enter
+    // 4b. Deterministic assistant identity/capabilities route. This is a
+    // product-owned response boundary: it executes no model, retrieval,
+    // evidence, answer-writer, citation, or compliance work. Mixed turns are
+    // deliberately excluded and continue below with their knowledge remainder.
+    if (assistantIntent.isAssistantOnly && assistantIntent.kind) {
+      const assistantPlan = validateAndNormalizeQueryPlan(
+        {
+          detectedIntent:
+            assistantIntent.kind === "identity"
+              ? "assistant_identity"
+              : "assistant_capabilities",
+          assistantKind: assistantIntent.kind,
+          intentConfidence: 0.99,
+          language,
+          entities: [],
+          temporalConstraints: [],
+          referencedDocumentIds: [],
+          referencedDocumentTitles: [],
+          departments: [],
+          categories: [],
+          exactTerms: [],
+          semanticQueries: [],
+          keywordQueries: [],
+          clarificationNeeded: false,
+          clarification: null,
+          isFollowUp: false,
+          conversationContextUsed: false,
+          normalizedQuestion: input.question.trim(),
+        },
+        input.question,
+        language,
+        INTENT_PROMPT_VERSION,
+        this.modelAdapter.providerKey,
+        Date.now() - start,
+        0,
+        0,
+        false,
+      );
+
+      recordIntentQueryMetrics(metricRecorder, assistantPlan, traceId);
+      try {
+        await IntentQueryTraceModel.create({
+          traceId,
+          tenantId: actor.tenantId,
+          queryPlan: assistantPlan,
+          timing: {
+            totalMs: Date.now() - start,
+            languageDetectionMs: 1,
+            entityExtractionMs: 0,
+            llmMs: 0,
+            postProcessingMs: 1,
+          },
+          promptVersion: INTENT_PROMPT_VERSION,
+          modelVersion: this.modelAdapter.providerKey,
+          rawEntities: [],
+          fallbackUsed: false,
+        });
+      } catch (err) {
+        logger.error({ err, traceId }, "Failed to persist intent query trace in database");
+      }
+      return assistantPlan;
+    }
+
+    // 4c. Deterministic social fast-path — pure social exchanges never enter
     // retrieval, so no sources are ever attached to the response. Substantive
     // questions (including social-prefixed ones) are never classified here.
     const social = detectSocialMessage(input.question);
-    if (social.isSocial) {
+    const deferSocialForContext = Boolean(
+      social.isSocial &&
+      input.conversationId &&
+      isContextualAcknowledgement(input.question),
+    );
+    const buildAndPersistSocialPlan = async (): Promise<QueryPlan> => {
       const socialPlan = validateAndNormalizeQueryPlan(
         {
           detectedIntent: "social",
@@ -327,6 +359,9 @@ export class IntentQueryService {
       }
 
       return socialPlan;
+    };
+    if (social.isSocial && !deferSocialForContext) {
+      return buildAndPersistSocialPlan();
     }
 
     // 5. Deterministic unsupported external/current-data detector
@@ -337,18 +372,18 @@ export class IntentQueryService {
     // Exemptions: when the user explicitly references documents or reports.
     function isLikelyExternalCurrent(question: string): boolean {
       const q = question.toLowerCase();
-      // Temporal markers that imply 'current' or 'latest' (no word-boundary
-      // anchors because Arabic tokens may not be matched by \b reliably).
-      const temporal = /(today|now|yesterday|latest|this (morning|evening)|الآن|اليوم|أمس|آخر)/i;
+      // Temporal markers that imply 'current' or 'latest'. English terms are
+      // word-anchored so substrings ("now" in "knowledge") cannot trigger the
+      // short-circuit; Arabic tokens are not reliably matched by \b.
+      const temporal = /\b(?:today|now|yesterday|latest)\b|this (?:morning|evening)|الآن|اليوم|أمس|آخر/i;
       // Topics typically requiring live external data
-      const topics = /(gold|الذهب|dollar|دollar|weather|طقس|news|أخبار|score|نتيجة|مباراة|أسعار)/i;
+      const topics = /\b(?:gold|dollar|weather|news|score)\b|الذهب|دollar|طقس|أخبار|نتيجة|مباراة|أسعار/i;
       // Phrases that indicate the user is asking about a document/report
       const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
 
-      if (!temporal.test(q)) return false;
-      if (!topics.test(q)) return false;
       if (docIndicators.test(q)) return false;
-      return true;
+      const clearlyExternalGeneral = /(?:capital of|weather|طقس|latest news|اخر الاخبار|نتيجه مباراه|match score|recipe|وصفه|who is (?:the )?president)/i;
+      return (temporal.test(q) && topics.test(q)) || clearlyExternalGeneral.test(q);
     }
 
     // Deterministic short-circuit: clear live external-data questions with NO
@@ -416,22 +451,27 @@ export class IntentQueryService {
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPromptWithManifest },
     ];
-    let isFollowUp = false;
-    let contextUsed = false;
+    let conversationHistoryAvailable = false;
+    let latestAssistantMessage = "";
 
     if (input.conversationId) {
       try {
-        const history = await this.conversationContextAdapter.getContext(
+        const storedHistory = await this.conversationContextAdapter.getContext(
           tenantIdStr,
           actor.actorId,
           input.conversationId,
           input.maxContext
         );
+        const history = [...storedHistory];
+        if (
+          input.currentMessageAlreadyPersisted &&
+          history.at(-1)?.role === "user" &&
+          history.at(-1)?.content.trim() === input.question.trim()
+        ) {
+          history.pop();
+        }
 
         if (history.length > 0) {
-          isFollowUp = true;
-          contextUsed = true;
-
           // Limit context by character size (max 8000 characters)
           let totalLength = 0;
           const fitHistory = [];
@@ -444,6 +484,9 @@ export class IntentQueryService {
             fitHistory.unshift(msg);
             totalLength += msg.content.length;
           }
+          conversationHistoryAvailable = fitHistory.length > 0;
+          latestAssistantMessage =
+            [...fitHistory].reverse().find((message) => message.role === "assistant")?.content ?? "";
 
           // Add history to system prompt execution context
           for (const msg of fitHistory) {
@@ -463,10 +506,17 @@ export class IntentQueryService {
       }
     }
 
+    if (
+      deferSocialForContext &&
+      (!conversationHistoryAvailable || !assistantRequestsUserResponse(latestAssistantMessage))
+    ) {
+      return buildAndPersistSocialPlan();
+    }
+
     // Append the current question
     messagesPayload.push({
       role: "user",
-      content: input.question,
+      content: routingQuestion,
     });
 
     // 6. Call ModelAdapter (LLM) with timeout and fallback logic
@@ -483,6 +533,7 @@ export class IntentQueryService {
         messages: messagesPayload,
         temperature: 0,
         maxTokens: 1000,
+        structuredOutput: { type: "json_object" },
       });
 
       const content = response.choices[0]?.message?.content ?? "";
@@ -657,12 +708,19 @@ export class IntentQueryService {
       const llmTitleHints = Array.isArray(rawOutput.referencedDocumentTitles)
         ? (rawOutput.referencedDocumentTitles as string[])
         : [];
+      // A clear, explicitly marked natural-language document reference is
+      // request-local and deterministic. Prefer it over provider wording so
+      // identical requests cannot alternately constrain different documents
+      // (or lose the constraint entirely) as model output varies.
+      const titleHints = deterministicTitleHints.length > 0
+        ? deterministicTitleHints
+        : llmTitleHints;
 
       const hints = await resolveAuthorizedDocumentHints(mergedOutputIds, {
         tenantId: tenantIdStr,
         actorId: actor.actorId,
         tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
-      }, llmTitleHints);
+      }, titleHints);
       rawOutput.referencedDocumentIds = hints.referencedDocumentIds;
       rawOutput.referencedDocumentTitles = hints.referencedDocumentTitles;
 
@@ -678,9 +736,35 @@ export class IntentQueryService {
         }
       }
 
+      const rawDetectedIntent = rawOutput.detectedIntent;
+      if (rawDetectedIntent === "assistant_identity") {
+        rawOutput.assistantKind = "identity";
+      } else if (rawDetectedIntent === "assistant_capabilities") {
+        rawOutput.assistantKind = "capabilities";
+      }
+      if (
+        isRetrievableIntent(rawDetectedIntent) &&
+        isLikelyGibberish(routingQuestion)
+      ) {
+        rawOutput = {
+          detectedIntent: "unsupported",
+          normalizedQuestion: routingQuestion.trim(),
+          intentConfidence: 0.99,
+          language,
+          entities: [],
+          exactTerms: [],
+          semanticQueries: [],
+          keywordQueries: [],
+          clarificationNeeded: false,
+          clarification: null,
+        };
+      } else if (!isRetrievableIntent(rawDetectedIntent) && rawDetectedIntent == null) {
+        rawOutput.detectedIntent = "unsupported";
+      }
+
       // If semanticQueries/keywordQueries are empty, use local bilingual expansion
       if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
-        const expansion = expandBilingual(input.question, language, localEntities);
+        const expansion = expandBilingual(routingQuestion, language, localEntities);
         rawOutput.semanticQueries = expansion.semanticQueries;
         rawOutput.keywordQueries = expansion.keywordQueries;
       }
@@ -703,9 +787,42 @@ export class IntentQueryService {
 
       // Set confidence rules
       const rawConfidence = typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0.8;
-      const detectedIntent = (rawOutput.detectedIntent as string) || "knowledge_question";
+      const detectedIntent = (rawOutput.detectedIntent as string) || "unsupported";
+      const isFollowUp =
+        conversationHistoryAvailable && detectedIntent === "follow_up";
+      const normalizedQuestion =
+        typeof rawOutput.normalizedQuestion === "string"
+          ? rawOutput.normalizedQuestion.trim()
+          : "";
       let clarificationNeeded = !!rawOutput.clarificationNeeded;
       let clarification = rawOutput.clarification || null;
+
+      // A follow-up is safe to retrieve only after the intent model has
+      // resolved it into a standalone question. Merely having prior messages
+      // does not make a self-contained turn a follow-up. If context is missing
+      // or resolution failed, clarify instead of searching with a vague or
+      // contaminated transcript-derived query.
+      if (detectedIntent === "follow_up" && !conversationHistoryAvailable) {
+        clarificationNeeded = true;
+        clarification = {
+          reason: "missing_context",
+          suggestedQuestions: [routingQuestion],
+          messageEn: "Could you restate the question with the subject you mean?",
+          messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
+        };
+      } else if (
+        isFollowUp &&
+        (!normalizedQuestion ||
+          normalizedQuestion === routingQuestion.trim())
+      ) {
+        clarificationNeeded = true;
+        clarification = {
+          reason: "missing_context",
+          suggestedQuestions: [routingQuestion],
+          messageEn: "Could you restate the question with the subject you mean?",
+          messageAr: "هل يمكنك إعادة صياغة السؤال مع توضيح الموضوع المقصود؟",
+        };
+      }
 
       if (rawConfidence < 0.5 || detectedIntent === "unsupported") {
         clarificationNeeded = true;
@@ -723,7 +840,67 @@ export class IntentQueryService {
       rawOutput.clarificationNeeded = clarificationNeeded;
       rawOutput.clarification = clarification;
       rawOutput.isFollowUp = isFollowUp;
-      rawOutput.conversationContextUsed = contextUsed;
+      rawOutput.conversationContextUsed = isFollowUp;
+
+      if (isFollowUp && normalizedQuestion) {
+        const existingSemanticQueries = Array.isArray(rawOutput.semanticQueries)
+          ? rawOutput.semanticQueries
+          : [];
+        rawOutput.semanticQueries = [
+          { text: normalizedQuestion, language, weight: 1 },
+          ...existingSemanticQueries.filter(
+            (query) =>
+              typeof query === "object" &&
+              query !== null &&
+              typeof (query as { text?: unknown }).text === "string" &&
+              (query as { text?: unknown }).text !== normalizedQuestion,
+          ),
+        ].slice(0, 10);
+      } else {
+        // History is not allowed to alter a self-contained turn's executable
+        // retrieval plan. Rebuild it from the current message and explicit
+        // request-local document constraints. A fresh conversation has no
+        // prior messages from which model document hints could have leaked, so
+        // its revalidated model hints remain current-turn hints. Once history
+        // exists, only deterministic title hints or explicit request IDs are
+        // retained; other model fields are discarded as potentially
+        // history-derived.
+        const retainCurrentTurnDocumentHints =
+          !conversationHistoryAvailable ||
+          deterministicTitleHints.length > 0 ||
+          (input.referencedDocumentIds?.length ?? 0) > 0;
+        const safeRetrievalQuestion = isRetrievableIntent(detectedIntent)
+          ? selectSafeRetrievalQuestion(
+              routingQuestion,
+              normalizedQuestion,
+              [
+                ...localEntities
+                  .filter((entity) => entity.preserveExact)
+                  .map((entity) => entity.text),
+                ...deterministicTitleHints,
+              ],
+            )
+          : routingQuestion.trim();
+        const currentExpansion = expandBilingual(
+          safeRetrievalQuestion,
+          language,
+          localEntities,
+        );
+        rawOutput.normalizedQuestion = safeRetrievalQuestion;
+        rawOutput.semanticQueries = currentExpansion.semanticQueries;
+        rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        rawOutput.referencedDocumentIds =
+          retainCurrentTurnDocumentHints
+            ? hints.referencedDocumentIds
+            : (input.referencedDocumentIds ?? []);
+        rawOutput.referencedDocumentTitles =
+          retainCurrentTurnDocumentHints
+            ? hints.referencedDocumentTitles
+            : [];
+        if (!retainCurrentTurnDocumentHints) {
+          titleClarificationNeeded = false;
+        }
+      }
 
       validatedPlan = validateAndNormalizeQueryPlan(
         rawOutput,
@@ -736,31 +913,108 @@ export class IntentQueryService {
         estimatedCost,
         false
       );
+
+      // A provider plan is non-authoritative when it would suppress a current
+      // turn that independently has strong, bounded enterprise/document
+      // knowledge signals. This applies to valid-but-wrong classifications and
+      // low-confidence clarification as well as schema-invalid output. Unsafe
+      // remains a hard boundary; deterministic assistant-only, social-only and
+      // external-current requests already returned before the provider call.
+      //
+      // Additionally, a valid provider "unsupported" verdict never blocks a
+      // well-formed question about an arbitrary topic: the corpus (not the
+      // provider's topic judgement) is the authority, so the question is sent
+      // to retrieval and the evidence gate decides. Schema-invalid output
+      // (fallbackUsed) and gibberish stay fail-closed.
+      const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
+      const unsupportedQuestionOverride =
+        validatedPlan.route === "unsupported" &&
+        !validatedPlan.processingMetadata.fallbackUsed &&
+        !isLikelyGibberish(routingQuestion) &&
+        hasDomainAgnosticQuestionShape(routingQuestion);
+      if (
+        (knowledgeSignals.positive || unsupportedQuestionOverride) &&
+        validatedPlan.route !== "rag" &&
+        validatedPlan.route !== "unsafe"
+      ) {
+        const fallbackQuestion = knowledgeSignals.retrievalText;
+        const expansion = expandBilingual(
+          fallbackQuestion,
+          language,
+          localEntities,
+        );
+        validatedPlan = validateAndNormalizeQueryPlan(
+          {
+            detectedIntent: "knowledge_question",
+            intentConfidence: knowledgeSignals.positive ? 0.75 : 0.6,
+            normalizedQuestion: fallbackQuestion,
+            language,
+            entities: localEntities,
+            temporalConstraints: localTemporalConstraints,
+            exactTerms: localEntities
+              .filter((entity) => entity.preserveExact)
+              .map((entity) => entity.text),
+            semanticQueries: expansion.semanticQueries,
+            keywordQueries: expansion.keywordQueries,
+            clarificationNeeded: false,
+            clarification: null,
+            isFollowUp: false,
+            conversationContextUsed: false,
+            referencedDocumentIds: hints.referencedDocumentIds,
+            referencedDocumentTitles: hints.referencedDocumentTitles,
+          },
+          input.question,
+          language,
+          INTENT_PROMPT_VERSION,
+          this.modelAdapter.providerKey,
+          Date.now() - start,
+          tokensUsed,
+          estimatedCost,
+          validatedPlan.processingMetadata.fallbackUsed,
+        );
+      }
     } else {
       // Deterministic fallback execution
-      const expansion = expandBilingual(input.question, language, localEntities);
+      const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
+      const isKnowledgeQuestion = knowledgeSignals.positive;
+      const fallbackQuestion = knowledgeSignals.retrievalText || routingQuestion.trim();
+      const expansion = isKnowledgeQuestion
+        ? expandBilingual(fallbackQuestion, language, localEntities)
+        : { semanticQueries: [], keywordQueries: [] };
       const exactTerms = localEntities.filter(e => e.preserveExact).map(e => e.text);
+      const fallbackHints = await resolveAuthorizedDocumentHints(
+        input.referencedDocumentIds ?? [],
+        {
+          tenantId: tenantIdStr,
+          actorId: actor.actorId,
+          tenantObjectId: new mongoose.Types.ObjectId(tenantIdStr),
+        },
+        deterministicTitleHints,
+      );
+      if (
+        deterministicTitleHints.length > 0 &&
+        (fallbackHints.ambiguousTitleMatches || fallbackHints.unresolvedTitleHints.length > 0)
+      ) {
+        titleClarificationNeeded = true;
+      }
 
       validatedPlan = validateAndNormalizeQueryPlan(
         {
-          detectedIntent: "knowledge_question",
-          intentConfidence: 0.3,
+          detectedIntent: isKnowledgeQuestion ? "knowledge_question" : "unsupported",
+          intentConfidence: knowledgeSignals.positive ? 0.75 : 0,
+          normalizedQuestion: fallbackQuestion,
           language,
           entities: localEntities,
           temporalConstraints: localTemporalConstraints,
           exactTerms,
           semanticQueries: expansion.semanticQueries,
           keywordQueries: expansion.keywordQueries,
-          clarificationNeeded: true,
-          clarification: {
-            reason: "ambiguous_intent",
-            suggestedQuestions: ["Can you please clarify your request?"],
-            messageEn: "We encountered an issue analyzing your query. Please rephrase or try again.",
-            messageAr: "واجهنا مشكلة في تحليل سؤالك. يرجى إعادة الصياغة أو المحاولة مرة أخرى.",
-          },
-          isFollowUp,
-          conversationContextUsed: contextUsed,
-          referencedDocumentIds: input.referencedDocumentIds ?? [],
+          clarificationNeeded: false,
+          clarification: null,
+          isFollowUp: false,
+          conversationContextUsed: false,
+          referencedDocumentIds: fallbackHints.referencedDocumentIds,
+          referencedDocumentTitles: fallbackHints.referencedDocumentTitles,
         },
         input.question,
         language,
@@ -773,7 +1027,19 @@ export class IntentQueryService {
       );
     }
 
-    // 7b. Social subtype resolution: the deterministic detector is the
+    // 7b. Assistant plans are source-less by contract even if a provider
+    // recognized a natural variant outside the deterministic fast path.
+    if (validatedPlan.route === "assistant") {
+      validatedPlan.semanticQueries = [];
+      validatedPlan.keywordQueries = [];
+      validatedPlan.exactTerms = [];
+      validatedPlan.referencedDocumentIds = [];
+      validatedPlan.referencedDocumentTitles = [];
+      validatedPlan.departments = [];
+      validatedPlan.categories = [];
+    }
+
+    // 7c. Social subtype resolution: the deterministic detector is the
     // authority on social subtype; an LLM-reported social route gets its
     // subtype from the detector when available, otherwise keeps the
     // validated subtype (never fabricate a subtype).
@@ -784,15 +1050,6 @@ export class IntentQueryService {
           ? social.subtype
           : validatedPlan.socialSubtype;
     }
-
-    // 7b-2. Cross-lingual query translation: augment retrieval queries with a
-    // translated counterpart so content in the other language is searchable.
-    await this.augmentPlanWithTranslation(
-      validatedPlan,
-      input.question,
-      language,
-      traceId,
-    );
 
     // 7c. Title-hint resolution outcomes. Genuine ambiguity between multiple
     // authorized documents forces a clarification — never guess. Unresolved

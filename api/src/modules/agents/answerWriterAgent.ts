@@ -28,13 +28,6 @@ export const ANSWER_WRITER_AGENT_ID = "answer-writer-agent";
 export const ANSWER_WRITER_AGENT_VERSION = "1.0.0";
 
 /**
- * Token budget for direct-question answers, mirroring the legacy chat path's
- * DEFAULT_MAX_TOKENS. The agent only ever writes direct-question answers —
- * whole-document summaries are out of scope for the minimal executor.
- */
-const ANSWER_WRITER_MAX_TOKENS = 1024;
-
-/**
  * Trusted dependencies injected from the composition root. The executor never
  * reaches into a module-level singleton: production wiring passes resolved
  * instances explicitly, tests inject deterministic stubs.
@@ -171,10 +164,10 @@ export class AnswerWriterAgentExecutor implements AgentContract {
         conversationId: agentInput.conversationId,
         question: agentInput.question,
         language: agentInput.language ?? "en",
-        task: "direct_question",
-        citationsEnabled: true,
+        task: agentInput.task,
+        citationsEnabled: agentInput.citationsEnabled,
         evidence,
-        maxTokens: ANSWER_WRITER_MAX_TOKENS,
+        maxTokens: agentInput.maxTokens,
       });
 
       const safeAnswer = insufficientEvidenceMessage(agentInput.language ?? "en");
@@ -260,12 +253,10 @@ export class AnswerWriterAgentExecutor implements AgentContract {
       context.tenantId,
       approvedEvidenceIds,
     );
-    const eligibleChunks = loaded.filter(
-      (chunk) =>
-        chunk.allowAiUse &&
-        RETRIEVABLE_CHUNK_STATUSES.includes(
-          chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
-        ),
+    const eligibleChunks = loaded.filter((chunk) =>
+      RETRIEVABLE_CHUNK_STATUSES.includes(
+        chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
+      ),
     );
 
     const documentIds = [...new Set(eligibleChunks.map((c) => c.documentId))];

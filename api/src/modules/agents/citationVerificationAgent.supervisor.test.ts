@@ -119,6 +119,13 @@ function stubDeps(
     authorization: {
       authorizeDocumentAction: async () => undefined,
     } as unknown as DocumentAccessAuthorizationService,
+    semanticVerifier: {
+      verify: async ({ answerText, evidence }) => ({
+        claims: answerText ? [answerText] : [],
+        unsupportedClaims: [],
+        supportingEvidenceIds: evidence.map((item) => item.chunkId),
+      }),
+    },
     ...overrides,
   };
   return { deps, loadChunksCalls };
@@ -137,6 +144,7 @@ function buildHarness(
   registerCitationVerificationAgentExecutor(executorRegistry, deps);
 
   const persistence = new InMemorySupervisorPersistence();
+  persistence.seedPendingRun("run-1", TENANT_ID);
   const runtime = new SupervisorRuntime({
     model,
     workflowRegistry: createChatWorkflowRegistry(),
@@ -166,7 +174,7 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     assert.equal(result.handoffsCount, 2);
     assert.equal(result.totalSteps, 4);
     assert.deepEqual(calls, [SUP, CITATION_VERIFICATION_AGENT_ID, SUP]);
-    assert.equal(result.totalTokensUsed, 0, "deterministic verification consumes no tokens");
+    assert.equal(result.totalTokensUsed, 90, "only supervisor decisions consume tokens");
 
     const executionStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "execute" && step.agentName === CITATION_VERIFICATION_AGENT_ID,
@@ -210,7 +218,7 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     const result = await runtime.execute(baseRunInput());
 
     assert.equal(result.status, "completed");
-    assert.equal(result.totalTokensUsed, 0);
+    assert.equal(result.totalTokensUsed, 90);
 
     const executionStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "execute" && step.agentName === CITATION_VERIFICATION_AGENT_ID,
@@ -221,6 +229,42 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     const output = executionStep.output as Record<string, unknown>;
     assert.equal(output.verified, false);
     assert.equal(output.reasonCode, "MISSING_CITATIONS");
+    assert.deepEqual(output.validatedCitationIds, []);
+    assert.deepEqual(output.rejectedCitationIds, [CHUNK_ID]);
+  });
+
+  it("persists verification-bounds overflow as a fail-closed citation result", async () => {
+    const { model } = scriptedModel([
+      handoffToCitationVerifier({
+        decision: "grounded_answer",
+        answerText: "Candidate with uncovered factual text.",
+        citedChunkIds: [CHUNK_ID],
+        approvedEvidenceIds: [CHUNK_ID],
+      }),
+      returnToSupervisor(),
+      completeDecision({ answerText: "done" }),
+    ]);
+    const { deps } = stubDeps({
+      semanticVerifier: {
+        verify: async () => ({
+          claims: ["Candidate with uncovered factual text."],
+          unsupportedClaims: [],
+          supportingEvidenceIds: [],
+          reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
+        }),
+      },
+    });
+    const { runtime, persistence } = buildHarness(model, deps);
+
+    const result = await runtime.execute(baseRunInput());
+    assert.equal(result.status, "completed");
+    const executionStep = Array.from(persistence.steps.values()).find(
+      (step) => step.action === "execute" && step.agentName === CITATION_VERIFICATION_AGENT_ID,
+    );
+    assert.ok(executionStep);
+    const output = executionStep.output as Record<string, unknown>;
+    assert.equal(output.verified, false);
+    assert.equal(output.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
     assert.deepEqual(output.validatedCitationIds, []);
     assert.deepEqual(output.rejectedCitationIds, [CHUNK_ID]);
   });
@@ -259,6 +303,6 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     registerCitationVerificationAgentExecutor(registry, stubDeps().deps);
     const contract = registry.requireExecutor(CITATION_VERIFICATION_AGENT_ID);
     assert.equal(contract.id, toAgentId(CITATION_VERIFICATION_AGENT_ID));
-    assert.equal(contract.version, "1.0.0");
+    assert.equal(contract.version, "1.4.0");
   });
 });

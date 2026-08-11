@@ -9,8 +9,12 @@ import { EmailPreviewDialog, type EmailPreviewData } from "@/components/email/em
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { ApiError } from "@/lib/api-client";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export default function CompanyEmailsPage() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canUpdateEmail = permissions.can(Permission.COMPANY_SETTINGS_UPDATE);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
@@ -94,11 +98,11 @@ export default function CompanyEmailsPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Email Delivery Log"
-        description="Monitor outgoing emails sent from your organization."
+        title={t("dashboard.emails.title")}
+        description={t("dashboard.emails.description")}
         actions={
           <Button variant="outline" onClick={fetchEmails} isLoading={isLoading}>
-            Refresh
+            {t("dashboard.emails.refresh")}
           </Button>
         }
       />
@@ -112,15 +116,15 @@ export default function CompanyEmailsPage() {
           <div className="p-8 text-center text-error">{error}</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-start text-sm">
               <thead className="bg-surface-container-high border-b border-outline-variant text-on-surface-variant text-xs font-semibold uppercase">
                 <tr>
-                  <th className="px-6 py-4">Recipient</th>
-                  <th className="px-6 py-4">Subject</th>
-                  <th className="px-6 py-4">Template</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Date</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-6 py-4">{t("dashboard.emails.recipient")}</th>
+                  <th className="px-6 py-4">{t("dashboard.emails.subject")}</th>
+                  <th className="px-6 py-4">{t("dashboard.emails.template")}</th>
+                  <th className="px-6 py-4">{t("dashboard.emails.status")}</th>
+                  <th className="px-6 py-4">{t("dashboard.emails.date")}</th>
+                  <th className="px-6 py-4 text-end">{t("dashboard.emails.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant">
@@ -130,14 +134,15 @@ export default function CompanyEmailsPage() {
                     <td className="px-6 py-4 text-on-surface-variant max-w-[250px] truncate">{email.subject || "N/A"}</td>
                     <td className="px-6 py-4 text-on-surface-variant">{email.templateId}</td>
                     <td className="px-6 py-4">
-                      <Badge status={getStatusBadgeVariant(email.state)}>
-                        {email.state}
-                      </Badge>
+                      <Badge
+                        status={getStatusBadgeVariant(email.state)}
+                        label={codeLabel(t, "dashboard.emailState", email.state)}
+                      />
                     </td>
                     <td className="px-6 py-4 text-on-surface-variant">
-                      {new Date(email.createdAt).toLocaleString()}
+                      {new Date(email.createdAt).toLocaleString(intlLocale)}
                     </td>
-                    <td className="px-6 py-4 text-right space-x-2">
+                    <td className="px-6 py-4 text-end space-x-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -151,7 +156,7 @@ export default function CompanyEmailsPage() {
                           setIsPreviewOpen(true);
                         }}
                       >
-                        Details
+                        {t("dashboard.emails.details")}
                       </Button>
                       {canUpdateEmail && (email.state === "PERMANENT_FAILURE" || email.state === "CANCELLED" || email.state === "TEMPORARY_FAILURE") && (
                         <Button
@@ -160,12 +165,12 @@ export default function CompanyEmailsPage() {
                           disabled={resendCooldowns[email._id] === true}
                           title={
                             resendCooldowns[email._id] === true
-                              ? "Rate limited. Try again after the cooldown."
+                              ? t("dashboard.emails.rateLimitedTitle")
                               : undefined
                           }
                           onClick={() => handleResend(email._id)}
                         >
-                          Resend
+                          {t("dashboard.emails.resend")}
                         </Button>
                       )}
                     </td>
@@ -174,7 +179,7 @@ export default function CompanyEmailsPage() {
                 {emails.length === 0 && !isLoading && (
                   <tr>
                     <td colSpan={6} className="px-6 py-8 text-center text-on-surface-variant">
-                      No emails found.
+                      {t("dashboard.emails.noEmails")}
                     </td>
                   </tr>
                 )}

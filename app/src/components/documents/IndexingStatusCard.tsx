@@ -4,6 +4,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { codeLabel } from "@/lib/i18n/code-label";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { getIndexStatus, retryIndexing, reindexDocument } from "@/services/processing.service";
 import type {
   IndexGenerationView,
@@ -28,6 +30,9 @@ export function IndexingStatusCard({
   documentId,
   canUpdate,
 }: IndexingStatusCardProps) {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
+
   const [generation, setGeneration] = useState<IndexGenerationView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -93,11 +98,11 @@ export function IndexingStatusCard({
             },
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Retry failed");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setIsRetrying(false);
     }
-  }, [canUpdate, documentId]);
+  }, [canUpdate, documentId, t]);
 
   const handleReindex = useCallback(async () => {
     if (!canUpdate) return;
@@ -127,11 +132,11 @@ export function IndexingStatusCard({
             },
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Reindex failed");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setIsReindexing(false);
     }
-  }, [canUpdate, documentId]);
+  }, [canUpdate, documentId, t]);
 
   if (isLoading) {
     return (
@@ -153,7 +158,7 @@ export function IndexingStatusCard({
     <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-          Search Index
+          {t("documents.searchIndex")}
         </h3>
         {canUpdate && (
           <div className="flex gap-2">
@@ -166,7 +171,7 @@ export function IndexingStatusCard({
                 isLoading={isRetrying}
               >
                 <span className="material-symbols-outlined me-1 text-[14px]">refresh</span>
-                Retry
+                {t("common.retry")}
               </Button>
             )}
             {canReindex && (
@@ -178,7 +183,7 @@ export function IndexingStatusCard({
                 isLoading={isReindexing}
               >
                 <span className="material-symbols-outlined me-1 text-[14px]">replay</span>
-                Reindex
+                {t("documents.reindex")}
               </Button>
             )}
           </div>
@@ -193,21 +198,25 @@ export function IndexingStatusCard({
 
       {!generation && !isProcessing ? (
         <div className="mt-3 text-center">
-          <p className="text-sm text-on-surface-variant">No search index found for this document.</p>
+          <p className="text-sm text-on-surface-variant">{t("documents.noIndexFound")}</p>
           {canUpdate && (
             <p className="mt-2 text-xs text-on-surface-variant">
-              The index will be created automatically when the document is uploaded.
+              {t("documents.indexAutoCreate")}
             </p>
           )}
         </div>
       ) : generation ? (
         <div className="mt-3 space-y-3">
           <div className="flex items-center gap-2">
-            <Badge status={GENERATION_STATUS_MAP[generation.status] as "success" | "warning" | "error" | "info" | "neutral" | undefined}>
-              {generation.status}
-            </Badge>
+            {(() => {
+              const genBadgeStatus = GENERATION_STATUS_MAP[generation.status] as "success" | "warning" | "error" | "info" | "neutral" | undefined;
+              const labelText = codeLabel(t, "documents.indexStatus", generation.status);
+              return (
+                <Badge status={genBadgeStatus} label={labelText} />
+              );
+            })()}
             <span className="text-xs text-on-surface-variant font-medium">
-              Gen #{generation.generationNumber}
+              {t("documents.genNumber", { number: String(generation.generationNumber) })}
             </span>
             {generation.atlasIndexStatus && (
               <span className="text-xs text-on-surface-variant">
@@ -219,7 +228,7 @@ export function IndexingStatusCard({
           {(generation.expectedChunkCount > 0 || generation.actualChunkCount > 0) && (
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-on-surface-variant">Chunks</p>
+                <p className="text-on-surface-variant">{t("documents.chunks")}</p>
                 <p className="font-medium text-on-surface">
                   {generation.actualChunkCount}
                   {generation.expectedChunkCount > 0 && (
@@ -228,7 +237,7 @@ export function IndexingStatusCard({
                 </p>
               </div>
               <div>
-                <p className="text-on-surface-variant">Embeddings</p>
+                <p className="text-on-surface-variant">{t("documents.embeddings")}</p>
                 <p className="font-medium text-on-surface">
                   {generation.actualEmbeddingCount}
                   {generation.expectedEmbeddingCount > 0 && (
@@ -248,7 +257,7 @@ export function IndexingStatusCard({
 
           {generation.activatedAt && (
             <p className="text-xs text-on-surface-variant">
-              Active since {new Date(generation.activatedAt).toLocaleString()}
+              {t("documents.activeSince", { date: new Date(generation.activatedAt).toLocaleString(intlLocale) })}
             </p>
           )}
 
@@ -256,7 +265,7 @@ export function IndexingStatusCard({
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
               <span className="text-xs text-on-surface-variant">
-                {generation.status === "BUILDING" ? "Building index..." : "Verifying index..."}
+                {generation.status === "BUILDING" ? t("documents.buildingIndex") : t("documents.verifyingIndex")}
               </span>
             </div>
           )}

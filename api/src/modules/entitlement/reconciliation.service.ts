@@ -238,12 +238,14 @@ export class ReconciliationService {
         return UserModel.countDocuments({
           tenantId: tenantObjectId,
           role: "EMPLOYEE",
+          status: { $ne: "disabled" },
         });
 
       case "admins":
         return UserModel.countDocuments({
           tenantId: tenantObjectId,
           role: "COMPANY_ADMIN",
+          status: { $ne: "disabled" },
         });
 
       case "documents":

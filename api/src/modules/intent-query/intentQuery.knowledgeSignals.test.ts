@@ -1,0 +1,145 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  assessPositiveKnowledgeSeeking,
+  hasDomainAgnosticQuestionShape,
+  isLikelyGibberish,
+  selectSafeRetrievalQuestion,
+  stripLeadingSocialExpression,
+} from "./intentQuery.knowledgeSignals.js";
+
+test("positive knowledge signals require both enterprise/document scope and a request shape", () => {
+  for (const input of [
+    "ما سياسة الإجازات السنوية؟",
+    "What is our leave policy?",
+    "تسلم، ممكن تلخص HR_Policy.pdf؟",
+    "summarize the employee handbook",
+  ]) {
+    assert.equal(assessPositiveKnowledgeSeeking(input).positive, true, input);
+  }
+  for (const input of ["شجرا", "asdasd", "What is the capital of France?"]) {
+    assert.equal(assessPositiveKnowledgeSeeking(input).positive, false, input);
+  }
+});
+
+test("bounded enterprise structures survive intent-provider failure", () => {
+  for (const input of [
+    "What is the hotel limit?",
+    "What is the P1 response time?",
+    "Is MFA mandatory for VPN?",
+    "When is a purchase order required?",
+    "How many remote days are allowed?",
+    "ما زمن الاستجابة الأولية لـ P1؟",
+    "هل MFA إجباري للـ VPN؟",
+    "كام حد الفندق؟",
+    "امتى لازم Purchase Order؟",
+    "شكرا، كام حد الفندق؟",
+    "p1 response time كام؟",
+    "محتاج 3 quotations لو السعر 1500؟",
+    "هل الموظف اللي اشتغل 30 يوم يقدر يطلب العمل عن بعد؟",
+  ]) {
+    assert.equal(assessPositiveKnowledgeSeeking(input).positive, true, input);
+  }
+});
+
+test("enterprise vocabulary does not turn bare definitions or arbitrary input into RAG", () => {
+  for (const input of [
+    "Thanks",
+    "شجرا",
+    "Who are you?",
+    "انت مين؟",
+    "What is VPN?",
+    "What is procurement?",
+    "Explain MFA.",
+    "What is an SLA?",
+    "What is hotel management?",
+    "asdasdasd",
+    "?! 🎉",
+  ]) {
+    assert.equal(assessPositiveKnowledgeSeeking(input).positive, false, input);
+  }
+});
+
+test("verified social prefixes are removed without consuming the knowledge remainder", () => {
+  assert.deepEqual(stripLeadingSocialExpression("شكرا، كام يوم الإجازة السنوية؟"), {
+    text: "كام يوم الإجازة السنوية؟",
+    removed: true,
+  });
+  assert.deepEqual(stripLeadingSocialExpression("thanks, what is our leave policy?"), {
+    text: "what is our leave policy?",
+    removed: true,
+  });
+});
+
+test("safe retrieval normalization preserves critical anchors and rejects unrelated rewrites", () => {
+  assert.equal(
+    selectSafeRetrievalQuestion(
+      "شكرا، كام يوم الاجازه السنويه؟",
+      "كام يوم الإجازة السنوية؟",
+    ),
+    "كام يوم الإجازة السنوية؟",
+  );
+  assert.equal(
+    selectSafeRetrievalQuestion(
+      "لخص HR_Policy.pdf لسنة 2026",
+      "لخص سياسة الرواتب لسنة 2025",
+    ),
+    "لخص HR_Policy.pdf لسنة 2026",
+  );
+  assert.equal(
+    selectSafeRetrievalQuestion(
+      "What is the anual leave polcy?",
+      "What is the annual leave policy?",
+    ),
+    "What is the annual leave policy?",
+  );
+  assert.equal(
+    selectSafeRetrievalQuestion(
+      "Summarize the Blue Falcon policy",
+      "Summarize the Red Falcon policy",
+      ["Blue Falcon"],
+    ),
+    "Summarize the Blue Falcon policy",
+  );
+  assert.equal(
+    selectSafeRetrievalQuestion(
+      "Can an employee use annual leave during probation?",
+      "Who approves an expense of EGP 7,500? Can an employee use annual leave during probation?",
+    ),
+    "Can an employee use annual leave during probation?",
+  );
+});
+
+test("short random input is gibberish but social and policy questions are not", () => {
+  assert.equal(isLikelyGibberish("asdasd"), true);
+  assert.equal(isLikelyGibberish("qwerty zxcvb"), true);
+  assert.equal(isLikelyGibberish("شجرا"), false);
+  assert.equal(isLikelyGibberish("ما سياسة الإجازات؟"), false);
+});
+
+test("question shape is domain-agnostic but never promotes greetings, gibberish or bare definitions", () => {
+  for (const input of [
+    "What is the primary key in a relational database?",
+    "How do I create an index in a database?",
+    "ما هي انواع الفهارس في قواعد البيانات؟",
+    "Explain the replication setup in the lecture",
+    "What is our leave policy?",
+  ]) {
+    assert.equal(hasDomainAgnosticQuestionShape(input), true, input);
+  }
+  for (const input of [
+    "Thanks",
+    "شكرا",
+    "شجرا",
+    "asdasd",
+    "asdasdasd",
+    "?! 🎉",
+    "unclear input here",
+    "hello",
+    "What is VPN?",
+    "Explain MFA.",
+    "What is hotel management?",
+  ]) {
+    assert.equal(hasDomainAgnosticQuestionShape(input), false, input);
+  }
+});

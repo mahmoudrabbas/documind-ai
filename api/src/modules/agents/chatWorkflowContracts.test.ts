@@ -174,17 +174,25 @@ describe("per-agent input/output schemas", () => {
 
     assert.equal(
       ComplianceAgentInputSchema.safeParse({
-        answerText: "The leave policy states 30 days.",
-        citedChunkIds: ["c1"],
-        validatedCitationIds: ["c1"],
+        route: "rag",
+        answerDecision: "grounded_answer",
+        answer: "The leave policy states 30 days.",
+        language: "en",
+        citationsEnabled: true,
+        citationVerification: {
+          verified: true,
+          validatedCitationIds: ["c1"],
+          reasonCode: "CITATIONS_VERIFIED",
+        },
       }).success,
       true,
     );
     assert.equal(
       ComplianceAgentOutputSchema.safeParse({
-        decision: "release",
-        reasonCode: "COMPLIANCE_PASSED",
-        finalText: "The leave policy states 30 days.",
+        action: "release",
+        answer: "The leave policy states 30 days.",
+        sourceIds: ["c1"],
+        reasonCode: "COMPLIANT_GROUNDED_RESPONSE",
       }).success,
       true,
     );
@@ -245,11 +253,43 @@ describe("per-agent input/output schemas", () => {
       },
       {
         schema: ComplianceAgentOutputSchema,
-        value: { decision: "unsure", reasonCode: "X" },
+        value: { action: "unsure", answer: "x", sourceIds: [], reasonCode: "UNSAFE_RESPONSE" },
       },
       {
         schema: ComplianceAgentOutputSchema,
-        value: { decision: "release" },
+        value: { action: "release" },
+      },
+      {
+        schema: ComplianceAgentInputSchema,
+        value: {
+          answerDecision: "grounded_answer",
+          answer: "x",
+          citationVerification: {
+            verified: "maybe",
+            validatedCitationIds: ["c1"],
+            reasonCode: "CITATIONS_VERIFIED",
+          },
+        },
+      },
+      {
+        schema: ComplianceAgentInputSchema,
+        value: {
+          answerDecision: "grounded_answer",
+          answer: "x",
+          citationVerification: {
+            verified: true,
+            validatedCitationIds: ["c1"],
+            rejectedCitationIds: ["c1"],
+            reasonCode: "CITATIONS_VERIFIED",
+          },
+        },
+      },
+      {
+        schema: ComplianceAgentInputSchema,
+        value: {
+          answerDecision: "made_up",
+          answer: "x",
+        },
       },
     ];
 

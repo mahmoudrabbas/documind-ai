@@ -174,9 +174,9 @@ export class WorkflowRegistry {
 export function chatRagV1Definition(): ChatWorkflowDefinition {
   return normalizeChatWorkflowDefinition({
     id: "chat-rag-v1",
-    version: "1.0.0",
+    version: "1.1.0",
     description:
-      "Approved RAG chat workflow: intent analysis → retrieval evidence → grounded answer → citation verification → compliance release.",
+      "Approved controlled chat workflow: deterministic source-less intents or retrieval evidence → grounded answer → citation verification → compliance release.",
     entryAgent: "chat-supervisor",
     agents: [...CHAT_AGENT_IDS],
     allowedHandoffs: {
@@ -188,10 +188,10 @@ export function chatRagV1Definition(): ChatWorkflowDefinition {
       ],
       "intent-query-agent": ["chat-supervisor"],
       "answer-writer-agent": ["citation-verification-agent", "chat-supervisor"],
-      "citation-verification-agent": ["answer-writer-agent", "chat-supervisor"],
+      "citation-verification-agent": ["answer-writer-agent", "chat-supervisor", "compliance-agent"],
       "compliance-agent": ["chat-supervisor"],
     },
-    metadata: { schemaVersion: "1.0.0" },
+    metadata: { schemaVersion: "1.1.0" },
   });
 }
 

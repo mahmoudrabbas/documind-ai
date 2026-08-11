@@ -1284,6 +1284,175 @@ export async function refundCapabilitiesForTenant(tenantId: string): Promise<boo
   return count > 0;
 }
 
+export interface PendingRefundSettlementsReconciliationResult {
+  examined: number;
+  synchronized: number;
+  retried: number;
+  confirmed: number;
+  failed: number;
+  pending: number;
+}
+
+export const PENDING_REFUND_RECONCILE_DEFAULT_GRACE_MS = 5 * 60 * 1000;
+export const PENDING_REFUND_RECONCILE_DEFAULT_STALE_MS = 24 * 60 * 60 * 1000;
+export const PENDING_REFUND_RECONCILE_DEFAULT_LIMIT = 50;
+
+/**
+ * Reconcile refunds stuck in PROVIDER_PENDING / RETRY_PENDING. Refunds that
+ * already have a provider refund object are synchronized against the provider
+ * so a missed webhook can never strand a completed refund. RETRY_PENDING
+ * refunds without a provider object re-issue the create under the original
+ * stable idempotency key once their retry window elapses. Candidates that can
+ * not be resolved are failed after a staleness window and their reservation is
+ * released.
+ */
+export async function reconcilePendingRefundSettlements(input: {
+  provider: PaymentProvider;
+  limit?: number;
+  graceMs?: number;
+  staleMs?: number;
+}): Promise<PendingRefundSettlementsReconciliationResult> {
+  const now = new Date();
+  const graceMs = input.graceMs ?? PENDING_REFUND_RECONCILE_DEFAULT_GRACE_MS;
+  const staleMs = input.staleMs ?? PENDING_REFUND_RECONCILE_DEFAULT_STALE_MS;
+  const limit = Math.max(1, Math.min(200, input.limit ?? PENDING_REFUND_RECONCILE_DEFAULT_LIMIT));
+
+  const candidates = await RefundModel.find({
+    status: { $in: ["PROVIDER_PENDING", "RETRY_PENDING"] },
+    createdAt: { $lt: new Date(now.getTime() - graceMs) },
+  })
+    .sort({ createdAt: 1 })
+    .limit(limit)
+    .select("_id tenantId operationId invoiceId subscriptionId providerRefundId status providerStatus failureCode amountMinor currency reason")
+    .lean()
+    .exec();
+
+  const result: PendingRefundSettlementsReconciliationResult = { examined: 0, synchronized: 0, retried: 0, confirmed: 0, failed: 0, pending: 0 };
+
+  for (const refund of candidates) {
+    result.examined += 1;
+    const tenantId = String(refund.tenantId);
+    const operation = await BillingOperationModel.findById(refund.operationId).lean().exec();
+    if (refund.status === "RETRY_PENDING" && operation?.nextRetryAt && new Date(operation.nextRetryAt).getTime() > now.getTime()) {
+      result.pending += 1;
+      continue;
+    }
+
+    if (!refund.providerRefundId) {
+      if (refund.status !== "RETRY_PENDING") {
+        result.pending += 1;
+        continue;
+      }
+      if (await retryPendingRefundCreation({ provider: input.provider, refund, result })) {
+        result.retried += 1;
+      }
+      continue;
+    }
+
+    try {
+      const synchronized = await synchronizeRefundFromProvider({
+        provider: input.provider,
+        providerRefundId: refund.providerRefundId,
+        operationReference: String(refund.operationId),
+        sourceEventId: `reconcile:${String(refund._id)}`,
+        tenantIdHint: tenantId,
+      });
+      result.synchronized += 1;
+      if (synchronized.status === "SUCCEEDED") result.confirmed += 1;
+      else if (synchronized.status === "FAILED") result.failed += 1;
+      else result.pending += 1;
+    } catch {
+      if (isRefundStale(refund.createdAt, now, staleMs)) {
+        await failPendingRefund(refund as unknown as RefundDocument, result);
+      } else {
+        result.pending += 1;
+      }
+    }
+  }
+
+  return result;
+}
+
+async function retryPendingRefundCreation(input: {
+  provider: PaymentProvider;
+  refund: { _id: unknown; tenantId: unknown; operationId: unknown; invoiceId: unknown; subscriptionId: unknown; amountMinor: number; currency: string; reason?: string };
+  result: PendingRefundSettlementsReconciliationResult;
+}): Promise<boolean> {
+  const refund = input.refund as unknown as RefundDocument;
+  const { invoice, expectedCustomerId } = await loadRefundExecutionContext(refund);
+  if (isSystemSettlementRefund(refund)) {
+    if (!refund.subscriptionId) {
+      input.result.pending += 1;
+      return false;
+    }
+    try {
+      await assertSystemRefundTransitionReady({ tenantId: String(refund.tenantId), subscriptionId: String(refund.subscriptionId) });
+    } catch {
+      input.result.pending += 1;
+      return false;
+    }
+  }
+  const refreshedInvoice = await ensureInvoicePaymentReference(invoice, expectedCustomerId, input.provider);
+  try {
+    const resumed = await new BillingOperationService().resume(String(refund.operationId), String(refund.tenantId), async () => input.provider.createRefund({
+      chargeId: refreshedInvoice.paymentReference,
+      expectedCustomerId,
+      amountMinor: refund.amountMinor,
+      currency: refund.currency,
+      reason: refund.reason,
+      operationContext: operationContextFor(String(refund.tenantId), String(refund.operationId), {
+        refundId: String(refund._id),
+        invoiceId: refreshedInvoice.id,
+        amountMinor: refund.amountMinor,
+        currency: refund.currency,
+        reason: refund.reason,
+      }),
+    }).then((created) => ({ operationReference: created.refund.id, state: { id: created.refund.id } })));
+    await RefundModel.updateOne(
+      { _id: refund._id },
+      { $set: { status: "PROVIDER_PENDING", failureCode: "", providerRefundId: resumed.result.operationReference, providerStatus: "pending" } },
+    );
+    await getAuditWriter().write({
+      action: "BILLING_REFUND_RETRY_EXECUTED",
+      resourceType: "Refund",
+      resourceId: String(refund._id),
+      tenantId: String(refund.tenantId),
+      changes: { status: "PROVIDER_PENDING" },
+    });
+    input.result.pending += 1;
+    return true;
+  } catch (error) {
+    const mapped = mapBillingProviderError(error);
+    if (mapped.statusCode >= 500) {
+      input.result.pending += 1;
+    } else {
+      await failPendingRefund(refund, input.result);
+    }
+    return false;
+  }
+}
+
+async function failPendingRefund(
+  refund: RefundDocument,
+  result: PendingRefundSettlementsReconciliationResult,
+): Promise<void> {
+  await releaseReservedRefundAmount(refund.invoiceId, refund.tenantId, refund.amountMinor);
+  await RefundModel.updateOne({ _id: refund._id }, { $set: { status: "FAILED", failureCode: BILLING_PROVIDER_UNAVAILABLE } });
+  await new BillingOperationService().fail(String(refund.operationId), String(refund.tenantId), BILLING_PROVIDER_UNAVAILABLE);
+  await getAuditWriter().write({
+    action: "BILLING_REFUND_FAILED",
+    resourceType: "Refund",
+    resourceId: String(refund._id),
+    tenantId: String(refund.tenantId),
+    changes: { status: "FAILED", failureCode: BILLING_PROVIDER_UNAVAILABLE },
+  });
+  result.failed += 1;
+}
+
+function isRefundStale(requestedAt: Date, now: Date, staleMs: number): boolean {
+  return requestedAt.getTime() < now.getTime() - staleMs;
+}
+
 export function refundInvoiceSummary(invoice: Record<string, unknown>) {
   const amountPaidMinor = Number(invoice.amountPaidMinor ?? 0);
   const refundedAmountMinor = Number(invoice.refundedAmountMinor ?? 0);

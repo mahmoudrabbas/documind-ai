@@ -7,6 +7,8 @@ import {
   archivePackage,
   previewPackageImpact,
 } from "@/services/super-admin.service";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import type {
   PackageImpactPreview,
   PackageLifecycleAction,
@@ -20,6 +22,7 @@ export function PackageLifecycleDialog({ open, action, pkg, onClose, onSuccess }
   onClose: () => void;
   onSuccess: () => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const [preview, setPreview] = useState<PackageImpactPreview | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,7 +55,7 @@ export function PackageLifecycleDialog({ open, action, pkg, onClose, onSuccess }
     void previewPackageImpact(pkg._id, action, controller.signal)
       .then((response) => setPreview(response.data))
       .catch(() => {
-        if (!controller.signal.aborted) setPreviewError("Unable to load package impact.");
+        if (!controller.signal.aborted) setPreviewError(t("superAdmin.packages.impactError"));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -80,10 +83,10 @@ export function PackageLifecycleDialog({ open, action, pkg, onClose, onSuccess }
       onClose();
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === "PACKAGE_VERSION_CONFLICT") {
-        setError("This package changed in another session. Current data is being reloaded.");
+        setError(t("superAdmin.packages.versionConflict"));
         await onSuccess();
       } else {
-        setError(caught instanceof Error ? caught.message : "Package transition failed.");
+        setError(caught instanceof Error ? caught.message : t("superAdmin.packages.transitionFailed"));
       }
     } finally {
       setPending(false);
@@ -91,7 +94,7 @@ export function PackageLifecycleDialog({ open, action, pkg, onClose, onSuccess }
   }
 
   if (!open) return null;
-  const title = action === "archive" ? "Archive package" : "Activate package";
+  const title = action === "archive" ? t("superAdmin.packages.archive") : t("superAdmin.packages.activate");
   return (
     <div
       ref={dialogRef}
@@ -105,29 +108,29 @@ export function PackageLifecycleDialog({ open, action, pkg, onClose, onSuccess }
       <div className="w-full max-w-lg rounded-2xl bg-surface-container-lowest p-6 shadow-modal">
         <div className="flex items-start justify-between gap-4">
           <div><h2 id="package-lifecycle-title" className="text-title-lg font-bold">{title}</h2>
-            <p className="text-sm text-on-surface-variant">{pkg.name} · {pkg.code} · v{pkg.version}</p></div>
-          <button type="button" aria-label={`Close ${title}`} disabled={pending} onClick={onClose}>✕</button>
+            <p className="text-sm text-on-surface-variant">{t("superAdmin.packages.dialogSubtitle", { name: pkg.name, code: pkg.code, version: String(pkg.version) })}</p></div>
+          <button type="button" aria-label={t("superAdmin.packages.closeDialog", { title })} disabled={pending} onClick={onClose}>✕</button>
         </div>
-        {loading ? <p className="mt-4" aria-live="polite">Loading impact…</p> : null}
+        {loading ? <p className="mt-4" aria-live="polite">{t("superAdmin.packages.loadingImpact")}</p> : null}
         {previewError ? <div role="alert" className="mt-4 rounded-lg bg-error-container p-3">{previewError}{" "}
-          <button type="button" className="font-bold underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></div> : null}
+          <button type="button" className="font-bold underline" onClick={() => setRetry((value) => value + 1)}>{t("common.retry")}</button></div> : null}
         {preview ? <div className="mt-4 space-y-2 rounded-xl bg-surface-container-low p-4 text-sm">
-          <p>Subscriptions using package: <strong>{preview.subscriptionUsageCount}</strong></p>
-          <p>Landing visibility: <strong>{preview.landingVisibilityImpact}</strong></p>
-          {Object.entries(preview.affectedSubscriptionStates).map(([state, count]) => <p key={state}>{state}: {count}</p>)}
+          <p>{t("superAdmin.packages.subscriptionsUsing")} <strong>{preview.subscriptionUsageCount}</strong></p>
+          <p>{t("superAdmin.packages.landingVisibility")} <strong>{codeLabel(t, "superAdmin.packages.landingImpact", preview.landingVisibilityImpact)}</strong></p>
+          {Object.entries(preview.affectedSubscriptionStates).map(([state, count]) => <p key={state}>{t("superAdmin.packages.affectedState", { state: codeLabel(t, "superAdmin.subsStatus", state), count: String(count) })}</p>)}
           {preview.warnings.map((warning) => <p key={warning} className="text-amber-800">{warning}</p>)}
-          {preview.blockingReasons.map((reasonCode) => <p key={reasonCode} role="alert" className="text-error">Blocked: {reasonCode}</p>)}
+          {preview.blockingReasons.map((reasonCode) => <p key={reasonCode} role="alert" className="text-error">{t("superAdmin.packages.blockedReason", { reason: reasonCode })}</p>)}
         </div> : null}
-        <label className="mt-4 block text-sm font-bold">Reason
+        <label className="mt-4 block text-sm font-bold">{t("superAdmin.packages.reason")}
           <textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} minLength={3} maxLength={500} rows={3}
             className="mt-1 w-full rounded-lg border border-outline-variant bg-surface p-3" aria-describedby="package-reason-help" />
         </label>
-        <p id="package-reason-help" className="text-xs text-on-surface-variant">At least 3 characters; recorded in the audit trail.</p>
+        <p id="package-reason-help" className="text-xs text-on-surface-variant">{t("superAdmin.packages.reasonHelp")}</p>
         {error ? <p role="alert" className="mt-3 rounded-lg bg-error-container p-3">{error}</p> : null}
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" disabled={pending} onClick={onClose} className="rounded-lg border px-4 py-2 font-bold">Cancel</button>
+          <button type="button" disabled={pending} onClick={onClose} className="rounded-lg border px-4 py-2 font-bold">{t("common.cancel")}</button>
           <button type="button" onClick={() => void confirm()} disabled={pending || !preview?.transitionAllowed || reason.trim().length < 3}
-            className="rounded-lg bg-primary px-4 py-2 font-bold text-on-primary disabled:opacity-50">{pending ? "Working…" : title}</button>
+            className="rounded-lg bg-primary px-4 py-2 font-bold text-on-primary disabled:opacity-50">{pending ? t("superAdmin.packages.working") : title}</button>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { MODAL_OVERLAY_CLASSES, MODAL_PANEL_CLASSES } from "./variants";
+import { useI18n } from "@/providers/i18n-provider";
 
 export interface ModalProps {
   open: boolean;
@@ -34,6 +35,7 @@ export function Modal({
   className,
   panelClassName,
 }: ModalProps) {
+  const { t } = useI18n();
   const previousFocusRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export function Modal({
               {title}
             </h2>
             <button
-              aria-label="Close"
+              aria-label={t("common.close")}
               onClick={onClose}
               className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high"
             >
@@ -104,7 +106,9 @@ export interface ConfirmDialogProps {
   open: boolean;
   title: string;
   description?: string;
+  /** Defaults to the translated "Confirm" for the active locale. */
   confirmLabel?: string;
+  /** Defaults to the translated "Cancel" for the active locale. */
   cancelLabel?: string;
   variant?: "danger" | "primary" | "warning";
   onConfirm: () => void;
@@ -117,14 +121,16 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   variant = "danger",
   onConfirm,
   onCancel,
   isLoading,
   error,
 }: ConfirmDialogProps) {
+  const { t } = useI18n();
+
   if (!open) return null;
 
   return (
@@ -157,7 +163,7 @@ export function ConfirmDialog({
             onClick={onCancel}
             className="inline-flex items-center justify-center rounded-md px-4 py-2 text-label-md font-medium text-on-surface-variant transition-colors hover:bg-surface-container-low"
           >
-            {cancelLabel}
+            {cancelLabel ?? t("common.cancel")}
           </button>
           <button
             onClick={onConfirm}
@@ -172,7 +178,7 @@ export function ConfirmDialog({
             {isLoading ? (
               <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent me-2" aria-hidden="true" />
             ) : null}
-            {confirmLabel}
+            {confirmLabel ?? t("common.confirm")}
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import type { QualityMetricsData } from "@/services/analytics.service";
 
 interface QualityPanelProps {
@@ -10,6 +10,7 @@ interface QualityPanelProps {
 
 export function QualityPanel({ metrics }: QualityPanelProps) {
   const { t } = useI18n();
+  const intlLocale = useIntlLocale();
 
   // If sample-size fields are missing (old API), assume data exists and show rates as-is
   const sampleSizesAvailable = metrics.totalQueries !== undefined;
@@ -138,7 +139,7 @@ export function QualityPanel({ metrics }: QualityPanelProps) {
                     </div>
                     <p className="mt-1.5 text-[10px] text-on-surface-variant/50">
                       {t("qualityPanel.basedOn", {
-                        count: item.sampleSize.toLocaleString(),
+                        count: item.sampleSize.toLocaleString(intlLocale),
                         label: t(item.sampleLabelKey),
                       })}
                     </p>
@@ -160,9 +161,9 @@ export function QualityPanel({ metrics }: QualityPanelProps) {
             {judgeHasCompleted ? (
               <p className="text-body-xs text-on-surface-variant">
                 {t("qualityPanel.judgeCounts", {
-                  evaluated: (metrics.judgeEvaluatedCount ?? 0).toLocaleString(),
-                  degraded: (metrics.judgeDegradedCount ?? 0).toLocaleString(),
-                  failed: (metrics.judgeFailedCount ?? 0).toLocaleString(),
+                  evaluated: (metrics.judgeEvaluatedCount ?? 0).toLocaleString(intlLocale),
+                  degraded: (metrics.judgeDegradedCount ?? 0).toLocaleString(intlLocale),
+                  failed: (metrics.judgeFailedCount ?? 0).toLocaleString(intlLocale),
                 })}
               </p>
             ) : judgeHasAnyResult ? (

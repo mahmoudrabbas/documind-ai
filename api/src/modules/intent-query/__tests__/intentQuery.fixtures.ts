@@ -1,4 +1,4 @@
-import type { QueryLanguageValue, IntentClassValue } from "../intentQuery.types.js";
+import type { QueryLanguageValue, IntentClassValue, QueryRouteValue } from "../intentQuery.types.js";
 
 export interface QueryFixture {
   question: string;
@@ -6,6 +6,7 @@ export interface QueryFixture {
   expectedIntent: IntentClassValue;
   shouldClarify: boolean;
   isFollowUp: boolean;
+  expectedRoute?: QueryRouteValue;
   exactTerms?: string[];
   referencedDocumentIds?: string[];
 }

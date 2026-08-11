@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import OpenAI from "openai";
+import { logger } from "../../logger.js";
 
 export interface EmbeddingInput {
   chunkId: string;
@@ -271,7 +272,7 @@ export class StudentBedrockEmbeddingProvider implements EmbeddingProvider {
         const errorMessage = lastError.message.toLowerCase();
         if (errorMessage.includes("rate limit") || errorMessage.includes("timeout") || errorMessage.includes("503")) {
           this.currentModelIndex = (this.currentModelIndex + 1) % this.embeddingModels.length;
-          console.warn(`[StudentBedrock] Falling back to next embedding model: ${this.getCurrentModel()}`);
+          logger.warn(`[StudentBedrock] Falling back to next embedding model: ${this.getCurrentModel()}`);
         }
         throw lastError;
       }
@@ -286,10 +287,10 @@ export function createEmbeddingProvider(): EmbeddingProvider {
 
   if (aiProvider === "student-bedrock") {
     const apiKey = process.env.SBG_API_KEY;
-    const baseUrl = process.env.SBG_BASE_URL;
+    const baseUrl = process.env.BEDROCK_GATEWAY_URL || process.env.SBG_BASE_URL || "http://apiaccess.iti.net.eg";
 
-    if (!apiKey || !baseUrl) {
-      throw new Error("SBG_API_KEY and SBG_BASE_URL are required for student-bedrock provider");
+    if (!apiKey) {
+      throw new Error("SBG_API_KEY is required for student-bedrock provider");
     }
 
     const embeddingModels = (process.env.BEDROCK_EMBEDDING_MODELS || "amazon.titan-embed-text-v2:0,us.cohere.embed-v4:0")

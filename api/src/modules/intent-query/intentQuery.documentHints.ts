@@ -66,6 +66,122 @@ interface HintCandidateDoc {
   metadata: { title: string | null; aliases?: string[] | null } | null;
 }
 
+interface RankedHintCandidate {
+  document: HintCandidateDoc;
+  rank: number;
+}
+
+const FILE_EXTENSIONS = /\.(?:pdf|docx?|pptx?|xlsx?|txt)$/iu;
+const LEADING_TITLE_WRAPPERS = /^(?:the|file|document|pdf|presentation|ملف|وثيقة|مستند|عرض)\s+/iu;
+const TRAILING_TITLE_WRAPPERS = /\s+(?:file|document|pdf|presentation)$/iu;
+const NATURAL_DOCUMENT_MARKER =
+  /(?:\s+(?:file|document|pdf|presentation|ملف|وثيقة|مستند|عرض)|\.(?:pdf|docx?|pptx?|xlsx?|txt))$/iu;
+
+/**
+ * Extracts only explicit natural-language document references. This is not a
+ * fuzzy title detector: a candidate must end in a known document wrapper or
+ * file extension, and the authorized exact/wrapper resolver below remains the
+ * authority.
+ */
+export function extractNaturalDocumentTitleHints(question: string): string[] {
+  const normalized = String(question ?? "")
+    .trim()
+    .replace(/[?!.،؛]+$/gu, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+in\s+\d+\s+lines?$/iu, "")
+    .trim();
+  if (!normalized) return [];
+
+  const candidates: string[] = [];
+  const summary = normalized.match(
+    /^(?:please\s+)?(?:summarize|give\s+(?:me\s+)?(?:a\s+)?summary\s+of|لخ[ّ]?ص|تلخيص)\s+(?:the\s+)?(.+)$/iu,
+  );
+  if (summary?.[1]) candidates.push(summary[1]);
+
+  const relationPattern =
+    /(?:^|\s)(?:in|from|about|of|في|من)\s+(?:the\s+)?(.{1,160}?(?:\s+(?:file|document|pdf|presentation|ملف|وثيقة|مستند|عرض)|\.(?:pdf|docx?|pptx?|xlsx?|txt)))(?=$|[,،;؛])/giu;
+  for (const match of normalized.matchAll(relationPattern)) {
+    if (match[1]) candidates.push(match[1]);
+  }
+
+  return validTitleHints(
+    candidates
+      .map((candidate) => candidate.trim())
+      .filter(
+        (candidate) =>
+          NATURAL_DOCUMENT_MARKER.test(candidate) &&
+          candidate.split(/\s+/u).length <= 20,
+      ),
+  ).slice(0, 1);
+}
+
+function withoutFileExtension(value: string): string {
+  return value.replace(FILE_EXTENSIONS, "").trim();
+}
+
+function withoutNaturalLanguageWrappers(value: string): string {
+  let result = value.replace(LEADING_TITLE_WRAPPERS, "").trim();
+  let previous = "";
+  while (result !== previous) {
+    previous = result;
+    result = result.replace(TRAILING_TITLE_WRAPPERS, "").trim();
+  }
+  return result;
+}
+
+function compactTitle(value: string): string {
+  return value.replace(/[\p{P}\p{S}\p{Z}_]+/gu, "");
+}
+
+function hintAliases(hint: string): string[] {
+  const normalized = normalizeForComparison(hint);
+  const extensionless = withoutFileExtension(normalized);
+  const unwrapped = withoutNaturalLanguageWrappers(normalized);
+  const unwrappedExtensionless = withoutFileExtension(unwrapped);
+  return [...new Set([
+    normalized,
+    extensionless,
+    unwrapped,
+    unwrappedExtensionless,
+  ].filter(Boolean))];
+}
+
+/**
+ * Exact normalized title/filename matches are strongest. Lower ranks only
+ * remove a known file extension or harmless document wrapper; the final
+ * compact comparison handles spacing/separator differences but still requires
+ * complete equality, never substring or edit-distance fuzzy matching.
+ */
+function candidateMatchRank(hint: string, document: HintCandidateDoc): number | null {
+  const target = normalizeForComparison(hint);
+  const targetExtensionless = withoutFileExtension(target);
+  const targetUnwrapped = withoutNaturalLanguageWrappers(target);
+  const targetCanonical = withoutFileExtension(targetUnwrapped);
+  const documentValues = [
+    normalizeForComparison(document.metadata?.title ?? ""),
+    ...(Array.isArray(document.metadata?.aliases)
+      ? document.metadata!.aliases!.map(normalizeForComparison)
+      : []),
+    normalizeForComparison(document.fileName),
+  ].filter(Boolean);
+
+  if (documentValues.includes(target)) return 0;
+  if (documentValues.some((value) => withoutFileExtension(value) === targetExtensionless)) return 1;
+  if (documentValues.some((value) => {
+    const canonical = withoutFileExtension(withoutNaturalLanguageWrappers(value));
+    return canonical === targetCanonical;
+  })) return 2;
+
+  const compactTarget = compactTitle(targetCanonical);
+  if (
+    compactTarget.length >= 4 &&
+    documentValues.some((value) =>
+      compactTitle(withoutFileExtension(withoutNaturalLanguageWrappers(value))) === compactTarget,
+    )
+  ) return 3;
+  return null;
+}
+
 /**
  * Builds a case-insensitive search pattern that tolerates Arabic variant
  * forms (أ/إ/آ/ا, ة/ه, ى/ي) and strips harakat/kashida, so a hint matches a
@@ -85,37 +201,28 @@ function buildSearchPattern(hint: string): string {
 async function findDocumentsByHint(
   context: DocumentHintContext,
   hint: string,
-): Promise<HintCandidateDoc[]> {
-  const pattern = buildSearchPattern(hint);
-  if (!pattern) return [];
+): Promise<RankedHintCandidate[]> {
+  const patterns = hintAliases(hint).map(buildSearchPattern).filter(Boolean);
+  if (patterns.length === 0) return [];
 
   const docs = await DocumentModel.find({
     tenantId: context.tenantObjectId,
     deletedAt: null,
     isArchived: false,
     status: { $in: RETRIEVABLE_DOCUMENT_STATUSES },
-    $or: [
+    $or: patterns.flatMap((pattern) => [
       { "metadata.title": { $regex: pattern, $options: "i" } },
       { "metadata.aliases": { $regex: pattern, $options: "i" } },
       { fileName: { $regex: pattern, $options: "i" } },
-    ],
+    ]),
   })
     .select("_id fileName metadata.title metadata.aliases")
     .lean()
     .exec();
 
-  return docs.filter((doc) => {
-    const normalizedFileName = normalizeForComparison(doc.fileName);
-    const normalizedTitle = normalizeForComparison(doc.metadata?.title ?? "");
-    const aliases = Array.isArray(doc.metadata?.aliases)
-      ? doc.metadata!.aliases!.map(normalizeForComparison)
-      : [];
-    const target = normalizeForComparison(hint);
-    return (
-      normalizedFileName === target ||
-      normalizedTitle === target ||
-      aliases.includes(target)
-    );
+  return docs.flatMap((document) => {
+    const rank = candidateMatchRank(hint, document);
+    return rank === null ? [] : [{ document, rank }];
   });
 }
 
@@ -349,7 +456,7 @@ export async function resolveAuthorizedDocumentHints(
 
     const candidates = await findDocumentsByHint(context, hint);
     const candidatesNotAlreadyResolved = candidates.filter(
-      (candidate) => !resolvedIdSet.has(candidate._id.toString()),
+      (candidate) => !resolvedIdSet.has(candidate.document._id.toString()),
     );
     if (candidatesNotAlreadyResolved.length === 0) {
       // No candidates at all means the hint matches no retrievable document;
@@ -383,9 +490,9 @@ export async function resolveAuthorizedDocumentHints(
       continue;
     }
 
-    const authorizedMatches: HintCandidateDoc[] = [];
+    const authorizedMatches: RankedHintCandidate[] = [];
     for (const candidate of candidatesNotAlreadyResolved) {
-      const candidateId = candidate._id.toString();
+      const candidateId = candidate.document._id.toString();
       if (!(await authorize(candidateId))) continue;
       authorizedMatches.push(candidate);
     }
@@ -394,12 +501,16 @@ export async function resolveAuthorizedDocumentHints(
       unresolvedTitleHints.push(hint);
       continue;
     }
-    if (authorizedMatches.length > 1) {
+    const bestRank = Math.min(...authorizedMatches.map((candidate) => candidate.rank));
+    const bestAuthorizedMatches = authorizedMatches.filter(
+      (candidate) => candidate.rank === bestRank,
+    );
+    if (bestAuthorizedMatches.length > 1) {
       ambiguousTitleMatches = true;
       continue;
     }
 
-    const match = authorizedMatches[0]!;
+    const match = bestAuthorizedMatches[0]!.document;
     const matchId = match._id.toString();
     resolvedIdSet.add(matchId);
     resolvedIds.push(matchId);

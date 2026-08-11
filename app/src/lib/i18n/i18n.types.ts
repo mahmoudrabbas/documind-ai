@@ -41,6 +41,16 @@ export interface I18nContextValue {
    * placeholders.  Returns the key itself when no translation is found.
    */
   t: (key: string, params?: Record<string, string>) => string;
+  /**
+   * Look up a count-sensitive translation, resolving `<key>.<category>`
+   * via `Intl.PluralRules` for the active locale. `{{count}}` is
+   * interpolated automatically.
+   */
+  tPlural: (
+    key: string,
+    count: number,
+    params?: Record<string, string>,
+  ) => string;
   /** Switch the active locale (persists to cookie). */
   setLocale: (locale: Locale) => void;
 }

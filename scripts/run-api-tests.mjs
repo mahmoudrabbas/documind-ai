@@ -7,6 +7,7 @@ import { clearTimeout, setTimeout } from "node:timers";
 
 const root = resolve(import.meta.dirname, "..");
 const apiRoot = resolve(root, "api");
+const apiSrcRoot = resolve(apiRoot, "src");
 const require = createRequire(resolve(apiRoot, "package.json"));
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
@@ -58,7 +59,7 @@ const processingProgressVitestTestsDir = resolve(
   "processing-progress",
   "__tests__",
 ).replace(/\\/g, "/");
-const apiSrcRoot = resolve(apiRoot, "src");
+const rootSrcVitestTestsDir = resolve(apiRoot, "src", "__tests__").replace(/\\/g, "/");
 
 function isVitestOnlyTest(path) {
   const normalized = path.replace(/\\/g, "/");
@@ -73,6 +74,7 @@ function isVitestOnlyTest(path) {
     || normalized.startsWith(`${importsPortsVitestTestsDir}/`)
     || normalized.startsWith(`${agentsTokenChargeTestsDir}/`)
     || normalized.startsWith(`${processingProgressVitestTestsDir}/`)
+    || normalized.startsWith(`${rootSrcVitestTestsDir}/`)
   ) {
     return true;
   }
@@ -136,6 +138,8 @@ const testEnvironment = {
     "test-only-webhook-secret-at-least-32-characters",
   NOTIFICATION_SOCKET_SERVICE_TOKEN:
     "test-only-notification-socket-service-token-at-least-32",
+  BEDROCK_GATEWAY_API_KEY:
+    "test-fake-key-for-ci",
 };
 
 const path = [
@@ -176,16 +180,35 @@ const selectedTests = requestedTests.length > 0
   : findTests(resolve(apiRoot, "src"));
 const requestedVitestTests = requestedTests.filter(isVitestOnlyTest);
 
-const mongo = await MongoMemoryReplSet.create({
-  binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
-  replSet: { count: 1 },
-  instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
-});
+let mongo = null;
+const baseMongodbUri = process.env.MONGODB_URI;
+
+if (!baseMongodbUri) {
+  mongo = await MongoMemoryReplSet.create({
+    binary: { version: process.env.MONGOMS_VERSION ?? "7.0.14" },
+    replSet: { count: 1 },
+    instanceOpts: [{ launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) }],
+  });
+}
+
+function getDatabaseUriForFile() {
+  if (baseMongodbUri) {
+    try {
+      const parsed = new URL(baseMongodbUri);
+      parsed.pathname = `/documind-test-${randomUUID()}`;
+      return parsed.toString();
+    } catch {
+      return baseMongodbUri;
+    }
+  }
+  return mongo.getUri(`documind-test-${randomUUID()}`);
+}
+
 let exitCode = 0;
 try {
-  const mongodbUri = mongo.getUri(`documind-test-${randomUUID()}`);
   for (const testFile of selectedTests) {
-    const result = await runTestFile(testFile, mongodbUri);
+    const fileMongodbUri = getDatabaseUriForFile();
+    const result = await runTestFile(testFile, fileMongodbUri);
     if (result !== 0) {
       exitCode = result;
       break;
@@ -202,7 +225,7 @@ try {
       const child = spawn("vitest", vitestArgs, {
         cwd: apiRoot,
         stdio: "inherit",
-        env: { ...process.env, ...testEnvironment, MONGODB_URI: mongodbUri, PATH: path },
+        env: { ...process.env, ...testEnvironment, MONGODB_URI: getDatabaseUriForFile(), PATH: path },
         shell: true,
       });
       child.once("error", (error) => {
@@ -213,6 +236,8 @@ try {
     });
   }
 } finally {
-  await mongo.stop();
+  if (mongo) {
+    await mongo.stop();
+  }
 }
 process.exitCode = exitCode;

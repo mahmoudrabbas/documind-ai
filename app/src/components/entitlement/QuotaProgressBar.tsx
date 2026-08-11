@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { Card } from "../ui/Card";
 
 export interface QuotaProgressBarProps {
   label: string;
   current: number;
   limit: number;
+  /**
+   * Machine dimension code (e.g. "storageMb"). Kept for callers and
+   * analytics; it is deliberately NOT rendered — `label` carries the
+   * translated text, and printing the raw code beside it leaked English
+   * like "2 / 5 employees" into the Arabic UI.
+   */
   dimension: string;
   periodReset?: string;
   /** @default 0.8 — reserved for customising the warning threshold. */
@@ -28,9 +35,9 @@ function getBarColor(percent: number, isUnlimited: boolean): string {
 
 /* ---- helpers ----------------------------------------------------------- */
 
-function formatNumber(n: number): string {
+function formatNumber(n: number, locale: string): string {
   if (!Number.isFinite(n)) return "0";
-  return Math.round(n).toLocaleString();
+  return Math.round(n).toLocaleString(locale);
 }
 
 /* ---- component --------------------------------------------------------- */
@@ -39,11 +46,12 @@ export function QuotaProgressBar({
   label,
   current,
   limit,
-  dimension,
   periodReset,
   className,
   dir: dirProp,
 }: QuotaProgressBarProps) {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const [isRtl, setIsRtl] = useState(dirProp === "rtl");
 
   useEffect(() => {
@@ -69,10 +77,10 @@ export function QuotaProgressBar({
   let badge: string | null = null;
   let badgeVariant: "warning" | "error" = "warning";
   if (isFull) {
-    badge = "Full";
+    badge = t("quota.full");
     badgeVariant = "error";
   } else if (almostFull) {
-    badge = "Almost full";
+    badge = t("quota.almostFull");
     badgeVariant = "warning";
   }
 
@@ -137,29 +145,29 @@ export function QuotaProgressBar({
           {isUnlimited ? (
             <>
               <span className="font-medium text-on-surface">
-                {formatNumber(safeCurrent)}
+                {formatNumber(safeCurrent, intlLocale)}
               </span>
               {" / "}
-              No limit
+              {t("quota.noLimit")}
             </>
           ) : (
             <>
               <span className="font-medium text-on-surface">
-                {formatNumber(safeCurrent)}
+                {formatNumber(safeCurrent, intlLocale)}
               </span>
               {" / "}
-              {formatNumber(safeLimit)}
+              {formatNumber(safeLimit, intlLocale)}
             </>
-          )}{" "}
-          {dimension}
+          )}
         </span>
         {periodReset && (
           <span className="text-label-sm text-on-surface-variant">
-            Resets{" "}
-            {new Date(periodReset).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
+            {t("quota.resets", {
+              date: new Date(periodReset).toLocaleDateString(intlLocale, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              }),
             })}
           </span>
         )}
