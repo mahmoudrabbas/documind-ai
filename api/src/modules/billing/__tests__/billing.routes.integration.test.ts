@@ -806,7 +806,7 @@ async function seedRequestedRefund(
     status: "REQUESTED",
     subscriptionId: ids.subscriptionA,
     requestFingerprint: "c".repeat(64),
-    idempotencyKeyHash: "d".repeat(64),
+    idempotencyKeyHash: String(operationId).padEnd(64, "d"),
     provider: "fake",
   });
   const refund = await RefundModel.create({
