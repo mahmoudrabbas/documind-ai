@@ -41,6 +41,7 @@ import type { AuditEventInput } from "../audit/audit.types.js";
 import PackageModel from "../../db/models/package.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
 import { provisionSubscription } from "../billing/registration.service.js";
 import { transitionSubscription } from "../billing/subscription.service.js";
 import { getGlobalSettings } from "../platform/global-settings.js";
@@ -517,6 +518,18 @@ export async function registerTenantAndAdmin(
 
     if (created.tenant) {
       const tenantId = created.tenant._id.toString();
+
+      try {
+        const result = await SubscriptionModel.deleteMany({ tenantId });
+        console.error(
+          `[auth-register] cleaned up ${result.deletedCount} subscription(s) for orphaned tenant ${tenantId}`,
+        );
+      } catch (subscriptionCleanupError) {
+        console.error(
+          "[auth-register-subscription-cleanup]",
+          subscriptionCleanupError,
+        );
+      }
 
       await deleteTenantById(tenantId);
     }

@@ -91,7 +91,7 @@ export default function SubscriptionsPage() {
     return () => controller.abort();
   }, [tenantId, state.data]);
 
-  const subscriptionByTenant = useMemo(() => new Map((meta?.subscriptions ?? []).map((item) => [item.tenantId._id, item])), [meta]);
+  const subscriptionByTenant = useMemo(() => new Map((meta?.subscriptions ?? []).filter((item): item is PlatformSubscription & { tenantId: NonNullable<PlatformSubscription["tenantId"]> } => item.tenantId !== null).map((item) => [item.tenantId._id, item])), [meta]);
   const activePackages = meta?.packages.filter((pkg) => pkg.active) ?? [];
   const selectedPackage = activePackages.find((pkg) => pkg._id === packageId);
   const reload = async () => {
@@ -166,7 +166,7 @@ export default function SubscriptionsPage() {
     </div></DashboardPanel> : null}
     {state.data && state.data.subscriptions.length === 0 ? <DashboardPanel><p>{state.data.pagination.totalRecords === 0 && !search && !statusFilter ? t("superAdmin.subsNone") : t("superAdmin.subsNoMatch")}</p></DashboardPanel> : state.data ? <><PlatformTable headers={[t("superAdmin.tableCompany"), t("superAdmin.subsTablePackage"), t("superAdmin.subsTableVersion"), t("superAdmin.tableStatus"), t("superAdmin.subsTableOwnership"), t("superAdmin.subsTableRevision"), t("superAdmin.tableUpdated")]}>
       {state.data.subscriptions.map((item: PlatformSubscription) => <tr key={item._id}>
-        <td className={cell}><strong>{item.tenantId.name}</strong><p className="text-xs">{item.tenantId.slug}</p></td>
+        <td className={cell}>{item.tenantId ? <><strong>{item.tenantId.name}</strong><p className="text-xs">{item.tenantId.slug}</p></> : "—"}</td>
         <td className={cell}>{item.packageId.name}</td><td className={cell}>v{item.packageVersion}</td>
         <td className={cell}><StatusPill value={item.status} label={codeLabel(t, "superAdmin.subsStatus", item.status)} /></td><td className={cell}>{item.providerManaged ? t("superAdmin.subsOwnershipProvider") : t("superAdmin.subsOwnershipLocal")}</td>
         <td className={cell}>{item.version}</td><td className={cell}>{new Date(item.updatedAt).toLocaleDateString(intlLocale)}</td>

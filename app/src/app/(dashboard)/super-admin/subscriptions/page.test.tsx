@@ -198,4 +198,18 @@ describe("SubscriptionsPage", () => {
     await settle();
     expect(container.textContent).toContain("No subscriptions match these filters.");
   });
+
+  it("renders a dash for subscriptions whose tenant is missing", async () => {
+    const orphan = { ...subscription, _id: "sub-orphan", tenantId: null };
+    (listSubscriptions as Mock).mockResolvedValue({
+      success: true,
+      data: {
+        subscriptions: [subscription, orphan],
+        pagination: { page: 1, pageSize: 20, totalRecords: 2, totalPages: 1 },
+      },
+    });
+    const container = await renderPage();
+    expect(container.textContent).toContain("Acme Corp");
+    expect(container.textContent).toContain("—");
+  });
 });

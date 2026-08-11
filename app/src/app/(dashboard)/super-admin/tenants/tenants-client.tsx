@@ -191,6 +191,9 @@ export function TenantsClient() {
   const subscriptionByTenant = useMemo(() => {
     const map = new Map<string, PlatformSubscription>();
     for (const sub of subscriptions) {
+      // Legacy rows may carry a null/dangling tenantId; such orphans must not
+      // be attached to a tenant — the badge renderer shows "—" instead.
+      if (!sub.tenantId) continue;
       const tid =
         typeof sub.tenantId === "string" ? sub.tenantId : sub.tenantId._id;
       const existing = map.get(tid);

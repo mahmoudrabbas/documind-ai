@@ -288,6 +288,63 @@ test("combines status filter and tenant search", async () => {
   assert.equal(result.pagination.totalRecords, 1);
 });
 
+test("excludes subscriptions with a null or dangling tenantId and reports the filtered count", async () => {
+  // Isolate this case: replace the shared 5-row fixture with exactly one
+  // healthy subscription, one with `tenantId: null`, and one whose tenantId
+  // points at a deleted tenant (dangling ref). The newest `updatedAt` values
+  // belong to the bad rows so they would surface first without a filter.
+  await SubscriptionModel.deleteMany({});
+  const packageDoc = await PackageModel.findOne().lean().exec();
+  assert.ok(packageDoc, "seeded package is present");
+  const packageId = new mongoose.Types.ObjectId(packageDoc._id.toString());
+  const healthyTenantId = new mongoose.Types.ObjectId(tenantIds.get("acme") as string);
+  const danglingTenantId = new mongoose.Types.ObjectId("650000000000000000000000");
+
+  const baseDoc = {
+    packageId,
+    packageVersion: 1,
+    status: "ACTIVE" as const,
+    startedAt: new Date(PERIOD_START),
+    periodStart: new Date(PERIOD_START),
+    periodEnd: new Date(PERIOD_END),
+    revision: 1,
+    paymentState: "pending" as const,
+    provider: "",
+    providerCustomerId: "",
+    providerSubscriptionId: "",
+    providerPriceId: "",
+    providerMetadata: {},
+    adminOperations: [],
+  };
+
+  const inserted = await SubscriptionModel.collection.insertMany([
+    { ...baseDoc, tenantId: healthyTenantId, updatedAt: new Date("2026-08-11T00:00:00.000Z") },
+    { ...baseDoc, tenantId: null, updatedAt: new Date("2026-08-11T00:01:00.000Z") },
+    { ...baseDoc, tenantId: danglingTenantId, updatedAt: new Date("2026-08-11T00:02:00.000Z") },
+  ]);
+  assert.equal(inserted.insertedCount, 3, "fixture sanity: three rows are seeded");
+  assert.equal(
+    await SubscriptionModel.countDocuments({}),
+    3,
+    "fixture sanity: the raw collection holds three rows",
+  );
+
+  const result = await listSubscriptions({ page: 1, pageSize: 20 }, context);
+
+  assert.equal(result.subscriptions.length, 1, "only the healthy subscription is listed");
+  const listedTenant = (result.subscriptions[0] as {
+    tenantId: { _id: mongoose.Types.ObjectId };
+  }).tenantId;
+  assert.ok(listedTenant && typeof listedTenant === "object", "listed row carries a populated tenantId");
+  assert.equal(String(listedTenant._id), tenantIds.get("acme"));
+  assert.deepEqual(result.pagination, {
+    page: 1,
+    pageSize: 20,
+    totalRecords: 1,
+    totalPages: 1,
+  });
+});
+
 test("keeps the legacy subscription item shape after paging", async () => {
   const result = await listSubscriptions({ page: 1, pageSize: 20 }, context);
   const acme = result.subscriptions.find(

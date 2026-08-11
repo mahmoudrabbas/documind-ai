@@ -148,7 +148,7 @@ export interface PackageImpactPreview {
 
 export interface PlatformSubscription {
   _id: string;
-  tenantId: { _id: string; name: string; slug: string; status: string };
+  tenantId: { _id: string; name: string; slug: string; status: string } | null;
   packageId: {
     _id: string;
     name: string;
@@ -245,14 +245,14 @@ export interface PlatformUser {
   role: Role;
   status: string;
   emailVerified: boolean;
-  tenantId: { _id: string; name: string; slug: string };
+  tenantId: { _id: string; name: string; slug: string } | null;
   createdAt: string;
 }
 export interface PlatformJob {
   _id: string;
   fileName: string;
   status: string;
-  tenantId: { _id: string; name: string; slug: string };
+  tenantId: { _id: string; name: string; slug: string } | null;
   createdAt: string;
   updatedAt: string;
 }

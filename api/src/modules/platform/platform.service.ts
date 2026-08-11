@@ -380,7 +380,9 @@ export async function createSubscription(
  *
  * Mirrors {@link listPlatformUsers}/{@link listJobs}: accepts `page`/`pageSize`
  * plus optional free-text `search` (matches the tenant `name` or `slug`,
- * case-insensitively) and a lowercase `status` filter. Each page item keeps the
+ * case-insensitively) and a lowercase `status` filter. Rows whose `tenantId`
+ * is null/missing or points at a deleted tenant are excluded so the payload
+ * never carries an unpopulated `tenantId`. Each page item keeps the
  * exact shape the legacy bare-array endpoint returned: populated `tenantId` and
  * `packageId`, lowercase status, `version` from `revision`, provider-state
  * summary, and current period mapped from `periodStart`/`periodEnd`.
@@ -390,28 +392,26 @@ export async function listSubscriptions(
   context: OperationAuthorizationContext,
 ) {
   await authorizePlatformOperation(context, Permission.BILLING_READ);
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { tenantId: { $ne: null } };
   if (input.status) filter.status = input.status.toUpperCase();
-  if (input.search) {
-    const tenantIds = (
-      await TenantModel.find({
+  const tenantIdQuery = input.search
+    ? {
         $or: [
           { name: { $regex: input.search, $options: "i" } },
           { slug: { $regex: input.search, $options: "i" } },
         ],
-      })
-        .select("_id")
-        .lean()
-        .exec()
-    ).map((tenant) => tenant._id);
-    if (tenantIds.length === 0) {
-      return {
-        subscriptions: [],
-        pagination: { ...input, totalRecords: 0, totalPages: 0 },
-      };
-    }
-    filter.tenantId = { $in: tenantIds };
+      }
+    : {};
+  const tenantIds = (
+    await TenantModel.find(tenantIdQuery).select("_id").lean().exec()
+  ).map((tenant) => tenant._id);
+  if (tenantIds.length === 0) {
+    return {
+      subscriptions: [],
+      pagination: { ...input, totalRecords: 0, totalPages: 0 },
+    };
   }
+  filter.tenantId = { $ne: null, $in: tenantIds };
   const [subs, totalRecords] = await Promise.all([
     SubscriptionModel.find(filter)
       .sort({ updatedAt: -1 })
