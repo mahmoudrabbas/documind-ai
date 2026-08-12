@@ -2088,7 +2088,8 @@ test(
     assert.equal(intentStep?.output?.normalizedQuestion, knowledgeQuestion);
     assert.ok(graph.toolCalls.some((call) => call.toolName === "authorized_hybrid_search"));
     assert.ok(graph.toolCalls.some((call) => call.toolName === "evaluate_evidence"));
-    assert.equal(response.answer, COMPLIANCE_APPROVED_ANSWER);
+    assert.match(response.answer, /I'm DocuMind AI/);
+    assert.match(response.answer, /Simulated grounded answer\./);
     assert.equal(response.sources?.length, 1);
   },
 );

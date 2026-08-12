@@ -1291,6 +1291,15 @@ export class ChatWorkflowService {
     if (!artifacts.compliance || JSON.stringify(terminal) !== JSON.stringify(artifacts.compliance)) {
       return failClosed("Runtime output does not equal this run's Compliance authority");
     }
+    if (artifacts.intent?.route === "rag" && artifacts.intent.assistantKind) {
+      // Compose only after the original Compliance output has passed the
+      // run-authority equality check. The added identity text is deterministic
+      // and source-less; the RAG answer and its sources remain unchanged.
+      return ComplianceAgentOutputSchema.parse({
+        ...terminal,
+        answer: `${assistantReplyFor(artifacts.intent.language, artifacts.intent.assistantKind)}\n\n${terminal.answer}`,
+      });
+    }
     return terminal;
   }
 
