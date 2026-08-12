@@ -136,10 +136,13 @@ export class ItiBedrockChatAdapter implements AvailabilityProbeModelAdapter {
         content: m.content,
       })),
       temperature: params.temperature ?? 0.7,
-      top_p: params.topP,
       max_tokens: params.maxTokens,
       stream: false,
     };
+
+    if (params.topP !== undefined) {
+      request.top_p = params.topP;
+    }
 
     // The gateway reads tools/tool_choice when present. Forward the
     // provider-neutral schemas verbatim; a tool rejection surfaces as a

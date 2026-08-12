@@ -283,6 +283,7 @@ const ar: TranslationDictionary = {
   "billing.supportLevel.standard": "قياسي",
   "billing.supportLevel.priority": "ذو أولوية",
   "billing.supportLevel.dedicated": "مخصص",
+
   "landing.faqTitle": "الأسئلة الشائعة",
   "landing.faqSubtitle": "كل ما تحتاج معرفته عن DocuMind AI.",
   "landing.faq1Q": "كيف يعمل DocuMind AI؟",

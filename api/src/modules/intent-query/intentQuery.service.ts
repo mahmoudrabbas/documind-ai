@@ -28,9 +28,11 @@ import {
 import {
   extractNaturalDocumentTitleHints,
   resolveAuthorizedDocumentHints,
+  RETRIEVABLE_DOCUMENT_STATUSES,
 } from "./intentQuery.documentHints.js";
 import { validateAnalyzeQuery, validateAndNormalizeQueryPlan } from "./intentQuery.validator.js";
-import { INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION } from "./intentQuery.prompt.js";
+import { buildIntentSystemPrompt, INTENT_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT_AR, INTENT_PROMPT_VERSION, type DocumentManifestEntry } from "./intentQuery.prompt.js";
+import DocumentModel from "../../db/models/document.model.js";
 import type { ConversationContextPort } from "./ports/conversationContext.port.js";
 import type { ModelAdapter } from "../agents/agents.types.js";
 import { recordIntentQueryMetrics } from "./intentQuery.metrics.js";
@@ -57,6 +59,82 @@ export async function authorizeExplicitIntentDocuments(
     throw new AppError(400, "INTENT_QUERY_VALIDATION_ERROR", "Invalid document ID format");
   }
   await authorizer.authorizeDocumentsAction(context, [...new Set(documentIds)], "use_in_ai");
+}
+
+/**
+ * Loads a bounded, tenant-scoped manifest of retrievable documents
+ * (file name, title, aliases) so the intent router can recognize document
+ * references the user phrases in their own words. Only document identifiers
+ * are exposed — never content. Downstream document resolution still performs
+ * tenant + actor authorization before any document is referenced.
+ */
+async function loadTenantDocumentManifest(
+  tenantIdStr: string,
+): Promise<DocumentManifestEntry[]> {
+  try {
+    const docs = await DocumentModel.find({
+      tenantId: new mongoose.Types.ObjectId(tenantIdStr),
+      deletedAt: null,
+      isArchived: false,
+      status: { $in: RETRIEVABLE_DOCUMENT_STATUSES },
+    })
+      .select("_id fileName metadata.title metadata.aliases")
+      .sort({ createdAt: -1 })
+      .limit(150)
+      .lean()
+      .exec();
+
+    return docs.map((doc) => ({
+      fileName: doc.fileName ?? "",
+      title: (doc.metadata?.title as string | null) ?? null,
+      aliases: Array.isArray(doc.metadata?.aliases)
+        ? (doc.metadata.aliases as string[])
+        : [],
+    }));
+  } catch (err) {
+    logger.warn({ err, tenantId: tenantIdStr }, "Failed to load document manifest for intent analysis");
+    return [];
+  }
+}
+
+function normalizeManifestText(text: string): string {
+  return String(text ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Deterministic guard: did the user's question reference any known document
+ * identifier (file name, title, alias)? Used to rescue questions the router
+ * misclassifies as "unsupported" — if the user clearly pointed at a document,
+ * the query must reach retrieval.
+ */
+function matchesManifestQuestion(
+  question: string,
+  manifest: DocumentManifestEntry[],
+): boolean {
+  if (manifest.length === 0) return false;
+  const q = normalizeManifestText(question);
+  if (!q) return false;
+
+  for (const entry of manifest) {
+    const identifiers = [entry.fileName, entry.title, ...entry.aliases]
+      .filter((s): s is string => Boolean(s && s.trim()))
+      .map((s) => normalizeManifestText(s));
+    for (const identifier of identifiers) {
+      if (identifier.length < 3) continue;
+      if (q.includes(identifier)) return true;
+      const identifierWords = identifier.split(" ");
+      if (
+        identifierWords.length > 1 &&
+        identifierWords.every((w) => w.length >= 3 && q.includes(w))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export class IntentQueryService {
@@ -394,8 +472,10 @@ export class IntentQueryService {
 
     // 5. Load Conversation Context with strict tenant isolation
     const systemPrompt = (language === "ar" || language === "mixed") ? INTENT_SYSTEM_PROMPT_AR : INTENT_SYSTEM_PROMPT;
+    const tenantDocumentManifest = await loadTenantDocumentManifest(tenantIdStr);
+    const systemPromptWithManifest = buildIntentSystemPrompt(systemPrompt, tenantDocumentManifest);
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: systemPromptWithManifest },
     ];
     let conversationHistoryAvailable = false;
     let latestAssistantMessage = "";
@@ -1114,6 +1194,25 @@ export class IntentQueryService {
         messageEn: "I couldn't identify the exact document you're referring to. Could you clarify the document name?",
         messageAr: "لم أتمكن من تحديد الوثيقة المقصودة بدقة. هل يمكنك توضيح اسم الوثيقة؟",
       };
+    }
+
+    // 7d. The router may classify a document-referential question as
+    // "unsupported" when it cannot map the user's phrasing to a title. When
+    // the question deterministically references a document in the tenant
+    // manifest, rescue it to RAG so retrieval can answer from content.
+    if (
+      validatedPlan.detectedIntent === "unsupported" &&
+      !validatedPlan.processingMetadata.fallbackUsed &&
+      matchesManifestQuestion(input.question, tenantDocumentManifest)
+    ) {
+      validatedPlan.detectedIntent = "knowledge_question";
+      validatedPlan.route = "rag";
+      validatedPlan.clarificationNeeded = false;
+      validatedPlan.clarification = null;
+      validatedPlan.intentConfidence = Math.max(
+        validatedPlan.intentConfidence,
+        0.5,
+      );
     }
 
     // 8. Auditing

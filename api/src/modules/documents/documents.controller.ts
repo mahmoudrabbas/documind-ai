@@ -6,6 +6,8 @@ import {
 } from "../../providers/storage/index.js";
 import { LocalFileSignatureScanner } from "../../providers/security-scanner/index.js";
 import { StubProcessingDispatcher, RealProcessingDispatcher } from "../../providers/processing/index.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import { getEntitlementReservations } from "../entitlement/middlewares/entitlement.middleware.js";
 import { createDocumentServiceProviders } from "./documents.service.js";
 
 const service = createDocumentServiceProviders({
@@ -27,6 +29,73 @@ function handleDocumentError(error: unknown, res: Response, next: NextFunction) 
     return;
   }
   next(error);
+}
+
+/**
+ * Pipes a storage read stream to the response without letting a missing-file
+ * error crash the process. A stream from a storage provider (e.g. a local
+ * `createReadStream`) emits an asynchronous `error` event when the backing
+ * file is gone — with no listener that event is unhandled and kills the API.
+ * The stream errors before any data flows, so the response headers are not
+ * yet sent and a clean 404 can still be produced.
+ */
+function pipeFileStream(stream: import("node:stream").Readable, res: Response, next: NextFunction) {
+  stream.once("error", (error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      res.status(404).json({
+        success: false,
+        message: "Document file is missing from storage",
+        error: "DOCUMENT_FILE_NOT_FOUND",
+        details: null,
+      });
+      return;
+    }
+    res.destroy(error);
+    next(error);
+  });
+  stream.pipe(res);
+}
+
+/**
+ * Settle every quota reservation recorded by the entitlement reserve guards
+ * for this request. On success the reservations are committed (finalized);
+ * on failure they are released (refunded) so a failed upload no longer burns
+ * a permanent document/storage quota slot. Settlement failures are logged but
+ * never change the upload outcome.
+ */
+async function settleEntitlementReservations(
+  req: Request,
+  res: Response,
+  succeeded: boolean,
+): Promise<void> {
+  const reservations = getEntitlementReservations(res);
+  if (reservations.length === 0 || !req.tenantId) return;
+
+  const svc = getEntitlementService();
+  for (const reservation of reservations) {
+    try {
+      if (succeeded) {
+        await svc.commit(
+          req.tenantId,
+          reservation.dimension,
+          reservation.reservationId,
+        );
+      } else {
+        await svc.release(
+          req.tenantId,
+          reservation.dimension,
+          reservation.reservationId,
+        );
+      }
+    } catch (error) {
+      console.error("[documents-upload:entitlement-settlement]", {
+        dimension: reservation.dimension,
+        reservationId: reservation.reservationId,
+        succeeded,
+        error,
+      });
+    }
+  }
 }
 
 function requireAuthRole(req: Request) {
@@ -53,8 +122,12 @@ export async function uploadDocumentController(req: Request, res: Response, next
       req.tenantId,
       { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) },
     );
+    await settleEntitlementReservations(req, res, true);
     res.status(201).json({ success: true, message: "Document uploaded successfully", data: result });
-  } catch (error) { handleDocumentError(error, res, next); }
+  } catch (error) {
+    await settleEntitlementReservations(req, res, false);
+    handleDocumentError(error, res, next);
+  }
 }
 
 export async function uploadOptionsController(req: Request, res: Response, next: NextFunction) {
@@ -116,7 +189,7 @@ export async function downloadDocumentController(req: Request, res: Response, ne
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.setHeader("Pragma", "no-cache");
 
-    stream.pipe(res);
+    pipeFileStream(stream, res, next);
   } catch (error) { handleDocumentError(error, res, next); }
 }
 
@@ -137,7 +210,7 @@ export async function previewDocumentController(req: Request, res: Response, nex
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("Cache-Control", "private, max-age=3600");
 
-    stream.pipe(res);
+    pipeFileStream(stream, res, next);
   } catch (error) { handleDocumentError(error, res, next); }
 }
 
@@ -156,8 +229,12 @@ export async function replaceDocumentController(req: Request, res: Response, nex
       req.tenantId,
       { userId: req.auth.userId, email: req.auth.email, role: requireAuthRole(req) },
     );
+    await settleEntitlementReservations(req, res, true);
     res.status(200).json({ success: true, message: "Document replaced successfully", data: result });
-  } catch (error) { handleDocumentError(error, res, next); }
+  } catch (error) {
+    await settleEntitlementReservations(req, res, false);
+    handleDocumentError(error, res, next);
+  }
 }
 
 export async function archiveDocumentController(req: Request, res: Response, next: NextFunction) {

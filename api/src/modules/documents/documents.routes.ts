@@ -5,7 +5,7 @@ import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
-import { createEntitlementGuard, createEntitlementCheckGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { createEntitlementCheckGuard, createEntitlementReserveGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadDocumentController,
@@ -44,13 +44,13 @@ const requirePolicyManagement = requirePermission(Permission.DOCUMENTS_MANAGE_AC
 
 const svc = getEntitlementService();
 
-const documentCountGuard = createEntitlementGuard(svc, {
+const documentCountGuard = createEntitlementReserveGuard(svc, {
   dimension: "documents",
   amount: 1,
   failMode: "fail-closed",
 });
 
-const storageMbGuard = createEntitlementGuard(svc, {
+const storageMbGuard = createEntitlementReserveGuard(svc, {
   dimension: "storageMb",
   amount: (req) => Math.ceil((req.file?.size || 0) / (1024 * 1024)),
   failMode: "fail-closed",

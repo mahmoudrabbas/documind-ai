@@ -68,9 +68,12 @@ export class GroqChatAdapter implements AvailabilityProbeModelAdapter {
         content: m.content,
       })),
       temperature: params.temperature ?? 0.7,
-      top_p: params.topP,
       max_tokens: params.maxTokens,
     };
+
+    if (params.topP !== undefined) {
+      requestParams.top_p = params.topP;
+    }
 
     // Map the provider-neutral structured-output request to Groq's native
     // OpenAI-compatible JSON mode. JSON mode guarantees a syntactically valid

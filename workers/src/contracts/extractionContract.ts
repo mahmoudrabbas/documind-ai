@@ -42,7 +42,7 @@ export interface ExtractionLimits {
 }
 
 export const DEFAULT_EXTRACTION_LIMITS: ExtractionLimits = {
-  maxPages: 500,
+  maxPages: 2000,
   maxCharacters: 2_000_000,
   maxParsingTimeMs: 30_000,
   maxFileSizeBytes: 100 * 1024 * 1024, // 100 MB

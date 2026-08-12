@@ -1096,4 +1096,52 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.equal(plan.clarificationNeeded, true);
     assert.ok(!plan.referencedDocumentIds.includes(foreignDoc.id));
   });
+
+  await t.test("router-reported unsupported is rescued to RAG when the question references a manifest document", async () => {
+    const doc = await createTestDocWithPolicy(
+      tenantId, actorId, "gold-report.pdf",
+      ["discover", "read", "download", "use_in_ai"],
+    );
+    await DocumentModel.updateOne(
+      { _id: doc._id },
+      {
+        $set: {
+          "metadata.title": "Gold Report",
+          "metadata.aliases": ["تقرير الذهب"],
+        },
+      },
+    );
+
+    const unsupportedService = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      fakeConvoAdapter,
+    );
+
+    const plan = await unsupportedService.analyzeQuery(
+      { question: "أخبرني عن تقرير الذهب" },
+      companyAdminContext,
+    );
+
+    assert.equal(plan.detectedIntent, "knowledge_question");
+    assert.equal(plan.route, "rag");
+    assert.equal(plan.clarificationNeeded, false);
+    assert.equal(plan.clarification, null);
+    assert.ok(plan.intentConfidence >= 0.5, "confidence lifted out of the clarification band");
+  });
+
+  await t.test("unsupported without any manifest reference stays unsupported", async () => {
+    const unsupportedService = new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      fakeConvoAdapter,
+    );
+
+    const plan = await unsupportedService.analyzeQuery(
+      { question: "tell me about quantum mechanics" },
+      companyAdminContext,
+    );
+
+    assert.equal(plan.route, "unsupported");
+    assert.equal(plan.detectedIntent, "unsupported");
+    assert.equal(plan.clarificationNeeded, true);
+  });
 });

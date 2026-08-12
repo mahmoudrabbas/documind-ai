@@ -297,8 +297,16 @@ export class ReconciliationService {
       }
 
       case "ocrPagesPerMonth": {
+        // Auto-OCR (image-only documents ingested through the pipeline) is
+        // billed separately from the paid OCR entitlement, so it is excluded
+        // from the authoritative count. Records without a source field are
+        // legacy manual OCR records and are still counted.
         const ocrFilter: Record<string, unknown> = {
           tenantId: tenantObjectId,
+          $or: [
+            { source: { $ne: "auto" } },
+            { source: { $exists: false } },
+          ],
         };
         this.applyPeriodFilter(ocrFilter, periodStart, periodEnd);
         return OcrUsageRecordModel.countDocuments(ocrFilter);

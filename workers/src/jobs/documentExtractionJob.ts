@@ -11,12 +11,42 @@ import { reportProgressToProcessingRun } from "./progressReporter.js";
 import { withProcessingFailedOutbox } from "./processingFailedNotifier.js";
 import { withProcessingCompleteOutbox } from "./processingCompleteNotifier.js";
 import { storageProvider } from "../providers/storage/index.js";
+import type { ExtractionPage } from "../contracts/extractionContract.js";
 
 const PayloadSchema = z.object({
   documentId: z.string(),
   tenantId: z.string(),
   documentVersion: z.number().int().positive(),
 });
+
+/**
+ * Minimum number of characters a page must contain before we consider the
+ * text parser successful. Pages below this threshold are treated as
+ * image-only and routed to OCR (matches the PdfParser heuristic).
+ */
+const OCR_MIN_TEXT_CHARS = 20;
+
+function pageTextCharacterCount(page: ExtractionPage): number {
+  return page.blocks.reduce(
+    (sum, block) => sum + block.text.trim().length,
+    0,
+  );
+}
+
+/**
+ * Resolve the page numbers that need OCR. Returns `undefined` when the whole
+ * document has no extractable pages (the OCR job then OCRs every page it can
+ * detect), or the list of low-text page numbers otherwise.
+ */
+function resolveOcrPageNumbers(pages: ExtractionPage[]): number[] | undefined {
+  if (pages.length === 0) return undefined;
+  const lowTextPages = pages.filter(
+    (page) => pageTextCharacterCount(page) < OCR_MIN_TEXT_CHARS,
+  );
+  return lowTextPages.length > 0
+    ? lowTextPages.map((page) => page.pageNumber)
+    : undefined;
+}
 
 type DocumentExtractionPayload = z.infer<typeof PayloadSchema>;
 
@@ -74,16 +104,22 @@ export function createDocumentExtractionJobHandler(
 
       if (existingArtifact && existingArtifact.status === "completed" && existingArtifact.sourceChecksum === version.checksum) {
         ctx.progress("Extraction artifact is already completed; skipping reprocessing.");
-        
-        // Ensure document status is updated to processed if it's currently processing or uploaded
+
+        // Image-only artifacts need OCR before they can be chunked and embedded.
+        const artifactMetadata = (existingArtifact.metadata as Record<string, unknown>) ?? {};
+        const ocrNeeded =
+          artifactMetadata.hasImageOnlyPages === true ||
+          (existingArtifact.pages as unknown[] | undefined)?.length === 0;
+
+        // Ensure document status is updated if it's currently processing or uploaded
         if (document.status === "uploaded" || document.status === "processing") {
           await db.collection("documents").updateOne(
             { _id: documentId },
-            { $set: { status: "processed" } }
+            { $set: { status: ocrNeeded ? "processing" : "processed" } }
           );
         }
 
-        // Auto-trigger chunking if no active generation exists
+        // Auto-trigger the next pipeline stage if no active generation exists
         const existingGen = await db.collection("indexgenerations")
           .findOne({ tenantId, documentId, status: { $in: ["BUILDING", "VERIFYING", "VERIFIED", "ACTIVE"] } });
         if (!existingGen) {
@@ -125,31 +161,55 @@ export function createDocumentExtractionJobHandler(
               { _id: documentId },
               { $set: { searchStatus: "INDEXING" } },
             );
-            await ctx.enqueue({
-              jobType: "document.chunk",
-              tenantId: payload.tenantId,
-              actorId: "system",
-              traceId: ctx.traceId,
-              idempotencyKey: `${payload.documentId}-${payload.documentVersion}-chunk-${generationId.toString()}`,
-              payload: {
-                documentId: payload.documentId,
+            if (ocrNeeded) {
+              const ocrPageNumbers = resolveOcrPageNumbers(
+                existingArtifact.pages as ExtractionPage[],
+              );
+              await ctx.enqueue({
+                jobType: "document.ocr",
                 tenantId: payload.tenantId,
-                documentVersion: payload.documentVersion,
-                generationId: generationId.toString(),
-                department: document.department ?? null,
-                category: document.category ?? null,
-                classification: document.classification ?? null,
-                chunkingConfig: {
-                  targetTokens: 400,
-                  hardCeiling: 800,
-                  overlap: 50,
-                  tokenizerVersion: "cl100k_base",
+                actorId: "system",
+                traceId: ctx.traceId,
+                idempotencyKey: `${payload.documentId}-${payload.documentVersion}-ocr-${generationId.toString()}`,
+                payload: {
+                  documentId: payload.documentId,
+                  tenantId: payload.tenantId,
+                  documentVersion: payload.documentVersion,
+                  language: "ar+en",
+                  pageNumbers: ocrPageNumbers,
+                  generationId: generationId.toString(),
+                  department: document.department ?? null,
+                  classification: document.classification ?? null,
                 },
-              },
-            });
-            ctx.progress("Auto-triggered chunking pipeline after extraction.");
+              });
+              ctx.progress("Auto-triggered OCR pipeline after extraction.");
+            } else {
+              await ctx.enqueue({
+                jobType: "document.chunk",
+                tenantId: payload.tenantId,
+                actorId: "system",
+                traceId: ctx.traceId,
+                idempotencyKey: `${payload.documentId}-${payload.documentVersion}-chunk-${generationId.toString()}`,
+                payload: {
+                  documentId: payload.documentId,
+                  tenantId: payload.tenantId,
+                  documentVersion: payload.documentVersion,
+                  generationId: generationId.toString(),
+                  department: document.department ?? null,
+                  category: document.category ?? null,
+                  classification: document.classification ?? null,
+                  chunkingConfig: {
+                    targetTokens: 400,
+                    hardCeiling: 800,
+                    overlap: 50,
+                    tokenizerVersion: "cl100k_base",
+                  },
+                },
+              });
+              ctx.progress("Auto-triggered chunking pipeline after extraction.");
+            }
         } catch (err) {
-          ctx.progress(`Failed to auto-trigger chunking: ${err instanceof Error ? err.message : String(err)}`);
+          ctx.progress(`Failed to auto-trigger ${ocrNeeded ? "OCR" : "chunking"}: ${err instanceof Error ? err.message : String(err)}`);
         }
         }
 
@@ -283,9 +343,18 @@ export function createDocumentExtractionJobHandler(
           }
         );
 
+        // Image-only documents (scanned books) have no extractable text. They
+        // need OCR before chunking so the recognised text can be embedded.
+        const ocrNeeded =
+          result.metadata.hasImageOnlyPages === true || result.pages.length === 0;
+        const ocrPageNumbers = resolveOcrPageNumbers(result.pages);
+
+        // Keep the document in "processing" until OCR has run; only settle on
+        // "processed" once the whole pipeline (extraction → OCR → chunk →
+        // embed → index) has completed.
         await db.collection("documents").updateOne(
           { _id: documentId },
-          { $set: { status: "processed" } }
+          { $set: { status: ocrNeeded ? "processing" : "processed" } }
         );
 
         await reportProgressToProcessingRun({
@@ -297,8 +366,14 @@ export function createDocumentExtractionJobHandler(
           progress: 100,
         });
 
-        // Skip intermediate stages that aren't used in the basic pipeline
-        for (const skipStage of ["ocr", "quality_review", "metadata_review"]) {
+        // Skip intermediate stages that aren't used in the basic pipeline.
+        // The OCR stage stays pending for image-only documents so the OCR job
+        // can report its progress.
+        const skipStages = ["quality_review", "metadata_review"];
+        if (!ocrNeeded) {
+          skipStages.push("ocr");
+        }
+        for (const skipStage of skipStages) {
           await reportProgressToProcessingRun({
             tenantId: payload.tenantId,
             documentId: payload.documentId,
@@ -311,7 +386,8 @@ export function createDocumentExtractionJobHandler(
 
         ctx.progress(`Extraction completed successfully in ${durationMs}ms.`);
 
-        // Auto-trigger chunking pipeline after extraction
+        // Auto-trigger the next pipeline stage after extraction: OCR for
+        // image-only documents, chunking otherwise.
         try {
           const tenantObjectId = new ObjectId(payload.tenantId);
 
@@ -358,33 +434,53 @@ export function createDocumentExtractionJobHandler(
             { $set: { searchStatus: "INDEXING" } },
           );
 
-          // Enqueue chunk job to start the pipeline
-          await ctx.enqueue({
-            jobType: "document.chunk",
-            tenantId: payload.tenantId,
-            actorId: "system",
-            traceId: ctx.traceId,
-            idempotencyKey: `${payload.documentId}-${payload.documentVersion}-chunk-${generationId.toString()}`,
-            payload: {
-              documentId: payload.documentId,
+          if (ocrNeeded) {
+            await ctx.enqueue({
+              jobType: "document.ocr",
               tenantId: payload.tenantId,
-              documentVersion: payload.documentVersion,
-              generationId: generationId.toString(),
-              department: document.department ?? null,
-              category: document.category ?? null,
-              classification: document.classification ?? null,
-              chunkingConfig: {
-                targetTokens: 400,
-                hardCeiling: 800,
-                overlap: 50,
-                tokenizerVersion: "cl100k_base",
+              actorId: "system",
+              traceId: ctx.traceId,
+              idempotencyKey: `${payload.documentId}-${payload.documentVersion}-ocr-${generationId.toString()}`,
+              payload: {
+                documentId: payload.documentId,
+                tenantId: payload.tenantId,
+                documentVersion: payload.documentVersion,
+                language: "ar+en",
+                pageNumbers: ocrPageNumbers,
+                generationId: generationId.toString(),
+                department: document.department ?? null,
+                classification: document.classification ?? null,
               },
-            },
-          });
-
-          ctx.progress("Auto-triggered chunking pipeline after extraction.");
+            });
+            ctx.progress("Auto-triggered OCR pipeline after extraction.");
+          } else {
+            // Enqueue chunk job to start the pipeline
+            await ctx.enqueue({
+              jobType: "document.chunk",
+              tenantId: payload.tenantId,
+              actorId: "system",
+              traceId: ctx.traceId,
+              idempotencyKey: `${payload.documentId}-${payload.documentVersion}-chunk-${generationId.toString()}`,
+              payload: {
+                documentId: payload.documentId,
+                tenantId: payload.tenantId,
+                documentVersion: payload.documentVersion,
+                generationId: generationId.toString(),
+                department: document.department ?? null,
+                category: document.category ?? null,
+                classification: document.classification ?? null,
+                chunkingConfig: {
+                  targetTokens: 400,
+                  hardCeiling: 800,
+                  overlap: 50,
+                  tokenizerVersion: "cl100k_base",
+                },
+              },
+            });
+            ctx.progress("Auto-triggered chunking pipeline after extraction.");
+          }
         } catch (err) {
-          ctx.progress(`Failed to auto-trigger chunking: ${err instanceof Error ? err.message : String(err)}`);
+          ctx.progress(`Failed to auto-trigger ${ocrNeeded ? "OCR" : "chunking"} pipeline: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         return { summary: { success: true, pages: result.pages.length, characters: result.metadata.totalCharacters } };

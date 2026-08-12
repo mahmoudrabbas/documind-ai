@@ -372,6 +372,48 @@ async function resolveQueryEmbedding(
   return result.vectors[0];
 }
 
+async function resolveQueryEmbeddings(
+  deps: RetrievalServiceDeps,
+  query: RetrievalQuery,
+  semanticTexts: string[],
+): Promise<number[][]> {
+  if (query.queryVector !== undefined) {
+    return [query.queryVector];
+  }
+  const result = await deps.embeddingAdapter.embed({ inputs: semanticTexts });
+  return result.vectors;
+}
+
+const MAX_QUERY_VARIANTS = 3;
+
+function uniqueTexts(texts: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const text of texts) {
+    const trimmed = text.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+    if (result.length >= MAX_QUERY_VARIANTS) break;
+  }
+  return result;
+}
+
+function mergeVariantResults(
+  lists: { chunkId: string; score: number }[][],
+): { chunkId: string; score: number }[] {
+  const bestScores = new Map<string, number>();
+  for (const list of lists) {
+    for (const item of list) {
+      const current = bestScores.get(item.chunkId);
+      if (current === undefined || item.score > current) {
+        bestScores.set(item.chunkId, item.score);
+      }
+    }
+  }
+  return [...bestScores.entries()].map(([chunkId, score]) => ({ chunkId, score }));
+}
+
 // ---------------------------------------------------------------------------
 // Filter compilation helper
 // ---------------------------------------------------------------------------
@@ -468,23 +510,48 @@ export function createRetrievalService(
 
       validateQuery(query);
       const authorizationContext = await resolveAuthorizationContext(deps, context);
-      const vector = await resolveQueryEmbedding(deps, query);
+      const semanticTexts = uniqueTexts([
+        query.queryText,
+        ...(query.queryVariants ?? []),
+      ]);
+      const keywordTexts = uniqueTexts([
+        query.queryText,
+        ...(query.keywordTexts ?? []),
+      ]);
+      const vectors = await resolveQueryEmbeddings(deps, query, semanticTexts);
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
-      // Run vector + keyword search in parallel with individual timing
+      // Run vector + keyword searches (one per query variant) in parallel
+      // with individual timing; per-chunk best score wins across variants.
       const vectorStartTime = Date.now();
-      const vectorPromise = deps.vectorAdapter
-        .search({ vector, topK: query.topK, filter: merged })
-        .then((results) => ({ results, latencyMs: Date.now() - vectorStartTime }));
+      const vectorPromise = Promise.all(
+        vectors.map((vector) =>
+          deps.vectorAdapter.search({
+            vector,
+            topK: query.topK,
+            filter: merged,
+          }),
+        ),
+      )
+        .then((results) => ({
+          results: mergeVariantResults(results),
+          latencyMs: Date.now() - vectorStartTime,
+        }));
 
       const keywordStartTime = Date.now();
-      const keywordPromise = deps.keywordAdapter
-        .search({
-          queryText: query.queryText,
-          topK: query.topK,
-          filter: merged,
-        })
-        .then((results) => ({ results, latencyMs: Date.now() - keywordStartTime }));
+      const keywordPromise = Promise.all(
+        keywordTexts.map((text) =>
+          deps.keywordAdapter.search({
+            queryText: text,
+            topK: query.topK,
+            filter: merged,
+          }),
+        ),
+      )
+        .then((results) => ({
+          results: mergeVariantResults(results),
+          latencyMs: Date.now() - keywordStartTime,
+        }));
 
       const [vectorSettled, keywordSettled] = await Promise.allSettled([
         vectorPromise,
