@@ -114,6 +114,7 @@ interface HarnessOptions {
   intentSemanticQuery?: string;
   intentIsFollowUp?: boolean;
   conversationContextUsed?: boolean;
+  mixedAssistantKind?: "identity" | "capabilities";
   analyticsResult?: unknown;
   persistedActor?: Partial<{
     tenantId: string;
@@ -133,6 +134,7 @@ function intentOutput(
   semanticQuery = "trusted semantic query",
   isFollowUp = false,
   conversationContextUsed = false,
+  mixedAssistantKind: "identity" | "capabilities" | null = null,
 ): Record<string, unknown> {
   const intentRoute = ["analytics", "grounded", "insufficient", "weak"].includes(route)
     ? "rag"
@@ -147,7 +149,7 @@ function intentOutput(
     intent: assistantKind
       ? route
       : intentRoute === "social" ? "social" : "knowledge_question",
-    assistantKind,
+    assistantKind: mixedAssistantKind ?? assistantKind,
     intentConfidence: 0.99,
     referencedDocumentIds,
     clarificationNeeded: intentRoute === "clarification",
@@ -286,6 +288,7 @@ function makeHarness(options: HarnessOptions = {}) {
           options.intentSemanticQuery,
           options.intentIsFollowUp,
           options.conversationContextUsed,
+          options.mixedAssistantKind,
         ),
       };
 
@@ -1424,6 +1427,22 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(capabilitiesResponse.sources).toEqual([]);
     expect(capabilities.observations.tools).toEqual([]);
     expect(capabilities.observations.complianceInput).toBeUndefined();
+  });
+
+  it.each([
+    ["Who are you and what is the P1 response time?", "en", "I'm DocuMind AI", "P1 response is 15 minutes."],
+    ["انت مين وقولي كمان امتى لازم Purchase Order؟", "ar", "أنا DocuMind AI", "Purchase Orders above USD 1,000 are required."],
+  ] as const)("composes mixed identity and knowledge output for %s", async (question, language, identityText, knowledgeText) => {
+    const harness = makeHarness({
+      scenario: "grounded",
+      intentLanguage: language,
+      mixedAssistantKind: "identity",
+      complianceAnswer: knowledgeText,
+    });
+    const response = await executeHarness(harness, question);
+    expect(response.answer).toContain(identityText);
+    expect(response.answer).toContain(knowledgeText);
+    expect(response.sources?.length).toBeGreaterThan(0);
   });
 
   it("routes analytics through one controlled tool and deterministic formatter", async () => {
