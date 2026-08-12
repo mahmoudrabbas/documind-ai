@@ -22,6 +22,7 @@ import { NOT_FOUND } from "../../common/errors/errorCodes.js";
 
 export interface ReconciliationResult {
   totalSubscriptions: number;
+  skippedNullTenant: number;
   mismatched: Array<{
     tenantId: string;
     localStatus: string;
@@ -39,8 +40,13 @@ export async function reconcileSubscriptions(
   );
   const subscriptions = await SubscriptionModel.find({}).lean().exec();
   const mismatched: ReconciliationResult["mismatched"] = [];
+  let skippedNullTenant = 0;
 
   for (const sub of subscriptions) {
+    if (!sub.tenantId) {
+      skippedNullTenant++;
+      continue;
+    }
     const issues: string[] = [];
     const tenantId = String(sub.tenantId);
 
@@ -103,6 +109,7 @@ export async function reconcileSubscriptions(
 
   return {
     totalSubscriptions: subscriptions.length,
+    skippedNullTenant,
     mismatched,
   };
 }

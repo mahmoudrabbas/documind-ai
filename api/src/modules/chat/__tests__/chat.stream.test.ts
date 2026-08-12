@@ -1,7 +1,12 @@
 import express, { type RequestHandler } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "../../../common/errors/AppError.js";
-import { ENTITLEMENT_EXCEEDED } from "../../../common/errors/errorCodes.js";
+import {
+  ENTITLEMENT_EXCEEDED,
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_RATE_LIMITED,
+  LLM_TIMEOUT,
+} from "../../../common/errors/errorCodes.js";
 import { errorHandlerMiddleware } from "../../../common/middlewares/errorHandler.middleware.js";
 import type { ModelAdapter } from "../../agents/agents.types.js";
 import type { HybridRetrievalService } from "../../retrieval/retrieval.service.js";
@@ -223,7 +228,7 @@ describe("POST /chat/send/stream SSE progress", () => {
     const workflowExecute = vi.fn(
       async (_raw: unknown, context: { onStage?: (stage: string) => void }) => {
         context.onStage?.("intent");
-        throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Controlled chat workflow failed");
+        throw new AppError(502, "CHAT_WORKFLOW_FAILED", "internal provider chain org_123");
       },
     );
     const { port } = await startApp(workflowExecute);
@@ -240,11 +245,56 @@ describe("POST /chat/send/stream SSE progress", () => {
     expect(errorFrames).toHaveLength(1);
     expect(errorFrames[0]!.data).toEqual({
       success: false,
-      error: "CHAT_WORKFLOW_FAILED",
-      message: "Controlled chat workflow failed",
+      error: "CHAT_STREAM_FAILED",
+      message: "Failed to get a response. Please try again.",
       statusCode: 502,
     });
+    expect(JSON.stringify(errorFrames[0]!.data)).not.toContain("org_123");
     expect(frames.some((frame) => frame.event === "done")).toBe(false);
+  });
+
+  it.each([
+    [
+      LLM_RATE_LIMITED,
+      429,
+      "The AI service is temporarily rate-limited. Please try again shortly.",
+    ],
+    [
+      LLM_PROVIDER_UNAVAILABLE,
+      503,
+      "The AI service is temporarily unavailable. Please try again shortly.",
+    ],
+    [
+      LLM_TIMEOUT,
+      503,
+      "The AI service took too long to respond. Please try again.",
+    ],
+  ])("emits safe public SSE error details for %s", async (code, statusCode, message) => {
+    const workflowExecute = vi.fn(
+      async (_raw: unknown, context: { onStage?: (stage: string) => void }) => {
+        context.onStage?.("intent");
+        throw new AppError(statusCode, code, "raw provider body org_123 api-key sk-test");
+      },
+    );
+    const { port } = await startApp(workflowExecute);
+
+    const response = await fetch(`http://127.0.0.1:${port}/chat/send/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "What is the leave policy?" }),
+    });
+
+    expect(response.status).toBe(200);
+    const frames = parseFrames(await response.text());
+    const errorFrames = frames.filter((frame) => frame.event === "error");
+    expect(errorFrames).toHaveLength(1);
+    expect(errorFrames[0]!.data).toEqual({
+      success: false,
+      error: code,
+      message,
+      statusCode,
+    });
+    expect(JSON.stringify(errorFrames[0]!.data)).not.toContain("org_123");
   });
 
   it("keeps pre-handler entitlement denials as plain JSON responses", async () => {

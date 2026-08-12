@@ -3,7 +3,12 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
+import {
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_RATE_LIMITED,
+  LLM_TIMEOUT,
+  VALIDATION_ERROR,
+} from "../../common/errors/errorCodes.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import DocumentModel from "../../db/models/document.model.js";
@@ -67,10 +72,32 @@ import * as chatRepo from "./chat.repository.js";
 
 const WORKFLOW_ID = "chat-rag-v1" as const;
 const DEFAULT_MAX_TOKENS = 1024;
-const DIRECT_TOP_K = 5;
-const SUMMARY_TOP_K = 12;
+export const CHAT_DIRECT_RETRIEVAL_TOP_K = 5;
+export const CHAT_SUMMARIZATION_RETRIEVAL_TOP_K = 12;
 const SUMMARY_MAX_TOKENS = 2048;
 const MAX_SEARCH_QUERY_CHARS = 2_000;
+
+const SAFE_RUNTIME_PROVIDER_ERRORS = {
+  [LLM_RATE_LIMITED]: {
+    statusCode: 429,
+    message: "The AI service is temporarily rate-limited. Please try again shortly.",
+  },
+  [LLM_PROVIDER_UNAVAILABLE]: {
+    statusCode: 503,
+    message: "The AI service is temporarily unavailable. Please try again shortly.",
+  },
+  [LLM_TIMEOUT]: {
+    statusCode: 503,
+    message: "The AI service took too long to respond. Please try again.",
+  },
+} as const;
+
+function safeRuntimeProviderError(code: unknown): AppError | null {
+  if (typeof code !== "string") return null;
+  const safe = SAFE_RUNTIME_PROVIDER_ERRORS[code as keyof typeof SAFE_RUNTIME_PROVIDER_ERRORS];
+  if (!safe) return null;
+  return new AppError(safe.statusCode, code, safe.message);
+}
 
 /**
  * For Arabic questions, prioritize one validated English semantic expansion
@@ -222,6 +249,8 @@ export interface ChatWorkflowServiceDependencies {
     modelProvider: string;
     modelName: string;
   };
+  /** Optional in-process observation seam used by isolated evaluation runs. */
+  readonly onExecutionArtifacts?: (artifacts: ChatWorkflowExecutionArtifacts) => void;
 }
 
 export type ChatStageId =
@@ -246,6 +275,7 @@ interface CatalogCandidate {
   readonly score: number;
   readonly pageNumber?: number;
   readonly sectionTitle?: string;
+  readonly retrievalMethod?: string;
 }
 
 interface SearchBatch {
@@ -267,10 +297,40 @@ interface ChatRunArtifacts {
   activeSearchBatch: SearchBatch | null;
   evidenceSearchBatch: SearchBatch | null;
   evidenceEvaluated: boolean;
+  evidenceSufficiency: "SUFFICIENT" | "WEAK" | "NO_EVIDENCE" | "CONFLICTING" | null;
   approvedEvidenceIds: string[];
+  rejectedEvidenceIds: string[];
+  evidenceReasonCode: string | null;
   analyticsRequest: ChatAnalyticsRequest | null;
   analyticsOutput: unknown;
   complianceRequested: boolean;
+}
+
+export interface ChatWorkflowRankedCandidateArtifact {
+  readonly rank: number;
+  readonly chunkId: string;
+  readonly documentId: string;
+  readonly score: number;
+  readonly retrievalMethod?: string;
+}
+
+/** Sanitized evaluation observer DTO: no prompts, answer bodies, claims, or evidence text. */
+export interface ChatWorkflowExecutionArtifacts {
+  readonly intent: Pick<IntentAgentOutput, "route" | "intent" | "reasonCode"> | null;
+  readonly compliance: Pick<ComplianceAgentOutput, "action" | "reasonCode"> | null;
+  readonly retrievalCandidates: readonly ChatWorkflowRankedCandidateArtifact[];
+  readonly evidenceSelectedCandidates: readonly ChatWorkflowRankedCandidateArtifact[];
+  readonly evidenceSufficiency: ChatRunArtifacts["evidenceSufficiency"];
+  readonly approvedEvidenceIds: readonly string[];
+  readonly rejectedEvidenceIds: readonly string[];
+  readonly evidenceReasonCode: string | null;
+  readonly finalSourceChunkIds: readonly string[];
+  readonly finalSourceDocumentIds: readonly string[];
+  readonly finalSourceAuthorizationPassed: boolean;
+  readonly runtime: Pick<
+    SupervisorRunResult,
+    "totalTokensUsed" | "estimatedCost" | "latencyMs"
+  >;
 }
 
 function idOf(record: StoredRecord): string {
@@ -349,6 +409,8 @@ function capturePendingAgent(
         "validatedCitationIds",
         "rejectedCitationIds",
         "unsupportedClaims",
+        "unknownClaims",
+        "verifiedAnswer",
         "reasonCode",
       ]),
     );
@@ -397,7 +459,10 @@ function createChatRuntimePolicy(input: {
     activeSearchBatch: null,
     evidenceSearchBatch: null,
     evidenceEvaluated: false,
+    evidenceSufficiency: null,
     approvedEvidenceIds: [],
+    rejectedEvidenceIds: [],
+    evidenceReasonCode: null,
     analyticsRequest: null,
     analyticsOutput: undefined,
     complianceRequested: false,
@@ -715,6 +780,9 @@ function createChatRuntimePolicy(input: {
               validatedCitationIds: [...verifier.validatedCitationIds],
               reasonCode: verifier.reasonCode,
             };
+            if (verifier.verified) {
+              answer = verifier.verifiedAnswer ?? failClosed("Verified citations require the final verified answer");
+            }
           }
         }
 
@@ -785,7 +853,9 @@ function createChatRuntimePolicy(input: {
         emitStage("search");
         return {
           queryText,
-          topK: task === "document_summary" ? SUMMARY_TOP_K : DIRECT_TOP_K,
+          topK: task === "document_summary"
+            ? CHAT_SUMMARIZATION_RETRIEVAL_TOP_K
+            : CHAT_DIRECT_RETRIEVAL_TOP_K,
           ...(documentIds.length > 0 ? { documentIds } : {}),
         };
       }
@@ -847,6 +917,9 @@ function createChatRuntimePolicy(input: {
           failClosed("Approved evidence exceeds this run's evaluated candidate set");
         }
         artifacts.approvedEvidenceIds = [...output.approvedEvidenceIds];
+        artifacts.rejectedEvidenceIds = [...output.rejectedEvidenceIds];
+        artifacts.evidenceSufficiency = output.sufficiency;
+        artifacts.evidenceReasonCode = output.reasonCode;
         artifacts.evidenceEvaluated = true;
         return;
       }
@@ -1021,15 +1094,25 @@ export class ChatWorkflowService {
     );
 
     if (runtimeResult.status !== "completed" || !runtimeResult.output) {
+      const providerError = safeRuntimeProviderError(runtimeResult.error?.code);
+      if (providerError) throw providerError;
       throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Controlled chat workflow failed");
     }
     const terminal = this.validateTerminal(runtimeResult.output, artifacts);
-    const { persisted, response } = await this.materializeSources(
-      terminal,
-      artifacts,
-      tenantId,
-      actorId,
-    );
+    let materialized: { persisted: MessageSource[]; response: ChatSource[] };
+    try {
+      materialized = await this.materializeSources(
+        terminal,
+        artifacts,
+        tenantId,
+        actorId,
+      );
+    } catch (error) {
+      this.observeExecution(artifacts, terminal, runtimeResult, [], false);
+      throw error;
+    }
+    const { persisted, response } = materialized;
+    this.observeExecution(artifacts, terminal, runtimeResult, response, true);
     const assistant = await this.deps.repository.addMessage(
       tenantId,
       conversationId,
@@ -1089,6 +1172,67 @@ export class ChatWorkflowService {
           : settings.citationsEnabled ? response : undefined,
       conversationId,
     };
+  }
+
+  private observeExecution(
+    artifacts: ChatRunArtifacts,
+    terminal: TrustedTerminal,
+    runtime: SupervisorRunResult,
+    sources: readonly ChatSource[],
+    finalSourceAuthorizationPassed: boolean,
+  ): void {
+    const batch = artifacts.evidenceSearchBatch ?? artifacts.activeSearchBatch;
+    const retrievalCandidates = batch
+      ? [...batch.candidates.values()].map((candidate, index) => ({
+          rank: index + 1,
+          chunkId: candidate.chunkId,
+          documentId: candidate.documentId,
+          score: candidate.score,
+          ...(candidate.retrievalMethod
+            ? { retrievalMethod: candidate.retrievalMethod }
+            : {}),
+        }))
+      : [];
+    const candidateById = new Map(
+      retrievalCandidates.map((candidate) => [candidate.chunkId, candidate]),
+    );
+    const evidenceSelectedCandidates = artifacts.approvedEvidenceIds.flatMap(
+      (chunkId, index) => {
+        const candidate = candidateById.get(chunkId);
+        return candidate ? [{ ...candidate, rank: index + 1 }] : [];
+      },
+    );
+    try {
+      this.deps.onExecutionArtifacts?.({
+        intent: artifacts.intent
+          ? { route: artifacts.intent.route, intent: artifacts.intent.intent, reasonCode: artifacts.intent.reasonCode }
+          : null,
+        compliance:
+          terminal.reasonCode === "ASSISTANT_INTENT" ||
+          terminal.reasonCode === "SOCIAL_INTENT" ||
+          terminal.reasonCode === "ANALYTICS_TOOL"
+            ? null
+            : artifacts.compliance
+              ? { action: artifacts.compliance.action, reasonCode: artifacts.compliance.reasonCode }
+              : null,
+        retrievalCandidates,
+        evidenceSelectedCandidates,
+        evidenceSufficiency: artifacts.evidenceSufficiency,
+        approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
+        rejectedEvidenceIds: [...artifacts.rejectedEvidenceIds],
+        evidenceReasonCode: artifacts.evidenceReasonCode,
+        finalSourceChunkIds: [...terminal.sourceIds],
+        finalSourceDocumentIds: unique(sources.map((source) => source.documentId)),
+        finalSourceAuthorizationPassed,
+        runtime: {
+          totalTokensUsed: runtime.totalTokensUsed,
+          estimatedCost: runtime.estimatedCost,
+          latencyMs: runtime.latencyMs,
+        },
+      });
+    } catch {
+      // Observation is non-authoritative and cannot change workflow behavior.
+    }
   }
 
   private validateInput(rawInput: unknown): ChatSendBody {

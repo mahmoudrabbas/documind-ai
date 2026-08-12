@@ -662,6 +662,66 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.equal(plan.clarificationNeeded, false);
   });
 
+  await t.test("semantic summarization subjects do not nondeterministically clarify", async () => {
+    const provider = new IntentQueryService(
+      planAdapter({
+        detectedIntent: "summarization",
+        intentConfidence: 0.98,
+        clarificationNeeded: true,
+        clarification: {
+          reason: "multiple_interpretations",
+          suggestedQuestions: ["Which document?"],
+          messageEn: "Which document are you referring to?",
+          messageAr: "أي وثيقة تقصد؟",
+        },
+      }),
+      fakeConvoAdapter,
+    );
+
+    const completeRequests = [
+      "Summarize the remote work policy.",
+      "Summarize our employee handbook.",
+      "Can you summarize the IT security policy?",
+      "Give me a summary of the remote work policy.",
+      "لخص سياسة العمل عن بعد",
+      "ممكن تلخصلي سياسة أمن المعلومات؟",
+    ];
+
+    for (const question of completeRequests) {
+      for (let iteration = 0; iteration < 3; iteration += 1) {
+        const plan = await provider.analyzeQuery({ question }, companyAdminContext);
+        assert.equal(plan.detectedIntent, "summarization", question);
+        assert.equal(plan.clarificationNeeded, false, `${question} iteration ${iteration + 1}`);
+        assert.equal(plan.route, "rag", `${question} iteration ${iteration + 1}`);
+        assert.ok(plan.semanticQueries.length > 0, question);
+        assert.ok(plan.keywordQueries.length > 0, question);
+      }
+    }
+  });
+
+  await t.test("bare summarization references still require clarification", async () => {
+    const provider = new IntentQueryService(
+      planAdapter({
+        detectedIntent: "summarization",
+        intentConfidence: 0.98,
+        clarificationNeeded: true,
+        clarification: {
+          reason: "vague_reference",
+          suggestedQuestions: ["Which document?"],
+          messageEn: "Which document are you referring to?",
+          messageAr: "أي وثيقة تقصد؟",
+        },
+      }),
+      fakeConvoAdapter,
+    );
+
+    for (const question of ["Summarize it.", "Summarize the document.", "Can you summarize that?"]) {
+      const plan = await provider.analyzeQuery({ question }, companyAdminContext);
+      assert.equal(plan.clarificationNeeded, true, question);
+      assert.equal(plan.route, "clarification", question);
+    }
+  });
+
   await t.test("social stays social even after a RAG conversation", async () => {
     const conversationId = new mongoose.Types.ObjectId().toString();
     fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [

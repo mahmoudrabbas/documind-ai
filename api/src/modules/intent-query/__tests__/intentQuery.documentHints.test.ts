@@ -13,6 +13,11 @@ import {
   extractNaturalDocumentTitleHints,
   resolveAuthorizedDocumentHints,
 } from "../intentQuery.documentHints.js";
+import { InMemoryAuditWriter } from "../../../common/observability/auditWriter.js";
+import {
+  DocumentAccessAuthorizationService,
+  createEvaluationDocumentAccessAuthorizationService,
+} from "../../document-access/documentAccess.authorization.service.js";
 
 test("extractNaturalDocumentTitleHints only extracts explicit document references", () => {
   assert.deepEqual(
@@ -25,6 +30,37 @@ test("extractNaturalDocumentTitleHints only extracts explicit document reference
   );
   assert.deepEqual(extractNaturalDocumentTitleHints("لخص ملف handbook.pdf"), ["ملف handbook.pdf"]);
   assert.deepEqual(extractNaturalDocumentTitleHints("how i can install snort"), []);
+});
+
+test("extractNaturalDocumentTitleHints handles polite modal wrappers around summarize", () => {
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("can you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("could you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("would you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("please summarize the remote work file"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("please can you summarize the remote work file?"),
+    ["remote work file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("summarize the network security guide file in 5 lines"),
+    ["network security guide file"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("can you give me a summary of the policy document?"),
+    ["policy document"],
+  );
 });
 
 let mongoServer: MongoMemoryReplSet | null = null;
@@ -462,6 +498,19 @@ test("title hints never resolve documents without use_in_ai", async () => {
 
   assert.deepEqual(result.referencedDocumentIds, []);
   assert.deepEqual(result.unresolvedTitleHints, ["Secret Title"]);
+});
+
+test("title denial decisions are identical while evaluation injection suppresses durable audit", async () => {
+  await createDoc({ tenantId, ownerId: actorId, fileName: "audit-denial.pdf", title: "Audit Denial", withPolicy: false });
+  const durable = new InMemoryAuditWriter();
+  const production = await resolveAuthorizedDocumentHints([], hintContext(), ["Audit Denial"], {
+    authorizationService: new DocumentAccessAuthorizationService(durable),
+  });
+  const evaluation = await resolveAuthorizedDocumentHints([], hintContext(), ["Audit Denial"], {
+    authorizationService: createEvaluationDocumentAccessAuthorizationService(),
+  });
+  assert.deepEqual(evaluation, production);
+  assert.equal(durable.events.filter((event) => event.action === "DOCUMENT_ACCESS_DENIED").length, 1);
 });
 
 test("title hints never resolve archived, deleted, or failed documents", async () => {

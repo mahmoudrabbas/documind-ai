@@ -39,6 +39,7 @@ export interface GenerationStartInput {
   triggeredBy: IndexGenerationDocument["triggeredBy"];
   chunkingConfig?: Partial<ChunkingConfig>;
   department?: string | null;
+  category?: string | null;
   classification?: string | null;
 }
 
@@ -124,6 +125,7 @@ export async function persistChunks(
   department: string | null,
   classification: string | null,
   accessPolicyVersion: string | null = null,
+  category: string | null = null,
 ): Promise<void> {
   const chunkDocs = chunks.map((chunk, index) => ({
     tenantId: tenantId as unknown as import("mongoose").Types.ObjectId,
@@ -139,6 +141,7 @@ export async function persistChunks(
     contentType: chunk.contentType,
     language: chunk.language,
     department,
+    category,
     classification,
     accessPolicyVersion,
     confidenceScore: null,
@@ -192,6 +195,7 @@ export async function persistEmbeddings(
         .update(inputText)
         .digest("hex"),
       department: chunk?.department ?? null,
+      category: chunk?.category ?? null,
       classification: chunk?.classification ?? null,
       accessPolicyVersion: chunk?.accessPolicyVersion ?? null,
       language: chunk?.language ?? "en",

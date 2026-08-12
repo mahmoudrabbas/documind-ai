@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
+import { SourcePreviewModal } from "@/components/domain/SourcePreviewModal";
 import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
 import { AssistantMarkdown } from "@/components/domain/AssistantMarkdown";
 import { SourceList } from "@/components/domain/ChatSources";
@@ -41,6 +42,12 @@ import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
 import { previewText } from "./preview-text";
 import { getContentDirection } from "@/lib/i18n/content-direction";
+import {
+  downloadDocument,
+  fetchDocumentPreviewUrl,
+  getDocument,
+} from "@/services/documents.service";
+import { classifySourceFile } from "./source-preview";
 
 type Message = {
   id: string;
@@ -254,6 +261,12 @@ export function ChatClient() {
     pageNumber?: number;
     highlightText?: string;
     documentTitle?: string;
+  } | null>(null);
+  const [sourcePreview, setSourcePreview] = useState<{
+    title: string;
+    text?: string;
+    documentId?: string;
+    loading?: boolean;
   } | null>(null);
   const [imagePreview, setImagePreview] = useState<{
     src: string;
@@ -607,14 +620,44 @@ export function ChatClient() {
     clientMessageIdRef.current = null;
   }
 
-  const handleOpenSource = useCallback((source: ChatSource) => {
-    setPdfViewer({
-      documentId: source.documentId,
-      pageNumber: source.pageNumber,
-      highlightText: source.text,
-      documentTitle: source.documentTitle,
-    });
-  }, []);
+  const handleOpenSource = useCallback(async (source: ChatSource) => {
+    const fallbackTitle = source.documentTitle ?? t("chat.sourceDocumentFallback");
+    setPdfViewer(null);
+    setSourcePreview({ title: fallbackTitle, loading: true });
+    try {
+      const { data } = await getDocument(source.documentId);
+      const document = data.document;
+      const title = document.metadata.title || document.originalFileName || document.fileName || fallbackTitle;
+      const kind = classifySourceFile(document.mimeType, document.originalFileName || document.fileName);
+
+      if (kind === "pdf") {
+        setSourcePreview(null);
+        setPdfViewer({
+          documentId: source.documentId,
+          pageNumber: source.pageNumber,
+          highlightText: source.text,
+          documentTitle: title,
+        });
+        return;
+      }
+
+      if (kind === "text") {
+        const previewUrl = await fetchDocumentPreviewUrl(source.documentId);
+        try {
+          const response = await fetch(previewUrl);
+          if (!response.ok) throw new Error(`Text preview failed: ${response.status}`);
+          setSourcePreview({ title, text: await response.text() });
+        } finally {
+          URL.revokeObjectURL(previewUrl);
+        }
+        return;
+      }
+
+      setSourcePreview({ title, documentId: source.documentId });
+    } catch {
+      setSourcePreview({ title: fallbackTitle, documentId: source.documentId });
+    }
+  }, [t]);
 
   async function sendTextMessageWithProgress(
     question: string,
@@ -1244,6 +1287,16 @@ export function ChatClient() {
           highlightText={pdfViewer.highlightText}
           documentTitle={pdfViewer.documentTitle}
           onClose={() => setPdfViewer(null)}
+        />
+      )}
+      {sourcePreview && (
+        <SourcePreviewModal
+          title={sourcePreview.title}
+          text={sourcePreview.text}
+          documentId={sourcePreview.documentId}
+          loading={sourcePreview.loading}
+          onDownload={sourcePreview.documentId ? () => void downloadDocument(sourcePreview.documentId!) : undefined}
+          onClose={() => setSourcePreview(null)}
         />
       )}
 

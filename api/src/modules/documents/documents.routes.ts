@@ -9,6 +9,7 @@ import { createEntitlementCheckGuard, createEntitlementReserveGuard } from "../e
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadDocumentController,
+  uploadOptionsController,
   listDocumentsController,
   getDocumentController,
   updateDocumentMetadataController,
@@ -22,22 +23,9 @@ import {
   listDocumentVersionsController,
 } from "./documents.controller.js";
 
-const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: config.MAX_FILE_SIZE_BYTES },
-  fileFilter: (_req, file, callback) => {
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      callback(null, true);
-    } else {
-      callback(
-        Object.assign(new Error(`File type ${file.mimetype} is not supported`), {
-          code: "UNSUPPORTED_FILE_TYPE",
-        }) as Error & { code: string },
-      );
-    }
-  },
 });
 
 import {
@@ -257,7 +245,75 @@ const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
  */
 router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
-router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentsController);
+
+/**
+ * @openapi
+ * /documents/upload-options:
+ *   get:
+ *     summary: Get upload form options
+ *     description: Returns the active taxonomy options (classifications,
+ *       categories, departments) and the upload limits for the upload form.
+ *       Requires only DOCUMENTS_CREATE; it intentionally does not require
+ *       COMPANY_SETTINGS_READ.
+ *     tags: [Documents]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Upload form options
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     taxonomy:
+ *                       type: object
+ *                       properties:
+ *                         classifications:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                               level: { type: string }
+ *                         categories:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                         departments:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                     upload:
+ *                       type: object
+ *                       properties:
+ *                         maxFileSizeBytes:
+ *                           type: integer
+ *                         allowedMimeTypes:
+ *                           type: array
+ *                           items: { type: string }
+ *                         fileExtensions:
+ *                           type: array
+ *                           items: { type: string }
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get("/upload-options", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), uploadOptionsController);
 
 router.post("/access-policy/batch/preview", authenticate, tenantScoping, requirePolicyManagement, batchPreviewPolicyController);
 router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePolicyManagement, batchApplyPolicyController);
@@ -270,11 +326,11 @@ router.post("/:id/access-policy/effective-access", authenticate, tenantScoping, 
 router.post("/:id/access-policy/preview", authenticate, tenantScoping, requirePolicyManagement, previewPolicyController);
 router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePolicyManagement, applyPolicyController);
 
-router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
+router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentExtractionStatusController);
 
 router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
 
-router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
+router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentController);
 
 router.get(
   "/:id/download",
@@ -293,11 +349,11 @@ router.get(
   "/:id/preview",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   previewDocumentController,
 );
 
-router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
+router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentVersionsController);
 
 router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
 

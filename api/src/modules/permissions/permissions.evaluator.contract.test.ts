@@ -204,12 +204,13 @@ function runContract(label: string, createHarness: () => Harness) {
     assert.equal((await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_UPDATE })).denialCode, "RESOURCE_CONTEXT_REQUIRED");
   });
 
-  test(`${label}: inherited unrestricted grants dominate restricted duplicates`, async () => {
+  test(`${label}: inherited unrestricted grant is narrowed by an explicit scoped custom override`, async () => {
     const h = createHarness();
     const tenant = new mongoose.Types.ObjectId().toString();
     const userId = new mongoose.Types.ObjectId().toString();
     const roleId = new mongoose.Types.ObjectId().toString();
     const departmentId = new mongoose.Types.ObjectId().toString();
+    const otherDepartmentId = new mongoose.Types.ObjectId().toString();
     await h.addUser(userId, tenant, "EMPLOYEE", roleId);
     await h.addRole(roleId, tenant, "EMPLOYEE", [{
       permission: Permission.DOCUMENTS_READ,
@@ -221,13 +222,208 @@ function runContract(label: string, createHarness: () => Harness) {
       },
     }]);
 
-    const decision = await h.evaluator.evaluate({
-      ...actor(userId, tenant, "EMPLOYEE"),
-      permission: Permission.DOCUMENTS_READ,
-    });
+    const resolved = await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"));
+    const grant = resolved.grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(grant?.source, "base-role");
+    assert.deepEqual(grant?.scope?.departmentIds, [departmentId]);
+    assert.equal(grant?.scope?.selfOnly, false);
+
+    // The narrowed scope requires a resource context and forbids widening.
+    const noResource = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ });
+    assert.equal(noResource.allowed, false);
+    assert.equal(noResource.denialCode, "RESOURCE_CONTEXT_REQUIRED");
+    assert.equal(noResource.source, "base-role");
+
+    const inScope = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, departmentId } });
+    assert.equal(inScope.allowed, true);
+    assert.equal(inScope.source, "base-role");
+
+    const crossDept = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, departmentId: otherDepartmentId } });
+    assert.equal(crossDept.allowed, false);
+    assert.equal(crossDept.denialCode, "SCOPE_MISMATCH");
+  });
+
+  test(`${label}: inherited permission with no custom override stays unrestricted`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE");
+    const resolved = await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"));
+    const grant = resolved.grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(grant?.source, "base-role");
+    assert.equal(grant?.scope, null);
+    const decision = await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ });
     assert.equal(decision.allowed, true);
     assert.equal(decision.source, "base-role");
-    assert.equal(decision.scope, null);
+  });
+
+  test(`${label}: inherited permission is narrowed by an explicit selfOnly override`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: { selfOnly: true, departmentIds: [], documentCategories: [], documentClassifications: [] },
+    }]);
+    const grant = (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(grant?.source, "base-role");
+    assert.equal(grant?.scope?.selfOnly, true);
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ })).denialCode,
+      "RESOURCE_CONTEXT_REQUIRED",
+    );
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, ownerId: userId } })).allowed,
+      true,
+    );
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, ownerId: new mongoose.Types.ObjectId().toString() } })).denialCode,
+      "SCOPE_MISMATCH",
+    );
+  });
+
+  test(`${label}: inherited permission is narrowed by an explicit documentCategories override`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: { selfOnly: false, departmentIds: [], documentCategories: ["finance"], documentClassifications: [] },
+    }]);
+    const grant = (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(grant?.source, "base-role");
+    assert.deepEqual(grant?.scope?.documentCategories, ["finance"]);
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, documentCategory: "Finance" } })).allowed,
+      true,
+    );
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, documentCategory: "human resources" } })).denialCode,
+      "SCOPE_MISMATCH",
+    );
+  });
+
+  test(`${label}: inherited permission is narrowed by an explicit documentClassifications override`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: { selfOnly: false, departmentIds: [], documentCategories: [], documentClassifications: ["internal"] },
+    }]);
+    const grant = (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(grant?.source, "base-role");
+    assert.deepEqual(grant?.scope?.documentClassifications, ["internal"]);
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, documentClassification: "INTERNAL" } })).allowed,
+      true,
+    );
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ, resource: { tenantId: tenant, documentClassification: "confidential" } })).denialCode,
+      "SCOPE_MISMATCH",
+    );
+  });
+
+  test(`${label}: non-inherited permission explicitly custom-granted retains custom-role source`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    const departmentId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [{
+      permission: Permission.ANALYTICS_READ,
+      scopes: { selfOnly: false, departmentIds: [departmentId], documentCategories: [], documentClassifications: [] },
+    }]);
+    const grant = (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).grants.get(Permission.ANALYTICS_READ);
+    assert.equal(grant?.source, "custom-role");
+    assert.deepEqual(grant?.scope?.departmentIds, [departmentId]);
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.ANALYTICS_READ, resource: { tenantId: tenant, departmentId } })).allowed,
+      true,
+    );
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.ANALYTICS_READ, resource: { tenantId: tenant, departmentId: new mongoose.Types.ObjectId().toString() } })).denialCode,
+      "SCOPE_MISMATCH",
+    );
+  });
+
+  test(`${label}: unrelated inherited permission is not narrowed by another scoped override`, async () => {
+    const h = createHarness();
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    await h.addUser(userId, tenant, "EMPLOYEE", roleId);
+    await h.addRole(roleId, tenant, "EMPLOYEE", [
+      { permission: Permission.CHAT_READ, scopes: { selfOnly: true, departmentIds: [], documentCategories: [], documentClassifications: [] } },
+      { permission: Permission.DOCUMENTS_READ },
+    ]);
+    const grants = (await h.evaluator.resolve(actor(userId, tenant, "EMPLOYEE"))).grants;
+    const readGrant = grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(readGrant?.source, "base-role");
+    assert.equal(readGrant?.scope, null);
+    const chatGrant = grants.get(Permission.CHAT_READ);
+    assert.equal(chatGrant?.source, "base-role");
+    assert.equal(chatGrant?.scope?.selfOnly, true);
+    assert.equal(
+      (await h.evaluator.evaluate({ ...actor(userId, tenant, "EMPLOYEE"), permission: Permission.DOCUMENTS_READ })).allowed,
+      true,
+    );
+  });
+
+  test(`${label}: production and fake evaluators resolve identical scoped overrides`, async () => {
+    const tenant = new mongoose.Types.ObjectId().toString();
+    const userId = new mongoose.Types.ObjectId().toString();
+    const roleId = new mongoose.Types.ObjectId().toString();
+    const departmentId = new mongoose.Types.ObjectId().toString();
+    const grants = [{
+      permission: Permission.DOCUMENTS_READ,
+      scopes: { selfOnly: false, departmentIds: [departmentId], documentCategories: [], documentClassifications: [] },
+    }];
+
+    const fake = new InMemoryPermissionEvaluator();
+    fake.addUser(userId, tenant, "EMPLOYEE", roleId);
+    fake.addRole(roleId, tenant, "EMPLOYEE", grants);
+    const fakeGrant = (await fake.resolve(actor(userId, tenant, "EMPLOYEE"))).grants.get(Permission.DOCUMENTS_READ);
+
+    let actorUser = await UserModel.findOne({ tenantId: tenant }).exec();
+    if (!actorUser) {
+      actorUser = await UserModel.create({ tenantId: tenant, name: "Fixture", email: `${tenant}@example.test`, passwordHash: "test", role: "EMPLOYEE", status: "active", emailVerified: true });
+    }
+    await RoleModel.collection.deleteOne({ _id: new mongoose.Types.ObjectId(roleId), tenantId: new mongoose.Types.ObjectId(tenant) });
+    await RoleModel.collection.insertOne({
+      _id: new mongoose.Types.ObjectId(roleId),
+      tenantId: new mongoose.Types.ObjectId(tenant),
+      name: "Scoped",
+      normalizedName: "scoped",
+      baseRole: "EMPLOYEE",
+      grants,
+      contractVersion: PERMISSION_CONTRACT_VERSION,
+      status: "active",
+      version: 1,
+      migrationState: "complete",
+      createdBy: actorUser._id,
+      updatedBy: actorUser._id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await UserModel.findOneAndUpdate(
+      { _id: userId, tenantId: tenant },
+      { $set: { role: "EMPLOYEE", customRoleId: new mongoose.Types.ObjectId(roleId), status: "active" }, $setOnInsert: { name: "Scoped User", email: `${userId}@example.test`, passwordHash: "test", emailVerified: true } },
+      { upsert: true, runValidators: true },
+    ).exec();
+
+    const prodGrant = (await new PermissionEvaluatorImpl().resolve(actor(userId, tenant, "EMPLOYEE"))).grants.get(Permission.DOCUMENTS_READ);
+    assert.equal(prodGrant?.source, fakeGrant?.source);
+    assert.deepEqual(prodGrant?.scope, fakeGrant?.scope);
+    assert.equal(prodGrant?.source, "base-role");
+    assert.deepEqual(prodGrant?.scope?.departmentIds, [departmentId]);
   });
 
   for (const [caseName, grants, options] of [

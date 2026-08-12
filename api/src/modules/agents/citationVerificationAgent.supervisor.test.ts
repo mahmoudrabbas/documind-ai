@@ -123,7 +123,10 @@ function stubDeps(
       verify: async ({ answerText, evidence }) => ({
         claims: answerText ? [answerText] : [],
         unsupportedClaims: [],
+        unknownClaims: [],
         supportingEvidenceIds: evidence.map((item) => item.chunkId),
+        releasedAnswerText: answerText,
+        reasonCode: "SEMANTIC_VERIFIED",
       }),
     },
     ...overrides,
@@ -160,6 +163,7 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     const { model, calls } = scriptedModel([
       handoffToCitationVerifier({
         decision: "grounded_answer",
+        answerText: "The remote work policy allows three days per week.",
         citedChunkIds: [CHUNK_ID, INVENTED_ID],
         approvedEvidenceIds: [CHUNK_ID],
       }),
@@ -303,6 +307,6 @@ describe("SupervisorRuntime + citation-verification-agent integration", () => {
     registerCitationVerificationAgentExecutor(registry, stubDeps().deps);
     const contract = registry.requireExecutor(CITATION_VERIFICATION_AGENT_ID);
     assert.equal(contract.id, toAgentId(CITATION_VERIFICATION_AGENT_ID));
-    assert.equal(contract.version, "1.4.0");
+    assert.equal(contract.version, "2.0.0");
   });
 });

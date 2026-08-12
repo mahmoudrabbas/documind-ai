@@ -82,9 +82,13 @@ interface HarnessOptions {
   permissionState?: ResolvedPermissions["customRoleState"];
   permissions?: readonly string[];
   runtimeFailure?: boolean;
+  runtimeErrorCode?: string;
+  runtimeErrorMessage?: string;
+  verifierError?: string;
   approvedIds?: string[];
   writerCitations?: string[];
   verifierIds?: string[];
+  verifierAnswer?: string;
   complianceSourceIds?: string[];
   complianceAnswer?: string;
   searchCandidates?: Array<{
@@ -230,7 +234,10 @@ function makeHarness(options: HarnessOptions = {}) {
           workflowId: "chat-rag-v1" as const,
           status: "failed" as const,
           output: null,
-          error: { code: "INFRASTRUCTURE_FAILURE" },
+          error: {
+            code: options.runtimeErrorCode ?? "INFRASTRUCTURE_FAILURE",
+            message: options.runtimeErrorMessage,
+          },
           totalSteps: 1,
           totalToolCalls: 0,
           totalTokensUsed: 0,
@@ -456,12 +463,34 @@ function makeHarness(options: HarnessOptions = {}) {
             proposedPayload: { citedChunkIds: [chunkC], answerText: "forged" },
           }) ?? {};
           observations.handoffs.push({ agent: "citation-verification-agent", payload: verifierInput });
+          if (options.verifierError) {
+            const code = options.verifierError;
+            return {
+              runId: runInput.runId,
+              workflowId: "chat-rag-v1" as const,
+              status: "failed" as const,
+              output: null,
+              error: { code, message: "citation verification provider error" },
+              totalSteps: observations.handoffs.length,
+              totalToolCalls: observations.tools.length,
+              totalTokensUsed: 0,
+              estimatedCost: 0,
+              latencyMs: 0,
+              handoffsCount: observations.handoffs.length,
+              approvalsCount: 0,
+              guardrailResult: null,
+            };
+          }
           state = {
             ...state,
             verified: verifierIds.length > 0,
             validatedCitationIds: verifierIds,
             rejectedCitationIds: [chunkC],
             unsupportedClaims: [],
+            unknownClaims: [],
+            ...(verifierIds.length > 0
+              ? { verifiedAnswer: options.verifierAnswer ?? "WRITER_DRAFT" }
+              : {}),
             reasonCode: verifierIds.length > 0 ? "CITATIONS_VERIFIED" : "MISSING_CITATIONS",
           };
         }
@@ -823,6 +852,66 @@ describe("ChatWorkflowService lifecycle and trusted context", () => {
     await expect(executeHarness(harness)).rejects.toMatchObject({ code: "CHAT_WORKFLOW_FAILED" });
     expect(harness.messages.filter((message) => message.role === "assistant")).toHaveLength(0);
   });
+
+  it.each([
+    [
+      "LLM_RATE_LIMITED",
+      429,
+      "The AI service is temporarily rate-limited. Please try again shortly.",
+    ],
+    [
+      "LLM_PROVIDER_UNAVAILABLE",
+      503,
+      "The AI service is temporarily unavailable. Please try again shortly.",
+    ],
+    [
+      "LLM_TIMEOUT",
+      503,
+      "The AI service took too long to respond. Please try again.",
+    ],
+  ])("preserves safe public runtime provider error %s", async (code, statusCode, message) => {
+    const harness = makeHarness({
+      runtimeFailure: true,
+      runtimeErrorCode: code,
+      runtimeErrorMessage: "raw provider body org_123 api-key sk-test",
+    });
+    let caught: unknown;
+    try {
+      await executeHarness(harness);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code, statusCode, message });
+    expect((caught as Error).message).not.toContain("org_123");
+  });
+
+  it("collapses arbitrary runtime provider codes to the generic workflow failure", async () => {
+    const harness = makeHarness({
+      runtimeFailure: true,
+      runtimeErrorCode: "RAW_PROVIDER_AUTH_FAILURE",
+      runtimeErrorMessage: "raw provider body org_123 api-key sk-test",
+    });
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "CHAT_WORKFLOW_FAILED",
+      statusCode: 502,
+      message: "Controlled chat workflow failed",
+    });
+  });
+
+  it("fails the workflow on a citation-verification provider error instead of emitting an insufficient-evidence answer", async () => {
+    const harness = makeHarness({ verifierError: "LLM_RATE_LIMITED" });
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "LLM_RATE_LIMITED",
+      statusCode: 429,
+      message: "The AI service is temporarily rate-limited. Please try again shortly.",
+    });
+    expect(harness.observations.handoffs).toContainEqual(
+      expect.objectContaining({ agent: "citation-verification-agent" }),
+    );
+    // The verifier failure must not degrade into an insufficient-evidence
+    // refusal: no assistant answer (refuse or release) is persisted.
+    expect(harness.messages.filter((message) => message.role === "assistant")).toHaveLength(0);
+  });
 });
 
 describe("ChatWorkflowService trusted projections and provenance", () => {
@@ -893,6 +982,15 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     });
     expect(harness.observations.complianceInput).not.toHaveProperty("rejectedCitationIds");
     expect(harness.observations.complianceInput).not.toHaveProperty("candidates");
+  });
+
+  it("hands Compliance the exact final-verified salvage instead of the writer draft", async () => {
+    const harness = makeHarness({ verifierAnswer: "SUPPORTED FACTS ONLY" });
+    await executeHarness(harness);
+    expect(harness.observations.complianceInput).toMatchObject({
+      answer: "SUPPORTED FACTS ONLY",
+      citationVerification: { verified: true },
+    });
   });
 
   it("uses the standalone normalized question and server topK for search", async () => {

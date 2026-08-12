@@ -429,18 +429,21 @@ const en: TranslationDictionary = {
   "documents.dragDropText": "Drag and drop your file here, or",
   "documents.dragDropActive": "Drop your file here",
   "documents.browseFiles": "browse files",
-  "documents.fileRequirements": "PDF, DOCX, TXT or MD — max 50 MB",
-  "documents.fileTooLarge": "File is too large. Maximum size is 50 MB.",
+  "documents.fileRequirements": "{{formats}} — max {{maxSize}}",
+  "documents.fileTooLarge": "File is too large. Maximum size is {{maxSize}}.",
   "documents.fileTypeNotSupported": "File type is not supported.",
+  "documents.fileEmpty": "The file is empty.",
+  "documents.fileContentsMismatch": "The file contents do not match the file type. Please check the file and try again.",
   "documents.fileRequired": "Please select a file.",
   "documents.metadataTitle": "Document title",
   "documents.metadataTitlePlaceholder": "Enter a descriptive title",
   "documents.metadataTitleRequired": "Title is required (min 2 characters).",
   "documents.metadataDescription": "Description",
   "documents.metadataDescriptionPlaceholder": "Brief description of the document",
-  "documents.metadataTags": "Tags",
-  "documents.metadataTagsPlaceholder": "e.g. policy, HR, 2024",
-  "documents.metadataTagsHint": "Comma-separated tags (max 10).",
+  "documents.uploadTaxonomyTitle": "Categorize this document",
+  "documents.uploadTaxonomyHint": "Optional. Classify the document to improve search and keep access consistent.",
+  "documents.taxonomyOptionsErrorTitle": "Upload options unavailable",
+  "documents.retryUploadOptions": "Retry",
   "documents.noDocuments": "No documents yet",
   "documents.noDocumentsHint": "Upload your first document to get started.",
   "documents.tableName": "Name",
@@ -1087,6 +1090,8 @@ const en: TranslationDictionary = {
     "AI responses are based on your company documents. Always verify critical information.",
   "chat.sourceDocumentFallback": "Document",
   "chat.sourcePage": "(p.{{page}})",
+  "chat.sourcePreviewLoading": "Loading preview...",
+  "chat.sourcePreviewUnavailable": "Preview not available for this file type.",
   /* Suggested starter questions. Resolved at render from
      SUGGESTED_QUESTION_KEYS in chat-client.tsx — a module-level constant
      cannot call the hook, so it holds keys rather than text. */
@@ -1125,6 +1130,9 @@ const en: TranslationDictionary = {
   "audit.title": "Audit Log",
   "audit.description": "Review sensitive administrative actions across the platform.",
   "audit.fetchError": "Failed to load audit logs",
+  "audit.previous": "Previous",
+  "audit.next": "Next",
+  "audit.pageOf": "Page {{page}} of {{total}}",
   "audit.exportError": "Failed to export audit logs",
   "audit.exporting": "Exporting...",
   "audit.export": "Export CSV (30 days)",
@@ -1336,10 +1344,12 @@ const en: TranslationDictionary = {
   "chat.error.microphoneUnavailable":
     "Microphone access denied or unsupported browser. Please check microphone permissions.",
   "chat.error.rateLimited":
-    "The AI provider is temporarily rate-limited. Please try again shortly.",
+    "The AI service is temporarily rate-limited. Please try again shortly.",
   "chat.error.providerUnavailable":
-    "The AI provider is temporarily unavailable. Please try again shortly.",
-  "chat.error.timedOut": "The AI provider timed out. Please try again.",
+    "The AI service is temporarily unavailable. Please try again shortly.",
+  "chat.error.timedOut": "The AI service took too long to respond. Please try again.",
+  "chat.error.quotaExhausted":
+    "The AI service quota has been exhausted. Please try again later or contact your administrator.",
   "chat.error.retrievalUnavailable":
     "Document search is temporarily unavailable. Please try again shortly.",
   "chat.error.visionUnavailable":

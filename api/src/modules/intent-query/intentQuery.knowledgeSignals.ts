@@ -66,6 +66,16 @@ const OVERLAP_STOP_WORDS = new Set([
   "شكرا", "شكر", "تسلم", "thanks", "thank", "hello", "مرحبا", "السلام", "عليكم",
 ]);
 
+const GENERIC_DOCUMENT_REFERENTS = new Set([
+  "document", "documents", "file", "files", "policy", "policies", "handbook",
+  "summary", "summaries", "documento", "ملف", "ملفات", "وثيقه", "وثائق",
+  "مستند", "مستندات", "سياسه", "سياسات", "دليل", "ملخص", "تلخيص",
+]);
+
+const UNRESOLVED_REFERENCE_WORDS = new Set([
+  "it", "that", "this", "those", "these", "هو", "هي", "هذا", "هذه", "ذلك", "تلك",
+]);
+
 export interface KnowledgeSignalAssessment {
   readonly positive: boolean;
   readonly retrievalText: string;
@@ -75,6 +85,36 @@ export interface KnowledgeSignalAssessment {
 
 export function isRetrievableIntent(intent: unknown): intent is IntentClassValue {
   return typeof intent === "string" && RETRIEVABLE_INTENTS.has(intent as IntentClassValue);
+}
+
+/**
+ * Returns true when the current turn contains a usable semantic subject for
+ * retrieval, rather than only a generic document noun or a pronoun. This is a
+ * routing signal, not document authorization or title resolution.
+ */
+export function hasSemanticRetrievalSubject(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  const tokens = prepared.normalizedTokens;
+  const substantiveTokens = tokens.filter(
+    (token) =>
+      !QUESTION_TERMS.has(token) &&
+      !REQUEST_TERMS.has(token) &&
+      !OVERLAP_STOP_WORDS.has(token) &&
+      !GENERIC_DOCUMENT_REFERENTS.has(token) &&
+      !UNRESOLVED_REFERENCE_WORDS.has(token),
+  );
+  if (substantiveTokens.length === 0) return false;
+
+  // A trailing standalone reference still depends on prior context. A
+  // determiner before a real subject (for example, "this remote policy") is
+  // not treated as unresolved.
+  const hasTrailingUnresolvedReference = tokens.some(
+    (token, index) =>
+      UNRESOLVED_REFERENCE_WORDS.has(token) &&
+      index === tokens.length - 1,
+  );
+  return !hasTrailingUnresolvedReference;
 }
 
 function isBareGeneralDefinitionText(normalized: string): boolean {

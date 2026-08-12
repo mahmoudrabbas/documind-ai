@@ -7,8 +7,9 @@ import {
   flattenCatalogEntries,
   canPermission,
   combineSelectableWithActorGrants,
+  replacePermissionGrant,
 } from "../permission-utils";
-import type { PermissionCatalogEntry } from "@/types/api/permissions.types";
+import type { PermissionCatalogEntry, PermissionGrant } from "@/types/api/permissions.types";
 
 const baseEntry: PermissionCatalogEntry = {
   id: "documents:read",
@@ -38,6 +39,30 @@ const employeeOnly: PermissionCatalogEntry = {
   defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"],
   compatibleScopes: ["selfOnly"],
 };
+
+describe("permission grant editor updates", () => {
+  it("applies sequential scoped updates without losing dimensions", () => {
+    let grants: PermissionGrant[] = [];
+    const apply = (update: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => {
+      grants = typeof update === "function" ? update(grants) : update;
+    };
+    apply((current) => replacePermissionGrant(current, "documents:use-in-ai", {
+      permission: "documents:use-in-ai",
+      scopes: { selfOnly: false, departmentIds: ["hr"], documentCategories: [], documentClassifications: [] },
+    }));
+    apply((current) => replacePermissionGrant(current, "documents:use-in-ai", {
+      permission: "documents:use-in-ai",
+      scopes: { selfOnly: false, departmentIds: ["hr"], documentCategories: ["finance"], documentClassifications: [] },
+    }));
+    expect(grants).toHaveLength(1);
+    expect(grants[0]!.scopes!.departmentIds).toEqual(["hr"]);
+    expect(grants[0]!.scopes!.documentCategories).toEqual(["finance"]);
+  });
+
+  it("removes an explicit override by permission", () => {
+    expect(replacePermissionGrant([{ permission: "documents:read" }], "documents:read", null)).toEqual([]);
+  });
+});
 
 const platformOnly: PermissionCatalogEntry = {
   ...baseEntry,

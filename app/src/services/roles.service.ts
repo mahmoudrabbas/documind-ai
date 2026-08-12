@@ -4,6 +4,8 @@ import type {
   ListRolesResponse,
   UpdateRoleResponse,
   PermissionGrant,
+  RoleScopeOptionsRequest,
+  RoleScopeOptionsResponse,
   RoleView,
 } from "@/types/api/users.types";
 import { getPermissionCatalog, getMyPermissions } from "@/services/permissions.service";
@@ -126,5 +128,22 @@ export function migrateRoleUsers(
 export function getRoleUsage(roleId: string) {
   return apiClient<{ success: true; data: { roleId: string; assignedUserCount: number } }>(
     `/roles/${roleId}/usage`,
+  );
+}
+
+export function getRoleScopeOptions(input: RoleScopeOptionsRequest = {}) {
+  const parts: string[] = [];
+  const append = (key: string, values: string[] | undefined) => {
+    if (values && values.length > 0) {
+      parts.push(`${key}=${values.map(encodeURIComponent).join(",")}`);
+    }
+  };
+  append("departments", input.departments);
+  append("categories", input.categories);
+  append("classifications", input.classifications);
+  const query = parts.join("&");
+  return apiClient<RoleScopeOptionsResponse>(
+    `/roles/scope-options${query ? `?${query}` : ""}`,
+    { method: "GET" },
   );
 }

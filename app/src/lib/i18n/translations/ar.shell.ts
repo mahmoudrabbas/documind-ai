@@ -37,6 +37,11 @@ const arShell: TranslationDictionary = {
   "nav.refundReviews": "مراجعات الاسترداد",
   "nav.quotaOverrides": "تجاوزات الحصص",
   "nav.aiAnalyticsDeepDive": "تحليلات الذكاء الاصطناعي المتعمقة",
+  "nav.groupCustomers": "العملاء",
+  "nav.groupBillingPlans": "الفوترة والباقات",
+  "nav.groupOperations": "العمليات",
+  "nav.groupAiAnalytics": "الذكاء الاصطناعي والتحليلات",
+  "nav.groupGovernance": "الحوكمة",
 
   /* ── Shell chrome ──────────────────────────────────────────────── */
   "shell.openNavigation": "فتح القائمة",
@@ -58,7 +63,7 @@ const arShell: TranslationDictionary = {
   "shell.dragAndDropFile": "اسحب ملفك وأفلته هنا، أو",
   "shell.dropFileHere": "أفلت ملفك هنا",
   "shell.browseFiles": "تصفح الملفات",
-  "shell.fileRequirements": "PDF أو DOCX أو TXT أو MD — بحد أقصى 50 ميجابايت",
+  "shell.fileRequirements": "PDF أو DOCX أو TXT — بحد أقصى 50 ميجابايت",
   "shell.selectedFile": "الملف المحدد",
 };
 

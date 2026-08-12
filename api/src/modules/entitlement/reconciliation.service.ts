@@ -173,9 +173,23 @@ export class ReconciliationService {
    * A run with zero tenants returns an empty aggregate.
    */
   async reconcileAll(mode: "dry-run" | "execute"): Promise<ReconciliationRunReport> {
-    const tenantIds = await SubscriptionModel.distinct("tenantId", {
+    const distinctTenantIds = await SubscriptionModel.distinct("tenantId", {
       status: { $in: [...SERVICEABLE_STATUSES] },
     }).exec();
+
+    const skippedNullTenants = distinctTenantIds.reduce(
+      (count, tenantId) => count + (tenantId == null ? 1 : 0),
+      0,
+    );
+    if (skippedNullTenants > 0) {
+      console.warn(
+        `[Reconciliation] skipped ${skippedNullTenants} subscription(s) with a null tenantId in a serviceable status`,
+      );
+    }
+
+    const tenantIds = distinctTenantIds.filter(
+      (tenantId): tenantId is Types.ObjectId => tenantId != null,
+    );
 
     const reports: ReconciliationReport[] = [];
     for (const tenantId of tenantIds) {

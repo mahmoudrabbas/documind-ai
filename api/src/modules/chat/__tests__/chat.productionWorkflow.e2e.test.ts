@@ -191,7 +191,7 @@ function isSemanticCitationRequest(
   return params.messages.some(
     (message) =>
       message.role === "system" &&
-      message.content.includes("Judge whether each supplied factual claim is entailed"),
+      message.content.includes("Judge each supplied atomic factual claim independently"),
   );
 }
 
@@ -345,6 +345,45 @@ class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
             }
           : choice,
       ),
+    };
+  }
+}
+
+class SelectiveSemanticRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
+  constructor(
+    answers: ReadonlyMap<string, string>,
+    private readonly unsupportedPattern: RegExp,
+  ) {
+    super(answers);
+  }
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isSemanticCitationRequest(params)) return response;
+    const payload = semanticRequestData(params);
+    const supportingEvidenceIds = payload.authorizedEvidence.map((item) => item.chunkId);
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) => index === 0
+        ? {
+            ...choice,
+            message: {
+              ...choice.message,
+              content: JSON.stringify({
+                judgments: payload.claims.map((claim, claimIndex) => {
+                  const unsupported = this.unsupportedPattern.test(String(claim));
+                  return {
+                    claimIndex,
+                    verdict: unsupported ? "unsupported" : "supported",
+                    supportingEvidenceIds: unsupported ? [] : supportingEvidenceIds,
+                  };
+                }),
+              }),
+            },
+          }
+        : choice),
     };
   }
 }
@@ -1223,6 +1262,126 @@ test(
 );
 
 test(
+  "production-composed workflow releases a grounded answer with fully supported compound synthesis",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Summarize the remote work policy.";
+    const answer = [
+      "The Remote Work Policy outlines the following key points:",
+      "- Eligibility: Employees become eligible to request a regular remote-work arrangement after completing at least 90 days of employment.",
+      "- Standard Remote Schedule: Eligible staff may work remotely up to two days per week, pending manager approval.",
+      "- Core Hours: Remote workers must be reachable between 10:00 AM and 3:00 PM local time on workdays.",
+      "- Equipment: The company supplies one laptop and one headset; home internet costs are not reimbursed.",
+      "- Security: Confidential information may not be printed at home without written approval, and all company systems must be accessed via approved security controls.",
+      "- Location: Remote work must be performed from the employee's registered country unless an exception is approved by HR and Legal.",
+      "In summary, after a 90-day employment period, staff can work remotely up to two days weekly within defined core hours, using provided equipment, while adhering to security and location requirements.",
+    ].join("\n");
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-policy-synthesis.pdf",
+      title: "Remote Work Policy",
+      question,
+      text: [
+        "Employees who have completed at least 90 days of employment may request regular remote work.",
+        "Regular remote work is limited to two days per week.",
+        "Remote employees must be available from 10:00 AM to 3:00 PM local time on working days.",
+        "The company provides one laptop and one headset for approved remote workers.",
+        "The company does not reimburse home internet costs.",
+        "Confidential company information must not be printed at home unless written approval is provided.",
+        "Company systems must be accessed through approved security controls.",
+        "Regular remote work must be performed from the employee's registered country unless HR and Legal approve an exception.",
+      ].join(" "),
+      sectionTitle: "Remote work rules",
+      pageNumber: 4,
+    });
+    const requestId = "request-compound-synthesis-release";
+    const model = new RecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+    );
+    const service = await productionService(fixture, {
+      evidence: [evidence],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [
+      evidence.chunkId,
+    ]);
+    const verifierStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "citation-verification-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.equal(verifierStep?.output?.reasonCode, "CITATIONS_VERIFIED");
+    assert.deepEqual(verifierStep?.output?.validatedCitationIds, [evidence.chunkId]);
+    assert.deepEqual(verifierStep?.output?.unsupportedClaims, []);
+    const complianceStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "compliance-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(complianceStep?.output?.action, "release");
+    assert.deepEqual(complianceStep?.output?.sourceIds, [evidence.chunkId]);
+  },
+);
+
+test(
+  "production-composed workflow salvages supported facts and excludes one hallucinated fact",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Summarize the leave policy.";
+    const answer = [
+      "Employees receive 21 days of annual leave.",
+      "Leave requests require manager approval.",
+      "Employees also receive a private aircraft.",
+    ].join(" ");
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "leave-policy.pdf",
+      title: "Leave Policy",
+      question,
+      text: "Employees receive 21 days of annual leave. Leave requests require manager approval.",
+      sectionTitle: "Annual leave",
+      pageNumber: 2,
+    });
+    const requestId = "request-partial-semantic-salvage";
+    const model = new SelectiveSemanticRecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+      /private aircraft/iu,
+    );
+    const service = await productionService(fixture, { evidence: [evidence], model });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, [
+      "Employees receive 21 days of annual leave.",
+      "Leave requests require manager approval.",
+    ].join("\n"));
+    assert.equal(response.answer.includes("private aircraft"), false);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const verifierStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "citation-verification-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.deepEqual(verifierStep?.output?.unsupportedClaims, [
+      "Employees also receive a private aircraft.",
+    ]);
+    assert.equal(verifierStep?.output?.verifiedAnswer, response.answer);
+  },
+);
+
+test(
   "production-composed workflow refuses a numerically contradicted claim despite a valid citation id",
   { timeout: 60_000 },
   async () => {
@@ -1246,7 +1405,7 @@ test(
     }).lean().exec();
     assert.equal(verifierStep?.output?.verified, false);
     assert.equal(verifierStep?.output?.reasonCode, "UNSUPPORTED_CLAIMS");
-    assert.deepEqual(verifierStep?.output?.validatedCitationIds, [fixture.chunkId]);
+    assert.deepEqual(verifierStep?.output?.validatedCitationIds, []);
   },
 );
 
@@ -1363,7 +1522,7 @@ test(
         message.content.includes("SEMANTIC_VERIFICATION_DATA_START"),
       ),
     );
-    assert.equal(boundaryCalls.length, 2);
+    assert.equal(boundaryCalls.length, 3);
     for (const call of boundaryCalls) {
       assert.equal(call.messages.some((message) =>
         message.role === "system" && message.content.includes(maliciousInstruction),

@@ -4,12 +4,14 @@ import { logger } from "../../common/logger/logger.js";
 
 export class EmbeddingProviderAdapter implements EmbeddingAdapter {
   readonly providerKey: string;
+  readonly runtimeIdentity;
 
   private provider: EmbeddingProvider;
 
   constructor(provider: EmbeddingProvider) {
     this.provider = provider;
     this.providerKey = provider.name;
+    this.runtimeIdentity = Object.freeze({ provider: provider.name, model: provider.model, modelRevisionStatus: "unavailable" as const, componentVersion: "embedding-provider-adapter-v1" });
   }
 
   async embed(params: {

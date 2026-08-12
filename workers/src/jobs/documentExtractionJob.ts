@@ -196,6 +196,7 @@ export function createDocumentExtractionJobHandler(
                   documentVersion: payload.documentVersion,
                   generationId: generationId.toString(),
                   department: document.department ?? null,
+                  category: document.category ?? null,
                   classification: document.classification ?? null,
                   chunkingConfig: {
                     targetTokens: 400,
@@ -466,6 +467,7 @@ export function createDocumentExtractionJobHandler(
                 documentVersion: payload.documentVersion,
                 generationId: generationId.toString(),
                 department: document.department ?? null,
+                category: document.category ?? null,
                 classification: document.classification ?? null,
                 chunkingConfig: {
                   targetTokens: 400,

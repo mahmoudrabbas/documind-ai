@@ -1,5 +1,27 @@
 export type DocumentClassification = "public" | "internal" | "confidential" | "restricted" | "highly_confidential";
 
+export interface UploadTaxonomyOption {
+  id: string;
+  name: string;
+  level?: DocumentClassification;
+}
+
+export interface DocumentUploadOptionsResponse {
+  success: boolean;
+  data: {
+    taxonomy: {
+      classifications: UploadTaxonomyOption[];
+      categories: Array<{ id: string; name: string }>;
+      departments: Array<{ id: string; name: string }>;
+    };
+    upload: {
+      maxFileSizeBytes: number;
+      allowedMimeTypes: string[];
+      fileExtensions: string[];
+    };
+  };
+}
+
 export interface DocumentView {
   id: string;
   tenantId: string;

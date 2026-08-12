@@ -429,18 +429,21 @@ const ar: TranslationDictionary = {
   "documents.dragDropText": "اسحب وأفلت ملفك هنا، أو",
   "documents.dragDropActive": "أفلت ملفك هنا",
   "documents.browseFiles": "تصفح الملفات",
-  "documents.fileRequirements": "PDF، DOCX، TXT أو MD — 50 MB كحد أقصى",
-  "documents.fileTooLarge": "الملف كبير جداً. الحد الأقصى 50 MB.",
+  "documents.fileRequirements": "{{formats}} — بحد أقصى {{maxSize}}",
+  "documents.fileTooLarge": "الملف كبير جداً. الحد الأقصى {{maxSize}}.",
   "documents.fileTypeNotSupported": "نوع الملف غير مدعوم.",
+  "documents.fileEmpty": "الملف فارغ.",
+  "documents.fileContentsMismatch": "محتوى الملف لا يتطابق مع نوع الملف. يرجى التحقق من الملف والمحاولة مرة أخرى.",
   "documents.fileRequired": "يرجى اختيار ملف.",
   "documents.metadataTitle": "عنوان المستند",
   "documents.metadataTitlePlaceholder": "أدخل عنواناً وصفياً",
   "documents.metadataTitleRequired": "العنوان مطلوب (حرفان على الأقل).",
   "documents.metadataDescription": "الوصف",
   "documents.metadataDescriptionPlaceholder": "وصف مختصر للمستند",
-  "documents.metadataTags": "الوسوم",
-  "documents.metadataTagsPlaceholder": "مثال: سياسة، موارد بشرية، 2024",
-  "documents.metadataTagsHint": "وسوم مفصولة بفواصل (10 كحد أقصى).",
+  "documents.uploadTaxonomyTitle": "تصنيف هذا المستند",
+  "documents.uploadTaxonomyHint": "اختياري. صنّف المستند لتحسين البحث والحفاظ على اتساق الوصول.",
+  "documents.taxonomyOptionsErrorTitle": "خيارات الرفع غير متاحة",
+  "documents.retryUploadOptions": "إعادة المحاولة",
   "documents.noDocuments": "لا توجد مستندات بعد",
   "documents.noDocumentsHint": "ارفع مستندك الأول للبدء.",
   "documents.tableName": "الاسم",
@@ -1084,6 +1087,8 @@ const ar: TranslationDictionary = {
     "تستند إجابات الذكاء الاصطناعي إلى مستندات شركتك. تحقّق دائمًا من المعلومات المهمة.",
   "chat.sourceDocumentFallback": "مستند",
   "chat.sourcePage": "(ص. {{page}})",
+  "chat.sourcePreviewLoading": "جارٍ تحميل المعاينة...",
+  "chat.sourcePreviewUnavailable": "المعاينة غير متاحة لهذا النوع من الملفات.",
   /* أسئلة مقترحة للبدء. تُترجم عند العرض انطلاقًا من
      SUGGESTED_QUESTION_KEYS في chat-client.tsx، لأن الثابت على مستوى
      الوحدة لا يمكنه استدعاء الخطّاف فيحمل المفاتيح بدل النص. */
@@ -1122,6 +1127,9 @@ const ar: TranslationDictionary = {
   "audit.title": "سجل التدقيق",
   "audit.description": "مراجعة الإجراءات الإدارية الحساسة عبر المنصة.",
   "audit.fetchError": "فشل في تحميل سجلات التدقيق",
+  "audit.previous": "السابق",
+  "audit.next": "التالي",
+  "audit.pageOf": "صفحة {{page}} من {{total}}",
   "audit.exportError": "فشل في تصدير سجلات التدقيق",
   "audit.exporting": "جارٍ التصدير...",
   "audit.export": "تصدير CSV (30 يومًا)",
@@ -1329,11 +1337,13 @@ const ar: TranslationDictionary = {
   "chat.error.microphoneUnavailable":
     "تم رفض الوصول إلى الميكروفون أو أن المتصفح غير مدعوم. يرجى التحقق من أذونات الميكروفون.",
   "chat.error.rateLimited":
-    "مزوّد الذكاء الاصطناعي محدود مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
+    "خدمة الذكاء الاصطناعي تواجه ضغطًا مؤقتًا. يرجى المحاولة مرة أخرى بعد قليل.",
   "chat.error.providerUnavailable":
-    "مزوّد الذكاء الاصطناعي غير متاح مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
+    "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا. يرجى المحاولة مرة أخرى بعد قليل.",
   "chat.error.timedOut":
-    "انتهت مهلة مزوّد الذكاء الاصطناعي. يرجى المحاولة مرة أخرى.",
+    "استغرقت خدمة الذكاء الاصطناعي وقتًا أطول من المتوقع. يرجى المحاولة مرة أخرى.",
+  "chat.error.quotaExhausted":
+    "تم استنفاد حصة خدمة الذكاء الاصطناعي. يرجى المحاولة لاحقًا أو التواصل مع المسؤول.",
   "chat.error.retrievalUnavailable":
     "البحث في المستندات غير متاح مؤقتًا. يرجى المحاولة مرة أخرى قريبًا.",
   "chat.error.visionUnavailable":

@@ -42,6 +42,11 @@ const enShell: TranslationDictionary = {
   "nav.refundReviews": "Refund Reviews",
   "nav.quotaOverrides": "Quota Overrides",
   "nav.aiAnalyticsDeepDive": "AI Analytics Deep Dive",
+  "nav.groupCustomers": "Customers",
+  "nav.groupBillingPlans": "Billing & Plans",
+  "nav.groupOperations": "Operations",
+  "nav.groupAiAnalytics": "AI & Analytics",
+  "nav.groupGovernance": "Governance",
 
   /* ── Shell chrome ──────────────────────────────────────────────── */
   "shell.openNavigation": "Open navigation",
@@ -63,7 +68,7 @@ const enShell: TranslationDictionary = {
   "shell.dragAndDropFile": "Drag and drop your file here, or",
   "shell.dropFileHere": "Drop your file here",
   "shell.browseFiles": "browse files",
-  "shell.fileRequirements": "PDF, DOCX, TXT or MD — max 50 MB",
+  "shell.fileRequirements": "PDF, DOCX or TXT — max 50 MB",
   "shell.selectedFile": "Selected file",
 };
 

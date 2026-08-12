@@ -70,10 +70,22 @@ export const activatePackage = (id: string, body: PackageLifecycleInput) =>
     `/platform/packages/${encodeURIComponent(id)}/activate`,
     { method: "POST", body: { ...body } },
   );
-export const listSubscriptions = (signal?: AbortSignal) =>
-  apiClient<Success<PlatformSubscription[]>>("/platform/subscriptions", {
-    signal,
+export const listSubscriptions = (
+  params: { page: number; pageSize: number; search?: string; status?: string },
+  signal?: AbortSignal,
+) => {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
   });
+  if (params.search) search.set("search", params.search);
+  if (params.status) search.set("status", params.status);
+  const qs = search.toString();
+  return apiClient<Success<{ subscriptions: PlatformSubscription[]; pagination: Pagination }>>(
+    `/platform/subscriptions${qs ? `?${qs}` : ""}`,
+    { signal },
+  );
+};
 export const updateSubscription = (
   tenantId: string,
   body: SubscriptionUpdateInput,
@@ -109,11 +121,20 @@ export const provisionSubscription = (
   `/platform/subscriptions/${encodeURIComponent(tenantId)}`,
   { method: "POST", body: { ...body }, headers: { "Idempotency-Key": idempotencyKey } },
 );
-export const listPlatformUsers = (signal?: AbortSignal) =>
-  apiClient<Success<{ users: PlatformUser[]; pagination: Pagination }>>(
-    "/platform/users?page=1&pageSize=100",
+export const listPlatformUsers = (
+  params: { page: number; pageSize: number },
+  signal?: AbortSignal,
+) => {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+  });
+  const qs = search.toString();
+  return apiClient<Success<{ users: PlatformUser[]; pagination: Pagination }>>(
+    `/platform/users${qs ? `?${qs}` : ""}`,
     { signal },
   );
+};
 export const getPlatformUsage = (signal?: AbortSignal) =>
   apiClient<
     Success<{
@@ -127,11 +148,20 @@ export const getPlatformUsage = (signal?: AbortSignal) =>
       storage: { storageBytes: number; documents: number };
     }>
   >("/platform/usage", { signal });
-export const listPlatformJobs = (signal?: AbortSignal) =>
-  apiClient<Success<{ jobs: PlatformJob[]; pagination: Pagination }>>(
-    "/platform/jobs?page=1&pageSize=100",
+export const listPlatformJobs = (
+  params: { page: number; pageSize: number },
+  signal?: AbortSignal,
+) => {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+  });
+  const qs = search.toString();
+  return apiClient<Success<{ jobs: PlatformJob[]; pagination: Pagination }>>(
+    `/platform/jobs${qs ? `?${qs}` : ""}`,
     { signal },
   );
+};
 export const getPlatformHealth = (signal?: AbortSignal) =>
   apiClient<
     Success<{
@@ -140,11 +170,20 @@ export const getPlatformHealth = (signal?: AbortSignal) =>
       checkedAt: string;
     }>
   >("/platform/system-health", { signal });
-export const listPlatformAudit = (signal?: AbortSignal) =>
-  apiClient<Success<{ logs: PlatformAuditLog[]; pagination: Pagination }>>(
-    "/platform/audit?page=1&pageSize=100",
+export const listPlatformAudit = (
+  params: { page: number; pageSize: number },
+  signal?: AbortSignal,
+) => {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+  });
+  const qs = search.toString();
+  return apiClient<Success<{ logs: PlatformAuditLog[]; pagination: Pagination }>>(
+    `/platform/audit${qs ? `?${qs}` : ""}`,
     { signal },
   );
+};
 export const getGlobalSettings = (signal?: AbortSignal) =>
   apiClient<Success<GlobalSettings>>("/platform/settings", { signal });
 

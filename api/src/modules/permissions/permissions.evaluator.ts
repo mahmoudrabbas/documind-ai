@@ -8,6 +8,7 @@ import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
 import { ALL_PERMISSIONS, BASE_ROLE_DEFAULTS, PERMISSION_CONTRACT_VERSION, type PermissionValue } from "./permissions.catalog.js";
 import { decidePermission, emptyResolved } from "./permissions.decision.js";
 import { normalizeRoleGrants } from "./permissions.grants.js";
+import { hasScopeConstraints } from "./permissions.scope.js";
 import type {
   PermissionActor,
   PermissionEvaluationInput,
@@ -74,8 +75,11 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
             }
             const persistedGrants = normalizeRoleGrants(role.grants, { requireCanonical: true });
             for (const grant of persistedGrants) {
-              if (!grants.has(grant.permission)) {
+              const existing = grants.get(grant.permission);
+              if (!existing) {
                 grants.set(grant.permission, { source: "custom-role", scope: grant.scopes ?? null });
+              } else if (grant.scopes && hasScopeConstraints(grant.scopes)) {
+                grants.set(grant.permission, { ...existing, scope: grant.scopes });
               }
             }
           } catch (error) {

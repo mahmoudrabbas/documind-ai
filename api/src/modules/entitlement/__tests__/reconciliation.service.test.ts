@@ -389,5 +389,32 @@ describe("ReconciliationService", () => {
       expect(run.totalFixed).toBe(0);
       expect(mockCreateReport).not.toHaveBeenCalled();
     });
+
+    it("skips a serviceable subscription with a null tenantId instead of crashing", async () => {
+      await seedSubscription(TENANT_A, "ACTIVE");
+      // Raw native insert required: tenantId is schema-required, so the real
+      // model's create() rejects null — the production null-tenant rows came
+      // from writes that bypassed schema validation.
+      await realSubscriptionModel.collection.insertOne({
+        tenantId: null,
+        packageId: PACKAGE_ID,
+        packageVersion: 1,
+        status: "ACTIVE",
+      });
+
+      const run = await service.reconcileAll("dry-run");
+
+      expect(run.totalTenants).toBe(1);
+      expect(run.reports).toHaveLength(1);
+      expect(run.reports[0].tenantId).toBe(TENANT_A);
+      expect(run.reports.map((report) => report.tenantId)).not.toContain("null");
+      expect(mockCreateReport).toHaveBeenCalledTimes(1);
+      expect(mockCreateReport).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: new Types.ObjectId(TENANT_A) }),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("skipped 1 subscription"),
+      );
+    });
   });
 });

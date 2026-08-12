@@ -46,6 +46,16 @@ const tokenMocks = vi.hoisted(() => ({
   createEmailVerificationToken: vi.fn(),
 }));
 
+const subscriptionMocks = vi.hoisted(() => ({
+  deleteMany: vi.fn(),
+}));
+
+vi.mock("../../../db/models/subscription.model.js", () => ({
+  default: {
+    deleteMany: subscriptionMocks.deleteMany,
+  },
+}));
+
 const mongooseMocks = vi.hoisted(() => ({
   startSession: vi.fn(async () => ({
     withTransaction: async (
@@ -147,6 +157,7 @@ describe("auth.service targeted behavior", () => {
       expiresAt: new Date("2026-07-18T12:30:00.000Z"),
       tokenHash: "verification-token-hash",
     });
+    subscriptionMocks.deleteMany.mockReset().mockResolvedValue({ deletedCount: 1 });
   });
 
   describe("resendVerificationEmail", () => {
@@ -393,6 +404,53 @@ describe("auth.service targeted behavior", () => {
       expect(repoMocks.deleteUserById).not.toHaveBeenCalled();
       expect(repoMocks.deleteTenantById).not.toHaveBeenCalled();
       expect(repoMocks.updateUserVerificationToken).toHaveBeenCalledTimes(1);
+    });
+
+    it("deletes the provisioned subscription for the tenant when a later registration step fails", async () => {
+      repoMocks.createTenant.mockResolvedValue({
+        _id: { toString: () => "tenant-1" },
+        name: "Acme",
+        slug: "acme",
+        status: "pending_verification",
+        plan: "free",
+        isSystemTenant: false,
+        createdAt: new Date("2026-07-18T10:00:00.000Z"),
+      });
+      repoMocks.createUser.mockResolvedValue({
+        _id: { toString: () => "user-1" },
+        tenantId: { toString: () => "tenant-1" },
+        name: "Admin User",
+        email: "admin@example.com",
+        role: "COMPANY_ADMIN",
+        status: "pending_email_verification",
+        emailVerified: false,
+        emailVerifiedAt: null,
+        createdAt: new Date("2026-07-18T10:00:00.000Z"),
+      });
+      billingMocks.provisionSubscription.mockResolvedValue(undefined);
+      repoMocks.updateUserVerificationToken.mockRejectedValue(
+        new Error("token write failed"),
+      );
+
+      await expect(
+        registerTenantAndAdmin({
+          companyName: "Acme",
+          companySlug: "acme",
+          adminName: "Admin User",
+          email: "admin@example.com",
+          password: "StrongPass123!",
+        }),
+      ).rejects.toMatchObject({ code: "REGISTRATION_FAILED" });
+
+      expect(billingMocks.provisionSubscription).toHaveBeenCalledWith(
+        "tenant-1",
+        undefined,
+      );
+      expect(repoMocks.deleteUserById).toHaveBeenCalledWith("user-1");
+      expect(repoMocks.deleteTenantById).toHaveBeenCalledWith("tenant-1");
+      expect(subscriptionMocks.deleteMany).toHaveBeenCalledWith({
+        tenantId: "tenant-1",
+      });
     });
   });
 });

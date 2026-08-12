@@ -1,7 +1,10 @@
 import mongoose from "mongoose";
 import DocumentModel from "../../db/models/document.model.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
+import {
+  getDocumentAccessAuthorizationService,
+  type DocumentAccessAuthorizationService,
+} from "../document-access/documentAccess.authorization.service.js";
 import { normalizeArabic } from "./intentQuery.languageDetector.js";
 
 export interface DocumentHintResolution {
@@ -17,6 +20,10 @@ export interface DocumentHintContext {
   tenantId: string;
   actorId: string;
   tenantObjectId: mongoose.Types.ObjectId;
+}
+
+export interface DocumentHintResolutionOptions {
+  authorizationService?: DocumentAccessAuthorizationService;
 }
 
 /** Hard bound matching QueryPlanSchema.referencedDocumentTitles (max 20 × 500). */
@@ -94,7 +101,7 @@ export function extractNaturalDocumentTitleHints(question: string): string[] {
 
   const candidates: string[] = [];
   const summary = normalized.match(
-    /^(?:please\s+)?(?:summarize|give\s+(?:me\s+)?(?:a\s+)?summary\s+of|لخ[ّ]?ص|تلخيص)\s+(?:the\s+)?(.+)$/iu,
+    /^(?:please\s+)?(?:can you|could you|would you|will you)?\s*(?:summarize|give\s+(?:me\s+)?(?:a\s+)?summary\s+of|لخ[ّ]?ص|تلخيص)\s+(?:the\s+)?(.+)$/iu,
   );
   if (summary?.[1]) candidates.push(summary[1]);
 
@@ -376,6 +383,7 @@ export async function resolveAuthorizedDocumentHints(
   rawIds: readonly string[],
   context: DocumentHintContext,
   rawTitles: readonly string[] | undefined = [],
+  options: DocumentHintResolutionOptions = {},
 ): Promise<DocumentHintResolution> {
   const empty: DocumentHintResolution = {
     referencedDocumentIds: [],
@@ -392,7 +400,8 @@ export async function resolveAuthorizedDocumentHints(
   const titleHints = validTitleHints(rawTitles);
   if (uniqueIds.length === 0 && titleHints.length === 0) return empty;
 
-  const authorizationService = getDocumentAccessAuthorizationService();
+  const authorizationService =
+    options.authorizationService ?? getDocumentAccessAuthorizationService();
 
   const authorize = async (documentId: string): Promise<boolean> => {
     try {

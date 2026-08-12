@@ -20,6 +20,16 @@ export class FusionEngine {
     };
   }
 
+  get runtimeIdentity() {
+    return Object.freeze({
+      strategy: "reciprocal-rank-fusion",
+      version: `rrf-k${this.config.rrfK}-v1`,
+      weights: Object.freeze(Object.fromEntries(
+        this.config.strategies.map((entry) => [entry.method, entry.weight]),
+      )),
+    });
+  }
+
   /**
    * Fuse multiple retrieval result lists using Reciprocal Rank Fusion.
    *

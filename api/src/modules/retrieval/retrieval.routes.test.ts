@@ -5,6 +5,7 @@ import { createRetrievalController } from "./retrieval.controller.js";
 import type { HybridRetrievalService } from "./retrieval.service.js";
 import type { RetrievalResult } from "./retrieval.types.js";
 import { AppError } from "../../common/errors/AppError.js";
+import { readFileSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -86,6 +87,13 @@ function mockReq(
 }
 
 const controller = createRetrievalController(createMockService());
+
+test("standalone retrieval is gated by documents:use-in-ai, not documents:read", () => {
+  const source = readFileSync(new URL("./retrieval.routes.ts", import.meta.url), "utf8");
+  const searchRoute = source.slice(source.indexOf('router.post(\n    "/search"'));
+  assert.match(searchRoute, /requirePermission\(Permission\.DOCUMENTS_USE_IN_AI, \{ allowScoped: true \}\)/);
+  assert.doesNotMatch(searchRoute, /requirePermission\(Permission\.DOCUMENTS_READ/);
+});
 
 // ---------------------------------------------------------------------------
 // Tests
