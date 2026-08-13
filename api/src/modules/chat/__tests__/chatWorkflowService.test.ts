@@ -113,6 +113,9 @@ interface HarnessOptions {
   intentLanguage?: "ar" | "en";
   intentNormalizedQuestion?: string;
   intentSemanticQuery?: string;
+  intentSemanticQueries?: Array<{ text: string; language: "ar" | "en" | "mixed"; weight: number }>;
+  intentKeywordQueries?: Array<{ terms: string[]; language: "ar" | "en" | "mixed"; mustMatch: boolean }>;
+  intentExactTerms?: string[];
   intentIsFollowUp?: boolean;
   conversationContextUsed?: boolean;
   mixedAssistantKind?: "identity" | "capabilities";
@@ -278,9 +281,7 @@ function makeHarness(options: HarnessOptions = {}) {
         proposedPayload: { tenantId: "spoof", permissions: ["*"] },
       }) ?? {};
       observations.handoffs.push({ agent: "intent-query-agent", payload });
-      state = {
-        ...state,
-        ...intentOutput(
+      const generatedIntent = intentOutput(
           scenario,
           options.intentReferencedDocumentIds,
           options.intentReferencedDocumentTitles,
@@ -290,7 +291,13 @@ function makeHarness(options: HarnessOptions = {}) {
           options.intentIsFollowUp,
           options.conversationContextUsed,
           options.mixedAssistantKind,
-        ),
+        );
+      state = {
+        ...state,
+        ...generatedIntent,
+        ...(options.intentSemanticQueries ? { semanticQueries: options.intentSemanticQueries } : {}),
+        ...(options.intentKeywordQueries ? { keywordQueries: options.intentKeywordQueries } : {}),
+        ...(options.intentExactTerms ? { exactTerms: options.intentExactTerms } : {}),
       };
 
       const afterIntentDecision = hooks.resolveDecision?.({
@@ -1004,7 +1011,11 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     await executeHarness(harness);
     expect(harness.observations.tools[0]).toEqual({
       name: "authorized_hybrid_search",
-      input: { queryText: "trusted normalized question", topK: 5 },
+      input: {
+        queryText: "trusted normalized question",
+        queryVariants: ["trusted semantic query"],
+        topK: 5,
+      },
     });
   });
 
@@ -1022,8 +1033,31 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     await executeHarness(harness);
     expect(harness.observations.tools[0].input).toEqual({
       queryText: "trusted normalized question",
+      queryVariants: ["trusted semantic query"],
       topK: 5,
       documentIds: [documentA],
+    });
+  });
+
+  it("passes bounded semantic, keyword, and exact-term query plans to retrieval", async () => {
+    const harness = makeHarness({
+      intentSemanticQueries: [
+        { text: "English remote work policy", language: "en", weight: 0.7 },
+        { text: "English remote work policy", language: "en", weight: 0.6 },
+      ],
+      intentKeywordQueries: [
+        { terms: ["remote", "work", "policy"], language: "en", mustMatch: true },
+      ],
+      intentExactTerms: ["P1", "$25", "P1"],
+    });
+    await executeHarness(harness);
+    expect(harness.observations.tools[0]).toMatchObject({
+      name: "authorized_hybrid_search",
+      input: {
+        queryText: "trusted normalized question",
+        queryVariants: ["English remote work policy"],
+        keywordTexts: ["P1", "$25", "remote work policy"],
+      },
     });
   });
 
@@ -1572,6 +1606,7 @@ describe("ChatWorkflowService controlled short paths", () => {
       name: "authorized_hybrid_search",
       input: {
         queryText: "trusted normalized question",
+        queryVariants: ["trusted semantic query"],
         topK: 5,
         documentIds: [documentA],
       },

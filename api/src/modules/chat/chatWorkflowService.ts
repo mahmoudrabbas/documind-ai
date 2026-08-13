@@ -122,6 +122,42 @@ export function buildAuthorizedSearchQueryText(
     : englishExpansion.slice(0, MAX_SEARCH_QUERY_CHARS);
 }
 
+function buildAuthorizedSearchVariants(intent: IntentAgentOutput): {
+  queryVariants?: string[];
+  keywordTexts?: string[];
+} {
+  const base = intent.normalizedQuestion.trim();
+  const dedupe = (values: readonly string[], limit: number): string[] => {
+    const seen = new Set<string>([base]);
+    const result: string[] = [];
+    for (const value of values) {
+      const trimmed = value.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      result.push(trimmed);
+      if (result.length >= limit) break;
+    }
+    return result;
+  };
+
+  const queryVariants = dedupe(
+    intent.semanticQueries.map((query) => query.text),
+    10,
+  );
+  const keywordTexts = dedupe(
+    [
+      ...intent.exactTerms,
+      ...intent.keywordQueries.map((query) => query.terms.join(" ")),
+    ],
+    30,
+  );
+
+  return {
+    ...(queryVariants.length > 0 ? { queryVariants } : {}),
+    ...(keywordTexts.length > 0 ? { keywordTexts } : {}),
+  };
+}
+
 const SearchCandidateSchema = z
   .object({
     chunkId: z.string().min(1),
@@ -851,6 +887,7 @@ function createChatRuntimePolicy(input: {
           ...artifacts.resolvedDocumentIds,
         ]);
         const queryText = buildAuthorizedSearchQueryText(intent);
+        const queryVariants = buildAuthorizedSearchVariants(intent);
         const task = detectAnswerTask(
           { detectedIntent: intent.intent },
           intent.normalizedQuestion,
@@ -862,6 +899,7 @@ function createChatRuntimePolicy(input: {
             ? CHAT_SUMMARIZATION_RETRIEVAL_TOP_K
             : CHAT_DIRECT_RETRIEVAL_TOP_K,
           ...(documentIds.length > 0 ? { documentIds } : {}),
+          ...queryVariants,
         };
       }
       if (args.toolName === "evaluate_evidence") {

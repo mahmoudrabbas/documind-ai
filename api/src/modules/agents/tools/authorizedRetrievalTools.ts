@@ -308,6 +308,8 @@ const HybridSearchInputSchema = z
     queryText: z.string().min(1).max(2000),
     topK: z.number().int().min(1).max(50).default(10),
     documentIds: boundedIdArraySchema(20).optional(),
+    queryVariants: z.array(z.string().trim().min(1).max(1000)).max(10).default([]),
+    keywordTexts: z.array(z.string().trim().min(1).max(1000)).max(30).default([]),
   })
   .strict();
 
@@ -541,6 +543,8 @@ export function createAuthorizedHybridSearchTool(
         queryText: parsed.queryText,
         topK: parsed.topK,
       };
+      if (parsed.queryVariants.length > 0) query.queryVariants = parsed.queryVariants;
+      if (parsed.keywordTexts.length > 0) query.keywordTexts = parsed.keywordTexts;
       if (parsed.documentIds && parsed.documentIds.length > 0) {
         query.filter = { documentIds: parsed.documentIds };
       }

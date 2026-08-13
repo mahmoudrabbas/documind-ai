@@ -313,6 +313,41 @@ class RecordingFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   }
 }
 
+class ExpandedIntentFakeModelAdapter extends FakeModelAdapter {
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isIntentClassificationRequest(params)) return response;
+    const content = response.choices[0]?.message.content;
+    if (!content) return response;
+    const plan = JSON.parse(content) as Record<string, unknown>;
+    const language = typeof plan.language === "string" ? plan.language : "ar";
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) => index === 0
+        ? {
+            ...choice,
+            message: {
+              ...choice.message,
+              content: JSON.stringify({
+                ...plan,
+                semanticQueries: [
+                  { text: String(plan.normalizedQuestion), language, weight: 1 },
+                  { text: "What are the remote work conditions?", language: "en", weight: 0.7 },
+                ],
+                keywordQueries: [
+                  { terms: ["remote", "work", "conditions"], language: "en", mustMatch: false },
+                ],
+                exactTerms: ["remote work"],
+              }),
+            },
+          }
+        : choice),
+    };
+  }
+}
+
 class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
   constructor(
     answers: ReadonlyMap<string, string>,
@@ -1262,6 +1297,53 @@ test(
       );
     }
     assertPersistenceSafety({ run, steps, toolCalls });
+  },
+);
+
+test(
+  "production chat executes semantic, keyword, and exact-term intent expansions",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-english.pdf",
+      title: "Remote Work English Policy",
+      question: "work job employment remote work work remotely remote-work arrangement",
+      text: "The remote work conditions allow employees to work from home three days each week.",
+      sectionTitle: "Remote work conditions",
+      pageNumber: 2,
+    });
+    const requestId = "request-query-plan-expansion";
+    const service = await productionService(fixture, {
+      model: new ExpandedIntentFakeModelAdapter(),
+      evidence: [evidence],
+    });
+
+    await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: "ما هي شروط العمل عن بعد؟",
+      },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const searchCall = graph.toolCalls.find(
+      (toolCall) => toolCall.toolName === "authorized_hybrid_search",
+    );
+
+    assert.ok(searchCall);
+    assert.ok(Array.isArray(searchCall.input?.queryVariants));
+    assert.ok(searchCall.input.queryVariants.length > 0);
+    assert.ok(Array.isArray(searchCall.input?.keywordTexts));
+    assert.ok(searchCall.input.keywordTexts.some((text) => /remote work/u.test(text)));
+    const searchOutput = searchCall.output as
+      | { candidates?: Array<{ documentId: string }> }
+      | undefined;
+    assert.ok(
+      searchOutput?.candidates?.some(
+        (candidate) => candidate.documentId === evidence.documentId,
+      ),
+    );
   },
 );
 
