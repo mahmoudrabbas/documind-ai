@@ -32,12 +32,12 @@ export class DocumentAccessAuthorizationService {
       if (document.deletedAt && action !== "restore" && action !== "delete") return this.deny(context, documentId, action, "DOCUMENT_DELETED");
       const resource = await this.withCanonicalCategory(resourceContext(document));
 
-      // Control-plane recovery does not imply permission to use document content in AI.
+      // Control-plane recovery is limited to policy management. It does not grant
+      // document content or mutation authority.
       if (
-        action !== "use_in_ai" && (
+        action === "manage_access" && (
           actor.baseRole === "SUPER_ADMIN" ||
-          actor.baseRole === "COMPANY_ADMIN" ||
-          actor.actorId === resource.ownerId
+          actor.baseRole === "COMPANY_ADMIN"
         )
       ) {
         return;

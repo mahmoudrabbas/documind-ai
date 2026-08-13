@@ -14,6 +14,8 @@ import DocumentAccessPolicyModel from "../../db/models/documentAccessPolicy.mode
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import QuotaOverrideModel from "../../db/models/quotaOverride.model.js";
+import DocumentRelationshipModel from "../../db/models/documentRelationship.model.js";
+import ConflictFindingModel from "../../db/models/conflictFinding.model.js";
 import {
   getOcrPageResults,
   getDocumentQuality,
@@ -22,9 +24,14 @@ import {
   retryOcrPages,
   getOcrUsageSummary,
   triggerOcrProcessing,
+  triggerVersionConflictAnalysis,
 } from "./processing.service.js";
 import type { DocumentAccessAction } from "../document-access/documentAccess.actions.js";
 import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
+import type {
+  DocumentComparisonInput,
+  VersionConflictAgent,
+} from "./ports/versionConflictAgent.port.js";
 
 let mongoServer: MongoMemoryServer | null = null;
 const TENANT_ID = "6650f0f0f0f0f0f0f0f0f0f0";
@@ -66,6 +73,8 @@ afterEach(async () => {
   await PackageModel.deleteMany({});
   await SubscriptionModel.deleteMany({});
   await QuotaOverrideModel.deleteMany({});
+  await DocumentRelationshipModel.deleteMany({});
+  await ConflictFindingModel.deleteMany({});
 });
 
 beforeEach(async () => {
@@ -149,8 +158,25 @@ async function seedActiveSubscription() {
   return pkg;
 }
 
-async function createTestDocument(version = 1, actions: DocumentAccessAction[] = ["read", "update", "reprocess"]) {
+async function createTestDocument(
+  version = 1,
+  actions: DocumentAccessAction[] = ["read", "update", "reprocess"],
+  options: {
+    fileName?: string;
+    checksum?: string;
+    ownerId?: string;
+    status?: "uploading" | "uploaded" | "processing" | "processed" | "failed" | "canceled";
+    searchStatus?: "NOT_INDEXED" | "INDEXING" | "READY" | "FAILED" | "STALE";
+    additionalPolicyRules?: Array<{
+      ruleId: string;
+      effect: "allow" | "deny";
+      subject: { type: "tenant_member" | "department"; id?: string };
+      actions: DocumentAccessAction[];
+    }>;
+  } = {},
+) {
   const actorId = new mongoose.Types.ObjectId(ACTOR_ID);
+  const ownerId = new mongoose.Types.ObjectId(options.ownerId ?? ACTOR_ID);
   const tenantIdObj = new mongoose.Types.ObjectId(TENANT_ID);
   const normalizedName = "internal";
 
@@ -191,19 +217,19 @@ async function createTestDocument(version = 1, actions: DocumentAccessAction[] =
 
   const doc = await DocumentModel.create({
     tenantId: tenantIdObj,
-    fileName: "test-document.pdf",
-    originalFileName: "test-document.pdf",
+    fileName: options.fileName ?? "test-document.pdf",
+    originalFileName: options.fileName ?? "test-document.pdf",
     fileSize: 1024,
     mimeType: "application/pdf",
     storageKey: "test-key",
-    checksum: "test-checksum",
-    status: "uploaded" as const,
+    checksum: options.checksum ?? "test-checksum",
+    status: options.status ?? "uploaded",
     metadata: { title: "Test Document", description: null, tags: [] },
     classification: "internal" as DocumentClassification,
     version,
     versionLabel: `v${version}`,
     uploadedBy: actorId,
-    owner: actorId,
+    owner: ownerId,
     classificationId: classificationDoc._id,
     activePolicyId: policyId,
     activePolicyVersion: 1,
@@ -219,6 +245,7 @@ async function createTestDocument(version = 1, actions: DocumentAccessAction[] =
     department: null,
     effectiveDate: null,
     expiryDate: null,
+    searchStatus: options.searchStatus ?? "READY",
   });
 
   await DocumentVersionModel.create({
@@ -226,10 +253,10 @@ async function createTestDocument(version = 1, actions: DocumentAccessAction[] =
     documentId: doc._id,
     version,
     versionLabel: `v${version}`,
-    fileName: "test-document.pdf",
+    fileName: options.fileName ?? "test-document.pdf",
     fileSize: 1024,
     mimeType: "application/pdf",
-    checksum: "test-checksum",
+    checksum: options.checksum ?? "test-checksum",
     storageKey: "test-key-v" + version,
     uploadedBy: actorId,
     uploadReason: "initial",
@@ -245,12 +272,15 @@ async function createTestDocument(version = 1, actions: DocumentAccessAction[] =
     effectiveFrom: now,
     effectiveUntil: null,
     inherits: null,
-    rules: [{
-      ruleId: "test-owner-rule",
-      effect: "allow",
-      subject: { type: "owner" },
-      actions,
-    }],
+    rules: [
+      {
+        ruleId: "test-owner-rule",
+        effect: "allow",
+        subject: { type: "owner" },
+        actions,
+      },
+      ...(options.additionalPolicyRules ?? []),
+    ],
     provenance: {
       createdBy: ACTOR_ID,
       createdAt: now,
@@ -754,4 +784,156 @@ test("processing.service", async (t) => {
       );
     },
   );
+});
+
+function recordingConflictAgent(inputs: DocumentComparisonInput[]): VersionConflictAgent {
+  return {
+    async analyzeDocument(input) {
+      inputs.push(input);
+      return {
+        relationships: [],
+        conflicts: [],
+        summary: `Analyzed ${input.candidateDocuments.length} authorized candidates.`,
+        overallConfidence: 1,
+        requiresReview: false,
+      };
+    },
+  };
+}
+
+test("version-conflict analysis excludes unauthorized explicit candidates before agent input", async () => {
+  const source = await createTestDocument(1, ["read", "reprocess"], {
+    fileName: "source-explicit.pdf",
+    checksum: "source-explicit-checksum",
+    status: "processed",
+  });
+  const authorized = await createTestDocument(1, ["use_in_ai"], {
+    fileName: "authorized-candidate.pdf",
+    checksum: "authorized-candidate-checksum",
+    status: "processed",
+  });
+  const missingAiGrant = await createTestDocument(1, ["read"], {
+    fileName: "restricted-candidate.pdf",
+    checksum: "restricted-candidate-checksum",
+    status: "processed",
+  });
+  const explicitDeny = await createTestDocument(1, ["use_in_ai"], {
+    fileName: "explicit-deny-candidate.pdf",
+    checksum: "explicit-deny-checksum",
+    status: "processed",
+    additionalPolicyRules: [{
+      ruleId: "deny-ai",
+      effect: "deny",
+      subject: { type: "tenant_member" },
+      actions: ["use_in_ai"],
+    }],
+  });
+  const departmentScoped = await createTestDocument(1, ["read"], {
+    fileName: "department-scoped-candidate.pdf",
+    checksum: "department-scoped-checksum",
+    status: "processed",
+    additionalPolicyRules: [{
+      ruleId: "other-department-ai",
+      effect: "allow",
+      subject: { type: "department", id: new Types.ObjectId().toString() },
+      actions: ["use_in_ai"],
+    }],
+  });
+  const crossTenant = await createTestDocument(1, ["use_in_ai"], {
+    fileName: "cross-tenant-candidate.pdf",
+    checksum: "cross-tenant-checksum",
+    status: "processed",
+  });
+  await DocumentModel.updateOne(
+    { _id: crossTenant._id },
+    { $set: { tenantId: new Types.ObjectId() } },
+  );
+
+  await seedOcrPages(source.id, [{ pageNumber: 1, text: "source public text", confidence: 0.99 }]);
+  await seedOcrPages(authorized.id, [{ pageNumber: 1, text: "authorized candidate text", confidence: 0.99 }]);
+  await seedOcrPages(missingAiGrant.id, [{ pageNumber: 1, text: "RESTRICTED OCR SECRET", confidence: 0.99 }]);
+  await seedOcrPages(explicitDeny.id, [{ pageNumber: 1, text: "EXPLICIT DENY SECRET", confidence: 0.99 }]);
+  await seedOcrPages(departmentScoped.id, [{ pageNumber: 1, text: "DEPARTMENT SECRET", confidence: 0.99 }]);
+
+  const agentInputs: DocumentComparisonInput[] = [];
+  const result = await triggerVersionConflictAnalysis(
+    TENANT_ID,
+    {
+      documentId: source.id,
+      candidateDocumentIds: [
+        missingAiGrant.id,
+        authorized.id,
+        explicitDeny.id,
+        departmentScoped.id,
+        crossTenant.id,
+      ],
+    },
+    TEST_CONTEXT,
+    recordingConflictAgent(agentInputs),
+  );
+
+  assert.equal(result.summary, "Analyzed 1 authorized candidates.");
+  assert.equal(agentInputs.length, 1);
+  assert.deepEqual(agentInputs[0]?.candidateDocuments.map((candidate) => candidate.id), [authorized.id]);
+  const serializedInput = JSON.stringify(agentInputs[0]);
+  assert.equal(serializedInput.includes("RESTRICTED OCR SECRET"), false);
+  assert.equal(serializedInput.includes("EXPLICIT DENY SECRET"), false);
+  assert.equal(serializedInput.includes("DEPARTMENT SECRET"), false);
+  assert.equal(serializedInput.includes("restricted-candidate.pdf"), false);
+});
+
+test("version-conflict automatic discovery filters restricted candidates before agent input", async () => {
+  const sharedChecksum = "automatic-discovery-checksum";
+  const source = await createTestDocument(1, ["read", "reprocess"], {
+    fileName: "automatic-source.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+  const authorized = await createTestDocument(1, ["use_in_ai"], {
+    fileName: "automatic-authorized.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+  const restricted = await createTestDocument(1, ["read"], {
+    fileName: "automatic-restricted.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+  await seedOcrPages(restricted.id, [{ pageNumber: 1, text: "AUTO DISCOVERY SECRET", confidence: 0.99 }]);
+
+  const agentInputs: DocumentComparisonInput[] = [];
+  await triggerVersionConflictAnalysis(
+    TENANT_ID,
+    { documentId: source.id },
+    TEST_CONTEXT,
+    recordingConflictAgent(agentInputs),
+  );
+
+  assert.equal(agentInputs.length, 1);
+  assert.deepEqual(agentInputs[0]?.candidateDocuments.map((candidate) => candidate.id), [authorized.id]);
+  assert.equal(JSON.stringify(agentInputs[0]).includes("AUTO DISCOVERY SECRET"), false);
+});
+
+test("version-conflict analysis still produces relationships for an authorized candidate", async () => {
+  const sharedChecksum = "authorized-version-checksum";
+  const source = await createTestDocument(1, ["read", "reprocess"], {
+    fileName: "authorized-source.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+  const candidate = await createTestDocument(1, ["use_in_ai"], {
+    fileName: "authorized-target.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+
+  const result = await triggerVersionConflictAnalysis(
+    TENANT_ID,
+    { documentId: source.id, candidateDocumentIds: [candidate.id] },
+    TEST_CONTEXT,
+  );
+
+  assert.ok(result.relationships.some((relationship) =>
+    relationship.targetDocumentId === candidate.id &&
+    relationship.relationshipType === "DUPLICATE_OF"));
 });

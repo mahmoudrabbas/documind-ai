@@ -253,6 +253,18 @@ describe.skipIf(!hasMongo)("notificationSocketServer (T15)", () => {
     expect(err.message).toBe("unauthorized");
   });
 
+  it("rejects an already-issued user token after its tenant is suspended", async () => {
+    const token = userToken();
+    await TenantModel.updateOne(
+      { _id: tenantId },
+      { $set: { status: "suspended" } },
+    );
+
+    const socket = connectSocket(token);
+    const err = await onConnectError(socket);
+    expect(err.message).toBe("unauthorized");
+  });
+
   it("rejects a JWT with a non-access type claim", async () => {
     const socket = connectSocket(userToken({ type: "refresh" }));
     const err = await onConnectError(socket);

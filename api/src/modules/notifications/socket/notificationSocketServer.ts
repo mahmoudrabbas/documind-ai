@@ -28,6 +28,7 @@ import {
 import { isBaseRole } from "../../../common/auth/baseRoles.js";
 import { resolveCorsOrigin } from "../../../common/cors/corsOrigins.js";
 import { verifyJwt } from "../../auth/jwtTokens.js";
+import { requireActiveTenantAccess } from "../../../common/auth/tenantAccess.js";
 import type { AuthTokenClaims } from "../../auth/auth.types.js";
 
 export interface NotificationSocketServerHandle {
@@ -201,28 +202,26 @@ export function createSocketServer(
       return next(new Error("unauthorized"));
     }
 
-    if (typeof claims.sessionVersion === "number") {
-      void UserModel.findById(claims.sub)
-        .select("sessionVersion")
-        .lean()
-        .exec()
-        .then((user) => {
-          if (!user || (user.sessionVersion ?? 0) !== claims.sessionVersion) {
-            return next(new Error("unauthorized"));
-          }
-          socket.data.role = "user";
-          socket.data.tenantId = claims.tenantId;
-          socket.data.userId = claims.sub;
-          next();
-        })
-        .catch(() => next(new Error("unauthorized")));
-      return;
-    }
-
-    socket.data.role = "user";
-    socket.data.tenantId = claims.tenantId;
-    socket.data.userId = claims.sub;
-    next();
+    const sessionCheck = typeof claims.sessionVersion === "number"
+      ? UserModel.findById(claims.sub).select("sessionVersion").lean().exec()
+      : Promise.resolve(null);
+    void Promise.all([
+      requireActiveTenantAccess(claims.tenantId),
+      sessionCheck,
+    ])
+      .then(([, user]) => {
+        if (
+          typeof claims.sessionVersion === "number" &&
+          (!user || (user.sessionVersion ?? 0) !== claims.sessionVersion)
+        ) {
+          return next(new Error("unauthorized"));
+        }
+        socket.data.role = "user";
+        socket.data.tenantId = claims.tenantId;
+        socket.data.userId = claims.sub;
+        next();
+      })
+      .catch(() => next(new Error("unauthorized")));
   });
 
   io.on("connection", (socket) => {

@@ -43,6 +43,8 @@ import {
 } from "../permissions/permissions.operation.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
+import { buildRetrievableDocumentFilter } from "../retrieval/retrievalEligibility.js";
+import type { VersionConflictAgent } from "./ports/versionConflictAgent.port.js";
 
 const metadataAgent = new FakeMetadataAgent();
 const versionConflictAgent = new FakeVersionConflictAgent();
@@ -753,6 +755,7 @@ export async function triggerVersionConflictAnalysis(
   tenantId: string,
   input: TriggerVersionConflictAnalysisInput,
   inputContext: OperationAuthorizationContext,
+  conflictAgent: VersionConflictAgent = versionConflictAgent,
 ): Promise<{
   relationships: DocumentRelationshipView[];
   conflicts: ConflictFindingView[];
@@ -800,12 +803,12 @@ export async function triggerVersionConflictAnalysis(
       tenantId: tenId,
       _id: { $ne: docId },
       checksum: doc.checksum,
-    }).limit(10);
+    }).select("_id").lean().limit(10);
     const sameNameDocs = await DocumentModel.find({
       tenantId: tenId,
       _id: { $ne: docId },
       fileName: doc.fileName,
-    }).limit(10);
+    }).select("_id").lean().limit(10);
     const candidateIds = new Set<string>();
     for (const d of [...sameChecksumDocs, ...sameNameDocs]) {
       candidateIds.add(d._id.toString());
@@ -818,14 +821,36 @@ export async function triggerVersionConflictAnalysis(
         _id: { $ne: docId },
         status: "processed",
       })
+        .select("_id")
+        .lean()
         .sort({ createdAt: -1 })
         .limit(20);
       candidateDocIds = recentDocs.map((d) => d._id);
     }
   }
 
+  const distinctCandidateIds = [...new Set(candidateDocIds.map((id) => id.toString()))];
+  const eligibleCandidateIds = new Set(
+    (await DocumentModel.find(
+      buildRetrievableDocumentFilter(tenantId, distinctCandidateIds),
+      { _id: 1 },
+    ).lean().exec()).map((candidate) => candidate._id.toString()),
+  );
+
   const candidateDocuments = [];
-  for (const cId of candidateDocIds) {
+  for (const candidateId of distinctCandidateIds) {
+    if (!eligibleCandidateIds.has(candidateId)) continue;
+    try {
+      await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+        { tenantId, actorId: actor.actorId },
+        candidateId,
+        "use_in_ai",
+      );
+    } catch {
+      continue;
+    }
+
+    const cId = new Types.ObjectId(candidateId);
     const cDoc = await DocumentModel.findOne({ _id: cId, tenantId: tenId });
     if (!cDoc) continue;
 
@@ -867,7 +892,7 @@ export async function triggerVersionConflictAnalysis(
     };
   }
 
-  const analysisResult = await versionConflictAgent.analyzeDocument({
+  const analysisResult = await conflictAgent.analyzeDocument({
     sourceDocument: {
       id: input.documentId,
       fileName: doc.fileName,

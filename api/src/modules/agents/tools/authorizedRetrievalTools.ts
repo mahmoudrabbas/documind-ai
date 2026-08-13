@@ -28,6 +28,11 @@ import type { DocumentChunkDocument } from "../../../db/models/documentChunk.mod
 import DocumentModel from "../../../db/models/document.model.js";
 import { createRetrievalRepository } from "../../retrieval/retrieval.repository.js";
 import { Permission } from "../../permissions/permissions.catalog.js";
+import {
+  buildRetrievableDocumentFilter,
+  EXCLUDED_SEARCH_STATUSES,
+  RETRIEVABLE_DOCUMENT_STATUSES,
+} from "../../retrieval/retrievalEligibility.js";
 
 /**
  * Trusted dependencies injected from production wiring in app.ts.
@@ -93,12 +98,7 @@ export interface LoadedChunkCandidate {
  * Document lifecycle statuses that are eligible for AI use. `failed` and
  * `canceled` documents never participate.
  */
-export const RETRIEVABLE_DOCUMENT_STATUSES: ReadonlyArray<
-  "uploading" | "uploaded" | "processing" | "processed" | "reprocessing"
-> = ["uploading", "uploaded", "processing", "processed", "reprocessing"];
-
-/** Search-index statuses that make a document ineligible (stale index). */
-export const EXCLUDED_SEARCH_STATUSES = ["FAILED", "STALE"] as const;
+export { EXCLUDED_SEARCH_STATUSES, RETRIEVABLE_DOCUMENT_STATUSES };
 
 /** Chunk statuses eligible for evidence evaluation. */
 export const RETRIEVABLE_CHUNK_STATUSES: ReadonlyArray<
@@ -132,14 +132,9 @@ export function createDefaultLoadEligibleDocumentIds(): AuthorizedRetrievalDepen
       mongoose.Types.ObjectId.isValid(id),
     );
     if (validIds.length === 0) return [];
-    const docs = await DocumentModel.find({
-      _id: { $in: validIds.map((id) => new mongoose.Types.ObjectId(id)) },
-      tenantId,
-      deletedAt: null,
-      isArchived: false,
-      status: { $in: [...RETRIEVABLE_DOCUMENT_STATUSES] },
-      searchStatus: { $nin: [...EXCLUDED_SEARCH_STATUSES] },
-    })
+    const docs = await DocumentModel.find(
+      buildRetrievableDocumentFilter(tenantId, validIds),
+    )
       .select("_id")
       .lean()
       .exec();

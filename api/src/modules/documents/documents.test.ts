@@ -23,6 +23,7 @@ import * as fsp from "node:fs/promises";
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { Permission } from "../permissions/permissions.catalog.js";
+import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
 import { config } from "../../config/index.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
@@ -237,6 +238,12 @@ interface TestDocOverrides {
   department?: string | null;
   effectiveDate?: Date | null;
   expiryDate?: Date | null;
+  additionalPolicyRules?: Array<{
+    ruleId: string;
+    effect: "allow" | "deny";
+    subject: { type: "tenant_member" | "user"; id?: string };
+    actions: DocumentAccessAction[];
+  }>;
 }
 
 async function createTestDocumentWithPolicy(
@@ -324,12 +331,15 @@ async function createTestDocumentWithPolicy(
     effectiveFrom: now,
     effectiveUntil: null,
     inherits: null,
-    rules: [{
-      ruleId: "test-owner-rule",
-      effect: "allow",
-      subject: { type: "owner" },
-      actions: actions as DocumentAccessAction[],
-    }],
+    rules: [
+      {
+        ruleId: "test-owner-rule",
+        effect: "allow",
+        subject: { type: "owner" },
+        actions: actions as DocumentAccessAction[],
+      },
+      ...(overrides.additionalPolicyRules ?? []),
+    ],
     provenance: {
       createdBy: userId,
       createdAt: now,
@@ -678,6 +688,225 @@ void test("PATCH /documents/:id — updates metadata", async () => {
   assert.deepEqual((result.metadata as Record<string, unknown>).tags, ["new", "tags"]);
   assert.equal(result.classification, "confidential");
   await closeServer(server);
+});
+
+void test("Company Admin cannot bypass explicit document-policy denials for ordinary actions", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const accessToken = await login(port);
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id,
+      user.id,
+      "internal",
+      ["read", "download", "update", "delete"],
+      {
+        metadata: { title: "Policy protected", description: "", tags: [] },
+        additionalPolicyRules: [{
+          ruleId: "deny-company-admin-ordinary-actions",
+          effect: "deny",
+          subject: { type: "tenant_member" },
+          actions: ["read", "download", "update", "delete"],
+        }],
+      },
+    );
+
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const read = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, { headers });
+    const download = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/download`, { headers });
+    const update = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      method: "PATCH",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Unauthorized change" }),
+    });
+    const deletion = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      method: "DELETE",
+      headers,
+    });
+
+    assert.equal(read.status, 404);
+    assert.equal(download.status, 404);
+    assert.equal(update.status, 404);
+    assert.equal(deletion.status, 404);
+    const unchanged = await DocumentModel.findById(doc.id).lean().exec();
+    assert.equal(unchanged?.metadata.title, "Policy protected");
+    assert.equal(unchanged?.deletedAt, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("Company Admin ordinary actions fail closed without an active policy while manage_access recovery remains authorized", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const accessToken = await login(port);
+    const { doc, policy } = await createTestDocumentWithPolicy(
+      tenant.id,
+      user.id,
+      "internal",
+      ["read", "download", "update", "manage_access"],
+    );
+    await DocumentModel.updateOne(
+      { _id: doc._id, tenantId: tenant._id },
+      { $unset: { activePolicyId: 1, activePolicyVersion: 1 } },
+    );
+
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const read = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, { headers });
+    const download = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/download`, { headers });
+    const update = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      method: "PATCH",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Unauthorized change" }),
+    });
+
+    assert.equal(read.status, 404);
+    assert.equal(download.status, 404);
+    assert.equal(update.status, 404);
+    await assert.doesNotReject(
+      getDocumentAccessAuthorizationService().authorizeDocumentAction(
+        { tenantId: tenant.id, actorId: user.id },
+        doc.id,
+        "manage_access",
+      ),
+    );
+
+    await DocumentModel.updateOne(
+      { _id: doc._id, tenantId: tenant._id },
+      { $set: { activePolicyId: new Types.ObjectId(), activePolicyVersion: 1 } },
+    );
+    const stalePolicyRead = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, { headers });
+    assert.equal(stalePolicyRead.status, 404);
+
+    await DocumentAccessPolicyModel.collection.updateOne(
+      { _id: policy._id },
+      { $set: { contractVersion: 2 } },
+    );
+    await DocumentModel.updateOne(
+      { _id: doc._id, tenantId: tenant._id },
+      { $set: { activePolicyId: policy.policyId, activePolicyVersion: policy.policyVersion } },
+    );
+    const malformedPolicyRead = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, { headers });
+    assert.equal(malformedPolicyRead.status, 400);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("document owner cannot bypass an explicit read denial", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const accessToken = await login(port, tenant.slug, employee.email);
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id,
+      employee.id,
+      "internal",
+      ["read"],
+      { additionalPolicyRules: [{
+        ruleId: "deny-owner-read",
+        effect: "deny",
+        subject: { type: "user", id: employee.id },
+        actions: ["read"],
+      }] },
+    );
+
+    const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("ordinary metadata update rejects every owner assignment and cannot grant owner access", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user } = await createActiveTenantAdmin();
+    const localTarget = await createEmployee(tenant.id, { email: "new-owner@acme.com" });
+    const { user: foreignTarget } = await createActiveTenantAdmin({
+      slug: "foreign-owner-tenant",
+      companyName: "Foreign Owner Tenant",
+      email: "foreign-owner@example.com",
+    });
+    const accessToken = await login(port);
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id,
+      user.id,
+      "internal",
+      ["read", "update"],
+    );
+    const attemptedOwners = [
+      localTarget.id,
+      foreignTarget.id,
+      new Types.ObjectId().toString(),
+    ];
+
+    for (const owner of attemptedOwners) {
+      const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ owner }),
+      });
+      assert.equal(response.status, 400);
+      const unchanged = await DocumentModel.findById(doc.id).select("owner").lean().exec();
+      assert.equal(unchanged?.owner?.toString(), user.id);
+    }
+
+    const targetToken = await login(port, tenant.slug, localTarget.email);
+    const targetRead = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
+      headers: { Authorization: `Bearer ${targetToken}` },
+    });
+    assert.equal(targetRead.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("use_in_ai continues to require exact policy authorization for Company Admin and owner", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+  const employee = await createEmployee(tenant.id);
+  const adminDocument = await createTestDocumentWithPolicy(tenant.id, user.id, "internal", ["use_in_ai"]);
+  const ownerDocument = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["use_in_ai"], {
+    fileName: "owner-ai.pdf",
+    checksum: "owner-ai-checksum",
+  });
+  const deniedAdminDocument = await createTestDocumentWithPolicy(tenant.id, user.id, "internal", ["use_in_ai"], {
+    fileName: "denied-admin-ai.pdf",
+    checksum: "denied-admin-ai-checksum",
+    additionalPolicyRules: [{ ruleId: "deny-admin-ai", effect: "deny", subject: { type: "tenant_member" }, actions: ["use_in_ai"] }],
+  });
+  const deniedOwnerDocument = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["use_in_ai"], {
+    fileName: "denied-owner-ai.pdf",
+    checksum: "denied-owner-ai-checksum",
+    additionalPolicyRules: [{ ruleId: "deny-owner-ai", effect: "deny", subject: { type: "tenant_member" }, actions: ["use_in_ai"] }],
+  });
+  const authorization = getDocumentAccessAuthorizationService();
+
+  await assert.doesNotReject(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: user.id }, adminDocument.doc.id, "use_in_ai",
+  ));
+  await assert.doesNotReject(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: employee.id }, ownerDocument.doc.id, "use_in_ai",
+  ));
+
+  await assert.rejects(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: user.id }, deniedAdminDocument.doc.id, "use_in_ai",
+  ));
+  await assert.rejects(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: employee.id }, deniedOwnerDocument.doc.id, "use_in_ai",
+  ));
 });
 
 void test("DELETE /documents/:id — soft deletes document", async () => {

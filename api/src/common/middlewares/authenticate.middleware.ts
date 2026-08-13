@@ -6,6 +6,7 @@ import { verifyJwt } from "../../modules/auth/jwtTokens.js";
 import type { AuthTokenClaims } from "../../modules/auth/auth.types.js";
 import { isBaseRole } from "../auth/baseRoles.js";
 import UserModel from "../../db/models/user.model.js";
+import { requireActiveTenantAccess } from "../auth/tenantAccess.js";
 
 /**
  * Extracts the bearer token from the Authorization header.
@@ -61,6 +62,8 @@ export async function authenticate(
     if (claims.type !== "access" || !claims.sub || !claims.tenantId || !isBaseRole(claims.role)) {
       throw new AppError(401, UNAUTHORIZED, "Invalid access token claims");
     }
+
+    await requireActiveTenantAccess(claims.tenantId);
 
     if (typeof claims.sessionVersion === "number") {
       const user = await UserModel.findById(claims.sub)

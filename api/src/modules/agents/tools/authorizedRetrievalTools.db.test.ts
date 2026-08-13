@@ -597,6 +597,65 @@ test("authorized_hybrid_search never returns cross-tenant chunks", async () => {
   assert.equal(ids.includes(foreignChunk.id), false);
 });
 
+test("direct retrieval and chat retrieval share parent-document lifecycle eligibility", async () => {
+  const ready = await createDoc({
+    tenantId, ownerId: actorId, fileName: "ready.pdf", title: "Ready",
+    status: "processed", searchStatus: "READY",
+  });
+  const archived = await createDoc({
+    tenantId, ownerId: actorId, fileName: "archived-search.pdf", title: "Archived",
+    status: "processed", searchStatus: "READY", isArchived: true,
+  });
+  const failed = await createDoc({
+    tenantId, ownerId: actorId, fileName: "failed-search.pdf", title: "Failed",
+    status: "failed", searchStatus: "READY",
+  });
+  const canceled = await createDoc({
+    tenantId, ownerId: actorId, fileName: "canceled-search.pdf", title: "Canceled",
+    status: "canceled", searchStatus: "READY",
+  });
+  const stale = await createDoc({
+    tenantId, ownerId: actorId, fileName: "stale-search.pdf", title: "Stale",
+    status: "processed", searchStatus: "STALE",
+  });
+  const aiDenied = await createDoc({
+    tenantId, ownerId: actorId, fileName: "ai-denied-search.pdf", title: "AI Denied",
+    status: "processed", searchStatus: "READY", policyActions: ["read"],
+  });
+  const foreign = await createDoc({
+    tenantId: otherTenantId, ownerId: otherActorId, fileName: "foreign-search.pdf", title: "Foreign",
+    status: "processed", searchStatus: "READY",
+  });
+
+  const documents = [ready, archived, failed, canceled, stale, aiDenied, foreign];
+  const chunks = await Promise.all(documents.map((document) => createChunk({
+    tenantId: document.tenantId.toString(),
+    documentId: document.id,
+    text: `lifecycle parity marker ${document.fileName}`,
+    confidenceScore: 0.95,
+  })));
+
+  const direct = await retrievalService.hybridSearch(
+    { queryText: "lifecycle parity marker", topK: 20 },
+    { tenantId, actorId, baseRole: "COMPANY_ADMIN" },
+  );
+  const chat = (await hybridSearchTool.handler(runContext(), {
+    queryText: "lifecycle parity marker",
+    topK: 20,
+  })) as { candidates: Array<{ chunkId: string }> };
+
+  const directIds = direct.candidates.map((candidate) => candidate.chunkId).sort();
+  const chatIds = chat.candidates.map((candidate) => candidate.chunkId).sort();
+  assert.deepEqual(directIds, [chunks[0]!.id]);
+  assert.deepEqual(chatIds, directIds);
+  assert.equal(directIds.includes(chunks[1]!.id), false);
+  assert.equal(directIds.includes(chunks[2]!.id), false);
+  assert.equal(directIds.includes(chunks[3]!.id), false);
+  assert.equal(directIds.includes(chunks[4]!.id), false);
+  assert.equal(directIds.includes(chunks[5]!.id), false);
+  assert.equal(directIds.includes(chunks[6]!.id), false);
+});
+
 // ── evaluate_evidence ──────────────────────────────────────────────────────
 
 test("evaluate_evidence reauthorizes candidates and approves SUFFICIENT evidence", async () => {

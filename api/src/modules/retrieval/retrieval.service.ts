@@ -22,6 +22,7 @@ import type {
   RetrievalQuery,
   RetrievalResult,
 } from "./retrieval.types.js";
+import { buildRetrievableDocumentFilter } from "./retrievalEligibility.js";
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -190,7 +191,7 @@ async function revalidateAndHydrate(
     chunkMap.set(chunk._id.toString(), chunk);
   }
 
-  // Active document verification: filter out chunks belonging to soft-deleted documents
+  // Parent-document verification: enforce the canonical AI retrieval lifecycle.
   const allDocIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
   let activeDocIds = new Set<string>();
   if (allDocIds.length > 0) {
@@ -198,11 +199,10 @@ async function revalidateAndHydrate(
       const active = await deps.findActiveDocumentIds(tenantId, allDocIds);
       activeDocIds = new Set(active);
     } else if (DocumentModel.db?.readyState === 1) {
-      const activeDocs = await DocumentModel.find({
-        _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
-        tenantId: new Types.ObjectId(tenantId),
-        deletedAt: null,
-      }, { _id: 1 }).lean().exec();
+      const activeDocs = await DocumentModel.find(
+        buildRetrievableDocumentFilter(tenantId, allDocIds),
+        { _id: 1 },
+      ).lean().exec();
       activeDocIds = new Set(activeDocs.map((d) => d._id.toString()));
     } else {
       activeDocIds = new Set(allDocIds);
@@ -238,7 +238,7 @@ async function revalidateAndHydrate(
     const chunk = chunkMap.get(candidate.chunkId);
     if (!chunk) continue;
 
-    // Active document check: reject chunks from soft-deleted documents
+    // Parent-document check: reject chunks from retrieval-ineligible documents.
     if (!activeDocIds.has(chunk.documentId.toString())) continue;
 
     // Re-validate: classification must be in the mandatory filter's allowed set
@@ -575,13 +575,9 @@ async function scopeProbeFoundTenantCandidate(
     return (await deps.findActiveDocumentIds(context.tenantId, documentIds)).length > 0;
   }
   if (DocumentModel.db?.readyState === 1) {
-    return Boolean(await DocumentModel.exists({
-      _id: { $in: documentIds.map((id) => new Types.ObjectId(id)) },
-      tenantId: new Types.ObjectId(context.tenantId),
-      deletedAt: null,
-      isArchived: false,
-      status: { $in: ["uploading", "uploaded", "processing", "processed", "reprocessing"] },
-    }));
+    return Boolean(await DocumentModel.exists(
+      buildRetrievableDocumentFilter(context.tenantId, documentIds),
+    ));
   }
   return true;
 }

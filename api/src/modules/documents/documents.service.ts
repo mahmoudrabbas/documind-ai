@@ -407,7 +407,6 @@ export function createDocumentServiceProviders(deps: {
     if (payload.category !== undefined) update.category = payload.category;
     if (payload.department !== undefined) update.department = payload.department;
     if (payload.classification !== undefined) update.classification = payload.classification;
-    if (payload.owner !== undefined) update.owner = payload.owner;
     if (payload.effectiveDate !== undefined) update.effectiveDate = payload.effectiveDate;
     if (payload.expiryDate !== undefined) update.expiryDate = payload.expiryDate;
     if (payload.versionLabel !== undefined) update.versionLabel = payload.versionLabel;
