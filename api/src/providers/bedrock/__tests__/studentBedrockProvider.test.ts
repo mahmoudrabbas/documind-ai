@@ -12,7 +12,7 @@ global.fetch = mockFetch as unknown as typeof fetch;
 
 const defaultModelsResponse = {
   ok: true,
-  json: async () => ({ data: [{ model_id: "embed-model-1", is_active: true }, { model_id: "model-1", is_active: true }] }),
+  json: async () => [{ model_id: "embed-model-1", is_active: true }, { model_id: "model-1", is_active: true }],
 };
 
 const defaultEmbedResponse = {
@@ -27,11 +27,12 @@ const defaultEmbedResponse = {
 const defaultChatResponse = {
   ok: true,
   json: async () => ({
-    id: "chat-1",
-    model: "model-1",
-    choices: [{ index: 0, message: { role: "assistant", content: "Hello!" }, finish_reason: "stop" }],
-    usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
-    created: Date.now(),
+    request_id: "chat-1",
+    model_id: "model-1",
+    region: "us-east-2",
+    output_text: "Hello!",
+    usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8, stop_reason: "end_turn" },
+    status: "active",
   }),
 };
 
@@ -127,6 +128,46 @@ describe("StudentBedrockProvider", () => {
     expect(response.model).toBe("model-1");
     expect(response.choices[0].message.content).toBe("Hello!");
     expect(response.usage.totalTokens).toBe(8);
+  });
+
+  test("should fall back to OpenAI-style choices shape for chat responses", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/models")) {
+        return Promise.resolve(defaultModelsResponse);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          id: "chat-2",
+          model: "model-1",
+          choices: [{ index: 0, message: { role: "assistant", content: "Legacy!" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+          created: Date.now(),
+        }),
+      });
+    });
+
+    const response = await provider.complete({ messages: [{ role: "user", content: "Hello" }] });
+
+    expect(response.id).toBe("chat-2");
+    expect(response.choices[0].message.content).toBe("Legacy!");
+    expect(response.usage.promptTokens).toBe(5);
+  });
+
+  test("should tolerate wrapped {data:[...]} models response", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/models")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ data: [{ model_id: "model-1", is_active: true }] }),
+        });
+      }
+      return Promise.resolve(defaultChatResponse);
+    });
+
+    const response = await provider.complete({ messages: [{ role: "user", content: "Hello" }] });
+
+    expect(response.choices[0].message.content).toBe("Hello!");
   });
 
   test("should handle auth error", async () => {

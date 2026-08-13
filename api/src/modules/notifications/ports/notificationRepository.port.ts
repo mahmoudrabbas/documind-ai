@@ -179,11 +179,32 @@ export interface NotificationRepositoryPort {
     session?: TransactionSession,
   ): Promise<MatchedResult>;
 
+  /** "Clear all" — soft-delete every live (non-deleted) notification doc owned
+   *  by the user. The caller resets the unread counter (all unread docs are
+   *  among the deleted set). `actorId` is recorded for audit. */
+  softDeleteAll(
+    tenantId: string,
+    userId: string,
+    actorId: string,
+    session?: TransactionSession,
+  ): Promise<MatchedCountResult>;
+
   /** Backs the unread-count badge (T14), including per-priority totals. */
   unreadCountByPriority(
     tenantId: string,
     userId: string,
   ): Promise<UnreadCountByPriorityResult>;
+
+  /** Apply the "enqueue" lifecycle transition (CREATED → QUEUED) to the given
+   *  notification docs — called by the outbox producer right after the
+   *  'notification.dispatch' job is enqueued, so the dispatch worker (which
+   *  requires QUEUED|DISPATCHED) delivers them. Idempotent: docs not in CREATED
+   *  are left untouched. */
+  markEnqueued(
+    tenantId: string,
+    notificationIds: string[],
+    session?: TransactionSession,
+  ): Promise<MatchedCountResult>;
 
   /** Purge all of a user's notification docs (soft delete) during user-data
    *  deletion. Called inside the deletion transaction when a session is given. */

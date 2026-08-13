@@ -92,7 +92,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
       />
       <aside
         aria-label="Primary navigation"
-        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[280px] ${
+        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col overflow-hidden border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[280px] ${
           open
             ? "translate-x-0"
             : "max-md:ltr:-translate-x-full max-md:rtl:translate-x-full"
@@ -124,7 +124,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <nav className="mt-md flex-1 space-y-1 px-md">
+        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-md scrollbar-hide">
           {links.map(({ label, href, icon }) => {
             const allHrefs = links.map((l) => l.href);
             const isActive =

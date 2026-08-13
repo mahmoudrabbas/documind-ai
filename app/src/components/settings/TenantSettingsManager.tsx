@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api-client";
-import { updateTenantSettings } from "@/services/settings.service";
+import {
+  updateTenantSettings,
+  uploadTenantLogo,
+} from "@/services/settings.service";
 import { useTenantSettings } from "@/providers/tenant-provider";
 import type {
   DeepPartial,
@@ -128,9 +131,12 @@ export function TenantSettingsManager() {
   const { refresh, applyUpdated } = tenant;
   const [form, setForm] = useState<TenantSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   /* Kick off the shared provider load when nothing has been fetched yet. */
   useEffect(() => {
@@ -277,6 +283,50 @@ export function TenantSettingsManager() {
     setSuccessMessage(null);
     setErrorMessage(null);
     setConflictMessage(null);
+    setLogoUploadError(null);
+  }
+
+  async function handleLogoUpload(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || tenant.status !== "ready") return;
+
+    setIsUploadingLogo(true);
+    setLogoUploadError(null);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+    setConflictMessage(null);
+
+    try {
+      const response = await uploadTenantLogo(file);
+      const nextVersion =
+        typeof response.data.settingsVersion === "number"
+          ? response.data.settingsVersion
+          : tenant.settingsVersion + 1;
+      const saved: GetTenantSettingsResult = {
+        settings: response.data.settings,
+        settingsVersion: nextVersion,
+        settingsUpdatedAt: response.data.settingsUpdatedAt,
+      };
+      applyUpdated(saved);
+      setForm(saved.settings);
+      setSuccessMessage("Logo uploaded successfully.");
+    } catch (err) {
+      setLogoUploadError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to upload logo. Please try again.",
+      );
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
+
+  function handleRemoveLogo() {
+    updateProfile("logoUrl", null);
+    setLogoUploadError(null);
   }
 
   if (tenant.status === "idle" || tenant.status === "loading") {
@@ -352,14 +402,61 @@ export function TenantSettingsManager() {
             }
             placeholder="UTC"
           />
-          <Input
-            label="Logo URL"
-            value={form?.profile.logoUrl ?? ""}
-            onChange={(event) =>
-              updateProfile("logoUrl", emptyToNull(event.target.value))
-            }
-            placeholder="https://…/logo.png"
-          />
+          <div className="sm:col-span-2">
+            <p className="mb-2 text-label-md font-medium text-on-surface-variant">
+              Company logo
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              {form?.profile.logoUrl ? (
+                <img
+                  src={form.profile.logoUrl}
+                  alt="Company logo"
+                  className="h-12 w-auto max-w-[160px] rounded border border-outline-variant bg-white object-contain p-1"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-outline-variant bg-surface-container-low text-outline">
+                  <span className="material-symbols-outlined text-2xl">
+                    image
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  isLoading={isUploadingLogo}
+                  disabled={isSaving}
+                  onClick={() => logoFileInputRef.current?.click()}
+                >
+                  {form?.profile.logoUrl ? "Replace logo" : "Upload logo"}
+                </Button>
+                {form?.profile.logoUrl ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isUploadingLogo || isSaving}
+                    onClick={handleRemoveLogo}
+                  >
+                    Remove
+                  </Button>
+                ) : null}
+                <input
+                  ref={logoFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml"
+                  className="hidden"
+                  onChange={(event) => void handleLogoUpload(event)}
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-on-surface-variant">
+              PNG, JPG, WebP, GIF or SVG, up to 2 MB. Shown in the app header
+              and in outgoing emails.
+            </p>
+            {logoUploadError ? (
+              <p className="mt-2 text-sm text-error">{logoUploadError}</p>
+            ) : null}
+          </div>
         </div>
         <div className="mt-4 max-w-xs">
           <Select

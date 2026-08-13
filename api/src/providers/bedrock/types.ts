@@ -57,11 +57,14 @@ export interface SBGChatMessage {
 }
 
 export interface SBGChatResponse {
-  id: string;
-  model: string;
-  choices: SBGChatChoice[];
-  usage: SBGChatUsage;
-  created: number;
+  request_id?: string;
+  id?: string;
+  model_id?: string;
+  model?: string;
+  output_text?: string;
+  choices?: SBGChatChoice[];
+  usage?: SBGChatUsage;
+  status?: string;
 }
 
 export interface SBGChatChoice {
@@ -71,9 +74,14 @@ export interface SBGChatChoice {
 }
 
 export interface SBGChatUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  stop_reason?: string | null;
+  budget_state?: string;
+  fallback_used?: boolean;
 }
 
 export interface SBGEmbedRequest {
@@ -126,6 +134,4 @@ export interface SBGAudioResponse {
   format: string;
 }
 
-export interface SBGModelsResponse {
-  data: SBGModel[];
-}
+export type SBGModelsResponse = SBGModel[] | { data: SBGModel[] };

@@ -214,6 +214,8 @@ const notificationService = new NotificationService(
 setNotificationCreatePort({
   create: (tenantId, draft, recipientUserIds) =>
     notificationService.create(tenantId, draft, recipientUserIds),
+  markEnqueued: (tenantId, notificationIds) =>
+    notificationService.markEnqueued(tenantId, notificationIds),
 });
 
 // ── Notification outbox scheduler ────────────────────────────────────────────

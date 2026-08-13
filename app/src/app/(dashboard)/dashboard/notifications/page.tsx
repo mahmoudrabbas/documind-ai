@@ -12,7 +12,7 @@ import {
 import { useI18n } from "@/providers/i18n-provider";
 import { useNotificationFeed } from "@/hooks/features/useNotificationFeed";
 import { useUnreadCount } from "@/hooks/features/useUnreadCount";
-import { markAllRead } from "@/services/notifications.service";
+import { markAllRead, clearAllNotifications } from "@/services/notifications.service";
 import {
   localizeNotification,
   resolveNotificationActionHref,
@@ -49,6 +49,7 @@ export default function NotificationsPage() {
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [page, setPage] = useState(1);
   const [markingAllRead, setMarkingAllRead] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   useEffect(() => {
     const category = categoryToParam(activeCategory);
@@ -66,6 +67,17 @@ export default function NotificationsPage() {
       await refresh();
     } finally {
       setMarkingAllRead(false);
+    }
+  }
+
+  async function handleClearAll() {
+    setClearingAll(true);
+    try {
+      await clearAllNotifications();
+      await unread.refresh();
+      await refresh();
+    } finally {
+      setClearingAll(false);
     }
   }
 
@@ -89,14 +101,24 @@ export default function NotificationsPage() {
         title={t("notifications.title")}
         description={t("notifications.pageDescription")}
         actions={
-          <Button
-            variant="secondary"
-            isLoading={markingAllRead}
-            disabled={unread.count === 0}
-            onClick={() => void handleMarkAllRead()}
-          >
-            {t("notifications.markAllRead")}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              isLoading={clearingAll}
+              disabled={total === 0}
+              onClick={() => void handleClearAll()}
+            >
+              {t("notifications.clearAll")}
+            </Button>
+            <Button
+              variant="secondary"
+              isLoading={markingAllRead}
+              disabled={unread.count === 0}
+              onClick={() => void handleMarkAllRead()}
+            >
+              {t("notifications.markAllRead")}
+            </Button>
+          </div>
         }
       />
 
@@ -162,17 +184,20 @@ export default function NotificationsPage() {
                     onClick={() => void handleItemClick(item)}
                     className="flex w-full items-start gap-3 px-5 py-4 text-start hover:bg-surface-container-low"
                   >
-                    <span
-                      aria-hidden="true"
-                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                        {
-                          critical: "bg-error",
-                          high: "bg-warning",
-                          normal: "bg-info",
-                          low: "bg-on-surface-variant",
-                        }[item.priority]
-                      }`}
-                    />
+                    {!item.isRead ? (
+                      <span
+                        aria-hidden="true"
+                        data-testid="unread-dot"
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                          {
+                            critical: "bg-error",
+                            high: "bg-warning",
+                            normal: "bg-info",
+                            low: "bg-on-surface-variant",
+                          }[item.priority]
+                        }`}
+                      />
+                    ) : null}
                     <span className="min-w-0 flex-1">
                       <span
                         className={`block text-label-md font-semibold ${

@@ -80,8 +80,8 @@ export function createEmailSendJobHandler(dispatchPort: EmailDispatchPort): JobH
           db.collection("platformsettings").findOne({ key: "global_settings" }),
         ]);
         const branding = {
-          accentColor: tenant?.settings?.accentColor,
-          logoUrl: tenant?.settings?.logoUrl,
+          accentColor: tenant?.settings?.profile?.accentColor,
+          logoUrl: tenant?.settings?.profile?.logoUrl,
           supportEmail: typeof globalSettings?.value?.supportEmail === "string" ? globalSettings.value.supportEmail : undefined,
         };
 

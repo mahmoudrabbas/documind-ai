@@ -760,6 +760,7 @@ const en: TranslationDictionary = {
   "notifications.loadError": "Failed to load notifications.",
   "notifications.unreadCount": "{{count}} unread",
   "notifications.markAllRead": "Mark all as read",
+  "notifications.clearAll": "Clear all",
   "notifications.archive": "Archive",
   "notifications.clear": "Clear",
   "notifications.markRead": "Mark as read",
@@ -774,6 +775,9 @@ const en: TranslationDictionary = {
   "notifications.category.knowledge": "Knowledge",
   "notifications.category.workflow": "Workflow",
   "notifications.category.admin": "Admin",
+
+  /* ── toasts ───────────────────────────────────────────── */
+  "toasts.dismiss": "Dismiss",
 
   /* ── chat (conversation + image analysis) ────────────────── */
   "chat.attachImage": "Attach an image to analyze",
