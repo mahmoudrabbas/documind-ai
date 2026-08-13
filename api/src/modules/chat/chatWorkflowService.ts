@@ -124,16 +124,24 @@ export function buildAuthorizedSearchQueryText(
 
 function buildAuthorizedSearchVariants(intent: IntentAgentOutput): {
   queryVariants?: string[];
+  exactTerms?: string[];
   keywordTexts?: string[];
 } {
   const base = intent.normalizedQuestion.trim();
-  const dedupe = (values: readonly string[], limit: number): string[] => {
-    const seen = new Set<string>([base]);
+  const dedupe = (
+    values: readonly string[],
+    limit: number,
+    caseInsensitive = false,
+  ): string[] => {
+    const keyOf = (value: string): string =>
+      caseInsensitive ? value.toLowerCase() : value;
+    const seen = new Set<string>([keyOf(base)]);
     const result: string[] = [];
     for (const value of values) {
       const trimmed = value.trim();
-      if (!trimmed || seen.has(trimmed)) continue;
-      seen.add(trimmed);
+      const key = keyOf(trimmed);
+      if (!trimmed || seen.has(key)) continue;
+      seen.add(key);
       result.push(trimmed);
       if (result.length >= limit) break;
     }
@@ -144,16 +152,16 @@ function buildAuthorizedSearchVariants(intent: IntentAgentOutput): {
     intent.semanticQueries.map((query) => query.text),
     10,
   );
+  const exactTerms = dedupe(intent.exactTerms, 30, true);
   const keywordTexts = dedupe(
-    [
-      ...intent.exactTerms,
-      ...intent.keywordQueries.map((query) => query.terms.join(" ")),
-    ],
-    30,
+    intent.keywordQueries.map((query) => query.terms.join(" ")),
+    10,
+    true,
   );
 
   return {
     ...(queryVariants.length > 0 ? { queryVariants } : {}),
+    ...(exactTerms.length > 0 ? { exactTerms } : {}),
     ...(keywordTexts.length > 0 ? { keywordTexts } : {}),
   };
 }

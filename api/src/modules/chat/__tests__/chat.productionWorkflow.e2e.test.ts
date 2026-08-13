@@ -339,12 +339,23 @@ class ExpandedIntentFakeModelAdapter extends FakeModelAdapter {
                 keywordQueries: [
                   { terms: ["remote", "work", "conditions"], language: "en", mustMatch: false },
                 ],
-                exactTerms: ["remote work"],
+                exactTerms: ["$25", "P1"],
               }),
             },
           }
         : choice),
     };
+  }
+}
+
+class RecordingKeywordAdapter extends FakeKeywordAdapter {
+  readonly searches: Array<Parameters<FakeKeywordAdapter["search"]>[0]> = [];
+
+  override async search(
+    query: Parameters<FakeKeywordAdapter["search"]>[0],
+  ): ReturnType<FakeKeywordAdapter["search"]> {
+    this.searches.push(query);
+    return super.search(query);
   }
 }
 
@@ -1039,6 +1050,7 @@ async function productionService(
   options: {
     broadenAtMaterialization?: boolean;
     evidence?: readonly EvidenceFixture[];
+    keywordAdapter?: FakeKeywordAdapter;
     model?: FakeModelAdapter;
     useMongoHistory?: boolean;
   } = {},
@@ -1046,7 +1058,7 @@ async function productionService(
   const model = options.model ?? new SemanticAwareFakeModelAdapter();
   const embedding = new FakeEmbeddingAdapter();
   const vector = new FakeVectorStoreAdapter();
-  const keyword = new FakeKeywordAdapter();
+  const keyword = options.keywordAdapter ?? new FakeKeywordAdapter();
   const reranker = createRerankerService({ reranker: new FakeRerankerAdapter() });
   const authorization = getDocumentAccessAuthorizationService();
   const evidence = options.evidence ?? [
@@ -1305,6 +1317,7 @@ test(
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
+    const keyword = new RecordingKeywordAdapter();
     const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
       fileName: "remote-work-english.pdf",
       title: "Remote Work English Policy",
@@ -1317,6 +1330,7 @@ test(
     const service = await productionService(fixture, {
       model: new ExpandedIntentFakeModelAdapter(),
       evidence: [evidence],
+      keywordAdapter: keyword,
     });
 
     await service.execute(
@@ -1334,8 +1348,17 @@ test(
     assert.ok(searchCall);
     assert.ok(Array.isArray(searchCall.input?.queryVariants));
     assert.ok(searchCall.input.queryVariants.length > 0);
+    assert.deepEqual(searchCall.input?.exactTerms, ["$25", "P1"]);
     assert.ok(Array.isArray(searchCall.input?.keywordTexts));
-    assert.ok(searchCall.input.keywordTexts.some((text) => /remote work/u.test(text)));
+    assert.ok(searchCall.input.keywordTexts.includes(evidence.question));
+    assert.deepEqual(
+      keyword.searches.map((search) => search.queryText),
+      [
+        searchCall.input.queryText,
+        "$25",
+        evidence.question,
+      ],
+    );
     const searchOutput = searchCall.output as
       | { candidates?: Array<{ documentId: string }> }
       | undefined;
@@ -3190,6 +3213,7 @@ test(
       (toolCall) => toolCall.toolName === "evaluate_evidence",
     );
     assert.ok(searchCall);
+    assert.equal(searchCall.output?.retrievalOutcome, "AUTHORIZATION_FILTERED");
     assert.deepEqual(searchCall.output?.candidates, []);
     assert.equal(evidenceCall, undefined);
     assert.deepEqual(response.sources, []);
@@ -3225,6 +3249,36 @@ test(
       0,
     );
     assertPersistenceSafety(graph);
+  },
+);
+
+test(
+  "a genuine authorized-corpus no-match still creates a durable Knowledge Gap",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const requestId = "request-genuine-knowledge-gap";
+    const service = await productionService(fixture, { evidence: [] });
+
+    const response = await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: "What is the company maternity leave policy?",
+      },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const searchCall = graph.toolCalls.find(
+      (toolCall) => toolCall.toolName === "authorized_hybrid_search",
+    );
+
+    assert.ok(searchCall);
+    assert.equal(searchCall.output?.retrievalOutcome, "NO_MATCHES");
+    assert.deepEqual(response.sources, []);
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      1,
+    );
   },
 );
 

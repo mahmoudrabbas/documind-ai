@@ -23,9 +23,13 @@ export interface RetrievalQuery {
    */
   queryVariants?: string[];
   /**
-   * Additional keyword-search texts besides `queryText` (e.g. translated
-   * terms). Each text runs an `$text` search; per-chunk the best score wins.
-   * Capped internally at 3.
+   * Exact lexical anchors from the query plan. Retrieval deliberately gives
+   * this class a bounded keyword-search slot when keyword plans also exist.
+   */
+  exactTerms?: string[];
+  /**
+   * Generated keyword-search texts besides `queryText`. Retrieval balances
+   * this class with exact terms; per-chunk the best score wins.
    */
   keywordTexts?: string[];
   topK: number;
@@ -113,6 +117,8 @@ export interface RetrievalDiagnostics {
   rawKeywordCandidateCount?: number;
   postAuthorizationVectorCandidateCount?: number;
   postAuthorizationKeywordCandidateCount?: number;
+  /** True only when actor authorization removed otherwise tenant-matching candidates. */
+  authorizationFiltered?: boolean;
   fusedCandidateCount?: number;
   hydratedCandidateCount?: number;
   evidenceItemCount?: number;

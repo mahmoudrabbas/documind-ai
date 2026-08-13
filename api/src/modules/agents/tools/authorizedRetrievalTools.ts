@@ -309,6 +309,7 @@ const HybridSearchInputSchema = z
     topK: z.number().int().min(1).max(50).default(10),
     documentIds: boundedIdArraySchema(20).optional(),
     queryVariants: z.array(z.string().trim().min(1).max(1000)).max(10).default([]),
+    exactTerms: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
     keywordTexts: z.array(z.string().trim().min(1).max(1000)).max(30).default([]),
   })
   .strict();
@@ -544,6 +545,7 @@ export function createAuthorizedHybridSearchTool(
         topK: parsed.topK,
       };
       if (parsed.queryVariants.length > 0) query.queryVariants = parsed.queryVariants;
+      if (parsed.exactTerms.length > 0) query.exactTerms = parsed.exactTerms;
       if (parsed.keywordTexts.length > 0) query.keywordTexts = parsed.keywordTexts;
       if (parsed.documentIds && parsed.documentIds.length > 0) {
         query.filter = { documentIds: parsed.documentIds };
@@ -578,10 +580,10 @@ export function createAuthorizedHybridSearchTool(
       const postAuthorizationCandidateCount = postAuthorizationVectorCandidateCount !== undefined || postAuthorizationKeywordCandidateCount !== undefined
         ? (postAuthorizationVectorCandidateCount ?? 0) + (postAuthorizationKeywordCandidateCount ?? 0)
         : result.candidates.length;
-      const retrievalOutcome = rawCandidateCount > postAuthorizationCandidateCount
-        ? "AUTHORIZATION_FILTERED"
-        : eligibleCandidates.length > 0
-          ? "AUTHORIZED_RESULTS"
+      const retrievalOutcome = eligibleCandidates.length > 0
+        ? "AUTHORIZED_RESULTS"
+        : result.diagnostics.authorizationFiltered || rawCandidateCount > postAuthorizationCandidateCount
+          ? "AUTHORIZATION_FILTERED"
           : "NO_MATCHES";
       if (trustedCandidateCatalog) {
         // Bounded, request-private provenance cache. Only the server-produced

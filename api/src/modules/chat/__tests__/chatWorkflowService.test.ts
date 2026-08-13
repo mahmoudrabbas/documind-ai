@@ -1056,7 +1056,8 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
       input: {
         queryText: "trusted normalized question",
         queryVariants: ["English remote work policy"],
-        keywordTexts: ["P1", "$25", "remote work policy"],
+        exactTerms: ["P1", "$25"],
+        keywordTexts: ["remote work policy"],
       },
     });
   });
@@ -1647,6 +1648,25 @@ describe("ChatWorkflowService controlled short paths", () => {
     });
     const response = await executeHarness(harness);
     expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Knowledge Gap eligible when authorized results remain but evidence is insufficient", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      retrievalOutcome: "AUTHORIZED_RESULTS",
+    });
+    await executeHarness(harness);
+    expect(harness.reportKnowledgeGap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create an unverified-grounded Knowledge Gap after authorization filtering", async () => {
+    const harness = makeHarness({
+      verifierIds: [],
+      complianceSourceIds: [],
+      retrievalOutcome: "AUTHORIZATION_FILTERED",
+    });
+    await executeHarness(harness);
     expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
   });
 
