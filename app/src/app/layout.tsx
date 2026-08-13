@@ -36,6 +36,7 @@ export default async function RootLayout({
       lang={locale}
       dir={dir}
       className={`h-full antialiased ${cairo.variable}`}
+      suppressHydrationWarning
     >
       <head>
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
@@ -43,7 +44,10 @@ export default async function RootLayout({
       {/* `font-sans` is intentionally omitted: the base layer already sets
           the body font, and a utility class would outrank the RTL Arabic
           override in globals.css (Tailwind v4 orders utilities after base). */}
-      <body className="min-h-full flex flex-col bg-background text-on-background">
+      <body
+        className="min-h-full flex flex-col bg-background text-on-background"
+        suppressHydrationWarning
+      >
         <I18nProvider initialLocale={locale}><AuthProvider><PermissionProvider><TenantProvider>{children}</TenantProvider></PermissionProvider></AuthProvider></I18nProvider>
       </body>
     </html>
