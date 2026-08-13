@@ -10,6 +10,15 @@ export class PublicEnvironmentValidationError extends Error {
   }
 }
 
+export function resolveCopilotEnabled(configured: string | undefined): boolean {
+  return configured?.trim().toLowerCase() === "true";
+}
+
+/** Build-time constant: whether the Copilot feature is enabled for this build. */
+export const COPILOT_ENABLED = resolveCopilotEnabled(
+  process.env.NEXT_PUBLIC_COPILOT_ENABLED,
+);
+
 export function resolvePublicApiUrl(nodeEnv: string | undefined, configuredUrl: string | undefined): string {
   const value = configuredUrl?.trim();
   if (!value) {

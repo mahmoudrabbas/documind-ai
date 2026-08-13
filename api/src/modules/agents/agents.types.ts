@@ -169,6 +169,25 @@ export interface RunRecord {
   updatedAt: string;
 }
 
+/**
+ * Fields needed to materialize an AgentRun row for a supervisor run that did
+ * not pre-create one (e.g. the copilot supervisor). `tenantId` is supplied
+ * separately by the persistence boundary; `runId` is the target `_id`.
+ */
+export interface RunSeed {
+  actorId: string;
+  workflowName: string;
+  agentName: string;
+  input: Record<string, unknown>;
+  modelProvider: string;
+  modelName: string;
+  promptVersion?: string | null;
+  promptVersionId?: string | null;
+  toolVersionSnapshot?: string | null;
+  traceId: string;
+  requestId: string;
+}
+
 export interface ModelCompletionMessage {
   role: "system" | "user" | "assistant";
   content: string;

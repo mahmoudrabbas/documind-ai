@@ -258,6 +258,7 @@ function serializeVerifiedUser(user: CreatedUserRecord) {
     role: user.role,
     status: user.status,
     emailVerified: user.emailVerified,
+    createdAt: user.createdAt?.toISOString() ?? new Date().toISOString(),
   };
 }
 
@@ -389,6 +390,7 @@ export async function resetPassword(
       resourceType: "User",
       resourceId: user.id.toString(),
       action: "AUTH_PASSWORD_RESET",
+      actorKind: "USER",
       actorId: user.id.toString(),
       actorEmail: user.email,
       actorRole: user.role,

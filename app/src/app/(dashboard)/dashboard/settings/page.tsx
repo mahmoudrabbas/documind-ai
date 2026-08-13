@@ -16,12 +16,15 @@ export default function SettingsPage() {
   return (
     <DashboardPage dir={dir}>
       <DashboardPageHeader
+        guideId="page-heading-settings"
         title={t("settings.title")}
         description={t("settings.description")}
       />
 
       <div className="space-y-6">
-        <SessionSecurity />
+        <div data-guide-id="settings-session-security">
+          <SessionSecurity />
+        </div>
 
         <DashboardPanel>
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -29,7 +32,7 @@ export default function SettingsPage() {
               <h2 className="text-title-lg font-bold text-primary">{t("settings.documentTaxonomyTitle")}</h2>
               <p className="mt-1 text-sm text-on-surface-variant">{t("settings.documentTaxonomyDesc")}</p>
             </div>
-            <Link href="/dashboard/settings/document-taxonomy" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">
+            <Link href="/dashboard/settings/document-taxonomy" data-guide-id="settings-taxonomy-link" className="rounded bg-primary px-4 py-2 text-sm font-medium text-white">
               {t("settings.openDocumentTaxonomy")}
             </Link>
           </div>

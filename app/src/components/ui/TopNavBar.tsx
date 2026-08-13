@@ -14,6 +14,8 @@ import {
   TENANT_TOPBAR_LINKS,
 } from "@/constants/routes";
 import { Permission } from "@/types/api/permissions.types";
+import { useCopilot } from "@/providers/copilot-provider";
+import { COPILOT_ENABLED } from "@/config/public-env";
 import { NotificationsBell } from "./NotificationsBell";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
@@ -27,6 +29,7 @@ export function TopNavBar({
   const permissions = usePermissions();
   const tenant = useTenantSettings();
   const { t } = useI18n();
+  const { setOpen: setCopilotOpen } = useCopilot();
   const { user } = auth;
   const pathname = usePathname();
   const router = useRouter();
@@ -230,17 +233,34 @@ export function TopNavBar({
                 </Link>
               ) : null}
 
-              <Link
-                href="#"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2 px-4 py-2.5 text-label-md text-on-surface hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  help
-                </span>
-                {t("shell.helpCenter")}
-              </Link>
+              {COPILOT_ENABLED ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setCopilotOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-label-md text-on-surface hover:bg-surface-container-high"
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    help
+                  </span>
+                  {t("shell.helpCenter")}
+                </button>
+              ) : (
+                <Link
+                  href="#"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-label-md text-on-surface hover:bg-surface-container-high"
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    help
+                  </span>
+                  {t("shell.helpCenter")}
+                </Link>
+              )}
 
               <button
                 type="button"

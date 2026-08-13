@@ -11,6 +11,9 @@ export const CHAT_AGENT_IDS = [
   "answer-writer-agent",
   "citation-verification-agent",
   "compliance-agent",
+  "copilot-supervisor",
+  "platform-guide-agent",
+  "platform-action-agent",
 ] as const;
 
 export type ChatAgentId = (typeof CHAT_AGENT_IDS)[number];
@@ -69,6 +72,24 @@ const CHAT_AGENT_DEFINITIONS: ReadonlyArray<{
     capabilities: ["read", "sensitive_execute"],
     description:
       "Applies the final compliance review to the answer (release | refuse | clarify).",
+  },
+  {
+    id: "copilot-supervisor",
+    capabilities: ["read", "execute"],
+    description:
+      "Classifies copilot requests into guide, action, or clarify modes and delegates to specialized agents.",
+  },
+  {
+    id: "platform-guide-agent",
+    capabilities: ["read", "generate"],
+    description:
+      "Expands a guide flow into a validated GuideSession with permission-filtered steps and localized content.",
+  },
+  {
+    id: "platform-action-agent",
+    capabilities: ["read", "execute"],
+    description:
+      "Proposes a single registered action tool with typed input based on user utterance.",
   },
 ];
 

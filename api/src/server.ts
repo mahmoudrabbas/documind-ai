@@ -15,6 +15,7 @@ import { MongoUserNotificationStateRepository } from "./modules/notifications/re
 import { RecipientResolver } from "./modules/notifications/recipientResolver.js";
 import { setNotificationCreatePort } from "./modules/notifications/outbox/notificationOutbox.dispatcher.js";
 import { createSocketServer } from "./modules/notifications/socket/notificationSocketServer.js";
+import { setCopilotSocketServer } from "./modules/copilot/socket/copilotSocketEmitter.js";
 import SubscriptionModel from "./db/models/subscription.model.js";
 import { inspectSubscriptionIndexInvariant } from "./db/subscription-index-invariant.js";
 import { shutdownLangfuse } from "./providers/observability/langfuse.js";
@@ -181,6 +182,10 @@ const server = app.listen(config.PORT, () => {
 
 const notificationSocketServer = createSocketServer(server);
 logger.info("Notification socket server attached");
+
+// Copilot lifecycle channel (§15) — the same socket.io instance serves
+// `copilot:<runId>` rooms; emission is best-effort (see copilotSocketEmitter).
+setCopilotSocketServer(notificationSocketServer);
 
 // ── Entitlement reconciliation scheduler ─────────────────────────────────────
 //
