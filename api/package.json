@@ -33,6 +33,8 @@
     "audit:subscriptions": "node scripts/audit-null-tenant-subscriptions.mjs",
     "migrate:document-policy:v1": "tsx src/scripts/migrate-document-access-policy-v1.ts",
     "migrate:document-policy:v1:apply": "tsx src/scripts/migrate-document-access-policy-v1.ts --apply",
+    "migrate:policy:use-in-ai": "tsx src/scripts/migrate-policy-use-in-ai.ts --dry-run",
+    "migrate:policy:use-in-ai:apply": "tsx src/scripts/migrate-policy-use-in-ai.ts --apply",
     "pretypecheck": "npm run build --workspace workers",
     "prebuild": "npm run build --workspace workers",
     "pretest": "npm run build --workspace workers"
