@@ -48,7 +48,9 @@ export interface ProductionChatSupervisorDependencies {
 
 export interface ProductionChatSupervisorComposition {
   readonly runtime: SupervisorRuntime;
-  readonly workflow: ChatWorkflowDefinition;
+  readonly workflow: ChatWorkflowDefinition & {
+    readonly id: "chat-rag-v1";
+  };
   readonly persistence: SupervisorPersistence;
   readonly executors: readonly AgentContract[];
   readonly tools: readonly RegisteredTool[];

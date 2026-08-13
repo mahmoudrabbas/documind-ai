@@ -149,6 +149,13 @@ export class WorkflowRegistry {
     return this.workflows.get(id as ChatWorkflowId);
   }
 
+  require(id: "chat-rag-v1"): ChatWorkflowDefinition & {
+    readonly id: "chat-rag-v1";
+  };
+  require(id: "guider-v1"): ChatWorkflowDefinition & {
+    readonly id: "guider-v1";
+  };
+  require(id: string): ChatWorkflowDefinition;
   require(id: string): ChatWorkflowDefinition {
     const definition = this.workflows.get(id as ChatWorkflowId);
     if (!definition) {

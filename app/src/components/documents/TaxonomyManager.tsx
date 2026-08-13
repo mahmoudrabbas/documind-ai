@@ -83,7 +83,6 @@ export function TaxonomyManager() {
         <Tabs active={kind} onChange={(id) => setKind(id as TaxonomyKind)} ariaLabel={t("taxonomy.title")} className="mt-4" data-guide-id="taxonomy-tabs">
           {KINDS.map((item) => <Tab key={item} id={item}>{t(`taxonomy.${item}`)}</Tab>)}
         </Tabs>
-        </Tabs>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <label className="flex-1"><span className="sr-only">{t("common.search")}</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("taxonomy.search")} className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" /></label>
           <label><span className="sr-only">{t("taxonomy.status")}</span><select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"><option value="all">{t("taxonomy.all")}</option><option value="active">{t("taxonomy.active")}</option><option value="archived">{t("taxonomy.archived")}</option></select></label>

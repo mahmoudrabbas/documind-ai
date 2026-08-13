@@ -92,7 +92,20 @@ export async function processCopilotMessage(
     },
   };
 
-  const result = await runtime.execute(runInput);
+  const result = await runtime.execute(runInput, {
+    onToolResult: ({ toolName, currentInput }) => {
+      const plan = currentInput.actionPlan as
+        | { toolInput?: Record<string, unknown> }
+        | undefined;
+      void writeCopilotActionAudit({
+        outcome: "EXECUTED",
+        context: runInput.context,
+        runId,
+        toolName,
+        toolInput: plan?.toolInput,
+      });
+    },
+  });
 
   if (result.status === "completed" && result.output) {
     const output = result.output as { mode: string; guideSession?: GuideSession; actionPlan?: ActionPlan };
@@ -254,7 +267,20 @@ export async function createActionPlan(
     },
   };
 
-  const result = await runtime.execute(runInput);
+  const result = await runtime.execute(runInput, {
+    onToolResult: ({ toolName, currentInput }) => {
+      const plan = currentInput.actionPlan as
+        | { toolInput?: Record<string, unknown> }
+        | undefined;
+      void writeCopilotActionAudit({
+        outcome: "EXECUTED",
+        context: runInput.context,
+        runId,
+        toolName,
+        toolInput: plan?.toolInput,
+      });
+    },
+  });
 
   let plan: (ActionPlan & { approvalId?: string }) | null = null;
 

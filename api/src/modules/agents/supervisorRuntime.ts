@@ -706,7 +706,7 @@ export class SupervisorRuntime {
           error: executorError,
           ...tracingPatch,
         });
-        return this.terminalFailed(executorError.code);
+        return this.terminalFailed(executorError.code, executorError.message);
       }
 
       state.currentInput = {

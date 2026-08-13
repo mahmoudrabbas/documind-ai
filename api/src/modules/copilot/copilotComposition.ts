@@ -14,7 +14,6 @@ import {
 } from "./agents/platformActionAgent.js";
 import { CopilotClassifier } from "./agents/copilotSupervisor.js";
 import { registerActionTools } from "./action/registerActionTools.js";
-import { writeCopilotActionAudit } from "./copilot.audit.js";
 import type { ClassifierDecision } from "./action/action.contracts.js";
 import type { StorageProvider, SecurityScanner, ProcessingDispatcher } from "../../providers/storage/types.js";
 import type { SupervisorPersistence } from "../agents/supervisorPersistence.js";
@@ -128,9 +127,15 @@ class CopilotSupervisorDecisionModel implements SupervisorDecisionModel {
   }
 
   async decide(request: SupervisorDecisionRequest): Promise<SupervisorDecisionContent> {
-    const { currentAgent, input, runId } = request;
+    const { currentAgent, input, context } = request;
     const utterance = (input.utterance as string) ?? "";
     const locale = (input.locale as "en" | "ar") ?? "en";
+
+    // The supervisor runtime does not expose a runId on the decision request;
+    // the copilot controller mint a fresh conversationId per run, so it is a
+    // stable, unique key for per-run state (the action plan retained between
+    // the action agent's tool_call and its final complete step).
+    const runKey = context.conversationId;
 
     if (currentAgent === "copilot-supervisor") {
       // Explicit tool selection (direct /copilot/action route) bypasses the
@@ -179,20 +184,49 @@ class CopilotSupervisorDecisionModel implements SupervisorDecisionModel {
 
     if (currentAgent === "platform-action-agent") {
       const plan = input.actionPlan as Record<string, unknown> | undefined;
+      const planHasTool =
+        plan &&
+        typeof plan.toolName === "string" &&
+        plan.toolName.length > 0;
+
+      // HEAD's runtime merges the tool output back into the current input but
+      // leaves the consumed actionPlan in place, so a plain `input.actionPlan`
+      // check would re-issue the tool_call forever. The plan carries the run
+      // id it was built for; when the recorded plan for this conversation
+      // matches the plan still sitting in the input, the tool already ran and
+      // this decide must surface the result instead.
+      const recorded = this.planByRunId.get(runKey);
+      const samePlan =
+        planHasTool &&
+        recorded &&
+        typeof plan.runId === "string" &&
+        plan.runId === recorded.runId;
+      if (samePlan) {
+        this.planByRunId.delete(runKey);
+        return {
+          content: JSON.stringify({
+            action: "complete",
+            currentAgent: "platform-action-agent",
+            reasonCode: "action_plan_created",
+            result: input,
+          }),
+          usage: ZERO_USAGE,
+        };
+      }
 
       // The handoff output (the action plan) drives a tool_call so the
       // SupervisorRuntime executes the tool under its guardrails — including
       // the approval path for destructive operations.
-      if (plan && typeof plan.toolName === "string" && plan.toolName.length > 0) {
-        this.planByRunId.set(runId, plan);
+      if (planHasTool) {
+        this.planByRunId.set(runKey, plan);
         return {
           content: JSON.stringify({
             action: "tool_call",
             currentAgent: "platform-action-agent",
-            toolName: plan.toolName,
+            toolName: plan!.toolName,
             toolInput:
-              plan.toolInput && typeof plan.toolInput === "object"
-                ? (plan.toolInput as Record<string, unknown>)
+              plan!.toolInput && typeof plan!.toolInput === "object"
+                ? (plan!.toolInput as Record<string, unknown>)
                 : {},
             reasonCode: "action_plan_tool_call",
           }),
@@ -200,18 +234,14 @@ class CopilotSupervisorDecisionModel implements SupervisorDecisionModel {
         };
       }
 
-      // The current input after the tool executed has no actionPlan; surface
-      // the retained plan plus the tool result as the final output.
-      const retainedPlan = this.planByRunId.get(runId);
-      this.planByRunId.delete(runId);
+      // The current input after the executor produced no plan; surface it as
+      // the final output.
       return {
         content: JSON.stringify({
           action: "complete",
           currentAgent: "platform-action-agent",
           reasonCode: "action_plan_created",
-          result: retainedPlan
-            ? { mode: "action", actionPlan: retainedPlan, toolResult: input }
-            : input,
+          result: input,
         }),
         usage: ZERO_USAGE,
       };
@@ -285,16 +315,6 @@ export async function initializeCopilotRuntime(deps: {
       agentRegistry: executorRegistry.definitionsRegistry(),
       toolRegistry,
     }),
-    onToolResult: async ({ runId, toolName, toolInput, result, context }) => {
-      await writeCopilotActionAudit({
-        outcome: result.ok ? "EXECUTED" : "FAILED",
-        context,
-        runId,
-        toolName,
-        toolInput,
-        error: result.error,
-      });
-    },
   };
 
   supervisorRuntimeInstance = new SupervisorRuntime(config);
