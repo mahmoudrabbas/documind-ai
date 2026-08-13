@@ -44,16 +44,22 @@ services:
       - SEED_SUPER_ADMIN_NAME=DocuMind Platform Admin
       - SEED_SUPER_ADMIN_EMAIL=superadmin@documind.ai
       - SEED_SUPER_ADMIN_PASSWORD=DocuMind@2026
-      - AI_PROVIDER=groq
+      - AI_PROVIDER=${AI_PROVIDER:-groq}
+      - LLM_PRIMARY_PROVIDER=${LLM_PRIMARY_PROVIDER:-iti-bedrock}
+      - SBG_API_KEY=${SBG_API_KEY}
+      - ITI_BEDROCK_BASE_URL=${ITI_BEDROCK_BASE_URL:-http://host.docker.internal:8787/v1}
+      - ITI_BEDROCK_MODEL=${ITI_BEDROCK_MODEL:-deepseek.v3.2}
+      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-groq}
+      - BEDROCK_TIMEOUT_MS=${BEDROCK_TIMEOUT_MS:-8000}
+      - BEDROCK_MAX_RETRIES=${BEDROCK_MAX_RETRIES:-1}
+      - BEDROCK_RETRY_DELAY_MS=${BEDROCK_RETRY_DELAY_MS:-500}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GROQ_STT_API_KEY=${GROQ_STT_API_KEY}
       - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
-      - SBG_BASE_URL=${SBG_BASE_URL:-https://apiaccess.iti.net.eg}
-      - ITI_BEDROCK_BASE_URL=${ITI_BEDROCK_BASE_URL:-http://host.docker.internal:8787/v1}
-      - ITI_BEDROCK_MODEL=${ITI_BEDROCK_MODEL:-openai.gpt-oss-120b-1:0}
+      - SBG_BASE_URL=${SBG_BASE_URL:-http://apiaccess.iti.net.eg}
 
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-s3}
       - AWS_REGION=${AWS_REGION:-eu-north-1}
@@ -113,12 +119,15 @@ services:
       start_period: 30s
     volumes:
       - ./app:/repo/app
+      - app_node_modules:/repo/app/node_modules
       - /repo/app/.next
 
   worker:
     build:
       context: .
       dockerfile: workers/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -150,7 +159,15 @@ services:
       - NOTIFICATION_SOCKET_URL=http://api:5000
       - NOTIFICATION_SOCKET_SERVICE_TOKEN_FILE=/run/secrets/notification_socket_service_token
       - EMAIL_VERIFICATION_JWT_SECRET_FILE=/run/secrets/api_email_verification_secret
-      - AI_PROVIDER=groq
+      - AI_PROVIDER=${AI_PROVIDER:-groq}
+      - LLM_PRIMARY_PROVIDER=${LLM_PRIMARY_PROVIDER:-iti-bedrock}
+      - SBG_API_KEY=${SBG_API_KEY}
+      - ITI_BEDROCK_BASE_URL=${ITI_BEDROCK_BASE_URL:-http://host.docker.internal:8787/v1}
+      - ITI_BEDROCK_MODEL=${ITI_BEDROCK_MODEL:-deepseek.v3.2}
+      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-groq}
+      - BEDROCK_TIMEOUT_MS=${BEDROCK_TIMEOUT_MS:-8000}
+      - BEDROCK_MAX_RETRIES=${BEDROCK_MAX_RETRIES:-1}
+      - BEDROCK_RETRY_DELAY_MS=${BEDROCK_RETRY_DELAY_MS:-500}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
       - JINA_API_KEY=${JINA_API_KEY}
@@ -185,6 +202,7 @@ volumes:
   uploads_data:
   api_node_modules:
   worker_node_modules:
+  app_node_modules:
 
 secrets:
   api_jwt_secret:

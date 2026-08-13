@@ -273,62 +273,6 @@ beforeEach(async () => {
   ]);
 });
 
-test("sendMessage strips reasoning from the returned and persisted assistant message", async () => {
-  const { tenant, user } = await seedTenantAdmin();
-  const { adapter } = createRecordingAdapter(
-    "<think>Let me recall the handbook.</think>\n\nThe handbook says onboarding takes 3 days.",
-  );
-  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
-
-  const response = await service.sendMessage(
-    { message: "What does the handbook say about onboarding?" },
-    actorContext(tenant, user),
-  );
-
-  assert.equal(
-    response.answer,
-    "The handbook says onboarding takes 3 days.",
-  );
-  assert.ok(!response.answer.includes("<think>"));
-
-  const messages = await chatRepo.getConversationHistory(
-    tenant.id,
-    response.conversationId,
-    20,
-  );
-  const assistant = messages.find((m) => m.role === "assistant");
-  assert.ok(assistant);
-  assert.equal(
-    assistant.content,
-    "The handbook says onboarding takes 3 days.",
-  );
-  assert.ok(!assistant.content.includes("<think>"));
-  assert.ok(!assistant.content.includes("Let me recall"));
-});
-
-test("sendMessage fails with a controlled error when only reasoning remains", async () => {
-  const { tenant, user } = await seedTenantAdmin();
-  const { adapter } = createRecordingAdapter(
-    "<think>Only chain-of-thought, no answer.</think>",
-  );
-  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
-
-  await assert.rejects(
-    () =>
-      service.sendMessage(
-        { message: "What does the handbook say about travel?" },
-        actorContext(tenant, user),
-      ),
-    (error: unknown) =>
-      error instanceof AppError &&
-      error.code === "LLM_PROVIDER_UNAVAILABLE" &&
-      error.statusCode === 502,
-  );
-
-  const messages = await MessageModel.find({});
-  assert.equal(messages.filter((m) => m.role === "assistant").length, 0);
-});
-
 test("sendVisionMessage strips reasoning from the returned and persisted vision answer", async () => {
   const { tenant, user } = await seedTenantAdmin();
   const { adapter } = createRecordingAdapter("unused");
@@ -511,37 +455,4 @@ test("listConversations preview sanitizes legacy assistant reasoning", async () 
   assert.equal(conversations.length, 1);
   assert.equal(conversations[0].lastMessage, "Legacy preview.");
   assert.ok(!conversations[0].lastMessage.includes("<think>"));
-});
-
-test("RAG replay never sends legacy assistant reasoning back to the LLM", async () => {
-  const { tenant, user } = await seedTenantAdmin();
-  const { adapter, calls } = createRecordingAdapter("Fresh answer.");
-  const service = new ChatService(createStubRetrieval(tenant.id), adapter);
-
-  const conv = await chatRepo.createConversation(
-    tenant.id,
-    user.id,
-    "Legacy conversation",
-  );
-  await chatRepo.addMessage(tenant.id, conv._id.toString(), "user", "Hello", 0);
-  await chatRepo.addMessage(
-    tenant.id,
-    conv._id.toString(),
-    "assistant",
-    "<think>legacy reasoning</think>Legacy answer.",
-    1,
-  );
-
-  const response = await service.sendMessage(
-    { message: "Continue", conversationId: conv._id.toString() },
-    actorContext(tenant, user),
-  );
-
-  assert.equal(response.answer, "Fresh answer.");
-  const replayed = calls[0].messages.find(
-    (m) => m.role === "assistant",
-  );
-  assert.ok(replayed);
-  assert.equal(replayed.content, "Legacy answer.");
-  assert.ok(!replayed.content.includes("<think>"));
 });

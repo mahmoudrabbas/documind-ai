@@ -247,7 +247,7 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
 
       assert.equal(intentExecutionStep.modelProvider, "fake");
       assert.equal(intentExecutionStep.modelName, "fake");
-      assert.equal(intentExecutionStep.promptVersion, "1.1.0");
+      assert.equal(intentExecutionStep.promptVersion, "1.5.0");
       assert.equal(typeof intentExecutionStep.tokensUsed, "number");
       assert.ok((intentExecutionStep.tokensUsed as number) > 0);
       assert.equal(Number(intentExecutionStep.estimatedCost), 0);
@@ -267,7 +267,10 @@ test("SupervisorRuntime + intent-query-agent integration", async (t) => {
       assert.ok(run);
       assert.equal(run.status, "completed");
       assert.equal(run.totalSteps, 4);
-      assert.equal(run.totalTokensUsed, intentExecutionStep.tokensUsed);
+      assert.equal(
+        run.totalTokensUsed,
+        (intentExecutionStep.tokensUsed as number) + 90,
+      );
       assert.equal(Number(run.estimatedCost), 0);
     },
   );

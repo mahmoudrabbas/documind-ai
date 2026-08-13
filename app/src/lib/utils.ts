@@ -6,13 +6,20 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-/** Format a date for display in the UI. */
+/**
+ * Format a date for display in the UI.
+ *
+ * `locale` is a BCP-47 tag; components should pass `useIntlLocale()` so
+ * dates follow the selected language. It defaults to `"en-US"` to keep
+ * existing non-localized callers rendering exactly as before.
+ */
 export function formatDate(
   date: Date | string | number,
   options?: Intl.DateTimeFormatOptions,
+  locale: string = "en-US",
 ): string {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toLocaleDateString("en-US", {
+  return d.toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -21,9 +28,52 @@ export function formatDate(
 }
 
 /** Format a date with only month and year (no day). */
-export function formatMonthYear(date: Date | string | number): string {
+export function formatMonthYear(
+  date: Date | string | number,
+  locale: string = "en-US",
+): string {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  return d.toLocaleDateString(locale, { month: "long", year: "numeric" });
+}
+
+/**
+ * Break a timestamp into a translation key plus its interpolation
+ * params, e.g. `{ key: "common.relativeMinutes", params: { count: "5" } }`.
+ *
+ * The thresholds are identical to {@link formatRelativeTime}; only the
+ * rendering moves to the caller, which resolves the key with `t()`. A
+ * date older than a week returns no key and should be shown with
+ * {@link formatDate} instead.
+ */
+export function getRelativeTimeParts(date: Date | string | number): {
+  key: string | null;
+  params?: Record<string, string>;
+} {
+  const d = date instanceof Date ? date : new Date(date);
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
+
+  if (diffSec < 60) return { key: "common.relativeJustNow" };
+  if (diffSec < 3600) {
+    return {
+      key: "common.relativeMinutes",
+      params: { count: String(Math.floor(diffSec / 60)) },
+    };
+  }
+  if (diffSec < 86400) {
+    return {
+      key: "common.relativeHours",
+      params: { count: String(Math.floor(diffSec / 3600)) },
+    };
+  }
+  if (diffSec < 604800) {
+    return {
+      key: "common.relativeDays",
+      params: { count: String(Math.floor(diffSec / 86400)) },
+    };
+  }
+
+  return { key: null };
 }
 
 /** Format a relative time string (e.g. "2 hours ago"). */

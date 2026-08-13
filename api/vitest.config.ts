@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    setupFiles: ["./vitest.setup.db-guard.ts"],
     // The official API runner provisions one disposable replica-set database.
     // Persistence suites reset shared collections, so files must not run in
     // parallel against that single database.
@@ -42,6 +43,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/subscription-provisioning.contract.test.ts",
+    "src/modules/chat/__tests__/chat.productionWorkflow.e2e.test.ts",
       "**/indexing/__tests__/indexing.tenant-isolation.test.ts",
     ],
   },

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
 
@@ -65,7 +65,7 @@ function HeroSection() {
               className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
             >
               {t("landing.heroCta")}
-              <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+              <span className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
                 arrow_forward
               </span>
             </Link>
@@ -245,40 +245,135 @@ function formatCurrency(amount: number, currency: string): string {
   return formatMoneyMinor(amount, currency);
 }
 
-function formatEntitlementLabel(key: string, value: number): string {
+type TranslateFn = (key: string, params?: Record<string, string>) => string;
+type PluralFn = (key: string, count: number, params?: Record<string, string>) => string;
+
+/**
+ * Render one entitlement row.
+ *
+ * Counts go through `tPlural` rather than an `n !== 1` suffix: Arabic
+ * selects six plural categories, so English's singular/plural pair is
+ * simply wrong for it. `{{count}}` is overridden with the locale-formatted
+ * number wherever the original formatted the count for display.
+ */
+function formatEntitlementLabel(
+  key: string,
+  value: number,
+  t: TranslateFn,
+  tPlural: PluralFn,
+  intlLocale: string,
+): string {
   switch (key) {
     case "employees":
-      return `${value} user${value !== 1 ? "s" : ""}`;
+      return tPlural("billing.entitlementUsers", value);
     case "documents":
-      return `${value.toLocaleString()} document${value !== 1 ? "s" : ""}`;
+      return tPlural("billing.entitlementDocuments", value, {
+        count: value.toLocaleString(intlLocale),
+      });
     case "queriesPerMonth":
-      return `${value.toLocaleString()} questions/mo`;
-    case "storageMb":
-      return value >= 1024
-        ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)} GB storage`
-        : `${value} MB storage`;
+      return tPlural("billing.entitlementQuestionsPerMonth", value, {
+        count: value.toLocaleString(intlLocale),
+      });
+    case "storageMb": {
+      const gbVal = value >= 1000 ? Math.round(value / 1000) : Math.round(value / 1024);
+      return value >= 1000
+        ? t("billing.entitlementStorageGb", { value: String(gbVal) })
+        : t("billing.entitlementStorageMb", { value: String(value) });
+    }
     case "admins":
-      return `${value} admin${value !== 1 ? "s" : ""}`;
+      return tPlural("billing.entitlementAdmins", value);
     case "fileSizeMb":
-      return `Up to ${value} MB per file`;
+      return t("billing.entitlementFileSize", { value: String(value) });
     case "tokensPerMonth":
-      return `${(value / 1_000_000).toFixed(0)}M tokens/mo`;
+      return t("billing.entitlementTokensPerMonth", {
+        value: (value / 1_000_000).toFixed(0),
+      });
     case "ocrPagesPerMonth":
-      return `${value.toLocaleString()} OCR pages/mo`;
+      return tPlural("billing.entitlementOcrPagesPerMonth", value, {
+        count: value.toLocaleString(intlLocale),
+      });
     default:
+      // Unmapped machine key — surfaced verbatim so a new entitlement is
+      // visible rather than silently dropped. Never user-facing copy.
       return `${key}: ${value}`;
   }
+}
+
+function getPackageName(pkg: PackageData, t: TranslateFn): string {
+  const code = (pkg.code || "").toLowerCase();
+  const name = (pkg.name || "").toLowerCase();
+
+  const isAr = t("landing.pricingMonthly") === "/شهر";
+  if (!isAr) return pkg.name;
+
+  if (code === "free" || name.includes("free")) return "الخطة المجانية";
+  if (code.includes("pro") || name.includes("pro")) return "دوكيوميند بروفيشينال";
+  if (code.includes("ultra") || name.includes("ultra")) return "دوكيوميند ألترا";
+  if (code.includes("enterprise") || name.includes("enterprise")) return "دوكيوميند للمؤسسات";
+
+  const key = `billing.packageName.${code}`;
+  const translated = t(key);
+  return translated !== key ? translated : pkg.name;
+}
+
+function getPackageDescription(pkg: PackageData, t: TranslateFn): string {
+  const code = (pkg.code || "").toLowerCase();
+  const name = (pkg.name || "").toLowerCase();
+
+  const isAr = t("landing.pricingMonthly") === "/شهر";
+  if (!isAr) return pkg.description || "";
+
+  if (code === "free" || name.includes("free")) {
+    return "ابدأ بالميزات الأساسية للفرق الصغيرة.";
+  }
+  if (code.includes("pro") || name.includes("pro")) {
+    return "الفئة الاحترافية للفرق والشركات المتنامية.";
+  }
+  if (code.includes("ultra") || name.includes("ultra")) {
+    return "حدود فائقة الارتفاع لسير العمل في المؤسسات الكبيرة.";
+  }
+  if (code.includes("enterprise") || name.includes("enterprise")) {
+    return "حدود مخصصة واتفاقيات مستوى الخدمة للمؤسسات الضخمة.";
+  }
+
+  const key = `billing.packageDesc.${code}`;
+  const translated = t(key);
+  return translated !== key ? translated : (pkg.description || "");
+}
+
+function getSupportLevelLabel(level: string, t: TranslateFn): string {
+  const code = level.toLowerCase();
+  const key = `billing.supportLevel.${code}`;
+  const translated = t(key);
+  if (translated !== key) return translated;
+
+  const levelMap: Record<string, { en: string; ar: string }> = {
+    community: { en: "community", ar: "مجتمعي" },
+    standard: { en: "standard", ar: "قياسي" },
+    priority: { en: "priority", ar: "ذو أولوية" },
+    dedicated: { en: "dedicated", ar: "مخصص" },
+  };
+
+  if (levelMap[code]) {
+    const isAr = t("landing.pricingMonthly") === "/شهر";
+    return isAr ? levelMap[code].ar : levelMap[code].en;
+  }
+  return level;
 }
 
 function PricingCard({
   pkg,
   t,
+  tPlural,
+  intlLocale,
   annual,
   isRecommended,
   isFree,
 }: {
   pkg: PackageData;
-  t: (key: string) => string;
+  t: TranslateFn;
+  tPlural: PluralFn;
+  intlLocale: string;
   annual: boolean;
   isRecommended?: boolean;
   isFree?: boolean;
@@ -301,6 +396,9 @@ function PricingCard({
     ([, v]) => typeof v === "number" && v > 0,
   );
 
+  const packageName = getPackageName(pkg, t);
+  const packageDesc = getPackageDescription(pkg, t);
+
   return (
     <div
       className={cn(
@@ -311,7 +409,7 @@ function PricingCard({
       )}
     >
       {isRecommended && (
-        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
           <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3.5 py-1 text-label-xs font-semibold text-on-primary shadow-sm">
             <span
               className="material-symbols-outlined text-sm"
@@ -319,57 +417,73 @@ function PricingCard({
             >
               star
             </span>
-            Most Popular
+            {t("landing.pricingMostPopular")}
           </span>
         </div>
       )}
 
-      {hasTrial && (
-        <div className={cn("mb-3", isRecommended && "mt-1")}>
+      {/* Reserved top badge slot so title h3 starts at identical vertical height across cards */}
+      <div className="h-7 mb-3 flex items-center">
+        {hasTrial ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-tertiary/10 px-3 py-1 text-label-xs font-medium text-tertiary">
-            {pkg.trialDays}-day free trial
+            {tPlural("billing.entitlementTrialDays", pkg.trialDays ?? 0)}
           </span>
-        </div>
-      )}
-
-      <h3
-        className={cn(
-          "text-xl font-bold",
-          isRecommended ? "text-primary" : "text-on-surface",
-        )}
-      >
-        {pkg.name}
-      </h3>
-
-      {pkg.description && (
-        <p className="mt-1.5 text-body-sm text-on-surface-variant line-clamp-2">
-          {pkg.description}
-        </p>
-      )}
-
-      <div className="mt-5 flex items-baseline gap-1.5">
-        <span
-          className={cn(
-            "text-4xl font-extrabold tracking-tight",
-            isRecommended ? "text-primary" : "text-on-surface",
-          )}
-        >
-          {isFree ? "$0" : formatCurrency(effectivePrice, pkg.currency)}
-        </span>
-        {!isFree && (
-          <span className="text-body-sm text-on-surface-variant">/month</span>
+        ) : (
+          <span className="inline-block h-6" />
         )}
       </div>
 
-      {annual && annualSavings > 0 && pkg.annualPrice ? (
-        <p className="mt-1 text-label-xs text-tertiary">
-          Billed annually at {formatCurrency(pkg.annualPrice, pkg.currency)}/yr — save {annualSavings}%
-        </p>
-      ) : annual && pkg.annualPrice ? (
-        <p className="mt-1 text-label-xs text-on-surface-variant">
-          Billed annually at {formatCurrency(pkg.annualPrice, pkg.currency)}/yr
-        </p>
-      ) : null}
+      {/* Reserved title & description height so prices align horizontally */}
+      <div className="min-h-[76px] flex flex-col justify-start">
+        <h3
+          className={cn(
+            "text-xl font-bold",
+            isRecommended ? "text-primary" : "text-on-surface",
+          )}
+        >
+          {packageName}
+        </h3>
+
+        {packageDesc ? (
+          <p className="mt-1.5 text-body-sm text-on-surface-variant line-clamp-2">
+            {packageDesc}
+          </p>
+        ) : null}
+      </div>
+
+      {/* Reserved price & annual savings height so divider line is perfectly aligned */}
+      <div className="mt-4 min-h-[64px] flex flex-col justify-end">
+        <div className="flex items-baseline gap-1.5">
+          <span
+            className={cn(
+              "text-4xl font-extrabold tracking-tight",
+              isRecommended ? "text-primary" : "text-on-surface",
+            )}
+          >
+            {isFree ? "$0" : formatCurrency(effectivePrice, pkg.currency)}
+          </span>
+          {!isFree && (
+            <span className="text-body-sm text-on-surface-variant">{t("landing.pricingMonthly")}</span>
+          )}
+        </div>
+
+        {annual && annualSavings > 0 && pkg.annualPrice ? (
+          <p className="mt-1 text-label-xs text-tertiary">
+            {t("landing.pricingBilledAnnuallySave", {
+              price: formatCurrency(pkg.annualPrice, pkg.currency),
+              percent: annualSavings.toLocaleString(intlLocale),
+            })}
+          </p>
+        ) : annual && pkg.annualPrice ? (
+          <p className="mt-1 text-label-xs text-on-surface-variant">
+            {t("landing.pricingBilledAnnually", {
+              price: formatCurrency(pkg.annualPrice, pkg.currency),
+            })}
+          </p>
+        ) : (
+          <div className="h-4" />
+        )}
+      </div>
 
       <div className="my-5 h-px bg-outline-variant/50" />
 
@@ -381,14 +495,14 @@ function PricingCard({
           >
             <span
               className={cn(
-                "material-symbols-outlined mt-0.5 text-base",
+                "material-symbols-outlined mt-0.5 text-base shrink-0",
                 isRecommended ? "text-primary" : "text-tertiary",
               )}
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
               check_circle
             </span>
-            {formatEntitlementLabel(key, value)}
+            <span>{formatEntitlementLabel(key, value, t, tPlural, intlLocale)}</span>
           </li>
         ))}
 
@@ -396,14 +510,14 @@ function PricingCard({
           <li className="flex items-start gap-2.5 text-sm text-on-surface-variant">
             <span
               className={cn(
-                "material-symbols-outlined mt-0.5 text-base",
+                "material-symbols-outlined mt-0.5 text-base shrink-0",
                 isRecommended ? "text-primary" : "text-tertiary",
               )}
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
               check_circle
             </span>
-            {pkg.supportedModels.length} AI model{pkg.supportedModels.length !== 1 ? "s" : ""}
+            <span>{tPlural("billing.entitlementAiModels", pkg.supportedModels.length)}</span>
           </li>
         )}
 
@@ -411,14 +525,18 @@ function PricingCard({
           <li className="flex items-start gap-2.5 text-sm text-on-surface-variant">
             <span
               className={cn(
-                "material-symbols-outlined mt-0.5 text-base",
+                "material-symbols-outlined mt-0.5 text-base shrink-0",
                 isRecommended ? "text-primary" : "text-tertiary",
               )}
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
               check_circle
             </span>
-            {pkg.supportLevel} support
+            <span>
+              {t("billing.entitlementSupport", {
+                level: getSupportLevelLabel(pkg.supportLevel, t),
+              })}
+            </span>
           </li>
         )}
 
@@ -426,14 +544,14 @@ function PricingCard({
           <li className="flex items-start gap-2.5 text-sm text-on-surface-variant">
             <span
               className={cn(
-                "material-symbols-outlined mt-0.5 text-base",
+                "material-symbols-outlined mt-0.5 text-base shrink-0",
                 isRecommended ? "text-primary" : "text-tertiary",
               )}
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
               check_circle
             </span>
-            {pkg.retentionDays}-day data retention
+            <span>{tPlural("billing.entitlementRetentionDays", pkg.retentionDays)}</span>
           </li>
         )}
       </ul>
@@ -441,7 +559,7 @@ function PricingCard({
       <Link
         href={isFree ? "/register" : `/register?package=${pkg.code}`}
         className={cn(
-          "mt-7 block w-full rounded-xl py-3 text-center text-label-md font-semibold transition-all active:scale-[0.98]",
+          "mt-6 block w-full rounded-xl py-3 text-center text-label-md font-semibold transition-all active:scale-[0.98]",
           isRecommended
             ? "bg-primary text-on-primary shadow-sm hover:opacity-90"
             : "border border-primary bg-transparent text-primary hover:bg-primary hover:text-on-primary",
@@ -454,7 +572,8 @@ function PricingCard({
 }
 
 function PricingSection() {
-  const { t, dir } = useI18n();
+  const { t, tPlural, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const [packages, setPackages] = useState<PackageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [annual, setAnnual] = useState(false);
@@ -506,7 +625,7 @@ function PricingSection() {
                   : "text-on-surface-variant hover:text-primary",
               )}
             >
-              Monthly
+              {t("billing.monthly")}
             </button>
             <button
               type="button"
@@ -518,9 +637,9 @@ function PricingSection() {
                   : "text-on-surface-variant hover:text-primary",
               )}
             >
-              Annual
+              {t("billing.annual")}
               <span className="rounded-full bg-tertiary/10 px-2 py-0.5 text-label-xs text-tertiary">
-                Save
+                {t("landing.pricingSaveBadge")}
               </span>
             </button>
           </div>
@@ -531,15 +650,26 @@ function PricingSection() {
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary/30 border-t-primary" />
           </div>
         ) : packages.length === 0 ? (
-          <p className="py-12 text-center text-on-surface-variant">No packages are currently available.</p>
+          <p className="py-12 text-center text-on-surface-variant">{t("billing.empty")}</p>
         ) : (
           <div className={cn("grid items-stretch gap-6 lg:gap-8", gridCols)}>
-            {freePkg ? <PricingCard pkg={freePkg} t={t} annual={annual} isFree /> : null}
+            {freePkg ? (
+              <PricingCard
+                pkg={freePkg}
+                t={t}
+                tPlural={tPlural}
+                intlLocale={intlLocale}
+                annual={annual}
+                isFree
+              />
+            ) : null}
             {paidPackages.map((pkg) => (
               <PricingCard
                 key={pkg.id}
                 pkg={pkg}
                 t={t}
+                tPlural={tPlural}
+                intlLocale={intlLocale}
                 annual={annual}
                 isRecommended={pkg.code === recommendedCode}
               />
@@ -572,7 +702,7 @@ function FaqSection() {
             <div key={i} className="overflow-hidden rounded-xl border border-outline-variant">
               <button
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="flex w-full items-center justify-between gap-4 bg-surface px-6 py-5 text-left transition-colors hover:bg-surface-container-high"
+                className="flex w-full items-center justify-between gap-4 bg-surface px-6 py-5 text-start transition-colors hover:bg-surface-container-high"
                 aria-expanded={openIndex === i}
               >
                 <span className="text-title-lg text-primary">{faq.q}</span>
@@ -606,7 +736,7 @@ function CtaSection() {
             className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
           >
             {t("landing.ctaButton")}
-            <span className="material-symbols-outlined text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+            <span className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
               arrow_forward
             </span>
           </Link>

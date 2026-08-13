@@ -5,6 +5,7 @@ import { detectSocialMessage } from "../../modules/intent-query/intentQuery.soci
 
 export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "fake";
+  readonly runtimeIdentity = Object.freeze({ provider: "fake", model: "fake-model-v1", modelRevisionStatus: "unavailable" as const, componentVersion: "fake-model-adapter-v1" });
 
   async checkAvailability(): Promise<{ available: boolean; reason?: string }> {
     return { available: true };
@@ -146,9 +147,21 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
       const intentConfidence = 0.95;
       let clarificationNeeded = false;
       let clarification = null;
-      const isFollowUp = params.messages.length > 2; // system prompt + user question = length 2, anything more is context history
+      const priorMessages = params.messages.slice(1, -1);
+      const hasConversationContext = priorMessages.length > 0;
+      const hasContextDependentReference =
+        /^(?:and\s+)?(?:what|how)\s+about\b|\b(?:it|that|those|they|them|the same)\b/i.test(
+          question.trim(),
+        );
+      const isFollowUp = hasConversationContext && hasContextDependentReference;
 
-      if (/unsafe|hack|ignore\s+previous|system\s+prompt/i.test(question)) {
+      const hasExplicitlyMaliciousIntent =
+        /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(question) ||
+        /(?:give|show|reveal)\s+me\s+another\s+user(?:'s|’s)?\s+password/i.test(question) ||
+        /bypass\s+authentication/i.test(question) ||
+        /(?:أعطني|اكشف|أظهر)\s+كلمة\s+مرور\s+مستخدم\s+آخر|تجاوز\s+المصادقة|موجه\s+النظام/i.test(question);
+
+      if (hasExplicitlyMaliciousIntent) {
         detectedIntent = "unsafe";
         clarificationNeeded = true;
         clarification = {
@@ -167,15 +180,25 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
         detectedIntent = "navigation";
       } else if (lowerQ.includes("upload") || lowerQ.includes("delete") || lowerQ.includes("حذف")) {
         detectedIntent = "administrative_action";
+      } else if (isFollowUp) {
+        detectedIntent = "follow_up";
       }
 
       const isArabic = /[\u0600-\u06FF]/.test(question);
       const language = isArabic ? "ar" : "en";
       const social = detectSocialMessage(question);
 
+      const priorUserQuestion = [...priorMessages]
+        .reverse()
+        .find((message) => message.role === "user")?.content;
+      const normalizedQuestion =
+        isFollowUp && priorUserQuestion
+          ? `Regarding ${priorUserQuestion.replace(/[?.!]+$/, "")}, ${question.trim()}`
+          : question.trim();
+
       const simulatedPlan = {
         schemaVersion: "1.0.0",
-        normalizedQuestion: question.trim(),
+        normalizedQuestion,
         originalQuestion: question,
         language,
         detectedIntent,
@@ -192,7 +215,7 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
         categories: [],
         exactTerms: [],
         semanticQueries: detectedIntent === "social" ? [] : [
-          { text: question, language, weight: 1.0 }
+          { text: normalizedQuestion, language, weight: 1.0 }
         ],
         keywordQueries: [],
         clarificationNeeded,
@@ -212,17 +235,24 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
       text = JSON.stringify(simulatedPlan);
     } else {
       // For RAG/chat generation contexts, produce a strict JSON answer when
-      // the prompt contains a Context block with source ids. Otherwise, emit
-      // a structured insufficient_evidence JSON.
-      const hasContext = params.messages.some((m) => m.content && m.content.includes("Context:"));
+      // the prompt contains the legacy Context block or the provider-neutral
+      // RAG data envelope with source ids. Otherwise, emit a structured
+      // insufficient_evidence JSON.
+      const hasContext = params.messages.some((m) =>
+        m.content && (
+          m.content.includes("Context:") ||
+          m.content.includes("RAG_REQUEST_DATA_START")
+        ),
+      );
       if (hasContext) {
-        // extract chunk ids embedded as 'id:chunkId' inside the context
+        // Extract legacy id anchors and structured data-envelope chunk ids.
         const combined = params.messages.map((m) => m.content).join("\n");
-        const idRegex = /id:([^\s\]]+)/g;
+        const idRegex = /(?:id:([^\s\]]+)|"chunkId":"([^"]+)")/g;
         const ids: string[] = [];
         let match: RegExpExecArray | null;
         while ((match = idRegex.exec(combined))) {
-          if (!ids.includes(match[1])) ids.push(match[1]);
+          const id = match[1] ?? match[2];
+          if (id && !ids.includes(id)) ids.push(id);
         }
         const cited = ids.slice(0, 5);
         const json = {

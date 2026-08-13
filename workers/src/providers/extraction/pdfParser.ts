@@ -1,5 +1,12 @@
 import { PDFParse, PasswordException } from "pdf-parse";
-import type { ExtractionInput, ExtractionOutput, ExtractionPage } from "../../contracts/extractionContract.js";
+import {
+  DEFAULT_EXTRACTION_LIMITS,
+} from "../../contracts/extractionContract.js";
+import type {
+  ExtractionInput,
+  ExtractionOutput,
+  ExtractionPage,
+} from "../../contracts/extractionContract.js";
 import type { ExtractionParser } from "./extractionPort.js";
 
 export class PdfParser implements ExtractionParser {
@@ -8,8 +15,9 @@ export class PdfParser implements ExtractionParser {
   async parse(input: ExtractionInput): Promise<ExtractionOutput> {
     const warnings: string[] = [];
 
-    const maxPages = input.limits?.maxPages ?? 500;
-    const maxChars = input.limits?.maxCharacters ?? 2_000_000;
+    const maxPages = input.limits?.maxPages ?? DEFAULT_EXTRACTION_LIMITS.maxPages;
+    const maxChars =
+      input.limits?.maxCharacters ?? DEFAULT_EXTRACTION_LIMITS.maxCharacters;
 
     try {
       const parser = new PDFParse({ data: input.buffer });

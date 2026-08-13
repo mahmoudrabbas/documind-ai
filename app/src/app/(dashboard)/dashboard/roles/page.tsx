@@ -18,6 +18,7 @@ import {
   deleteRole,
   getPermissionCatalog,
   getRole,
+  getRoleScopeOptions,
   getRoleUsage,
   listRoles,
   migrateRoleUsers,
@@ -34,8 +35,13 @@ import type {
   PermissionScopeType,
 } from "@/types/api/permissions.types";
 import { Permission } from "@/types/api/permissions.types";
-import type { RoleView, UserView } from "@/types/api/users.types";
+import type {
+  RoleScopeOptions,
+  RoleView,
+  UserView,
+} from "@/types/api/users.types";
 import {
+  collectRoleScopeResolution,
   deriveDeleteFlowState,
   deriveInheritedPermissionIds,
   deriveRoleActionVisibility,
@@ -45,9 +51,11 @@ import {
   filterCatalogGroupsForActor,
   flattenCatalogEntries,
   normalizeScopesForPermission,
+  normalizeTaxonomyName,
   permissionScopesAreEmpty,
   prepareCreateRoleSubmission,
   prepareUpdateRoleSubmission,
+  replacePermissionGrant,
   type ActorGrantMap,
 } from "@/lib/permission-utils";
 import {
@@ -55,16 +63,18 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
+import { ScopeOptionPicker } from "@/components/domain/ScopeOptionPicker";
+import { useI18n } from "@/providers/i18n-provider";
 
 const BASE_ROLE_OPTIONS = [
-  { value: "EMPLOYEE", label: "Employee" },
-  { value: "COMPANY_ADMIN", label: "Company Admin" },
+  { value: "EMPLOYEE", labelKey: "dashboard.roles.employee" },
+  { value: "COMPANY_ADMIN", labelKey: "dashboard.roles.companyAdmin" },
 ] as const;
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All statuses" },
-  { value: "active", label: "Active" },
-  { value: "archived", label: "Archived" },
+  { value: "all", labelKey: "dashboard.roles.allStatuses" },
+  { value: "active", labelKey: "dashboard.roles.active" },
+  { value: "archived", labelKey: "dashboard.roles.archived" },
 ] as const;
 
 type TenantBaseRole = "COMPANY_ADMIN" | "EMPLOYEE";
@@ -77,6 +87,17 @@ interface CatalogData {
   groups: PermissionCatalogGroup[];
   baseRoleDefaults: Record<string, string[]>;
 }
+
+const EMPTY_SCOPE_OPTIONS: RoleScopeOptions = {
+  departments: [],
+  categories: [],
+  classifications: [],
+  archived: {
+    departments: [],
+    categories: [],
+    classifications: [],
+  },
+};
 
 interface LifecycleState {
   type: LifecycleKind;
@@ -110,18 +131,54 @@ function grantsEqual(a: PermissionGrant[], b: PermissionGrant[]): boolean {
   return JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
 }
 
-function formatScope(scopes: PermissionScopes | null | undefined): string {
-  if (!scopes || permissionScopesAreEmpty(scopes)) return "Unrestricted";
+function formatScope(
+  scopes: PermissionScopes | null | undefined,
+  t: (key: string, params?: Record<string, string>) => string,
+  options: RoleScopeOptions,
+): string {
+  if (!scopes || permissionScopesAreEmpty(scopes))
+    return t("dashboard.roles.scopeUnrestricted");
   const parts: string[] = [];
-  if (scopes.selfOnly) parts.push("Self only");
+  const displayValues = (
+    values: string[],
+    dimension: "departments" | "categories" | "classifications",
+    valueKey: "id" | "name",
+  ) => {
+    const available = [...options[dimension], ...options.archived[dimension]];
+    const byKey = new Map(
+      available.map((option) => [
+        valueKey === "id" ? option.id : normalizeTaxonomyName(option.normalizedName),
+        option.name,
+      ]),
+    );
+    return values
+      .map((value) => {
+        const key = valueKey === "id" ? value : normalizeTaxonomyName(value);
+        return byKey.get(key) ?? `${value} (unknown)`;
+      })
+      .join(", ");
+  };
+  if (scopes.selfOnly) parts.push(t("dashboard.roles.scopeSelfOnly"));
   if (scopes.departmentIds.length > 0) {
-    parts.push(`Departments: ${scopes.departmentIds.join(", ")}`);
+    parts.push(
+      t("dashboard.roles.scopeDepartments", {
+        departments: displayValues(scopes.departmentIds, "departments", "id"),
+      }),
+    );
   }
   if (scopes.documentCategories.length > 0) {
-    parts.push(`Categories: ${scopes.documentCategories.join(", ")}`);
+    parts.push(
+      t("dashboard.roles.scopeCategories", {
+        categories: displayValues(scopes.documentCategories, "categories", "name"),
+      }),
+    );
   }
   if (scopes.documentClassifications.length > 0) {
-    parts.push(`Classifications: ${scopes.documentClassifications.join(", ")}`);
+    parts.push(
+      t("dashboard.roles.scopeClassifications", {
+        classifications: displayValues(scopes.documentClassifications, "classifications", "name"),
+      }),
+    );
   }
   return parts.join(" · ");
 }
@@ -132,6 +189,7 @@ function isVersionConflict(error: unknown): error is ApiError {
 }
 
 export default function RolesPage() {
+  const { t, tPlural, dir } = useI18n();
   const permissionContext = usePermissions();
   const permissionsReady = permissionContext.status === "ready";
   const effectivePermissions = useMemo(
@@ -161,6 +219,23 @@ export default function RolesPage() {
   const [catalog, setCatalog] = useState<CatalogData | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const [scopeOptions, setScopeOptions] = useState<RoleScopeOptions>(
+    EMPTY_SCOPE_OPTIONS,
+  );
+  const [scopeOptionsLoading, setScopeOptionsLoading] = useState(false);
+  const [scopeOptionsError, setScopeOptionsError] = useState<string | null>(
+    null,
+  );
+  const scopeResolveRef = useRef<{
+    departments: Set<string>;
+    categories: Set<string>;
+    classifications: Set<string>;
+  }>({
+    departments: new Set(),
+    categories: new Set(),
+    classifications: new Set(),
+  });
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -234,12 +309,12 @@ export default function RolesPage() {
       setError(
         loadError instanceof ApiError
           ? loadError.message
-          : "Failed to load roles.",
+          : t("dashboard.roles.loadError"),
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const loadCatalog = useCallback(async () => {
     setCatalogLoading(true);
@@ -255,12 +330,53 @@ export default function RolesPage() {
       setCatalogError(
         loadError instanceof ApiError
           ? loadError.message
-          : "Failed to load the permission catalog.",
+          : t("dashboard.roles.catalogLoadError"),
       );
     } finally {
       setCatalogLoading(false);
     }
-  }, []);
+  }, [t]);
+
+  const loadScopeOptions = useCallback(
+    async (
+      resolution?: ReturnType<typeof collectRoleScopeResolution>,
+    ): Promise<boolean> => {
+      if (resolution) {
+        for (const id of resolution.departments) {
+          scopeResolveRef.current.departments.add(id);
+        }
+        for (const name of resolution.categories) {
+          scopeResolveRef.current.categories.add(normalizeTaxonomyName(name));
+        }
+        for (const name of resolution.classifications) {
+          scopeResolveRef.current.classifications.add(
+            normalizeTaxonomyName(name),
+          );
+        }
+      }
+      setScopeOptionsLoading(true);
+      setScopeOptionsError(null);
+      try {
+        const response = await getRoleScopeOptions({
+          departments: [...scopeResolveRef.current.departments],
+          categories: [...scopeResolveRef.current.categories],
+          classifications: [...scopeResolveRef.current.classifications],
+        });
+        setScopeOptions(response.data);
+        return true;
+      } catch (loadError) {
+        setScopeOptionsError(
+          loadError instanceof ApiError
+            ? loadError.message
+            : t("dashboard.roles.scopeOptionsError"),
+        );
+        return false;
+      } finally {
+        setScopeOptionsLoading(false);
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     if (!permissionsReady) return;
@@ -268,8 +384,8 @@ export default function RolesPage() {
       setLoading(false);
       return;
     }
-    void Promise.all([loadRoles(), loadCatalog()]);
-  }, [canReadRoles, loadCatalog, loadRoles, permissionsReady]);
+    void Promise.all([loadRoles(), loadCatalog(), loadScopeOptions()]);
+  }, [canReadRoles, loadCatalog, loadRoles, loadScopeOptions, permissionsReady]);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -333,7 +449,7 @@ export default function RolesPage() {
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!catalog || !permissionsReady) {
-      setCreateError("Permission data is still loading. Try again.");
+      setCreateError(t("dashboard.roles.permissionDataLoading"));
       return;
     }
 
@@ -356,7 +472,7 @@ export default function RolesPage() {
     try {
       await createRole(prepared.payload);
       setSuccessMessage(
-        `Role "${prepared.payload.name}" created successfully.`,
+        t("dashboard.roles.createdSuccess", { name: prepared.payload.name }),
       );
       setCreateName("");
       setCreateBaseRole("EMPLOYEE");
@@ -368,7 +484,7 @@ export default function RolesPage() {
       setCreateError(
         createFailure instanceof ApiError
           ? createFailure.message
-          : "Failed to create role.",
+          : t("dashboard.roles.createError"),
       );
     } finally {
       setCreateSubmitting(false);
@@ -388,6 +504,7 @@ export default function RolesPage() {
         const response = await getRole(roleId);
         const latest = response.data.role;
         setSelectedRole(latest);
+        void loadScopeOptions(collectRoleScopeResolution(latest.grants));
         if (startInEdit) {
           setEditing(true);
           setEditName(latest.name);
@@ -402,13 +519,13 @@ export default function RolesPage() {
         setDetailsError(
           detailsFailure instanceof ApiError
             ? detailsFailure.message
-            : "Failed to load role details.",
+            : t("dashboard.roles.detailsLoadError"),
         );
       } finally {
         setDetailsLoading(false);
       }
     },
-    [],
+    [loadScopeOptions, t],
   );
 
   const closeDetails = () => {
@@ -487,7 +604,9 @@ export default function RolesPage() {
       );
       setEditing(false);
       setEditStale(false);
-      setSuccessMessage(`Role "${latest.name}" updated successfully.`);
+      setSuccessMessage(
+        t("dashboard.roles.updatedSuccess", { name: latest.name }),
+      );
       await permissionContext.refreshPermissions();
     } catch (editFailure) {
       if (isVersionConflict(editFailure)) {
@@ -498,7 +617,7 @@ export default function RolesPage() {
         setEditError(
           editFailure instanceof ApiError
             ? editFailure.message
-            : "Failed to update role.",
+            : t("dashboard.roles.updateError"),
         );
       }
     } finally {
@@ -518,12 +637,12 @@ export default function RolesPage() {
         current.map((role) => (role.id === latest.id ? latest : role)),
       );
       startEdit(latest);
-      setSuccessMessage("Latest role version loaded. Review it before saving.");
+      setSuccessMessage(t("dashboard.roles.latestVersionLoadedReview"));
     } catch (reloadError) {
       setEditError(
         reloadError instanceof ApiError
           ? reloadError.message
-          : "Failed to reload the role.",
+          : t("dashboard.roles.reloadError"),
       );
     } finally {
       setEditSubmitting(false);
@@ -540,24 +659,27 @@ export default function RolesPage() {
     setMigrationResult(null);
   }
 
-  const loadAuthoritativeUsage = useCallback(async (roleId: string) => {
-    setUsageLoading(true);
-    setLifecycleError(null);
-    try {
-      const response = await getRoleUsage(roleId);
-      setUsageCount(response.data.assignedUserCount);
-      return response.data.assignedUserCount;
-    } catch (usageFailure) {
-      setLifecycleError(
-        usageFailure instanceof ApiError
-          ? usageFailure.message
-          : "Failed to load authoritative role usage.",
-      );
-      return null;
-    } finally {
-      setUsageLoading(false);
-    }
-  }, []);
+  const loadAuthoritativeUsage = useCallback(
+    async (roleId: string) => {
+      setUsageLoading(true);
+      setLifecycleError(null);
+      try {
+        const response = await getRoleUsage(roleId);
+        setUsageCount(response.data.assignedUserCount);
+        return response.data.assignedUserCount;
+      } catch (usageFailure) {
+        setLifecycleError(
+          usageFailure instanceof ApiError
+            ? usageFailure.message
+            : t("dashboard.roles.usageLoadError"),
+        );
+        return null;
+      } finally {
+        setUsageLoading(false);
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     if (lifecycle?.type !== "delete") return;
@@ -604,19 +726,31 @@ export default function RolesPage() {
           nameValidation.payload.name,
           lifecycle.role.version,
         );
-        setSuccessMessage(`Role cloned as "${response.data.role.name}".`);
+        setSuccessMessage(
+          t("dashboard.roles.clonedSuccess", {
+            name: response.data.role.name,
+          }),
+        );
       } else if (lifecycle.type === "archive") {
         const response = await archiveRole(
           lifecycle.role.id,
           lifecycle.role.version,
         );
-        setSuccessMessage(`Role "${response.data.role.name}" archived.`);
+        setSuccessMessage(
+          t("dashboard.roles.archivedSuccess", {
+            name: response.data.role.name,
+          }),
+        );
       } else if (lifecycle.type === "reactivate") {
         const response = await reactivateRole(
           lifecycle.role.id,
           lifecycle.role.version,
         );
-        setSuccessMessage(`Role "${response.data.role.name}" reactivated.`);
+        setSuccessMessage(
+          t("dashboard.roles.reactivatedSuccess", {
+            name: response.data.role.name,
+          }),
+        );
       } else {
         const confirmedUsage = await loadAuthoritativeUsage(lifecycle.role.id);
         const confirmedFlow = deriveDeleteFlowState(
@@ -626,13 +760,17 @@ export default function RolesPage() {
         if (!confirmedFlow.canDelete) {
           setLifecycleError(
             confirmedFlow.requiresMigration
-              ? `This role still has ${confirmedUsage ?? 0} assigned user(s). Migrate them before deleting.`
-              : "The role cannot be deleted until authoritative usage is confirmed as zero.",
+              ? tPlural("dashboard.roles.deleteHasUsers", confirmedUsage ?? 0, {
+                  count: String(confirmedUsage ?? 0),
+                })
+              : t("dashboard.roles.deleteUsageNotZero"),
           );
           return;
         }
         await deleteRole(lifecycle.role.id, lifecycle.role.version);
-        setSuccessMessage(`Role "${lifecycle.role.name}" deleted.`);
+        setSuccessMessage(
+          t("dashboard.roles.deletedSuccess", { name: lifecycle.role.name }),
+        );
         if (selectedRole?.id === lifecycle.role.id) closeDetails();
       }
 
@@ -648,15 +786,13 @@ export default function RolesPage() {
         lifecycleFailure instanceof ApiError &&
         lifecycleFailure.code === "ROLE_IN_USE"
       ) {
-        setLifecycleError(
-          "The server reports that this role is still in use. Migrate its users before deleting.",
-        );
+        setLifecycleError(t("dashboard.roles.roleInUse"));
         await loadAuthoritativeUsage(lifecycle.role.id);
       } else {
         setLifecycleError(
           lifecycleFailure instanceof ApiError
             ? lifecycleFailure.message
-            : "Role operation failed.",
+            : t("dashboard.roles.operationFailed"),
         );
       }
     } finally {
@@ -670,7 +806,7 @@ export default function RolesPage() {
       (role) => role.id === migrationDestinationId,
     );
     if (!destination) {
-      setLifecycleError("Select an active destination role.");
+      setLifecycleError(t("dashboard.roles.selectDestinationRole"));
       return;
     }
 
@@ -703,8 +839,12 @@ export default function RolesPage() {
       await permissionContext.refreshPermissions();
       setSuccessMessage(
         latestUsage === 0
-          ? "Migration completed. Authoritative usage is now zero; deletion is available."
-          : `Migration completed, but ${latestUsage ?? "some"} assigned user(s) remain.`,
+          ? t("dashboard.roles.migrationZero")
+          : latestUsage !== null
+            ? tPlural("dashboard.roles.migrationUsersRemain", latestUsage, {
+                count: String(latestUsage),
+              })
+            : t("dashboard.roles.migrationUsersRemainUnknown"),
       );
     } catch (migrationFailure) {
       if (isVersionConflict(migrationFailure)) {
@@ -715,7 +855,7 @@ export default function RolesPage() {
         setLifecycleError(
           migrationFailure instanceof ApiError
             ? migrationFailure.message
-            : "User migration failed.",
+            : t("dashboard.roles.migrationFailed"),
         );
       }
     } finally {
@@ -741,14 +881,12 @@ export default function RolesPage() {
       if (lifecycle.type === "delete") {
         await loadAuthoritativeUsage(latest.id);
       }
-      setSuccessMessage(
-        "Latest role version loaded. Confirm the action again.",
-      );
+      setSuccessMessage(t("dashboard.roles.latestLoadedConfirmAgain"));
     } catch (reloadError) {
       setLifecycleError(
         reloadError instanceof ApiError
           ? reloadError.message
-          : "Failed to reload the role.",
+          : t("dashboard.roles.reloadError"),
       );
     } finally {
       setLifecycleSubmitting(false);
@@ -768,12 +906,12 @@ export default function RolesPage() {
       setAssignmentError(
         usersFailure instanceof ApiError
           ? usersFailure.message
-          : "Failed to load users.",
+          : t("dashboard.roles.loadUsersError"),
       );
     } finally {
       setAssignmentLoading(false);
     }
-  }, []);
+  }, [t]);
 
   async function refreshAssignmentRole() {
     if (!assignmentRole) return;
@@ -787,14 +925,12 @@ export default function RolesPage() {
       setAssignmentRole(roleResponse.data.role);
       setAssignmentUsers(users);
       setAssignmentStale(false);
-      setSuccessMessage(
-        "Latest role version loaded. Retry the operation manually.",
-      );
+      setSuccessMessage(t("dashboard.roles.latestLoadedRetryManual"));
     } catch (refreshFailure) {
       setAssignmentError(
         refreshFailure instanceof ApiError
           ? refreshFailure.message
-          : "Failed to refresh assignment data.",
+          : t("dashboard.roles.refreshAssignmentError"),
       );
     } finally {
       setAssignmentLoading(false);
@@ -816,11 +952,11 @@ export default function RolesPage() {
       setSuccessMessage(
         response.data.changed
           ? remove
-            ? "Role assignment removed."
-            : "User assigned to role."
+            ? t("dashboard.roles.assignmentRemoved")
+            : t("dashboard.roles.userAssigned")
           : remove
-            ? "The user did not have this role."
-            : "The user already had this role.",
+            ? t("dashboard.roles.userDidNotHaveRole")
+            : t("dashboard.roles.userAlreadyHadRole"),
       );
       await Promise.all([refreshAssignmentRole(), loadRoles()]);
       await permissionContext.refreshPermissions();
@@ -834,8 +970,8 @@ export default function RolesPage() {
           assignmentFailure instanceof ApiError
             ? assignmentFailure.message
             : remove
-              ? "Failed to remove assignment."
-              : "Failed to assign role.",
+              ? t("dashboard.roles.removeAssignmentError")
+              : t("dashboard.roles.assignRoleError"),
         );
       }
     } finally {
@@ -844,10 +980,10 @@ export default function RolesPage() {
   }
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
-        title="Custom Roles"
-        description="Define tenant roles using the authoritative permission catalog and delegated scopes."
+        title={t("dashboard.roles.title")}
+        description={t("dashboard.roles.description")}
         actions={
           canCreateRole ? (
             <button
@@ -861,7 +997,9 @@ export default function RolesPage() {
               <span className="material-symbols-outlined text-[18px]">
                 {showCreateForm ? "close" : "add"}
               </span>
-              {showCreateForm ? "Cancel" : "Create Role"}
+              {showCreateForm
+                ? t("dashboard.roles.cancel")
+                : t("dashboard.roles.createRole")}
             </button>
           ) : null
         }
@@ -893,6 +1031,9 @@ export default function RolesPage() {
           actorGrants={actorGrants}
           catalogLoading={catalogLoading}
           catalogError={catalogError}
+          scopeOptions={scopeOptions}
+          scopeOptionsLoading={scopeOptionsLoading}
+          scopeOptionsError={scopeOptionsError}
           error={createError}
           submitting={createSubmitting}
           onSubmit={handleCreate}
@@ -936,6 +1077,9 @@ export default function RolesPage() {
           catalogEntries={catalogEntries}
           selectableGroups={selectableGroups}
           actorGrants={actorGrants}
+          scopeOptions={scopeOptions}
+          scopeOptionsLoading={scopeOptionsLoading}
+          scopeOptionsError={scopeOptionsError}
           editing={editing}
           editName={editName}
           editBaseRole={editBaseRole}
@@ -1033,6 +1177,9 @@ function CreateRolePanel({
   catalogEntries,
   selectableGroups,
   actorGrants,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
   catalogLoading,
   catalogError,
   error,
@@ -1045,11 +1192,14 @@ function CreateRolePanel({
   baseRole: TenantBaseRole;
   onBaseRoleChange: (value: TenantBaseRole) => void;
   grants: PermissionGrant[];
-  onGrantsChange: (value: PermissionGrant[]) => void;
+  onGrantsChange: (value: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   inheritedIds: string[];
   catalogEntries: PermissionCatalogEntry[];
   selectableGroups: PermissionCatalogGroup[];
   actorGrants: ActorGrantMap;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
   catalogLoading: boolean;
   catalogError: string | null;
   error: string | null;
@@ -1057,13 +1207,15 @@ function CreateRolePanel({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onRetryCatalog: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <DashboardPanel className="mb-6">
       <div className="mb-5 border-b border-outline-variant/30 pb-4">
-        <h2 className="text-title-lg font-bold text-primary">Create Role</h2>
+        <h2 className="text-title-lg font-bold text-primary">
+          {t("dashboard.roles.createRole")}
+        </h2>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Inherited permissions are read-only. Only explicit delegated grants
-          are submitted.
+          {t("dashboard.roles.createPanelDesc")}
         </p>
       </div>
       <form className="space-y-5" onSubmit={onSubmit} noValidate>
@@ -1073,7 +1225,7 @@ function CreateRolePanel({
               htmlFor="create-role-name"
               className="mb-2 block text-sm font-bold text-on-surface"
             >
-              Role name
+              {t("dashboard.roles.roleNameLabel")}
             </label>
             <input
               id="create-role-name"
@@ -1087,7 +1239,7 @@ function CreateRolePanel({
               id="create-role-name-help"
               className="mt-1 text-xs text-on-surface-variant"
             >
-              Required, maximum 50 characters.
+              {t("dashboard.roles.roleNameHelp")}
             </p>
           </div>
           <div>
@@ -1095,7 +1247,7 @@ function CreateRolePanel({
               htmlFor="create-role-base"
               className="mb-2 block text-sm font-bold text-on-surface"
             >
-              Base role
+              {t("dashboard.roles.baseRoleLabel")}
             </label>
             <select
               id="create-role-base"
@@ -1107,7 +1259,7 @@ function CreateRolePanel({
             >
               {BASE_ROLE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.labelKey)}
                 </option>
               ))}
             </select>
@@ -1125,7 +1277,7 @@ function CreateRolePanel({
               className="ms-3 underline"
               onClick={onRetryCatalog}
             >
-              Retry
+              {t("dashboard.roles.retry")}
             </button>
           </div>
         ) : null}
@@ -1138,6 +1290,9 @@ function CreateRolePanel({
           selectedGrants={grants}
           onChange={onGrantsChange}
           loading={catalogLoading}
+          scopeOptions={scopeOptions}
+          scopeOptionsLoading={scopeOptionsLoading}
+          scopeOptionsError={scopeOptionsError}
         />
 
         {error ? (
@@ -1155,7 +1310,9 @@ function CreateRolePanel({
             disabled={submitting}
             className="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "Creating..." : "Create Role"}
+            {submitting
+              ? t("dashboard.roles.creating")
+              : t("dashboard.roles.createRole")}
           </button>
         </div>
       </form>
@@ -1178,10 +1335,11 @@ function RoleFilters({
   statusFilter: RoleStatusFilter;
   onStatusFilterChange: (value: RoleStatusFilter) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <label className="relative block max-w-sm flex-1">
-        <span className="sr-only">Search roles</span>
+        <span className="sr-only">{t("dashboard.roles.searchRolesSr")}</span>
         <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
           search
         </span>
@@ -1189,13 +1347,15 @@ function RoleFilters({
           type="search"
           value={searchTerm}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search roles..."
+          placeholder={t("dashboard.roles.searchPlaceholder")}
           className="w-full rounded-full border border-outline-variant bg-surface py-2 pe-4 ps-10 text-sm outline-none focus:ring-2 focus:ring-primary"
         />
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <label>
-          <span className="sr-only">Filter by base role</span>
+          <span className="sr-only">
+            {t("dashboard.roles.filterBaseRoleSr")}
+          </span>
           <select
             value={baseRoleFilter}
             onChange={(event) =>
@@ -1203,16 +1363,18 @@ function RoleFilters({
             }
             className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="all">All base roles</option>
+            <option value="all">{t("dashboard.roles.allBaseRoles")}</option>
             {BASE_ROLE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          <span className="sr-only">Filter by status</span>
+          <span className="sr-only">
+            {t("dashboard.roles.filterStatusSr")}
+          </span>
           <select
             value={statusFilter}
             onChange={(event) =>
@@ -1222,7 +1384,7 @@ function RoleFilters({
           >
             {STATUS_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -1257,8 +1419,9 @@ function RoleListContent({
   onAssign: (role: RoleView) => void;
   onLifecycle: (type: LifecycleKind, role: RoleView) => void;
 }) {
+  const { t } = useI18n();
   if (state === "permissionLoading") {
-    return <CenteredStatus text="Loading permissions..." />;
+    return <CenteredStatus text={t("dashboard.roles.loadingPermissions")} />;
   }
   if (state === "permissionDenied") {
     return (
@@ -1266,11 +1429,12 @@ function RoleListContent({
         role="alert"
         className="p-6 text-center text-sm text-on-surface-variant"
       >
-        You do not have <code>roles:read</code> permission.
+        {t("dashboard.roles.permissionDenied")}
       </div>
     );
   }
-  if (state === "loading") return <CenteredStatus text="Loading roles..." />;
+  if (state === "loading")
+    return <CenteredStatus text={t("dashboard.roles.loadingRoles")} />;
   if (state === "error") {
     return (
       <div className="p-5">
@@ -1278,9 +1442,9 @@ function RoleListContent({
           role="alert"
           className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"
         >
-          {error ?? "Failed to load roles."}
+          {error ?? t("dashboard.roles.loadError")}
           <button type="button" className="ms-3 underline" onClick={onRetry}>
-            Retry
+            {t("dashboard.roles.retry")}
           </button>
         </div>
       </div>
@@ -1293,12 +1457,14 @@ function RoleListContent({
           shield_person
         </span>
         <h2 className="mt-2 font-bold text-on-surface">
-          {hasAnyRoles ? "No matching roles" : "No custom roles yet"}
+          {hasAnyRoles
+            ? t("dashboard.roles.noMatchingRoles")
+            : t("dashboard.roles.noCustomRolesYet")}
         </h2>
         <p className="mt-1 text-sm text-on-surface-variant">
           {hasAnyRoles
-            ? "Adjust or clear the current filters."
-            : "Create a custom role to delegate tenant permissions."}
+            ? t("dashboard.roles.adjustClearFilters")
+            : t("dashboard.roles.createCustomRoleDesc")}
         </p>
         {state === "filteredEmpty" ? (
           <button
@@ -1306,12 +1472,21 @@ function RoleListContent({
             className="mt-4 rounded-lg border border-outline-variant px-4 py-2 text-sm font-bold"
             onClick={onClearFilters}
           >
-            Clear filters
+            {t("dashboard.roles.clearFilters")}
           </button>
         ) : null}
       </div>
     );
   }
+
+  const headings = [
+    t("dashboard.roles.headingName"),
+    t("dashboard.roles.headingBaseRole"),
+    t("dashboard.roles.headingStatus"),
+    t("dashboard.roles.headingUsers"),
+    t("dashboard.roles.headingVersion"),
+    t("dashboard.roles.headingActions"),
+  ];
 
   return (
     <>
@@ -1319,14 +1494,7 @@ function RoleListContent({
         <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-surface-container-low text-start">
             <tr>
-              {[
-                "Name",
-                "Base role",
-                "Status",
-                "Users",
-                "Version",
-                "Actions",
-              ].map((heading) => (
+              {headings.map((heading) => (
                 <th
                   key={heading}
                   className="px-4 py-3 text-start font-bold text-on-surface-variant"
@@ -1399,14 +1567,20 @@ interface RoleActionProps {
 
 function RoleRow(props: RoleActionProps) {
   const { role } = props;
+  const { t } = useI18n();
   return (
     <tr className="hover:bg-surface-container-low/50">
       <td className="px-4 py-3 font-bold text-on-surface">{role.name}</td>
       <td className="px-4 py-3 text-on-surface-variant">
-        {role.baseRole === "COMPANY_ADMIN" ? "Company Admin" : "Employee"}
+        {role.baseRole === "COMPANY_ADMIN"
+          ? t("dashboard.roles.companyAdmin")
+          : t("dashboard.roles.employee")}
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={role.status} />
+        {(() => {
+          const roleStatus = role.status;
+          return <StatusBadge status={roleStatus} />;
+        })()}
       </td>
       <td className="px-4 py-3 text-on-surface-variant">{role.userCount}</td>
       <td className="px-4 py-3 font-mono text-on-surface-variant">
@@ -1421,17 +1595,25 @@ function RoleRow(props: RoleActionProps) {
 
 function RoleCard(props: RoleActionProps) {
   const { role } = props;
+  const { t, tPlural } = useI18n();
+  const roleStatus = role.status;
+  const baseRoleLabel =
+    role.baseRole === "COMPANY_ADMIN"
+      ? t("dashboard.roles.companyAdmin")
+      : t("dashboard.roles.employee");
+  const usersCountLabel = tPlural("dashboard.roles.usersCount", role.userCount, {
+    count: String(role.userCount),
+  });
   return (
     <article className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate font-bold text-on-surface">{role.name}</h3>
           <p className="mt-1 text-xs text-on-surface-variant">
-            {role.baseRole === "COMPANY_ADMIN" ? "Company Admin" : "Employee"} ·{" "}
-            {role.userCount} user(s) · v{role.version}
+            {baseRoleLabel} · {usersCountLabel} · v{role.version}
           </p>
         </div>
-        <StatusBadge status={role.status} />
+        <StatusBadge status={roleStatus} />
       </div>
       <div className="mt-3">
         <RoleActionButtons {...props} />
@@ -1448,6 +1630,7 @@ function RoleActionButtons({
   onAssign,
   onLifecycle,
 }: RoleActionProps) {
+  const { t } = useI18n();
   const buttonClass =
     "rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-xs font-bold hover:bg-surface-container-low";
   return (
@@ -1458,7 +1641,7 @@ function RoleActionButtons({
           className={buttonClass}
           onClick={() => onView(role)}
         >
-          View
+          {t("dashboard.roles.actionView")}
         </button>
       ) : null}
       {visibility.canEdit ? (
@@ -1470,7 +1653,7 @@ function RoleActionButtons({
             onEdit(role);
           }}
         >
-          Edit
+          {t("dashboard.roles.actionEdit")}
         </button>
       ) : null}
       {visibility.canAssign ? (
@@ -1479,7 +1662,7 @@ function RoleActionButtons({
           className={buttonClass}
           onClick={() => onAssign(role)}
         >
-          Assign
+          {t("dashboard.roles.actionAssign")}
         </button>
       ) : null}
       {visibility.canClone ? (
@@ -1488,7 +1671,7 @@ function RoleActionButtons({
           className={buttonClass}
           onClick={() => onLifecycle("clone", role)}
         >
-          Clone
+          {t("dashboard.roles.actionClone")}
         </button>
       ) : null}
       {visibility.canArchive ? (
@@ -1497,7 +1680,7 @@ function RoleActionButtons({
           className={buttonClass}
           onClick={() => onLifecycle("archive", role)}
         >
-          Archive
+          {t("dashboard.roles.actionArchive")}
         </button>
       ) : null}
       {visibility.canReactivate ? (
@@ -1506,7 +1689,7 @@ function RoleActionButtons({
           className={buttonClass}
           onClick={() => onLifecycle("reactivate", role)}
         >
-          Reactivate
+          {t("dashboard.roles.actionReactivate")}
         </button>
       ) : null}
       {visibility.canDelete ? (
@@ -1515,7 +1698,7 @@ function RoleActionButtons({
           className={`${buttonClass} text-error`}
           onClick={() => onLifecycle("delete", role)}
         >
-          Delete
+          {t("dashboard.roles.actionDelete")}
         </button>
       ) : null}
     </div>
@@ -1523,6 +1706,7 @@ function RoleActionButtons({
 }
 
 function StatusBadge({ status }: { status: RoleView["status"] }) {
+  const { t } = useI18n();
   return (
     <span
       className={
@@ -1531,7 +1715,9 @@ function StatusBadge({ status }: { status: RoleView["status"] }) {
           : "inline-flex rounded-full bg-surface-container px-2 py-0.5 text-xs text-on-surface-variant"
       }
     >
-      {status === "active" ? "Active" : "Archived"}
+      {status === "active"
+        ? t("dashboard.roles.active")
+        : t("dashboard.roles.archived")}
     </span>
   );
 }
@@ -1544,15 +1730,22 @@ function PermissionEditor({
   selectedGrants,
   onChange,
   loading,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
 }: {
   groups: PermissionCatalogGroup[];
   allEntries: PermissionCatalogEntry[];
   actorGrants: ActorGrantMap;
   inheritedIds: string[];
   selectedGrants: PermissionGrant[];
-  onChange: (grants: PermissionGrant[]) => void;
+  onChange: (grants: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   loading: boolean;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
 }) {
+  const { t } = useI18n();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const entryById = useMemo(
@@ -1585,33 +1778,30 @@ function PermissionEditor({
     .filter((group) => group.permissions.length > 0);
 
   const updateGrant = (permission: string, next: PermissionGrant | null) => {
-    const without = selectedGrants.filter(
-      (grant) => grant.permission !== permission,
-    );
-    onChange(next ? [...without, next] : without);
+    onChange((current) => replacePermissionGrant(current, permission, next));
   };
 
-  if (loading) return <CenteredStatus text="Loading permission catalog..." />;
+  if (loading)
+    return <CenteredStatus text={t("dashboard.roles.catalogLoadError")} />;
 
   return (
     <section aria-labelledby="permission-editor-title" className="space-y-4">
       <div>
         <h3 id="permission-editor-title" className="font-bold text-on-surface">
-          Permissions
+          {t("dashboard.roles.permissions")}
         </h3>
         <p className="text-xs text-on-surface-variant">
-          Scope controls come only from each catalog entry’s compatibleScopes
-          metadata.
+          {t("dashboard.roles.scopeControlsDesc")}
         </p>
       </div>
 
       <div className="rounded-lg border border-outline-variant/30 bg-surface-container-low p-3">
         <p className="text-sm font-bold text-on-surface">
-          Inherited permissions (read-only)
+          {t("dashboard.roles.inheritedReadonly")}
         </p>
         {inheritedIds.length === 0 ? (
           <p className="mt-1 text-xs text-on-surface-variant">
-            No inherited permissions reported for this base role.
+            {t("dashboard.roles.noInherited")}
           </p>
         ) : (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -1621,7 +1811,8 @@ function PermissionEditor({
                 className="rounded-full bg-surface px-2 py-1 text-xs text-on-surface-variant"
                 aria-readonly="true"
               >
-                {entryById.get(id)?.label ?? id} · inherited
+                {entryById.get(id)?.label ?? id} ·{" "}
+                {t("dashboard.roles.inheritedBadge")}
               </span>
             ))}
           </div>
@@ -1629,12 +1820,14 @@ function PermissionEditor({
       </div>
 
       <label className="block">
-        <span className="sr-only">Search permissions</span>
+        <span className="sr-only">
+          {t("dashboard.roles.searchPermissionsSr")}
+        </span>
         <input
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search permissions..."
+          placeholder={t("dashboard.roles.searchPermissionsPlaceholder")}
           className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
         />
       </label>
@@ -1645,11 +1838,10 @@ function PermissionEditor({
           className="rounded-lg border border-amber-200 bg-amber-50 p-3"
         >
           <p className="text-sm font-bold text-amber-950">
-            Existing grants that are no longer selectable
+            {t("dashboard.roles.existingGrantsNoLongerSelectable")}
           </p>
           <p className="mt-1 text-xs text-amber-900">
-            Remove these grants before submitting; they cannot be silently
-            discarded or delegated.
+            {t("dashboard.roles.removeGrantsHelp")}
           </p>
           <ul className="mt-2 space-y-2">
             {unavailableSelected.map((grant) => (
@@ -1665,7 +1857,7 @@ function PermissionEditor({
                   className="rounded border border-amber-400 px-2 py-1 text-xs font-bold"
                   onClick={() => updateGrant(grant.permission, null)}
                 >
-                  Remove
+                  {t("dashboard.roles.remove")}
                 </button>
               </li>
             ))}
@@ -1675,7 +1867,7 @@ function PermissionEditor({
 
       {filteredGroups.length === 0 ? (
         <p className="text-sm text-on-surface-variant">
-          No selectable permissions match the current search.
+          {t("dashboard.roles.noSelectableMatch")}
         </p>
       ) : (
         <div className="max-h-[34rem] space-y-2 overflow-y-auto rounded-lg border border-outline-variant/30 p-2">
@@ -1742,9 +1934,12 @@ function PermissionEditor({
                                 {entry.description}
                               </span>
                               <span className="mt-1 block text-[11px] text-on-surface-variant">
-                                Actor source:{" "}
-                                {actorGrant?.source ?? "unavailable"} · Actor
-                                scope: {formatScope(actorGrant?.scope)}
+                                {t("dashboard.roles.actorInfo", {
+                                  source:
+                                    actorGrant?.source ??
+                                    t("dashboard.roles.actorSourceUnavailable"),
+                                  scope: formatScope(actorGrant?.scope, t, scopeOptions),
+                                })}
                               </span>
                             </span>
                           </label>
@@ -1762,6 +1957,9 @@ function PermissionEditor({
                                   scopes,
                                 })
                               }
+                              scopeOptions={scopeOptions}
+                              scopeOptionsLoading={scopeOptionsLoading}
+                              scopeOptionsError={scopeOptionsError}
                             />
                           ) : null}
                         </div>
@@ -1783,38 +1981,31 @@ function ScopeControls({
   actorScope,
   value,
   onChange,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
 }: {
   entry: PermissionCatalogEntry;
   actorScope: PermissionScopes | null;
   value: PermissionScopes;
   onChange: (value: PermissionScopes) => void;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
 }) {
-  const setArray = (
-    dimension:
-      "departmentIds" | "documentCategories" | "documentClassifications",
-    raw: string,
-  ) => {
-    const values = [
-      ...new Set(
-        raw
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-      ),
-    ];
-    onChange({ ...value, [dimension]: values });
-  };
+  const { t } = useI18n();
   const control = (dimension: PermissionScopeType) =>
     entry.compatibleScopes.includes(dimension);
 
   return (
     <fieldset className="mt-3 space-y-3 rounded-lg border border-outline-variant/30 p-3">
       <legend className="px-1 text-xs font-bold text-on-surface">
-        Delegated scope
+        {t("dashboard.roles.delegatedScope")}
       </legend>
       <p className="text-[11px] text-on-surface-variant">
-        The submitted scope must be equal to or narrower than:{" "}
-        {formatScope(actorScope)}
+        {t("dashboard.roles.submittedScopeHelp", {
+          scope: formatScope(actorScope, t, scopeOptions),
+        })}
       </p>
       {control("selfOnly") ? (
         <label className="flex items-center gap-2 text-sm">
@@ -1825,53 +2016,54 @@ function ScopeControls({
               onChange({ ...value, selfOnly: event.target.checked })
             }
           />
-          Self only
+          {t("dashboard.roles.scopeSelfOnly")}
         </label>
       ) : null}
       {control("departmentIds") ? (
-        <ScopeArrayInput
-          label="Department IDs"
-          value={value.departmentIds}
-          onChange={(raw) => setArray("departmentIds", raw)}
+        <ScopeOptionPicker
+          label={t("dashboard.roles.deptIdsLabel")}
+          options={scopeOptions.departments}
+          archived={scopeOptions.archived.departments}
+          selected={value.departmentIds}
+          valueKey="id"
+          dimension="departmentIds"
+          actorScope={actorScope}
+          loading={scopeOptionsLoading}
+          error={scopeOptionsError}
+          onChange={(next) => onChange({ ...value, departmentIds: next })}
         />
       ) : null}
       {control("documentCategories") ? (
-        <ScopeArrayInput
-          label="Document categories"
-          value={value.documentCategories}
-          onChange={(raw) => setArray("documentCategories", raw)}
+        <ScopeOptionPicker
+          label={t("dashboard.roles.docCategoriesLabel")}
+          options={scopeOptions.categories}
+          archived={scopeOptions.archived.categories}
+          selected={value.documentCategories}
+          valueKey="name"
+          dimension="documentCategories"
+          actorScope={actorScope}
+          loading={scopeOptionsLoading}
+          error={scopeOptionsError}
+          onChange={(next) => onChange({ ...value, documentCategories: next })}
         />
       ) : null}
       {control("documentClassifications") ? (
-        <ScopeArrayInput
-          label="Document classifications"
-          value={value.documentClassifications}
-          onChange={(raw) => setArray("documentClassifications", raw)}
+        <ScopeOptionPicker
+          label={t("dashboard.roles.docClassificationsLabel")}
+          options={scopeOptions.classifications}
+          archived={scopeOptions.archived.classifications}
+          selected={value.documentClassifications}
+          valueKey="name"
+          dimension="documentClassifications"
+          actorScope={actorScope}
+          loading={scopeOptionsLoading}
+          error={scopeOptionsError}
+          onChange={(next) =>
+            onChange({ ...value, documentClassifications: next })
+          }
         />
       ) : null}
     </fieldset>
-  );
-}
-
-function ScopeArrayInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block text-xs font-bold text-on-surface-variant">
-      {label}
-      <input
-        value={value.join(", ")}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Comma-separated values"
-        className="mt-1 w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm font-normal text-on-surface outline-none focus:ring-2 focus:ring-primary"
-      />
-    </label>
   );
 }
 
@@ -1883,6 +2075,9 @@ function RoleDetailsDialog({
   catalogEntries,
   selectableGroups,
   actorGrants,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
   editing,
   editName,
   editBaseRole,
@@ -1909,6 +2104,9 @@ function RoleDetailsDialog({
   catalogEntries: PermissionCatalogEntry[];
   selectableGroups: PermissionCatalogGroup[];
   actorGrants: ActorGrantMap;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
   editing: boolean;
   editName: string;
   editBaseRole: TenantBaseRole;
@@ -1924,10 +2122,11 @@ function RoleDetailsDialog({
   onCancelEdit: () => void;
   onEditNameChange: (value: string) => void;
   onEditBaseRoleChange: (value: TenantBaseRole) => void;
-  onEditGrantsChange: (value: PermissionGrant[]) => void;
+  onEditGrantsChange: (value: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   onSave: () => void;
   onReloadLatest: () => void;
 }) {
+  const { t } = useI18n();
   const closeRef = useRef<HTMLButtonElement>(null);
   useModalKeyboard(onClose, editSubmitting);
   useEffect(() => {
@@ -1957,16 +2156,16 @@ function RoleDetailsDialog({
               id="role-details-title"
               className="text-title-lg font-bold text-primary"
             >
-              {role?.name ?? "Role details"}
+              {role?.name ?? t("dashboard.roles.roleDetails")}
             </h2>
             <p className="text-xs text-on-surface-variant">
-              Authoritative role data and explicit grants
+              {t("dashboard.roles.authoritativeRoleData")}
             </p>
           </div>
           <button
             ref={closeRef}
             type="button"
-            aria-label="Close role details"
+            aria-label={t("dashboard.roles.closeRoleDetails")}
             onClick={onClose}
             className="rounded-full p-2 hover:bg-surface-container"
           >
@@ -1975,7 +2174,7 @@ function RoleDetailsDialog({
         </div>
         <div className="p-4">
           {loading ? (
-            <CenteredStatus text="Loading role details..." />
+            <CenteredStatus text={t("dashboard.roles.loadingRoleDetails")} />
           ) : error ? (
             <div
               role="alert"
@@ -1987,7 +2186,7 @@ function RoleDetailsDialog({
                 className="ms-3 underline"
                 onClick={onRetry}
               >
-                Retry
+                {t("dashboard.roles.retry")}
               </button>
             </div>
           ) : role ? (
@@ -1996,7 +2195,7 @@ function RoleDetailsDialog({
                 <div className="space-y-5">
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="text-sm font-bold">
-                      Role name
+                      {t("dashboard.roles.roleNameLabel")}
                       <input
                         value={editName}
                         onChange={(event) =>
@@ -2007,7 +2206,7 @@ function RoleDetailsDialog({
                       />
                     </label>
                     <label className="text-sm font-bold">
-                      Base role
+                      {t("dashboard.roles.baseRoleLabel")}
                       <select
                         value={editBaseRole}
                         onChange={(event) =>
@@ -2019,7 +2218,7 @@ function RoleDetailsDialog({
                       >
                         {BASE_ROLE_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
-                            {option.label}
+                            {t(option.labelKey)}
                           </option>
                         ))}
                       </select>
@@ -2033,6 +2232,9 @@ function RoleDetailsDialog({
                     selectedGrants={editGrants}
                     onChange={onEditGrantsChange}
                     loading={false}
+                    scopeOptions={scopeOptions}
+                    scopeOptionsLoading={scopeOptionsLoading}
+                    scopeOptionsError={scopeOptionsError}
                   />
                   {editError ? (
                     <div
@@ -2046,7 +2248,7 @@ function RoleDetailsDialog({
                           className="ms-3 underline"
                           onClick={onReloadLatest}
                         >
-                          Reload Latest
+                          {t("dashboard.roles.reloadLatest")}
                         </button>
                       ) : null}
                     </div>
@@ -2058,7 +2260,7 @@ function RoleDetailsDialog({
                       onClick={onCancelEdit}
                       disabled={editSubmitting}
                     >
-                      Cancel
+                      {t("dashboard.roles.cancel")}
                     </button>
                     <button
                       type="button"
@@ -2066,7 +2268,9 @@ function RoleDetailsDialog({
                       onClick={onSave}
                       disabled={editSubmitting || editStale || !editHasChanges}
                     >
-                      {editSubmitting ? "Saving..." : "Save changes"}
+                      {editSubmitting
+                        ? t("dashboard.roles.saving")
+                        : t("dashboard.roles.saveChanges")}
                     </button>
                   </div>
                 </div>
@@ -2074,25 +2278,41 @@ function RoleDetailsDialog({
                 <div className="space-y-6">
                   <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                     <Meta
-                      label="Base role"
+                      label={t("dashboard.roles.headingBaseRole")}
                       value={
                         role.baseRole === "COMPANY_ADMIN"
-                          ? "Company Admin"
-                          : "Employee"
+                          ? t("dashboard.roles.companyAdmin")
+                          : t("dashboard.roles.employee")
                       }
                     />
-                    <Meta label="Status" value={role.status} />
                     <Meta
-                      label="Assigned users"
+                      label={t("dashboard.roles.headingStatus")}
+                      value={
+                        role.status === "active"
+                          ? t("dashboard.roles.active")
+                          : t("dashboard.roles.archived")
+                      }
+                    />
+                    <Meta
+                      label={t("dashboard.roles.assignedUsers")}
                       value={String(role.userCount)}
                     />
-                    <Meta label="Version" value={`v${role.version}`} />
-                    <Meta label="Created" value={role.createdAt} />
-                    <Meta label="Updated" value={role.updatedAt} />
+                    <Meta
+                      label={t("dashboard.roles.version")}
+                      value={`v${role.version}`}
+                    />
+                    <Meta
+                      label={t("dashboard.roles.created")}
+                      value={role.createdAt}
+                    />
+                    <Meta
+                      label={t("dashboard.roles.updated")}
+                      value={role.updatedAt}
+                    />
                   </dl>
                   <section>
                     <h3 className="font-bold text-on-surface">
-                      Inherited permissions
+                      {t("dashboard.roles.inheritedReadonly")}
                     </h3>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {inheritedIds.map((id) => (
@@ -2107,11 +2327,11 @@ function RoleDetailsDialog({
                   </section>
                   <section>
                     <h3 className="font-bold text-on-surface">
-                      Explicit custom grants
+                      {t("dashboard.roles.explicitGrants")}
                     </h3>
                     {role.grants.length === 0 ? (
                       <p className="mt-1 text-sm text-on-surface-variant">
-                        No explicit custom grants.
+                        {t("dashboard.roles.noExplicitGrants")}
                       </p>
                     ) : (
                       <ul className="mt-2 space-y-2">
@@ -2125,7 +2345,7 @@ function RoleDetailsDialog({
                                 grant.permission}
                             </p>
                             <p className="mt-1 text-xs text-on-surface-variant">
-                              {formatScope(grant.scopes)}
+                              {formatScope(grant.scopes, t, scopeOptions)}
                             </p>
                           </li>
                         ))}
@@ -2139,7 +2359,7 @@ function RoleDetailsDialog({
                         className="rounded-lg bg-primary px-4 py-2 font-bold text-on-primary"
                         onClick={() => onStartEdit(role)}
                       >
-                        Edit role
+                        {t("dashboard.roles.editRole")}
                       </button>
                     ) : null}
                   </div>
@@ -2203,6 +2423,7 @@ function LifecycleDialog({
   onReloadLatest: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useI18n();
   const closeRef = useRef<HTMLButtonElement>(null);
   useModalKeyboard(onCancel, submitting || migrationSubmitting);
   useEffect(() => {
@@ -2210,12 +2431,12 @@ function LifecycleDialog({
   }, []);
   const title =
     lifecycle.type === "clone"
-      ? "Clone Role"
+      ? t("dashboard.roles.dialogCloneTitle")
       : lifecycle.type === "archive"
-        ? "Archive Role"
+        ? t("dashboard.roles.dialogArchiveTitle")
         : lifecycle.type === "reactivate"
-          ? "Reactivate Role"
-          : "Delete Role";
+          ? t("dashboard.roles.dialogReactivateTitle")
+          : t("dashboard.roles.dialogDeleteTitle");
 
   return (
     <div
@@ -2240,7 +2461,7 @@ function LifecycleDialog({
           <button
             ref={closeRef}
             type="button"
-            aria-label="Close confirmation"
+            aria-label={t("dashboard.roles.closeConfirmation")}
             onClick={onCancel}
             disabled={submitting || migrationSubmitting}
             className="rounded-full p-2"
@@ -2251,7 +2472,7 @@ function LifecycleDialog({
         <div className="space-y-4 p-4">
           {lifecycle.type === "clone" ? (
             <label className="block text-sm font-bold">
-              Clone name
+              {t("dashboard.roles.cloneName")}
               <input
                 value={cloneName}
                 onChange={(event) => onCloneNameChange(event.target.value)}
@@ -2262,38 +2483,43 @@ function LifecycleDialog({
           ) : null}
           {lifecycle.type === "archive" ? (
             <p className="text-sm text-on-surface-variant">
-              Archived roles cannot receive new assignments.
+              {t("dashboard.roles.archivedHelp")}
             </p>
           ) : null}
           {lifecycle.type === "reactivate" ? (
             <p className="text-sm text-on-surface-variant">
-              The role will become assignable again.
+              {t("dashboard.roles.reactivateHelp")}
             </p>
           ) : null}
           {lifecycle.type === "delete" ? (
             <div className="space-y-4">
               {usageLoading ? (
-                <CenteredStatus text="Checking authoritative usage..." />
+                <CenteredStatus
+                  text={t("dashboard.roles.checkingAuthoritativeUsage")}
+                />
               ) : (
                 <div className="rounded-lg bg-surface-container-low p-3 text-sm">
                   <p className="font-bold">
-                    Assigned users: {usageCount ?? "Unknown"}
+                    {usageCount !== null
+                      ? t("dashboard.roles.assignedUsersCount", {
+                          count: String(usageCount),
+                        })
+                      : t("dashboard.roles.assignedUsersUnknown")}
                   </p>
                   <p className="mt-1 text-xs text-on-surface-variant">
-                    Deletion is enabled only after the usage endpoint confirms
-                    zero.
+                    {t("dashboard.roles.deletionZeroNotice")}
                   </p>
                 </div>
               )}
               {deleteFlow.requiresMigration ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                   <h3 className="font-bold text-amber-950">
-                    Migration required
+                    {t("dashboard.roles.migrationRequired")}
                   </h3>
                   {canMigrate ? (
                     <>
                       <label className="mt-3 block text-sm font-bold text-amber-950">
-                        Destination role
+                        {t("dashboard.roles.destinationRole")}
                         <select
                           value={destinationId}
                           onChange={(event) =>
@@ -2301,7 +2527,9 @@ function LifecycleDialog({
                           }
                           className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 font-normal"
                         >
-                          <option value="">Select destination...</option>
+                          <option value="">
+                            {t("dashboard.roles.selectDestination")}
+                          </option>
                           {destinations.map((role) => (
                             <option key={role.id} value={role.id}>
                               {role.name} · v{role.version}
@@ -2317,12 +2545,14 @@ function LifecycleDialog({
                         }
                         onClick={onMigrate}
                       >
-                        {migrationSubmitting ? "Migrating..." : "Migrate users"}
+                        {migrationSubmitting
+                          ? t("dashboard.roles.migrating")
+                          : t("dashboard.roles.migrateUsers")}
                       </button>
                     </>
                   ) : (
                     <p className="mt-2 text-sm text-amber-900">
-                      You need users:assign-role to migrate assigned users.
+                      {t("dashboard.roles.needUsersAssignRole")}
                     </p>
                   )}
                 </div>
@@ -2332,9 +2562,11 @@ function LifecycleDialog({
                   role="status"
                   className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
                 >
-                  Affected: {migrationResult.affected} · Skipped:{" "}
-                  {migrationResult.skipped} · Conflicted:{" "}
-                  {migrationResult.conflicted}
+                  {t("dashboard.roles.migrationResult", {
+                    affected: String(migrationResult.affected),
+                    skipped: String(migrationResult.skipped),
+                    conflicted: String(migrationResult.conflicted),
+                  })}
                 </div>
               ) : null}
             </div>
@@ -2351,7 +2583,7 @@ function LifecycleDialog({
                   className="ms-3 underline"
                   onClick={onReloadLatest}
                 >
-                  Reload Latest
+                  {t("dashboard.roles.reloadLatest")}
                 </button>
               ) : null}
             </div>
@@ -2363,7 +2595,7 @@ function LifecycleDialog({
               onClick={onCancel}
               disabled={submitting || migrationSubmitting}
             >
-              Cancel
+              {t("dashboard.roles.cancel")}
             </button>
             <button
               type="button"
@@ -2380,14 +2612,14 @@ function LifecycleDialog({
               }
             >
               {submitting
-                ? "Processing..."
+                ? t("dashboard.roles.processing")
                 : lifecycle.type === "delete"
-                  ? "Delete"
+                  ? t("dashboard.roles.actionDelete")
                   : lifecycle.type === "archive"
-                    ? "Archive"
+                    ? t("dashboard.roles.actionArchive")
                     : lifecycle.type === "reactivate"
-                      ? "Reactivate"
-                      : "Clone"}
+                      ? t("dashboard.roles.actionReactivate")
+                      : t("dashboard.roles.actionClone")}
             </button>
           </div>
         </div>
@@ -2423,6 +2655,7 @@ function UserAssignmentDialog({
   onReloadLatest: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const closeRef = useRef<HTMLButtonElement>(null);
   useModalKeyboard(onClose, false);
   useEffect(() => {
@@ -2449,16 +2682,18 @@ function UserAssignmentDialog({
               id="assignment-title"
               className="text-title-lg font-bold text-primary"
             >
-              Assignments: {role.name}
+              {t("dashboard.roles.assignmentsTitle", { name: role.name })}
             </h2>
             <p className="text-xs text-on-surface-variant">
-              Role version v{role.version}
+              {t("dashboard.roles.roleVersionSubtitle", {
+                version: String(role.version),
+              })}
             </p>
           </div>
           <button
             ref={closeRef}
             type="button"
-            aria-label="Close assignments"
+            aria-label={t("dashboard.roles.closeAssignments")}
             onClick={onClose}
             className="rounded-full p-2"
           >
@@ -2467,12 +2702,14 @@ function UserAssignmentDialog({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <label className="block">
-            <span className="sr-only">Search users</span>
+            <span className="sr-only">
+              {t("dashboard.roles.searchUsersSr")}
+            </span>
             <input
               type="search"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search users..."
+              placeholder={t("dashboard.roles.searchUsersPlaceholder")}
               className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
             />
           </label>
@@ -2488,26 +2725,34 @@ function UserAssignmentDialog({
                   className="ms-3 underline"
                   onClick={onReloadLatest}
                 >
-                  Reload Latest
+                  {t("dashboard.roles.reloadLatest")}
                 </button>
               ) : null}
             </div>
           ) : null}
           {loading ? (
-            <CenteredStatus text="Loading users..." />
+            <CenteredStatus text={t("dashboard.roles.loadingUsers")} />
           ) : filtered.length === 0 ? (
             <p className="py-8 text-center text-sm text-on-surface-variant">
-              No users found.
+              {t("dashboard.roles.noUsersFound")}
             </p>
           ) : (
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-[680px] w-full text-sm">
                 <thead className="bg-surface-container-low">
                   <tr>
-                    <th className="px-3 py-2 text-start">User</th>
-                    <th className="px-3 py-2 text-start">Base role</th>
-                    <th className="px-3 py-2 text-start">Status</th>
-                    <th className="px-3 py-2 text-start">Action</th>
+                    <th className="px-3 py-2 text-start">
+                      {t("dashboard.roles.headingUser")}
+                    </th>
+                    <th className="px-3 py-2 text-start">
+                      {t("dashboard.roles.headingBaseRole")}
+                    </th>
+                    <th className="px-3 py-2 text-start">
+                      {t("dashboard.roles.headingStatus")}
+                    </th>
+                    <th className="px-3 py-2 text-start">
+                      {t("dashboard.roles.headingAction")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/30">
@@ -2527,7 +2772,7 @@ function UserAssignmentDialog({
                           {user.role}
                           {!compatible ? (
                             <p className="text-xs text-error">
-                              Base-role mismatch
+                              {t("dashboard.roles.baseRoleMismatch")}
                             </p>
                           ) : null}
                         </td>
@@ -2540,7 +2785,9 @@ function UserAssignmentDialog({
                               disabled={busy || stale}
                               onClick={() => onRemove(user.id)}
                             >
-                              {busy ? "Removing..." : "Remove"}
+                              {busy
+                                ? t("dashboard.roles.removing")
+                                : t("dashboard.roles.remove")}
                             </button>
                           ) : (
                             <button
@@ -2554,7 +2801,9 @@ function UserAssignmentDialog({
                               }
                               onClick={() => onAssign(user.id)}
                             >
-                              {busy ? "Assigning..." : "Assign"}
+                              {busy
+                                ? t("dashboard.roles.assigning")
+                                : t("dashboard.roles.actionAssign")}
                             </button>
                           )}
                         </td>

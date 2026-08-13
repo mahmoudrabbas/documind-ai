@@ -173,9 +173,23 @@ export class ReconciliationService {
    * A run with zero tenants returns an empty aggregate.
    */
   async reconcileAll(mode: "dry-run" | "execute"): Promise<ReconciliationRunReport> {
-    const tenantIds = await SubscriptionModel.distinct("tenantId", {
+    const distinctTenantIds = await SubscriptionModel.distinct("tenantId", {
       status: { $in: [...SERVICEABLE_STATUSES] },
     }).exec();
+
+    const skippedNullTenants = distinctTenantIds.reduce(
+      (count, tenantId) => count + (tenantId == null ? 1 : 0),
+      0,
+    );
+    if (skippedNullTenants > 0) {
+      console.warn(
+        `[Reconciliation] skipped ${skippedNullTenants} subscription(s) with a null tenantId in a serviceable status`,
+      );
+    }
+
+    const tenantIds = distinctTenantIds.filter(
+      (tenantId): tenantId is Types.ObjectId => tenantId != null,
+    );
 
     const reports: ReconciliationReport[] = [];
     for (const tenantId of tenantIds) {
@@ -238,12 +252,14 @@ export class ReconciliationService {
         return UserModel.countDocuments({
           tenantId: tenantObjectId,
           role: "EMPLOYEE",
+          status: { $ne: "disabled" },
         });
 
       case "admins":
         return UserModel.countDocuments({
           tenantId: tenantObjectId,
           role: "COMPANY_ADMIN",
+          status: { $ne: "disabled" },
         });
 
       case "documents":
@@ -281,8 +297,16 @@ export class ReconciliationService {
       }
 
       case "ocrPagesPerMonth": {
+        // Auto-OCR (image-only documents ingested through the pipeline) is
+        // billed separately from the paid OCR entitlement, so it is excluded
+        // from the authoritative count. Records without a source field are
+        // legacy manual OCR records and are still counted.
         const ocrFilter: Record<string, unknown> = {
           tenantId: tenantObjectId,
+          $or: [
+            { source: { $ne: "auto" } },
+            { source: { $exists: false } },
+          ],
         };
         this.applyPeriodFilter(ocrFilter, periodStart, periodEnd);
         return OcrUsageRecordModel.countDocuments(ocrFilter);

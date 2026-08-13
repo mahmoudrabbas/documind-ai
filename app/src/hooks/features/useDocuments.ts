@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { DocumentView, DocumentVersionView } from "@/types/api/documents.types";
 import * as documentsService from "@/services/documents.service";
+import { getDocumentUploadErrorKey } from "@/lib/document-upload-errors";
 
 export interface SearchFilters {
   search?: string;
@@ -112,7 +113,14 @@ export function useDocuments() {
 
   async function upload(
     file: File,
-    metadata: { title: string; description?: string; tags?: string },
+    metadata: {
+      title: string;
+      description?: string;
+      tags?: string;
+      categoryId?: string;
+      departmentId?: string;
+      classificationId?: string;
+    },
   ) {
     setIsUploading(true);
     setUploadError(null);
@@ -134,8 +142,9 @@ export function useDocuments() {
     } catch (error) {
       setUploadProgress(null);
       setIsUploading(false);
+      const errorKey = getDocumentUploadErrorKey(error);
       setUploadError(
-        error instanceof Error ? error.message : "documents.uploadError",
+        errorKey ?? (error instanceof Error ? error.message : "documents.uploadError"),
       );
     }
   }

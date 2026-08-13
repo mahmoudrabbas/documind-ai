@@ -4,6 +4,7 @@ import { extractEntities, extractTemporalConstraints } from "../intentQuery.enti
 import { expandBilingual } from "../intentQuery.bilingualExpander.js";
 import { detectSocialMessage } from "../intentQuery.socialDetector.js";
 import { deriveQueryRoute } from "../intentQuery.route.js";
+import { detectAssistantIntent } from "../intentQuery.assistantDetector.js";
 
 export class FakeIntentQueryAdapter {
   private promptVersion = "1.0.0";
@@ -30,8 +31,15 @@ export class FakeIntentQueryAdapter {
     let clarificationNeeded = false;
     let clarification = null;
     const isFollowUp = !!conversationId;
+    const assistantIntent = detectAssistantIntent(question);
 
-    if (/unsafe|hack|ignore\s+previous|system\s+prompt|تجاهل|التعليمات\s+السابقة/i.test(question)) {
+    const hasExplicitlyMaliciousIntent =
+      /unsafe|hack|ignore\s+previous|system\s+prompt|تجاهل|التعليمات\s+السابقة/i.test(question) ||
+      /(?:give|show|reveal)\s+me\s+another\s+user(?:'s|’s)?\s+password/i.test(question) ||
+      /bypass\s+authentication/i.test(question) ||
+      /(?:أعطني|اكشف|أظهر)\s+كلمة\s+مرور\s+مستخدم\s+آخر|تجاوز\s+المصادقة|موجه\s+النظام/i.test(question);
+
+    if (hasExplicitlyMaliciousIntent) {
       detectedIntent = "unsafe";
       intentConfidence = 0.95;
       clarificationNeeded = true;
@@ -41,6 +49,11 @@ export class FakeIntentQueryAdapter {
         messageEn: "This request violates safety policies and cannot be processed.",
         messageAr: "لا يمكن معالجة هذا الطلب لمخالفته لسياسات الأمان.",
       };
+    } else if (assistantIntent.isAssistantOnly && assistantIntent.kind) {
+      detectedIntent = assistantIntent.kind === "identity"
+        ? "assistant_identity"
+        : "assistant_capabilities";
+      intentConfidence = 0.99;
     } else if (detectSocialMessage(question).isSocial) {
       detectedIntent = "social";
       intentConfidence = 0.95;
@@ -88,13 +101,14 @@ export class FakeIntentQueryAdapter {
 
     // Build the query plan
     return {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: question.trim(),
       originalQuestion: question,
       language,
       detectedIntent,
       intentConfidence,
       route: deriveQueryRoute(detectedIntent, clarificationNeeded),
+      assistantKind: assistantIntent.isAssistantOnly ? assistantIntent.kind : null,
       socialSubtype:
         detectedIntent === "social"
           ? (detectSocialMessage(question).subtype ?? "acknowledgement")
@@ -106,8 +120,8 @@ export class FakeIntentQueryAdapter {
       departments: [],
       categories: [],
       exactTerms,
-      semanticQueries: detectedIntent === "social" ? [] : semanticQueries,
-      keywordQueries: detectedIntent === "social" ? [] : keywordQueries,
+      semanticQueries: ["social", "assistant_identity", "assistant_capabilities"].includes(detectedIntent) ? [] : semanticQueries,
+      keywordQueries: ["social", "assistant_identity", "assistant_capabilities"].includes(detectedIntent) ? [] : keywordQueries,
       clarificationNeeded,
       clarification,
       isFollowUp,

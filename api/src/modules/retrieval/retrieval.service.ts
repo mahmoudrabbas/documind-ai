@@ -40,8 +40,31 @@ export interface RetrievalServiceDeps {
     actorId: string,
     documentIds: string[],
   ) => Promise<string[]>;
+  findActiveDocumentIds?: (
+    tenantId: string,
+    documentIds: string[],
+  ) => Promise<string[]>;
   resolveAccessContext: (context: AccessContext) => Promise<AccessContext>;
   authorizeDocumentForAi: (context: AccessContext, documentId: string) => Promise<void>;
+  /** Optional request-local diagnostics seam; never changes retrieval output. */
+  onHybridRetrievalArtifacts?: (artifacts: HybridRetrievalArtifacts) => void;
+  /** Suppresses durable audit writes for isolated evaluation composition only. */
+  persistenceMode?: "production" | "ephemeral";
+}
+
+export interface RankedRetrievalArtifact {
+  readonly rank: number;
+  readonly chunkId: string;
+  readonly score: number;
+}
+
+export interface HybridRetrievalArtifacts {
+  readonly rawVectorCandidates: readonly RankedRetrievalArtifact[];
+  readonly rawKeywordCandidates: readonly RankedRetrievalArtifact[];
+  readonly postAuthorizationVectorCandidates: readonly RankedRetrievalArtifact[];
+  readonly postAuthorizationKeywordCandidates: readonly RankedRetrievalArtifact[];
+  readonly fusedCandidateIds: readonly string[];
+  readonly hydratedCandidateIds: readonly string[];
 }
 
 export interface HybridRetrievalService {
@@ -133,6 +156,15 @@ function buildDiagnostics(params: {
   totalLatencyMs: number;
   vectorCandidateCount: number;
   keywordCandidateCount: number;
+  rawVectorCandidateCount?: number;
+  rawKeywordCandidateCount?: number;
+  postAuthorizationVectorCandidateCount?: number;
+  postAuthorizationKeywordCandidateCount?: number;
+  fusedCandidateCount?: number;
+  hydratedCandidateCount?: number;
+  evidenceItemCount?: number;
+  evidenceSufficiency?: string;
+  zeroCandidateReason?: string;
 }): RetrievalDiagnostics {
   return params;
 }
@@ -157,6 +189,25 @@ async function revalidateAndHydrate(
     chunkMap.set(chunk._id.toString(), chunk);
   }
 
+  // Active document verification: filter out chunks belonging to soft-deleted documents
+  const allDocIds = [...new Set(chunks.map((c) => c.documentId.toString()))];
+  let activeDocIds = new Set<string>();
+  if (allDocIds.length > 0) {
+    if (deps.findActiveDocumentIds) {
+      const active = await deps.findActiveDocumentIds(tenantId, allDocIds);
+      activeDocIds = new Set(active);
+    } else if (DocumentModel.db?.readyState === 1) {
+      const activeDocs = await DocumentModel.find({
+        _id: { $in: allDocIds.map((id) => new Types.ObjectId(id)) },
+        tenantId: new Types.ObjectId(tenantId),
+        deletedAt: null,
+      }, { _id: 1 }).lean().exec();
+      activeDocIds = new Set(activeDocs.map((d) => d._id.toString()));
+    } else {
+      activeDocIds = new Set(allDocIds);
+    }
+  }
+
   // selfOnly enforcement: fetch parent documents and check ownership
   let ownedDocumentIds: Set<string> | null = null;
   if (context?.permissionScopes?.selfOnly) {
@@ -165,13 +216,16 @@ async function revalidateAndHydrate(
       if (deps.findOwnedDocumentIds) {
         const owned = await deps.findOwnedDocumentIds(tenantId, context.actorId, docIds);
         ownedDocumentIds = new Set(owned);
-      } else {
+      } else if (DocumentModel.db?.readyState === 1) {
         const docs = await DocumentModel.find({
           _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
           tenantId: new Types.ObjectId(tenantId),
           uploadedBy: new Types.ObjectId(context.actorId),
+          deletedAt: null,
         }, { _id: 1 }).lean().exec();
         ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));
+      } else {
+        ownedDocumentIds = new Set(docIds);
       }
     }
   }
@@ -181,6 +235,9 @@ async function revalidateAndHydrate(
   for (const candidate of candidates) {
     const chunk = chunkMap.get(candidate.chunkId);
     if (!chunk) continue;
+
+    // Active document check: reject chunks from soft-deleted documents
+    if (!activeDocIds.has(chunk.documentId.toString())) continue;
 
     // Re-validate: classification must be in the mandatory filter's allowed set
     if (mandatoryFilter.classification) {
@@ -255,6 +312,46 @@ function retainAuthorized<T extends { chunkId: string }>(candidates: T[], author
   return candidates.filter((candidate) => authorizedChunkIds.has(candidate.chunkId));
 }
 
+/**
+ * Reauthorize only the final hydrated documents immediately before their
+ * content can leave the retrieval service. Raw candidates are authorized
+ * earlier for efficient filtering; this second check closes the revocation
+ * window between candidate authorization and final content return.
+ */
+async function reauthorizeFinalCandidates(
+  deps: RetrievalServiceDeps,
+  context: AccessContext,
+  candidates: RetrievalCandidate[],
+  traceId: string,
+): Promise<RetrievalCandidate[]> {
+  if (candidates.length === 0) return [];
+
+  const documentIds = [...new Set(candidates.map((candidate) => candidate.documentId))];
+  const authorizedDocumentIds = new Set<string>();
+  await Promise.all(documentIds.map(async (documentId) => {
+    try {
+      await deps.authorizeDocumentForAi(context, documentId);
+      authorizedDocumentIds.add(documentId);
+    } catch (error) {
+      const reasonCode = error instanceof AppError ? error.code : "AUTHORIZATION_FAILED";
+      logger.info(
+        {
+          traceId,
+          userId: context.actorId,
+          tenantId: context.tenantId,
+          documentId,
+          requiredAction: "use_in_ai",
+          authorizationResult: "denied",
+          reasonCode,
+        },
+        "Final RAG document authorization",
+      );
+    }
+  }));
+
+  return candidates.filter((candidate) => authorizedDocumentIds.has(candidate.documentId));
+}
+
 async function resolveAuthorizationContext(deps: RetrievalServiceDeps, context: AccessContext): Promise<AccessContext> {
   const resolved = await deps.resolveAccessContext(context);
   return { ...resolved, requiredAction: "use_in_ai" };
@@ -273,6 +370,48 @@ async function resolveQueryEmbedding(
   }
   const result = await deps.embeddingAdapter.embed({ inputs: [query.queryText] });
   return result.vectors[0];
+}
+
+async function resolveQueryEmbeddings(
+  deps: RetrievalServiceDeps,
+  query: RetrievalQuery,
+  semanticTexts: string[],
+): Promise<number[][]> {
+  if (query.queryVector !== undefined) {
+    return [query.queryVector];
+  }
+  const result = await deps.embeddingAdapter.embed({ inputs: semanticTexts });
+  return result.vectors;
+}
+
+const MAX_QUERY_VARIANTS = 3;
+
+function uniqueTexts(texts: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const text of texts) {
+    const trimmed = text.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+    if (result.length >= MAX_QUERY_VARIANTS) break;
+  }
+  return result;
+}
+
+function mergeVariantResults(
+  lists: { chunkId: string; score: number }[][],
+): { chunkId: string; score: number }[] {
+  const bestScores = new Map<string, number>();
+  for (const list of lists) {
+    for (const item of list) {
+      const current = bestScores.get(item.chunkId);
+      if (current === undefined || item.score > current) {
+        bestScores.set(item.chunkId, item.score);
+      }
+    }
+  }
+  return [...bestScores.entries()].map(([chunkId, score]) => ({ chunkId, score }));
 }
 
 // ---------------------------------------------------------------------------
@@ -371,23 +510,48 @@ export function createRetrievalService(
 
       validateQuery(query);
       const authorizationContext = await resolveAuthorizationContext(deps, context);
-      const vector = await resolveQueryEmbedding(deps, query);
+      const semanticTexts = uniqueTexts([
+        query.queryText,
+        ...(query.queryVariants ?? []),
+      ]);
+      const keywordTexts = uniqueTexts([
+        query.queryText,
+        ...(query.keywordTexts ?? []),
+      ]);
+      const vectors = await resolveQueryEmbeddings(deps, query, semanticTexts);
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
-      // Run vector + keyword search in parallel with individual timing
+      // Run vector + keyword searches (one per query variant) in parallel
+      // with individual timing; per-chunk best score wins across variants.
       const vectorStartTime = Date.now();
-      const vectorPromise = deps.vectorAdapter
-        .search({ vector, topK: query.topK, filter: merged })
-        .then((results) => ({ results, latencyMs: Date.now() - vectorStartTime }));
+      const vectorPromise = Promise.all(
+        vectors.map((vector) =>
+          deps.vectorAdapter.search({
+            vector,
+            topK: query.topK,
+            filter: merged,
+          }),
+        ),
+      )
+        .then((results) => ({
+          results: mergeVariantResults(results),
+          latencyMs: Date.now() - vectorStartTime,
+        }));
 
       const keywordStartTime = Date.now();
-      const keywordPromise = deps.keywordAdapter
-        .search({
-          queryText: query.queryText,
-          topK: query.topK,
-          filter: merged,
-        })
-        .then((results) => ({ results, latencyMs: Date.now() - keywordStartTime }));
+      const keywordPromise = Promise.all(
+        keywordTexts.map((text) =>
+          deps.keywordAdapter.search({
+            queryText: text,
+            topK: query.topK,
+            filter: merged,
+          }),
+        ),
+      )
+        .then((results) => ({
+          results: mergeVariantResults(results),
+          latencyMs: Date.now() - keywordStartTime,
+        }));
 
       const [vectorSettled, keywordSettled] = await Promise.allSettled([
         vectorPromise,
@@ -433,6 +597,19 @@ export function createRetrievalService(
         );
       }
 
+      const rawVectorCandidateCount = vectorResults.length;
+      const rawKeywordCandidateCount = keywordResults.length;
+      const rawVectorCandidates = vectorResults.map((candidate, index) => ({
+        rank: index + 1,
+        chunkId: candidate.chunkId,
+        score: candidate.score,
+      }));
+      const rawKeywordCandidates = keywordResults.map((candidate, index) => ({
+        rank: index + 1,
+        chunkId: candidate.chunkId,
+        score: candidate.score,
+      }));
+
       const authorizedChunkIds = await authorizeCandidateIds(
         deps,
         authorizationContext,
@@ -455,16 +632,33 @@ export function createRetrievalService(
       const fusionLatencyMs = Date.now() - fusionStartTime;
 
       // Re-validate and hydrate
-      const hydrated = await revalidateAndHydrate(
+      let hydrated = await revalidateAndHydrate(
         deps,
         authorizationContext.tenantId,
         fused,
         mandatory,
         authorizationContext,
       );
+      hydrated = await reauthorizeFinalCandidates(
+        deps,
+        authorizationContext,
+        hydrated,
+        traceId,
+      );
 
       const totalLatencyMs = Date.now() - totalStartTime;
       const filterSummary = buildFilterSummary(authorizationContext, query.filter);
+      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      const zeroCandidateReason =
+        rawVectorCandidateCount + rawKeywordCandidateCount === 0
+          ? "NO_RAW_SEARCH_RESULTS"
+          : vectorResults.length + keywordResults.length === 0
+            ? "NO_AUTHORIZED_CANDIDATES"
+            : fused.length === 0
+              ? "NO_FUSED_CANDIDATES"
+              : hydrated.length === 0
+                ? "NO_HYDRATED_CANDIDATES"
+                : undefined;
       const diagnostics = buildDiagnostics({
         traceId,
         vectorLatencyMs,
@@ -473,11 +667,59 @@ export function createRetrievalService(
         totalLatencyMs,
         vectorCandidateCount: vectorResults.length,
         keywordCandidateCount: keywordResults.length,
+        rawVectorCandidateCount,
+        rawKeywordCandidateCount,
+        postAuthorizationVectorCandidateCount: vectorResults.length,
+        postAuthorizationKeywordCandidateCount: keywordResults.length,
+        fusedCandidateCount: fused.length,
+        hydratedCandidateCount: hydrated.length,
+        evidenceItemCount: evidenceBundle?.items.length ?? 0,
+        evidenceSufficiency: evidenceBundle?.sufficiency.level,
+        zeroCandidateReason,
       });
 
-      const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      try {
+        deps.onHybridRetrievalArtifacts?.({
+          rawVectorCandidates,
+          rawKeywordCandidates,
+          postAuthorizationVectorCandidates: vectorResults.map(
+            (candidate, index) => ({
+              rank: index + 1,
+              chunkId: candidate.chunkId,
+              score: candidate.score,
+            }),
+          ),
+          postAuthorizationKeywordCandidates: keywordResults.map(
+            (candidate, index) => ({
+              rank: index + 1,
+              chunkId: candidate.chunkId,
+              score: candidate.score,
+            }),
+          ),
+          fusedCandidateIds: fused.map((candidate) => candidate.chunkId),
+          hydratedCandidateIds: hydrated.map((candidate) => candidate.chunkId),
+        });
+      } catch {
+        // Diagnostics observers are advisory and cannot affect retrieval.
+      }
 
-      void emitRetrievalAudit({
+      logger.info(
+        {
+          traceId,
+          rawVectorCandidateCount,
+          rawKeywordCandidateCount,
+          postAuthorizationVectorCandidateCount: vectorResults.length,
+          postAuthorizationKeywordCandidateCount: keywordResults.length,
+          fusedCandidateCount: fused.length,
+          hydratedCandidateCount: hydrated.length,
+          evidenceItemCount: evidenceBundle?.items.length ?? 0,
+          evidenceSufficiency: evidenceBundle?.sufficiency.level,
+          zeroCandidateReason,
+        },
+        "Hybrid retrieval stage counts",
+      );
+
+      if (deps.persistenceMode !== "ephemeral") void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context: authorizationContext,
         traceId,
@@ -541,12 +783,18 @@ export function createRetrievalService(
       const fusionLatencyMs = Date.now() - fusionStartTime;
 
       // Re-validate and hydrate
-      const hydrated = await revalidateAndHydrate(
+      let hydrated = await revalidateAndHydrate(
         deps,
         authorizationContext.tenantId,
         fused,
         mandatory,
         authorizationContext,
+      );
+      hydrated = await reauthorizeFinalCandidates(
+        deps,
+        authorizationContext,
+        hydrated,
+        traceId,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
@@ -562,7 +810,7 @@ export function createRetrievalService(
 
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
-      void emitRetrievalAudit({
+      if (deps.persistenceMode !== "ephemeral") void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context: authorizationContext,
         traceId,
@@ -623,12 +871,18 @@ export function createRetrievalService(
       const fusionLatencyMs = Date.now() - fusionStartTime;
 
       // Re-validate and hydrate
-      const hydrated = await revalidateAndHydrate(
+      let hydrated = await revalidateAndHydrate(
         deps,
         authorizationContext.tenantId,
         fused,
         mandatory,
         authorizationContext,
+      );
+      hydrated = await reauthorizeFinalCandidates(
+        deps,
+        authorizationContext,
+        hydrated,
+        traceId,
       );
 
       const totalLatencyMs = Date.now() - totalStartTime;
@@ -644,7 +898,7 @@ export function createRetrievalService(
 
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
 
-      void emitRetrievalAudit({
+      if (deps.persistenceMode !== "ephemeral") void emitRetrievalAudit({
         action: "RETRIEVAL_SEARCH",
         context: authorizationContext,
         traceId,

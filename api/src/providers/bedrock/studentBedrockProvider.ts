@@ -82,6 +82,7 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
   readonly providerKey = "student-bedrock";
 
   readonly model: string;
+  readonly runtimeIdentity;
   readonly dimensions: number;
 
   private readonly config: SBGConfig;
@@ -107,6 +108,15 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
     this.audioModel = audioModel;
 
     this.model = chatModels.primary[0] ?? chatModels.fast[0] ?? "anthropic.claude-sonnet-4-6";
+    this.runtimeIdentity = Object.freeze({
+      provider: this.providerKey,
+      model: this.model,
+      modelRevisionStatus: "unavailable" as const,
+      componentVersion: "student-bedrock-provider-v1",
+      chain: Object.freeze([...chatModels.primary, ...chatModels.fast].map((model) =>
+        Object.freeze({ provider: this.providerKey, model, modelRevisionStatus: "unavailable" as const, componentVersion: "student-bedrock-provider-v1" }),
+      )),
+    });
     this.dimensions = 1024;
   }
 
@@ -540,13 +550,10 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
 
 export function createStudentBedrockProvider(): StudentBedrockProvider {
   const apiKey = process.env.SBG_API_KEY;
-  const baseUrl = process.env.SBG_BASE_URL;
+  const baseUrl = process.env.BEDROCK_GATEWAY_URL || process.env.SBG_BASE_URL || "http://apiaccess.iti.net.eg";
 
   if (!apiKey || apiKey.trim() === "") {
     throw new Error("SBG_API_KEY environment variable is required for student-bedrock provider");
-  }
-  if (!baseUrl || baseUrl.trim() === "") {
-    throw new Error("SBG_BASE_URL environment variable is required for student-bedrock provider");
   }
 
   const config: SBGConfig = {

@@ -34,6 +34,19 @@ export function getDirection(locale: Locale): Direction {
 }
 
 /**
+ * BCP-47 tags used for `Intl` date and number formatting.
+ *
+ * Arabic requests the Latin numbering system (`-u-nu-latn`) so months
+ * and date order are Arabic while digits stay Western. This dashboard
+ * shows invoice amounts, quotas and IDs alongside Latin text throughout,
+ * where Arabic-Indic numerals hurt more than they help.
+ */
+export const INTL_LOCALES: Record<Locale, string> = {
+  en: "en-US",
+  ar: "ar-EG-u-nu-latn",
+};
+
+/**
  * Type-guard: returns `true` when `value` is a recognised `Locale`.
  * Useful for validating cookies, query-params, and other untrusted input.
  */

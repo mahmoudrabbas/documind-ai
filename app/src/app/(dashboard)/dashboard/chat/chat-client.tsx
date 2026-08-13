@@ -3,8 +3,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PdfViewerModal } from "@/components/documents/PdfViewerModal";
+import { SourcePreviewModal } from "@/components/domain/SourcePreviewModal";
 import { FeedbackWidget } from "@/components/domain/FeedbackWidget";
 import { AssistantMarkdown } from "@/components/domain/AssistantMarkdown";
+import { SourceList } from "@/components/domain/ChatSources";
+import {
+  ChatImageThumbnail,
+  PersistedChatImageThumbnail,
+} from "@/components/domain/ChatImageThumbnail";
+import { ChatImagePreviewModal } from "@/components/domain/ChatImagePreviewModal";
 import { UpgradePrompt } from "@/components/entitlement/UpgradePrompt";
 import {
   mapEntitlementError,
@@ -12,9 +19,11 @@ import {
 } from "@/lib/entitlement-errors";
 import {
   sendMessage,
+  sendMessageStream,
+  ChatStreamError,
+  type ChatProgressStage,
   sendVisionMessage,
   transcribeAudio,
-  fetchChatAttachmentUrl,
   listConversations,
   getConversationMessages,
   deleteConversation,
@@ -27,11 +36,18 @@ import type {
   ConversationListItem,
 } from "@/types/api/chat.types";
 import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { getChatErrorPresentation } from "./chat-error";
 import { previewText } from "./preview-text";
 import { getContentDirection } from "@/lib/i18n/content-direction";
+import {
+  downloadDocument,
+  fetchDocumentPreviewUrl,
+  getDocument,
+} from "@/services/documents.service";
+import { classifySourceFile } from "./source-preview";
 
 type Message = {
   id: string;
@@ -44,16 +60,24 @@ type Message = {
 
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_TEXTAREA_HEIGHT = 128;
 
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+function formatRelativeTime(
+  iso: string,
+  t: (key: string, params?: Record<string, string>) => string,
+): string {
+  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return new Date(iso).toLocaleString();
+  }
+  if (seconds < 60) return t("dashboard.justNow");
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return t("dashboard.minutesAgo", { count: String(minutes) });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t("dashboard.hoursAgo", { count: String(hours) });
+  const days = Math.floor(hours / 24);
+  return t("dashboard.daysAgo", { count: String(days) });
 }
 
 function formatDuration(seconds: number): string {
@@ -62,23 +86,11 @@ function formatDuration(seconds: number): string {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
-const SUGGESTED_QUESTIONS = [
-  "What is the company holidays schedule?",
-  "How do I request time off?",
-  "What are the IT security guidelines?",
+const SUGGESTED_QUESTION_KEYS = [
+  "chat.suggestedQuestion1",
+  "chat.suggestedQuestion2",
+  "chat.suggestedQuestion3",
 ];
-
-function resolveDimensionLabel(
-  t: (key: string) => string,
-  dimension: string,
-): string {
-  const key = `usage.dimension.${dimension}`;
-  const label = t(key);
-  if (label !== key) return label;
-  return dimension
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^[a-z]/, (c) => c.toUpperCase());
-}
 
 function isVisionResponse(
   response: ChatResponse | ChatVisionResponse,
@@ -86,45 +98,128 @@ function isVisionResponse(
   return "attachment" in response;
 }
 
-function AttachmentThumbnail({
-  attachment,
-  alt,
-}: {
-  attachment: ChatAttachment;
-  alt?: string;
-}) {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    fetchChatAttachmentUrl(attachment.id)
-      .then((url) => {
-        if (cancelled) return;
-        objectUrl = url;
-        setSrc(url);
-      })
-      .catch(() => {
-        // Silently fail; the bubble still shows the message text.
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [attachment.id]);
-
-  if (!src) {
-    return (
-      <div className="h-28 w-36 animate-pulse rounded-xl bg-on-surface/10" />
-    );
-  }
-
+function ThinkingIndicator({ label }: { label: string }) {
   return (
-    <img
-      src={src}
-      alt={alt ?? attachment.fileName}
-      className="h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
-    />
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex items-center gap-2"
+    >
+      <span className="flex gap-1" aria-hidden="true">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/40 [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/30 [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/25 [animation-delay:300ms]" />
+      </span>
+      <span className="text-[13px] text-on-surface-variant">{label}</span>
+    </div>
+  );
+}
+
+type ConversationPanelProps = {
+  conversations: ConversationListItem[];
+  activeConversation: string;
+  loadingConversations: boolean;
+  onSelect: (id: string) => void;
+  onDelete: (id: string, e: React.MouseEvent) => void;
+  onNew: () => void;
+  headerTrailing?: React.ReactNode;
+};
+
+/**
+ * Shared conversation-history panel used by both the persistent
+ * desktop/tablet sidebar and the mobile chat-history drawer. Keeping a single
+ * source of truth guarantees the two surfaces never drift apart and that the
+ * mobile drawer cannot accidentally reuse the global navigation drawer.
+ */
+function ConversationPanel({
+  conversations,
+  activeConversation,
+  loadingConversations,
+  onSelect,
+  onDelete,
+  onNew,
+  headerTrailing,
+}: ConversationPanelProps) {
+  const { t } = useI18n();
+  return (
+    <>
+      <div className="border-b border-outline-variant/20 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-normal text-on-surface">
+            {t("chat.conversationsTitle")}
+          </h2>
+          {headerTrailing}
+        </div>
+        <button
+          type="button"
+          onClick={onNew}
+          className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          <span className="material-symbols-outlined text-[17px]">add</span>
+          {t("chat.newConversation")}
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        {loadingConversations && conversations.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
+            {t("common.loading")}
+          </div>
+        ) : (
+          conversations.map((conv) => {
+            const titleDir = getContentDirection(conv.title);
+            const previewDir = getContentDirection(conv.lastMessage);
+            return (
+              <div
+                key={conv.id}
+                onClick={() => onSelect(conv.id)}
+                className={`group relative flex w-full cursor-pointer flex-col gap-1.5 rounded-xl px-3 py-2.5 text-start transition-colors hover:bg-surface-container-low ${
+                  activeConversation === conv.id ? "bg-primary/5" : ""
+                }`}
+              >
+                {activeConversation === conv.id && (
+                  <span
+                    className="absolute inset-y-3 start-0 w-1 rounded-full bg-primary/70"
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="flex items-start justify-between gap-2">
+                  <span
+                    dir={titleDir.dir}
+                    lang={titleDir.lang}
+                    className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-5 text-on-surface"
+                  >
+                    {conv.title}
+                  </span>
+                  <button
+                    onClick={(e) => onDelete(conv.id, e)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-variant/0 transition-colors hover:bg-error/10 hover:text-error group-hover:text-on-surface-variant/50 focus-visible:text-on-surface-variant focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                    title={t("chat.deleteConversation")}
+                    aria-label={t("chat.deleteConversation")}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">delete</span>
+                  </button>
+                </div>
+                <span
+                  dir={previewDir.dir}
+                  lang={previewDir.lang}
+                  className="truncate text-xs leading-4 text-on-surface-variant/70"
+                >
+                  {previewText(conv.lastMessage) || t("chat.noMessagesYet")}
+                </span>
+                <span className="text-[10px] font-medium leading-4 text-outline/80">
+                  {formatRelativeTime(conv.updatedAt, t)}
+                </span>
+              </div>
+            );
+          })
+        )}
+        {!loadingConversations && conversations.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
+            {t("chat.noConversations")}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -153,17 +248,29 @@ export function ChatClient() {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [progressStage, setProgressStage] = useState<ChatProgressStage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [entitlementBanner, setEntitlementBanner] =
     useState<EntitlementDenial | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [pdfViewer, setPdfViewer] = useState<{
     documentId: string;
     pageNumber?: number;
     highlightText?: string;
     documentTitle?: string;
+  } | null>(null);
+  const [sourcePreview, setSourcePreview] = useState<{
+    title: string;
+    text?: string;
+    documentId?: string;
+    loading?: boolean;
+  } | null>(null);
+  const [imagePreview, setImagePreview] = useState<{
+    src: string;
+    alt: string;
   } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -177,6 +284,7 @@ export function ChatClient() {
   const liveTranscriptRef = useRef<string>("");
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const clientMessageIdRef = useRef<string | null>(null);
   const msgIdCounter = useRef(0);
@@ -244,7 +352,7 @@ export function ChatClient() {
 
           recognition.onerror = (event: { error: string }) => {
             if (event.error === "not-allowed") {
-              setError("Microphone access denied. Please allow microphone permissions.");
+              setError(t("chat.error.micPermission"));
             }
           };
 
@@ -262,9 +370,7 @@ export function ChatClient() {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch {
-      setError(
-        "Microphone access denied or unsupported browser. Please check microphone permissions.",
-      );
+      setError(t("chat.error.micFailed"));
     }
   };
 
@@ -360,6 +466,10 @@ export function ChatClient() {
 
   const currentMessages = messages[activeConversation] ?? [];
 
+  const activeConversationTitle =
+    conversations.find((c) => c.id === activeConversation)?.title ?? "";
+  const activeTitleDir = getContentDirection(activeConversationTitle);
+
   const loadConversations = useCallback(async () => {
     try {
       setLoadingConversations(true);
@@ -376,6 +486,22 @@ export function ChatClient() {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Mobile chat-history drawer: close on Escape and lock body scroll while
+  // open. Kept independent from the global navigation drawer.
+  useEffect(() => {
+    if (!historyOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setHistoryOpen(false);
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [historyOpen]);
 
   // Refresh relative timestamps every minute
   useEffect(() => {
@@ -421,6 +547,13 @@ export function ChatClient() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages.length, isTyping]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+  }, [input]);
 
   function handleSelectConversation(id: string) {
     setActiveConversation(id);
@@ -487,6 +620,68 @@ export function ChatClient() {
     clientMessageIdRef.current = null;
   }
 
+  const handleOpenSource = useCallback(async (source: ChatSource) => {
+    const fallbackTitle = source.documentTitle ?? t("chat.sourceDocumentFallback");
+    setPdfViewer(null);
+    setSourcePreview({ title: fallbackTitle, loading: true });
+    try {
+      const { data } = await getDocument(source.documentId);
+      const document = data.document;
+      const title = document.metadata.title || document.originalFileName || document.fileName || fallbackTitle;
+      const kind = classifySourceFile(document.mimeType, document.originalFileName || document.fileName);
+
+      if (kind === "pdf") {
+        setSourcePreview(null);
+        setPdfViewer({
+          documentId: source.documentId,
+          pageNumber: source.pageNumber,
+          highlightText: source.text,
+          documentTitle: title,
+        });
+        return;
+      }
+
+      if (kind === "text") {
+        const previewUrl = await fetchDocumentPreviewUrl(source.documentId);
+        try {
+          const response = await fetch(previewUrl);
+          if (!response.ok) throw new Error(`Text preview failed: ${response.status}`);
+          setSourcePreview({ title, text: await response.text() });
+        } finally {
+          URL.revokeObjectURL(previewUrl);
+        }
+        return;
+      }
+
+      setSourcePreview({ title, documentId: source.documentId });
+    } catch {
+      setSourcePreview({ title: fallbackTitle, documentId: source.documentId });
+    }
+  }, [t]);
+
+  async function sendTextMessageWithProgress(
+    question: string,
+    convId: string,
+  ): Promise<ChatResponse> {
+    try {
+      return await sendMessageStream(
+        { message: question, conversationId: convId || undefined },
+        { onStage: (stage) => setProgressStage(stage) },
+      );
+    } catch (err) {
+      // Fallback only when the stream failed before the workflow started;
+      // after any event the server already persists the message, so a retry
+      // would duplicate the exchange and re-consume entitlement quota.
+      if (err instanceof ChatStreamError && !err.receivedAnyEvent) {
+        return sendMessage({
+          message: question,
+          conversationId: convId || undefined,
+        });
+      }
+      throw err;
+    }
+  }
+
   async function handleSend(text?: string) {
     const question = (text || input).trim();
     if (!question || isTyping || retryAfterSeconds !== null) return;
@@ -541,10 +736,7 @@ export function ChatClient() {
             clientMessageId,
             image: selectedFile,
           })
-        : await sendMessage({
-            message: question,
-            conversationId: convId || undefined,
-          });
+        : await sendTextMessageWithProgress(question, convId);
 
       const actualConvId = response.conversationId;
       const aiMsg: Message = {
@@ -633,232 +825,209 @@ export function ChatClient() {
       }
     } finally {
       setIsTyping(false);
+      setProgressStage(null);
     }
   }
 
   return (
-    <div className="flex h-[calc(100dvh-4rem)] overflow-hidden rounded-3xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm lg:h-[calc(100dvh-6rem)]">
+    <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface shadow-sm">
       {/* Sidebar */}
-      <aside className="hidden w-72 shrink-0 flex-col border-e border-outline-variant/30 bg-surface-container-low md:flex">
-        <div className="border-b border-outline-variant/30 p-4">
-          <h2 className="text-title-sm font-bold text-on-surface">Conversations</h2>
-          <button
-            onClick={() => handleNewConversation()}
-            className="mt-3 flex w-full items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            New conversation
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {loadingConversations && conversations.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
-              Loading...
-            </div>
-          ) : (
-            conversations.map((conv) => (
-              <div
-                key={conv.id}
-                onClick={() => handleSelectConversation(conv.id)}
-                className={`group flex w-full cursor-pointer flex-col gap-1 border-b border-outline-variant/20 px-4 py-3 text-start transition-colors hover:bg-surface-container ${
-                  activeConversation === conv.id
-                    ? "bg-primary/5 border-s-4 border-s-primary"
-                    : ""
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="truncate text-sm font-semibold text-on-surface">
-                    {conv.title}
-                  </span>
-                  <button
-                    onClick={(e) => handleDeleteConversation(conv.id, e)}
-                    className="hidden shrink-0 rounded p-0.5 text-on-surface-variant/40 transition-colors hover:bg-error/10 hover:text-error group-hover:block"
-                    title="Delete conversation"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">delete</span>
-                  </button>
-                </div>
-                <span className="truncate text-xs text-on-surface-variant">
-                  {previewText(conv.lastMessage) || "No messages yet"}
-                </span>
-                <span className="text-[11px] text-outline">
-                  {formatRelativeTime(conv.updatedAt)}
-                </span>
-              </div>
-            ))
-          )}
-          {!loadingConversations && conversations.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-on-surface-variant">
-              No conversations yet
-            </div>
-          )}
-        </div>
+      <aside
+        data-testid="chat-conversations-sidebar"
+        className="hidden w-56 shrink-0 flex-col border-e border-outline-variant/25 bg-surface-container-lowest md:flex lg:w-64 xl:w-72"
+      >
+        <ConversationPanel
+          conversations={conversations}
+          activeConversation={activeConversation}
+          loadingConversations={loadingConversations}
+          onSelect={handleSelectConversation}
+          onDelete={handleDeleteConversation}
+          onNew={() => void handleNewConversation()}
+        />
       </aside>
 
       {/* Main chat area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col bg-surface-container-lowest">
+        {/* Mobile conversation header (chat history lives in its own drawer on small screens) */}
+        <header className="flex items-center gap-2 border-b border-outline-variant/20 bg-surface-container-lowest px-3 py-2 md:hidden">
+          <button
+            type="button"
+            data-testid="chat-mobile-history-toggle"
+            onClick={() => setHistoryOpen(true)}
+            aria-label={t("chat.conversationsTitle")}
+            aria-haspopup="dialog"
+            aria-expanded={historyOpen}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span
+              className="material-symbols-outlined text-[18px]"
+              aria-hidden="true"
+            >
+              chat
+            </span>
+            {t("chat.conversationsTitle")}
+          </button>
+          <h2
+            dir={activeTitleDir.dir}
+            lang={activeTitleDir.lang}
+            className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface-variant"
+          >
+            {activeConversationTitle}
+          </h2>
+        </header>
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6 lg:pe-8 lg:ps-8">
           {currentMessages.length === 0 && !loadingMessages ? (
-            <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <div className="flex h-full flex-col items-center justify-center gap-5 px-4 pb-12 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/10">
                 <span
-                  className="material-symbols-outlined text-[32px] text-primary"
+                  className="material-symbols-outlined text-[30px] text-primary/80"
                   style={{ fontVariationSettings: "'FILL' 1" }}
                 >
                   psychology
                 </span>
               </div>
-              <div>
-                <h3 className="text-title-lg font-bold text-on-surface">
-                  DocuMind AI
-                </h3>
-                <p className="mt-1 max-w-sm text-sm text-on-surface-variant">
-                  Ask questions about your company documents and get instant
-                  answers sourced from your knowledge base.
+              <div className="space-y-1.5">
+                <h2 className="text-title-lg font-semibold text-on-surface">
+                  {t("chat.emptyTitle")}
+                </h2>
+                <p className="mx-auto max-w-md text-sm leading-6 text-on-surface-variant">
+                  {t("chat.emptyDescription")}
                 </p>
               </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTED_QUESTIONS.map((q) => (
+              <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
+                {SUGGESTED_QUESTION_KEYS.map((key) => (
                   <button
-                    key={q}
-                    onClick={() => handleSend(q)}
+                    key={key}
+                    type="button"
+                    onClick={() => handleSend(t(key))}
                     disabled={isTyping || retryAfterSeconds !== null}
-                    className="rounded-full border border-outline-variant/40 bg-surface px-4 py-2 text-sm text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                    className="max-w-full rounded-full border border-outline-variant/30 bg-surface px-3.5 py-1.5 text-center text-sm leading-5 text-on-surface-variant transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {q}
+                    {t(key)}
                   </button>
                 ))}
               </div>
             </div>
           ) : loadingMessages ? (
             <div className="flex h-full items-center justify-center">
-              <div className="flex gap-1">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:0ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:150ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:300ms]" />
+              <div className="rounded-2xl border border-outline-variant/20 bg-surface px-3.5 py-2.5">
+                <ThinkingIndicator label={t("chat.loadingConversation")} />
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl space-y-6">
+            <div className="mx-auto flex max-w-5xl flex-col gap-4">
               {currentMessages.map((msg) => {
                 const contentDir = getContentDirection(msg.content);
                 return (
                   <div
                     key={msg.id}
-                    className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     {msg.role === "assistant" && (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                        <span className="material-symbols-outlined text-[18px] text-primary">
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/10">
+                        <span className="material-symbols-outlined text-[16px] text-primary/80">
                           smart_toy
                         </span>
                       </div>
                     )}
                     <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                      className={`flex min-w-0 flex-col ${
                         msg.role === "user"
-                          ? "bg-primary text-on-primary"
-                          : "bg-surface-container border border-outline-variant/30 text-on-surface"
+                          ? "max-w-[calc(100%-2.5rem)] items-end sm:max-w-[68%]"
+                          : "max-w-[calc(100%-2.5rem)] items-start sm:max-w-[88%]"
                       }`}
                     >
-                      {msg.role === "user" && msg.localAttachmentUrl && (
-                        <img
-                          src={msg.localAttachmentUrl}
-                          alt={t("chat.attachmentPreview")}
-                          className="mb-2 h-28 w-36 rounded-xl border border-outline-variant/30 object-cover"
+                      <div
+                        className={
+                          msg.role === "user"
+                            ? "w-fit max-w-full rounded-2xl rounded-ee-md bg-primary px-3.5 py-2 text-[15px] leading-6 text-on-primary shadow-sm"
+                            : "w-full rounded-2xl rounded-ss-md border border-outline-variant/15 bg-surface/80 px-5 py-4 text-base leading-7 text-on-surface"
+                        }
+                      >
+                        {msg.role === "user" && msg.localAttachmentUrl && (
+                          <div className="mb-2">
+                            <ChatImageThumbnail
+                              src={msg.localAttachmentUrl}
+                              alt={t("chat.attachmentPreview")}
+                              onOpen={() =>
+                                setImagePreview({
+                                  src: msg.localAttachmentUrl as string,
+                                  alt: t("chat.attachmentPreview"),
+                                })
+                              }
+                            />
+                          </div>
+                        )}
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {msg.attachments.map((attachment) => (
+                              <PersistedChatImageThumbnail
+                                key={attachment.id}
+                                attachment={attachment}
+                                alt={attachment.fileName}
+                                onOpen={(src) =>
+                                  setImagePreview({
+                                    src,
+                                    alt: attachment.fileName,
+                                  })
+                                }
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {msg.role === "user" ? (
+                          <p
+                            dir={contentDir.dir}
+                            lang={contentDir.lang}
+                            className="whitespace-pre-line break-words"
+                          >
+                            {msg.content}
+                          </p>
+                        ) : (
+                          <AssistantMarkdown content={msg.content} />
+                        )}
+                      </div>
+                      {msg.sources && msg.sources.length > 0 && (
+                        <SourceList
+                          sources={msg.sources}
+                          onOpen={handleOpenSource}
                         />
                       )}
-                      {msg.attachments && msg.attachments.length > 0 && (
-                        <div className="mb-2 flex flex-wrap gap-2">
-                          {msg.attachments.map((attachment) => (
-                            <AttachmentThumbnail
-                              key={attachment.id}
-                              attachment={attachment}
-                            />
-                          ))}
-                        </div>
+                      {msg.role === "assistant" && activeConversation && (
+                        <FeedbackWidget
+                          messageId={msg.id}
+                          conversationId={activeConversation}
+                        />
                       )}
-                      {msg.role === "user" ? (
-                        <p
-                          dir={contentDir.dir}
-                          lang={contentDir.lang}
-                          className="whitespace-pre-line"
-                        >
-                          {msg.content}
-                        </p>
-                      ) : (
-                        <AssistantMarkdown content={msg.content} />
-                      )}
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 border-t border-outline-variant/20 pt-2">
-                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
-                          Sources
-                        </p>
-                        {msg.sources.map((src) => (
-                            <button
-                              key={src.chunkId}
-                              onClick={() => setPdfViewer({
-                                documentId: src.documentId,
-                                pageNumber: src.pageNumber,
-                                highlightText: src.text,
-                                documentTitle: src.documentTitle,
-                              })}
-                              className="flex items-center gap-1 text-xs text-on-surface-variant transition-colors hover:text-primary"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">
-                                description
-                              </span>
-                              <span className="underline-offset-2 hover:underline">
-                                {src.documentTitle ?? "Document"}
-                              </span>
-                              {src.sectionTitle && (
-                                <span className="text-outline">
-                                  — {src.sectionTitle}
-                                </span>
-                              )}
-                              {src.pageNumber && (
-                                <span className="text-outline">
-                                  (p.{src.pageNumber})
-                                </span>
-                              )}
-                              <span className="ml-1 text-outline">
-                                ({(src.score * 100).toFixed(0)}%)
-                              </span>
-                            </button>
-                          ))}
+                    </div>
+                    {msg.role === "user" && (
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-container-high/80 ring-1 ring-outline-variant/20">
+                        <span className="material-symbols-outlined text-[16px] text-on-surface-variant/80">
+                          person
+                        </span>
                       </div>
                     )}
-                    {msg.role === "assistant" && activeConversation && (
-                      <FeedbackWidget
-                        messageId={msg.id}
-                        conversationId={activeConversation}
-                      />
-                    )}
                   </div>
-                  {msg.role === "user" && (
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-container-high">
-                      <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
-                        person
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
               {isTyping && (
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <span className="material-symbols-outlined text-[18px] text-primary">
+                <div className="flex gap-2.5">
+                  <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/10">
+                    <span className="material-symbols-outlined text-[16px] text-primary/80">
                       smart_toy
                     </span>
                   </div>
-                  <div className="rounded-2xl border border-outline-variant/30 bg-surface-container px-4 py-3">
-                    <div className="flex gap-1">
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-on-surface-variant/40 [animation-delay:300ms]" />
-                    </div>
+                  <div className="rounded-2xl rounded-ss-md border border-outline-variant/20 bg-surface px-4 py-3">
+                    <ThinkingIndicator
+                      label={
+                        progressStage &&
+                        t(`chat.progress.${progressStage}`) !== `chat.progress.${progressStage}`
+                          ? t(`chat.progress.${progressStage}`)
+                          : t("chat.thinking")
+                      }
+                    />
                   </div>
                 </div>
               )}
@@ -871,13 +1040,16 @@ export function ChatClient() {
         {error && (
           <div className="border-t border-error/20 bg-error/5 px-4 py-2 text-center text-xs text-error">
             {error}
-            {retryAfterSeconds !== null && ` Retry in ${retryAfterSeconds}s.`}
+            {retryAfterSeconds !== null &&
+              ` ${t("chat.error.retryCountdown", {
+                seconds: String(retryAfterSeconds),
+              })}`}
           </div>
         )}
 
         {/* Entitlement denial banner (429 quota exceeded / 403 subscription inactive) */}
         {entitlementBanner && (
-          <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-3 sm:px-6 lg:px-10">
+          <div className="border-t border-outline-variant/25 bg-surface-container-lowest px-4 py-3 sm:px-6 lg:px-10">
             <div className="mx-auto max-w-3xl">
               {entitlementBanner.kind === "subscription-inactive" ? (
                 <UpgradePrompt
@@ -894,8 +1066,9 @@ export function ChatClient() {
                 />
               ) : (
                 <UpgradePrompt
-                  dimension={resolveDimensionLabel(
+                  dimension={codeLabel(
                     t,
+                    "usage.dimension",
                     entitlementBanner.dimension,
                   )}
                   current={entitlementBanner.current}
@@ -904,8 +1077,9 @@ export function ChatClient() {
                   hasBillingPermission={permissions.can(Permission.BILLING_MANAGE)}
                   warningThreshold={0}
                   title={t("entitlement.denial.quotaTitle", {
-                    dimension: resolveDimensionLabel(
+                    dimension: codeLabel(
                       t,
+                      "usage.dimension",
                       entitlementBanner.dimension,
                     ),
                   })}
@@ -917,37 +1091,47 @@ export function ChatClient() {
         )}
 
         {/* Input */}
-        <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 sm:px-6 lg:px-10">
-          <div className="mx-auto max-w-3xl">
+        <div className="min-w-0 border-t border-outline-variant/20 bg-surface/95 px-4 pb-3 pt-3 sm:px-6 lg:pe-8 lg:ps-8">
+          <div className="mx-auto max-w-5xl">
             {previewUrl && selectedFile && (
-              <div className="mb-2 flex items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface p-2 pr-3">
+              <div className="mb-2 flex w-full items-center gap-3 rounded-xl border border-outline-variant/25 bg-surface-container-lowest p-2 pe-3 sm:max-w-md">
                 <img
                   src={previewUrl}
                   alt={t("chat.selectedImagePreview")}
-                  className="h-16 w-20 rounded-xl object-cover"
+                  className="h-12 w-16 shrink-0 rounded-lg object-cover"
                 />
                 <span className="min-w-0 flex-1 truncate text-xs text-on-surface-variant">
                   {selectedFile.name}
                 </span>
                 <button
+                  type="button"
                   onClick={handleRemoveImage}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                  aria-label={t("chat.removeImage")}
                   title={t("chat.removeImage")}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-error"
                 >
-                  <span className="material-symbols-outlined text-[18px]">
+                  <span
+                    className="material-symbols-outlined text-[18px]"
+                    aria-hidden="true"
+                  >
                     close
                   </span>
                 </button>
               </div>
             )}
-            <div className="flex items-end gap-3 rounded-2xl border border-outline-variant/40 bg-surface px-4 py-3 shadow-sm transition-all focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+            <div className="flex min-w-0 items-end gap-1.5 rounded-2xl border border-outline-variant/25 bg-surface-container-lowest p-2 shadow-sm transition-colors focus-within:border-primary/50 focus-within:bg-surface focus-within:ring-4 focus-within:ring-primary/10">
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={retryAfterSeconds !== null}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t("chat.attachImage")}
                 title={t("chat.attachImage")}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant/75 transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span className="material-symbols-outlined text-[20px]">
+                <span
+                  className="material-symbols-outlined text-[20px]"
+                  aria-hidden="true"
+                >
                   image
                 </span>
               </button>
@@ -959,31 +1143,45 @@ export function ChatClient() {
                 onChange={handleSelectImage}
               />
               <button
+                type="button"
                 onClick={toggleRecording}
                 disabled={isTranscribing || retryAfterSeconds !== null}
-                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors ${
+                aria-label={
+                  isRecording ? t("chat.stopRecording") : t("chat.voiceInput")
+                }
+                title={isRecording ? t("chat.stopRecording") : t("chat.voiceInput")}
+                className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
                   isRecording
                     ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
-                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary"
+                    : "text-on-surface-variant/75 hover:bg-surface-container-high hover:text-primary"
                 } disabled:cursor-not-allowed disabled:opacity-40`}
-                title={isRecording ? "Stop Voice Recording" : "Voice Input"}
               >
                 {isTranscribing ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                    aria-hidden="true"
+                  />
                 ) : isRecording ? (
                   <>
-                    <span className="h-2.5 w-2.5 animate-ping rounded-full bg-error" />
-                    <span className="font-mono text-xs font-medium">
+                    <span
+                      className="h-2.5 w-2.5 animate-ping rounded-full bg-error"
+                      aria-hidden="true"
+                    />
+                    <span className="font-mono text-xs font-medium tabular-nums">
                       {formatDuration(recordingDuration)}
                     </span>
                   </>
                 ) : (
-                  <span className="material-symbols-outlined text-[20px]">
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
                     mic
                   </span>
                 )}
               </button>
               <textarea
+                ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -993,27 +1191,94 @@ export function ChatClient() {
                   }
                 }}
                 disabled={retryAfterSeconds !== null}
-                placeholder="Ask about your documents..."
+                placeholder={t("chat.inputPlaceholder")}
                 rows={1}
-                className="max-h-32 min-h-[24px] flex-1 resize-none bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/50"
+                className="max-h-32 min-h-[24px] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-1.5 text-[15px] leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/55"
               />
               <button
+                type="button"
                 onClick={() => handleSend()}
                 disabled={!input.trim() || isTyping || retryAfterSeconds !== null}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t("chat.sendAriaLabel")}
+                title={t("chat.sendAriaLabel")}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-on-primary disabled:cursor-not-allowed disabled:bg-primary/40 disabled:text-on-primary/80 disabled:hover:bg-primary/40 disabled:shadow-none"
               >
-                <span className="material-symbols-outlined text-[20px]">
-                  send
-                </span>
+                {isTyping ? (
+                  <span
+                    className="material-symbols-outlined animate-spin text-[19px]"
+                    aria-hidden="true"
+                  >
+                    progress_activity
+                  </span>
+                ) : (
+                  <span
+                    className="material-symbols-outlined text-[19px]"
+                    aria-hidden="true"
+                  >
+                    send
+                  </span>
+                )}
               </button>
             </div>
-            <p className="mt-2 text-center text-[11px] text-outline">
-              AI responses are based on your company documents. Always verify
-              critical information.
+            <p className="mt-2 text-center text-[10.5px] leading-4 text-outline">
+              {t("chat.disclaimer")}
             </p>
           </div>
         </div>
       </div>
+
+      {/* Mobile chat-history drawer: its own overlay, never the global
+          navigation drawer. Selecting a conversation closes it. */}
+      {historyOpen && (
+        <>
+          <button
+            type="button"
+            data-testid="chat-history-backdrop"
+            aria-label={t("chat.closeConversations")}
+            tabIndex={-1}
+            onClick={() => setHistoryOpen(false)}
+            className="fixed inset-0 z-[55] bg-primary/35 md:hidden"
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("chat.conversationsTitle")}
+            data-testid="chat-history-drawer"
+            className="fixed inset-y-0 start-0 z-[60] flex w-[min(300px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface shadow-xl md:hidden"
+          >
+            <ConversationPanel
+              conversations={conversations}
+              activeConversation={activeConversation}
+              loadingConversations={loadingConversations}
+              onSelect={(id) => {
+                handleSelectConversation(id);
+                setHistoryOpen(false);
+              }}
+              onDelete={handleDeleteConversation}
+              onNew={() => {
+                void handleNewConversation();
+                setHistoryOpen(false);
+              }}
+              headerTrailing={
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(false)}
+                  aria-label={t("chat.closeConversations")}
+                  title={t("chat.closeConversations")}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    close
+                  </span>
+                </button>
+              }
+            />
+          </aside>
+        </>
+      )}
 
       {pdfViewer && (
         <PdfViewerModal
@@ -1024,6 +1289,22 @@ export function ChatClient() {
           onClose={() => setPdfViewer(null)}
         />
       )}
+      {sourcePreview && (
+        <SourcePreviewModal
+          title={sourcePreview.title}
+          text={sourcePreview.text}
+          documentId={sourcePreview.documentId}
+          loading={sourcePreview.loading}
+          onDownload={sourcePreview.documentId ? () => void downloadDocument(sourcePreview.documentId!) : undefined}
+          onClose={() => setSourcePreview(null)}
+        />
+      )}
+
+      <ChatImagePreviewModal
+        src={imagePreview?.src ?? null}
+        alt={imagePreview?.alt}
+        onClose={() => setImagePreview(null)}
+      />
     </div>
   );
 }

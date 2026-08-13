@@ -105,6 +105,7 @@ function buildHarness(
   registerComplianceAgentExecutor(executorRegistry, { evaluate: evaluateCompliance });
 
   const persistence = new InMemorySupervisorPersistence();
+  persistence.seedPendingRun("run-1", TENANT_ID);
   const runtime = new SupervisorRuntime({
     model,
     workflowRegistry: createChatWorkflowRegistry(),
@@ -141,7 +142,7 @@ describe("SupervisorRuntime + compliance-agent integration", () => {
     assert.equal(result.handoffsCount, 2);
     assert.equal(result.totalSteps, 4);
     assert.deepEqual(calls, [SUP, COMPLIANCE_AGENT_ID, SUP]);
-    assert.equal(result.totalTokensUsed, 0, "deterministic compliance consumes no tokens");
+    assert.equal(result.totalTokensUsed, 90, "only supervisor decisions consume tokens");
 
     const executionStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "execute" && step.agentName === COMPLIANCE_AGENT_ID,
@@ -183,7 +184,7 @@ describe("SupervisorRuntime + compliance-agent integration", () => {
     const result = await runtime.execute(baseRunInput());
 
     assert.equal(result.status, "completed");
-    assert.equal(result.totalTokensUsed, 0);
+    assert.equal(result.totalTokensUsed, 90);
 
     const executionStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "execute" && step.agentName === COMPLIANCE_AGENT_ID,
@@ -229,7 +230,7 @@ describe("SupervisorRuntime + compliance-agent integration", () => {
     const result = await runtime.execute(baseRunInput());
 
     assert.equal(result.status, "completed");
-    assert.equal(result.totalTokensUsed, 0);
+    assert.equal(result.totalTokensUsed, 90);
 
     const executionStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "execute" && step.agentName === COMPLIANCE_AGENT_ID,

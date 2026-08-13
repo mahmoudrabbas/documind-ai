@@ -59,3 +59,32 @@ export interface RoleView {
 export interface ListRolesResponse { success: true; data: { roles: RoleView[] } }
 export interface CreateRoleResponse { success: true; message: string; data: { role: RoleView } }
 export interface UpdateRoleResponse { success: true; message: string; data: { role: RoleView } }
+
+export interface RoleScopeOption {
+  id: string;
+  name: string;
+  normalizedName: string;
+  status: "active" | "archived";
+}
+
+export interface RoleScopeOptions {
+  departments: RoleScopeOption[];
+  categories: RoleScopeOption[];
+  classifications: RoleScopeOption[];
+  archived: {
+    departments: RoleScopeOption[];
+    categories: RoleScopeOption[];
+    classifications: RoleScopeOption[];
+  };
+}
+
+export interface RoleScopeOptionsResponse {
+  success: true;
+  data: RoleScopeOptions;
+}
+
+export interface RoleScopeOptionsRequest {
+  departments?: string[];
+  categories?: string[];
+  classifications?: string[];
+}

@@ -6,6 +6,9 @@ vi.mock("../../../db/models/subscription.model.js", () => ({
 vi.mock("../../../db/models/package.model.js", () => ({
   default: { findById: vi.fn(), find: vi.fn() },
 }));
+vi.mock("../../../db/models/paymentEvent.model.js", () => ({
+  default: { findOne: vi.fn() },
+}));
 const auditWrite = vi.fn();
 vi.mock("../../../common/observability/index.js", () => ({
   getAuditWriter: () => ({ write: auditWrite }),
@@ -21,6 +24,7 @@ vi.mock("../../checkout/payment-provider-loader.js", () => ({
 }));
 
 import PackageModel from "../../../db/models/package.model.js";
+import PaymentEventModel from "../../../db/models/paymentEvent.model.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
 import { FakePaymentProvider } from "../../billing/ports/fakes/fake-payment-provider.js";
 import {
@@ -28,7 +32,10 @@ import {
   registerPlanChangeHook,
 } from "../../billing/subscription.service.js";
 import type { PlanChangeHook } from "../../billing/subscription.service.js";
-import { syncTenantSubscriptionFromProvider } from "../reconciliation.service.js";
+import {
+  reconcileSubscriptions,
+  syncTenantSubscriptionFromProvider,
+} from "../reconciliation.service.js";
 
 const TENANT_ID = "507f1f77bcf86cd799439011";
 const PACKAGE_ID = "507f1f77bcf86cd799439012";
@@ -161,5 +168,65 @@ describe("provider-backed subscription reconciliation", () => {
     const auditPayload = auditWrite.mock.calls[0][0];
     expect(auditPayload.changes.triggeredBy).toBe("provider_sync");
     expect(auditPayload.changes.reason).toContain("synchronized");
+  });
+
+  it("skips subscriptions with a null tenantId and reports the skipped count", async () => {
+    const nullTenantSubscription = {
+      _id: "507f1f77bcf86cd799439014",
+      tenantId: null,
+      packageId: "507f1f77bcf86cd799439055",
+      packageVersionId: null,
+      packageVersion: 1,
+      status: "ACTIVE",
+      paymentState: "failed",
+    };
+    const normalSubscription = {
+      _id: "507f1f77bcf86cd799439015",
+      tenantId: TENANT_ID,
+      packageId: "507f1f77bcf86cd799439055",
+      packageVersionId: null,
+      packageVersion: 1,
+      providerCustomerId: "cus_normal",
+      providerSubscriptionId: "sub_normal",
+      status: "ACTIVE",
+      paymentState: "paid",
+    };
+    (SubscriptionModel.find as ReturnType<typeof vi.fn>).mockReturnValue(
+      query([nullTenantSubscription, normalSubscription]),
+    );
+    const eventFindOne = PaymentEventModel.findOne as ReturnType<typeof vi.fn>;
+    eventFindOne.mockReturnValue(
+      query({
+        eventType: "customer.subscription.deleted",
+        status: "processed",
+        createdAt: new Date("2026-08-01T00:00:00Z"),
+      }),
+    );
+
+    const result = await reconcileSubscriptions({
+      tenantId: "507f1f77bcf86cd799439088",
+      actorId: "507f1f77bcf86cd799439087",
+      actorEmail: "admin@example.com",
+      actorRole: "SUPER_ADMIN",
+    });
+
+    expect(result.totalSubscriptions).toBe(2);
+    expect(result.skippedNullTenant).toBe(1);
+    expect(result.mismatched).toHaveLength(1);
+    expect(result.mismatched[0]).toMatchObject({
+      tenantId: TENANT_ID,
+      localStatus: "ACTIVE",
+      localPaymentState: "paid",
+    });
+    expect(result.mismatched[0].issues[0]).toContain(
+      "customer.subscription.deleted",
+    );
+    // The null-tenant row must be skipped before any work per row: the only
+    // payment-event lookup is for the normal row, keyed by its real tenantId.
+    expect(eventFindOne).toHaveBeenCalledTimes(1);
+    expect(eventFindOne.mock.calls[0][0]).toMatchObject({
+      tenantId: TENANT_ID,
+      status: "processed",
+    });
   });
 });

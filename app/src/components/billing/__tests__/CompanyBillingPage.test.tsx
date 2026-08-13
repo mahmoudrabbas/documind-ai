@@ -8,7 +8,7 @@ import { CompanyBillingPage } from "../CompanyBillingPage";
 import { Permission } from "@/types/api/permissions.types";
 
 const localeState = vi.hoisted(() => ({ locale: "en" as "en" | "ar", t: (key: string) => key }));
-vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: localeState.locale, dir: localeState.locale === "ar" ? "rtl" : "ltr", t: localeState.t }) }));
+vi.mock("@/providers/i18n-provider", () => ({ useI18n: () => ({ locale: localeState.locale, dir: localeState.locale === "ar" ? "rtl" : "ltr", t: localeState.t, tPlural: (key: string) => key, setLocale: vi.fn() }), useIntlLocale: () => (localeState.locale === "ar" ? "ar-EG-u-nu-latn" : "en-US"), useDirection: () => (localeState.locale === "ar" ? "rtl" : "ltr") }));
 vi.mock("@/providers/permission-provider", () => ({ usePermissions: vi.fn() }));
 vi.mock("@/services/billing.service", () => ({
   getBillingSummary: vi.fn(),
@@ -181,6 +181,25 @@ describe("CompanyBillingPage", () => {
         paymentState,
         transitionState: "ACTIVE",
         providerManaged: false,
+        providerLinked: false,
+        pendingOperation: null,
+      },
+    });
+    const { container } = await render();
+    const choosePlan = Array.from(container.querySelectorAll("a")).find((link) => link.textContent === "billingAdmin.choosePlan");
+    expect(choosePlan?.getAttribute("href")).toBe("/checkout");
+  });
+
+  it("shows checkout entry for Free plan with a provider customer but no subscription", async () => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+        status: "ACTIVE",
+        paymentState: "pending",
+        transitionState: "ACTIVE",
+        providerManaged: true,
         providerLinked: false,
         pendingOperation: null,
       },

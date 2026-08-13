@@ -41,6 +41,7 @@ import type { AuditEventInput } from "../audit/audit.types.js";
 import PackageModel from "../../db/models/package.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import SubscriptionModel from "../../db/models/subscription.model.js";
 import { provisionSubscription } from "../billing/registration.service.js";
 import { transitionSubscription } from "../billing/subscription.service.js";
 import { getGlobalSettings } from "../platform/global-settings.js";
@@ -135,7 +136,7 @@ function isResendVerificationEligible(
   return user.status === "pending_email_verification";
 }
 
-function safeAuditLog(input: AuditEventInput) {
+async function safeAuditLog(input: AuditEventInput): Promise<void> {
   try {
     const actorRole = normalizeAuditActorRole(input.actorRole);
     const actorKind = resolveAuditActorKind({
@@ -151,15 +152,13 @@ function safeAuditLog(input: AuditEventInput) {
       userId = new mongoose.Types.ObjectId(input.actorId);
     }
 
-    createAuditLog({
+    await createAuditLog({
       ...input,
       tenantId: input.tenantId ?? "system",
       actorKind,
       actorId: userId,
       actorRole,
       userId,
-    }).catch((err) => {
-      console.error("[audit-log-failed]", err);
     });
   } catch (err) {
     console.error("[audit-log-failed]", err);
@@ -517,6 +516,18 @@ export async function registerTenantAndAdmin(
 
     if (created.tenant) {
       const tenantId = created.tenant._id.toString();
+
+      try {
+        const result = await SubscriptionModel.deleteMany({ tenantId });
+        console.error(
+          `[auth-register] cleaned up ${result.deletedCount} subscription(s) for orphaned tenant ${tenantId}`,
+        );
+      } catch (subscriptionCleanupError) {
+        console.error(
+          "[auth-register-subscription-cleanup]",
+          subscriptionCleanupError,
+        );
+      }
 
       await deleteTenantById(tenantId);
     }
@@ -1305,7 +1316,7 @@ export async function logoutAll(
     identity.userId,
   ).catch(() => null);
 
-  safeAuditLog({
+  await safeAuditLog({
     tenantId: identity.tenantId,
     resourceType: "Session",
     resourceId: identity.userId,

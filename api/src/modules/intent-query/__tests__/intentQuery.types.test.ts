@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { QueryPlanSchema } from "../intentQuery.types.js";
+import { validateAndNormalizeQueryPlan } from "../intentQuery.validator.js";
 
 test("QueryPlanSchema validation", async (t) => {
   await t.test("should validate a valid QueryPlan structure", () => {
     const validPlan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: "What is the policy for maternal leave?",
       originalQuestion: "What is the policy for maternal leave?",
       language: "en",
@@ -54,7 +55,7 @@ test("QueryPlanSchema validation", async (t) => {
 
   await t.test("should reject missing required properties", () => {
     const invalidPlan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: "Invalid question",
       // missing language, detectedIntent, etc.
     };
@@ -65,7 +66,7 @@ test("QueryPlanSchema validation", async (t) => {
 
   await t.test("should reject invalid intent class types", () => {
     const invalidIntentPlan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: "Hi",
       originalQuestion: "Hi",
       language: "en",
@@ -98,4 +99,56 @@ test("QueryPlanSchema validation", async (t) => {
     const result = QueryPlanSchema.safeParse(invalidIntentPlan);
     assert.equal(result.success, false);
   });
+});
+
+test("validator preserves a non-social RAG plan when provider emits null socialSubtype", () => {
+  const plan = validateAndNormalizeQueryPlan(
+    {
+      detectedIntent: "document_specific",
+      intentConfidence: 0.9,
+      language: "en",
+      socialSubtype: null,
+      entities: [],
+      exactTerms: ["network security"],
+      semanticQueries: [{ text: "summarize network security", language: "en", weight: 1 }],
+      keywordQueries: [{ terms: ["network", "security"], language: "en", mustMatch: true }],
+      referencedDocumentIds: ["64a000000000000000000001"],
+      referencedDocumentTitles: ["Network Security Guide"],
+      clarificationNeeded: false,
+      clarification: null,
+    },
+    "summarize the network security guide file",
+    "en",
+    "test-prompt",
+    "test-model",
+    5,
+    10,
+    0,
+  );
+
+  assert.equal(plan.processingMetadata.fallbackUsed, false);
+  assert.equal(plan.socialSubtype, "acknowledgement");
+  assert.equal(plan.route, "rag");
+  assert.deepEqual(plan.referencedDocumentIds, ["64a000000000000000000001"]);
+  assert.deepEqual(plan.exactTerms, ["network security"]);
+  assert.equal(plan.keywordQueries.length, 1);
+});
+
+test("validator fails unknown or malformed intent output closed to unsupported", () => {
+  for (const raw of [{ detectedIntent: "future_intent" }, { normalizedQuestion: "x" }, null]) {
+    const plan = validateAndNormalizeQueryPlan(
+      raw,
+      "ambiguous input",
+      "en",
+      "test-prompt",
+      "test-model",
+      1,
+      0,
+      0,
+    );
+    assert.equal(plan.route, "unsupported");
+    assert.equal(plan.detectedIntent, "unsupported");
+    assert.deepEqual(plan.semanticQueries, []);
+    assert.equal(plan.processingMetadata.fallbackUsed, true);
+  }
 });

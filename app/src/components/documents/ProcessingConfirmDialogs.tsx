@@ -1,6 +1,7 @@
 "use client";
 
 import { ConfirmDialog } from "@/components/ui";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface RetryConfirmDialogProps {
   open: boolean;
@@ -19,18 +20,20 @@ export function RetryConfirmDialog({
   stageName,
   error,
 }: RetryConfirmDialogProps) {
+  const { t } = useI18n();
+
   return (
     <ConfirmDialog
       open={open}
-      title="Retry processing?"
+      title={t("documents.retryConfirmTitle")}
       description={
         stageName
-          ? `Retry the "${stageName}" stage. Attempts already completed stages will be skipped.`
-          : "Retry processing from the current stage. Already-completed stages will be skipped."
+          ? t("documents.retryConfirmWithStage", { stage: stageName })
+          : t("documents.retryConfirmDefault")
       }
       variant="warning"
-      confirmLabel="Retry"
-      cancelLabel="Cancel"
+      confirmLabel={t("common.retry")}
+      cancelLabel={t("common.cancel")}
       isLoading={isLoading}
       error={error}
       onConfirm={onConfirm}
@@ -56,18 +59,20 @@ export function ReprocessConfirmDialog({
   fromStage,
   error,
 }: ReprocessConfirmDialogProps) {
+  const { t } = useI18n();
+
   return (
     <ConfirmDialog
       open={open}
-      title="Reprocess document?"
+      title={t("documents.reprocessConfirmTitle")}
       description={
         fromStage
-          ? `Reprocess this document starting from the "${fromStage}" stage. All subsequent stages will be re-run.`
-          : "Reprocess this document from scratch. All processing stages will be re-run."
+          ? t("documents.reprocessConfirmWithStage", { stage: fromStage })
+          : t("documents.reprocessConfirmDefault")
       }
       variant="warning"
-      confirmLabel="Reprocess"
-      cancelLabel="Cancel"
+      confirmLabel={t("documents.reprocessConfirmAction")}
+      cancelLabel={t("common.cancel")}
       isLoading={isLoading}
       error={error}
       onConfirm={onConfirm}
@@ -91,14 +96,16 @@ export function CancelConfirmDialog({
   isLoading,
   error,
 }: CancelConfirmDialogProps) {
+  const { t } = useI18n();
+
   return (
     <ConfirmDialog
       open={open}
-      title="Cancel processing?"
-      description="Cancel the current processing run. Completed stages will be preserved; failed stages will need to be retried or the document reprocessed."
+      title={t("documents.cancelConfirmTitle")}
+      description={t("documents.cancelConfirmDesc")}
       variant="danger"
-      confirmLabel="Cancel processing"
-      cancelLabel="Keep running"
+      confirmLabel={t("documents.cancelConfirmAction")}
+      cancelLabel={t("documents.cancelConfirmKeep")}
       isLoading={isLoading}
       error={error}
       onConfirm={onConfirm}

@@ -31,13 +31,14 @@ const CONVERSATION_ID = "507f1f77bcf86cd799439013";
 
 function baseQueryPlan(): QueryPlan {
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     normalizedQuestion: "What is the leave policy?",
     originalQuestion: "What is the leave policy?",
     language: "en",
     detectedIntent: "knowledge_question",
     intentConfidence: 0.92,
     route: "rag",
+    assistantKind: null,
     socialSubtype: "acknowledgement",
     entities: [],
     temporalConstraints: [],
@@ -134,7 +135,7 @@ describe("intent-query-agent contract", () => {
   it("exposes a version string", () => {
     const { service } = fakeService();
     assert.equal(typeof makeExecutor(service).version, "string");
-    assert.equal(INTENT_QUERY_AGENT_VERSION, "1.0.0");
+    assert.equal(INTENT_QUERY_AGENT_VERSION, "1.1.0");
   });
 
   it("declares only the read capability", () => {
@@ -423,6 +424,22 @@ describe("intent-query-agent output mapping", () => {
     const result = await makeExecutor(service).execute(runContext(), VALID_INPUT);
     const output = result.ok ? result.output : null;
     assert.equal(output?.reasonCode, "SOCIAL_INTENT");
+  });
+
+  it("derives ASSISTANT_INTENT with a typed source-less assistant kind", async () => {
+    const { service } = fakeService({
+      plan: plan({
+        route: "assistant",
+        detectedIntent: "assistant_capabilities",
+        assistantKind: "capabilities",
+      }),
+    });
+    const result = await makeExecutor(service).execute(runContext(), VALID_INPUT);
+    const output = result.ok ? result.output : null;
+    assert.equal(output?.reasonCode, "ASSISTANT_INTENT");
+    assert.equal(output?.assistantKind, "capabilities");
+    assert.deepEqual(output?.semanticQueries, []);
+    assert.deepEqual(output?.keywordQueries, []);
   });
 
   it("derives UNSUPPORTED_INTENT reason code on the unsupported route", async () => {

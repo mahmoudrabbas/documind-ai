@@ -220,7 +220,7 @@ class TokenReportingModelAdapter implements ModelAdapter {
   async complete(): Promise<ModelCompletionResponse> {
     const question = "What is our remote work policy?";
     const plan = {
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       normalizedQuestion: question,
       originalQuestion: question,
       language: "en",

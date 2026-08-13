@@ -382,6 +382,58 @@ export function createChatRoutes(service: ChatService): Router {
 
   /**
    * @openapi
+   * /chat/send/stream:
+   *   post:
+   *     summary: Send a chat question and stream stage progress (SSE)
+   *     description: |
+   *       Same request/response contract as /chat/send, but the
+   *       reply is a Server-Sent Events stream. Events - `stage` with
+   *       {"stage":"intent|search|evidence|answer|verify|finalize"}, `done`
+   *       with {"success":true,"data":<same payload as /chat/send>}, and
+   *       `error` with {"success":false,"error","message","statusCode"}.
+   *       Heartbeat comments (": ping") keep proxies alive.
+   *     tags: [Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [message]
+   *             properties:
+   *               message:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 2000
+   *               conversationId:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Server-Sent Events stream of stage progress
+   *         content:
+   *           text/event-stream:
+   *             schema:
+   *               type: string
+   *       400:
+   *         description: Validation failed (plain JSON)
+   *       401:
+   *         description: Authentication required (plain JSON)
+   *       403:
+   *         description: Insufficient permissions or entitlement limit reached (plain JSON)
+   */
+  router.post(
+    "/send/stream",
+    authenticate,
+    tenantScoping,
+    requirePermission(Permission.CHAT_CREATE),
+    queryGuard,
+    controller.sendMessageStream,
+  );
+
+  /**
+   * @openapi
    * /chat/vision:
    *   post:
    *     summary: Analyze an image with a question

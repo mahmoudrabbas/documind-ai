@@ -16,6 +16,8 @@ import type {
 } from "@/types/api/settings.types";
 import { DashboardPanel } from "@/components/ui/DashboardPage";
 import { Alert, Button, Checkbox, Input, Select } from "@/components/ui";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -87,6 +89,7 @@ function emptyToNull(value: string): string | null {
 
 function validate(
   form: TenantSettings,
+  t: (key: string) => string,
 ): Array<{ field: string; message: string }> {
   const issues: Array<{ field: string; message: string }> = [];
   if (
@@ -95,7 +98,7 @@ function validate(
   ) {
     issues.push({
       field: "aiRuntimePreferences.temperature",
-      message: "Temperature must be between 0 and 2",
+      message: t("settings.temperatureRangeError"),
     });
   }
   if (
@@ -105,7 +108,7 @@ function validate(
   ) {
     issues.push({
       field: "aiRuntimePreferences.maxTokens",
-      message: "Max tokens must be an integer between 128 and 8192",
+      message: t("settings.maxTokensRangeError"),
     });
   }
   return issues;
@@ -115,19 +118,20 @@ function validate(
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-const LANGUAGE_OPTIONS = [
-  { value: "en", label: "English" },
-  { value: "ar", label: "Arabic" },
-];
+/* Option values are machine codes sent to the API and stay untranslated.
+   Only their display labels are localised, at render time. */
+const LANGUAGE_OPTION_VALUES: TenantDefaultLanguage[] = ["en", "ar"];
 
-const RESPONSE_STYLE_OPTIONS = [
-  { value: "concise", label: "Concise" },
-  { value: "balanced", label: "Balanced" },
-  { value: "detailed", label: "Detailed" },
+const RESPONSE_STYLE_OPTION_VALUES: TenantResponseStyle[] = [
+  "concise",
+  "balanced",
+  "detailed",
 ];
 
 export function TenantSettingsManager() {
   const tenant = useTenantSettings();
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const { refresh, applyUpdated } = tenant;
   const [form, setForm] = useState<TenantSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -161,6 +165,24 @@ export function TenantSettingsManager() {
   }, [tenant, form]);
 
   const hasChanges = Object.keys(patch).length > 0;
+
+  const languageOptions = useMemo(
+    () =>
+      LANGUAGE_OPTION_VALUES.map((value) => ({
+        value,
+        label: codeLabel(t, "settings.language", value),
+      })),
+    [t],
+  );
+
+  const responseStyleOptions = useMemo(
+    () =>
+      RESPONSE_STYLE_OPTION_VALUES.map((value) => ({
+        value,
+        label: codeLabel(t, "settings.responseStyle", value),
+      })),
+    [t],
+  );
 
   function update<K extends keyof TenantSettings>(
     group: K,
@@ -209,13 +231,13 @@ export function TenantSettingsManager() {
 
   async function handleSave() {
     if (tenant.status !== "ready" || !form) return;
-    const issues = validate(form);
+    const issues = validate(form, t);
     if (issues.length > 0) {
       setErrorMessage(issues.map((issue) => issue.message).join(" · "));
       return;
     }
     if (!hasChanges) {
-      setSuccessMessage("No changes to save.");
+      setSuccessMessage(t("settings.noChanges"));
       return;
     }
 
@@ -244,8 +266,8 @@ export function TenantSettingsManager() {
       setErrorMessage(null);
       setSuccessMessage(
         response.data.updated
-          ? "Settings saved successfully."
-          : "Settings are up to date.",
+          ? t("settings.saveSuccess")
+          : t("settings.upToDate"),
       );
     } catch (err) {
       if (
@@ -253,23 +275,19 @@ export function TenantSettingsManager() {
         err.status === 409 &&
         err.code === "SETTINGS_VERSION_CONFLICT"
       ) {
-        setConflictMessage(
-          "Settings were changed in another session. Your edits were re-applied on top of the latest version — review and save again.",
-        );
+        setConflictMessage(t("settings.conflictMessage"));
         const latest = await refresh({ background: true });
         if (latest) {
           applyUpdated(latest);
           setForm(applyPatch(latest.settings, patch));
         } else {
-          setConflictMessage(
-            "Settings changed in another session, but the latest version could not be loaded. Refresh to review.",
-          );
+          setConflictMessage(t("settings.conflictReloadFailed"));
         }
       } else {
         setErrorMessage(
           err instanceof ApiError
             ? err.message
-            : "Failed to save settings. Please try again.",
+            : t("settings.saveError"),
         );
       }
     } finally {
@@ -352,14 +370,14 @@ export function TenantSettingsManager() {
           error_outline
         </span>
         <p className="mt-2 text-label-md text-on-surface-variant">
-          {tenant.message || "Failed to load settings"}
+          {tenant.message || t("settings.loadError")}
         </p>
         <Button
           variant="outline"
           className="mt-4"
           onClick={() => void refresh()}
         >
-          Retry
+          {t("common.retry")}
         </Button>
       </DashboardPanel>
     );
@@ -379,23 +397,23 @@ export function TenantSettingsManager() {
       <DashboardPanel>
         <div className="mb-5">
           <h2 className="text-title-lg font-bold text-primary">
-            Company Profile
+            {t("settings.companyProfileTitle")}
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-on-surface-variant">
-            Branding and regional defaults used across the workspace.
+            {t("settings.companyProfileDesc")}
           </p>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Company name"
+            label={t("settings.companyNameLabel")}
             value={form?.profile.companyName ?? ""}
             onChange={(event) =>
               updateProfile("companyName", emptyToNull(event.target.value))
             }
-            placeholder="Acme Inc."
+            placeholder={t("settings.companyNamePlaceholder")}
           />
           <Input
-            label="Timezone"
+            label={t("settings.timezoneLabel")}
             value={form?.profile.timezone ?? ""}
             onChange={(event) =>
               updateProfile("timezone", emptyToNull(event.target.value))
@@ -460,8 +478,8 @@ export function TenantSettingsManager() {
         </div>
         <div className="mt-4 max-w-xs">
           <Select
-            label="Default language"
-            options={LANGUAGE_OPTIONS}
+            label={t("settings.defaultLanguageLabel")}
+            options={languageOptions}
             value={form?.defaultLanguage ?? "en"}
             onChange={(event) =>
               update(
@@ -477,15 +495,15 @@ export function TenantSettingsManager() {
       <DashboardPanel>
         <div className="mb-5">
           <h2 className="text-title-lg font-bold text-primary">
-            AI Runtime Preferences
+            {t("settings.aiPreferencesTitle")}
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-on-surface-variant">
-            Tune how DocuMind AI answers questions across the workspace.
+            {t("settings.aiPreferencesDesc")}
           </p>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Temperature (0–2)"
+            label={t("settings.temperatureLabel")}
             type="number"
             min={0}
             max={2}
@@ -496,7 +514,7 @@ export function TenantSettingsManager() {
             }
           />
           <Input
-            label="Max tokens (128–8192)"
+            label={t("settings.maxTokensLabel")}
             type="number"
             min={128}
             max={8192}
@@ -509,8 +527,8 @@ export function TenantSettingsManager() {
         </div>
         <div className="mt-4 max-w-xs">
           <Select
-            label="Response style"
-            options={RESPONSE_STYLE_OPTIONS}
+            label={t("settings.responseStyleLabel")}
+            options={responseStyleOptions}
             value={form?.aiRuntimePreferences.responseStyle ?? "balanced"}
             onChange={(event) =>
               updateAi(
@@ -522,7 +540,7 @@ export function TenantSettingsManager() {
         </div>
         <div className="mt-4">
           <Checkbox
-            label="Attach citations to answers when sources are available"
+            label={t("settings.citationsLabel")}
             checked={form?.aiRuntimePreferences.citationsEnabled ?? true}
             onChange={(event) =>
               updateAi("citationsEnabled", event.target.checked)
@@ -535,14 +553,17 @@ export function TenantSettingsManager() {
       <DashboardPanel className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-on-surface-variant">
           {hasChanges
-            ? "You have unsaved changes."
-            : `Loaded from version ${tenant.settingsVersion}${
-                settingsUpdatedAt
-                  ? ` · last updated ${new Date(
-                      settingsUpdatedAt,
-                    ).toLocaleString()}`
-                  : ""
-              }`}
+            ? t("settings.unsavedChanges")
+            : settingsUpdatedAt
+              ? t("settings.loadedFromVersionUpdated", {
+                  version: String(tenant.settingsVersion),
+                  timestamp: new Date(settingsUpdatedAt).toLocaleString(
+                    intlLocale,
+                  ),
+                })
+              : t("settings.loadedFromVersion", {
+                  version: String(tenant.settingsVersion),
+                })}
         </p>
         <div className="flex flex-wrap gap-3">
           <Button
@@ -550,14 +571,14 @@ export function TenantSettingsManager() {
             disabled={!hasChanges || isSaving}
             onClick={handleDiscard}
           >
-            Discard changes
+            {t("settings.discardChanges")}
           </Button>
           <Button
             onClick={() => void handleSave()}
             isLoading={isSaving}
             disabled={!hasChanges}
           >
-            Save changes
+            {t("settings.saveChanges")}
           </Button>
         </div>
       </DashboardPanel>

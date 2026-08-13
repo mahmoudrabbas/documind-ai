@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   type PaymentProvider,
   type CreateCustomerParams,
+  type ProviderCustomer,
   type CreateCheckoutSessionParams,
   type CheckoutSession,
   type CreateBillingPortalSessionParams,
@@ -64,6 +65,17 @@ export class StripePaymentProvider implements PaymentProvider {
       metadata: { tenantId: params.tenantId },
     }, requestOptions(params.operationContext));
     return customer.id;
+  }
+
+  async retrieveCustomer(customerId: string): Promise<ProviderCustomer> {
+    const stripe = await this.client();
+    const customer = await stripe.customers.retrieve(customerId);
+    if (customer.deleted) {
+      const error = new Error(`Stripe customer ${customerId} is deleted`);
+      Object.assign(error, { status: 404, code: "resource_missing" });
+      throw error;
+    }
+    return { id: customer.id };
   }
 
   async createCheckoutSession(
@@ -319,7 +331,7 @@ export class StripePaymentProvider implements PaymentProvider {
       subscription: current.id,
       subscription_details: {
         items: [{ id: await this.subscriptionItemId(stripe, current.id), price: params.targetPriceReference }],
-        proration_behavior: "create_prorations",
+        proration_behavior: "always_invoice",
       },
     });
     assertProviderOwnership(customerId(preview.customer), params.expectedCustomerId);
@@ -336,11 +348,21 @@ export class StripePaymentProvider implements PaymentProvider {
   async updateSubscription(params: SubscriptionChangeParams): Promise<ProviderSubscriptionMutationResult> {
     const stripe = await this.client();
     const current = await this.retrieveCurrentSubscriptionState(params);
+    const metadata: Record<string, string> = {
+      ...current.metadata,
+      tenantReference: params.operationContext.tenantReference,
+      operationReference: params.operationContext.operationReference,
+    };
+    if (params.targetPackage) {
+      metadata.packageId = params.targetPackage.packageId;
+      metadata.packageVersionId = params.targetPackage.packageVersionId;
+      metadata.packageVersion = String(params.targetPackage.packageVersion);
+      metadata.billingInterval = params.targetPackage.billingInterval;
+    }
     const updated = await stripe.subscriptions.update(current.id, {
       items: [{ id: await this.subscriptionItemId(stripe, current.id), price: params.targetPriceReference }],
-      proration_behavior: "create_prorations",
-      metadata: { ...current.metadata, tenantReference: params.operationContext.tenantReference,
-        operationReference: params.operationContext.operationReference },
+      proration_behavior: "always_invoice",
+      metadata,
     }, requestOptions(params.operationContext));
     return this.mutationResult(updated, params.operationContext, params.expectedCustomerId);
   }

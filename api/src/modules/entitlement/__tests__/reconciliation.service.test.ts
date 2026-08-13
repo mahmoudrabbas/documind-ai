@@ -173,6 +173,36 @@ describe("ReconciliationService", () => {
         }),
       );
     });
+
+    it("excludes auto-OCR usage records from the authoritative count", async () => {
+      seedCounters(counter, TENANT_A, {
+        employees: 5,
+        admins: 2,
+        documents: 1,
+        storageMb: 1,
+        queriesPerMonth: 40,
+        ocrPagesPerMonth: 10,
+      });
+
+      await service.reconcile(TENANT_A, "dry-run");
+
+      // Auto-OCR (source: "auto") is billed separately from the paid OCR
+      // entitlement, so the authoritative filter must exclude those records.
+      expect(mockOcrCount).toHaveBeenCalledTimes(1);
+      const [ocrFilter] = mockOcrCount.mock.calls[0] as unknown as [
+        Record<string, unknown>,
+      ];
+      expect(ocrFilter).toEqual(
+        expect.objectContaining({
+          tenantId: new Types.ObjectId(TENANT_A),
+          $or: [
+            { source: { $ne: "auto" } },
+            { source: { $exists: false } },
+          ],
+        }),
+      );
+      expect(ocrFilter.$or).not.toContain({ source: "auto" });
+    });
   });
 
   describe("reconcile — execute", () => {
@@ -358,6 +388,33 @@ describe("ReconciliationService", () => {
       expect(run.totalDiscrepancies).toBe(0);
       expect(run.totalFixed).toBe(0);
       expect(mockCreateReport).not.toHaveBeenCalled();
+    });
+
+    it("skips a serviceable subscription with a null tenantId instead of crashing", async () => {
+      await seedSubscription(TENANT_A, "ACTIVE");
+      // Raw native insert required: tenantId is schema-required, so the real
+      // model's create() rejects null — the production null-tenant rows came
+      // from writes that bypassed schema validation.
+      await realSubscriptionModel.collection.insertOne({
+        tenantId: null,
+        packageId: PACKAGE_ID,
+        packageVersion: 1,
+        status: "ACTIVE",
+      });
+
+      const run = await service.reconcileAll("dry-run");
+
+      expect(run.totalTenants).toBe(1);
+      expect(run.reports).toHaveLength(1);
+      expect(run.reports[0].tenantId).toBe(TENANT_A);
+      expect(run.reports.map((report) => report.tenantId)).not.toContain("null");
+      expect(mockCreateReport).toHaveBeenCalledTimes(1);
+      expect(mockCreateReport).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: new Types.ObjectId(TENANT_A) }),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("skipped 1 subscription"),
+      );
     });
   });
 });

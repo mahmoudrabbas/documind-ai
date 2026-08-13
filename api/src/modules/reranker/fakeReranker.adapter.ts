@@ -12,6 +12,7 @@ import type {
 import { EVIDENCE_ITEM_MIN_TOTAL_SCORE } from "./reranker.types.js";
 import { selectDiverse, areRedundant, type ScoredItem } from "./diversity.js";
 import {
+  areEquivalentEvidenceAssertions,
   detectConflicts,
   type ConflictDetectorInput,
 } from "./conflictDetector.js";
@@ -35,6 +36,7 @@ import {
  */
 export class FakeRerankerAdapter implements RerankerAdapter {
   readonly providerKey = "fake";
+  readonly runtimeIdentity = Object.freeze({ provider: "fake", model: "deterministic-reranker", modelRevisionStatus: "unavailable" as const, componentVersion: "deterministic-reranker-v1" });
 
   async rerank(request: RerankRequest): Promise<RerankResponse> {
     const { candidates, queryText, maxItems = 10, maxTokenBudget = 4000 } = request;
@@ -57,10 +59,14 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       const candidate = candidates[i]!;
       const candidateTerms = this.tokenize(candidate.text);
       const exactTermScore = this.computeExactTermScore(queryTerms, candidateTerms);
-      const semanticScore = candidate.scoreBreakdown?.fusionScore ?? candidate.score;
+      const retrievalRelevance =
+        candidate.scoreBreakdown?.relevanceScore ??
+        candidate.scoreBreakdown?.fusionScore ??
+        candidate.score;
+      const semanticScore = retrievalRelevance;
       const sourceAuthorityScore = this.computeSourceAuthority(candidate);
       const versionPreferenceScore = this.computeVersionPreference(candidate, candidates);
-      const fusionScore = candidate.scoreBreakdown?.fusionScore ?? candidate.score;
+      const fusionScore = retrievalRelevance;
       const rerankScore =
         semanticScore * 0.5 +
         exactTermScore * 0.3 +
@@ -92,10 +98,15 @@ export class FakeRerankerAdapter implements RerankerAdapter {
         text: c.text,
         documentId: c.documentId,
         documentVersionId: c.documentVersionId,
+        tenantId: c.tenantId,
         sectionTitle: c.sectionTitle,
       }),
     );
-    const conflictGroups = detectConflicts(preConflictInputs);
+    const conflictGroups = detectConflicts(
+      preConflictInputs,
+      undefined,
+      queryText,
+    );
     const conflictingIndices = new Set<number>();
     for (const group of conflictGroups) {
       for (const idx of group.itemIndices) {
@@ -117,6 +128,9 @@ export class FakeRerankerAdapter implements RerankerAdapter {
       const isDup = dedupedIndices.some((existingIdx) => {
         if (conflictingIndices.has(existingIdx)) return false;
         const existing = scored.find((s) => s.index === existingIdx)!;
+        if (areEquivalentEvidenceAssertions(existing.text, item.text)) {
+          return true;
+        }
         return areRedundant(
           { text: existing.text, documentId: existing.documentId },
           { text: item.text, documentId: item.documentId },

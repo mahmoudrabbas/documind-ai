@@ -38,8 +38,11 @@ export interface RefundUsageReadInput {
 /**
  * Issue 25 counters are labelled YYYY-MM but represent the subscription period
  * whose start falls in that month. Exact timestamp attribution comes from the
- * usage ledgers. Counter values are used for direct reservations only when they
- * can be reconciled with an exact ledger; otherwise eligibility fails closed.
+ * usage ledgers. When a counter cannot be attributed exactly to a non-calendar
+ * period (missing ledger, or counter exceeds the ledger), attribution is
+ * conservative: the counter value is treated as consumed inside the period,
+ * which shrinks the refund but never over-refunds. Malformed or duplicated
+ * counters still fail closed.
  */
 export function resolveRefundUsageMetrics(input: RefundUsageReadInput) {
   const periodKeys = refundCounterPeriodKeys(input.periodStart);
@@ -58,16 +61,13 @@ export function resolveRefundUsageMetrics(input: RefundUsageReadInput) {
     const counterUsage = matching.length === 0 ? 0 : Number(matching[0]!.value);
     const sourceValue = input.exactSourceUsage[dimension];
     if (sourceValue === undefined) {
-      // A missing counter is authoritative zero under MongoQuotaCounter's
-      // upsert-on-first-consume contract. A non-zero timestamp-less counter
-      // cannot be attributed to an exact non-calendar subscription period.
-      return { dimension, usage: counterUsage === 0 || isExactUtcCalendarMonth(input.periodStart, input.periodEnd) ? counterUsage : null, limit };
+      // No exact ledger exists for this dimension (e.g. tokens), so the
+      // month-labelled counter is the only observation. Attribute it
+      // conservatively to the period rather than blocking the refund.
+      return { dimension, usage: counterUsage, limit };
     }
     if (!Number.isSafeInteger(sourceValue) || Number(sourceValue) < 0) return { dimension, usage: null, limit };
     const exactUsage = Number(sourceValue);
-    if (counterUsage > exactUsage && !isExactUtcCalendarMonth(input.periodStart, input.periodEnd)) {
-      return { dimension, usage: null, limit };
-    }
     return { dimension, usage: Math.max(exactUsage, counterUsage), limit };
   });
 }
@@ -89,12 +89,6 @@ export function refundCounterPeriodKeys(value: Date): string[] {
 
 export function exactRefundUsageRange(periodStart: Date, periodEnd: Date) {
   return { $gte: periodStart, $lt: periodEnd } as const;
-}
-
-function isExactUtcCalendarMonth(start: Date, end: Date): boolean {
-  if (start.getUTCDate() !== 1 || start.getUTCHours() !== 0 || start.getUTCMinutes() !== 0 || start.getUTCSeconds() !== 0 || start.getUTCMilliseconds() !== 0) return false;
-  const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-  return end.getTime() === next.getTime();
 }
 
 export interface RefundEligibilityPreviewDto {
@@ -189,6 +183,7 @@ export async function calculateRefundEligibilitySnapshot(input: {
     usageMetrics,
     duplicatePaymentProven,
     goodwillCapMinor: config.BILLING_GOODWILL_REFUND_CAP_MINOR,
+    invoicePaidAt: invoice.paidAt ?? null,
   });
   const snapshot = {
     tenantId: String(invoice.tenantId), invoiceId: String(invoice._id), subscriptionId: String(subscription._id),

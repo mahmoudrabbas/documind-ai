@@ -1,6 +1,7 @@
 import {
   type PaymentProvider,
   type CreateCustomerParams,
+  type ProviderCustomer,
   type CreateCheckoutSessionParams,
   type CheckoutSession,
   type CreateBillingPortalSessionParams,
@@ -133,6 +134,16 @@ export class FakePaymentProvider implements PaymentProvider {
     void _operationContext;
     this.customers.push({ id, ...customer });
     return id;
+  }
+
+  async retrieveCustomer(customerId: string): Promise<ProviderCustomer> {
+    const customer = this.customers.find((item) => item.id === customerId);
+    if (!customer) {
+      const error = new Error(`Fake provider: customer ${customerId} not found`);
+      Object.assign(error, { status: 404, code: "resource_missing" });
+      throw error;
+    }
+    return { id: customer.id };
   }
 
   async createCheckoutSession(
@@ -378,6 +389,17 @@ export class FakePaymentProvider implements PaymentProvider {
       await this.maybeFail();
       const subscription = await this.ownedSubscription(params);
       subscription.priceId = params.targetPriceReference;
+      subscription.metadata = {
+        ...subscription.metadata,
+        tenantReference: params.operationContext.tenantReference,
+        operationReference: params.operationContext.operationReference,
+      };
+      if (params.targetPackage) {
+        subscription.metadata.packageId = params.targetPackage.packageId;
+        subscription.metadata.packageVersionId = params.targetPackage.packageVersionId;
+        subscription.metadata.packageVersion = String(params.targetPackage.packageVersion);
+        subscription.metadata.billingInterval = params.targetPackage.billingInterval;
+      }
       return { operationReference: params.operationContext.operationReference, state: this.state(subscription), idempotentReplay: false };
     });
   }

@@ -7,11 +7,21 @@ import type {
   PermissionScopes,
 } from "@/types/api/permissions.types";
 import { Permission } from "@/types/api/permissions.types";
+import type { RoleScopeOption } from "@/types/api/users.types";
 
 export type ActorGrantMap = Record<
   string,
   { source: PermissionSource; scope: PermissionScopes | null }
 >;
+
+export function replacePermissionGrant(
+  grants: PermissionGrant[],
+  permission: string,
+  next: PermissionGrant | null,
+): PermissionGrant[] {
+  const without = grants.filter((grant) => grant.permission !== permission);
+  return next ? [...without, next] : without;
+}
 
 export function deriveInheritedPermissionIds(
   baseRoleDefaults: Record<string, string[]>,
@@ -147,6 +157,85 @@ export function emptyPermissionScopes(): PermissionScopes {
     documentCategories: [],
     documentClassifications: [],
   };
+}
+
+/**
+ * Mirrors the API's taxonomy name normalization so the editor can match
+ * categories/classifications by their canonical key.
+ */
+export function normalizeTaxonomyName(value: string): string {
+  return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+/**
+ * Collects every taxonomy-backed scope value already stored on a role so the
+ * scope-options endpoint can resolve archived records the editor must preserve.
+ */
+export function collectRoleScopeResolution(
+  grants: readonly PermissionGrant[],
+): {
+  departments: string[];
+  categories: string[];
+  classifications: string[];
+} {
+  const departments = new Set<string>();
+  const categories = new Set<string>();
+  const classifications = new Set<string>();
+  for (const grant of grants) {
+    if (!grant.scopes) continue;
+    for (const id of grant.scopes.departmentIds) departments.add(id);
+    for (const name of grant.scopes.documentCategories) {
+      categories.add(normalizeTaxonomyName(name));
+    }
+    for (const name of grant.scopes.documentClassifications) {
+      classifications.add(normalizeTaxonomyName(name));
+    }
+  }
+  return {
+    departments: [...departments],
+    categories: [...categories],
+    classifications: [...classifications],
+  };
+}
+
+/**
+ * Restricts the taxonomy options offered by the scope editor to the values the
+ * actor may actually delegate. An empty actor dimension means unrestricted, so
+ * every active option stays available.
+ */
+export function filterScopeOptionsByActorScope(input: {
+  dimension: "departmentIds" | "documentCategories" | "documentClassifications";
+  options: readonly RoleScopeOption[];
+  actorScope: PermissionScopes | null;
+}): RoleScopeOption[] {
+  const { dimension, options, actorScope } = input;
+  const allowed = actorScope?.[dimension] ?? [];
+  if (allowed.length === 0) return [...options];
+  if (dimension === "departmentIds") {
+    const allowedIds = new Set(allowed as string[]);
+    return options.filter((option) => allowedIds.has(option.id));
+  }
+  const allowedNames = new Set(
+    (allowed as string[]).map((value) => normalizeTaxonomyName(value)),
+  );
+  return options.filter((option) => allowedNames.has(option.normalizedName));
+}
+
+export function isScopeValueInActorScope(input: {
+  dimension: "departmentIds" | "documentCategories" | "documentClassifications";
+  value: string;
+  actorScope: PermissionScopes | null;
+}): boolean {
+  const { dimension, value, actorScope } = input;
+  const allowed = actorScope?.[dimension] ?? [];
+  if (allowed.length === 0) return true;
+  if (dimension === "departmentIds") {
+    return (allowed as string[]).includes(value);
+  }
+  return (allowed as string[]).some(
+    (candidate) =>
+      normalizeTaxonomyName(candidate) === normalizeTaxonomyName(value),
+  );
 }
 
 export function permissionScopesAreEmpty(
@@ -471,7 +560,9 @@ export type PreparedGrantResult =
 
 /**
  * Produces the exact explicit grants that may be sent to create/update. It:
- * - removes inherited permissions,
+ * - drops inherited permissions that merely restate the base-role scope,
+ * - preserves inherited permissions that narrow the base-role scope into a
+ *   deliberate scoped override (the backend narrows the effective grant),
  * - requires a current actor grant,
  * - normalizes only unsupported catalog dimensions,
  * - rejects widening instead of clipping,
@@ -490,9 +581,14 @@ export function prepareRoleGrantsForSubmission(input: {
   const prepared = new Map<string, PermissionGrant>();
 
   for (const grant of input.grants) {
-    if (inherited.has(grant.permission)) continue;
-
     const entry = catalogById.get(grant.permission);
+    const isInherited = inherited.has(grant.permission);
+
+    // An inherited permission whose catalog entry is no longer selectable
+    // cannot express a narrowing, so it falls back to the base role. Drop it
+    // silently rather than blocking the save.
+    if (isInherited && (!entry || !isTenantSelectable(entry))) continue;
+
     if (!entry || !isTenantSelectable(entry)) {
       return {
         valid: false,
@@ -500,6 +596,17 @@ export function prepareRoleGrantsForSubmission(input: {
         error: `${grant.permission} is no longer available for tenant delegation.`,
       };
     }
+
+    const requested = normalizeScopesForPermission(
+      grant.scopes ?? emptyPermissionScopes(),
+      entry.compatibleScopes,
+    );
+
+    // Inherited permissions are granted unrestricted by the base role. A grant
+    // that merely re-states that unrestricted scope is redundant and is dropped;
+    // a grant that narrows the inherited scope is a deliberate scoped override
+    // the backend honours, so it is validated and preserved below.
+    if (isInherited && permissionScopesAreEmpty(requested)) continue;
 
     const actorGrant = input.actorGrants[grant.permission];
     if (!actorGrant) {
@@ -510,10 +617,6 @@ export function prepareRoleGrantsForSubmission(input: {
       };
     }
 
-    const requested = normalizeScopesForPermission(
-      grant.scopes ?? emptyPermissionScopes(),
-      entry.compatibleScopes,
-    );
     const validation = validateRoleGrantScopes(requested, actorGrant.scope);
     if (!validation.valid) {
       return {

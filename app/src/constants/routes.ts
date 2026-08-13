@@ -3,6 +3,7 @@ import {
   type PermissionValue,
 } from "@/types/api/permissions.types";
 import { isStandardUserRole } from "@/lib/role-home";
+import { PLATFORM_NAV_ITEMS } from "@/constants/platform-navigation";
 
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
@@ -14,7 +15,14 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 export type AppContext = "tenant" | "platform";
 
 export type NavLink = {
+  /** English label. Retained as the fallback when `labelKey` is absent. */
   label: string;
+  /**
+   * Translation key for the displayed label. Consumers render
+   * `labelKey ? t(labelKey) : label`, so links without a key still show
+   * their English text rather than a raw dotted key.
+   */
+  labelKey?: string;
   href: string;
   icon: string;
   context: AppContext;
@@ -24,6 +32,7 @@ export type NavLink = {
 export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   {
     label: "Overview",
+    labelKey: "nav.overview",
     href: "/dashboard",
     icon: "dashboard",
     context: "tenant",
@@ -31,6 +40,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Documents",
+    labelKey: "nav.documents",
     href: "/dashboard/documents",
     icon: "description",
     context: "tenant",
@@ -38,6 +48,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Users",
+    labelKey: "nav.users",
     href: "/dashboard/users",
     icon: "group",
     context: "tenant",
@@ -45,6 +56,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Roles",
+    labelKey: "nav.roles",
     href: "/dashboard/roles",
     icon: "manage_accounts",
     context: "tenant",
@@ -52,6 +64,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Billing",
+    labelKey: "nav.billing",
     href: "/dashboard/settings/billing",
     icon: "payments",
     context: "tenant",
@@ -59,6 +72,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Usage & Limits",
+    labelKey: "nav.usageLimits",
     href: "/company/usage",
     icon: "speed",
     context: "tenant",
@@ -66,6 +80,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Settings",
+    labelKey: "nav.settings",
     href: "/dashboard/settings",
     icon: "settings",
     context: "tenant",
@@ -73,6 +88,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Document Taxonomy",
+    labelKey: "nav.documentTaxonomy",
     href: "/dashboard/settings/document-taxonomy",
     icon: "category",
     context: "tenant",
@@ -80,6 +96,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Audit Log",
+    labelKey: "nav.auditLog",
     href: "/dashboard/audit",
     icon: "policy",
     context: "tenant",
@@ -87,6 +104,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Email Log",
+    labelKey: "nav.emailLog",
     href: "/dashboard/emails",
     icon: "mail",
     context: "tenant",
@@ -94,6 +112,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Chat",
+    labelKey: "nav.chat",
     href: "/dashboard/chat",
     icon: "chat",
     context: "tenant",
@@ -101,6 +120,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Knowledge Gaps",
+    labelKey: "nav.knowledgeGaps",
     href: "/dashboard/knowledge-gaps",
     icon: "search_insights",
     context: "tenant",
@@ -108,6 +128,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Analytics & Insights",
+    labelKey: "nav.analyticsInsights",
     href: "/dashboard/analytics",
     icon: "analytics",
     context: "tenant",
@@ -115,6 +136,7 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
   {
     label: "Failed Processing",
+    labelKey: "nav.failedProcessing",
     href: "/dashboard/processing-failed",
     icon: "error",
     context: "tenant",
@@ -122,28 +144,22 @@ export const TENANT_SIDEBAR_LINKS: readonly NavLink[] = [
   },
 ];
 
-export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = [
-  { label: "Overview", href: "/super-admin", icon: "dashboard", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
-  { label: "Companies", href: "/super-admin/companies", icon: "business", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Packages", href: "/super-admin/packages", icon: "inventory_2", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Subscriptions", href: "/super-admin/subscriptions", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Platform Users", href: "/super-admin/users", icon: "group", context: "platform", requiredPermissions: [Permission.USERS_READ] },
-  { label: "Usage & Costs", href: "/super-admin/usage", icon: "monitoring", context: "platform", requiredPermissions: [Permission.ANALYTICS_READ] },
-  { label: "Processing Jobs", href: "/super-admin/jobs", icon: "manufacturing", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
-  { label: "Processing Overview", href: "/super-admin/processing-overview", icon: "monitoring", context: "platform", requiredPermissions: [Permission.DOCUMENTS_READ] },
-  { label: "System Health", href: "/super-admin/system-health", icon: "health_and_safety", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Retrieval Debug", href: "/super-admin/retrieval-debug", icon: "search", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "AI Configuration", href: "/super-admin/ai-configuration", icon: "psychology", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Security & Audit", href: "/super-admin/audit", icon: "policy", context: "platform", requiredPermissions: [Permission.AUDIT_READ] },
-  { label: "Global Settings", href: "/super-admin/settings", icon: "settings", context: "platform", requiredPermissions: [Permission.COMPANY_SETTINGS_READ] },
-  { label: "Payment Diagnostics", href: "/super-admin/payments", icon: "payments", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Refund Reviews", href: "/super-admin/refunds", icon: "currency_exchange", context: "platform", requiredPermissions: [Permission.BILLING_READ] },
-  { label: "Quota Overrides", href: "/super-admin/entitlement", icon: "tune", context: "platform", requiredPermissions: [Permission.BILLING_MANAGE] },
-  { label: "AI Analytics Deep Dive", href: "/super-admin/analytics", icon: "analytics", context: "platform", requiredPermissions: [Permission.ANALYTICS_READ] },
-];
+/** Flat view derived from the grouped platform nav (see platform-navigation.ts). */
+export const PLATFORM_SIDEBAR_LINKS: readonly NavLink[] = PLATFORM_NAV_ITEMS.map(
+  (item) => ({ ...item, context: "platform" as const }),
+);
 
 export const TENANT_TOPBAR_LINKS = TENANT_SIDEBAR_LINKS.slice(0, 3);
-export const PLATFORM_TOPBAR_LINKS = PLATFORM_SIDEBAR_LINKS.slice(0, 3);
+
+/** Pinned by href — regrouping PLATFORM_NAV_GROUPS must not change the top bar. */
+const PLATFORM_TOPBAR_HREFS = [
+  "/super-admin",
+  "/super-admin/companies",
+  "/super-admin/packages",
+] as const;
+export const PLATFORM_TOPBAR_LINKS: readonly NavLink[] = PLATFORM_TOPBAR_HREFS.flatMap(
+  (href) => PLATFORM_SIDEBAR_LINKS.find((link) => link.href === href) ?? [],
+);
 
 export function isKnownRole(role: string): role is Role {
   return Object.values(ROLES).includes(role as Role);

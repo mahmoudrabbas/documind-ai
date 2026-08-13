@@ -93,6 +93,7 @@ interface OpenAIChatResponse {
 export class ItiBedrockChatAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "iti-bedrock";
   readonly model: string;
+  readonly runtimeIdentity;
 
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -113,6 +114,7 @@ export class ItiBedrockChatAdapter implements AvailabilityProbeModelAdapter {
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.model = config.model?.trim() || DEFAULT_MODEL;
+    this.runtimeIdentity = Object.freeze({ provider: this.providerKey, model: this.model, modelRevisionStatus: "unavailable" as const, componentVersion: "iti-bedrock-chat-adapter-v1" });
   }
 
   async complete(params: {
@@ -134,10 +136,13 @@ export class ItiBedrockChatAdapter implements AvailabilityProbeModelAdapter {
         content: m.content,
       })),
       temperature: params.temperature ?? 0.7,
-      top_p: params.topP,
       max_tokens: params.maxTokens,
       stream: false,
     };
+
+    if (params.topP !== undefined) {
+      request.top_p = params.topP;
+    }
 
     // The gateway reads tools/tool_choice when present. Forward the
     // provider-neutral schemas verbatim; a tool rejection surfaces as a

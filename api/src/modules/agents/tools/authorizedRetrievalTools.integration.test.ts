@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   AGENT_TOOL_PERMISSION_DENIED,
   AGENT_UNREGISTERED_TOOL,
+  SUPERVISOR_DECISION_INVALID,
 } from "../../../common/errors/errorCodes.js";
 import type { AgentExecutionContext } from "../agentExecutionContext.js";
 import { AgentExecutorRegistry } from "../agentExecutorRegistry.js";
@@ -86,7 +87,7 @@ function baseContext(overrides: Partial<AgentExecutionContext> = {}): AgentExecu
     conversationId: "507f1f77bcf86cd799439013",
     workflowId: "chat-rag-v1",
     permissions: [
-      "documents:use_in_ai",
+      "documents:use-in-ai",
       "documents:read",
       "agents:tools:echo:use",
       "agents:approval:request",
@@ -196,6 +197,15 @@ function singleToolRegistry(deps: AuthorizedRetrievalDependencies): ToolRegistry
   return registry;
 }
 
+function executeRun(
+  runtime: SupervisorRuntime,
+  persistence: InMemorySupervisorPersistence,
+  input: Parameters<SupervisorRuntime["execute"]>[0],
+) {
+  persistence.seedPendingRun(input.runId, input.context.tenantId);
+  return runtime.execute(input);
+}
+
 describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
   it("resolve_document_titles tool call is executed and persisted", async () => {
     const { model } = scriptedModel([
@@ -220,7 +230,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       toolRegistry: registry,
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-resolve-titles",
       workflowId: "chat-rag-v1",
       context: baseContext(),
@@ -252,7 +262,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       toolRegistry: singleToolRegistry(makeDeps()),
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-inject-tenant",
       workflowId: "chat-rag-v1",
       context: baseContext(),
@@ -260,12 +270,8 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
     });
 
     assert.equal(result.status, "failed");
-    assert.equal(persistence.toolCalls.size, 1);
-
-    const toolCall = Array.from(persistence.toolCalls.values())[0];
-    assert.equal(toolCall.status, "failed");
-    const errorMsg = toolCall.error?.message as string | undefined;
-    assert.ok(errorMsg?.includes("tenantId"));
+    assert.equal(result.error?.code, SUPERVISOR_DECISION_INVALID);
+    assert.equal(persistence.toolCalls.size, 0);
   });
 
   it("rejects resolve_document_titles with injected actorRole through the runtime", async () => {
@@ -281,7 +287,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       toolRegistry: singleToolRegistry(makeDeps()),
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-inject-actor",
       workflowId: "chat-rag-v1",
       context: baseContext(),
@@ -289,13 +295,11 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
     });
 
     assert.equal(result.status, "failed");
-    const toolCall = Array.from(persistence.toolCalls.values())[0];
-    assert.equal(toolCall.status, "failed");
-    const actorErr = toolCall.error?.message as string | undefined;
-    assert.ok(actorErr?.includes("actorRole"));
+    assert.equal(result.error?.code, SUPERVISOR_DECISION_INVALID);
+    assert.equal(persistence.toolCalls.size, 0);
   });
 
-  it("authorized_hybrid_search requires documents:use_in_ai permission", async () => {
+  it("authorized_hybrid_search requires documents:use-in-ai permission", async () => {
     const { model } = scriptedModel([
       toolCallDecision("authorized_hybrid_search", {
         queryText: "policies",
@@ -307,7 +311,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       permissions: [],
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-permission-denied",
       workflowId: "chat-rag-v1",
       context: baseContext({ permissions: [] }),
@@ -328,11 +332,11 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
     const registry = new ToolRegistry();
 
-    const { runtime } = buildHarness(model, {
+    const { runtime, persistence } = buildHarness(model, {
       toolRegistry: registry,
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-unregistered",
       workflowId: "chat-rag-v1",
       context: baseContext(),
@@ -392,7 +396,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       toolRegistry: registry,
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-no-leak",
       workflowId: "chat-rag-v1",
       context: baseContext(),
@@ -468,7 +472,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       toolRegistry: registry,
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-evaluate-evidence",
       workflowId: "chat-rag-v1",
       context: baseContext(),
@@ -543,7 +547,7 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
       toolRegistry: registry,
     });
 
-    const result = await runtime.execute({
+    const result = await executeRun(runtime, persistence, {
       runId: "run-cross-tenant-exclusion",
       workflowId: "chat-rag-v1",
       context: baseContext(),

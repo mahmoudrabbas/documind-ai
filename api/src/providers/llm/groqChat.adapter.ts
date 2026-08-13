@@ -20,9 +20,10 @@ const MAX_SDK_RETRIES = 1;
 
 export class GroqChatAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "groq";
+  readonly runtimeIdentity;
 
   private client: OpenAI;
-  private model: string;
+  readonly model: string;
   private apiKey: string;
   private rateLimitedUntil: number | null = null;
   private rateLimitRetryAfterSeconds: number | null = null;
@@ -35,6 +36,7 @@ export class GroqChatAdapter implements AvailabilityProbeModelAdapter {
       maxRetries: MAX_SDK_RETRIES,
     });
     this.model = model;
+    this.runtimeIdentity = Object.freeze({ provider: this.providerKey, model, modelRevisionStatus: "unavailable" as const, componentVersion: "groq-chat-adapter-v1" });
   }
 
   /**
@@ -118,9 +120,12 @@ export class GroqChatAdapter implements AvailabilityProbeModelAdapter {
         content: m.content,
       })),
       temperature: params.temperature ?? 0.7,
-      top_p: params.topP,
       max_tokens: params.maxTokens,
     };
+
+    if (params.topP !== undefined) {
+      requestParams.top_p = params.topP;
+    }
 
     // Map the provider-neutral structured-output request to Groq's native
     // OpenAI-compatible JSON mode. JSON mode guarantees a syntactically valid

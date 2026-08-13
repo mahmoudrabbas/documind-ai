@@ -9,7 +9,7 @@ import {
   Tab,
   Tabs,
 } from "@/components/ui";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { useNotificationFeed } from "@/hooks/features/useNotificationFeed";
 import { useUnreadCount } from "@/hooks/features/useUnreadCount";
 import { markAllRead, clearAllNotifications } from "@/services/notifications.service";
@@ -43,6 +43,7 @@ function categoryToParam(id: CategoryId): NotificationCategory | undefined {
 
 export default function NotificationsPage() {
   const { t, locale } = useI18n();
+  const intlLocale = useIntlLocale();
   const feed = useNotificationFeed();
   const unread = useUnreadCount();
   const { load, refresh, markRead, items, total, isLoading, error } = feed;
@@ -212,7 +213,7 @@ export default function NotificationsPage() {
                         {localizeNotification(item.body, locale)}
                       </span>
                       <span className="mt-1 block text-label-sm text-on-surface-variant/70">
-                        {new Date(item.createdAt).toLocaleString()}
+                        {new Date(item.createdAt).toLocaleString(intlLocale)}
                       </span>
                     </span>
                   </button>

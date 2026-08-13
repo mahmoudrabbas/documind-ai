@@ -4,9 +4,11 @@ import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
 import { getRoleHome } from "@/lib/role-home";
+import { useI18n } from "@/providers/i18n-provider";
 
 function LoadingShell() {
-  return <main className="flex min-h-screen items-center justify-center bg-slate-50" aria-busy="true"><p className="text-sm text-slate-600">Restoring your session…</p></main>;
+  const { t } = useI18n();
+  return <main className="flex min-h-screen items-center justify-center bg-slate-50" aria-busy="true"><p className="text-sm text-slate-600">{t("auth.restoringSession")}</p></main>;
 }
 
 export function GuestOnly({ children }: { children: ReactNode }) {

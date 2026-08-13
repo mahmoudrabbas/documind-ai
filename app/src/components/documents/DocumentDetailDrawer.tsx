@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { getFileSizeLabel } from "@/lib/validation";
+import { getFileSizeLabel, validateDocumentFile } from "@/lib/validation";
 import { formatFileType } from "@/lib/utils";
 import * as documentsService from "@/services/documents.service";
 import * as processingProgressService from "@/services/processingProgress.service";
@@ -20,8 +21,6 @@ import { DocumentPolicyPanel } from "./DocumentPolicyPanel";
 import { ProcessingTimeline } from "./ProcessingTimeline";
 import { ProcessingStatusBadge } from "./ProcessingStatusBadge";
 import { RetryConfirmDialog, ReprocessConfirmDialog, CancelConfirmDialog } from "./ProcessingConfirmDialogs";
-
-
 
 const SCAN_RESULT_MAP: Record<string, string> = {
   clean: "success",
@@ -71,6 +70,7 @@ export function DocumentDetailDrawer({
   highlightPage,
 }: DocumentDetailDrawerProps) {
   const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canDownload = permissions.can(Permission.DOCUMENTS_DOWNLOAD);
   const canUpdate = permissions.can(Permission.DOCUMENTS_UPDATE);
@@ -80,6 +80,7 @@ export function DocumentDetailDrawer({
 
   const [showReplaceForm, setShowReplaceForm] = useState(false);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [replaceError, setReplaceError] = useState<string | null>(null);
   const [replaceDesc, setReplaceDesc] = useState("");
   const [isReplacing, setIsReplacing] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"archive" | "restore" | "softDelete" | "permanentDelete" | null>(null);
@@ -185,6 +186,23 @@ export function DocumentDetailDrawer({
     }
   }, [canDownload, doc.id]);
 
+  function handleReplaceFileSelect(selected: File | null) {
+    setReplaceError(null);
+    if (!selected) {
+      setReplaceFile(null);
+      return;
+    }
+
+    const fileErr = validateDocumentFile(selected);
+    if (fileErr) {
+      setReplaceFile(null);
+      setReplaceError(t(fileErr));
+      return;
+    }
+
+    setReplaceFile(selected);
+  }
+
   async function handleReplace() {
     if (!canUpdate || !replaceFile) return;
     setIsReplacing(true);
@@ -225,22 +243,28 @@ export function DocumentDetailDrawer({
 
           {/* Status badges */}
           <div className="mb-6 flex flex-wrap gap-2">
-            <Badge status={STATUS_BADGE_MAP[doc.status] as "success" | "info" | "warning" | "error" | undefined} icon={STATUS_ICON_MAP[doc.status]}>
-              {t(`documents.status${doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}`)}
-            </Badge>
+            {(() => {
+              const docBadgeStatus = STATUS_BADGE_MAP[doc.status] as "success" | "info" | "warning" | "error" | undefined;
+              return (
+                <Badge status={docBadgeStatus} icon={STATUS_ICON_MAP[doc.status]} label={codeLabel(t, "documents.status", doc.status)} />
+              );
+            })()}
             <ClassificationBadge level={doc.classification} />
-            {doc.isArchived && <Badge status="warning" icon="archive">{t("documents.archived")}</Badge>}
-            {doc.quarantineStatus === "quarantined" && <Badge status="error" icon="shield">{t("documents.quarantined")}</Badge>}
-            <Badge status="neutral" icon="tag">{doc.versionLabel}</Badge>
+            {doc.isArchived && <Badge status="warning" icon="archive" label={t("documents.archived")} />}
+            {doc.quarantineStatus === "quarantined" && <Badge status="error" icon="shield" label={t("documents.quarantined")} />}
+            <Badge status="neutral" icon="tag" label={doc.versionLabel} />
           </div>
 
           {doc.scanResult && (
             <div className="mb-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
               <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.scanResult")}</p>
               <div className="mt-2 flex items-center gap-2">
-                <Badge status={SCAN_RESULT_MAP[doc.scanResult.result] as "success" | "error" | "warning" | undefined}>
-                  {doc.scanResult.result}
-                </Badge>
+                {(() => {
+                  const scanStatusVariant = SCAN_RESULT_MAP[doc.scanResult.result] as "success" | "error" | "warning" | undefined;
+                  return (
+                    <Badge status={scanStatusVariant} label={codeLabel(t, "documents.scanResult", doc.scanResult.result)} />
+                  );
+                })()}
                 <span className="text-body-sm text-on-surface-variant">{doc.scanResult.scanner}</span>
               </div>
               {doc.scanResult.details && <p className="mt-1 text-body-sm text-on-surface-variant">{doc.scanResult.details}</p>}
@@ -250,8 +274,11 @@ export function DocumentDetailDrawer({
           {/* Processing Progress Section */}
           <div className="mb-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Processing Progress</p>
-              {processingRun && <ProcessingStatusBadge status={processingRun.status} />}
+              <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.processingProgress")}</p>
+              {processingRun && (() => {
+                const procRunStatus = processingRun.status;
+                return <ProcessingStatusBadge status={procRunStatus} />;
+              })()}
             </div>
 
             {isLoadingProcessing ? (
@@ -284,7 +311,7 @@ export function DocumentDetailDrawer({
                       onClick={() => setShowRetryDialog(true)}
                     >
                       <span className="material-symbols-outlined me-1 text-[14px]">refresh</span>
-                      Retry
+                      {t("documents.retry")}
                     </Button>
                     <Button
                       size="sm"
@@ -292,7 +319,7 @@ export function DocumentDetailDrawer({
                       onClick={() => setShowReprocessDialog(true)}
                     >
                       <span className="material-symbols-outlined me-1 text-[14px]">replay</span>
-                      Reprocess
+                      {t("documents.reprocess")}
                     </Button>
                   </div>
                 )}
@@ -305,7 +332,7 @@ export function DocumentDetailDrawer({
                     onClick={() => setShowCancelDialog(true)}
                   >
                     <span className="material-symbols-outlined me-1 text-[14px]">cancel</span>
-                    Cancel Processing
+                    {t("documents.cancelProcessing")}
                   </Button>
                 )}
 
@@ -317,7 +344,7 @@ export function DocumentDetailDrawer({
               </div>
             ) : (
               <div>
-                <p className="text-body-sm text-on-surface-variant">No processing run found for this document.</p>
+                <p className="text-body-sm text-on-surface-variant">{t("documents.noProcessingRun")}</p>
                 {canProcessOcr && (
                   <Button
                     size="sm"
@@ -333,7 +360,7 @@ export function DocumentDetailDrawer({
                     }}
                   >
                     <span className="material-symbols-outlined me-1 text-[14px]">play_arrow</span>
-                    Start Processing
+                    {t("documents.startProcessing")}
                   </Button>
                 )}
               </div>
@@ -346,7 +373,7 @@ export function DocumentDetailDrawer({
                   <p className="mt-1 text-xs text-red-600">{processingErrorDetail.description}</p>
                 )}
                 {processingErrorDetail?.retryable === false && (
-                  <p className="mt-1 text-xs text-red-500">This error is not retryable.</p>
+                  <p className="mt-1 text-xs text-red-500">{t("documents.errorNotRetryable")}</p>
                 )}
               </div>
             )}
@@ -384,7 +411,7 @@ export function DocumentDetailDrawer({
               </div>
               <div>
                 <p className="text-on-surface-variant">{t("documents.tableDate")}</p>
-                <p className="font-medium text-on-surface">{new Date(doc.createdAt).toLocaleDateString()}</p>
+                <p className="font-medium text-on-surface">{new Date(doc.createdAt).toLocaleDateString(intlLocale)}</p>
               </div>
               <div>
                 <p className="text-on-surface-variant">{t("documents.version")}</p>
@@ -438,11 +465,9 @@ export function DocumentDetailDrawer({
                   <div key={v.id} className="flex items-center justify-between rounded-lg border border-outline-variant/20 bg-surface-container-low px-3 py-2">
                     <div>
                       <p className="text-body-sm font-medium text-on-surface">{v.versionLabel} — {v.fileName}</p>
-                      <p className="text-body-sm text-on-surface-variant">{getFileSizeLabel(v.fileSize)} · {new Date(v.createdAt).toLocaleDateString()} · {v.uploadReason}</p>
+                      <p className="text-body-sm text-on-surface-variant">{getFileSizeLabel(v.fileSize)} · {new Date(v.createdAt).toLocaleDateString(intlLocale)} · {v.uploadReason}</p>
                     </div>
-                    <Badge status={v.version === doc.version ? "info" : "neutral"}>
-                      {v.version === doc.version ? t("documents.current") : ""}
-                    </Badge>
+                    <Badge status={v.version === doc.version ? "info" : "neutral"} label={v.version === doc.version ? t("documents.current") : ""} />
                   </div>
                 ))}
               </div>
@@ -454,11 +479,14 @@ export function DocumentDetailDrawer({
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-6 py-4">
           {showReplaceForm && canUpdate ? (
             <div className="space-y-3">
-              <input type="file" accept=".pdf,.docx,.doc,.txt,.md" onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)} className="w-full text-body-sm" />
+              <div>
+                <input type="file" accept=".pdf,.docx,.txt" onChange={(e) => handleReplaceFileSelect(e.target.files?.[0] ?? null)} className="w-full text-body-sm" />
+                {replaceError ? <p className="mt-1 text-xs text-error" role="alert">{replaceError}</p> : null}
+              </div>
               <input type="text" value={replaceDesc} onChange={(e) => setReplaceDesc(e.target.value)} placeholder={t("documents.changeDescription")} className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
               <div className="flex gap-2">
-                <Button size="sm" isLoading={isReplacing} disabled={!replaceFile} onClick={handleReplace}>{t("documents.replace")}</Button>
-                <Button size="sm" variant="ghost" onClick={() => { setShowReplaceForm(false); setReplaceFile(null); setReplaceDesc(""); }}>{t("common.cancel")}</Button>
+                <Button size="sm" isLoading={isReplacing} disabled={!replaceFile || Boolean(replaceError)} onClick={handleReplace}>{t("documents.replace")}</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setShowReplaceForm(false); setReplaceFile(null); setReplaceError(null); setReplaceDesc(""); }}>{t("common.cancel")}</Button>
               </div>
             </div>
           ) : (

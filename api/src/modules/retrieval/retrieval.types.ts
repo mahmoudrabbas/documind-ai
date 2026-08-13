@@ -16,6 +16,18 @@ export interface RetrievalFilter {
 export interface RetrievalQuery {
   queryText: string;
   queryVector?: number[];
+  /**
+   * Additional semantic query texts to embed and vector-search (e.g.
+   * cross-lingual translations of the primary query). Each variant runs a
+   * vector search; per-chunk the best score wins. Capped internally at 3.
+   */
+  queryVariants?: string[];
+  /**
+   * Additional keyword-search texts besides `queryText` (e.g. translated
+   * terms). Each text runs an `$text` search; per-chunk the best score wins.
+   * Capped internally at 3.
+   */
+  keywordTexts?: string[];
   topK: number;
   filter?: RetrievalFilter;
 }
@@ -28,6 +40,31 @@ export interface AccessContext {
   permissionScopes?: PermissionScopes;
   customRoleId?: string | null;
   departmentIds?: string[];
+  /**
+   * Department names resolved server-side from the DOCUMENTS_USE_IN_AI grant
+   * scope's `departmentIds` (ObjectIds) to `DepartmentModel.name` text values,
+   * so they can be compared against the `department` field stored on
+   * document/chunk records.
+   *
+   * Populated by `resolveAccessContext` in `app.ts`.
+   * `undefined` = no department restriction.
+   * `[]` = fail-closed (restrictive scope failed resolution; match nothing).
+   * `['HR', 'IT']` = restrict to those departments.
+   */
+  resolvedDepartmentFilter?: string[] | null;
+  /**
+   * Category names resolved server-side from the DOCUMENTS_USE_IN_AI grant
+   * scope's `documentCategories` (canonical taxonomy names) to the display
+   * names AND normalized names of the tenant-scoped active DocumentCategory
+   * records they resolve to, so they can be compared against the `category`
+   * field stored on document/chunk records.
+   *
+   * Populated by `resolveAccessContext` in `app.ts`.
+   * `undefined` = no category restriction.
+   * `[]` = fail-closed (restrictive scope failed resolution; match nothing).
+   * `['Finance', 'finance']` = restrict to that canonical category.
+   */
+  resolvedCategoryFilter?: string[] | null;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }
@@ -36,6 +73,11 @@ export interface ScoreBreakdown {
   vectorScore?: number;
   keywordScore?: number;
   fusionScore: number;
+  /**
+   * Provider relevance on a stable [0, 1] scale. RRF fusionScore is a rank
+   * value (~0.01) and must not be interpreted as semantic confidence.
+   */
+  relevanceScore?: number;
 }
 
 export interface RetrievalCandidate {
@@ -67,6 +109,15 @@ export interface RetrievalDiagnostics {
   totalLatencyMs: number;
   vectorCandidateCount: number;
   keywordCandidateCount: number;
+  rawVectorCandidateCount?: number;
+  rawKeywordCandidateCount?: number;
+  postAuthorizationVectorCandidateCount?: number;
+  postAuthorizationKeywordCandidateCount?: number;
+  fusedCandidateCount?: number;
+  hydratedCandidateCount?: number;
+  evidenceItemCount?: number;
+  evidenceSufficiency?: string;
+  zeroCandidateReason?: string;
   traceId: string;
 }
 

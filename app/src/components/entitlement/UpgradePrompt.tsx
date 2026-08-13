@@ -1,10 +1,18 @@
+"use client";
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export type UpgradePromptVariant = "quota" | "subscription-inactive";
 
 export interface UpgradePromptProps {
-  /** Human-readable label for the quota dimension (e.g. "documents", "storageMb"). */
+  /**
+   * Machine dimension code (e.g. `"documents"`, `"storageMb"`). Stays the
+   * untranslated identifier — the visible label is resolved from it through
+   * `codeLabel(t, "usage.dimension", …)`.
+   */
   dimension: string;
   /** Current usage count (unused by the `subscription-inactive` variant). */
   current?: number;
@@ -35,26 +43,6 @@ export interface UpgradePromptProps {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Converts a camelCase or snake_case dimension key into a human-readable label.
- *
- * Examples:
- *   "documents"      → "Documents"
- *   "storageMb"      → "Storage MB"
- *   "active_users"   → "Active Users"
- *   "apiCallsPerDay" → "Api Calls Per Day"
- */
-function humanizeDimension(key: string): string {
-  return key
-    .replace(/([a-z])([A-Z])/g, "$1 $2") // camelCase → spaces
-    .replace(/_/g, " ")                     // snake_case → spaces
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -82,6 +70,7 @@ export function UpgradePrompt({
   hintLabel,
   className,
 }: UpgradePromptProps) {
+  const { t } = useI18n();
   const ratio = limit > 0 ? current / limit : (current > 0 ? Infinity : 0);
 
   // ── Subscription-inactive variant: no usage numbers to render ────────
@@ -96,21 +85,21 @@ export function UpgradePrompt({
       <div className={containerClasses} role="alert">
         <div className="flex-1">
           <p className="text-label-md font-semibold text-on-error-container">
-            {title ?? "Subscription Inactive"}
+            {title ?? t("entitlement.denial.subscriptionInactiveTitle")}
           </p>
           <p className="mt-1 text-body-sm text-on-error-container/80">
             {description ??
-              "Your subscription is inactive. Reactivate your plan to continue using DocuMind AI."}
+              t("entitlement.denial.subscriptionInactiveDescription")}
           </p>
         </div>
         <div className="shrink-0 self-center">
           {hasBillingPermission ? (
             <Button variant="danger" size="sm" onClick={onUpgradeClick}>
-              {ctaLabel ?? "Reactivate plan"}
+              {ctaLabel ?? t("entitlement.denial.reactivateCta")}
             </Button>
           ) : (
-            <span className="block max-w-40 text-right text-label-sm text-on-surface-variant/70">
-              {hintLabel ?? "Contact your admin to reactivate"}
+            <span className="block max-w-40 text-end text-label-sm text-on-surface-variant/70">
+              {hintLabel ?? t("entitlement.denial.reactivateHint")}
             </span>
           )}
         </div>
@@ -125,7 +114,7 @@ export function UpgradePrompt({
 
   const isCritical = ratio >= 0.95;
   const isExceeded = ratio >= 1;
-  const label = humanizeDimension(dimension);
+  const label = codeLabel(t, "usage.dimension", dimension);
   const percent = Math.min(Math.round(ratio * 100), 100);
 
   // ── Container classes ───────────────────────────────────────────────
@@ -149,8 +138,8 @@ export function UpgradePrompt({
         >
           {title ??
             (isExceeded
-              ? `${label} limit reached`
-              : `${label} nearly full`)}
+              ? t("entitlement.upgrade.limitReachedTitle", { dimension: label })
+              : t("entitlement.upgrade.nearlyFullTitle", { dimension: label }))}
         </p>
 
         {/* Description */}
@@ -164,8 +153,17 @@ export function UpgradePrompt({
         >
           {description ??
             (isExceeded
-              ? `You have used ${percent}% of your ${label.toLowerCase()} quota. Some actions may be blocked.`
-              : `You have used ${percent}% of your ${label.toLowerCase()} capacity.`)}
+              ? t("entitlement.upgrade.limitReachedDescription", {
+                  percent: String(percent),
+                  /* Casing only — the label is already translated, and
+                     `toLowerCase` is a no-op for Arabic script. Keeps the
+                     English sentence reading "your documents quota". */
+                  dimension: label.toLowerCase(),
+                })
+              : t("entitlement.upgrade.nearlyFullDescription", {
+                  percent: String(percent),
+                  dimension: label.toLowerCase(),
+                }))}
         </p>
 
         {/* Usage bar */}
@@ -175,7 +173,10 @@ export function UpgradePrompt({
           aria-valuenow={current}
           aria-valuemin={0}
           aria-valuemax={limit}
-          aria-label={`${label} usage: ${percent}%`}
+          aria-label={t("entitlement.upgrade.usageAria", {
+            dimension: label,
+            percent: String(percent),
+          })}
         >
           <div
             className={cn(
@@ -195,11 +196,11 @@ export function UpgradePrompt({
             size="sm"
             onClick={onUpgradeClick}
           >
-            {ctaLabel ?? "Upgrade"}
+            {ctaLabel ?? t("entitlement.upgrade.cta")}
           </Button>
         ) : (
-          <span className="block max-w-40 text-right text-label-sm text-on-surface-variant/70">
-            {hintLabel ?? "Contact your admin to upgrade"}
+          <span className="block max-w-40 text-end text-label-sm text-on-surface-variant/70">
+            {hintLabel ?? t("entitlement.upgrade.hint")}
           </span>
         )}
       </div>

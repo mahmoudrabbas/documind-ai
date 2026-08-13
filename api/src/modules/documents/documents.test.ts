@@ -13,6 +13,8 @@ import UserModel from "../../db/models/user.model.js";
 import DocumentModel, { type DocumentClassification, type DocumentDocument } from "../../db/models/document.model.js";
 import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
 import DocumentAccessPolicyModel from "../../db/models/documentAccessPolicy.model.js";
 import RoleModel from "../../db/models/role.model.js";
 import { hashPassword } from "../auth/passwordHashing.js";
@@ -32,17 +34,28 @@ const TEST_PASSWORD = "StrongPass123!";
 const UPLOAD_TEST_DIR = path.resolve(process.cwd(), config.UPLOAD_DIR);
 
 let mongoServer: MongoMemoryReplSet | null = null;
+const activeServers = new Set<Server>();
 
 function createServer() {
   return new Promise<Server>((resolve) => {
-    const srv = app.listen(0, () => resolve(srv));
+    const srv = app.listen(0, () => {
+      activeServers.add(srv);
+      resolve(srv);
+    });
   });
 }
 
 function closeServer(server: Server) {
   return new Promise<void>((resolve, reject) => {
     server.closeAllConnections?.();
-    server.close((err) => (err ? reject(err) : resolve()));
+    server.close((err) => {
+      activeServers.delete(server);
+      if (err && (err as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   });
 }
 
@@ -358,6 +371,8 @@ beforeEach(async () => {
   await DocumentModel.deleteMany({});
   await DocumentVersionModel.deleteMany({});
   await DocumentClassificationModel.deleteMany({});
+  await DocumentCategoryModel.deleteMany({});
+  await DepartmentModel.deleteMany({});
   await DocumentAccessPolicyModel.deleteMany({});
   await RoleModel.deleteMany({});
 
@@ -370,6 +385,7 @@ beforeEach(async () => {
 after(async () => {
   await fsp.rm(UPLOAD_TEST_DIR, { recursive: true, force: true }).catch(() => {});
   await disconnectRedis();
+  await Promise.all(Array.from(activeServers, closeServer));
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
@@ -424,6 +440,7 @@ void test("POST /documents — returns 413 FILE_SIZE_LIMIT_EXCEEDED when file ex
   const accessToken = await login(port);
 
   const pdfContent = Buffer.alloc(3 * 1024 * 1024, 0x41); // 3 MB > 2 MB limit
+  pdfContent.write("%PDF-1.4", 0, "ascii");
   const { buffer, boundary } = buildMultipartBody("oversized.pdf", pdfContent, {
     title: "Oversized",
   });
@@ -510,7 +527,7 @@ void test("POST /documents — returns 400 for zero-byte file", async () => {
   await closeServer(server);
 });
 
-void test("POST /documents — quarantines file with signature mismatch", async () => {
+void test("POST /documents — rejects file with signature mismatch", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
   await createActiveTenantAdmin();
@@ -528,10 +545,10 @@ void test("POST /documents — quarantines file with signature mismatch", async 
     body: buffer,
   });
 
-  assert.equal(response.status, 201);
+  assert.equal(response.status, 400);
   const body = (await response.json()) as Record<string, unknown>;
-  const doc = (body.data as Record<string, unknown>).document as Record<string, unknown>;
-  assert.equal(doc.quarantineStatus, "quarantined");
+  assert.equal(body.error, "FILE_SIGNATURE_MISMATCH");
+  assert.equal(await DocumentModel.countDocuments({}), 0);
   await closeServer(server);
 });
 
@@ -1437,7 +1454,7 @@ void test("POST /documents — rejects unsupported MIME type", async () => {
   await closeServer(server);
 });
 
-void test("POST /documents — detects signature mismatch (fake PDF with DOCX bytes)", async () => {
+void test("POST /documents — rejects signature mismatch (fake PDF with DOCX bytes)", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
   await createActiveTenantAdmin();
@@ -1452,10 +1469,10 @@ void test("POST /documents — detects signature mismatch (fake PDF with DOCX by
     body: buffer,
   });
 
-  const body2 = (await response.json()) as Record<string, unknown>;
-  const doc = (body2.data as Record<string, unknown>).document as Record<string, unknown>;
-  assert.equal(doc.quarantineStatus, "quarantined");
-  assert.equal(doc.scanResult && (doc.scanResult as Record<string, unknown>).result, "error");
+  const body = (await response.json()) as Record<string, unknown>;
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "FILE_SIGNATURE_MISMATCH");
+  assert.equal(await DocumentModel.countDocuments({}), 0);
 
   await closeServer(server);
 });
@@ -1497,6 +1514,241 @@ void test("POST /documents — sanitizes path traversal in filename", async () =
   const docFileName = responseBody.data.document.fileName;
   assert.ok(!docFileName.includes(".."), "filename should not contain path traversal");
   assert.ok(!docFileName.includes("/"), "filename should not contain forward slash");
+
+  await closeServer(server);
+});
+
+void test("POST /documents — stores selected taxonomy and references it in the default access policy", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  const { tenant, user } = await createActiveTenantAdmin();
+  const accessToken = await login(port);
+
+  const category = await DocumentCategoryModel.create({
+    tenantId: tenant._id, name: "Legal", normalizedName: "legal", description: null,
+    status: "active", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+  const department = await DepartmentModel.create({
+    tenantId: tenant._id, name: "Finance", normalizedName: "finance", description: null,
+    status: "active", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+  const classification = await DocumentClassificationModel.create({
+    tenantId: tenant._id, name: "Confidential", normalizedName: "confidential", level: "confidential",
+    description: null, status: "active", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+
+  const pdfContent = Buffer.from("%PDF-1.4 taxonomy upload", "utf-8");
+  const { buffer, boundary } = buildMultipartBody("contract.pdf", pdfContent, {
+    title: "Legal Contract",
+    categoryId: category._id.toString(),
+    departmentId: department._id.toString(),
+    classificationId: classification._id.toString(),
+  });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+    body: buffer,
+  });
+
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 201);
+  assert.equal(body.success, true);
+
+  const doc = (body.data as Record<string, unknown>).document as Record<string, unknown>;
+  assert.equal(doc.category, "Legal");
+  assert.equal(doc.department, "Finance");
+  assert.equal(doc.classification, "confidential");
+
+  const stored = await DocumentModel.findOne({ _id: String(doc.id), tenantId: tenant._id });
+  assert.ok(stored, "document should be persisted");
+  assert.equal(stored.categoryId?.toString(), category._id.toString());
+  assert.equal(stored.departmentId?.toString(), department._id.toString());
+  assert.equal(stored.classificationId?.toString(), classification._id.toString());
+
+  const policy = await DocumentAccessPolicyModel.findOne({ documentId: stored._id, status: "active" });
+  assert.ok(policy, "default access policy should be created");
+  assert.equal(policy.indexMetadata?.categoryId?.toString(), category._id.toString());
+  assert.equal(policy.indexMetadata?.departmentId?.toString(), department._id.toString());
+  assert.equal(policy.indexMetadata?.classificationId?.toString(), classification._id.toString());
+
+  await closeServer(server);
+});
+
+void test("POST /documents — default upload references the Internal classification in its policy", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  const { tenant } = await createActiveTenantAdmin();
+  const accessToken = await login(port);
+
+  const pdfContent = Buffer.from("%PDF-1.4 default taxonomy", "utf-8");
+  const { buffer, boundary } = buildMultipartBody("default.pdf", pdfContent, { title: "Default Taxonomy" });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+    body: buffer,
+  });
+
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 201);
+  const doc = (body.data as Record<string, unknown>).document as Record<string, unknown>;
+  assert.equal(doc.classification, "internal");
+  assert.equal(doc.category, null);
+  assert.equal(doc.department, null);
+
+  const stored = await DocumentModel.findOne({ _id: String(doc.id), tenantId: tenant._id });
+  assert.ok(stored);
+  const internal = await DocumentClassificationModel.findOne({ tenantId: tenant._id, normalizedName: "internal", status: "active" });
+  assert.ok(internal, "Internal classification should be ensured for the tenant");
+  const policy = await DocumentAccessPolicyModel.findOne({ documentId: stored._id, status: "active" });
+  assert.ok(policy);
+  assert.equal(policy.indexMetadata?.classificationId?.toString(), internal._id.toString());
+  assert.equal(policy.indexMetadata?.categoryId, null);
+  assert.equal(policy.indexMetadata?.departmentId, null);
+
+  await closeServer(server);
+});
+
+void test("POST /documents — returns 400 TAXONOMY_RECORD_NOT_FOUND for unknown taxonomy id", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  await createActiveTenantAdmin();
+  const accessToken = await login(port);
+
+  const pdfContent = Buffer.from("%PDF-1.4 unknown taxonomy", "utf-8");
+  const { buffer, boundary } = buildMultipartBody("x.pdf", pdfContent, {
+    title: "Unknown taxonomy",
+    classificationId: new mongoose.Types.ObjectId().toString(),
+  });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+    body: buffer,
+  });
+
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "TAXONOMY_RECORD_NOT_FOUND");
+
+  await closeServer(server);
+});
+
+void test("POST /documents — returns 400 TAXONOMY_RECORD_ARCHIVED for archived taxonomy id", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  const { tenant, user } = await createActiveTenantAdmin();
+  const accessToken = await login(port);
+
+  const category = await DocumentCategoryModel.create({
+    tenantId: tenant._id, name: "Old", normalizedName: "old", description: null,
+    status: "archived", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+
+  const pdfContent = Buffer.from("%PDF-1.4 archived taxonomy", "utf-8");
+  const { buffer, boundary } = buildMultipartBody("x.pdf", pdfContent, {
+    title: "Archived taxonomy",
+    categoryId: category._id.toString(),
+  });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+    body: buffer,
+  });
+
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "TAXONOMY_RECORD_ARCHIVED");
+
+  await closeServer(server);
+});
+
+void test("POST /documents — returns 400 VALIDATION_ERROR for malformed taxonomy id", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  await createActiveTenantAdmin();
+  const accessToken = await login(port);
+
+  const pdfContent = Buffer.from("%PDF-1.4 malformed taxonomy", "utf-8");
+  const { buffer, boundary } = buildMultipartBody("x.pdf", pdfContent, {
+    title: "Malformed taxonomy",
+    departmentId: "not-an-object-id",
+  });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/form-data; boundary=${boundary}` },
+    body: buffer,
+  });
+
+  const body = await response.json() as Record<string, unknown>;
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "VALIDATION_ERROR");
+
+  await closeServer(server);
+});
+
+void test("GET /documents/upload-options — returns active taxonomy and effective upload limits", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+  const { tenant, user } = await createActiveTenantAdmin({ fileSizeMb: 2 });
+  const accessToken = await login(port);
+
+  await DocumentCategoryModel.create({
+    tenantId: tenant._id, name: "HR", normalizedName: "hr", description: null,
+    status: "active", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+  await DepartmentModel.create({
+    tenantId: tenant._id, name: "Engineering", normalizedName: "engineering", description: null,
+    status: "active", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+  await DocumentClassificationModel.create({
+    tenantId: tenant._id, name: "Restricted", normalizedName: "restricted", level: "restricted",
+    description: null, status: "active", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+  // Archived records must be excluded from the upload form.
+  await DocumentCategoryModel.create({
+    tenantId: tenant._id, name: "ArchivedCat", normalizedName: "archivedcat", description: null,
+    status: "archived", version: 1, createdBy: user._id, updatedBy: user._id,
+  });
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents/upload-options`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    success: boolean;
+    data: {
+      taxonomy: {
+        classifications: Array<{ id: string; name: string; level: string }>;
+        categories: Array<{ id: string; name: string }>;
+        departments: Array<{ id: string; name: string }>;
+      };
+      upload: { maxFileSizeBytes: number; allowedMimeTypes: string[]; fileExtensions: string[] };
+    };
+  };
+  assert.equal(body.success, true);
+  assert.deepEqual(body.data.taxonomy.categories.map((c) => c.name), ["HR"]);
+  assert.deepEqual(body.data.taxonomy.departments.map((d) => d.name), ["Engineering"]);
+  assert.equal(body.data.taxonomy.classifications.length, 1);
+  assert.equal(body.data.taxonomy.classifications[0].name, "Restricted");
+  assert.equal(body.data.taxonomy.classifications[0].level, "restricted");
+  assert.equal(body.data.upload.maxFileSizeBytes, 2 * 1024 * 1024);
+  assert.ok(body.data.upload.allowedMimeTypes.includes("application/pdf"));
+  assert.ok(body.data.upload.fileExtensions.includes(".pdf"));
+
+  await closeServer(server);
+});
+
+void test("GET /documents/upload-options — returns 401 without auth", async () => {
+  const server = await createServer();
+  const port = (server.address() as { port: number }).port;
+
+  const response = await fetch(`http://127.0.0.1:${port}/documents/upload-options`);
+  assert.equal(response.status, 401);
 
   await closeServer(server);
 });

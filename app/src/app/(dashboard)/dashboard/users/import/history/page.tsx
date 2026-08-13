@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listBatches } from "@/services/imports.service";
 import type { ImportBatchView } from "@/types/api/imports.types";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import {
   DashboardPageHeader,
   DashboardPanel,
@@ -16,15 +18,17 @@ type Pagination = {
   totalRecords: number;
 };
 
-const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "", label: "All statuses" },
-  { value: "PENDING_MAPPING", label: "Pending mapping" },
-  { value: "VALIDATING", label: "Validating" },
-  { value: "PROCESSING", label: "Processing" },
-  { value: "COMPLETED", label: "Completed" },
-  { value: "PARTIALLY_COMPLETED", label: "Partially completed" },
-  { value: "FAILED", label: "Failed" },
-  { value: "CANCELLED", label: "Cancelled" },
+/* `value` is the API's status code (empty string = no filter) and is sent
+   verbatim to `listBatches`. Only the option text is translated. */
+const STATUS_OPTIONS: Array<{ value: string; labelKey: string }> = [
+  { value: "", labelKey: "dashboard.import.allStatuses" },
+  { value: "PENDING_MAPPING", labelKey: "dashboard.importStatus.pending_mapping" },
+  { value: "VALIDATING", labelKey: "dashboard.importStatus.validating" },
+  { value: "PROCESSING", labelKey: "dashboard.importStatus.processing" },
+  { value: "COMPLETED", labelKey: "dashboard.importStatus.completed" },
+  { value: "PARTIALLY_COMPLETED", labelKey: "dashboard.importStatus.partially_completed" },
+  { value: "FAILED", labelKey: "dashboard.importStatus.failed" },
+  { value: "CANCELLED", labelKey: "dashboard.importStatus.cancelled" },
 ];
 
 const STATUS_BADGE: Record<string, string> = {
@@ -41,6 +45,8 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export default function ImportHistoryPage() {
   const router = useRouter();
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const [batches, setBatches] = useState<ImportBatchView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,11 +71,11 @@ export default function ImportHistoryPage() {
       setBatches(res.data.batches);
       setPagination(res.data.pagination);
     } catch {
-      setError("Failed to load import history.");
+      setError(t("dashboard.import.loadHistoryError"));
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, t]);
 
   useEffect(() => {
     void loadBatches();
@@ -82,7 +88,7 @@ export default function ImportHistoryPage() {
 
   function formatTiming(dateStr: string): string {
     const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", {
+    return d.toLocaleDateString(intlLocale, {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -99,18 +105,18 @@ export default function ImportHistoryPage() {
               <span className="material-symbols-outlined text-[16px]">
                 history
               </span>
-              Import history
+              {t("dashboard.import.historyEyebrow")}
             </div>
           }
-          title="Import History"
-          description="View all past employee imports and their results."
+          title={t("dashboard.import.historyTitle")}
+          description={t("dashboard.import.historyDescription")}
         />
 
         <DashboardPanel>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <span className="text-label-sm font-medium text-on-surface-variant">
-                Filter by status:
+                {t("dashboard.import.filterByStatus")}
               </span>
               <select
                 className="rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -119,13 +125,16 @@ export default function ImportHistoryPage() {
               >
                 {STATUS_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </option>
                 ))}
               </select>
             </div>
             <div className="shrink-0 rounded-full bg-surface-container-low px-3 py-1 text-label-sm font-bold text-on-surface-variant">
-              Page {pagination.page} of {pagination.totalPages}
+              {t("dashboard.import.pageOf", {
+                page: String(pagination.page),
+                totalPages: String(pagination.totalPages),
+              })}
             </div>
           </div>
 
@@ -140,7 +149,7 @@ export default function ImportHistoryPage() {
               <span className="material-symbols-outlined animate-spin">
                 progress_activity
               </span>
-              Loading import history...
+              {t("dashboard.import.loadingHistory")}
             </div>
           ) : (
             <div className="max-w-full overflow-x-auto rounded-xl border border-outline-variant/30">
@@ -148,28 +157,28 @@ export default function ImportHistoryPage() {
                 <thead className="bg-surface-container-low">
                   <tr>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      File Name
+                      {t("dashboard.import.colFileName")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Status
+                      {t("dashboard.import.colStatus")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Total
+                      {t("dashboard.import.total")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Valid
+                      {t("dashboard.import.valid")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Invalid
+                      {t("dashboard.import.invalid")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Created
+                      {t("dashboard.import.created")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Failed
+                      {t("dashboard.import.failed")}
                     </th>
                     <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                      Created At
+                      {t("dashboard.import.colCreatedAt")}
                     </th>
                   </tr>
                 </thead>
@@ -200,12 +209,11 @@ export default function ImportHistoryPage() {
                               "bg-surface-container text-on-surface-variant"
                             }`}
                           >
-                            {batch.status === "PENDING_MAPPING"
-                              ? "Pending"
-                              : batch.status === "PARTIALLY_COMPLETED"
-                                ? "Partial"
-                                : batch.status.charAt(0) +
-                                  batch.status.slice(1).toLowerCase()}
+                            {codeLabel(
+                              t,
+                              "dashboard.importStatus",
+                              batch.status,
+                            )}
                           </span>
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
@@ -234,7 +242,7 @@ export default function ImportHistoryPage() {
                         colSpan={8}
                         className="px-4 py-8 text-center text-sm text-on-surface-variant"
                       >
-                        No imports found.
+                        {t("dashboard.import.noImportsFound")}
                       </td>
                     </tr>
                   )}
@@ -255,10 +263,13 @@ export default function ImportHistoryPage() {
               <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
                 chevron_left
               </span>
-              Previous
+              {t("dashboard.import.previous")}
             </button>
             <div className="text-label-sm font-medium text-on-surface-variant">
-              Showing {batches.length} of {pagination.totalRecords} imports
+              {t("dashboard.import.showingImports", {
+                shown: String(batches.length),
+                total: String(pagination.totalRecords),
+              })}
             </div>
             <button
               type="button"
@@ -270,7 +281,7 @@ export default function ImportHistoryPage() {
                 )
               }
             >
-              Next
+              {t("common.next")}
               <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
                 chevron_right
               </span>

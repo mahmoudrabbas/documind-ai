@@ -10,8 +10,8 @@ import {
   PlatformState,
   PlatformTable,
   StatusPill,
-  usePlatformData,
 } from "@/components/super-admin/platform-ui";
+import { usePlatformQuery } from "@/components/super-admin/use-platform-query";
 import {
   listPaymentEvents,
   reprocessPaymentEvent,
@@ -19,14 +19,21 @@ import {
 } from "@/services/billing.service";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
-const loadEvents = (signal?: AbortSignal) =>
-  listPaymentEvents({ page: 1, pageSize: 50 }, signal);
+const loadEvents = (
+  params: { page: number; pageSize: number },
+  signal?: AbortSignal,
+) => listPaymentEvents(params, signal);
 
 export default function PaymentDiagnosticsPage() {
+  const { t } = useI18n();
+  const intlLocale = useIntlLocale();
   const permissions = usePermissions();
   const canManage = permissions.can(Permission.BILLING_MANAGE);
-  const state = usePlatformData(loadEvents);
+  const [page, setPage] = useState(1);
+  const state = usePlatformQuery(loadEvents, { page, pageSize: 20 });
   const [notice, setNotice] = useState("");
   const [reconciling, setReconciling] = useState(false);
   const [reconResult, setReconResult] = useState<{
@@ -47,13 +54,13 @@ export default function PaymentDiagnosticsPage() {
       setNotice("");
       try {
         await reprocessPaymentEvent(eventId);
-        setNotice(`Event ${eventId} reprocessed.`);
+        setNotice(t("superAdmin.payments.reprocessed", { eventId }));
         await state.reload();
       } catch {
-        setNotice("Failed to reprocess event.");
+        setNotice(t("superAdmin.payments.reprocessFailed"));
       }
     },
-    [canManage, state],
+    [canManage, state, t],
   );
 
   const handleReconcile = useCallback(async () => {
@@ -64,20 +71,23 @@ export default function PaymentDiagnosticsPage() {
       const result = await triggerReconciliation();
       setReconResult(result.data);
       setNotice(result.data.subscriptionIndex.status === "READY"
-        ? `Reconciliation complete. ${result.data.subscriptions.mismatched.length} subscription mismatches found; ${result.data.refundSettlements.transitionsCompleted} refund transitions completed.`
-        : "Subscription index migration is required before refund transitions can be repaired.");
+        ? t("superAdmin.payments.reconcileComplete", {
+            mismatches: String(result.data.subscriptions.mismatched.length),
+            transitions: String(result.data.refundSettlements.transitionsCompleted),
+          })
+        : t("superAdmin.payments.reconcileMigrationRequired"));
     } catch {
-      setNotice("Reconciliation failed.");
+      setNotice(t("superAdmin.payments.reconcileFailed"));
     } finally {
       setReconciling(false);
     }
-  }, [canManage, reconciling]);
+  }, [canManage, reconciling, t]);
 
   return (
     <DashboardPage>
       <DashboardPageHeader
-        title="Payment Diagnostics"
-        description="Monitor webhook events, reprocess failures, and reconcile subscription state."
+        title={t("superAdmin.payments.title")}
+        description={t("superAdmin.payments.desc")}
       />
 
       {canManage ? (
@@ -90,7 +100,7 @@ export default function PaymentDiagnosticsPage() {
             onClick={() => void handleReconcile()}
             className="min-h-10 rounded-lg bg-primary px-4 font-bold text-on-primary disabled:opacity-60"
           >
-            {reconciling ? "Reconciling…" : "Run reconciliation"}
+            {reconciling ? t("superAdmin.payments.reconciling") : t("superAdmin.payments.runReconciliation")}
           </button>
         </div>
         {notice ? (
@@ -104,26 +114,51 @@ export default function PaymentDiagnosticsPage() {
       {reconResult ? (
         <DashboardPanel className="mb-5">
           <h2 className="text-title-md font-bold text-on-surface">
-            Reconciliation results
+            {t("superAdmin.payments.reconcileResultsTitle")}
           </h2>
           <p className="text-sm text-on-surface-variant">
-            {reconResult.subscriptions.examined} subscriptions checked,{" "}
-            {reconResult.subscriptions.mismatched.length} mismatches
+            {t("superAdmin.payments.reconcileSubscriptionsLine", {
+              examined: String(reconResult.subscriptions.examined),
+              mismatches: String(reconResult.subscriptions.mismatched.length),
+            })}
           </p>
           <p className="text-sm text-on-surface-variant">
-            Subscription index: {reconResult.subscriptionIndex.status}; effective duplicate tenants: {reconResult.subscriptionIndex.effectiveDuplicateTenantCount}
+            {t("superAdmin.payments.reconcileIndexLine", {
+              status: codeLabel(t, "superAdmin.indexStatus", reconResult.subscriptionIndex.status),
+              duplicates: String(reconResult.subscriptionIndex.effectiveDuplicateTenantCount),
+            })}
           </p>
           <p className="text-sm text-on-surface-variant">
-            Refund settlements examined: {reconResult.refundSettlements.examined}; eligible repairs: {reconResult.refundSettlements.eligibleForTransitionRepair}; transitions completed: {reconResult.refundSettlements.transitionsCompleted}; provider cancellations retryable: {reconResult.providerCancellations.retryable}
+            {t("superAdmin.payments.reconcileRefundsLine", {
+              examined: String(reconResult.refundSettlements.examined),
+              eligible: String(reconResult.refundSettlements.eligibleForTransitionRepair),
+              completed: String(reconResult.refundSettlements.transitionsCompleted),
+              retryable: String(reconResult.providerCancellations.retryable),
+            })}
           </p>
           <p className="text-sm text-on-surface-variant">
-            Invoices examined: {reconResult.invoices.examined}; created: {reconResult.invoices.created}; updated: {reconResult.invoices.updated}; failed: {reconResult.invoices.failed}
+            {t("superAdmin.payments.reconcileInvoicesLine", {
+              examined: String(reconResult.invoices.examined),
+              created: String(reconResult.invoices.created),
+              updated: String(reconResult.invoices.updated),
+              failed: String(reconResult.invoices.failed),
+            })}
           </p>
           {reconResult.invoices.failures?.length ? (
             <ul className="mt-2 list-disc space-y-1 ps-5 text-sm text-on-surface-variant">
               {reconResult.invoices.failures.map((failure) => (
                 <li key={`${failure.code}:${failure.classification}`}>
-                  {failure.classification}: {failure.count} ({failure.code}){failure.retryable ? " — retry pending" : ""}
+                  {failure.retryable
+                    ? t("superAdmin.payments.invoiceFailureRetryable", {
+                        classification: failure.classification,
+                        count: String(failure.count),
+                        code: failure.code,
+                      })
+                    : t("superAdmin.payments.invoiceFailure", {
+                        classification: failure.classification,
+                        count: String(failure.count),
+                        code: failure.code,
+                      })}
                 </li>
               ))}
             </ul>
@@ -135,9 +170,11 @@ export default function PaymentDiagnosticsPage() {
                   key={i}
                   className="rounded-lg border border-error/20 bg-error-container/10 p-3 text-sm"
                 >
-                  <strong>Tenant:</strong> {String(m.tenantId)} —{" "}
-                  <strong>Status:</strong> {String(m.localStatus)} —{" "}
-                  <strong>Issues:</strong>{" "}
+                  <strong>{t("superAdmin.payments.mismatchTenantLabel")}</strong>{" "}
+                  {String(m.tenantId)} —{" "}
+                  <strong>{t("superAdmin.payments.mismatchStatusLabel")}</strong>{" "}
+                  {codeLabel(t, "superAdmin.subsStatus", String(m.localStatus))} —{" "}
+                  <strong>{t("superAdmin.payments.mismatchIssuesLabel")}</strong>{" "}
                   {(m.issues as string[]).join("; ")}
                 </div>
               ))}
@@ -148,57 +185,91 @@ export default function PaymentDiagnosticsPage() {
 
       <PlatformState
         loading={state.loading}
+        refreshing={state.refreshing}
         error={state.error}
         onRetry={state.reload}
       />
 
-      {state.data ? (
-        <PlatformTable
-          headers={[
-            "Event ID",
-            "Type",
-            "Status",
-            "Errors",
-            "Processed",
-            "Actions",
-          ]}
-          minWidth="900px"
-        >
-          {state.data.events.map((event) => (
-            <tr key={event._id}>
-              <td className="cell max-w-[200px] truncate font-mono text-xs">
-                {event.eventId}
-              </td>
-              <td className="cell">{event.eventType}</td>
-              <td className="cell">
-                <StatusPill value={event.status} />
-              </td>
-              <td className="cell max-w-[200px] truncate text-xs">
-                {event.processingErrors?.length
-                  ? event.processingErrors.join("; ")
-                  : "—"}
-              </td>
-              <td className="cell text-xs">
-                {event.processedAt
-                  ? new Date(event.processedAt).toLocaleString()
-                  : "—"}
-              </td>
-              <td className="cell">
-                {canManage && event.status === "failed" ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleReprocess(event.eventId)}
-                    className="rounded bg-primary px-2 py-1 text-xs font-bold text-on-primary"
-                  >
-                    Reprocess
-                  </button>
-                ) : (
-                  <span className="text-xs text-on-surface-variant">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </PlatformTable>
+      {state.data && state.data.events.length === 0 ? (
+        <DashboardPanel>
+          <p>{t("superAdmin.payments.none")}</p>
+        </DashboardPanel>
+      ) : state.data ? (
+        <>
+          <PlatformTable
+            headers={[
+              t("superAdmin.payments.tableEventId"),
+              t("superAdmin.payments.tableType"),
+              t("superAdmin.tableStatus"),
+              t("superAdmin.payments.tableErrors"),
+              t("superAdmin.payments.tableProcessed"),
+              t("superAdmin.payments.tableActions"),
+            ]}
+            minWidth="900px"
+          >
+            {state.data.events.map((event) => (
+              <tr key={event._id}>
+                <td className="cell max-w-[200px] truncate font-mono text-xs">
+                  {event.eventId}
+                </td>
+                <td className="cell">{event.eventType}</td>
+                <td className="cell">
+                  <StatusPill
+                    value={event.status}
+                    label={codeLabel(t, "superAdmin.payments.eventStatus", event.status)}
+                  />
+                </td>
+                <td className="cell max-w-[200px] truncate text-xs">
+                  {event.processingErrors?.length
+                    ? event.processingErrors.join("; ")
+                    : "—"}
+                </td>
+                <td className="cell text-xs">
+                  {event.processedAt
+                    ? new Date(event.processedAt).toLocaleString(intlLocale)
+                    : "—"}
+                </td>
+                <td className="cell">
+                  {canManage && event.status === "failed" ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleReprocess(event.eventId)}
+                      className="rounded bg-primary px-2 py-1 text-xs font-bold text-on-primary"
+                    >
+                      {t("superAdmin.payments.reprocessButton")}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-on-surface-variant">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </PlatformTable>
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => value - 1)}
+              className="rounded border px-3 py-2 disabled:opacity-50"
+            >
+              {t("common.previous")}
+            </button>
+            <span>
+              {t("common.pageOf", {
+                page: String(page),
+                totalPages: String(state.data.pagination.totalPages),
+              })}
+            </span>
+            <button
+              type="button"
+              disabled={page >= state.data.pagination.totalPages}
+              onClick={() => setPage((value) => value + 1)}
+              className="rounded border px-3 py-2 disabled:opacity-50"
+            >
+              {t("common.next")}
+            </button>
+          </div>
+        </>
       ) : null}
     </DashboardPage>
   );

@@ -89,11 +89,6 @@
 
   /* ---- Elevation (DESIGN.md > Elevation & Depth) ---------------------- */
   --shadow-color-card: 15 42 61;
-
-  /* ---- Fonts ----------------------------------------------------------- */
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Arial, Helvetica, sans-serif;
 }
 
 /*
@@ -331,6 +326,26 @@
     background: var(--color-background);
     color: var(--color-on-background);
     font-family: var(--font-sans);
+  }
+
+  /*
+   * Arabic typeface, applied only when the document is RTL.
+   *
+   * `--font-arabic` is declared by next/font in src/app/fonts.ts and
+   * attached to <html> by the root layout. Cairo leads the stack and the
+   * system fonts stay behind it, so Latin runs inside Arabic screens
+   * (emails, IDs, file types) keep sensible glyphs.
+   *
+   * This lives in @layer base rather than overriding --font-sans because
+   * `@theme inline` bakes that variable's value into .font-sans as a
+   * literal, so redefining it here would have no effect. For the same
+   * reason the root layout does not put `font-sans` on <body> — a
+   * utility class would outrank this rule.
+   */
+  html[dir="rtl"] body {
+    font-family:
+      var(--font-arabic), ui-sans-serif, system-ui, -apple-system,
+      BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
   }
 
   /* Visible keyboard focus everywhere — no silent focus removal. */

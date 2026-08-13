@@ -15,6 +15,7 @@ const PayloadSchema = z.object({
   documentVersion: z.number().int().positive(),
   generationId: z.string(),
   department: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
   classification: z.string().nullable().optional(),
   chunkingConfig: z.object({
     targetTokens: z.number().int().positive().optional(),
@@ -134,6 +135,7 @@ export function createDocumentChunkingJobHandler(): JobHandlerDefinition<Chunkin
         contentType: chunk.contentType,
         language: chunk.language,
         department: payload.department ?? null,
+        category: payload.category ?? null,
         classification: payload.classification ?? null,
         text: chunk.text,
         checksum: createHash("sha256").update(chunk.text).digest("hex"),

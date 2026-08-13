@@ -34,6 +34,33 @@ export function t(
 }
 
 /**
+ * Pick the plural form of `key` for `count` and interpolate it.
+ *
+ * English needs only `one`/`other`, but Arabic distinguishes up to six
+ * CLDR categories (`zero`, `one`, `two`, `few`, `many`, `other`), so the
+ * usual `count === 1 ? x : y` in JSX is wrong for it. `Intl.PluralRules`
+ * supplies the correct category per locale at no bundle cost.
+ *
+ * Looks up `<key>.<category>` and falls back to `<key>.other`, which
+ * every locale defines — so a dictionary that omits a rarer category
+ * still renders a sensible string instead of a raw key. `count` is
+ * exposed to the template as `{{count}}`.
+ */
+export function tPlural(
+  dictionary: TranslationDictionary,
+  locale: Locale,
+  key: string,
+  count: number,
+  params?: Record<string, string>,
+): string {
+  const category = new Intl.PluralRules(locale).select(count);
+  const candidate = `${key}.${category}`;
+  const resolved = dictionary[candidate] !== undefined ? candidate : `${key}.other`;
+
+  return t(dictionary, resolved, { count: String(count), ...params });
+}
+
+/**
  * Read the locale preference from `document.cookie`.
  * Returns `DEFAULT_LOCALE` when the cookie is missing or holds an
  * unrecognised value.

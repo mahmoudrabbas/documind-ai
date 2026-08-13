@@ -34,6 +34,14 @@ test("Bilingual Query Plan Evaluation Regression Tests", async (t) => {
         `Expected clarificationNeeded to be ${entry.shouldClarify} but got ${plan.clarificationNeeded}`
       );
 
+      if (entry.expectedRoute) {
+        assert.equal(
+          plan.route,
+          entry.expectedRoute,
+          `Expected route "${entry.expectedRoute}" but got "${plan.route}"`
+        );
+      }
+
       // 4. Exact terms checking if specified in the fixture
       if (entry.exactTerms && entry.exactTerms.length > 0) {
         for (const term of entry.exactTerms) {

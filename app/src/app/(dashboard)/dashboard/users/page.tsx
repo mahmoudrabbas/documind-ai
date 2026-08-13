@@ -14,6 +14,8 @@ import {
 } from "@/services/users.service";
 import type { RoleView, UserView } from "@/types/api/users.types";
 import { useAuth } from "@/providers/auth-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import {
@@ -22,6 +24,7 @@ import {
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
 import { ConfirmDialog } from "@/components/ui/Modal";
+import { BulkImportModal } from "@/components/users/BulkImportModal";
 
 type Pagination = {
   page: number;
@@ -47,20 +50,24 @@ type ConfirmAction =
   | { type: "revoke"; userId: string; userName: string }
   | null;
 
+/* Values are the API's machine codes and stay untranslated; the visible
+   text is resolved per-render via codeLabel so it follows the locale. */
 const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "pending_email_verification", label: "Pending verification" },
-  { value: "disabled", label: "Disabled" },
+  { value: "active" },
+  { value: "pending_email_verification" },
+  { value: "disabled" },
 ];
 
 const ROLE_OPTIONS = [
-  { value: "EMPLOYEE", label: "Employee" },
-  { value: "COMPANY_ADMIN", label: "Company Admin" },
+  { value: "EMPLOYEE", labelKey: "dashboard.userRole.employee" },
+  { value: "COMPANY_ADMIN", labelKey: "dashboard.userRole.company_admin" },
 ];
 
 const DEFAULT_PAGE_SIZE = 10;
 
 export default function UsersPage() {
+  const { t, tPlural, dir } = useI18n();
+  const intlLocale = useIntlLocale();
   const auth = useAuth();
   const permissionContext = usePermissions();
   const canCreateUsers = permissionContext.can(Permission.USERS_CREATE);
@@ -107,6 +114,7 @@ export default function UsersPage() {
   const filtersInitializedRef = useRef(false);
 
   const [customRoles, setCustomRoles] = useState<RoleView[]>([]);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState<boolean>(false);
 
   const loadRoles = useCallback(async () => {
     if (!canAssignCustomRole) {
@@ -129,12 +137,15 @@ export default function UsersPage() {
 
   function getRoleDropdownOptions() {
     const baseOptions = canAssignBaseRole
-      ? ROLE_OPTIONS
-      : ROLE_OPTIONS.filter((option) => option.value === "EMPLOYEE");
+      ? ROLE_OPTIONS.map((opt) => ({ value: opt.value, label: t(opt.labelKey) }))
+      : ROLE_OPTIONS.filter((option) => option.value === "EMPLOYEE").map((opt) => ({
+          value: opt.value,
+          label: t(opt.labelKey),
+        }));
     if (customRoles.length === 0) return baseOptions;
     return [
       ...baseOptions,
-      { value: "---divider---", label: "─── Custom Roles ───", disabled: true },
+      { value: "---divider---", label: t("dashboard.users.dividerCustomRoles"), disabled: true },
       ...customRoles
         .filter((item) => item.status === "active")
         .map((r) => ({ value: `custom:${r.id}`, label: r.name })),
@@ -144,9 +155,9 @@ export default function UsersPage() {
   function getRoleLabel(user: UserView) {
     if (user.customRoleName) return user.customRoleName;
     return user.role === "COMPANY_ADMIN"
-      ? "Company Admin"
+      ? t("dashboard.userRole.company_admin")
       : user.role === "EMPLOYEE"
-        ? "Employee"
+        ? t("dashboard.userRole.employee")
         : user.role;
   }
 
@@ -190,13 +201,13 @@ export default function UsersPage() {
         if (err instanceof ApiError) {
           setFetchError(err.message);
         } else {
-          setFetchError("Unable to load users. Please try again.");
+          setFetchError(t("dashboard.users.loadError"));
         }
       } finally {
         setLoadingUsers(false);
       }
     },
-    [search, roleFilter],
+    [search, roleFilter, t],
   );
 
   useEffect(() => {
@@ -227,20 +238,25 @@ export default function UsersPage() {
     try {
       const selectedRole = role.startsWith("custom:")
         ? customRoles.find((item) => item.id === role.slice("custom:".length))
-        : role as "COMPANY_ADMIN" | "EMPLOYEE";
-      if (!selectedRole) throw new Error("The selected role is no longer available.");
-      const result = await inviteUserWithRole({ name, email, role: selectedRole });
+        : (role as "COMPANY_ADMIN" | "EMPLOYEE");
+      if (!selectedRole)
+        throw new Error(t("dashboard.users.selectedRoleUnavailable"));
+      const result = await inviteUserWithRole({
+        name,
+        email,
+        role: selectedRole,
+      });
       const emailFailed = result.emailDelivery && !result.emailDelivery.sent;
       if (result.status === "assignment-failed") {
         setPendingAssignment({ userId: result.user.id, role: result.role });
-        setStatus("User invited successfully, but custom-role assignment failed.");
-        setError("Retry the role assignment after refreshing the role list.");
+        setStatus(t("dashboard.users.invitedCustomRoleFailed"));
+        setError(t("dashboard.users.retryRoleAssignmentHelp"));
       } else if (emailFailed) {
         setPendingAssignment(null);
-        setStatus("Invitation created successfully, but the email could not be sent. You can resend the invitation from the user list.");
+        setStatus(t("dashboard.users.invitedEmailFailed"));
       } else {
         setPendingAssignment(null);
-        setStatus("Invitation sent successfully.");
+        setStatus(t("dashboard.users.invitedSuccess"));
       }
       setName("");
       setEmail("");
@@ -250,7 +266,7 @@ export default function UsersPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(t("dashboard.users.genericError"));
       }
     } finally {
       setIsSubmitting(false);
@@ -265,14 +281,18 @@ export default function UsersPage() {
       setCustomRoles(rolesResponse.data.roles);
       const currentRole = rolesResponse.data.roles.find((item) => item.id === pendingAssignment.role.id);
       if (!currentRole || currentRole.status !== "active") {
-        throw new Error("The custom role is no longer assignable.");
+        throw new Error(t("dashboard.users.customRoleNotAssignable"));
       }
       await retryInvitationRoleAssignment(pendingAssignment.userId, currentRole);
       setPendingAssignment(null);
-      setStatus("User was already invited; custom role assigned successfully.");
+      setStatus(t("dashboard.users.customRoleAssignedSuccess"));
       void loadUsers(page);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Custom-role assignment retry failed.");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t("dashboard.users.customRoleRetryFailed"),
+      );
     }
   }
 
@@ -308,7 +328,7 @@ export default function UsersPage() {
                 )
               : (update.role as "COMPANY_ADMIN" | "EMPLOYEE");
             if (!selectedRole) {
-              throw new Error("The selected role is no longer available.");
+              throw new Error(t("dashboard.users.selectedRoleUnavailable"));
             }
             return updateUserWithRole({
               user,
@@ -336,13 +356,13 @@ export default function UsersPage() {
           error: null,
         },
       }));
-      setUpdateMessage("User updated successfully.");
+      setUpdateMessage(t("dashboard.users.updatedSuccess"));
       if (auth.status === "authenticated" && auth.user.id === userId) {
         await permissionContext.refreshPermissions();
       }
     } catch (err) {
       const message =
-        err instanceof ApiError ? err.message : "Failed to update user.";
+        err instanceof ApiError ? err.message : t("dashboard.users.updateFailed");
 
       setRowUpdates((prev: RowUpdates): RowUpdates => ({
         ...prev,
@@ -372,13 +392,13 @@ export default function UsersPage() {
         },
       );
 
-      setUpdateMessage(response.message ?? "User deleted successfully.");
+      setUpdateMessage(response.message ?? t("dashboard.users.deletedSuccess"));
       void loadUsers(page);
     } catch (err) {
       if (err instanceof ApiError) {
         setFetchError(err.message);
       } else {
-        setFetchError("Unable to delete user. Please try again.");
+        setFetchError(t("dashboard.users.deleteFailed"));
       }
     } finally {
       setDeletingUserIds((prev: DeletingUserIds): DeletingUserIds => ({
@@ -403,14 +423,14 @@ export default function UsersPage() {
         response.data.emailDelivery && !response.data.emailDelivery.sent;
       setUpdateMessage(
         deliveryFailed
-          ? "Invitation email queued, but delivery may be delayed."
-          : response.message ?? "Invitation email resent successfully.",
+          ? t("dashboard.users.inviteEmailQueued")
+          : response.message ?? t("dashboard.users.inviteResentSuccess"),
       );
     } catch (err) {
       if (err instanceof ApiError) {
         setFetchError(err.message);
       } else {
-        setFetchError("Unable to resend invitation. Please try again.");
+        setFetchError(t("dashboard.users.resendFailed"));
       }
     } finally {
       setResendingIds((prev: ResendingIds): ResendingIds => ({
@@ -430,13 +450,13 @@ export default function UsersPage() {
 
     try {
       const response = await revokeInvitation(userId);
-      setUpdateMessage(response.message ?? "Invitation revoked successfully.");
+      setUpdateMessage(response.message ?? t("dashboard.users.revokedSuccess"));
       void loadUsers(page);
     } catch (err) {
       if (err instanceof ApiError) {
         setFetchError(err.message);
       } else {
-        setFetchError("Unable to revoke invitation. Please try again.");
+        setFetchError(t("dashboard.users.revokeFailed"));
       }
     } finally {
       setRevokingIds((prev: RevokingIds): RevokingIds => ({
@@ -462,23 +482,23 @@ export default function UsersPage() {
   }
 
   return (
-    <DashboardPage>
+    <DashboardPage dir={dir}>
       <DashboardPageHeader
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">group</span>
-            Team access
+            {t("dashboard.users.teamAccessEyebrow")}
           </div>
         }
-        title="Team Management"
-        description="Invite teammates and manage user access for your company in one place."
+        title={t("dashboard.users.teamManagementTitle")}
+        description={t("dashboard.users.teamManagementDesc")}
         actions={
           <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3 text-sm shadow-sm">
             <p className="font-semibold text-on-surface">
-              Manage access quickly
+              {t("dashboard.users.manageAccessQuickly")}
             </p>
             <p className="mt-1 max-w-xs text-on-surface-variant">
-              Keep your team members aligned with the right roles and status.
+              {t("dashboard.users.keepTeamAligned")}
             </p>
           </div>
         }
@@ -490,49 +510,48 @@ export default function UsersPage() {
           <div className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <h2 className="text-title-lg font-bold text-primary">
-                Invite New User
+                {t("dashboard.users.inviteNewUser")}
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                Add a teammate and assign the access level they should have from
-                the start.
+                {t("dashboard.users.inviteNewUserDesc")}
               </p>
             </div>
             <div className="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-              New invite
+              {t("dashboard.users.newInviteBadge")}
             </div>
           </div>
 
           <form id="invite" className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="mb-2 block text-label-md font-bold text-on-surface-variant">
-                Name
+                {t("dashboard.users.name")}
               </label>
               <input
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Invitee name"
+                placeholder={t("dashboard.users.inviteeNamePlaceholder")}
                 required
               />
             </div>
 
             <div>
               <label className="mb-2 block text-label-md font-bold text-on-surface-variant">
-                Email
+                {t("dashboard.users.email")}
               </label>
               <input
                 type="email"
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="invitee@example.com"
+                placeholder={t("dashboard.users.emailPlaceholder")}
                 required
               />
             </div>
 
             <div>
               <label className="mb-2 block text-label-md font-bold text-on-surface-variant">
-                Role
+                {t("dashboard.users.role")}
               </label>
               <select
                 className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
@@ -554,21 +573,27 @@ export default function UsersPage() {
             </div>
 
             {status ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              <div
+                role="status"
+                className="rounded-lg border border-emerald-200 bg-emerald-50 p-sm text-label-md text-emerald-900"
+              >
                 {status}
               </div>
             ) : null}
 
             {error ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+              <div
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 p-sm text-label-md text-red-900"
+              >
                 {error}
-                {pendingAssignment && canAssignCustomRole ? (
+                {pendingAssignment ? (
                   <button
                     type="button"
-                    className="ml-3 underline"
+                    className="ms-2 underline hover:text-red-950"
                     onClick={() => void retryPendingAssignment()}
                   >
-                    Retry role assignment
+                    {t("dashboard.users.retryRoleAssignmentBtn")}
                   </button>
                 ) : null}
               </div>
@@ -576,49 +601,37 @@ export default function UsersPage() {
 
             <button
               type="submit"
-              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-label-md font-bold text-on-primary shadow-sm transition-all hover:bg-secondary-container hover:text-on-secondary-container disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-lg py-sm text-label-lg font-bold text-on-primary shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isSubmitting}
             >
-              {isSubmitting ? (
-                <span className="material-symbols-outlined animate-spin text-[18px]">
-                  progress_activity
-                </span>
-              ) : (
-                <span className="material-symbols-outlined text-[18px]">
-                  person_add
-                </span>
-              )}
-              {isSubmitting ? "Sending invitation..." : "Send invite"}
+              {isSubmitting
+                ? t("dashboard.users.sendingInvite")
+                : t("dashboard.users.sendInvitation")}
             </button>
           </form>
         </DashboardPanel>
 
-        <DashboardPanel tone="muted">
+        <DashboardPanel className="h-full">
           <h3 className="text-title-md font-bold text-primary">
-            What you can control
+            {t("dashboard.users.whatYouCanControl")}
           </h3>
           <ul className="mt-5 space-y-4 text-sm leading-relaxed text-on-surface-variant">
             <li className="flex gap-3">
               <span className="mt-0.5 shrink-0 text-primary">•</span>
-              <span>Invite people with the right role from the start.</span>
+              <span>{t("dashboard.users.controlPoint1")}</span>
             </li>
             <li className="flex gap-3">
               <span className="mt-0.5 shrink-0 text-primary">•</span>
-              <span>
-                Adjust access and status without leaving the directory.
-              </span>
+              <span>{t("dashboard.users.controlPoint2")}</span>
             </li>
             <li className="flex gap-3">
               <span className="mt-0.5 shrink-0 text-primary">•</span>
-              <span>
-                Review verification state and team membership at a glance.
-              </span>
+              <span>{t("dashboard.users.controlPoint3")}</span>
             </li>
           </ul>
 
           <div className="mt-5 rounded-2xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm leading-relaxed text-on-surface-variant">
-            Tip: use custom roles when a teammate needs a more specific
-            permission setup.
+            {t("dashboard.users.customRolesTip")}
           </div>
         </DashboardPanel>
       </div>
@@ -628,29 +641,32 @@ export default function UsersPage() {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-title-lg font-bold text-primary">
-              User Directory
+              {t("dashboard.users.title")}
             </h2>
             <p className="mt-1 text-body-sm leading-relaxed text-on-surface-variant">
-              Browse tenant users and review access status.
+              {t("dashboard.users.directoryDesc")}
             </p>
           </div>
           <div className="shrink-0 rounded-full bg-surface-container-low px-3 py-1 text-label-sm font-bold text-on-surface-variant">
-            Page {pagination.page} of {pagination.totalPages}
+            {t("dashboard.users.pageInfo", {
+              page: String(pagination.page),
+              totalPages: String(pagination.totalPages),
+            })}
           </div>
         </div>
 
         <div className="mb-4 flex flex-col gap-3 border-b border-outline-variant/30 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center">
             <div className="relative min-[480px]:w-64">
-              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+              <span className="material-symbols-outlined pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
                 search
               </span>
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name or email"
-                className="w-full rounded-lg border border-outline-variant bg-surface py-2 pl-9 pr-3 text-sm transition-all outline-none placeholder:text-outline focus:border-transparent focus:ring-2 focus:ring-primary"
+                placeholder={t("dashboard.users.searchPlaceholder")}
+                className="w-full rounded-lg border border-outline-variant bg-surface py-2 ps-9 pe-3 text-sm transition-all outline-none placeholder:text-outline focus:border-transparent focus:ring-2 focus:ring-primary"
               />
             </div>
             <select
@@ -658,21 +674,26 @@ export default function UsersPage() {
               onChange={(event) => setRoleFilter(event.target.value)}
               className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary min-[480px]:w-48"
             >
-              <option value="">All roles</option>
-              <option value="EMPLOYEE">Employee</option>
-              <option value="COMPANY_ADMIN">Company Admin</option>
+              <option value="">{t("dashboard.users.allRoles")}</option>
+              <option value="EMPLOYEE">
+                {t("dashboard.userRole.employee")}
+              </option>
+              <option value="COMPANY_ADMIN">
+                {t("dashboard.userRole.company_admin")}
+              </option>
             </select>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard/users/import"
+            <button
+              type="button"
+              onClick={() => setIsBulkImportOpen(true)}
               className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
             >
               <span className="material-symbols-outlined text-[18px]">
                 upload_file
               </span>
-              Bulk import
-            </Link>
+              {t("dashboard.users.bulkImport")}
+            </button>
             <Link
               href="/dashboard/users/import/history"
               className="inline-flex items-center gap-2 rounded-lg border border-outline-variant bg-surface px-4 py-2 text-label-md font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low"
@@ -680,7 +701,7 @@ export default function UsersPage() {
               <span className="material-symbols-outlined text-[18px]">
                 history
               </span>
-              Import history
+              {t("dashboard.users.importHistory")}
             </Link>
           </div>
         </div>
@@ -702,7 +723,7 @@ export default function UsersPage() {
             <span className="material-symbols-outlined animate-spin">
               progress_activity
             </span>
-            Loading directory...
+            {t("dashboard.users.loadingDirectory")}
           </div>
         ) : (
           <div className="max-w-full overflow-x-auto rounded-xl border border-outline-variant/30">
@@ -710,25 +731,25 @@ export default function UsersPage() {
               <thead className="bg-surface-container-low">
                 <tr>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Name
+                    {t("dashboard.users.name")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Email
+                    {t("dashboard.users.email")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Role
+                    {t("dashboard.users.role")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Status
+                    {t("dashboard.users.status")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Verified
+                    {t("dashboard.users.verified")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Created
+                    {t("dashboard.users.created")}
                   </th>
                   <th className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                    Actions
+                    {t("dashboard.users.actions")}
                   </th>
                 </tr>
               </thead>
@@ -750,7 +771,6 @@ export default function UsersPage() {
                     const isPending =
                       user.status === "pending_email_verification";
                     const isResending = resendingIds[user.id] === true;
-                    const isRevoking = revokingIds[user.id] === true;
 
                     return (
                       <tr
@@ -772,29 +792,29 @@ export default function UsersPage() {
                           {canUpdateUsers &&
                           canAssignBaseRole &&
                           (!user.customRoleId || canAssignCustomRole) ? (
-                          <select
-                            className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                            value={update.role}
-                            onChange={(event) =>
-                              handleRowChange(
-                                user.id,
-                                "role",
-                                event.target.value,
-                              )
-                            }
-                          >
-                            {getRoleDropdownOptions().map((opt) =>
-                              "disabled" in opt && opt.disabled ? (
-                                <option key={opt.value} disabled>
-                                  {opt.label}
-                                </option>
-                              ) : (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ),
-                            )}
-                          </select>
+                            <select
+                              className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                              value={update.role}
+                              onChange={(event) =>
+                                handleRowChange(
+                                  user.id,
+                                  "role",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {getRoleDropdownOptions().map((opt) =>
+                                "disabled" in opt && opt.disabled ? (
+                                  <option key={opt.value} disabled>
+                                    {opt.label}
+                                  </option>
+                                ) : (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
                           ) : (
                             <span>{getRoleLabel(user)}</span>
                           )}
@@ -806,25 +826,31 @@ export default function UsersPage() {
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
                           {canUpdateUsers ? (
-                          <select
-                            className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                            value={update.status}
-                            onChange={(event) =>
-                              handleRowChange(
-                                user.id,
-                                "status",
-                                event.target.value,
-                              )
-                            }
-                          >
-                            {STATUS_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
+                            <select
+                              className="w-full rounded-md border border-outline-variant bg-surface px-2 py-1.5 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                              value={update.status}
+                              onChange={(event) =>
+                                handleRowChange(
+                                  user.id,
+                                  "status",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {STATUS_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {codeLabel(
+                                    t,
+                                    "dashboard.userStatus",
+                                    option.value,
+                                  )}
+                                </option>
+                              ))}
+                            </select>
                           ) : (
-                            <span>{user.status.replaceAll("_", " ")}</span>
+                            <span>
+                              {codeLabel(t, "dashboard.userStatus", user.status)}
+                            </span>
                           )}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
@@ -833,72 +859,66 @@ export default function UsersPage() {
                               <span className="material-symbols-outlined text-[14px]">
                                 verified
                               </span>{" "}
-                              Yes
+                              {t("dashboard.users.yes")}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-surface-container px-2 py-0.5 text-xs font-medium text-on-surface-variant">
-                              No
+                              {t("dashboard.users.no")}
                             </span>
                           )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-4 text-sm text-on-surface-variant">
-                          {new Date(user.createdAt).toLocaleDateString()}
+                          {new Date(user.createdAt).toLocaleDateString(
+                            intlLocale,
+                          )}
                         </td>
                         <td className="px-4 py-4 text-on-surface-variant">
                           <div className="flex flex-col gap-2 sm:flex-row">
                             {canUpdateUsers ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-on-secondary shadow-sm transition-colors hover:bg-secondary-container hover:text-on-secondary-container disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={
-                                !isChanged || update.isSaving || isDeleting
-                              }
-                              onClick={() => void handleUserUpdate(user.id)}
-                            >
-                              {update.isSaving ? "Saving..." : "Update"}
-                            </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-on-secondary shadow-sm transition-colors hover:bg-secondary-container hover:text-on-secondary-container disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={
+                                  !isChanged || update.isSaving || isDeleting
+                                }
+                                onClick={() => void handleUserUpdate(user.id)}
+                              >
+                                {update.isSaving
+                                  ? t("dashboard.users.saving")
+                                  : t("dashboard.users.actionUpdate")}
+                              </button>
                             ) : null}
                             {isPending && canCreateUsers ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-xs font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isResending || isDeleting}
-                              onClick={() => void handleResendInvitation(user.id)}
-                            >
-                              {isResending ? "Resending..." : "Resend"}
-                            </button>
-                            ) : null}
-                            {isPending && canDeleteUsers ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-warning/40 bg-surface px-3 py-1.5 text-xs font-bold text-warning shadow-sm transition-colors hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isRevoking || isDeleting}
-                              onClick={() =>
-                                setConfirmAction({
-                                  type: "revoke",
-                                  userId: user.id,
-                                  userName: user.name,
-                                })
-                              }
-                            >
-                              {isRevoking ? "Revoking..." : "Revoke"}
-                            </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md border border-outline-variant bg-surface px-3 py-1.5 text-xs font-bold text-on-surface shadow-sm transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isResending || isDeleting}
+                                onClick={() =>
+                                  void handleResendInvitation(user.id)
+                                }
+                              >
+                                {isResending
+                                  ? t("dashboard.users.resending")
+                                  : t("dashboard.users.actionResend")}
+                              </button>
                             ) : null}
                             {canDeleteUsers ? (
-                            <button
-                              type="button"
-                              className="inline-flex items-center justify-center rounded-md border border-error/30 bg-surface px-3 py-1.5 text-xs font-bold text-error shadow-sm transition-colors hover:bg-error-container hover:text-on-error-container disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isDeleting}
-                              onClick={() =>
-                                setConfirmAction({
-                                  type: "delete",
-                                  userId: user.id,
-                                  userName: user.name,
-                                })
-                              }
-                            >
-                              {isDeleting ? "Deleting..." : "Delete"}
-                            </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md border border-error/30 bg-surface px-3 py-1.5 text-xs font-bold text-error shadow-sm transition-colors hover:bg-error-container hover:text-on-error-container disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isDeleting}
+                                onClick={() =>
+                                  setConfirmAction({
+                                    type: "delete",
+                                    userId: user.id,
+                                    userName: user.name,
+                                  })
+                                }
+                              >
+                                {isDeleting
+                                  ? t("dashboard.users.deleting")
+                                  : t("dashboard.users.actionDelete")}
+                              </button>
                             ) : null}
                           </div>
                           {update.error ? (
@@ -917,8 +937,8 @@ export default function UsersPage() {
                       className="px-4 py-8 text-center text-sm text-on-surface-variant"
                     >
                       {search.trim() || roleFilter
-                        ? "No users match the current search or role filter."
-                        : "No users found for this tenant."}
+                        ? t("dashboard.users.noMatchingUsers")
+                        : t("dashboard.users.noTenantUsers")}
                     </td>
                   </tr>
                 )}
@@ -939,10 +959,13 @@ export default function UsersPage() {
             <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
               chevron_left
             </span>
-            Previous
+            {t("dashboard.users.previous")}
           </button>
           <div className="text-label-sm font-medium text-on-surface-variant">
-            Showing {users.length} of {pagination.totalRecords} users
+            {tPlural("dashboard.users.showingUsers", pagination.totalRecords, {
+              count: String(users.length),
+              total: String(pagination.totalRecords),
+            })}
           </div>
           <button
             type="button"
@@ -954,7 +977,7 @@ export default function UsersPage() {
               )
             }
           >
-            Next
+            {t("dashboard.users.next")}
             <span className="material-symbols-outlined text-[18px] rtl:rotate-180">
               chevron_right
             </span>
@@ -966,16 +989,22 @@ export default function UsersPage() {
         open={confirmAction !== null}
         title={
           confirmAction?.type === "revoke"
-            ? "Revoke invitation?"
-            : "Delete user?"
+            ? t("dashboard.users.revokeDialogTitle")
+            : t("dashboard.users.deleteDialogTitle")
         }
         description={
           confirmAction?.type === "revoke"
-            ? `${confirmAction.userName} has not accepted their invitation yet. Revoking will cancel it and remove the pending user record.`
-            : `This will permanently remove ${confirmAction?.userName ?? "this user"} from the workspace. This action cannot be undone.`
+            ? t("dashboard.users.revokeDialogDesc", {
+                name: confirmAction.userName,
+              })
+            : t("dashboard.users.deleteDialogDesc", {
+                name: confirmAction?.userName ?? t("dashboard.users.thisUser"),
+              })
         }
         confirmLabel={
-          confirmAction?.type === "revoke" ? "Revoke invitation" : "Delete user"
+          confirmAction?.type === "revoke"
+            ? t("dashboard.users.actionRevoke")
+            : t("dashboard.users.actionDeleteUser")
         }
         variant="danger"
         isLoading={
@@ -994,6 +1023,13 @@ export default function UsersPage() {
           } else {
             void handleRevokeInvitation(confirmAction.userId);
           }
+        }}
+      />
+      <BulkImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onImportSuccess={() => {
+          void loadUsers(page);
         }}
       />
     </DashboardPage>

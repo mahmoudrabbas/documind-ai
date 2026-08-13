@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
+import { useI18n } from "@/providers/i18n-provider";
+import { codeLabel } from "@/lib/i18n/code-label";
 
 export function SessionSecurity() {
   const { user, revokeOtherSessions } = useAuth();
+  const { t } = useI18n();
   const [isRevoking, setIsRevoking] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [message, setMessage] = useState<{
@@ -19,12 +22,12 @@ export function SessionSecurity() {
       await revokeOtherSessions();
       setMessage({
         type: "success",
-        text: "All other sessions have been revoked. This session stays signed in.",
+        text: t("auth.sessionsRevokedSuccess"),
       });
     } catch {
       setMessage({
         type: "error",
-        text: "Failed to revoke sessions. Please try again.",
+        text: t("auth.sessionsRevokeError"),
       });
     } finally {
       setIsRevoking(false);
@@ -35,21 +38,24 @@ export function SessionSecurity() {
   return (
     <div className="rounded-xl border border-outline-variant bg-surface p-6">
       <h3 className="text-title-md font-semibold text-on-surface">
-        Session Security
+        {t("auth.sessionSecurityTitle")}
       </h3>
       <p className="mt-2 text-body-md text-on-surface-variant">
-        Sign out all other sessions across your other devices and browsers.
-        This session will stay signed in.
+        {t("auth.sessionSecurityDescription")}
       </p>
 
       {user && (
         <div className="mt-4 rounded-lg bg-surface-container-low p-4">
-          <p className="text-label-md text-on-surface-variant">Current session</p>
+          <p className="text-label-md text-on-surface-variant">
+            {t("auth.currentSession")}
+          </p>
           <p className="mt-1 text-body-md font-medium text-on-surface">
             {user.email}
           </p>
           <p className="text-body-sm text-on-surface-variant">
-            Role: {user.role} &middot; Signed in to your active session
+            {t("auth.currentSessionRole", {
+              role: codeLabel(t, "audit.actorRole", user.role),
+            })}
           </p>
         </div>
       )}
@@ -73,13 +79,12 @@ export function SessionSecurity() {
           onClick={() => setShowConfirm(true)}
           className="mt-4 rounded-lg border border-outline-variant px-4 py-2 text-label-md text-on-surface transition-colors hover:bg-surface-container-low"
         >
-          Sign out all other sessions
+          {t("auth.signOutOtherSessions")}
         </button>
       ) : (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
           <p className="text-body-sm font-medium text-amber-800">
-            Are you sure? This will sign out every other device for your
-            account. This session will remain signed in.
+            {t("auth.revokeSessionsConfirm")}
           </p>
           <div className="mt-3 flex gap-2">
             <button
@@ -88,7 +93,9 @@ export function SessionSecurity() {
               disabled={isRevoking}
               className="rounded-lg bg-red-600 px-4 py-2 text-label-md text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isRevoking ? "Revoking..." : "Yes, revoke others"}
+              {isRevoking
+                ? t("auth.revokingSessions")
+                : t("auth.revokeSessionsConfirmAction")}
             </button>
             <button
               type="button"
@@ -96,7 +103,7 @@ export function SessionSecurity() {
               disabled={isRevoking}
               className="rounded-lg border border-outline-variant px-4 py-2 text-label-md text-on-surface transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>

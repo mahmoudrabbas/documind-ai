@@ -15,12 +15,17 @@ export async function createDocumentWithPrivatePolicy(
 ): Promise<DocumentDocument> {
   const tenantId = documentData.tenantId.toString();
   const ownerId = documentData.uploadedBy.toString();
-  const classificationId = await ensureInternalClassification(tenantId, ownerId);
+  const classificationId = documentData.classificationId ?? await ensureInternalClassification(tenantId, ownerId);
+  // The sensitivity level and its classification reference must stay consistent:
+  // an explicit level is only honored alongside a matching classificationId,
+  // otherwise the upload falls back to the ensured Internal record.
+  const classification = documentData.classificationId ? (documentData.classification ?? "internal") : "internal";
   const documentId = new mongoose.Types.ObjectId();
   const policyId = new mongoose.Types.ObjectId();
   const createdAt = new Date();
   const policy = createDefaultDocumentAccessPolicy({ tenantId, documentId: documentId.toString(), policyId: policyId.toString(),
-    ownerId, classificationId: classificationId.toString(), createdAt: createdAt.toISOString(), reason: "upload-private-default" });
+    ownerId, classificationId: classificationId.toString(), categoryId: documentData.categoryId?.toString() ?? null,
+    departmentId: documentData.departmentId?.toString() ?? null, createdAt: createdAt.toISOString(), reason: "upload-private-default" });
   const session = await mongoose.startSession();
   try {
     let created: DocumentDocument | null = null;
@@ -29,7 +34,7 @@ export async function createDocumentWithPrivatePolicy(
         throw new Error("UPLOAD_OWNER_INELIGIBLE");
       }
       [created] = await DocumentModel.create([{ ...documentData, _id: documentId, owner: documentData.uploadedBy,
-        classification: "internal", classificationId, activePolicyId: policyId, activePolicyVersion: 1, policyChangedAt: createdAt }], { session });
+        classification, classificationId, activePolicyId: policyId, activePolicyVersion: 1, policyChangedAt: createdAt }], { session });
       const snapshot = new DocumentAccessPolicyModel({ ...policy, rules: policy.rules.map((rule) => ({ ...rule, subject: { ...rule.subject }, actions: [...rule.actions] })),
         effectiveFrom: createdAt, effectiveUntil: null, provenance: { ...policy.provenance, createdAt }, createdAt });
       await snapshot.save({ session });

@@ -8,6 +8,8 @@ import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
 import PackageModel from "../../../db/models/package.model.js";
 import SubscriptionModel from "../../../db/models/subscription.model.js";
+import ConversationModel from "../../../db/models/conversation.model.js";
+import MessageModel from "../../../db/models/message.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import { getIntentQueryService } from "../intentQuery.factory.js";
@@ -22,6 +24,7 @@ let token: string;
 let employeeToken: string;
 let tenantId: string;
 let actorId: string;
+let employeeActorId: string;
 
 async function createServer() {
   return new Promise<Server>((resolve) => {
@@ -86,6 +89,8 @@ beforeEach(async () => {
   await UserModel.deleteMany({});
   await PackageModel.deleteMany({});
   await SubscriptionModel.deleteMany({});
+  await ConversationModel.deleteMany({});
+  await MessageModel.deleteMany({});
 
   const tenant = await TenantModel.create({
     name: "Api Corp",
@@ -189,7 +194,7 @@ beforeEach(async () => {
   });
   actorId = user.id;
 
-  await UserModel.create({
+  const employee = await UserModel.create({
     tenantId: tenant.id,
     name: "Regular Employee",
     email: "employee@api.com",
@@ -199,6 +204,7 @@ beforeEach(async () => {
     emailVerified: true,
     emailVerifiedAt: new Date(),
   });
+  employeeActorId = employee.id;
 
   token = await login(port, "api-corp", "admin@api.com");
   employeeToken = await login(port, "api-corp", "employee@api.com");
@@ -259,6 +265,41 @@ test("Intent Query HTTP API", async (t) => {
     });
 
     assert.equal(res.status, 403);
+  });
+
+  await t.test("POST /intent-query/analyze cannot consume another same-tenant actor's history", async () => {
+    await UserModel.updateOne({ _id: employeeActorId }, { status: "active" });
+    const conversation = await ConversationModel.create({
+      tenantId,
+      userId: actorId,
+      title: "Admin-only conversation",
+    });
+    await MessageModel.create({
+      tenantId,
+      conversationId: conversation._id,
+      role: "assistant",
+      content: "Secret prior context that must never reach the employee classifier.",
+      sequenceNumber: 0,
+    });
+
+    const res = await fetch(`http://127.0.0.1:${port}/intent-query/analyze`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${employeeToken}`,
+      },
+      body: JSON.stringify({
+        question: "What about that?",
+        conversationId: conversation.id,
+      }),
+    });
+
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      data: { queryPlan: { conversationContextUsed: boolean } };
+    };
+    assert.equal(body.data.queryPlan.conversationContextUsed, false);
+    assert.notEqual(employeeActorId, actorId);
   });
 
   await t.test("GET /intent-query/debug/:traceId - success for COMPANY_ADMIN", async () => {

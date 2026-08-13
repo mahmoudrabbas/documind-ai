@@ -137,6 +137,7 @@ describe("Phase 4 — createRetrievalService", () => {
         makeChunk({ _id: "chunk3", text: "Third chunk", classification: "public" }),
       ]),
       findOwnedDocumentIds: async (_tenantId, _actorId, docIds) => docIds,
+      findActiveDocumentIds: async (_tenantId, docIds) => docIds,
       resolveAccessContext: async (context) => ({ ...context, requiredAction: "use_in_ai" }),
       authorizeDocumentForAi: async () => {},
       ...overrides,

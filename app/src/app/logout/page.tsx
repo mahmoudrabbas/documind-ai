@@ -4,9 +4,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { clearAccessToken } from "@/lib/auth-tokens";
+import { useI18n } from "@/providers/i18n-provider";
 
 export default function LogoutPage() {
   const router = useRouter();
+  const { t } = useI18n();
 
   useEffect(() => {
     async function logout() {
@@ -30,9 +32,11 @@ export default function LogoutPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm shadow-slate-200/50">
-        <p className="text-sm font-medium text-slate-500">Signing you out…</p>
+        <p className="text-sm font-medium text-slate-500">
+          {t("auth.signingOut")}
+        </p>
         <h1 className="mt-4 text-2xl font-semibold text-slate-900">
-          Redirecting to login
+          {t("auth.redirectingToLogin")}
         </h1>
       </div>
     </main>

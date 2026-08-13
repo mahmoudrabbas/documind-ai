@@ -2,12 +2,22 @@ export type ImportBatchStatus =
   | "PENDING_MAPPING"
   | "VALIDATING"
   | "PROCESSING"
+  | "QUEUED"
   | "COMPLETED"
   | "PARTIALLY_COMPLETED"
   | "FAILED"
   | "CANCELLED";
 
-export type ImportRowState = "VALID" | "WARNING" | "INVALID";
+export type ImportRowState =
+  | "VALID"
+  | "WARNING"
+  | "INVALID"
+  | "CREATED"
+  | "INVITED"
+  | "FAILED"
+  | "SKIPPED"
+  | "PENDING"
+  | "PROCESSING";
 
 export interface BatchSummary {
   totalRows: number;
@@ -16,6 +26,16 @@ export interface BatchSummary {
   invalidRows: number;
   createdCount: number;
   failedCount: number;
+  skippedCount?: number;
+  valid?: number;
+  warning?: number;
+  invalid?: number;
+}
+
+export interface QuotaImpact {
+  currentUsers: number;
+  planLimit: number;
+  wouldExceed: boolean;
 }
 
 export interface ImportRowView {
@@ -24,6 +44,7 @@ export interface ImportRowView {
   data: Record<string, string>;
   errors?: string[];
   warnings?: string[];
+  errorMessage?: string;
 }
 
 export interface ImportBatchView {
@@ -48,6 +69,7 @@ export interface ImportPreview {
   columns: string[];
   rows: ImportRowView[];
   summary: BatchSummary;
+  quotaImpact?: QuotaImpact;
 }
 
 export interface SingleBatchResponse {

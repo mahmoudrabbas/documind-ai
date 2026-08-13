@@ -136,7 +136,7 @@ export function createRetrievalController(
   /**
    * POST /retrieval/search
    *
-   * Authenticated hybrid search endpoint (any role with DOCUMENTS_READ).
+   * Authenticated hybrid search endpoint (any role with DOCUMENTS_USE_IN_AI).
    */
   async function hybridSearch(
     req: Request,

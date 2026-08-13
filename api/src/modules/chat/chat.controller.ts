@@ -1,11 +1,53 @@
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
-import { UNAUTHORIZED, VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
+import {
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_RATE_LIMITED,
+  LLM_TIMEOUT,
+  UNAUTHORIZED,
+  VALIDATION_ERROR,
+} from "../../common/errors/errorCodes.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import type { OperationAuthorizationContext } from "../permissions/permissions.operation.js";
 import type { ChatService } from "./chat.service.js";
 import { ChatAttachmentIdParamSchema } from "./chat.validator.js";
+import type { ChatStageId } from "./chatWorkflowService.js";
+
+const STREAM_HEARTBEAT_MS = 5_000;
+
+const SAFE_STREAM_ERRORS = {
+  [LLM_RATE_LIMITED]: {
+    statusCode: 429,
+    message: "The AI service is temporarily rate-limited. Please try again shortly.",
+  },
+  [LLM_PROVIDER_UNAVAILABLE]: {
+    statusCode: 503,
+    message: "The AI service is temporarily unavailable. Please try again shortly.",
+  },
+  [LLM_TIMEOUT]: {
+    statusCode: 503,
+    message: "The AI service took too long to respond. Please try again.",
+  },
+} as const;
+
+function toSafeStreamError(error: unknown): {
+  code: string;
+  message: string;
+  statusCode: number;
+} {
+  if (error instanceof AppError) {
+    const safe = SAFE_STREAM_ERRORS[error.code as keyof typeof SAFE_STREAM_ERRORS];
+    if (safe) {
+      return { code: error.code, message: safe.message, statusCode: safe.statusCode };
+    }
+  }
+  return {
+    code: "CHAT_STREAM_FAILED",
+    message: "Failed to get a response. Please try again.",
+    statusCode: 502,
+  };
+}
 
 function operationContext(req: Request): OperationAuthorizationContext {
   const actor = requireAuthenticatedAuditActor({
@@ -62,6 +104,79 @@ export function createChatController(service: ChatService) {
         success: true,
         data: result,
       });
+    } catch (error) {
+      handleChatError(error, res, next);
+    }
+  }
+
+  async function sendMessageStream(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      if (!req.auth || !req.tenantId) {
+        throw new AppError(401, UNAUTHORIZED, "Authentication required");
+      }
+
+      const context = operationContext(req);
+
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      let closed = false;
+      let lastStage: ChatStageId = "intent";
+      const writeEvent = (event: string, data: unknown): void => {
+        if (closed || res.writableEnded) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+      const heartbeat = setInterval(() => {
+        if (closed || res.writableEnded) {
+          clearInterval(heartbeat);
+          return;
+        }
+        res.write(": ping\n\n");
+      }, STREAM_HEARTBEAT_MS);
+      req.on("close", () => {
+        clearInterval(heartbeat);
+      });
+      res.on("close", () => {
+        if (!res.writableEnded) {
+          // Client disconnect stops writes but not the run: the user message
+          // is already persisted and a retry would re-consume entitlement quota.
+          closed = true;
+        }
+        clearInterval(heartbeat);
+      });
+
+      writeEvent("stage", { stage: "intent" });
+
+      try {
+        const result = await service.sendMessageStream(req.body, {
+          ...context,
+          onStage: (stage: ChatStageId) => {
+            if (stage === lastStage) return;
+            lastStage = stage;
+            writeEvent("stage", { stage });
+          },
+        });
+        clearInterval(heartbeat);
+        writeEvent("done", { success: true, data: result });
+        res.end();
+      } catch (error) {
+        clearInterval(heartbeat);
+        const safeError = toSafeStreamError(error);
+        writeEvent("error", {
+          success: false,
+          error: safeError.code,
+          message: safeError.message,
+          statusCode: safeError.statusCode,
+        });
+        res.end();
+      }
     } catch (error) {
       handleChatError(error, res, next);
     }
@@ -229,6 +344,7 @@ export function createChatController(service: ChatService) {
 
   return {
     sendMessage,
+    sendMessageStream,
     sendVisionMessage,
     transcribeAudio,
     getAttachment,

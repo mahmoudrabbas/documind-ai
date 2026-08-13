@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface ImportErrorBannerProps {
   message: string | null;
@@ -13,6 +14,8 @@ export function ImportErrorBanner({
   onDismiss,
   className,
 }: ImportErrorBannerProps) {
+  const { t } = useI18n();
+
   if (!message) return null;
 
   return (
@@ -32,7 +35,7 @@ export function ImportErrorBanner({
           type="button"
           onClick={onDismiss}
           className="shrink-0 rounded p-0.5 text-red-500 transition-colors hover:bg-red-100"
-          aria-label="Dismiss error"
+          aria-label={t("common.dismissError")}
         >
           <span className="material-symbols-outlined text-[18px]">close</span>
         </button>

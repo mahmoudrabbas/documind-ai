@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AssistantIntentKind,
   ClarificationRequest,
   DetectedEntity,
   IntentClass,
@@ -45,12 +46,14 @@ export const IntentAgentOutputSchema = z
     language: QueryLanguage,
     route: QueryRoute,
     intent: IntentClass,
+    assistantKind: AssistantIntentKind.nullable().default(null),
     intentConfidence: z.number().min(0).max(1),
     referencedDocumentIds: boundedIdArray(20).default([]),
     clarificationNeeded: z.boolean().default(false),
     clarification: ClarificationRequest.nullable().default(null),
     socialSubtype: SocialSubtype.optional(),
     isFollowUp: z.boolean().default(false),
+    conversationContextUsed: z.boolean().default(false),
     // Issue 3 extension: typed search-plan metadata. All fields are bounded
     // and never carry raw document/chunk text. Non-retrieval routes
     // (social / unsupported / unsafe / clarification) always emit empty
@@ -81,6 +84,9 @@ export const AnswerWriterInputSchema = z
     language: QueryLanguage.optional(),
     approvedEvidenceIds: boundedIdArray(100).optional(),
     referencedDocumentIds: boundedIdArray(20).optional(),
+    task: z.enum(["direct_question", "document_summary"]).default("direct_question"),
+    citationsEnabled: z.boolean().default(true),
+    maxTokens: z.number().int().min(128).max(8192).default(1024),
   })
   .strict();
 
@@ -109,6 +115,7 @@ export const CitationVerifierInputSchema = z
     citedChunkIds: boundedIdArray(50),
     approvedEvidenceIds: boundedIdArray(100).optional(),
     answerText: z.string().max(20_000).optional(),
+    questionText: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
 
@@ -117,6 +124,9 @@ export type CitationVerifierInput = z.infer<typeof CitationVerifierInputSchema>;
 export const CitationVerifierReasonCode = z.enum([
   "CITATIONS_VERIFIED",
   "MISSING_CITATIONS",
+  "UNSUPPORTED_CLAIMS",
+  "UNRESOLVED_CLAIMS",
+  "VERIFICATION_BOUNDS_EXCEEDED",
   "CITATIONS_SKIPPED",
 ]);
 export type CitationVerifierReasonCodeValue = z.infer<
@@ -128,12 +138,19 @@ export const CitationVerifierOutputSchema = z
     verified: z.boolean(),
     validatedCitationIds: boundedIdArray(50).default([]),
     rejectedCitationIds: boundedIdArray(50).default([]),
-    // Claim-level checks are an explicit extension point (no LLM in the
-    // deterministic core): always empty until a claim-extraction path exists.
+    // Bounded factual claims that were absent from or contradicted by the
+    // authorized cited evidence.
     unsupportedClaims: z
       .array(z.string().trim().min(1).max(500))
       .max(20)
       .default([]),
+    unknownClaims: z
+      .array(z.string().trim().min(1).max(500))
+      .max(20)
+      .optional(),
+    // The exact answer that passed the mandatory final semantic gate. The
+    // workflow never substitutes this unless verified is true.
+    verifiedAnswer: z.string().trim().min(1).max(20_000).optional(),
     reasonCode: CitationVerifierReasonCode,
   })
   .strict();

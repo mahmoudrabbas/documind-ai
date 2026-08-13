@@ -131,6 +131,7 @@ function buildHarness(
   registerAnswerWriterAgentExecutor(executorRegistry, deps);
 
   const persistence = new InMemorySupervisorPersistence();
+  persistence.seedPendingRun("run-1", TENANT_ID);
   const runtime = new SupervisorRuntime({
     model,
     workflowRegistry: createChatWorkflowRegistry(),
@@ -160,7 +161,7 @@ describe("SupervisorRuntime + answer-writer-agent integration", () => {
     assert.equal(result.handoffsCount, 2);
     assert.equal(result.totalSteps, 4);
     assert.deepEqual(calls, [SUP, "answer-writer-agent", SUP]);
-    assert.ok((result.totalTokensUsed as number) > 30, "executor tokens were traced");
+    assert.ok((result.totalTokensUsed as number) > 90, "supervisor and executor tokens were traced");
 
     const writerHandoffStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "handoff" && step.handoffToAgent === "answer-writer-agent",
@@ -203,7 +204,7 @@ describe("SupervisorRuntime + answer-writer-agent integration", () => {
     const result = await runtime.execute(baseRunInput());
 
     assert.equal(result.status, "completed");
-    assert.equal(result.totalTokensUsed, 0, "no LLM call means no executor-reported usage");
+    assert.equal(result.totalTokensUsed, 90, "only supervisor decisions consume tokens");
 
     const writerExecutionStep = Array.from(persistence.steps.values()).find(
       (step) => step.action === "execute" && step.agentName === "answer-writer-agent",
@@ -234,12 +235,14 @@ describe("SupervisorRuntime + answer-writer-agent integration", () => {
       toolRegistry.register(tool);
     }
     const executorRegistry = new AgentExecutorRegistry(createChatAgentRegistry());
+    const persistence = new InMemorySupervisorPersistence();
+    persistence.seedPendingRun("run-1", TENANT_ID);
     const runtime = new SupervisorRuntime({
       model,
       workflowRegistry: createChatWorkflowRegistry(),
       executorRegistry,
       toolRegistry,
-      persistence: new InMemorySupervisorPersistence(),
+      persistence,
     });
 
     const result = await runtime.execute(baseRunInput());

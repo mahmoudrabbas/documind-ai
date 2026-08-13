@@ -13,6 +13,7 @@ import {
   archivePackage,
   activatePackage,
   getSubscriptionDetail,
+  listSubscriptions,
   previewSubscriptionImpact,
   provisionSubscription,
   updateSubscription,
@@ -35,6 +36,22 @@ describe("super-admin.service subscription operations", () => {
     await previewSubscriptionImpact("tenant/id", { action: "update", packageId: "pkg", expectedVersion: 2 });
     expect(mockApiClient).toHaveBeenNthCalledWith(1, "/platform/subscriptions/tenant%2Fid", { signal: undefined });
     expect(mockApiClient).toHaveBeenNthCalledWith(2, "/platform/subscriptions/tenant%2Fid/impact?action=update&expectedVersion=2&packageId=pkg", { signal: undefined });
+  });
+
+  it("lists subscriptions with server-side paging, search, and status params", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: { subscriptions: [], pagination: { page: 2, pageSize: 20, totalPages: 3, totalRecords: 45 } } });
+    const result = await listSubscriptions({ page: 2, pageSize: 20, search: "acme", status: "active" });
+    expect(mockApiClient).toHaveBeenCalledWith(
+      "/platform/subscriptions?page=2&pageSize=20&search=acme&status=active",
+      { signal: undefined },
+    );
+    expect(result.data.pagination.totalRecords).toBe(45);
+  });
+
+  it("omits optional search and status params when absent", async () => {
+    mockApiClient.mockResolvedValue({ success: true, data: { subscriptions: [], pagination: { page: 1, pageSize: 100, totalPages: 0, totalRecords: 0 } } });
+    await listSubscriptions({ page: 1, pageSize: 100 });
+    expect(mockApiClient).toHaveBeenCalledWith("/platform/subscriptions?page=1&pageSize=100", { signal: undefined });
   });
 
   it("uses POST for provision and PATCH for existing updates with stable caller keys", async () => {

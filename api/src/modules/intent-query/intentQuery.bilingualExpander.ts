@@ -16,6 +16,10 @@ const BILINGUAL_DICTIONARY: { en: string[]; ar: string[] }[] = [
   { en: ["code of conduct", "ethics"], ar: ["قواعد السلوك", "اخلاقيات", "أخلاقيات العمل"] },
   { en: ["compliance"], ar: ["امتثال", "التزام"] },
   { en: ["work", "job", "employment"], ar: ["عمل", "وظيفة", "توظيف"] },
+  {
+    en: ["remote work", "work remotely", "remote-work arrangement"],
+    ar: ["العمل عن بعد", "عمل عن بعد", "يعمل عن بعد"],
+  },
 ];
 
 /**
@@ -88,8 +92,11 @@ export function expandBilingual(
   const expandedArTerms: string[] = [];
   const expandedEnTerms: string[] = [];
 
-  for (const word of words) {
-    const expansions = getExpansions(word);
+  // Evaluate the bounded full question as well as individual tokens so known
+  // multi-word enterprise concepts survive cross-language retrieval. The
+  // dictionary remains static; user text is never compiled into a pattern.
+  for (const term of [cleanTextForExpansion, ...words]) {
+    const expansions = getExpansions(term);
     expansions.en.forEach(w => expandedEnTerms.push(w));
     expansions.ar.forEach(w => expandedArTerms.push(w));
   }

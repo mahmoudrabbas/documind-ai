@@ -22,6 +22,38 @@ describe("checkout-state", () => {
     ).toBe(false);
   });
 
+  it("treats a provider-backed subscription with an effective scheduled cancellation as non-blocking", () => {
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    expect(
+      hasBlockingProviderSubscription({
+        status: "CANCEL_AT_PERIOD_END",
+        providerLinked: true,
+        cancelAtPeriodEnd: true,
+        periodEnd: past,
+      }),
+    ).toBe(false);
+
+    expect(
+      hasBlockingProviderSubscription({
+        status: "ACTIVE",
+        providerLinked: true,
+        cancelAtPeriodEnd: true,
+        periodEnd: past,
+      }),
+    ).toBe(false);
+
+    expect(
+      hasBlockingProviderSubscription({
+        status: "CANCEL_AT_PERIOD_END",
+        providerLinked: true,
+        cancelAtPeriodEnd: true,
+        periodEnd: future,
+      }),
+    ).toBe(true);
+  });
+
   it("resolves the current package id from populated or raw values", () => {
     expect(
       getCurrentPackageId({

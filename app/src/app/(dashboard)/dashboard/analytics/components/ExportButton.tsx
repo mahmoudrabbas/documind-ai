@@ -2,12 +2,14 @@
 
 import React, { useState } from "react";
 import { triggerAnalyticsExport, getAnalyticsExportStatus } from "@/services/analytics.service";
+import { useI18n } from "@/providers/i18n-provider";
 
 interface ExportButtonProps {
   filters?: Record<string, string>;
 }
 
 export function ExportButton({ filters }: ExportButtonProps) {
+  const { t } = useI18n();
   const [exporting, setExporting] = useState(false);
   const [format, setFormat] = useState<"csv" | "xlsx">("csv");
 
@@ -23,7 +25,7 @@ export function ExportButton({ filters }: ExportButtonProps) {
         if (attempts > 10) {
           clearInterval(interval);
           setExporting(false);
-          alert("Export timed out. Please check back shortly.");
+          alert(t("analytics.exportTimeout"));
           return;
         }
 
@@ -56,7 +58,7 @@ export function ExportButton({ filters }: ExportButtonProps) {
           } else if (statusRes.data.status === "failed") {
             clearInterval(interval);
             setExporting(false);
-            alert(`Export failed: ${statusRes.data.error || "Unknown error"}`);
+            alert(t("analytics.exportFailed", { error: statusRes.data.error || "Unknown error" }));
           }
         } catch {
           // Keep polling
@@ -64,7 +66,7 @@ export function ExportButton({ filters }: ExportButtonProps) {
       }, 1000);
     } catch (err: unknown) {
       setExporting(false);
-      alert(`Failed to start export: ${err instanceof Error ? err.message : String(err)}`);
+      alert(t("analytics.exportFailed", { error: err instanceof Error ? err.message : String(err) }));
     }
   };
 
@@ -74,6 +76,7 @@ export function ExportButton({ filters }: ExportButtonProps) {
         value={format}
         onChange={(e) => setFormat(e.target.value as "csv" | "xlsx")}
         disabled={exporting}
+        aria-label={t("analytics.exportFormat")}
         className="rounded-xl border border-outline-variant/40 bg-surface px-3 py-1.5 text-body-sm text-on-surface focus:border-primary focus:outline-none"
       >
         <option value="csv">CSV (.csv)</option>
@@ -86,7 +89,7 @@ export function ExportButton({ filters }: ExportButtonProps) {
         disabled={exporting}
         className="inline-flex items-center rounded-xl bg-primary px-4 py-2 text-label-md font-bold text-on-primary hover:opacity-90 disabled:opacity-50 transition-opacity shadow-sm"
       >
-        {exporting ? "Exporting..." : "Export Data"}
+        {exporting ? t("analytics.exporting") : t("analytics.exportData")}
       </button>
     </div>
   );

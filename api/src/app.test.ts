@@ -29,6 +29,7 @@ import UsageLogModel from "./db/models/usageLog.model.js";
 import KnowledgeGapModel from "./db/models/knowledgeGap.model.js";
 import PackageModel from "./db/models/package.model.js";
 import SubscriptionModel from "./db/models/subscription.model.js";
+import PlatformSettingModel from "./db/models/platformSetting.model.js";
 import { PLATFORM_TENANT_SLUG } from "./common/auth/platformTenant.js";
 import { createEmailVerificationTokenForUser } from "./modules/auth/auth.service.js";
 import { USER_INVITATION_PURPOSE } from "./modules/auth/emailVerificationToken.js";
@@ -277,7 +278,24 @@ function tinyPngBuffer(): Buffer {
   );
 }
 
+function assertDisposableDatabase(): void {
+  const uri = process.env.MONGODB_URI ?? "";
+  let dbName = "";
+  try {
+    dbName = new URL(uri).pathname.replace(/^\//, "");
+  } catch {
+    dbName = "";
+  }
+  if (!/test/i.test(dbName) && process.env.ALLOW_DESTRUCTIVE_APP_TESTS !== "true") {
+    throw new Error(
+      `app.test.ts wipes collections via deleteMany({}) and refuses to run against database "${dbName || "<none>"}". ` +
+        `Point MONGODB_URI at a disposable database (name containing "test") or set ALLOW_DESTRUCTIVE_APP_TESTS=true to override.`,
+    );
+  }
+}
+
 before(async () => {
+  assertDisposableDatabase();
   await connectDB();
   await connectRedis();
   await UsageLogModel.syncIndexes();
@@ -293,6 +311,7 @@ beforeEach(async () => {
   await UsageLogModel.deleteMany({});
   await SubscriptionModel.deleteMany({});
   await PackageModel.deleteMany({});
+  await PlatformSettingModel.deleteMany({});
 });
 
 after(async () => {

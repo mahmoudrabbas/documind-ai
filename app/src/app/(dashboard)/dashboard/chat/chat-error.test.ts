@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import { ApiError } from "@/lib/api-client";
 import { t as translateKey } from "@/lib/i18n/i18n.utils";
+import ar from "@/lib/i18n/translations/ar";
 import en from "@/lib/i18n/translations/en";
+import { ChatStreamError, sendMessageStream } from "@/services/chat.service";
 import { getChatErrorPresentation } from "./chat-error";
 
 const translate = (key: string) => translateKey(en, key);
+const translateAr = (key: string) => translateKey(ar, key);
 
 describe("chat provider error presentation", () => {
   it("shows a recoverable rate-limit state with retry delay", () => {
@@ -16,20 +19,104 @@ describe("chat provider error presentation", () => {
       retryAfterSeconds: 37,
     }), translate);
     expect(presentation).toEqual({
-      message: "The AI provider is temporarily rate-limited. Please try again shortly.",
+      message: "The AI service is temporarily rate-limited. Please try again shortly.",
       retryAfterSeconds: 37,
     });
   });
 
   it.each([
-    ["LLM_PROVIDER_UNAVAILABLE", "The AI provider is temporarily unavailable. Please try again shortly."],
-    ["LLM_TIMEOUT", "The AI provider timed out. Please try again."],
+    ["LLM_PROVIDER_UNAVAILABLE", "The AI service is temporarily unavailable. Please try again shortly."],
+    ["LLM_TIMEOUT", "The AI service took too long to respond. Please try again."],
     ["RETRIEVAL_UNAVAILABLE", "Document search is temporarily unavailable. Please try again shortly."],
   ])("distinguishes %s", (code, message) => {
     expect(getChatErrorPresentation(new ApiError({ status: 503, code, message: "ignored" }), translate)).toEqual({
       message,
       retryAfterSeconds: null,
     });
+  });
+
+  it("maps the canonical entitlement quota denial", () => {
+    expect(getChatErrorPresentation(new ApiError({
+      status: 429,
+      code: "ENTITLEMENT_EXCEEDED",
+      message: "quota exhausted",
+      retryAfterSeconds: 60,
+    }), translate)).toEqual({
+      message: "The AI service quota has been exhausted. Please try again later or contact your administrator.",
+      retryAfterSeconds: 60,
+    });
+  });
+
+  it.each([
+    [
+      "LLM_RATE_LIMITED",
+      "The AI service is temporarily rate-limited. Please try again shortly.",
+    ],
+    [
+      "LLM_PROVIDER_UNAVAILABLE",
+      "The AI service is temporarily unavailable. Please try again shortly.",
+    ],
+    [
+      "LLM_TIMEOUT",
+      "The AI service took too long to respond. Please try again.",
+    ],
+  ])("distinguishes stream error %s", (code, message) => {
+    expect(getChatErrorPresentation(
+      new ChatStreamError("raw backend message", code, 503, true),
+      translate,
+    )).toEqual({ message, retryAfterSeconds: null });
+  });
+
+  it.each([
+    [
+      "LLM_RATE_LIMITED",
+      "خدمة الذكاء الاصطناعي تواجه ضغطًا مؤقتًا. يرجى المحاولة مرة أخرى بعد قليل.",
+    ],
+    [
+      "LLM_PROVIDER_UNAVAILABLE",
+      "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا. يرجى المحاولة مرة أخرى بعد قليل.",
+    ],
+    [
+      "LLM_TIMEOUT",
+      "استغرقت خدمة الذكاء الاصطناعي وقتًا أطول من المتوقع. يرجى المحاولة مرة أخرى.",
+    ],
+    [
+      "ENTITLEMENT_EXCEEDED",
+      "تم استنفاد حصة خدمة الذكاء الاصطناعي. يرجى المحاولة لاحقًا أو التواصل مع المسؤول.",
+    ],
+  ])("localizes Arabic stream error %s", (code, message) => {
+    expect(getChatErrorPresentation(
+      new ChatStreamError("raw backend message", code, 503, true),
+      translateAr,
+    )).toEqual({ message, retryAfterSeconds: null });
+  });
+
+  it("keeps unknown stream error codes generic", () => {
+    expect(getChatErrorPresentation(
+      new ChatStreamError("raw backend message org_123", "RAW_PROVIDER_ERROR", 502, true),
+      translate,
+    )).toEqual({
+      message: "Failed to get a response. Please try again.",
+      retryAfterSeconds: null,
+    });
+  });
+
+  it("preserves a canonical code supplied in the SSE code field", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(
+      [
+        'event: stage\ndata: {"stage":"intent"}\n\n',
+        'event: error\ndata: {"code":"LLM_TIMEOUT","message":"safe","statusCode":503}\n\n',
+      ].join(""),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    )));
+    try {
+      await expect(sendMessageStream({ message: "hello" }, {})).rejects.toMatchObject({
+        code: "LLM_TIMEOUT",
+        statusCode: 503,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("does not display arbitrary provider payload text", () => {
@@ -44,7 +131,15 @@ describe("chat provider error presentation", () => {
     const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
     expect(source).toContain("isTyping || retryAfterSeconds !== null");
     expect(source).toContain("disabled={!input.trim() || isTyping || retryAfterSeconds !== null}");
-    expect(source).toContain("Retry in ${retryAfterSeconds}s.");
+    expect(source).toContain('t("chat.error.retryCountdown"');
+    expect(source).toContain("setIsTyping(false);");
+    expect(source).toContain("setProgressStage(null);");
+  });
+
+  it("does not create stale assistant source bubbles on failed provider responses", async () => {
+    const source = await readFile(new URL("./chat-client.tsx", import.meta.url), "utf8");
+    expect(source).toContain("setError(presentation.message);");
+    expect(source).not.toContain("role: \"assistant\",\\n        content: presentation.message");
   });
 
   it("surfaces entitlement denials with an UpgradePrompt banner that keeps the conversation intact", async () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getCompanyUsage } from "@/services/entitlement.service";
-import { useI18n } from "@/providers/i18n-provider";
+import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 
 /* ------------------------------------------------------------------ */
 /*  Types & card definitions                                          */
@@ -72,22 +72,38 @@ function statusColor(percent: number): string {
   return "#22C55E";
 }
 
-function formatValue(value: number, dimension: string): string {
+function formatValue(
+  value: number,
+  dimension: string,
+  t: (key: string) => string,
+  locale: string,
+): string {
   if (value === 0) return "0";
   if (dimension === "storageMb") {
-    if (value >= 1024) return `${(value / 1024).toFixed(1)} GB`;
-    return `${value.toLocaleString()} MB`;
+    if (value >= 1000) {
+      const gb = Math.round(value % 1000 === 0 ? value / 1000 : value / 1024);
+      return `${gb} ${t("common.unitGB")}`;
+    }
+    return `${value.toLocaleString(locale)} ${t("common.unitMB")}`;
   }
-  return value.toLocaleString();
+  return value.toLocaleString(locale);
 }
 
-function formatLimit(value: number, dimension: string): string {
-  if (value === 0) return "Unlimited";
+function formatLimit(
+  value: number,
+  dimension: string,
+  t: (key: string) => string,
+  locale: string,
+): string {
+  if (value === 0) return t("common.unlimited");
   if (dimension === "storageMb") {
-    if (value >= 1024) return `${(value / 1024).toFixed(1)} GB`;
-    return `${value.toLocaleString()} MB`;
+    if (value >= 1000) {
+      const gb = Math.round(value % 1000 === 0 ? value / 1000 : value / 1024);
+      return `${gb} ${t("common.unitGB")}`;
+    }
+    return `${value.toLocaleString(locale)} ${t("common.unitMB")}`;
   }
-  return value.toLocaleString();
+  return value.toLocaleString(locale);
 }
 
 /* ------------------------------------------------------------------ */
@@ -98,6 +114,7 @@ export default function MetricsCards() {
   const [view, setView] = useState<ViewState>({ status: "loading" });
   const [retryCount, setRetryCount] = useState(0);
   const { t } = useI18n();
+  const intlLocale = useIntlLocale();
 
   const fetchMetrics = useCallback(async (signal: AbortSignal) => {
     setView({ status: "loading" });
@@ -209,7 +226,7 @@ export default function MetricsCards() {
         const pct = usagePercent(current, limit);
 
         const displayValue = hasData
-          ? formatValue(current, def.dimension)
+          ? formatValue(current, def.dimension, t, intlLocale)
           : "\u2014";
 
         return (
@@ -252,8 +269,10 @@ export default function MetricsCards() {
                   />
                 </div>
                 <p className="mt-1 text-label-sm text-on-surface-variant">
-                  {current.toLocaleString()} /{" "}
-                  {formatLimit(limit, def.dimension)} used
+                  {t("dashboard.usedOfLimit", {
+                    current: current.toLocaleString(intlLocale),
+                    limit: formatLimit(limit, def.dimension, t, intlLocale),
+                  })}
                 </p>
               </>
             )}
@@ -261,7 +280,9 @@ export default function MetricsCards() {
             {/* Unlimited label */}
             {hasData && !showLimit && (
               <p className="mt-1 text-label-sm text-on-surface-variant">
-                {current.toLocaleString()} used
+                {t("dashboard.usedUnlimited", {
+                  current: current.toLocaleString(intlLocale),
+                })}
               </p>
             )}
           </div>

@@ -10,7 +10,7 @@ const ocrConfigSchema = z.object({
   retryDelayMs: z.coerce.number().int().min(0).default(1_000),
   confidenceThreshold: z.coerce.number().min(0).max(1).default(0.7),
   criticalConfidenceThreshold: z.coerce.number().min(0).max(1).default(0.4),
-  maxPages: z.coerce.number().int().positive().default(500),
+  maxPages: z.coerce.number().int().positive().default(2000),
   maxFileSizeBytes: z.coerce.number().int().positive().default(50 * 1024 * 1024),
   ocrServiceUrl: z.string().url().default("http://localhost:8501"),
 });
