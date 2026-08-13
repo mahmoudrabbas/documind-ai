@@ -94,6 +94,7 @@ export default function CompanyEmailsPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
+        guideId="page-heading-emails"
         title="Email Delivery Log"
         description="Monitor outgoing emails sent from your organization."
         actions={
@@ -111,7 +112,7 @@ export default function CompanyEmailsPage() {
         {error ? (
           <div className="p-8 text-center text-error">{error}</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" data-guide-id="emails-table">
             <table className="w-full text-left text-sm">
               <thead className="bg-surface-container-high border-b border-outline-variant text-on-surface-variant text-xs font-semibold uppercase">
                 <tr>
@@ -141,6 +142,7 @@ export default function CompanyEmailsPage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        data-guide-id="emails-details-button"
                         onClick={() => {
                           setPreviewData({
                             subject: email.subject || "No Subject",
@@ -158,6 +160,7 @@ export default function CompanyEmailsPage() {
                           variant="outline"
                           size="sm"
                           disabled={resendCooldowns[email._id] === true}
+                          data-guide-id="emails-resend-button"
                           title={
                             resendCooldowns[email._id] === true
                               ? "Rate limited. Try again after the cooldown."

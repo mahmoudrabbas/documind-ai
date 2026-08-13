@@ -120,11 +120,13 @@ export default function AnalyticsPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
+        guideId="page-heading-analytics"
         title="Token, Cost & Quality Analytics"
         description="Real-time operational telemetry, LLM token expenditure, and AI quality metrics across your organization."
-        actions={<ExportButton filters={{ startDate: filters.startDate, endDate: filters.endDate }} />}
+        actions={<div data-guide-id="analytics-export"><ExportButton filters={{ startDate: filters.startDate, endDate: filters.endDate }} /></div>}
       />
 
+      <div data-guide-id="analytics-filter-bar">
       <AnalyticsFilterBar
         startDate={filters.startDate}
         endDate={filters.endDate}
@@ -132,6 +134,7 @@ export default function AnalyticsPage() {
         model={filters.model}
         onFilterChange={setFilters}
       />
+      </div>
 
       {error && (
         <DashboardPanel className="mt-4">
@@ -199,7 +202,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Time Series & Cost Breakdown Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-guide-id="analytics-charts">
             <div className="lg:col-span-2">
               <TimeSeriesChart data={timeSeries} metricKey="queries" title="Daily Query Volume & Activity" />
             </div>

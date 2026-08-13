@@ -644,6 +644,7 @@ export function ChatClient() {
           <h2 className="text-title-sm font-bold text-on-surface">Conversations</h2>
           <button
             onClick={() => handleNewConversation()}
+            data-guide-id="chat-new-conversation"
             className="mt-3 flex w-full items-center gap-2 rounded-xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
@@ -710,7 +711,10 @@ export function ChatClient() {
                 </span>
               </div>
               <div>
-                <h3 className="text-title-lg font-bold text-on-surface">
+                <h3
+                  data-guide-id="page-heading-chat"
+                  className="text-title-lg font-bold text-on-surface"
+                >
                   DocuMind AI
                 </h3>
                 <p className="mt-1 max-w-sm text-sm text-on-surface-variant">
@@ -718,7 +722,7 @@ export function ChatClient() {
                   answers sourced from your knowledge base.
                 </p>
               </div>
-              <div className="flex flex-wrap justify-center gap-2">
+              <div className="flex flex-wrap justify-center gap-2" data-guide-id="chat-suggestions">
                 {SUGGESTED_QUESTIONS.map((q) => (
                   <button
                     key={q}
@@ -791,7 +795,7 @@ export function ChatClient() {
                         <AssistantMarkdown content={msg.content} />
                       )}
                     {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 border-t border-outline-variant/20 pt-2">
+                      <div className="mt-3 border-t border-outline-variant/20 pt-2" data-guide-id="chat-sources">
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant">
                           Sources
                         </p>
@@ -830,10 +834,12 @@ export function ChatClient() {
                       </div>
                     )}
                     {msg.role === "assistant" && activeConversation && (
+                      <div data-guide-id="chat-feedback">
                       <FeedbackWidget
                         messageId={msg.id}
                         conversationId={activeConversation}
                       />
+                      </div>
                     )}
                   </div>
                   {msg.role === "user" && (
@@ -944,6 +950,7 @@ export function ChatClient() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={retryAfterSeconds !== null}
+                data-guide-id="chat-image-attach"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                 title={t("chat.attachImage")}
               >
@@ -961,6 +968,7 @@ export function ChatClient() {
               <button
                 onClick={toggleRecording}
                 disabled={isTranscribing || retryAfterSeconds !== null}
+                data-guide-id="chat-voice-input"
                 className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors ${
                   isRecording
                     ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
@@ -985,6 +993,7 @@ export function ChatClient() {
               </button>
               <textarea
                 value={input}
+                data-guide-id="chat-message-input"
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -999,6 +1008,7 @@ export function ChatClient() {
               />
               <button
                 onClick={() => handleSend()}
+                data-guide-id="chat-send-button"
                 disabled={!input.trim() || isTyping || retryAfterSeconds !== null}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
               >

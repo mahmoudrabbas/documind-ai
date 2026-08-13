@@ -22,15 +22,19 @@ export function DashboardPageHeader({
   description,
   actions,
   className,
+  guideId,
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   className?: string;
+  /** Optional `data-guide-id` anchor for the copilot guide overlay. */
+  guideId?: string;
 }) {
   return (
     <header
+      data-guide-id={guideId}
       className={cn(
         "mb-6 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between",
         className,

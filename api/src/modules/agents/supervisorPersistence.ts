@@ -5,12 +5,16 @@ import {
   createApproval,
   createStep,
   createToolCall,
+  getApproval as getApprovalRecord,
+  getRun as getRunRecord,
+  listApprovalsForRun,
   resolveApproval,
   startRun,
 } from "./agents.repository.js";
 import type {
   ApprovalRecord,
   RunRecord,
+  RunSeed,
   RunStatus,
   StepGuardrailRecord,
   StepRecord,
@@ -113,7 +117,17 @@ export interface SupervisorRunPatch {
  * implementation exists so the runtime is fully testable without a database.
  */
 export interface SupervisorPersistence {
-  startRun(tenantId: string, runId: string): Promise<RunRecord | null>;
+  /**
+   * Marks an existing pending run as running, or (when a `seed` is provided)
+   * materializes the run row first so supervisors that never pre-created one
+   * (e.g. the copilot supervisor) still get a durable, queryable run.
+   */
+  startRun(
+    tenantId: string,
+    runId: string,
+    seed?: RunSeed,
+  ): Promise<RunRecord | null>;
+  getRun(tenantId: string, runId: string): Promise<RunRecord | null>;
   completeRun(
     tenantId: string,
     runId: string,
@@ -132,6 +146,11 @@ export interface SupervisorPersistence {
     patch: SupervisorToolCallPatch,
   ): Promise<ToolCallRecord | null>;
   createApproval(draft: SupervisorApprovalDraft): Promise<ApprovalRecord>;
+  getApproval(
+    tenantId: string,
+    approvalId: string,
+  ): Promise<ApprovalRecord | null>;
+  listApprovals(tenantId: string, runId: string): Promise<ApprovalRecord[]>;
   resolveApproval(
     tenantId: string,
     approvalId: string,
@@ -142,8 +161,16 @@ export interface SupervisorPersistence {
 }
 
 export class MongoSupervisorPersistence implements SupervisorPersistence {
-  startRun(tenantId: string, runId: string): Promise<RunRecord | null> {
-    return startRun(tenantId, runId);
+  startRun(
+    tenantId: string,
+    runId: string,
+    seed?: RunSeed,
+  ): Promise<RunRecord | null> {
+    return startRun(tenantId, runId, seed);
+  }
+
+  getRun(tenantId: string, runId: string): Promise<RunRecord | null> {
+    return getRunRecord(tenantId, runId);
   }
 
   completeRun(
@@ -210,6 +237,17 @@ export class MongoSupervisorPersistence implements SupervisorPersistence {
       ttlMs: draft.ttlMs,
       traceId: draft.traceId,
     });
+  }
+
+  getApproval(
+    tenantId: string,
+    approvalId: string,
+  ): Promise<ApprovalRecord | null> {
+    return getApprovalRecord(tenantId, approvalId);
+  }
+
+  listApprovals(tenantId: string, runId: string): Promise<ApprovalRecord[]> {
+    return listApprovalsForRun(tenantId, runId);
   }
 
   resolveApproval(
@@ -289,6 +327,12 @@ export class InMemorySupervisorPersistence implements SupervisorPersistence {
     };
     this.runs.set(runId, started);
     return Promise.resolve(started);
+  }
+
+  getRun(tenantId: string, runId: string): Promise<RunRecord | null> {
+    const run = this.runs.get(runId);
+    if (!run || run.tenantId !== tenantId) return Promise.resolve(null);
+    return Promise.resolve(run);
   }
 
   completeRun(
@@ -418,6 +462,22 @@ export class InMemorySupervisorPersistence implements SupervisorPersistence {
     };
     this.approvals.set(approval.id, approval);
     return Promise.resolve(approval);
+  }
+
+  getApproval(
+    _tenantId: string,
+    approvalId: string,
+  ): Promise<ApprovalRecord | null> {
+    const approval = this.approvals.get(approvalId);
+    if (!approval) return Promise.resolve(null);
+    return Promise.resolve(approval);
+  }
+
+  listApprovals(_tenantId: string, runId: string): Promise<ApprovalRecord[]> {
+    const approvals = [...this.approvals.values()].filter(
+      (approval) => approval.runId === runId,
+    );
+    return Promise.resolve(approvals);
   }
 
   resolveApproval(

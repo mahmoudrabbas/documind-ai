@@ -14,6 +14,8 @@ export interface FileDropzoneProps {
   browseText?: string;
   fileRequirementsText?: string;
   selectedFileLabel?: string;
+  /** Optional `data-guide-id` anchor for the copilot guide overlay. */
+  guideId?: string;
 }
 
 export function FileDropzone({
@@ -26,6 +28,7 @@ export function FileDropzone({
   browseText = "browse files",
   fileRequirementsText = "PDF, DOCX, TXT or MD — max 50 MB",
   selectedFileLabel = "Selected file",
+  guideId,
 }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -76,6 +79,7 @@ export function FileDropzone({
       <div
         role="button"
         tabIndex={0}
+        data-guide-id={guideId}
         onClick={handleClick}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") handleClick();

@@ -202,7 +202,7 @@ export function DocumentDetailDrawer({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-labelledby="document-detail-title" className="fixed inset-y-0 end-0 z-50 flex w-full max-w-lg flex-col border-s border-outline-variant/30 bg-surface-container-lowest shadow-modal transition-transform sm:max-w-xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="document-detail-title" className="fixed inset-y-0 end-0 z-50 flex w-full max-w-lg flex-col border-s border-outline-variant/30 bg-surface-container-lowest shadow-modal transition-transform sm:max-w-xl" data-guide-id="documents-drawer">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline-variant/30 px-6 py-4">
           <h2 id="document-detail-title" className="text-title-lg font-bold text-on-surface truncate">{t("documents.detailTitle")}</h2>
@@ -248,7 +248,7 @@ export function DocumentDetailDrawer({
           )}
 
           {/* Processing Progress Section */}
-          <div className="mb-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
+          <div className="mb-6 rounded-xl border border-outline-variant/30 bg-surface-container-low p-4" data-guide-id="documents-drawer-processing">
             <div className="flex items-center justify-between mb-3">
               <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">Processing Progress</p>
               {processingRun && <ProcessingStatusBadge status={processingRun.status} />}
@@ -424,7 +424,7 @@ export function DocumentDetailDrawer({
             )}
           </div>
 
-          <div className="mb-6">
+          <div className="mb-6" data-guide-id="documents-drawer-versions">
             <h4 className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t("documents.versionHistory")}</h4>
             {isLoadingVersions ? (
               <div className="mt-3 space-y-2">
@@ -454,35 +454,35 @@ export function DocumentDetailDrawer({
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-6 py-4">
           {showReplaceForm && canUpdate ? (
             <div className="space-y-3">
-              <input type="file" accept=".pdf,.docx,.doc,.txt,.md" onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)} className="w-full text-body-sm" />
+              <input type="file" accept=".pdf,.docx,.doc,.txt,.md" onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)} className="w-full text-body-sm" data-guide-id="documents-drawer-replace-file" />
               <input type="text" value={replaceDesc} onChange={(e) => setReplaceDesc(e.target.value)} placeholder={t("documents.changeDescription")} className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
               <div className="flex gap-2">
-                <Button size="sm" isLoading={isReplacing} disabled={!replaceFile} onClick={handleReplace}>{t("documents.replace")}</Button>
+                <Button size="sm" isLoading={isReplacing} disabled={!replaceFile} onClick={handleReplace} data-guide-id="documents-drawer-replace-submit">{t("documents.replace")}</Button>
                 <Button size="sm" variant="ghost" onClick={() => { setShowReplaceForm(false); setReplaceFile(null); setReplaceDesc(""); }}>{t("common.cancel")}</Button>
               </div>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
               {canDownload ? (
-                <Button size="sm" onClick={handleDownload}>
+                <Button size="sm" data-guide-id="documents-drawer-download" onClick={handleDownload}>
                   <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">download</span>
                   {t("documents.download")}
                 </Button>
               ) : null}
               {canUpdate && !doc.isArchived && !doc.deletedAt && (
-                <Button size="sm" variant="secondary" onClick={() => setShowReplaceForm(true)}>
+                <Button size="sm" variant="secondary" onClick={() => setShowReplaceForm(true)} data-guide-id="documents-drawer-replace">
                   <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">swap_horiz</span>
                   {t("documents.replace")}
                 </Button>
               )}
               {canArchive && !doc.isArchived && !doc.deletedAt && (
-                <Button size="sm" variant="secondary" onClick={() => setConfirmAction("archive")}>
+                <Button size="sm" variant="secondary" onClick={() => setConfirmAction("archive")} data-guide-id="documents-drawer-archive">
                   <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">archive</span>
                   {t("documents.archive")}
                 </Button>
               )}
               {canArchive && doc.isArchived && (
-                <Button size="sm" variant="secondary" onClick={() => setConfirmAction("restore")}>
+                <Button size="sm" variant="secondary" onClick={() => setConfirmAction("restore")} data-guide-id="documents-drawer-restore">
                   <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">unarchive</span>
                   {t("documents.restore")}
                 </Button>

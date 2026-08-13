@@ -4,6 +4,18 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    env: {
+      NODE_ENV: "test",
+      MONGODB_URI: "mongodb://localhost:27017/documind-test",
+      REDIS_URL: "redis://localhost:6379",
+      APP_FRONTEND_URL: "http://example.com",
+      JWT_SECRET: "test-jwt-secret-0123456789abcdefghijklmnopqrstuv",
+      JWT_REFRESH_SECRET: "test-jwt-refresh-secret-0123456789abcdefghijk",
+      EMAIL_VERIFICATION_JWT_SECRET: "test-email-verification-secret-012345678",
+      PASSWORD_RESET_JWT_SECRET: "test-password-reset-secret-01234567890",
+      EMAIL_WEBHOOK_SECRET: "test-email-webhook-secret-01234567890abc",
+      NOTIFICATION_SOCKET_SERVICE_TOKEN: "test-notification-socket-token-012345678",
+    },
     // The official API runner provisions one disposable replica-set database.
     // Persistence suites reset shared collections, so files must not run in
     // parallel against that single database.
@@ -30,6 +42,8 @@ export default defineConfig({
       "src/modules/processing/indexing/__tests__/*.test.ts",
       "src/modules/processing-progress/__tests__/*.test.ts",
       "src/modules/notifications/__tests__/*.test.ts",
+      "src/modules/copilot/__tests__/*.test.ts",
+      "src/modules/public/__tests__/*.test.ts",
       "src/modules/retrieval/ports/__tests__/*.test.ts",
       "src/providers/bedrock/__tests__/*.test.ts",
       "src/providers/stt/__tests__/*.test.ts",

@@ -257,6 +257,7 @@ export default function CompanyUsagePage() {
   return (
     <DashboardPage dir={dir}>
       <DashboardPageHeader
+        guideId="page-heading-usage"
         title={t("usage.pageTitle")}
         description={t("usage.pageDescription")}
       />
@@ -312,7 +313,7 @@ export default function CompanyUsagePage() {
             </DashboardPanel>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-5" data-guide-id="usage-quota-grid">
             {dimensions.map((item) => (
               <UsageCard
                 key={item.dimension}

@@ -57,6 +57,7 @@ export default function KnowledgeGapsPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
+        guideId="page-heading-knowledge-gaps"
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">search_insights</span>
@@ -71,11 +72,13 @@ export default function KnowledgeGapsPage() {
         }
       />
 
-      <GapMetricsCards metrics={metrics} loading={loading} />
+      <div data-guide-id="knowledge-gaps-metrics">
+        <GapMetricsCards metrics={metrics} loading={loading} />
+      </div>
 
       <DashboardPanel>
         {/* Filter bar */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" id="gap-filter-bar">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" id="gap-filter-bar" data-guide-id="knowledge-gaps-filter">
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"
@@ -160,7 +163,7 @@ export default function KnowledgeGapsPage() {
             </p>
           </div>
         ) : (
-          <div className="mt-4 overflow-x-auto" id="gap-table-container">
+          <div className="mt-4 overflow-x-auto" id="gap-table-container" data-guide-id="knowledge-gaps-table">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-outline-variant/30 text-on-surface-variant font-semibold">
@@ -205,6 +208,7 @@ export default function KnowledgeGapsPage() {
                     <td className="py-3 px-2 text-right">
                       <Link
                         href={`/dashboard/knowledge-gaps/${gap.id}`}
+                        data-guide-id="knowledge-gaps-detail-link"
                         className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
                       >
                         View Detail

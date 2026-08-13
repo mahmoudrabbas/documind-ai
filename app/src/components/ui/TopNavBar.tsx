@@ -14,6 +14,8 @@ import {
   TENANT_TOPBAR_LINKS,
 } from "@/constants/routes";
 import { Permission } from "@/types/api/permissions.types";
+import { useCopilot } from "@/providers/copilot-provider";
+import { COPILOT_ENABLED } from "@/config/public-env";
 import { NotificationsBell } from "./NotificationsBell";
 
 export function TopNavBar({
@@ -24,6 +26,7 @@ export function TopNavBar({
   const auth = useAuth();
   const permissions = usePermissions();
   const tenant = useTenantSettings();
+  const { setOpen: setCopilotOpen } = useCopilot();
   const { user } = auth;
   const pathname = usePathname();
   const router = useRouter();
@@ -226,17 +229,22 @@ export function TopNavBar({
                 </Link>
               ) : null}
 
-              <Link
-                href="#"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2 px-4 py-2.5 text-label-md text-on-surface hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  help
-                </span>
-                Help Center
-              </Link>
+              {COPILOT_ENABLED ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setCopilotOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-label-md text-on-surface hover:bg-surface-container-high"
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    help
+                  </span>
+                  Help Center
+                </button>
+              ) : null}
 
               <button
                 type="button"

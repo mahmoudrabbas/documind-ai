@@ -32,6 +32,7 @@ export type AuthUser = {
   role: Role;
   status: string;
   emailVerified: boolean;
+  createdAt: string;
 };
 export type AuthTenant = {
   id: string;

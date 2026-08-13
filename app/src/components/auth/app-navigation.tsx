@@ -13,6 +13,9 @@ import {
   PLATFORM_SIDEBAR_LINKS,
   TENANT_SIDEBAR_LINKS,
 } from "@/constants/routes";
+import { useCopilot } from "@/providers/copilot-provider";
+import { getNavGuideTargetId } from "@/lib/copilot/guide-targets";
+import { COPILOT_ENABLED } from "@/config/public-env";
 
 type AppNavigationProps = {
   open: boolean;
@@ -23,6 +26,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const auth = useAuth();
   const permissions = usePermissions();
   const tenant = useTenantSettings();
+  const { setOpen: setCopilotOpen } = useCopilot();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -143,6 +147,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                 key={href}
                 href={href}
                 onClick={onClose}
+                data-guide-id={getNavGuideTargetId(href)}
                 aria-current={isActive ? "page" : undefined}
                 className={`flex min-w-0 items-center gap-3 px-4 py-3 transition-colors ${
                   isActive
@@ -158,13 +163,19 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         </nav>
         <div className="mt-auto border-t border-outline-variant p-md">
           <div className="space-y-1">
-            <Link
-              href="#"
-              className="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined">help</span>
-              <span className="text-body-sm">Help Center</span>
-            </Link>
+            {COPILOT_ENABLED ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setCopilotOpen(true);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined">help</span>
+                <span className="text-body-sm">Help Center</span>
+              </button>
+            ) : null}
             <button
               onClick={() => void handleLogout()}
               disabled={loggingOut}

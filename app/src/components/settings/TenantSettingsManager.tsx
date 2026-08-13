@@ -326,7 +326,7 @@ export function TenantSettingsManager() {
       {conflictMessage ? <Alert variant="warning">{conflictMessage}</Alert> : null}
 
       {/* Company profile */}
-      <DashboardPanel>
+      <DashboardPanel data-guide-id="settings-profile-section">
         <div className="mb-5">
           <h2 className="text-title-lg font-bold text-primary">
             Company Profile
@@ -361,7 +361,7 @@ export function TenantSettingsManager() {
             placeholder="https://…/logo.png"
           />
         </div>
-        <div className="mt-4 max-w-xs">
+        <div className="mt-4 max-w-xs" data-guide-id="settings-language">
           <Select
             label="Default language"
             options={LANGUAGE_OPTIONS}
@@ -377,7 +377,7 @@ export function TenantSettingsManager() {
       </DashboardPanel>
 
       {/* AI runtime preferences */}
-      <DashboardPanel>
+      <DashboardPanel data-guide-id="settings-ai-preferences">
         <div className="mb-5">
           <h2 className="text-title-lg font-bold text-primary">
             AI Runtime Preferences
@@ -452,6 +452,7 @@ export function TenantSettingsManager() {
             variant="outline"
             disabled={!hasChanges || isSaving}
             onClick={handleDiscard}
+            data-guide-id="settings-discard"
           >
             Discard changes
           </Button>
@@ -459,6 +460,7 @@ export function TenantSettingsManager() {
             onClick={() => void handleSave()}
             isLoading={isSaving}
             disabled={!hasChanges}
+            data-guide-id="settings-profile-save"
           >
             Save changes
           </Button>

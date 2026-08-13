@@ -332,6 +332,7 @@ function BillingContent() {
     <DashboardPage dir={dir}>
       <div className="sr-only" aria-live="polite">{announcement}</div>
       <DashboardPageHeader
+        guideId="page-heading-billing"
         title={t("billingAdmin.title")}
         description={t("billingAdmin.description")}
         actions={<button type="button" disabled={readsLoading} onClick={refreshAll} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{readsLoading ? t("billingAdmin.loading") : readsFailed ? t("common.retry") : t("common.refresh")}</button>}
@@ -342,7 +343,7 @@ function BillingContent() {
         </div>
       ) : null}
       <div className="space-y-6">
-        <DashboardPanel aria-labelledby="current-subscription-heading">
+        <DashboardPanel aria-labelledby="current-subscription-heading" data-guide-id="settings-billing-tab">
           <h2 id="current-subscription-heading" className="text-title-lg font-bold">{t("billingAdmin.currentSubscription")}</h2>
           {summary.kind === "ready" && summary.data.transitionState && summary.data.transitionState !== "ACTIVE" ? (
             <div role="status" className="mt-4 rounded-xl border border-warning/40 bg-warning-container p-4 text-on-warning-container">
@@ -394,6 +395,7 @@ function BillingContent() {
               </div>
               <Link
                 href="/checkout"
+                data-guide-id="billing-choose-plan"
                 className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-5 font-semibold text-on-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               >
                 {t("billingAdmin.choosePlan")}
@@ -402,7 +404,7 @@ function BillingContent() {
           </DashboardPanel>
         ) : null}
 
-        <DashboardPanel padding="none" aria-labelledby="invoice-history-heading">
+        <DashboardPanel padding="none" aria-labelledby="invoice-history-heading" data-guide-id="billing-invoices">
           <div className="flex items-center justify-between border-b border-outline-variant/30 p-4 sm:p-5">
             <div>
               <h2 id="invoice-history-heading" className="text-title-lg font-bold">{t("billingAdmin.invoices")}</h2>
@@ -433,7 +435,7 @@ function BillingContent() {
           )}
         </DashboardPanel>
 
-        <DashboardPanel padding="none" aria-labelledby="refund-history-heading">
+        <DashboardPanel padding="none" aria-labelledby="refund-history-heading" data-guide-id="billing-refunds">
           <div className="flex items-center justify-between border-b border-outline-variant/30 p-4 sm:p-5">
             <div>
               <h2 id="refund-history-heading" className="text-title-lg font-bold">{t("billingAdmin.refunds")}</h2>
@@ -616,7 +618,7 @@ function SubscriptionDetails({
       {!summary.providerLinked ? <p className="rounded-xl bg-surface-container p-3">{t("billingAdmin.notLinked")}</p> : null}
       {reactivationError ? <p role="alert" className="rounded-xl border border-error/40 bg-error-container p-3 text-on-error-container">{reactivationError}</p> : null}
       <div className="flex flex-wrap gap-3">
-        {canManage && summary.canChangePlan ? <button type="button" disabled={Boolean(summary.pendingOperation)} onClick={openPreview} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.changePlan")}</button> : null}
+        {canManage && summary.canChangePlan ? <button type="button" data-guide-id="billing-change-plan" disabled={Boolean(summary.pendingOperation)} onClick={openPreview} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.changePlan")}</button> : null}
         {canManage && summary.canCancel ? <button type="button" disabled={Boolean(summary.pendingOperation)} onClick={() => openCancel("PERIOD_END")} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.cancelAtPeriodEnd")}</button> : null}
         {canManage && summary.canCancel ? <button type="button" disabled={Boolean(summary.pendingOperation)} onClick={() => openCancel("IMMEDIATE")} className="min-h-11 rounded-xl border border-error px-4 font-semibold text-error disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.cancelImmediately")}</button> : null}
         {canManage && summary.canReactivate ? <button type="button" disabled={reactivationLoading || Boolean(summary.pendingOperation)} onClick={reactivate} className="min-h-11 rounded-xl border border-outline px-4 font-semibold disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{reactivationLoading ? t("billingAdmin.submitting") : t("billingAdmin.reactivate")}</button> : null}

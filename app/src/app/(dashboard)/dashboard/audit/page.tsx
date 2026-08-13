@@ -33,6 +33,7 @@ export default function TenantAuditPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
+        guideId="page-heading-audit"
         title={t("audit.title")}
         description={t("audit.description")}
       />
@@ -48,6 +49,7 @@ export default function TenantAuditPage() {
       ) : logs.length === 0 ? (
         <div className="p-8 text-center text-sm text-on-surface-variant">No audit logs found.</div>
       ) : (
+        <div data-guide-id="audit-table">
         <PlatformTable
           headers={["Action", "Actor", "Role", "Resource", "Details", "Time"]}
           minWidth="920px"
@@ -86,6 +88,7 @@ export default function TenantAuditPage() {
             );
           })}
         </PlatformTable>
+        </div>
       )}
     </DashboardPage>
   );

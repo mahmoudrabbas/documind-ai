@@ -13,12 +13,15 @@ import { AgentBudgetTracker, MAX_STEP_TOKENS, normalizeBudgetLimits, resolveAgen
 import { createDefaultSupervisorGuardrails, OutputSchemaGuardrail, SupervisorGuardrailEvaluator, type SupervisorGuardrail, type SupervisorGuardrailContext, type SupervisorGuardrailOutcome } from "./supervisorGuardrails.js";
 import type { SupervisorPersistence, SupervisorStepPatch } from "./supervisorPersistence.js";
 import { ToolRegistry } from "./toolRegistry.js";
+import type { ToolCallResult } from "./agents.types.js";
+import { humanizeToolFailure } from "../copilot/action/resolveActionTarget.js";
 
 /**
  * Supervisor decision provider. The runtime only ever consumes a strict JSON
  * decision plus its token usage; it never falls back to prose planning.
  */
 export interface SupervisorDecisionRequest {
+  runId: string;
   context: AgentExecutionContext;
   workflow: ChatWorkflowDefinition;
   currentAgent: ChatAgentId;
@@ -68,6 +71,14 @@ export interface SupervisorRunResult {
   guardrailResult: Record<string, unknown> | null;
 }
 
+export interface SupervisorToolResultInfo {
+  runId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  result: ToolCallResult;
+  context: AgentExecutionContext;
+}
+
 export interface SupervisorRuntimeConfig {
   model: SupervisorDecisionModel;
   workflowRegistry: WorkflowRegistry;
@@ -76,6 +87,12 @@ export interface SupervisorRuntimeConfig {
   persistence: SupervisorPersistence;
   guardrails?: SupervisorGuardrail[];
   clock?: () => number;
+  /**
+   * Optional observer invoked after every tool execution (success or failure).
+   * Used by the copilot composition to emit COPILOT_* audit rows. It is
+   * best-effort: a throwing observer must never fail the run.
+   */
+  onToolResult?: (info: SupervisorToolResultInfo) => void | Promise<void>;
 }
 
 const BUDGET_EXCEEDED_CODES = new Set([
@@ -195,6 +212,9 @@ export class SupervisorRuntime {
   private readonly persistence: SupervisorPersistence;
   private readonly guardrails: SupervisorGuardrailEvaluator;
   private readonly clock: () => number;
+  private readonly onToolResult?: (
+    info: SupervisorToolResultInfo,
+  ) => void | Promise<void>;
 
   constructor(config: SupervisorRuntimeConfig) {
     this.model = config.model;
@@ -209,6 +229,7 @@ export class SupervisorRuntime {
       }),
     );
     this.clock = config.clock ?? Date.now;
+    this.onToolResult = config.onToolResult;
   }
 
   async execute(input: SupervisorRunInput): Promise<SupervisorRunResult> {
@@ -248,7 +269,16 @@ export class SupervisorRuntime {
     let output: Record<string, unknown> | null = null;
     let error: Record<string, unknown> | null = null;
 
-    await this.persistence.startRun(context.tenantId, input.runId);
+    await this.persistence.startRun(context.tenantId, input.runId, {
+      actorId: context.actorId,
+      workflowName: workflow.id,
+      agentName: workflow.entryAgent,
+      input: input.input,
+      modelProvider: this.model.providerKey,
+      modelName: this.model.modelName,
+      traceId: context.traceId,
+      requestId: context.requestId,
+    });
 
     while (status === "running") {
       try {
@@ -346,6 +376,7 @@ export class SupervisorRuntime {
     };
     try {
       const content = await this.model.decide({
+        runId: state.runId,
         context,
         workflow,
         currentAgent: state.currentAgent,
@@ -585,10 +616,21 @@ export class SupervisorRuntime {
           error: executorError,
           ...tracingPatch,
         });
-        return this.terminalFailed(executorError.code);
+        return this.terminalFailed(executorError.code, executorError.message);
       }
 
       this.transitionHandoff(state, toAgent, decision.reasonCode);
+      // The target agent's own turn follows the handoff: feed it the output it
+      // just produced so its decision (e.g. complete) can surface the executor
+      // result as the run's final output instead of recomputing it.
+      if (
+        executorResult.ok &&
+        typeof executorResult.output === "object" &&
+        executorResult.output !== null &&
+        !Array.isArray(executorResult.output)
+      ) {
+        state.currentInput = executorResult.output as Record<string, unknown>;
+      }
       await completeHandoff("completed");
       await this.completeStepWith(state, executionStep.id, {
         status: "completed",
@@ -660,18 +702,29 @@ export class SupervisorRuntime {
       estimatedCost: result.estimatedCost ?? 0,
     });
 
+    if (this.onToolResult) {
+      try {
+        await this.onToolResult({
+          runId: state.runId,
+          toolName: decision.toolName,
+          toolInput: decision.toolInput,
+          result,
+          context,
+        });
+      } catch {
+        // Best-effort observer — a failing audit must not fail the run.
+      }
+    }
+
     if (!result.ok) {
+      const error = humanizeToolFailure(result.error, decision.toolName);
       await this.completeStepWith(state, step.id, {
         status: "failed",
         guardrails: outcomes,
         toolCallsCount: 1,
-        error: result.error,
+        error,
       });
-      return this.terminalFailed(
-        typeof result.error?.code === "string"
-          ? result.error.code
-          : AGENT_PROVIDER_ERROR,
-      );
+      return this.terminalFailed(error.code, error.message);
     }
 
     state.currentInput = (result.output as Record<string, unknown>) ?? {};
