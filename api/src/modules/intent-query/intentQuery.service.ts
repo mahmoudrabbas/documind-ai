@@ -70,6 +70,8 @@ export async function authorizeExplicitIntentDocuments(
  */
 async function loadTenantDocumentManifest(
   tenantIdStr: string,
+  actorId: string,
+  authorizationService: DocumentAccessAuthorizationService,
 ): Promise<DocumentManifestEntry[]> {
   try {
     const docs = await DocumentModel.find({
@@ -84,7 +86,31 @@ async function loadTenantDocumentManifest(
       .lean()
       .exec();
 
-    return docs.map((doc) => ({
+    const authorizedDocs = await Promise.all(
+      docs.map(async (doc) => {
+        try {
+          await authorizationService.authorizeDocumentAction(
+            { tenantId: tenantIdStr, actorId },
+            doc._id.toString(),
+            "use_in_ai",
+          );
+          return doc;
+        } catch (err) {
+          logger.debug(
+            {
+              err,
+              tenantId: tenantIdStr,
+              actorId,
+              documentId: doc._id.toString(),
+            },
+            "Excluded unauthorized document from intent manifest",
+          );
+          return null;
+        }
+      }),
+    );
+
+    return authorizedDocs.filter((doc): doc is NonNullable<typeof doc> => doc !== null).map((doc) => ({
       fileName: doc.fileName ?? "",
       title: (doc.metadata?.title as string | null) ?? null,
       aliases: Array.isArray(doc.metadata?.aliases)
@@ -472,7 +498,13 @@ export class IntentQueryService {
 
     // 5. Load Conversation Context with strict tenant isolation
     const systemPrompt = (language === "ar" || language === "mixed") ? INTENT_SYSTEM_PROMPT_AR : INTENT_SYSTEM_PROMPT;
-    const tenantDocumentManifest = await loadTenantDocumentManifest(tenantIdStr);
+    const authorizationService =
+      this.options.authorizationService ?? getDocumentAccessAuthorizationService();
+    const tenantDocumentManifest = await loadTenantDocumentManifest(
+      tenantIdStr,
+      actor.actorId,
+      authorizationService,
+    );
     const systemPromptWithManifest = buildIntentSystemPrompt(systemPrompt, tenantDocumentManifest);
     const messagesPayload: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPromptWithManifest },
