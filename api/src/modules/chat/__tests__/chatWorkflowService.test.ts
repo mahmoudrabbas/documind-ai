@@ -78,6 +78,7 @@ interface RuntimeObservations {
 
 interface HarnessOptions {
   scenario?: Scenario;
+  retrievalOutcome?: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED";
   citationsEnabled?: boolean;
   permissionState?: ResolvedPermissions["customRoleState"];
   permissions?: readonly string[];
@@ -359,6 +360,7 @@ function makeHarness(options: HarnessOptions = {}) {
           candidates,
           totalCandidates: candidates.length,
           reasonCode: "SEARCH_COMPLETED",
+          retrievalOutcome: options.retrievalOutcome ?? "NO_MATCHES",
         };
         observations.sourceCatalogOutput = searchOutput;
         hooks.onToolResult?.({
@@ -397,6 +399,7 @@ function makeHarness(options: HarnessOptions = {}) {
             candidates: options.secondSearchCandidates,
             totalCandidates: options.secondSearchCandidates.length,
             reasonCode: "SEARCH_COMPLETED",
+            retrievalOutcome: options.retrievalOutcome ?? "NO_MATCHES",
           };
           hooks.onToolResult?.({
             workflowId: "chat-rag-v1",
@@ -1600,6 +1603,16 @@ describe("ChatWorkflowService controlled short paths", () => {
     const response = await executeHarness(harness);
     expect(response.sources).toEqual([]);
     expect(harness.reportKnowledgeGap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create a Knowledge Gap when retrieval was authorization-filtered", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      retrievalOutcome: "AUTHORIZATION_FILTERED",
+    });
+    const response = await executeHarness(harness);
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
   });
 
   it("records an unverified-grounded Knowledge Gap and never releases the draft", async () => {

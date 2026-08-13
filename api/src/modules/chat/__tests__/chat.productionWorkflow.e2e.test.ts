@@ -13,7 +13,9 @@ import DocumentAccessPolicyModel from "../../../db/models/documentAccessPolicy.m
 import DocumentChunkModel from "../../../db/models/documentChunk.model.js";
 import DocumentClassificationModel from "../../../db/models/documentClassification.model.js";
 import IntentQueryTraceModel from "../../../db/models/intentQueryTrace.model.js";
+import KnowledgeGapModel from "../../../db/models/knowledgeGap.model.js";
 import MessageModel from "../../../db/models/message.model.js";
+import NotificationOutboxModel from "../../../db/models/notificationOutbox.model.js";
 import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
 import {
@@ -140,6 +142,8 @@ beforeEach(async () => {
     MessageModel.deleteMany({}),
     ConversationModel.deleteMany({}),
     IntentQueryTraceModel.deleteMany({}),
+    KnowledgeGapModel.deleteMany({}),
+    NotificationOutboxModel.deleteMany({}),
     DocumentChunkModel.deleteMany({}),
     DocumentAccessPolicyModel.deleteMany({}),
     DocumentModel.deleteMany({}),
@@ -3127,6 +3131,17 @@ test(
       deniedEvidence.documentId,
       USE_IN_AI_DENIED_MARKER,
     ]);
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
+    assert.equal(
+      await NotificationOutboxModel.countDocuments({
+        tenantId: fixture.tenantId,
+        notificationType: "knowledge_gap_created",
+      }),
+      0,
+    );
     assertPersistenceSafety(graph);
   },
 );

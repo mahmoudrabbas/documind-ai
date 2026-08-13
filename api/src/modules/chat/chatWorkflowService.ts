@@ -147,6 +147,9 @@ const SearchOutputSchema = z
     candidates: z.array(SearchCandidateSchema),
     totalCandidates: z.number().int().nonnegative(),
     reasonCode: z.string(),
+    retrievalOutcome: z
+      .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
+      .default("NO_MATCHES"),
   })
   .strict();
 
@@ -301,6 +304,7 @@ interface ChatRunArtifacts {
   approvedEvidenceIds: string[];
   rejectedEvidenceIds: string[];
   evidenceReasonCode: string | null;
+  retrievalOutcome: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED" | null;
   analyticsRequest: ChatAnalyticsRequest | null;
   analyticsOutput: unknown;
   complianceRequested: boolean;
@@ -463,6 +467,7 @@ function createChatRuntimePolicy(input: {
     approvedEvidenceIds: [],
     rejectedEvidenceIds: [],
     evidenceReasonCode: null,
+    retrievalOutcome: null,
     analyticsRequest: null,
     analyticsOutput: undefined,
     complianceRequested: false,
@@ -888,6 +893,7 @@ function createChatRuntimePolicy(input: {
       }
       if (args.toolName === "authorized_hybrid_search") {
         const output = SearchOutputSchema.parse(args.validatedOutput);
+        artifacts.retrievalOutcome = output.retrievalOutcome;
         const restrictedDocumentIds = unique([
           ...(artifacts.intent?.referencedDocumentIds ?? []),
           ...artifacts.resolvedDocumentIds,
@@ -1123,8 +1129,11 @@ export class ChatWorkflowService {
     );
 
     if (
-      terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
-      terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
+      (
+        terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
+        terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
+      ) &&
+      artifacts.retrievalOutcome !== "AUTHORIZATION_FILTERED"
     ) {
       await this.deps.reportKnowledgeGap?.({
         tenantId,

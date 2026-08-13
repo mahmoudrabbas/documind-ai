@@ -528,6 +528,62 @@ describe("authorizedRetrievalTools — resolve_document_titles handler", () => {
 // ── Handler: authorized_hybrid_search ──────────────────────────────────────
 
 describe("authorizedRetrievalTools — authorized_hybrid_search handler", () => {
+  test("reports authorization filtering from pre- and post-authorization retrieval counts", async () => {
+    const { deps } = makeDeps({
+      retrieval: {
+        hybridSearch: async () => ({
+          candidates: [makeCandidate()],
+          totalCandidates: 1,
+          filterSummary: {} as never,
+          diagnostics: {
+            rawVectorCandidateCount: 2,
+            rawKeywordCandidateCount: 0,
+            postAuthorizationVectorCandidateCount: 1,
+            postAuthorizationKeywordCandidateCount: 0,
+          } as never,
+        }),
+        vectorSearch: async () => ({}) as never,
+        keywordSearch: async () => ({}) as never,
+      } as unknown as HybridRetrievalService,
+    });
+    const tool = toolOf("authorized_hybrid_search", deps);
+
+    const result = await tool.handler(agentRunContext(), { queryText: "policies" }) as {
+      retrievalOutcome: string;
+      candidates: unknown[];
+    };
+
+    assert.equal(result.retrievalOutcome, "AUTHORIZATION_FILTERED");
+    assert.equal(result.candidates.length, 1);
+  });
+
+  test("does not call an empty cross-tenant/no-match retrieval authorization-filtered", async () => {
+    const { deps } = makeDeps({
+      retrieval: {
+        hybridSearch: async () => ({
+          candidates: [],
+          totalCandidates: 0,
+          filterSummary: {} as never,
+          diagnostics: {
+            rawVectorCandidateCount: 0,
+            rawKeywordCandidateCount: 0,
+            postAuthorizationVectorCandidateCount: 0,
+            postAuthorizationKeywordCandidateCount: 0,
+          } as never,
+        }),
+        vectorSearch: async () => ({}) as never,
+        keywordSearch: async () => ({}) as never,
+      } as unknown as HybridRetrievalService,
+    });
+    const tool = toolOf("authorized_hybrid_search", deps);
+
+    const result = await tool.handler(agentRunContext(), { queryText: "foreign secret" }) as {
+      retrievalOutcome: string;
+    };
+
+    assert.equal(result.retrievalOutcome, "NO_MATCHES");
+  });
+
   test("delegates to retrieval service with server-derived accessContext", async () => {
     const { deps, retrievalCalls } = makeDeps();
     const tool = toolOf("authorized_hybrid_search", deps);

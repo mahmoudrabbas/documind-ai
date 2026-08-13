@@ -346,6 +346,9 @@ const HybridSearchOutputSchema = z
     candidates: z.array(SearchCandidateSummarySchema),
     totalCandidates: z.number().int().nonnegative(),
     reasonCode: z.string().min(1).max(200),
+    retrievalOutcome: z
+      .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
+      .default("NO_MATCHES"),
   })
   .strict();
 
@@ -557,6 +560,25 @@ export function createAuthorizedHybridSearchTool(
       const eligibleCandidates = result.candidates.filter((candidate) =>
         eligibleDocumentIds.has(candidate.documentId),
       );
+      const rawVectorCandidateCount =
+        result.diagnostics.rawVectorCandidateCount ?? result.diagnostics.vectorCandidateCount;
+      const rawKeywordCandidateCount =
+        result.diagnostics.rawKeywordCandidateCount ?? result.diagnostics.keywordCandidateCount;
+      const postAuthorizationVectorCandidateCount =
+        result.diagnostics.postAuthorizationVectorCandidateCount ?? result.diagnostics.vectorCandidateCount;
+      const postAuthorizationKeywordCandidateCount =
+        result.diagnostics.postAuthorizationKeywordCandidateCount ?? result.diagnostics.keywordCandidateCount;
+      const rawCandidateCount = rawVectorCandidateCount !== undefined || rawKeywordCandidateCount !== undefined
+        ? (rawVectorCandidateCount ?? 0) + (rawKeywordCandidateCount ?? 0)
+        : result.candidates.length;
+      const postAuthorizationCandidateCount = postAuthorizationVectorCandidateCount !== undefined || postAuthorizationKeywordCandidateCount !== undefined
+        ? (postAuthorizationVectorCandidateCount ?? 0) + (postAuthorizationKeywordCandidateCount ?? 0)
+        : result.candidates.length;
+      const retrievalOutcome = rawCandidateCount > postAuthorizationCandidateCount
+        ? "AUTHORIZATION_FILTERED"
+        : eligibleCandidates.length > 0
+          ? "AUTHORIZED_RESULTS"
+          : "NO_MATCHES";
       if (trustedCandidateCatalog) {
         // Bounded, request-private provenance cache. Only the server-produced
         // and currently retrievable candidates are retained; the model sees
@@ -586,6 +608,7 @@ export function createAuthorizedHybridSearchTool(
         totalCandidates: eligibleCandidates.length,
         reasonCode:
           eligibleCandidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+        retrievalOutcome,
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
