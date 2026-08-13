@@ -9,6 +9,7 @@ const MAX_RETRY_AFTER_SECONDS = 86_400;
 
 type ProviderErrorShape = {
   status?: unknown;
+  statusCode?: unknown;
   code?: unknown;
   name?: unknown;
   headers?: unknown;
@@ -59,11 +60,19 @@ export function mapLlmProviderError(error: unknown): AppError {
 
   const outer = (record(error) ?? {}) as ProviderErrorShape;
   const nested = record(outer.error);
-  const status = numericStatus(outer.status);
+  // Providers disagree on the field name: the OpenAI SDK uses `status`, the
+  // SBG gateway errors use `statusCode`. Accept either.
+  const status = numericStatus(outer.status) ?? numericStatus(outer.statusCode);
   const code = stringField(outer.code) ?? stringField(nested?.code);
   const name = stringField(outer.name);
 
-  if (status === 429 || code === "rate_limit_exceeded" || code === "too_many_requests") {
+  if (
+    status === 429 ||
+    code === "rate_limit_exceeded" ||
+    code === "too_many_requests" ||
+    code === "RATE_LIMIT_ERROR" ||
+    code === "QUOTA_EXCEEDED"
+  ) {
     const retryAfterSeconds = parseRetryAfterSeconds(headerValue(outer.headers, "retry-after"));
     return new AppError(
       429,
@@ -77,6 +86,7 @@ export function mapLlmProviderError(error: unknown): AppError {
     status === 408 ||
     code === "ETIMEDOUT" ||
     code === "UND_ERR_CONNECT_TIMEOUT" ||
+    code === "TIMEOUT_ERROR" ||
     name === "AbortError" ||
     name === "APIConnectionTimeoutError"
   ) {

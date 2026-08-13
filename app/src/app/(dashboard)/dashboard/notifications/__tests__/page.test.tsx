@@ -17,6 +17,7 @@ vi.mock("@/services/notifications.service", () => ({
   bulkRead: vi.fn(),
   archive: vi.fn(),
   softDelete: vi.fn(),
+  clearAllNotifications: vi.fn(),
 }));
 
 import {
@@ -24,6 +25,7 @@ import {
   listNotifications,
   markAllRead,
   markRead,
+  clearAllNotifications,
 } from "@/services/notifications.service";
 import { I18nProvider } from "@/providers/i18n-provider";
 import NotificationsPage from "../page";
@@ -58,7 +60,11 @@ function makeNotification(
   };
 }
 
-function mockFeedOverPages(itemsPerPage: number, total: number) {
+function mockFeedOverPages(
+  itemsPerPage: number,
+  total: number,
+  options: { isRead: boolean } = { isRead: false },
+) {
   (listNotifications as Mock).mockImplementation(
     async ({ page = 1, limit = 20 }: { page?: number; limit?: number } = {}) => {
       const start = (page - 1) * limit;
@@ -70,6 +76,7 @@ function mockFeedOverPages(itemsPerPage: number, total: number) {
             makeNotification({
               id: `n${start + i}`,
               title: { en: `Item ${start + i}`, ar: `عنصر ${start + i}` },
+              isRead: options.isRead,
             }),
           ),
           total,
@@ -105,6 +112,10 @@ describe("NotificationsPage", () => {
       data: { notificationId: "n1" },
     });
     (markAllRead as Mock).mockResolvedValue({
+      success: true,
+      data: { matchedCount: 2 },
+    });
+    (clearAllNotifications as Mock).mockResolvedValue({
       success: true,
       data: { matchedCount: 2 },
     });
@@ -172,10 +183,18 @@ describe("NotificationsPage", () => {
     renderPage();
 
     await screen.findByText("Item 0");
+    expect(screen.getAllByTestId("unread-dot")).toHaveLength(2);
+
+    // The next listNotifications call reflects the server-side mark-all-read.
+    mockFeedOverPages(2, 2, { isRead: true });
 
     await user.click(screen.getByRole("button", { name: "Mark all as read" }));
 
     await waitFor(() => expect(markAllRead).toHaveBeenCalledTimes(1));
+    // The refetched items are now read → the unread dot is hidden.
+    await waitFor(() =>
+      expect(screen.queryAllByTestId("unread-dot")).toHaveLength(0),
+    );
   });
 
   it("marks a notification read when its row is clicked", async () => {
@@ -186,5 +205,23 @@ describe("NotificationsPage", () => {
     await user.click(await screen.findByText("Item 0"));
 
     await waitFor(() => expect(markRead).toHaveBeenCalledWith("n0"));
+  });
+
+  it("clears all notifications via the header action", async () => {
+    mockFeedOverPages(2, 2);
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText("Item 0");
+
+    // The next listNotifications call reflects the server-side clear-all.
+    mockFeedOverPages(0, 0);
+
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
+
+    await waitFor(() => expect(clearAllNotifications).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByText("No notifications")).toBeInTheDocument(),
+    );
   });
 });

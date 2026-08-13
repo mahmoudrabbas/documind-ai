@@ -9,6 +9,7 @@ import NotificationModel, { NOTIFICATION_PRIORITY_VALUES, type NotificationDocum
 import type { NotificationDraft } from "../../factory/factory.js";
 import type { CreateManyEntry, CreateManyResult, DedupRangeMatch, FindDedupRangeQuery, ListNotificationsOptions, MatchedCountResult, MatchedResult, NotificationRepositoryPort, PaginatedNotifications, TransactionSession, UnreadCountByPriorityResult } from "../../ports/notificationRepository.port.js";
 import { buildDedupRangeQuery, DEDUP_WINDOW_HOURS } from "workers/contracts";
+import { transitionLifecycle } from "../../lifecycle/lifecycle.js";
 
 const isNotificationPriority = (v: string): v is NotificationPriority =>
   NOTIFICATION_PRIORITY_VALUES.some((p) => p === v);
@@ -193,10 +194,39 @@ export class MongoNotificationRepository implements NotificationRepositoryPort {
     return { count, byPriority };
   }
 
+  async markEnqueued(
+    tenantId: string,
+    notificationIds: string[],
+    session?: TransactionSession,
+  ): Promise<MatchedCountResult> {
+    // 'enqueue' is the only legal CREATED → QUEUED path (transitionLifecycle
+    // throws for any other current state, and the filter keeps it idempotent).
+    const target = transitionLifecycle("CREATED", "enqueue");
+    const r = await this.model.updateMany(
+      {
+        tenantId: this.oid(tenantId),
+        _id: { $in: notificationIds.map((id) => this.oid(id)) },
+        lifecycleState: "CREATED",
+      },
+      { $set: { lifecycleState: target } },
+      { session: this.toSession(session) },
+    );
+    return { matchedCount: r.modifiedCount };
+  }
+
   async purgeUserNotifications(tenantId: string, userId: string, session?: TransactionSession): Promise<MatchedCountResult> {
     const r = await this.model.updateMany(
       { tenantId: this.oid(tenantId), userId: this.oid(userId), deletedAt: null },
       { $set: { deletedAt: new Date(), deletedBy: "system:user-purge", lifecycleState: "DELETED" } },
+      { session: this.toSession(session) },
+    );
+    return { matchedCount: r.modifiedCount };
+  }
+
+  async softDeleteAll(tenantId: string, userId: string, actorId: string, session?: TransactionSession): Promise<MatchedCountResult> {
+    const r = await this.model.updateMany(
+      { tenantId: this.oid(tenantId), userId: this.oid(userId), deletedAt: null },
+      { $set: { deletedAt: new Date(), deletedBy: actorId, lifecycleState: "DELETED" } },
       { session: this.toSession(session) },
     );
     return { matchedCount: r.modifiedCount };

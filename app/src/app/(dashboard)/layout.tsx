@@ -5,6 +5,7 @@ import { AppNavigation } from "@/components/auth/app-navigation";
 import { ProtectedRoute } from "@/components/auth/auth-guard";
 
 import { TopNavBar } from "@/components/ui/TopNavBar";
+import { NotificationToasts } from "@/components/ui/NotificationToasts";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -18,6 +19,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       }
     >
       <ProtectedRoute>
+        <NotificationToasts />
         <div className="flex h-dvh min-h-0 overflow-x-clip bg-background text-on-background">
           <AppNavigation
             open={navigationOpen}

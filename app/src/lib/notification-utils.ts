@@ -18,6 +18,18 @@ export function localizeNotification(
 }
 
 /**
+ * Display text for real-time payloads: socket events carry plain strings,
+ * REST notifications carry LocalizedText — accept both.
+ */
+export function toNotificationText(
+  text: LocalizedText | string,
+  locale: Locale,
+): string {
+  if (typeof text === "string") return text;
+  return localizeNotification(text, locale);
+}
+
+/**
  * Notification actions carry an API route (e.g. `/documents/:id/ocr/retry`).
  * They are rendered as plain client-side links to the same permission-checked
  * frontend routes the direct UI uses — never server-side dispatches.

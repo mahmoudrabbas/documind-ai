@@ -390,36 +390,39 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
       const response = await this.makeRequest<SBGChatResponse>("/chat", request);
       const latencyMs = Date.now() - startTime;
 
-      const choice = response.choices[0];
-      if (!choice) {
-        throw new Error("No choices returned from SBG chat");
+      // The SBG gateway returns `output_text` (with `model_id` and
+      // `input_tokens`/`output_tokens`); tolerate the OpenAI-style
+      // `choices[].message.content` shape as a fallback.
+      const content = response.output_text
+        ?? response.choices?.[0]?.message?.content
+        ?? "";
+      if (!content) {
+        throw new Error("No output returned from SBG chat");
       }
 
       const usage: ModelCompletionUsage = {
-        promptTokens: response.usage?.prompt_tokens ?? 0,
-        completionTokens: response.usage?.completion_tokens ?? 0,
+        promptTokens: response.usage?.input_tokens ?? response.usage?.prompt_tokens ?? 0,
+        completionTokens: response.usage?.output_tokens ?? response.usage?.completion_tokens ?? 0,
         totalTokens: response.usage?.total_tokens ?? 0,
       };
 
-      const estimatedCost = this.estimateCost(model, usage);
-
       return {
-        id: response.id,
+        id: response.request_id ?? response.id ?? `${this.providerKey}-${Date.now()}`,
         provider: this.providerKey,
-        model: response.model,
+        model: response.model_id ?? response.model ?? model,
         choices: [
           {
-            index: choice.index,
+            index: 0,
             message: {
-              role: choice.message.role,
-              content: choice.message.content,
+              role: "assistant",
+              content,
             },
-            finishReason: choice.finish_reason,
+            finishReason: response.usage?.stop_reason ?? "stop",
           },
         ],
         usage,
         latencyMs,
-        estimatedCost,
+        estimatedCost: this.estimateCost(model, usage),
       };
     } catch (error) {
       logger.error({
@@ -476,7 +479,7 @@ export class StudentBedrockProvider implements EmbeddingProvider, ModelAdapter {
       }
 
       const data = await response.json() as SBGModelsResponse;
-      return Array.isArray(data.data) ? data.data : [];
+      return Array.isArray(data) ? data : Array.isArray(data.data) ? data.data : [];
     } catch (error) {
       logger.warn({
         provider: this.name,

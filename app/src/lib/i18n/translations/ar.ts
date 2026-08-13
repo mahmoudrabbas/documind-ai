@@ -1308,6 +1308,7 @@ const ar: TranslationDictionary = {
   "notifications.loadError": "تعذّر تحميل الإشعارات.",
   "notifications.unreadCount": "{{count}} غير مقروء",
   "notifications.markAllRead": "تحديد الكل كمقروء",
+  "notifications.clearAll": "مسح الكل",
   "notifications.archive": "أرشفة",
   "notifications.clear": "مسح",
   "notifications.markRead": "تحديد كمقروء",
@@ -1322,6 +1323,9 @@ const ar: TranslationDictionary = {
   "notifications.category.knowledge": "المعرفة",
   "notifications.category.workflow": "سير العمل",
   "notifications.category.admin": "الإدارة",
+
+  /* ── toasts ───────────────────────────────────────────── */
+  "toasts.dismiss": "إغلاق",
 
   /* ── chat (conversation + image analysis) ────────────────── */
   "chat.attachImage": "إرفاق صورة لتحليلها",
