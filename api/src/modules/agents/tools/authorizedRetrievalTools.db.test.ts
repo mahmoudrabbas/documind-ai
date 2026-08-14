@@ -11,6 +11,7 @@ import DocumentChunkModel, {
   type ChunkStatus,
   type ChunkClassification,
 } from "../../../db/models/documentChunk.model.js";
+import RoleModel from "../../../db/models/role.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import { getDocumentAccessAuthorizationService } from "../../document-access/documentAccess.authorization.service.js";
@@ -31,6 +32,8 @@ import type { AdapterFilter } from "../../../providers/embedding/adapterFilter.t
 import type { EmbeddingAdapter } from "../agents.types.js";
 import type { AgentRunContext } from "../agentRunContext.js";
 import type { RerankerService } from "../../reranker/reranker.service.js";
+import { Permission } from "../../permissions/permissions.catalog.js";
+import type { PermissionScopes } from "../../permissions/permissions.types.js";
 import {
   createDefaultLoadChunksByIds,
   createDefaultLoadEligibleDocumentIds,
@@ -87,8 +90,13 @@ let otherActorId: string;
 
 // ── Seed helpers ───────────────────────────────────────────────────────────
 
-async function seedClassification(forTenantId: string, userId: string) {
-  const normalizedName = "internal";
+async function seedClassification(
+  forTenantId: string,
+  userId: string,
+  name = "Internal",
+  level: "internal" | "restricted" | "confidential" | "highly_confidential" = "confidential",
+) {
+  const normalizedName = name.trim().toLowerCase();
   let classificationDoc = await DocumentClassificationModel.findOne({
     tenantId: forTenantId,
     normalizedName,
@@ -97,9 +105,9 @@ async function seedClassification(forTenantId: string, userId: string) {
   if (!classificationDoc) {
     classificationDoc = await DocumentClassificationModel.create({
       tenantId: forTenantId,
-      name: "Internal",
+      name,
       normalizedName,
-      level: "confidential" as const,
+      level,
       description: "Internal classification",
       status: "active" as const,
       version: 1,
@@ -113,6 +121,7 @@ async function seedClassification(forTenantId: string, userId: string) {
 async function createDoc(options: {
   tenantId: string;
   ownerId: string;
+  uploadedById?: string;
   fileName: string;
   title?: string | null;
   withPolicy?: boolean;
@@ -121,10 +130,19 @@ async function createDoc(options: {
   isArchived?: boolean;
   deletedAt?: Date | null;
   searchStatus?: "NOT_INDEXED" | "INDEXING" | "READY" | "FAILED" | "STALE";
+  department?: string | null;
+  departmentId?: string | null;
+  classificationName?: string;
+  classificationLevel?: "internal" | "restricted" | "confidential" | "highly_confidential";
 }) {
   const withPolicy = options.withPolicy ?? true;
   const actions = options.policyActions ?? ["discover", "read", "download", "use_in_ai"];
-  const classificationDoc = await seedClassification(options.tenantId, options.ownerId);
+  const classificationDoc = await seedClassification(
+    options.tenantId,
+    options.ownerId,
+    options.classificationName,
+    options.classificationLevel,
+  );
   const policyId = new Types.ObjectId();
   const now = new Date();
 
@@ -138,10 +156,10 @@ async function createDoc(options: {
     checksum: `cs-${options.fileName}`,
     status: (options.status ?? "uploaded") as "uploading" | "uploaded" | "processing" | "processed" | "failed" | "canceled",
     metadata: { title: options.title ?? null, description: null, tags: [] },
-    classification: "internal" as const,
+    classification: options.classificationLevel ?? "internal",
     version: 1,
     versionLabel: "v1",
-    uploadedBy: options.ownerId,
+    uploadedBy: options.uploadedById ?? options.ownerId,
     owner: options.ownerId,
     classificationId: classificationDoc._id,
     activePolicyId: withPolicy ? policyId : null,
@@ -155,7 +173,8 @@ async function createDoc(options: {
     quarantineStatus: "none" as const,
     scanResult: null,
     category: null,
-    department: null,
+    department: options.department ?? null,
+    departmentId: options.departmentId ?? null,
     effectiveDate: null,
     expiryDate: null,
     searchStatus: options.searchStatus ?? "READY",
@@ -184,7 +203,7 @@ async function createDoc(options: {
         policyVersion: 1,
         classificationId: classificationDoc._id,
         categoryId: null,
-        departmentId: null,
+        departmentId: options.departmentId ?? null,
       },
       createdAt: now,
     });
@@ -204,6 +223,7 @@ async function createChunk(options: {
   pageNumber?: number;
   sectionTitle?: string;
   documentVersionId?: string | null;
+  department?: string | null;
 }) {
   return DocumentChunkModel.create({
     tenantId: options.tenantId,
@@ -218,7 +238,7 @@ async function createChunk(options: {
     offsetEnd: options.text.length,
     contentType: "paragraph" as const,
     language: "en" as const,
-    department: null,
+    department: options.department ?? null,
     classification: options.classification ?? "internal",
     accessPolicyVersion: null,
     confidenceScore: options.confidenceScore ?? null,
@@ -364,6 +384,34 @@ const retrievalService = createRetrievalService({
   },
 });
 
+function createScopedRetrievalService(scopes: PermissionScopes) {
+  return createRetrievalService({
+    vectorAdapter,
+    keywordAdapter,
+    embeddingAdapter,
+    fusionEngine: new FusionEngine(),
+    filterCompiler: { compileAccessFilters, compileQueryFilters, mergeFilters },
+    repository: createRetrievalRepository(),
+    rerankerService,
+    resolveAccessContext: async (context) => ({
+      ...context,
+      permissionScopes: scopes,
+      resolvedDepartmentFilter: scopes.departmentIds.length > 0 ? ["HR"] : undefined,
+      resolvedClassificationFilter: scopes.documentClassifications.length > 0
+        ? [...scopes.documentClassifications]
+        : undefined,
+      requiredAction: "use_in_ai",
+    }),
+    authorizeDocumentForAi: async (context, documentId) => {
+      await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+        { tenantId: context.tenantId, actorId: context.actorId },
+        documentId,
+        "use_in_ai",
+      );
+    },
+  });
+}
+
 const deps: AuthorizedRetrievalDependencies = {
   retrieval: retrievalService,
   reranker: rerankerService,
@@ -385,6 +433,7 @@ beforeEach(async () => {
   await DocumentClassificationModel.deleteMany({});
   await DocumentAccessPolicyModel.deleteMany({});
   await DocumentChunkModel.deleteMany({});
+  await RoleModel.deleteMany({});
 
   const tenant = await TenantModel.create({ name: "Retrieval Corp", slug: "retrieval-corp", status: "active", plan: "free" });
   tenantId = tenant.id;
@@ -654,6 +703,166 @@ test("direct retrieval and chat retrieval share parent-document lifecycle eligib
   assert.equal(directIds.includes(chunks[4]!.id), false);
   assert.equal(directIds.includes(chunks[5]!.id), false);
   assert.equal(directIds.includes(chunks[6]!.id), false);
+});
+
+test("AUTH-COR-002 — retrieval selfOnly uses current owner and remains conjunctive with department, explicit IDs, tenant, and DAP", async () => {
+  const uploader = await UserModel.create({
+    tenantId,
+    name: "Former Uploader",
+    email: "former-uploader@retrieval.com",
+    passwordHash: await hashPassword(TEST_PASSWORD),
+    role: "EMPLOYEE",
+    status: "active",
+    emailVerified: true,
+    emailVerifiedAt: new Date(),
+  });
+  const currentOwner = await UserModel.create({
+    tenantId,
+    name: "Current Owner",
+    email: "current-owner@retrieval.com",
+    passwordHash: await hashPassword(TEST_PASSWORD),
+    role: "EMPLOYEE",
+    status: "active",
+    emailVerified: true,
+    emailVerifiedAt: new Date(),
+  });
+  const hrDepartmentId = new Types.ObjectId();
+  const scopes: PermissionScopes = {
+    selfOnly: true,
+    departmentIds: [hrDepartmentId.toString()],
+    documentCategories: [],
+    documentClassifications: [],
+  };
+  const role = await RoleModel.create({
+    tenantId,
+    name: "Own HR AI Documents",
+    normalizedName: "own hr ai documents",
+    baseRole: "EMPLOYEE",
+    grants: [{ permission: Permission.DOCUMENTS_USE_IN_AI, scopes }],
+    createdBy: actorId,
+    updatedBy: actorId,
+  });
+  await UserModel.updateMany(
+    { _id: { $in: [uploader._id, currentOwner._id] } },
+    { $set: { customRoleId: role._id } },
+  );
+
+  const transferred = await createDoc({
+    tenantId,
+    ownerId: currentOwner.id,
+    uploadedById: uploader.id,
+    fileName: "transferred-owner.pdf",
+    department: "HR",
+    departmentId: hrDepartmentId.toString(),
+  });
+  const ordinaryOwned = await createDoc({
+    tenantId,
+    ownerId: currentOwner.id,
+    fileName: "owner-is-uploader.pdf",
+    department: "HR",
+    departmentId: hrDepartmentId.toString(),
+  });
+  const wrongDepartment = await createDoc({
+    tenantId,
+    ownerId: currentOwner.id,
+    fileName: "finance-owned.pdf",
+    department: "Finance",
+    departmentId: new Types.ObjectId().toString(),
+  });
+  const foreign = await createDoc({
+    tenantId: otherTenantId,
+    ownerId: otherActorId,
+    fileName: "foreign-owned.pdf",
+    department: "HR",
+    departmentId: hrDepartmentId.toString(),
+  });
+  const [transferredChunk, ordinaryChunk, financeChunk, foreignChunk] = await Promise.all([
+    createChunk({ tenantId, documentId: transferred.id, text: "ownership transfer retrieval marker", department: "HR" }),
+    createChunk({ tenantId, documentId: ordinaryOwned.id, text: "ownership transfer retrieval marker", department: "HR" }),
+    createChunk({ tenantId, documentId: wrongDepartment.id, text: "ownership transfer retrieval marker", department: "Finance" }),
+    createChunk({ tenantId: otherTenantId, documentId: foreign.id, text: "ownership transfer retrieval marker", department: "HR" }),
+  ]);
+  const service = createScopedRetrievalService(scopes);
+
+  const ownerResult = await service.hybridSearch(
+    { queryText: "ownership transfer retrieval marker", topK: 20 },
+    { tenantId, actorId: currentOwner.id, baseRole: "EMPLOYEE" },
+  );
+  const ownerIds = new Set(ownerResult.candidates.map((candidate) => candidate.chunkId));
+  assert.equal(ownerIds.has(transferredChunk.id), true);
+  assert.equal(ownerIds.has(ordinaryChunk.id), true);
+  assert.equal(ownerIds.has(financeChunk.id), false);
+  assert.equal(ownerIds.has(foreignChunk.id), false);
+
+  const explicitOwnerResult = await service.hybridSearch(
+    { queryText: "ownership transfer retrieval marker", topK: 20, filter: { documentIds: [transferred.id, wrongDepartment.id] } },
+    { tenantId, actorId: currentOwner.id, baseRole: "EMPLOYEE" },
+  );
+  assert.deepEqual(explicitOwnerResult.candidates.map((candidate) => candidate.chunkId), [transferredChunk.id]);
+
+  const formerUploaderResult = await service.hybridSearch(
+    { queryText: "ownership transfer retrieval marker", topK: 20, filter: { documentIds: [transferred.id] } },
+    { tenantId, actorId: uploader.id, baseRole: "EMPLOYEE" },
+  );
+  assert.deepEqual(formerUploaderResult.candidates, []);
+
+  const policyUpdate = await DocumentAccessPolicyModel.collection.updateOne(
+    { tenantId: new Types.ObjectId(tenantId), documentId: transferred._id, status: "active" },
+    { $push: { rules: { ruleId: "deny-current-owner-ai", effect: "deny", subject: { type: "user", id: currentOwner.id }, actions: ["use_in_ai"] } } } as never,
+  );
+  assert.equal(policyUpdate.modifiedCount, 1);
+  const dapDeniedResult = await service.hybridSearch(
+    { queryText: "ownership transfer retrieval marker", topK: 20, filter: { documentIds: [transferred.id] } },
+    { tenantId, actorId: currentOwner.id, baseRole: "EMPLOYEE" },
+  );
+  assert.deepEqual(dapDeniedResult.candidates, []);
+});
+
+test("classification-scoped retrieval reauthorizes canonical identity when two classifications share one level", async () => {
+  const scopes: PermissionScopes = {
+    selfOnly: false,
+    departmentIds: [],
+    documentCategories: [],
+    documentClassifications: ["restricted"],
+  };
+  const role = await RoleModel.create({
+    tenantId,
+    name: "Restricted Identity AI",
+    normalizedName: "restricted identity ai",
+    baseRole: "EMPLOYEE",
+    grants: [{ permission: Permission.DOCUMENTS_USE_IN_AI, scopes }],
+    createdBy: actorId,
+    updatedBy: actorId,
+  });
+  await UserModel.updateOne(
+    { _id: actorId },
+    { $set: { role: "EMPLOYEE", customRoleId: role._id } },
+  );
+  const allowed = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "restricted-identity-rag.pdf",
+    classificationName: "Restricted",
+    classificationLevel: "restricted",
+  });
+  const denied = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "payroll-secret-rag.pdf",
+    classificationName: "Payroll Secret",
+    classificationLevel: "restricted",
+  });
+  const [allowedChunk, deniedChunk] = await Promise.all([
+    createChunk({ tenantId, documentId: allowed.id, text: "canonical classification retrieval evidence marker", classification: "restricted" }),
+    createChunk({ tenantId, documentId: denied.id, text: "canonical classification retrieval evidence marker", classification: "restricted" }),
+  ]);
+  const scopedService = createScopedRetrievalService(scopes);
+  const result = await scopedService.hybridSearch(
+    { queryText: "canonical classification retrieval evidence marker", topK: 10 },
+    { tenantId, actorId, baseRole: "EMPLOYEE", permissionScopes: scopes },
+  );
+  assert.deepEqual(result.candidates.map((candidate) => candidate.chunkId), [allowedChunk.id]);
+  assert.equal(result.candidates.some((candidate) => candidate.chunkId === deniedChunk.id), false);
 });
 
 // ── evaluate_evidence ──────────────────────────────────────────────────────

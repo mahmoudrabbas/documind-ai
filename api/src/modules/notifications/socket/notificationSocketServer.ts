@@ -202,18 +202,23 @@ export function createSocketServer(
       return next(new Error("unauthorized"));
     }
 
-    const sessionCheck = typeof claims.sessionVersion === "number"
-      ? UserModel.findById(claims.sub).select("sessionVersion").lean().exec()
-      : Promise.resolve(null);
+    // A token proves only that the session was issued. Every new handshake
+    // reloads current membership and account state so disabled/deleted/moved
+    // users cannot reconnect with an otherwise unexpired token.
+    const userCheck = UserModel.findOne({
+      _id: claims.sub,
+      tenantId: claims.tenantId,
+      status: "active",
+    }).select("sessionVersion").lean().exec();
     void Promise.all([
       requireActiveTenantAccess(claims.tenantId),
-      sessionCheck,
+      userCheck,
     ])
       .then(([, user]) => {
-        if (
+        if (!user || (
           typeof claims.sessionVersion === "number" &&
-          (!user || (user.sessionVersion ?? 0) !== claims.sessionVersion)
-        ) {
+          (user.sessionVersion ?? 0) !== claims.sessionVersion
+        )) {
           return next(new Error("unauthorized"));
         }
         socket.data.role = "user";

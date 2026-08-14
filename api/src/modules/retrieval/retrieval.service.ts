@@ -221,7 +221,7 @@ async function revalidateAndHydrate(
         const docs = await DocumentModel.find({
           _id: { $in: docIds.map((id) => new Types.ObjectId(id)) },
           tenantId: new Types.ObjectId(tenantId),
-          uploadedBy: new Types.ObjectId(context.actorId),
+          owner: new Types.ObjectId(context.actorId),
           deletedAt: null,
         }, { _id: 1 }).lean().exec();
         ownedDocumentIds = new Set(docs.map((d) => d._id.toString()));

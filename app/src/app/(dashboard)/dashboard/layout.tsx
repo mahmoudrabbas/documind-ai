@@ -9,7 +9,7 @@ import {
   type PermissionValue,
 } from "@/types/api/permissions.types";
 import { useAuth } from "@/providers/auth-provider";
-import { isStandardUserRole } from "@/lib/role-home";
+import { usePermissions } from "@/providers/permission-provider";
 
 const ROUTE_PERMISSIONS: ReadonlyArray<{
   prefix: string;
@@ -19,6 +19,10 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
   { prefix: "/dashboard/users", permissions: [Permission.USERS_READ] },
   { prefix: "/dashboard/roles", permissions: [Permission.ROLES_READ] },
   { prefix: "/dashboard/audit", permissions: [Permission.AUDIT_READ] },
+  {
+    prefix: "/dashboard/analytics",
+    permissions: [Permission.ANALYTICS_READ],
+  },
   {
     prefix: "/dashboard/knowledge-gaps",
     permissions: [Permission.KNOWLEDGE_GAPS_READ],
@@ -58,18 +62,23 @@ export default function TenantDashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const auth = useAuth();
-  const required =
-    ROUTE_PERMISSIONS.find(({ prefix }) => pathname.startsWith(prefix))
-      ?.permissions ?? [];
+  const permissions = usePermissions();
+  const isOverviewPath = pathname === "/dashboard" || pathname === "/dashboard/";
+  const required = isOverviewPath
+    ? [Permission.ANALYTICS_READ]
+    : ROUTE_PERMISSIONS.find(({ prefix }) => pathname.startsWith(prefix))
+        ?.permissions ?? [];
 
   useEffect(() => {
     if (auth.status !== "authenticated") return;
-    const isOverviewPath =
-      pathname === "/dashboard" || pathname === "/dashboard/";
-    if (isOverviewPath && isStandardUserRole(auth.user.role)) {
+    if (
+      isOverviewPath &&
+      permissions.status === "ready" &&
+      !permissions.can(Permission.ANALYTICS_READ)
+    ) {
       router.replace("/dashboard/chat");
     }
-  }, [auth, pathname, router]);
+  }, [auth, isOverviewPath, permissions, router]);
 
   return (
     <RoleGuard role={TENANT_SHELL_ROLES}>

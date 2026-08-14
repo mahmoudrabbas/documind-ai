@@ -44,6 +44,12 @@ export interface DocumentAccessResourceContext {
    * so capability scope checks compare canonical names.
    */
   canonicalCategoryName?: string | null;
+  /**
+   * Canonical normalized classification name resolved tenant-scoped from
+   * `classificationId`. The `classification` field is a sensitivity level,
+   * not a taxonomy identity.
+   */
+  canonicalClassificationName?: string | null;
 }
 
 export type DocumentAccessPolicyStatus = "draft" | "active" | "inactive" | "retired";

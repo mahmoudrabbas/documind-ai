@@ -27,6 +27,10 @@ import { getDocumentAccessAuthorizationService } from "../document-access/docume
 import { config } from "../../config/index.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
+import ProcessingRunModel from "../../db/models/processingRun.model.js";
+import AuditLogModel from "../../db/models/auditLog.model.js";
+import { signJwt } from "../auth/jwtTokens.js";
+import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 
 
 const app: Express = (await import("../../app.js")).default;
@@ -236,6 +240,8 @@ interface TestDocOverrides {
   scanResult?: DocumentDocument["scanResult"];
   category?: string | null;
   department?: string | null;
+  departmentId?: string | null;
+  classificationLevel?: Exclude<DocumentClassification, "public">;
   effectiveDate?: Date | null;
   expiryDate?: Date | null;
   additionalPolicyRules?: Array<{
@@ -265,7 +271,7 @@ async function createTestDocumentWithPolicy(
         tenantId,
         name: classification.charAt(0).toUpperCase() + classification.slice(1),
         normalizedName: normalizedClassification,
-        level: "confidential" as const,
+        level: overrides.classificationLevel ?? "confidential",
         description: `${classification} classification`,
         status: "active" as const,
         version: 1,
@@ -299,7 +305,7 @@ async function createTestDocumentWithPolicy(
     checksum: overrides.checksum ?? "abc123",
     status: overrides.status ?? "uploaded",
     metadata: overrides.metadata ?? { title: "Test", description: "Desc", tags: [] },
-    classification: normalizedClassification as DocumentClassification,
+    classification: overrides.classificationLevel ?? normalizedClassification as DocumentClassification,
     version: overrides.version ?? 1,
     versionLabel: overrides.versionLabel ?? "v1",
     uploadedBy: userId,
@@ -317,6 +323,7 @@ async function createTestDocumentWithPolicy(
     scanResult: overrides.scanResult ?? null,
     category: overrides.category ?? null,
     department: overrides.department ?? null,
+    departmentId: overrides.departmentId ?? null,
     effectiveDate: overrides.effectiveDate ?? null,
     expiryDate: overrides.expiryDate ?? null,
   });
@@ -350,12 +357,20 @@ async function createTestDocumentWithPolicy(
       policyVersion: 1,
       classificationId: classificationDoc._id,
       categoryId: null,
-      departmentId: null,
+      departmentId: overrides.departmentId ?? null,
     },
     createdAt: now,
   });
 
   return { doc, classification: classificationDoc, policy };
+}
+
+async function writeTestDocumentFile(tenantId: string, fileName: string, content: Buffer) {
+  const storageKey = `${tenantId}/${fileName}`;
+  const fullPath = path.join(UPLOAD_TEST_DIR, storageKey);
+  await fsp.mkdir(path.dirname(fullPath), { recursive: true });
+  await fsp.writeFile(fullPath, content);
+  return storageKey;
 }
 
 before(async () => {
@@ -385,6 +400,8 @@ beforeEach(async () => {
   await DepartmentModel.deleteMany({});
   await DocumentAccessPolicyModel.deleteMany({});
   await RoleModel.deleteMany({});
+  await ProcessingRunModel.deleteMany({});
+  await AuditLogModel.deleteMany({});
 
   const uploads = await fsp.readdir(UPLOAD_TEST_DIR).catch(() => []);
   for (const dir of uploads) {
@@ -1295,6 +1312,153 @@ void test("employee without documents.download receives a stable authorization d
   }
 });
 
+void test("AUTH-COR-004 — preview uses read permission and read policy while download remains separate", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const fileContent = Buffer.from("read-only preview content");
+    const storageKey = await writeTestDocumentFile(tenant.id, "read-preview.pdf", fileContent);
+    const { doc } = await createTestDocumentWithPolicy(
+      tenant.id,
+      employee.id,
+      "internal",
+      ["read"],
+      {
+        fileName: "read-preview.pdf",
+        originalFileName: "read-preview.pdf",
+        fileSize: fileContent.length,
+        storageKey,
+        checksum: "read-preview",
+      },
+    );
+    const token = await login(port, "acme-consulting", employee.email);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const preview = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/preview`, { headers });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.headers.get("Content-Disposition"), "inline");
+    assert.equal(await preview.text(), fileContent.toString("utf-8"));
+
+    const download = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/download`, { headers });
+    assert.equal(download.status, 403);
+
+    await DocumentModel.updateOne(
+      { _id: doc._id, tenantId: tenant._id },
+      { $set: { isArchived: true, archivedAt: new Date(), archivedBy: employee._id } },
+    );
+    const archivedPreview = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/preview`, { headers });
+    assert.equal(archivedPreview.status, 200);
+    assert.equal(await archivedPreview.text(), fileContent.toString("utf-8"));
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("AUTH-COR-004 — preview read-policy denial applies to Company Admin and document owner", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const adminFile = Buffer.from("admin denied preview");
+    const ownerFile = Buffer.from("owner denied preview");
+    const [adminStorageKey, ownerStorageKey] = await Promise.all([
+      writeTestDocumentFile(tenant.id, "admin-denied-preview.pdf", adminFile),
+      writeTestDocumentFile(tenant.id, "owner-denied-preview.pdf", ownerFile),
+    ]);
+    const { doc: adminDoc } = await createTestDocumentWithPolicy(
+      tenant.id,
+      admin.id,
+      "internal",
+      ["read"],
+      {
+        fileName: "admin-denied-preview.pdf",
+        storageKey: adminStorageKey,
+        fileSize: adminFile.length,
+        checksum: "admin-denied-preview",
+        additionalPolicyRules: [{ ruleId: "deny-admin-preview", effect: "deny", subject: { type: "user", id: admin.id }, actions: ["read"] }],
+      },
+    );
+    const { doc: ownerDoc } = await createTestDocumentWithPolicy(
+      tenant.id,
+      employee.id,
+      "internal",
+      ["read"],
+      {
+        fileName: "owner-denied-preview.pdf",
+        storageKey: ownerStorageKey,
+        fileSize: ownerFile.length,
+        checksum: "owner-denied-preview",
+        additionalPolicyRules: [{ ruleId: "deny-owner-preview", effect: "deny", subject: { type: "user", id: employee.id }, actions: ["read"] }],
+      },
+    );
+    const [adminToken, employeeToken] = await Promise.all([
+      login(port),
+      login(port, "acme-consulting", employee.email),
+    ]);
+
+    const adminPreview = await fetch(`http://127.0.0.1:${port}/documents/${adminDoc.id}/preview`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const ownerPreview = await fetch(`http://127.0.0.1:${port}/documents/${ownerDoc.id}/preview`, {
+      headers: { Authorization: `Bearer ${employeeToken}` },
+    });
+    assert.equal(adminPreview.status, 404);
+    assert.equal(ownerPreview.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("AUTH-COR-004 — scoped preview enforces the authoritative document scope", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const [hr, finance] = await Promise.all([
+      DepartmentModel.create({ tenantId: tenant._id, name: "HR", normalizedName: "hr", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+      DepartmentModel.create({ tenantId: tenant._id, name: "Finance", normalizedName: "finance", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+    ]);
+    const role = await RoleModel.create({
+      tenantId: tenant._id,
+      name: "HR Preview Reader",
+      normalizedName: "hr preview reader",
+      baseRole: "EMPLOYEE",
+      grants: [{
+        permission: Permission.DOCUMENTS_READ,
+        scopes: { selfOnly: false, departmentIds: [hr.id], documentCategories: [], documentClassifications: [] },
+      }],
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    });
+    await UserModel.updateOne({ _id: employee._id }, { $set: { customRoleId: role._id } });
+    const fileContent = Buffer.from("scoped preview content");
+    const [hrStorageKey, financeStorageKey] = await Promise.all([
+      writeTestDocumentFile(tenant.id, "hr-preview.pdf", fileContent),
+      writeTestDocumentFile(tenant.id, "finance-preview.pdf", fileContent),
+    ]);
+    const { doc: hrDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["read"], {
+      fileName: "hr-preview.pdf", storageKey: hrStorageKey, fileSize: fileContent.length, checksum: "hr-preview", department: "HR", departmentId: hr.id,
+    });
+    const { doc: financeDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["read"], {
+      fileName: "finance-preview.pdf", storageKey: financeStorageKey, fileSize: fileContent.length, checksum: "finance-preview", department: "Finance", departmentId: finance.id,
+    });
+    const token = await login(port, "acme-consulting", employee.email);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const allowed = await fetch(`http://127.0.0.1:${port}/documents/${hrDoc.id}/preview`, { headers });
+    const denied = await fetch(`http://127.0.0.1:${port}/documents/${financeDoc.id}/preview`, { headers });
+    assert.equal(allowed.status, 200);
+    assert.equal(await allowed.text(), fileContent.toString("utf-8"));
+    assert.equal(denied.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 void test("employee with documents.download but without document-level access is denied", async () => {
   const server = await createServer();
   try {
@@ -1471,6 +1635,103 @@ void test("GET /documents — filter by classification", async () => {
   assert.equal((data.documents as unknown[]).length, 1);
   assert.equal(((data.documents as unknown[])[0] as Record<string, unknown>).classification, "restricted");
   await closeServer(server);
+});
+
+void test("classification-scoped document operations use canonical taxonomy identity, not shared sensitivity level", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id, { email: "classification-scope@acme.com" });
+    const role = await RoleModel.create({
+      tenantId: tenant._id,
+      name: "Restricted Identity Role",
+      normalizedName: "restricted identity role",
+      baseRole: "EMPLOYEE",
+      grants: [
+        Permission.DOCUMENTS_READ,
+        Permission.DOCUMENTS_CREATE,
+        Permission.DOCUMENTS_USE_IN_AI,
+      ].map((permission) => ({
+        permission,
+        scopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: ["restricted"],
+        },
+      })),
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    });
+    await UserModel.updateOne({ _id: employee._id }, { $set: { customRoleId: role._id } });
+
+    const restricted = await createTestDocumentWithPolicy(
+      tenant.id, employee.id, "Restricted", ["discover", "read", "use_in_ai"],
+      { classificationLevel: "restricted", fileName: "restricted-identity.pdf", checksum: "restricted-identity" },
+    );
+    const payroll = await createTestDocumentWithPolicy(
+      tenant.id, employee.id, "Payroll Secret", ["discover", "read", "use_in_ai"],
+      { classificationLevel: "restricted", fileName: "payroll-secret.pdf", checksum: "payroll-secret" },
+    );
+    const token = await login(port, "acme-consulting", "classification-scope@acme.com");
+
+    const optionsResponse = await fetch(`http://127.0.0.1:${port}/documents/upload-options`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const optionsBody = await optionsResponse.json() as { data: { taxonomy: { classifications: Array<{ name: string }> } } };
+    assert.equal(optionsResponse.status, 200);
+    assert.deepEqual(optionsBody.data.taxonomy.classifications.map((item) => item.name), ["Restricted"]);
+
+    assert.equal((await fetch(`http://127.0.0.1:${port}/documents/${restricted.doc.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })).status, 200);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/documents/${payroll.doc.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })).status, 404);
+    assert.ok(await AuditLogModel.findOne({
+      tenantId: tenant._id,
+      userId: employee._id,
+      action: "PERMISSION_DENIED",
+      "changes.reason": "SCOPE_MISMATCH",
+      "metadata.resourceContext.documentClassification": "payroll secret",
+    }).lean().exec());
+
+    const listResponse = await fetch(`http://127.0.0.1:${port}/documents`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(listResponse.status, 200);
+    const listed = (await listResponse.json()) as { data: { documents: Array<{ id: string }> } };
+    assert.deepEqual(listed.data.documents.map((document) => document.id), [restricted.doc.id]);
+
+    await assert.doesNotReject(getDocumentAccessAuthorizationService().authorizeDocumentAction(
+      { tenantId: tenant.id, actorId: employee.id }, restricted.doc.id, "use_in_ai",
+    ));
+    await assert.rejects(getDocumentAccessAuthorizationService().authorizeDocumentAction(
+      { tenantId: tenant.id, actorId: employee.id }, payroll.doc.id, "use_in_ai",
+    ));
+
+    for (const [classificationId, expectedStatus] of [
+      [restricted.classification.id, 201],
+      [payroll.classification.id, 403],
+    ] as const) {
+      const multipart = buildMultipartBody(`upload-${classificationId}.pdf`, Buffer.from("%PDF-1.4 scoped"), {
+        title: "Scoped Classification Upload",
+        classificationId,
+      });
+      const response = await fetch(`http://127.0.0.1:${port}/documents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "content-type": `multipart/form-data; boundary=${multipart.boundary}`,
+        },
+        body: multipart.buffer,
+      });
+      assert.equal(response.status, expectedStatus);
+    }
+  } finally {
+    await closeServer(server);
+  }
 });
 
 void test("PUT /documents/:id/replace — replaces document and creates new version", async () => {
@@ -1980,4 +2241,278 @@ void test("GET /documents/upload-options — returns 401 without auth", async ()
   assert.equal(response.status, 401);
 
   await closeServer(server);
+});
+
+void test("AUTH-COR-001 — scoped document mutations use authoritative taxonomy and still obey document policy", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const [hr, finance] = await Promise.all([
+      DepartmentModel.create({ tenantId: tenant._id, name: "HR", normalizedName: "hr", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+      DepartmentModel.create({ tenantId: tenant._id, name: "Finance", normalizedName: "finance", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+    ]);
+    const scopes = { selfOnly: false, departmentIds: [hr.id], documentCategories: [], documentClassifications: [] };
+    const role = await RoleModel.create({
+      tenantId: tenant._id,
+      name: "HR Document Operator",
+      normalizedName: "hr document operator",
+      baseRole: "EMPLOYEE",
+      grants: [
+        { permission: Permission.DOCUMENTS_UPDATE, scopes },
+        { permission: Permission.DOCUMENTS_ARCHIVE, scopes },
+      ],
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    });
+    await UserModel.updateOne({ _id: employee._id }, { $set: { customRoleId: role._id } });
+    const actions = ["discover", "read", "update", "archive", "restore", "replace"];
+    const { doc: hrDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", actions, { department: "HR", departmentId: hr.id });
+    const { doc: financeDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", actions, { department: "Finance", departmentId: finance.id, checksum: "finance-scoped-deny" });
+    const { doc: policyDeniedDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", actions, {
+      department: "HR",
+      departmentId: hr.id,
+      checksum: "policy-denied-scoped-update",
+      additionalPolicyRules: [{ ruleId: "deny-employee-update", effect: "deny", subject: { type: "user", id: employee.id }, actions: ["update"] }],
+    });
+    const token = await login(port, "acme-consulting", employee.email);
+
+    const allowed = await fetch(`http://127.0.0.1:${port}/documents/${hrDoc.id}`, {
+      method: "PATCH", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ title: "HR updated" }),
+    });
+    assert.equal(allowed.status, 200, await allowed.text());
+
+    const denied = await fetch(`http://127.0.0.1:${port}/documents/${financeDoc.id}`, {
+      method: "PATCH", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ title: "Finance updated" }),
+    });
+    assert.equal(denied.status, 404);
+
+    const archived = await fetch(`http://127.0.0.1:${port}/documents/${hrDoc.id}/archive`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(archived.status, 200);
+
+    const policyDenied = await fetch(`http://127.0.0.1:${port}/documents/${policyDeniedDoc.id}`, {
+      method: "PATCH", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ title: "Must not change" }),
+    });
+    assert.equal(policyDenied.status, 404);
+    assert.notEqual((await DocumentModel.findById(policyDeniedDoc.id))?.metadata.title, "Must not change");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("AUTH-COR-001 — scoped users:read filters in Mongo and users:update checks the target", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const [hr, finance] = await Promise.all([
+      DepartmentModel.create({ tenantId: tenant._id, name: "HR", normalizedName: "hr", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+      DepartmentModel.create({ tenantId: tenant._id, name: "Finance", normalizedName: "finance", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+    ]);
+    const actor = await createEmployee(tenant.id, { email: "hr-operator@acme.com" });
+    const hrTarget = await createEmployee(tenant.id, { email: "hr-target@acme.com" });
+    const financeTarget = await createEmployee(tenant.id, { email: "finance-target@acme.com" });
+    await UserModel.updateOne({ _id: actor._id }, { $set: { "employeeProfile.department": "HR" } });
+    await UserModel.updateOne({ _id: hrTarget._id }, { $set: { "employeeProfile.department": "hr" } });
+    await UserModel.updateOne({ _id: financeTarget._id }, { $set: { "employeeProfile.department": "Finance" } });
+    const scopes = { selfOnly: false, departmentIds: [hr.id], documentCategories: [], documentClassifications: [] };
+    const role = await RoleModel.create({ tenantId: tenant._id, name: "HR User Manager", normalizedName: "hr user manager", baseRole: "EMPLOYEE", grants: [
+      { permission: Permission.USERS_READ, scopes }, { permission: Permission.USERS_UPDATE, scopes },
+    ], createdBy: admin._id, updatedBy: admin._id });
+    await UserModel.updateOne({ _id: actor._id }, { $set: { customRoleId: role._id } });
+    const token = await login(port, "acme-consulting", actor.email);
+
+    const list = await fetch(`http://127.0.0.1:${port}/users`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(list.status, 200);
+    const listBody = await list.json() as { data: { users: Array<{ id: string }>; pagination: { totalRecords: number } } };
+    assert.deepEqual(new Set(listBody.data.users.map((user) => user.id)), new Set([actor.id, hrTarget.id]));
+    assert.equal(listBody.data.pagination.totalRecords, 2);
+
+    const allowed = await fetch(`http://127.0.0.1:${port}/users/${hrTarget.id}`, { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ status: "disabled" }) });
+    assert.equal(allowed.status, 200);
+    const denied = await fetch(`http://127.0.0.1:${port}/users/${financeTarget.id}`, { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ status: "disabled" }) });
+    assert.equal(denied.status, 403);
+    assert.equal((await UserModel.findById(financeTarget.id))?.status, "active");
+    assert.notEqual(finance.id, hr.id);
+
+    const selfActor = await createEmployee(tenant.id, { email: "self-manager@acme.com" });
+    const selfRole = await RoleModel.create({ tenantId: tenant._id, name: "Self User Manager", normalizedName: "self user manager", baseRole: "EMPLOYEE", grants: [
+      { permission: Permission.USERS_READ, scopes: { selfOnly: true, departmentIds: [], documentCategories: [], documentClassifications: [] } },
+      { permission: Permission.USERS_UPDATE, scopes: { selfOnly: true, departmentIds: [], documentCategories: [], documentClassifications: [] } },
+    ], createdBy: admin._id, updatedBy: admin._id });
+    await UserModel.updateOne({ _id: selfActor._id }, { $set: { customRoleId: selfRole._id } });
+    const selfToken = await login(port, "acme-consulting", selfActor.email);
+    const selfList = await fetch(`http://127.0.0.1:${port}/users`, { headers: { Authorization: `Bearer ${selfToken}` } });
+    const selfListBody = await selfList.json() as { data: { users: Array<{ id: string }> } };
+    assert.deepEqual(selfListBody.data.users.map((user) => user.id), [selfActor.id]);
+    const otherUpdate = await fetch(`http://127.0.0.1:${port}/users/${hrTarget.id}`, { method: "PATCH", headers: { Authorization: `Bearer ${selfToken}`, "content-type": "application/json" }, body: JSON.stringify({ status: "active" }) });
+    assert.equal(otherUpdate.status, 403);
+    assert.equal(await AuditLogModel.countDocuments({
+      tenantId: tenant._id,
+      userId: selfActor._id,
+      action: "PERMISSION_DENIED",
+      "changes.reason": "SCOPE_MISMATCH",
+    }), 1);
+    const ownUpdate = await fetch(`http://127.0.0.1:${port}/users/${selfActor.id}`, { method: "PATCH", headers: { Authorization: `Bearer ${selfToken}`, "content-type": "application/json" }, body: JSON.stringify({ status: "disabled" }) });
+    assert.equal(ownUpdate.status, 200);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("AUTH-COR-001 — scoped reprocess denies out-of-scope documents before processing side effects", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const [hr, finance] = await Promise.all([
+      DepartmentModel.create({ tenantId: tenant._id, name: "HR", normalizedName: "hr", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+      DepartmentModel.create({ tenantId: tenant._id, name: "Finance", normalizedName: "finance", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+    ]);
+    const role = await RoleModel.create({ tenantId: tenant._id, name: "HR Reprocessor", normalizedName: "hr reprocessor", baseRole: "EMPLOYEE", grants: [{
+      permission: Permission.DOCUMENTS_OCR_PROCESS,
+      scopes: { selfOnly: false, departmentIds: [hr.id], documentCategories: [], documentClassifications: [] },
+    }], createdBy: admin._id, updatedBy: admin._id });
+    await UserModel.updateOne({ _id: employee._id }, { $set: { customRoleId: role._id } });
+    const { doc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["reprocess"], { department: "Finance", departmentId: finance.id, checksum: "finance-reprocess-deny" });
+    const { doc: allowedDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["reprocess"], { department: "HR", departmentId: hr.id, checksum: "hr-reprocess-allow" });
+    const { doc: policyDeniedDoc } = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["reprocess"], {
+      department: "HR", departmentId: hr.id, checksum: "hr-reprocess-policy-deny",
+      additionalPolicyRules: [{ ruleId: "deny-scoped-reprocess", effect: "deny", subject: { type: "user", id: employee.id }, actions: ["reprocess"] }],
+    });
+    const token = await login(port, "acme-consulting", employee.email);
+    const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/processing/reprocess`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 403);
+    assert.equal(await ProcessingRunModel.countDocuments({ tenantId: tenant._id, documentId: doc._id }), 0);
+
+    const denialAudit = await AuditLogModel.findOne({
+      tenantId: tenant._id,
+      userId: employee._id,
+      action: "PERMISSION_DENIED",
+      "changes.reason": "SCOPE_MISMATCH",
+    }).lean().exec();
+    assert.ok(denialAudit, "downstream department scope mismatch must persist PERMISSION_DENIED");
+
+    const policyDenied = await fetch(`http://127.0.0.1:${port}/documents/${policyDeniedDoc.id}/processing/reprocess`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(policyDenied.status, 404);
+    assert.equal(await ProcessingRunModel.countDocuments({ tenantId: tenant._id, documentId: policyDeniedDoc._id }), 0);
+
+    const allowed = await fetch(`http://127.0.0.1:${port}/documents/${allowedDoc.id}/processing/reprocess`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(allowed.status, 200, await allowed.text());
+    assert.equal(await ProcessingRunModel.countDocuments({ tenantId: tenant._id, documentId: allowedDoc._id }), 1);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("processing mutations enforce DAP reprocess for Company Admin before run or extraction side effects", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const { doc } = await createTestDocumentWithPolicy(tenant.id, admin.id, "internal", ["reprocess"], {
+      checksum: "company-admin-processing-deny",
+      additionalPolicyRules: [{ ruleId: "deny-admin-reprocess", effect: "deny", subject: { type: "user", id: admin.id }, actions: ["reprocess"] }],
+    });
+    const token = await login(port);
+
+    for (const endpoint of ["processing/initiate", "processing/retry", "processing/reprocess", "processing/cancel", "extraction/retrigger"]) {
+      const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/${endpoint}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      assert.equal(response.status, 404, `${endpoint} must obey explicit reprocess deny`);
+      assert.equal(await ProcessingRunModel.countDocuments({ documentId: doc._id }), 0);
+      assert.equal((await DocumentModel.findById(doc._id))?.status, "uploaded");
+    }
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("stale SUPER_ADMIN JWT loses foreign processing access after persisted role change", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const platformTenant = await TenantModel.create({
+      name: "DocuMind Platform",
+      slug: PLATFORM_TENANT_SLUG,
+      isSystemTenant: true,
+      status: "active",
+      plan: "pro",
+    });
+    const platformUser = await UserModel.create({
+      tenantId: platformTenant._id,
+      name: "Platform Operator",
+      email: "platform-processing@example.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "SUPER_ADMIN",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    const { tenant: customerTenant, user: customerAdmin } = await createActiveTenantAdmin({
+      slug: "processing-customer",
+      companyName: "Processing Customer",
+      email: "processing-customer@example.com",
+    });
+    const { doc } = await createTestDocumentWithPolicy(customerTenant.id, customerAdmin.id, "internal", ["read", "reprocess"], {
+      checksum: "foreign-processing-document",
+    });
+    const staleToken = signJwt({
+      sub: platformUser.id,
+      tenantId: platformTenant.id,
+      type: "access",
+      role: "SUPER_ADMIN",
+      email: platformUser.email,
+      sessionVersion: platformUser.sessionVersion,
+    }, config.JWT_SECRET, "15m");
+
+    const legitimate = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/processing/status`, {
+      headers: { Authorization: `Bearer ${staleToken}` },
+    });
+    assert.equal(legitimate.status, 200, await legitimate.text());
+
+    await UserModel.updateOne({ _id: platformUser._id }, { $set: { role: "COMPANY_ADMIN" } });
+    const denied = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}/processing/status`, {
+      headers: { Authorization: `Bearer ${staleToken}` },
+    });
+    assert.equal(denied.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+void test("AUTH-COR-001 — scoped document create validates authoritative taxonomy before storage", async () => {
+  const server = await createServer();
+  try {
+    const port = (server.address() as { port: number }).port;
+    const { tenant, user: admin } = await createActiveTenantAdmin();
+    const employee = await createEmployee(tenant.id);
+    const [hr, finance] = await Promise.all([
+      DepartmentModel.create({ tenantId: tenant._id, name: "HR", normalizedName: "hr", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+      DepartmentModel.create({ tenantId: tenant._id, name: "Finance", normalizedName: "finance", description: null, status: "active", version: 1, createdBy: admin._id, updatedBy: admin._id }),
+    ]);
+    const role = await RoleModel.create({ tenantId: tenant._id, name: "HR Uploader", normalizedName: "hr uploader", baseRole: "EMPLOYEE", grants: [{
+      permission: Permission.DOCUMENTS_CREATE,
+      scopes: { selfOnly: false, departmentIds: [hr.id], documentCategories: [], documentClassifications: [] },
+    }], createdBy: admin._id, updatedBy: admin._id });
+    await UserModel.updateOne({ _id: employee._id }, { $set: { customRoleId: role._id } });
+    const token = await login(port, "acme-consulting", employee.email);
+    const inScopeBody = buildMultipartBody("hr-create.pdf", Buffer.from("%PDF-1.4 scoped HR"), { title: "HR create", departmentId: hr.id });
+    const allowed = await fetch(`http://127.0.0.1:${port}/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/form-data; boundary=${inScopeBody.boundary}` }, body: inScopeBody.buffer });
+    assert.equal(allowed.status, 201);
+
+    const outOfScopeBody = buildMultipartBody("finance-create.pdf", Buffer.from("%PDF-1.4 scoped Finance"), { title: "Finance create", departmentId: finance.id });
+    const denied = await fetch(`http://127.0.0.1:${port}/documents`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/form-data; boundary=${outOfScopeBody.boundary}` }, body: outOfScopeBody.buffer });
+    assert.equal(denied.status, 403);
+    assert.equal(await DocumentModel.countDocuments({ tenantId: tenant._id, departmentId: finance._id }), 0);
+  } finally {
+    await closeServer(server);
+  }
 });

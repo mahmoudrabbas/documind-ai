@@ -10,6 +10,7 @@ import {
   INVALID_OR_EXPIRED_VERIFICATION_TOKEN,
   PERMISSION_REQUIRED,
   SELF_ACTION_FORBIDDEN,
+  SCOPE_MISMATCH,
 } from "../../common/errors/errorCodes.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
@@ -40,7 +41,7 @@ import type {
   AuditOutcome,
 } from "../../common/observability/auditEvents.js";
 import { getAuditWriter } from "../../common/observability/index.js";
-import { authorizePermission } from "../permissions/permissions.authorization.js";
+import { authorizePermission, authorizePermissionCapability } from "../permissions/permissions.authorization.js";
 import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import {
   Permission,
@@ -71,6 +72,8 @@ import { RecipientResolver } from "../notifications/recipientResolver.js";
 import { getNotificationOutboxDispatcher } from "../notifications/outbox/notificationOutbox.dispatcher.js";
 import { publishInvitationAcceptedTriggers } from "../notifications/triggers/invitationAccepted.trigger.js";
 import { publishRoleChangedTrigger } from "../notifications/triggers/roleChanged.trigger.js";
+import DepartmentModel from "../../db/models/department.model.js";
+import type { PermissionResourceContext, PermissionScopes } from "../permissions/permissions.types.js";
 
 export interface UserOperationContext {
   tenantId: string;
@@ -267,7 +270,6 @@ export async function updateUser(
   targetUserId: string,
 ): Promise<UpdateUserResult> {
   const context = await resolveUserOperationContext(inputContext);
-  await authorizeUserOperation(context, Permission.USERS_UPDATE);
   const payload = validateUpdateUserInput(input);
   if (payload.role !== undefined) {
     await authorizeUserOperation(context, Permission.USERS_ASSIGN_ROLE);
@@ -286,6 +288,11 @@ export async function updateUser(
     );
     throw new AppError(404, NOT_FOUND, "User not found");
   }
+  await authorizeUserOperationForResource(
+    context,
+    Permission.USERS_UPDATE,
+    await userPermissionResource(context.tenantId, existingUser),
+  );
   const tenant = await findTenantById(tenantId);
   if (!tenant) {
     throw new AppError(404, NOT_FOUND, "Tenant not found");
@@ -639,6 +646,83 @@ async function authorizeUserOperation(
   }
 }
 
+async function authorizeUserOperationForResource(
+  context: ResolvedUserOperationContext,
+  permission: PermissionValue,
+  resource: PermissionResourceContext,
+): Promise<void> {
+  try {
+    await authorizePermission(context, permission, resource);
+  } catch (error) {
+    // authorizePermission centrally persists authoritative downstream scope
+    // mismatches; keep the legacy audit for other denial classes only.
+    if (!(error instanceof AppError && error.code === SCOPE_MISMATCH)) {
+      await auditUserOperation(
+        context,
+        "PERMISSION_DENIED",
+        permission,
+        { required: permission, reason: PERMISSION_REQUIRED },
+        "DENIED",
+      );
+    }
+    throw error;
+  }
+}
+
+async function departmentNamesForScope(tenantId: string, departmentIds: readonly string[]): Promise<string[]> {
+  if (departmentIds.length === 0) return [];
+  const departments = await DepartmentModel.find({
+    tenantId,
+    _id: { $in: departmentIds },
+    status: "active",
+  }).select("name").lean().exec();
+  return departments.map((department) => department.name.trim().toLowerCase());
+}
+
+async function userCollectionScopeFilter(
+  tenantId: string,
+  actorId: string,
+  scopes: PermissionScopes | null,
+): Promise<Record<string, unknown>> {
+  if (!scopes) return {};
+  const constraints: Record<string, unknown>[] = [];
+  if (scopes.selfOnly) constraints.push({ _id: new mongoose.Types.ObjectId(actorId) });
+  if (scopes.departmentIds.length > 0) {
+    const names = await departmentNamesForScope(tenantId, scopes.departmentIds);
+    constraints.push({
+      $expr: {
+        $in: [
+          { $toLower: { $ifNull: ["$employeeProfile.department", ""] } },
+          names,
+        ],
+      },
+    });
+  }
+  return constraints.length > 0 ? { $and: constraints } : {};
+}
+
+async function userPermissionResource(
+  tenantId: string,
+  user: Pick<UserDocument, "_id" | "employeeProfile">,
+): Promise<PermissionResourceContext> {
+  const department = user.employeeProfile?.department?.trim();
+  let departmentId: string | undefined;
+  if (department) {
+    const escaped = department.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const record = await DepartmentModel.findOne({
+      tenantId,
+      name: { $regex: `^${escaped}$`, $options: "i" },
+      status: "active",
+    }).select("_id").lean().exec();
+    departmentId = record?._id.toString();
+  }
+  return {
+    tenantId,
+    ownerId: user._id.toString(),
+    ...(departmentId ? { departmentId } : {}),
+  };
+}
+
 async function auditUserOperation(
   context: ResolvedUserOperationContext,
   action: AuditAction,
@@ -801,7 +885,7 @@ export async function listUsers(
   inputContext: UserOperationContext,
 ): Promise<ListUsersResult> {
   const context = await resolveUserOperationContext(inputContext);
-  await authorizeUserOperation(context, Permission.USERS_READ);
+  const capability = await authorizePermissionCapability(context, Permission.USERS_READ);
   const tenantId = context.tenantId;
   const payload = validateListUsersInput(input);
   const tenant = await findTenantById(tenantId);
@@ -809,10 +893,15 @@ export async function listUsers(
     throw new AppError(404, NOT_FOUND, "Tenant not found");
   }
   assertCustomerTenantForUserManagement(tenant);
+  const authorizationFilter = await userCollectionScopeFilter(
+    tenantId,
+    context.actorId,
+    capability.scope,
+  );
 
   const [totalRecords, users] = await Promise.all([
-    countUsersByTenant(tenantId, payload),
-    findUsersByTenant(tenantId, payload.page, payload.pageSize, payload),
+    countUsersByTenant(tenantId, payload, authorizationFilter),
+    findUsersByTenant(tenantId, payload.page, payload.pageSize, payload, authorizationFilter),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(totalRecords / payload.pageSize));

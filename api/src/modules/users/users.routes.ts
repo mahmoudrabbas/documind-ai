@@ -38,7 +38,7 @@ const employeeInviteGuard = createEntitlementGuard(svc, {
   amount: 1,
   failMode: "fail-closed",
 });
-const requireUserUpdate = requirePermission(Permission.USERS_UPDATE);
+const requireUserUpdate = requirePermission(Permission.USERS_UPDATE, { allowScoped: true });
 const requireRoleAssignment = requirePermission(Permission.USERS_ASSIGN_ROLE);
 const validateInvite: import("express").RequestHandler = (req, _res, next) => {
   try {
@@ -95,7 +95,7 @@ router.get(
   "/",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.USERS_READ),
+  requirePermission(Permission.USERS_READ, { allowScoped: true }),
   validateList,
   listUsersController,
 );

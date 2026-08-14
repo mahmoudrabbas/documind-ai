@@ -23,8 +23,9 @@ export {
 export function countUsersByTenant(
   tenantId: string,
   filter: ListUsersFilter = {},
+  authorizationFilter: Record<string, unknown> = {},
 ) {
-  return tenantScopedFind(UserModel, tenantId, buildListFilter(filter))
+  return tenantScopedFind(UserModel, tenantId, { ...buildListFilter(filter), ...authorizationFilter })
     .countDocuments()
     .exec();
 }
@@ -34,8 +35,9 @@ export function findUsersByTenant(
   page: number,
   pageSize: number,
   filter: ListUsersFilter = {},
+  authorizationFilter: Record<string, unknown> = {},
 ): Promise<UserSingleRecord[]> {
-  return tenantScopedFind(UserModel, tenantId, buildListFilter(filter))
+  return tenantScopedFind(UserModel, tenantId, { ...buildListFilter(filter), ...authorizationFilter })
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)

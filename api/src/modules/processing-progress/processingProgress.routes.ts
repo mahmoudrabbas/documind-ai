@@ -20,7 +20,7 @@ router.get(
   "/:id/processing/status",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   getProcessingStatusController,
 );
 
@@ -28,7 +28,7 @@ router.get(
   "/:id/processing/history",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   getProcessingHistoryController,
 );
 
@@ -36,7 +36,7 @@ router.post(
   "/:id/processing/initiate",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   initiateProcessingController,
 );
 
@@ -44,7 +44,7 @@ router.post(
   "/:id/processing/retry",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   retryProcessingStageController,
 );
 
@@ -52,7 +52,7 @@ router.post(
   "/:id/processing/reprocess",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   reprocessDocumentController,
 );
 
@@ -60,7 +60,7 @@ router.post(
   "/:id/processing/cancel",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   cancelProcessingController,
 );
 

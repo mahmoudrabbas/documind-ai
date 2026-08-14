@@ -265,6 +265,27 @@ describe.skipIf(!hasMongo)("notificationSocketServer (T15)", () => {
     expect(err.message).toBe("unauthorized");
   });
 
+  it("rejects a disabled or deleted user on a new handshake with an old token", async () => {
+    const disabledToken = userToken();
+    await UserModel.updateOne({ _id: userId }, { $set: { status: "disabled" } });
+    expect((await onConnectError(connectSocket(disabledToken))).message).toBe("unauthorized");
+
+    await UserModel.deleteOne({ _id: userId });
+    expect((await onConnectError(connectSocket(disabledToken))).message).toBe("unauthorized");
+  });
+
+  it("rejects a token whose user no longer belongs to the claimed tenant", async () => {
+    const token = userToken();
+    const otherTenant = await TenantModel.create({
+      name: "Moved User Tenant",
+      slug: "moved-user-tenant",
+      status: "active",
+      plan: "free",
+    });
+    await UserModel.updateOne({ _id: userId }, { $set: { tenantId: otherTenant._id } });
+    expect((await onConnectError(connectSocket(token))).message).toBe("unauthorized");
+  });
+
   it("rejects a JWT with a non-access type claim", async () => {
     const socket = connectSocket(userToken({ type: "refresh" }));
     const err = await onConnectError(socket);

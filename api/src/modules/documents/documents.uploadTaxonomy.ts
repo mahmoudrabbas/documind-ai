@@ -22,6 +22,8 @@ export interface ResolvedUploadTaxonomy {
   department: string | null;
   /** Sensitivity level of the selected classification record, or null when the default applies. */
   classification: DocumentClassification | null;
+  /** Canonical normalized taxonomy identity used by permission scopes. */
+  classificationName: string | null;
   categoryId: mongoose.Types.ObjectId | null;
   departmentId: mongoose.Types.ObjectId | null;
   classificationId: mongoose.Types.ObjectId | null;
@@ -76,13 +78,14 @@ export async function resolveUploadTaxonomy(
     resolveActiveRecord("department", selection.departmentId, (id) =>
       DepartmentModel.findOne({ _id: id, tenantId }).select("name status").lean().exec()),
     resolveActiveRecord("classification", selection.classificationId, (id) =>
-      DocumentClassificationModel.findOne({ _id: id, tenantId }).select("name level status").lean().exec()),
+      DocumentClassificationModel.findOne({ _id: id, tenantId }).select("name normalizedName level status").lean().exec()),
   ]);
 
   return {
     category: category?.name ?? null,
     department: department?.name ?? null,
     classification: (classification?.level ?? null) as DocumentClassification | null,
+    classificationName: classification?.normalizedName ?? null,
     categoryId: category ? new mongoose.Types.ObjectId(String(category._id)) : null,
     departmentId: department ? new mongoose.Types.ObjectId(String(department._id)) : null,
     classificationId: classification ? new mongoose.Types.ObjectId(String(classification._id)) : null,

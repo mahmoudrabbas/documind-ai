@@ -17,6 +17,7 @@ import type {
   PermissionResourceContext,
   PermissionScopes,
 } from "./permissions.types.js";
+import { writePermissionDenialAudit } from "./permissions.denialAudit.js";
 
 export interface AuthorizationActor {
   actorId: string;
@@ -37,7 +38,7 @@ export async function authorizePermission(
     throw new AppError(400, INVALID_PERMISSION, "Permission identifier is unknown or deprecated");
   }
   validateResourceContext(actor.tenantId, resource);
-  const user = await UserModel.findOne({ _id: actor.actorId, tenantId: actor.tenantId }).select("role").lean().exec();
+  const user = await UserModel.findOne({ _id: actor.actorId, tenantId: actor.tenantId }).select("email role").lean().exec();
   if (!user) throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
   const decision = await getPermissionEvaluator().evaluate({
     actorId: actor.actorId,
@@ -47,12 +48,57 @@ export async function authorizePermission(
     resource,
   });
   if (!decision.allowed) {
+    if (decision.denialCode === "SCOPE_MISMATCH") {
+      await writePermissionDenialAudit({
+        tenantId: actor.tenantId,
+        actorId: actor.actorId,
+        actorEmail: user.email,
+        actorRole: user.role,
+        permission: definition.id,
+        reason: decision.denialCode,
+        scope: decision.scope,
+        resource,
+      });
+    }
     const code = decision.denialCode === "SCOPE_MISMATCH" || decision.denialCode === "TENANT_MISMATCH"
       ? SCOPE_MISMATCH
       : PERMISSION_REQUIRED;
     throw new AppError(403, code, "Permission denied");
   }
   return decision;
+}
+
+/**
+ * Authorize the permission capability without pretending that a scoped grant
+ * is an unrestricted grant. Callers may use the returned scope only to build
+ * an authoritative resource lookup/query, and must subsequently call
+ * authorizePermission with that resource (or apply the equivalent query
+ * constraints) before returning data or causing side effects.
+ */
+export async function authorizePermissionCapability(
+  actor: AuthorizationActor,
+  permission: PermissionValue,
+): Promise<PermissionDecision> {
+  if (!mongoose.isObjectIdOrHexString(actor.actorId) || !mongoose.isObjectIdOrHexString(actor.tenantId)) {
+    throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
+  }
+  const user = await UserModel.findOne({ _id: actor.actorId, tenantId: actor.tenantId }).select("role").lean().exec();
+  if (!user) throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
+  const decision = await getPermissionEvaluator().evaluate({
+    actorId: actor.actorId,
+    tenantId: actor.tenantId,
+    baseRole: user.role,
+    permission,
+  });
+  if (decision.allowed || (
+    decision.denialCode === "RESOURCE_CONTEXT_REQUIRED" &&
+    decision.source !== null &&
+    decision.scope !== null &&
+    hasScopeConstraints(decision.scope)
+  )) {
+    return decision;
+  }
+  throw new AppError(403, PERMISSION_REQUIRED, "Permission denied");
 }
 
 export async function assertDelegableGrants(actor: AuthorizationActor, grants: readonly PermissionGrant[]): Promise<void> {

@@ -45,6 +45,7 @@ import { getDocumentAccessAuthorizationService } from "../document-access/docume
 import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
 import { buildRetrievableDocumentFilter } from "../retrieval/retrievalEligibility.js";
 import type { VersionConflictAgent } from "./ports/versionConflictAgent.port.js";
+import { buildDocumentPermissionResource } from "../documents/documents.permissionResource.js";
 
 const metadataAgent = new FakeMetadataAgent();
 const versionConflictAgent = new FakeVersionConflictAgent();
@@ -53,8 +54,20 @@ async function authorizeProcessingOperation(
   tenantId: string,
   context: OperationAuthorizationContext,
   permission: PermissionValue,
+  documentId?: string,
 ): Promise<ResolvedOperationAuthorizationContext> {
-  const actor = await authorizeTenantOperation(context, permission);
+  let actor: ResolvedOperationAuthorizationContext;
+  if (documentId) {
+    const document = await DocumentModel.findOne({ _id: documentId, tenantId }).lean().exec();
+    if (!document) throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found or access denied");
+    actor = await authorizeTenantOperation(
+      context,
+      permission,
+      await buildDocumentPermissionResource(tenantId, document),
+    );
+  } else {
+    actor = await authorizeTenantOperation(context, permission);
+  }
   if (tenantId !== actor.tenantId) {
     throw new AppError(
       404,
@@ -96,6 +109,7 @@ export async function triggerOcrProcessing(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_OCR_PROCESS,
+    input.documentId,
   );
   const tenId = new Types.ObjectId(tenantId);
   const docId = new Types.ObjectId(input.documentId);
@@ -208,6 +222,7 @@ export async function getOcrPageResults(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const pages = await findOcrPageResults(tenantId, documentId, documentVersion);
   return pages.map((page) => ({
@@ -243,6 +258,7 @@ export async function getDocumentQuality(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const quality = await findDocumentQuality(tenantId, documentId, documentVersion);
   if (!quality) {
@@ -287,11 +303,13 @@ export async function assessDocumentQuality(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_QUALITY_REVIEW,
+    documentId,
   );
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const ocrPages = await findOcrPageResults(tenantId, documentId, documentVersion);
 
@@ -359,11 +377,13 @@ export async function reviewDocumentQuality(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_QUALITY_REVIEW,
+    documentId,
   );
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const quality = await findDocumentQuality(tenantId, documentId, documentVersion);
   if (!quality) {
@@ -427,6 +447,7 @@ export async function retryOcrPages(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_OCR_PROCESS,
+    documentId,
   );
   const tenId = new Types.ObjectId(tenantId);
   const docId = new Types.ObjectId(documentId);
@@ -524,7 +545,8 @@ export async function triggerMetadataAnalysis(
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
-    Permission.DOCUMENTS_READ,
+    Permission.DOCUMENTS_OCR_PROCESS,
+    input.documentId,
   );
 
   const tenId = new Types.ObjectId(tenantId);
@@ -654,6 +676,7 @@ export async function getMetadataCandidates(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
 
   const candidates = await MetadataCandidateModel.find({
@@ -765,7 +788,8 @@ export async function triggerVersionConflictAnalysis(
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
-    Permission.DOCUMENTS_READ,
+    Permission.DOCUMENTS_OCR_PROCESS,
+    input.documentId,
   );
 
   const tenId = new Types.ObjectId(tenantId);
@@ -795,9 +819,37 @@ export async function triggerVersionConflictAnalysis(
 
   const sourceExtractedText = sourceOcrPages.map((p) => p.text).join("\n\n");
 
-  let candidateDocIds: Types.ObjectId[];
+  const authorizeCandidateIds = async (candidateIds: readonly Types.ObjectId[]): Promise<string[]> => {
+    const distinctIds = [...new Set(candidateIds.map((id) => id.toString()))];
+    if (distinctIds.length === 0) return [];
+    const eligibleIds = new Set(
+      (await DocumentModel.find(
+        buildRetrievableDocumentFilter(tenantId, distinctIds),
+        { _id: 1 },
+      ).lean().exec()).map((candidate) => candidate._id.toString()),
+    );
+    const authorizedIds: string[] = [];
+    for (const candidateId of distinctIds) {
+      if (!eligibleIds.has(candidateId)) continue;
+      try {
+        await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+          { tenantId, actorId: actor.actorId },
+          candidateId,
+          "use_in_ai",
+        );
+        authorizedIds.push(candidateId);
+      } catch {
+        // Inaccessible and nonexistent candidates are deliberately indistinguishable.
+      }
+    }
+    return authorizedIds;
+  };
+
+  let authorizedCandidateIds: string[];
   if (input.candidateDocumentIds && input.candidateDocumentIds.length > 0) {
-    candidateDocIds = input.candidateDocumentIds.map((id) => new Types.ObjectId(id));
+    authorizedCandidateIds = await authorizeCandidateIds(
+      input.candidateDocumentIds.map((id) => new Types.ObjectId(id)),
+    );
   } else {
     const sameChecksumDocs = await DocumentModel.find({
       tenantId: tenId,
@@ -813,43 +865,31 @@ export async function triggerVersionConflictAnalysis(
     for (const d of [...sameChecksumDocs, ...sameNameDocs]) {
       candidateIds.add(d._id.toString());
     }
-    candidateDocIds = [...candidateIds].map((id) => new Types.ObjectId(id));
+    const primaryCandidateIds = [...candidateIds].map((id) => new Types.ObjectId(id));
+    authorizedCandidateIds = await authorizeCandidateIds(primaryCandidateIds);
 
-    if (candidateDocIds.length === 0) {
+    // Restricted primary matches must not suppress fallback discovery. Decide
+    // from the authorized set, and exclude raw primary ids so their existence
+    // cannot crowd authorized fallback candidates out of the bounded query.
+    if (authorizedCandidateIds.length === 0) {
       const recentDocs = await DocumentModel.find({
         tenantId: tenId,
-        _id: { $ne: docId },
+        _id: {
+          $ne: docId,
+          ...(primaryCandidateIds.length > 0 ? { $nin: primaryCandidateIds } : {}),
+        },
         status: "processed",
       })
         .select("_id")
         .lean()
         .sort({ createdAt: -1 })
         .limit(20);
-      candidateDocIds = recentDocs.map((d) => d._id);
+      authorizedCandidateIds = await authorizeCandidateIds(recentDocs.map((d) => d._id));
     }
   }
 
-  const distinctCandidateIds = [...new Set(candidateDocIds.map((id) => id.toString()))];
-  const eligibleCandidateIds = new Set(
-    (await DocumentModel.find(
-      buildRetrievableDocumentFilter(tenantId, distinctCandidateIds),
-      { _id: 1 },
-    ).lean().exec()).map((candidate) => candidate._id.toString()),
-  );
-
   const candidateDocuments = [];
-  for (const candidateId of distinctCandidateIds) {
-    if (!eligibleCandidateIds.has(candidateId)) continue;
-    try {
-      await getDocumentAccessAuthorizationService().authorizeDocumentAction(
-        { tenantId, actorId: actor.actorId },
-        candidateId,
-        "use_in_ai",
-      );
-    } catch {
-      continue;
-    }
-
+  for (const candidateId of authorizedCandidateIds) {
     const cId = new Types.ObjectId(candidateId);
     const cDoc = await DocumentModel.findOne({ _id: cId, tenantId: tenId });
     if (!cDoc) continue;
@@ -1031,6 +1071,7 @@ export async function getDocumentRelationships(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
 
   const relationships = await DocumentRelationshipModel.find({
@@ -1198,6 +1239,7 @@ export async function getConflictFindings(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
 
   const conflicts = await ConflictFindingModel.find({

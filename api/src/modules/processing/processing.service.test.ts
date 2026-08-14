@@ -914,6 +914,40 @@ test("version-conflict automatic discovery filters restricted candidates before 
   assert.equal(JSON.stringify(agentInputs[0]).includes("AUTO DISCOVERY SECRET"), false);
 });
 
+test("version-conflict automatic discovery falls back when every primary match is unauthorized", async () => {
+  const sharedChecksum = "unauthorized-primary-checksum";
+  const source = await createTestDocument(1, ["read", "reprocess"], {
+    fileName: "fallback-source.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+  const restrictedPrimary = await createTestDocument(1, ["read"], {
+    fileName: "fallback-restricted-primary.pdf",
+    checksum: sharedChecksum,
+    status: "processed",
+  });
+  const authorizedFallback = await createTestDocument(1, ["use_in_ai"], {
+    fileName: "fallback-authorized.pdf",
+    checksum: "different-fallback-checksum",
+    status: "processed",
+  });
+  await seedOcrPages(restrictedPrimary.id, [{ pageNumber: 1, text: "PRIMARY SECRET", confidence: 0.99 }]);
+  await seedOcrPages(authorizedFallback.id, [{ pageNumber: 1, text: "AUTHORIZED FALLBACK", confidence: 0.99 }]);
+
+  const agentInputs: DocumentComparisonInput[] = [];
+  const result = await triggerVersionConflictAnalysis(
+    TENANT_ID,
+    { documentId: source.id },
+    TEST_CONTEXT,
+    recordingConflictAgent(agentInputs),
+  );
+
+  assert.equal(result.summary, "Analyzed 1 authorized candidates.");
+  assert.deepEqual(agentInputs[0]?.candidateDocuments.map((candidate) => candidate.id), [authorizedFallback.id]);
+  assert.equal(JSON.stringify(agentInputs[0]).includes("PRIMARY SECRET"), false);
+  assert.equal(JSON.stringify(agentInputs[0]).includes("AUTHORIZED FALLBACK"), true);
+});
+
 test("version-conflict analysis still produces relationships for an authorized candidate", async () => {
   const sharedChecksum = "authorized-version-checksum";
   const source = await createTestDocument(1, ["read", "reprocess"], {

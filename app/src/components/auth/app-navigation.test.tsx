@@ -118,6 +118,28 @@ describe("responsive navigation", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows analytics destinations to an Employee with effective analytics permission", () => {
+    state.auth.user.role = "EMPLOYEE";
+    state.permissions.baseRole = "EMPLOYEE";
+    grantOnly(Permission.ANALYTICS_READ, Permission.CHAT_READ);
+    renderNav();
+
+    expect(navHrefs()).toEqual([
+      "/dashboard",
+      "/dashboard/chat",
+      "/dashboard/analytics",
+    ]);
+  });
+
+  it("hides analytics destinations from an Employee without effective analytics permission", () => {
+    state.auth.user.role = "EMPLOYEE";
+    state.permissions.baseRole = "EMPLOYEE";
+    grantOnly(Permission.CHAT_READ);
+    renderNav();
+
+    expect(navHrefs()).toEqual(["/dashboard/chat"]);
+  });
+
   it("switches to platform navigation for super-admin", () => {
     grantAllPermissions();
     state.auth.user.role = "SUPER_ADMIN";

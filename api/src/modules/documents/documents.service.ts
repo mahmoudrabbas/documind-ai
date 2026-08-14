@@ -59,6 +59,15 @@ import type {
 import type { DocumentDocument, DocumentClassification, DocumentQuarantineStatus } from "../../db/models/document.model.js";
 import type { DocumentVersionDocument } from "../../db/models/documentVersion.model.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
+import { authorizePermission, authorizePermissionCapability } from "../permissions/permissions.authorization.js";
+import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
+import type { PermissionScopes } from "../permissions/permissions.types.js";
+import mongoose from "mongoose";
+import {
+  buildDocumentPermissionResource,
+  resolveCanonicalDocumentClassification,
+  resolveClassificationScopeIds,
+} from "./documents.permissionResource.js";
 
 type MulterFile = {
   fieldname: string;
@@ -75,6 +84,84 @@ type DocumentActor = {
   email?: string;
   role: BaseRole;
 };
+
+function permissionActor(tenantId: string, actor: DocumentActor) {
+  return { tenantId, actorId: actor.userId, baseRole: actor.role };
+}
+
+async function loadAndAuthorizeDocument(
+  tenantId: string,
+  documentId: string,
+  actor: DocumentActor,
+  permission: PermissionValue,
+): Promise<DocumentDocument> {
+  const document = await findDocumentByTenantAndId(tenantId, documentId);
+  if (!document) throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
+  try {
+    await authorizePermission(
+      permissionActor(tenantId, actor),
+      permission,
+      await buildDocumentPermissionResource(tenantId, document),
+    );
+  } catch (error) {
+    if (error instanceof AppError && error.code === "SCOPE_MISMATCH") {
+      throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
+    }
+    throw error;
+  }
+  return document;
+}
+
+async function authorizeProposedDocumentUpdate(
+  tenantId: string,
+  actor: DocumentActor,
+  existing: DocumentDocument,
+  payload: ReturnType<typeof validateUpdateDocumentMetadataInput>,
+): Promise<void> {
+  let departmentId = existing.departmentId?.toString();
+  if (payload.department !== undefined && payload.department !== existing.department) {
+    const escaped = payload.department.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const department = await DepartmentModel.findOne({
+      tenantId,
+      name: { $regex: `^${escaped}$`, $options: "i" },
+      status: "active",
+    }).select("_id").lean().exec();
+    departmentId = department?._id.toString();
+  }
+  const classificationName = await resolveCanonicalDocumentClassification(tenantId, existing);
+  await authorizePermission(permissionActor(tenantId, actor), Permission.DOCUMENTS_UPDATE, {
+    tenantId,
+    ...(existing.owner ? { ownerId: existing.owner.toString() } : {}),
+    ...(departmentId ? { departmentId } : {}),
+    ...((payload.category ?? existing.category) ? { documentCategory: payload.category ?? existing.category ?? undefined } : {}),
+    ...(classificationName ? { documentClassification: classificationName } : {}),
+  });
+}
+
+async function documentScopeFilter(tenantId: string, actorId: string, scopes: PermissionScopes | null): Promise<Record<string, unknown>> {
+  if (!scopes) return {};
+  const constraints: Record<string, unknown>[] = [];
+  if (scopes.selfOnly) constraints.push({ owner: new mongoose.Types.ObjectId(actorId) });
+  if (scopes.departmentIds.length > 0) {
+    constraints.push({ departmentId: { $in: scopes.departmentIds.map((id) => new mongoose.Types.ObjectId(id)) } });
+  }
+  if (scopes.documentCategories.length > 0) {
+    constraints.push({ $expr: { $in: [{ $toLower: { $ifNull: ["$category", ""] } }, scopes.documentCategories] } });
+  }
+  if (scopes.documentClassifications.length > 0) {
+    const classificationIds = await resolveClassificationScopeIds(tenantId, scopes.documentClassifications);
+    constraints.push({ $or: [
+      { classificationId: { $in: classificationIds } },
+      {
+        $and: [
+          { $or: [{ classificationId: null }, { classificationId: { $exists: false } }] },
+          { $expr: { $in: [{ $toLower: { $ifNull: ["$classification", ""] } }, scopes.documentClassifications] } },
+        ],
+      },
+    ] });
+  }
+  return constraints.length > 0 ? { $and: constraints } : {};
+}
 
 function computeChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -185,6 +272,13 @@ export function createDocumentServiceProviders(deps: {
 
     const metadata = validateUploadDocumentInput(metadataInput);
     const taxonomy = await resolveUploadTaxonomy(tenantId, metadata);
+    await authorizePermission(permissionActor(tenantId, actor), Permission.DOCUMENTS_CREATE, {
+      tenantId,
+      ownerId: actor.userId,
+      ...(taxonomy.departmentId ? { departmentId: taxonomy.departmentId.toString() } : {}),
+      ...(taxonomy.category ? { documentCategory: taxonomy.category } : {}),
+      documentClassification: taxonomy.classificationName ?? "internal",
+    });
     const safeName = sanitizeFilename(file.originalname);
 
     const checksum = computeChecksum(file.buffer);
@@ -318,7 +412,14 @@ export function createDocumentServiceProviders(deps: {
   ): Promise<ListDocumentsResult> {
     const payload = validateListDocumentsInput(input);
 
-    const filter: Record<string, unknown> = { deletedAt: null };
+    const capability = await authorizePermissionCapability(
+      permissionActor(tenantId, actor),
+      Permission.DOCUMENTS_READ,
+    );
+    const filter: Record<string, unknown> = {
+      deletedAt: null,
+      ...(await documentScopeFilter(tenantId, actor.userId, capability.scope)),
+    };
 
     if (payload.status) {
       filter.status = payload.status;
@@ -375,6 +476,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<{ document: DocumentPublicView }> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_READ);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "read");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -393,12 +495,9 @@ export function createDocumentServiceProviders(deps: {
   ): Promise<UpdateDocumentMetadataResult> {
     const payload = validateUpdateDocumentMetadataInput(input);
 
+    const existing = await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_UPDATE);
+    await authorizeProposedDocumentUpdate(tenantId, actor, existing, payload);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "update");
-    const existing = await findDocumentByTenantAndId(tenantId, documentId);
-
-    if (!existing) {
-      throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
-    }
 
     const update: Record<string, unknown> = {};
     if (payload.title !== undefined) update["metadata.title"] = payload.title;
@@ -449,12 +548,20 @@ export function createDocumentServiceProviders(deps: {
     return { document: serializeDocument(updated) };
   }
 
-  async function downloadDocument(
+  async function openDocumentContent(
     documentId: string,
     tenantId: string,
     actor: DocumentActor,
+    permission: PermissionValue,
+    policyAction: "read" | "download",
+    auditDownload: boolean,
   ): Promise<{ stream: import("node:stream").Readable; contentType: string; fileName: string; fileSize: number }> {
-    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "download");
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, permission);
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+      { tenantId, actorId: actor.userId },
+      documentId,
+      policyAction,
+    );
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -468,17 +575,19 @@ export function createDocumentServiceProviders(deps: {
     const stream = await storageProvider.getFileStream(document.storageKey);
     const contentType = storageProvider.getContentType(document.fileName);
 
-    await getAuditWriter().write({
-      tenantId,
-      resourceType: "Document",
-      resourceId: documentId,
-      action: "DOCUMENT_DOWNLOADED",
-      actorId: actor.userId,
-      actorEmail: actor.email ?? "",
-      actorRole: actor.role,
-      actorKind: "USER",
-      changes: { fileName: document.fileName },
-    });
+    if (auditDownload) {
+      await getAuditWriter().write({
+        tenantId,
+        resourceType: "Document",
+        resourceId: documentId,
+        action: "DOCUMENT_DOWNLOADED",
+        actorId: actor.userId,
+        actorEmail: actor.email ?? "",
+        actorRole: actor.role,
+        actorKind: "USER",
+        changes: { fileName: document.fileName },
+      });
+    }
 
     return {
       stream,
@@ -486,6 +595,36 @@ export function createDocumentServiceProviders(deps: {
       fileName: document.fileName,
       fileSize: document.fileSize,
     };
+  }
+
+  async function downloadDocument(
+    documentId: string,
+    tenantId: string,
+    actor: DocumentActor,
+  ) {
+    return openDocumentContent(
+      documentId,
+      tenantId,
+      actor,
+      Permission.DOCUMENTS_DOWNLOAD,
+      "download",
+      true,
+    );
+  }
+
+  async function previewDocument(
+    documentId: string,
+    tenantId: string,
+    actor: DocumentActor,
+  ) {
+    return openDocumentContent(
+      documentId,
+      tenantId,
+      actor,
+      Permission.DOCUMENTS_READ,
+      "read",
+      false,
+    );
   }
 
   async function replaceDocument(
@@ -503,12 +642,8 @@ export function createDocumentServiceProviders(deps: {
       maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
     });
 
+    const existing = await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_UPDATE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "replace");
-    const existing = await findDocumentByTenantAndId(tenantId, documentId);
-
-    if (!existing) {
-      throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
-    }
 
     if (existing.deletedAt) {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
@@ -612,6 +747,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_ARCHIVE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "archive");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -652,6 +788,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_ARCHIVE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "restore");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -692,6 +829,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<void> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_DELETE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "delete");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -726,6 +864,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<void> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_DELETE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "delete");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -764,11 +903,18 @@ export function createDocumentServiceProviders(deps: {
     });
   }
 
-  async function uploadOptions(tenantId: string) {
+  async function uploadOptions(tenantId: string, actor: DocumentActor) {
+    const capability = await authorizePermissionCapability(
+      permissionActor(tenantId, actor),
+      Permission.DOCUMENTS_CREATE,
+    );
+    const scopes = capability.scope;
+    const classificationFilter: Record<string, unknown> = { tenantId, status: "active" };
+    if (scopes?.documentClassifications.length) classificationFilter.normalizedName = { $in: scopes.documentClassifications };
     const [classifications, categories, departments] = await Promise.all([
-      DocumentClassificationModel.find({ tenantId, status: "active" }).select("name level").sort({ name: 1 }).lean().exec(),
-      DocumentCategoryModel.find({ tenantId, status: "active" }).select("name").sort({ name: 1 }).lean().exec(),
-      DepartmentModel.find({ tenantId, status: "active" }).select("name").sort({ name: 1 }).lean().exec(),
+      DocumentClassificationModel.find(classificationFilter).select("name level").sort({ name: 1 }).lean().exec(),
+      DocumentCategoryModel.find({ tenantId, status: "active", ...(scopes?.documentCategories.length ? { name: { $in: scopes.documentCategories.map((value) => new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")) } } : {}) }).select("name").sort({ name: 1 }).lean().exec(),
+      DepartmentModel.find({ tenantId, status: "active", ...(scopes?.departmentIds.length ? { _id: { $in: scopes.departmentIds } } : {}) }).select("name").sort({ name: 1 }).lean().exec(),
     ]);
 
     const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
@@ -804,6 +950,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ListVersionsResult> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_READ);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "read");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -824,6 +971,7 @@ export function createDocumentServiceProviders(deps: {
     getDocument,
     updateDocumentMetadata,
     downloadDocument,
+    previewDocument,
     replaceDocument,
     archiveDocument,
     restoreDocument,

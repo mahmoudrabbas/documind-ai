@@ -69,6 +69,12 @@ export interface AccessContext {
    * `['Finance', 'finance']` = restrict to that canonical category.
    */
   resolvedCategoryFilter?: string[] | null;
+  /**
+   * Sensitivity levels resolved from canonical classification scope names for
+   * datastore prefiltering. Exact identity is reauthorized against the parent
+   * document before content is returned.
+   */
+  resolvedClassificationFilter?: string[] | null;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }
