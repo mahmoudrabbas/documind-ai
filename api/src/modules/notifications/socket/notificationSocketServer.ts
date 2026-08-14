@@ -37,6 +37,8 @@ export interface NotificationSocketServerHandle {
     event: string,
     payload: unknown,
   ): void;
+  /** Emits a copilot lifecycle event to every socket that joined `copilot:<runId>`. */
+  emitToCopilotRun(runId: string, event: string, payload: unknown): void;
   close(): void;
 }
 
@@ -55,9 +57,19 @@ interface DeliverInput {
 type DeliverAck = { ok: boolean; errorCategory?: "temporary" | "permanent" };
 
 const USER_ROOM_PREFIX = "user:";
+const COPILOT_ROOM_PREFIX = "copilot:";
 
 function userRoom(tenantId: string, userId: string): string {
   return `${USER_ROOM_PREFIX}${tenantId}:${userId}`;
+}
+
+function copilotRoom(runId: string): string {
+  return `${COPILOT_ROOM_PREFIX}${runId}`;
+}
+
+/** Accepts an opaque run id (uuid) used only to join a tenant-unguessable room. */
+function isCopilotRunId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -228,6 +240,30 @@ export function createSocketServer(
   io.on("connection", (socket) => {
     if (socket.data.role !== "service") {
       socket.join(userRoom(socket.data.tenantId, socket.data.userId));
+
+      // Copilot lifecycle channel (§15): user sockets opt into a
+      // `copilot:<runId>` room to receive live action-progress events. The
+      // room is keyed by an unguessable run id, the events are non-authoritative
+      // (final state is always fetchable via GET /copilot/action/:runId), and a
+      // socket may only join/leave rooms for run ids it explicitly names.
+      socket.on("copilot:join", (input: unknown, ack?: (ok: boolean) => void) => {
+        const runId = isRecord(input) ? input.runId : undefined;
+        if (!isCopilotRunId(runId)) {
+          ack?.(false);
+          return;
+        }
+        socket.join(copilotRoom(runId));
+        ack?.(true);
+      });
+      socket.on("copilot:leave", (input: unknown, ack?: (ok: boolean) => void) => {
+        const runId = isRecord(input) ? input.runId : undefined;
+        if (!isCopilotRunId(runId)) {
+          ack?.(false);
+          return;
+        }
+        socket.leave(copilotRoom(runId));
+        ack?.(true);
+      });
       return;
     }
 
@@ -251,6 +287,10 @@ export function createSocketServer(
   return {
     emitToUser(tenantId, userId, event, payload) {
       io.to(userRoom(tenantId, userId)).emit(event, payload);
+    },
+    emitToCopilotRun(runId, event, payload) {
+      if (!isCopilotRunId(runId)) return;
+      io.to(copilotRoom(runId)).emit(event, payload);
     },
     close() {
       io.close();

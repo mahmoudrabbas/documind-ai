@@ -19,6 +19,9 @@ import {
 } from "@/constants/platform-navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
+import { useCopilot } from "@/providers/copilot-provider";
+import { getNavGuideTargetId } from "@/lib/copilot/guide-targets";
+import { COPILOT_ENABLED } from "@/config/public-env";
 
 type AppNavigationProps = {
   open: boolean;
@@ -64,6 +67,7 @@ function NavItem({
     <Link
       href={href}
       onClick={onClose}
+      data-guide-id={getNavGuideTargetId(href)}
       title={label}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
@@ -86,6 +90,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const permissions = usePermissions();
   const tenant = useTenantSettings();
   const { t } = useI18n();
+  const { setOpen: setCopilotOpen } = useCopilot();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -388,6 +393,19 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <div className="px-4 pb-2 sm:hidden">
               <LanguageSwitcher className="w-full justify-center" />
             </div>
+            {COPILOT_ENABLED ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setCopilotOpen(true);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined">help</span>
+                <span className="text-body-sm">{t("shell.helpCenter")}</span>
+              </button>
+            ) : null}
             <button
               onClick={() => void handleLogout()}
               disabled={loggingOut}

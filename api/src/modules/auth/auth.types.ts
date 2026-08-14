@@ -142,7 +142,7 @@ export interface RefreshRotationResult extends RefreshResult {
 }
 
 export interface MeResult {
-  user: Omit<UserPublicView, "createdAt">;
+  user: UserPublicView;
   tenant: Omit<TenantPublicView, "createdAt">;
 }
 

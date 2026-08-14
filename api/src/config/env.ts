@@ -119,6 +119,10 @@ const envSchema = z
       .transform((value) => value.toLowerCase() === "true"),
     NOTIFICATION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
     NOTIFICATION_SWEEP_TTL_BATCH: z.coerce.number().int().positive().default(500),
+    COPILOT_ENABLED: z
+      .string()
+      .default("false")
+      .transform((value) => value.toLowerCase() === "true"),
     SMTP_HOST: z.string().default(""),
     SMTP_PORT: z
       .string()

@@ -394,7 +394,7 @@ export function TenantSettingsManager() {
       {conflictMessage ? <Alert variant="warning">{conflictMessage}</Alert> : null}
 
       {/* Company profile */}
-      <DashboardPanel>
+      <DashboardPanel data-guide-id="settings-profile-section">
         <div className="mb-5">
           <h2 className="text-title-lg font-bold text-primary">
             {t("settings.companyProfileTitle")}
@@ -476,7 +476,7 @@ export function TenantSettingsManager() {
             ) : null}
           </div>
         </div>
-        <div className="mt-4 max-w-xs">
+        <div className="mt-4 max-w-xs" data-guide-id="settings-language">
           <Select
             label={t("settings.defaultLanguageLabel")}
             options={languageOptions}
@@ -492,7 +492,7 @@ export function TenantSettingsManager() {
       </DashboardPanel>
 
       {/* AI runtime preferences */}
-      <DashboardPanel>
+      <DashboardPanel data-guide-id="settings-ai-preferences">
         <div className="mb-5">
           <h2 className="text-title-lg font-bold text-primary">
             {t("settings.aiPreferencesTitle")}
@@ -570,6 +570,7 @@ export function TenantSettingsManager() {
             variant="outline"
             disabled={!hasChanges || isSaving}
             onClick={handleDiscard}
+            data-guide-id="settings-discard"
           >
             {t("settings.discardChanges")}
           </Button>
@@ -577,6 +578,7 @@ export function TenantSettingsManager() {
             onClick={() => void handleSave()}
             isLoading={isSaving}
             disabled={!hasChanges}
+            data-guide-id="settings-profile-save"
           >
             {t("settings.saveChanges")}
           </Button>

@@ -84,6 +84,7 @@ const enDashboard: TranslationDictionary = {
   "dashboard.users.actionUpdate": "Update",
   "dashboard.users.resending": "Resending...",
   "dashboard.users.actionResend": "Resend",
+  "dashboard.users.revoking": "Revoking...",
   "dashboard.users.deleting": "Deleting...",
   "dashboard.users.actionDelete": "Delete",
   "dashboard.users.noMatchingUsers": "No users match the current search or role filter.",

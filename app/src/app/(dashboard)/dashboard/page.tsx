@@ -74,6 +74,7 @@ export default function DashboardPage() {
   return (
     <DashboardPageShell dir={dir}>
       <DashboardPageHeader
+        guideId="page-heading-overview"
         title={t("dashboard.title")}
         description={t("dashboard.description")}
         actions={
@@ -101,6 +102,7 @@ export default function DashboardPage() {
             </Link>
             <button
               type="button"
+              data-guide-id="overview-refresh"
               onClick={() => setRetryCount((count) => count + 1)}
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-secondary-container px-4 py-2 text-label-md font-bold text-on-secondary-container transition-opacity hover:opacity-90"
             >
@@ -115,13 +117,19 @@ export default function DashboardPage() {
 
       {/* Bento Grid: usage metrics + subscription */}
       <div className="grid min-w-0 auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 xl:gap-5">
-        <MetricsCards />
-        <SubscriptionWidget />
+        <div data-guide-id="overview-metrics">
+          <MetricsCards />
+        </div>
+        <div data-guide-id="overview-subscription">
+          <SubscriptionWidget />
+        </div>
       </div>
 
       {/* Bento Grid: live tenant summary */}
       <div className="mt-3 grid min-w-0 auto-rows-auto grid-cols-1 items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 xl:gap-5">
-        <SummaryStats summary={summary} />
+        <div data-guide-id="overview-summary">
+          <SummaryStats summary={summary} />
+        </div>
       </div>
 
       {view.status === "error" ? (
@@ -145,14 +153,17 @@ export default function DashboardPage() {
       {view.status === "success" ? (
         <>
           {/* Recent Activity Feed */}
-          <DashboardPanel className="mt-6">
+          <DashboardPanel className="mt-6" data-guide-id="overview-activity">
             <RecentActivityHeader href="/dashboard/audit" />
             <RecentActivityFeed items={view.summary.recentActivity} />
           </DashboardPanel>
 
           {/* AI Insight Section */}
           {hasOpenGaps ? (
-            <section className="relative mt-6 min-w-0 overflow-hidden rounded-3xl bg-primary-container p-4 text-on-primary sm:p-lg lg:mt-8 lg:p-xl">
+            <section
+              className="relative mt-6 min-w-0 overflow-hidden rounded-3xl bg-primary-container p-4 text-on-primary sm:p-lg lg:mt-8 lg:p-xl"
+              data-guide-id="overview-gaps"
+            >
               <div className="relative z-10 flex w-full flex-col gap-lg md:flex-row md:items-center">
                 <div className="flex min-w-0 flex-1 items-start gap-4">
                   <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-tertiary text-on-tertiary sm:flex">
