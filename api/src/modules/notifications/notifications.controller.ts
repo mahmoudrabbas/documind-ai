@@ -160,6 +160,11 @@ export const deleteNotification = endpoint(async (req) => {
   return { data: { notificationId: id, deleted: result.matched } };
 });
 
+export const clearAllNotifications = endpoint(async (req) => {
+  const { tenantId, userId } = requireActor(req);
+  return { data: await getService().clearAll(tenantId, userId) };
+});
+
 export const sendTestNotification = endpoint(async (req) => {
   if (!isTestNotificationsEnabled()) {
     throw new AppError(404, NOT_FOUND, "Test notifications are disabled");

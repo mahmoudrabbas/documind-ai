@@ -206,10 +206,13 @@ export function NotificationsBell() {
                       onClick={() => void handleItemClick(item)}
                       className="flex w-full items-start gap-3 px-4 py-3 text-start hover:bg-surface-container-low"
                     >
-                      <span
-                        aria-hidden="true"
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT_CLASSES[item.priority]}`}
-                      />
+                      {!item.isRead ? (
+                        <span
+                          aria-hidden="true"
+                          data-testid="unread-dot"
+                          className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT_CLASSES[item.priority]}`}
+                        />
+                      ) : null}
                       <span className="min-w-0 flex-1">
                         <span
                           className={`block text-label-md font-semibold ${

@@ -55,6 +55,13 @@ export class NotificationService {
     if (matched) await this.stateRepo.decrementUnread(tenantId, userId);
   }
 
+  /** "enqueue" lifecycle step (CREATED → QUEUED) — called by the outbox
+   *  dispatcher right after enqueueing the 'notification.dispatch' job so the
+   *  worker (QUEUED|DISPATCHED) delivers the batch. Idempotent per doc. */
+  async markEnqueued(tenantId: string, notificationIds: string[]): Promise<void> {
+    await this.repo.markEnqueued(tenantId, notificationIds);
+  }
+
   async markAllRead(tenantId: string, userId: string): Promise<{ matchedCount: number }> {
     const now = new Date();
     return this.withSession(async (session) => {
@@ -97,6 +104,16 @@ export class NotificationService {
       const { matched } = await this.repo.softDelete(tenantId, userId, notificationId, actorId, session);
       if (matched && wasUnread) await this.stateRepo.decrementUnread(tenantId, userId, session);
       return { matched };
+    });
+  }
+
+  /** "Clear all" — soft-delete every live notification for the user and reset
+   *  the unread counter to 0 (all unread docs are among the deleted set). */
+  async clearAll(tenantId: string, userId: string): Promise<{ matchedCount: number }> {
+    return this.withSession(async (session) => {
+      const { matchedCount } = await this.repo.softDeleteAll(tenantId, userId, userId, session);
+      if (matchedCount > 0) await this.stateRepo.recompute(tenantId, userId, 0, session);
+      return { matchedCount };
     });
   }
 

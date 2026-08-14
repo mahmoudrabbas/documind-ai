@@ -578,6 +578,85 @@ test("K4: direct threshold instructions forbid cross-chunk probation equivalence
   assert.match(data.content, /"satisfied":false/u);
 });
 
+test("K5: grounded answers retain material qualifiers and contrast facts", async () => {
+  const cases = [
+    {
+      question: "What is the hotel limit?",
+      answer: "The hotel limit is USD 180 per night, excluding taxes.",
+      evidence: "Hotel expenses are limited to USD 180 per night, excluding taxes.",
+    },
+    {
+      question: "How much remote work is allowed?",
+      answer: "Remote work is allowed up to 2 days per week with manager approval.",
+      evidence: "Remote work is allowed up to 2 days per week with manager approval.",
+    },
+    {
+      question: "P1 restoration target is 8 hours, correct?",
+      answer: "No. P1 restoration is 4 hours; 8 hours belongs to P2.",
+      evidence: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+    },
+  ] as const;
+
+  for (const item of cases) {
+    const chunkId = `qualifier-${cases.indexOf(item)}`;
+    const { service } = makeService(JSON.stringify({
+      decision: "grounded_answer",
+      answer: item.answer,
+      citedChunkIds: [chunkId],
+    }));
+    const result = await service.generate(generateArgs({
+      question: item.question,
+      evidence: [{
+        chunkId,
+        documentId: "507f1f77bcf86cd799439014",
+        text: item.evidence,
+      }],
+    }));
+    assert.equal(result.outcome, "usable");
+    if (result.outcome === "usable") assert.equal(result.answer, item.answer);
+  }
+});
+
+test("K6: direct-answer prompt requires material qualifiers and contrast facts", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    userMessage: "P1 restoration target is 8 hours, correct?",
+    sources: [{
+      chunkId: "p1-p2",
+      documentId: "sla",
+      documentTitle: "Customer_Support_SLA",
+      text: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+      score: 1,
+    }],
+  });
+  const system = messages.find((message) => message.role === "system")?.content ?? "";
+  assert.match(system, /material condition, exception, qualifier, threshold, and contrast/u);
+  assert.match(system, /different P2 target/u);
+});
+
+test("K7: cited tier evidence restores an omitted P1/P2 contrast", async () => {
+  const chunkId = "p1-p2-contrast";
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "No. The P1 restoration target is 4 hours, not 8 hours.",
+    citedChunkIds: [chunkId],
+  }));
+  const result = await service.generate(generateArgs({
+    question: "P1 restoration target is 8 hours, correct?",
+    evidence: [{
+      chunkId,
+      documentId: "sla",
+      text: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+    }],
+  }));
+
+  assert.equal(result.outcome, "usable");
+  if (result.outcome === "usable") {
+    assert.match(result.answer, /P1 restoration target is 4 hours/u);
+    assert.match(result.answer, /P2 restoration target is 8 hours/u);
+  }
+});
+
 test("K5: retries and removes a named employment phase absent from the threshold evidence", async () => {
   const bad = JSON.stringify({
     decision: "grounded_answer",

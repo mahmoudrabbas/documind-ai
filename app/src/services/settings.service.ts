@@ -1,9 +1,10 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, uploadFile } from "@/lib/api-client";
 import type {
   DeepPartial,
   GetSettingsResponse,
   TenantSettings,
   UpdateSettingsResponse,
+  UploadLogoResponse,
 } from "@/types/api/settings.types";
 
 export function getTenantSettings(signal?: AbortSignal) {
@@ -18,4 +19,8 @@ export function updateTenantSettings(input: {
     method: "PUT",
     body: input,
   });
+}
+
+export function uploadTenantLogo(file: File) {
+  return uploadFile<UploadLogoResponse>("/settings/logo", file, {});
 }

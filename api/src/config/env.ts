@@ -139,6 +139,13 @@ const envSchema = z
 
     UPLOAD_DIR: z.string().default("./uploads"),
     STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
+    /**
+     * Public base URL of the API service. Used to build absolute URLs for
+     * tenant-branding assets (e.g. the uploaded company logo) that are embedded
+     * in the app UI and in outgoing email HTML, so they must be reachable by
+     * browsers and email clients outside the service network.
+     */
+    PUBLIC_API_URL: z.string().url().default("http://localhost:5000"),
     AWS_REGION: z.string().default(""),
     AWS_S3_BUCKET: z.string().default(""),
     AWS_ACCESS_KEY_ID: z.string().default(""),
@@ -165,6 +172,11 @@ const envSchema = z
     VISION_ALLOWED_MIME_TYPES: z
       .string()
       .default("image/jpeg,image/png,image/webp"),
+
+    LOGO_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+    LOGO_ALLOWED_MIME_TYPES: z
+      .string()
+      .default("image/jpeg,image/png,image/webp,image/gif,image/svg+xml"),
 
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     LOG_PRETTY: z

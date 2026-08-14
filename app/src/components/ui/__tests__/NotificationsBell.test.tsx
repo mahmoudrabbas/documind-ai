@@ -198,6 +198,24 @@ describe("NotificationsBell", () => {
     expect(await screen.findByText("No notifications")).toBeInTheDocument();
   });
 
+  it("hides the unread dot for read notifications", async () => {
+    mockUnread(1);
+    mockFeed([
+      makeNotification({ id: "n1", isRead: true, title: { en: "Read one", ar: "مقروء" } }),
+      makeNotification({ id: "n2", isRead: false, title: { en: "Unread one", ar: "غير مقروء" } }),
+    ]);
+
+    const user = userEvent.setup();
+    renderBell();
+
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await screen.findByText("Read one");
+    await screen.findByText("Unread one");
+
+    const dots = screen.getAllByTestId("unread-dot");
+    expect(dots).toHaveLength(1);
+  });
+
   it("marks a notification read when its row is clicked", async () => {
     mockUnread(1);
     mockFeed([makeNotification({ id: "n1" })]);

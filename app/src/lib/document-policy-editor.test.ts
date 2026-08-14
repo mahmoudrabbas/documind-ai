@@ -23,7 +23,7 @@ describe("policy editor rule state", () => {
 
   it("adds an editable USER rule and never offers Owner as an editable subject", () => {
     const rule = createEditablePolicyRule("new-rule");
-    expect(rule).toEqual({ ruleId: "new-rule", effect: "allow", subject: { type: "user" }, actions: ["read"] });
+    expect(rule).toEqual({ ruleId: "new-rule", effect: "allow", subject: { type: "user" }, actions: ["discover", "read", "download", "use_in_ai"] });
     expect(EDITABLE_POLICY_SUBJECT_TYPES).toEqual(["user", "custom_role", "department", "tenant_member"]);
     expect(EDITABLE_POLICY_SUBJECT_TYPES).not.toContain("owner");
   });

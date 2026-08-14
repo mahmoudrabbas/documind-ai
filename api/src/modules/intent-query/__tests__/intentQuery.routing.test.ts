@@ -365,7 +365,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.equal(modelCalls, 0);
   });
 
-  await t.test("mixed assistant and knowledge turns preserve only the substantive RAG request", async () => {
+  await t.test("mixed assistant and knowledge turns preserve the RAG request and assistant metadata", async () => {
     const seenQuestions: string[] = [];
     const base = planAdapter();
     const mixedService = new IntentQueryService({
@@ -382,10 +382,46 @@ test("IntentQueryService - query routing contract", async (t) => {
     for (const [question, expectedRemainder] of cases) {
       const plan = await mixedService.analyzeQuery({ question }, companyAdminContext);
       assert.equal(plan.route, "rag", question);
+      assert.equal(plan.assistantKind, "identity", question);
       assert.equal(plan.normalizedQuestion, expectedRemainder, question);
       assert.ok(plan.semanticQueries.some((query) => query.text === expectedRemainder), question);
     }
     assert.deepEqual(seenQuestions, cases.map(([, remainder]) => remainder));
+  });
+
+  await t.test("access follow-up keeps the remote-work subject and becomes RAG deterministically", async () => {
+    const providerVariants = [
+      planAdapter({ detectedIntent: "follow_up", normalizedQuestion: "What if I need to access internal systems while doing that?" }),
+      planAdapter({ detectedIntent: "knowledge_question" }),
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+      {
+        providerKey: "malformed-follow-up-adapter",
+        async complete() {
+          return { choices: [{ message: { content: "not json" } }] } as Awaited<ReturnType<ModelAdapter["complete"]>>;
+        },
+      },
+    ];
+
+    for (const adapter of providerVariants) {
+      const conversationId = new Types.ObjectId().toString();
+      fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+        { role: "user", content: "Can I work remotely two days per week?", timestamp: new Date(1).toISOString() },
+        { role: "assistant", content: "Remote work is allowed up to two days per week.", timestamp: new Date(2).toISOString() },
+      ]);
+      const plan = await new IntentQueryService(adapter, fakeConvoAdapter).analyzeQuery(
+        {
+          question: "What if I need to access internal systems while doing that?",
+          conversationId,
+        },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "rag");
+      assert.equal(plan.detectedIntent, "follow_up");
+      assert.equal(plan.isFollowUp, true);
+      assert.match(plan.normalizedQuestion, /work remotely two days per week/u);
+      assert.match(plan.normalizedQuestion, /access internal systems/u);
+      assert.ok(plan.semanticQueries.some((query) => /internal systems/u.test(query.text)));
+    }
   });
 
   await t.test("assistant capability follow-up stays coherent and a later knowledge turn returns to RAG", async () => {
@@ -479,14 +515,23 @@ test("IntentQueryService - query routing contract", async (t) => {
       providerKey: "failing-provider",
       async complete() { throw new Error("Provider Offline"); },
     }, fakeConvoAdapter);
-    const plan = await failingService.analyzeQuery(
-      { question: "ما سياسة الإجازات السنوية؟" },
-      companyAdminContext,
-    );
-    assert.equal(plan.route, "rag");
-    assert.equal(plan.detectedIntent, "knowledge_question");
-    assert.equal(plan.processingMetadata.fallbackUsed, true);
-    assert.equal(plan.normalizedQuestion, "ما سياسة الإجازات السنوية؟");
+    const cases = [
+      "ما سياسة الإجازات السنوية؟",
+      "Can I work remotely two days per week?",
+      "How many remote days per week are allowed?",
+      "Do I need manager approval to work remotely?",
+    ];
+    for (const question of cases) {
+      const plan = await failingService.analyzeQuery(
+        { question },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "rag", question);
+      assert.equal(plan.detectedIntent, "knowledge_question", question);
+      assert.equal(plan.processingMetadata.fallbackUsed, true, question);
+      assert.ok(plan.semanticQueries.length > 0, question);
+      assert.ok(plan.keywordQueries.length > 0, question);
+    }
   });
 
   await t.test("provider failure keeps social and gibberish out of RAG", async () => {
@@ -504,6 +549,34 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.equal(socialPlan.processingMetadata.fallbackUsed, false);
     assert.equal(gibberishPlan.route, "unsupported");
     assert.equal(gibberishPlan.processingMetadata.fallbackUsed, true);
+  });
+
+  await t.test("provider failure preserves identity, unsupported, and external-current gates", async () => {
+    const failingService = new IntentQueryService({
+      providerKey: "failing-provider",
+      async complete() { throw new Error("Provider Offline"); },
+    }, fakeConvoAdapter);
+    const socialPlan = await failingService.analyzeQuery(
+      { question: "شكرا" }, companyAdminContext,
+    );
+    const identityPlan = await failingService.analyzeQuery(
+      { question: "Who are you?" }, companyAdminContext,
+    );
+    const unsupportedPlan = await failingService.analyzeQuery(
+      { question: "What is the CEO's personal mobile number?" }, companyAdminContext,
+    );
+    const externalPlan = await failingService.analyzeQuery(
+      { question: "What is the weather today?" }, companyAdminContext,
+    );
+
+    assert.equal(socialPlan.route, "social");
+    assert.deepEqual(socialPlan.semanticQueries, []);
+    assert.equal(identityPlan.route, "assistant");
+    assert.deepEqual(identityPlan.semanticQueries, []);
+    assert.equal(unsupportedPlan.route, "unsupported");
+    assert.deepEqual(unsupportedPlan.semanticQueries, []);
+    assert.equal(externalPlan.route, "unsupported");
+    assert.deepEqual(externalPlan.semanticQueries, []);
   });
 
   await t.test("invalid JSON and unknown intents fail closed unless positive knowledge signals exist", async () => {
@@ -605,6 +678,9 @@ test("IntentQueryService - query routing contract", async (t) => {
       "كام حد الفندق؟",
       "امتى لازم Purchase Order؟",
       "شكرا، كام حد الفندق؟",
+      "Does the account lock for 20 minutes after 5 failed logins?",
+      "What support incidents are monitored 24/7?",
+      "Do receipts become mandatory above $20?",
     ]) {
       const plan = await suppressingProvider.analyzeQuery(
         { question: enterpriseQuestion },

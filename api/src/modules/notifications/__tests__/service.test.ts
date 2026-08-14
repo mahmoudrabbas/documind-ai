@@ -421,6 +421,34 @@ describe.skipIf(!hasMongo)("NotificationService (T6 acceptance)", () => {
     });
   });
 
+  describe("markEnqueued — CREATED → QUEUED lifecycle transition", () => {
+    it("advances only CREATED docs, idempotently (non-CREATED left untouched)", async () => {
+      const service = makeService();
+      const tenantId = newId();
+      const user = newId();
+
+      const { createdIds } = await service.create(tenantId, makeDraft({ dedupEventId: "enq_1" }), [user]);
+      const queuedDoc = await NotificationModel.findOne({ tenantId: oid(tenantId) }).lean();
+      const queuedId = queuedDoc!._id.toString();
+
+      // Second create for the same user lands in-window → dedup "updated", no new doc.
+      const updated = await service.create(tenantId, makeDraft({ dedupEventId: "enq_1" }), [user]);
+      expect(updated.createdIds).toHaveLength(0);
+
+      // markEnqueued must only touch the CREATED batch doc.
+      await service.markEnqueued(tenantId, [...createdIds, "000000000000000000000000"]);
+      const docs = await NotificationModel.find({ tenantId: oid(tenantId) }).lean();
+      expect(docs).toHaveLength(1);
+      expect(docs[0].lifecycleState).toBe("QUEUED");
+      expect(queuedId).toBe(docs[0]._id.toString());
+
+      // Idempotent: second call changes nothing (already QUEUED, not CREATED).
+      await service.markEnqueued(tenantId, createdIds);
+      const after = await NotificationModel.findOne({ tenantId: oid(tenantId) }).lean();
+      expect(after!.lifecycleState).toBe("QUEUED");
+    });
+  });
+
   describe("create — dedup", () => {
     it("in-window dedup: same type+dedupEventId → 'updated', version++, deduplicatedAt refreshed, no new doc", async () => {
       const service = makeService();
@@ -549,6 +577,8 @@ describe.skipIf(!hasMongo)("NotificationService (T6 acceptance)", () => {
         {
           create: (tenantId: string, draft: NotificationDraft, ids: string[]) =>
             service.create(tenantId, draft, ids),
+          markEnqueued: (tenantId: string, ids: string[]) =>
+            service.markEnqueued(tenantId, ids),
         } satisfies NotificationCreatePort,
         queuePort,
       );
@@ -569,9 +599,14 @@ describe.skipIf(!hasMongo)("NotificationService (T6 acceptance)", () => {
       expect(enqueued.notificationIds).toHaveLength(users.length);
       expect(enqueued.actorId).toBe("actor-1");
 
-      // N docs + N unread counts were created through the trigger path.
+      // N docs + N unread counts were created through the trigger path, and the
+      // batch was advanced CREATED → QUEUED so the dispatch worker delivers it.
       const docs = await NotificationModel.find({ tenantId: oid(tenantId) }).lean();
       expect(docs).toHaveLength(3);
+      for (const d of docs) {
+        expect(d.lifecycleState).toBe("QUEUED");
+        expect(d.deliveryStatus).toBe("pending");
+      }
       expect(
         await UserNotificationStateModel.countDocuments({ tenantId: oid(tenantId) }),
       ).toBe(3);

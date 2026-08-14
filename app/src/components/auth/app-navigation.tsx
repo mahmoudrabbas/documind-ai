@@ -352,7 +352,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
       />
       <aside
         aria-label={t("shell.primaryNavigation")}
-        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[72px] xl:w-[280px] ${
+        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col overflow-hidden border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[72px] xl:w-[280px] ${
           open
             ? "translate-x-0"
             : "max-md:ltr:-translate-x-full max-md:rtl:translate-x-full"
@@ -383,7 +383,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-md md:px-0 xl:px-md">
+        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-md md:px-0 xl:px-md scrollbar-hide">
           {navContent}
         </nav>
         <div className="mt-auto border-t border-outline-variant p-md md:px-0 xl:px-md">

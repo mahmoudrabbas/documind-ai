@@ -1,9 +1,11 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../common/errors/AppError.js";
+import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
 import {
   getTenantSettings,
   updateTenantSettings,
+  uploadTenantLogo,
 } from "./settings.service.js";
 import type { SettingsOperationContext } from "./settings.types.js";
 
@@ -61,6 +63,36 @@ export async function updateSettingsController(
       data: await updateTenantSettings(
         operationContext.tenantId,
         req.body,
+        operationContext,
+      ),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadLogoController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const operationContext = context(req);
+    if (!req.file) {
+      throw new AppError(400, VALIDATION_ERROR, "A logo image file is required");
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Logo uploaded successfully.",
+      data: await uploadTenantLogo(
+        operationContext.tenantId,
+        {
+          buffer: req.file.buffer,
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+        },
         operationContext,
       ),
     });

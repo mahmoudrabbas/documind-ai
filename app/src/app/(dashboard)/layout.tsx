@@ -10,6 +10,7 @@ import { CopilotProvider } from "@/providers/copilot-provider";
 import { CopilotPanel } from "@/components/copilot/CopilotPanel";
 import { CopilotLauncher } from "@/components/copilot/CopilotLauncher";
 import { GuideOverlay } from "@/components/copilot/guide/GuideOverlay";
+import { NotificationToasts } from "@/components/ui/NotificationToasts";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -24,6 +25,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     >
       <ProtectedRoute>
         <CopilotProvider>
+          <NotificationToasts />
           <div className="flex h-dvh min-h-0 overflow-x-clip bg-background text-on-background">
             <AppNavigation
               open={navigationOpen}
@@ -38,14 +40,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 {children}
               </main>
             </div>
+            {COPILOT_ENABLED ? (
+              <>
+                <CopilotPanel />
+                <CopilotLauncher />
+                <GuideOverlay />
+              </>
+            ) : null}
           </div>
-          {COPILOT_ENABLED ? (
-            <>
-              <CopilotPanel />
-              <CopilotLauncher />
-              <GuideOverlay />
-            </>
-          ) : null}
         </CopilotProvider>
       </ProtectedRoute>
     </Suspense>

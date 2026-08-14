@@ -412,6 +412,30 @@ describe.skipIf(!hasMongo)("Notification REST API (T7 routes)", () => {
     expect(getRes.status).toBe(404);
   });
 
+  it("DELETE /notifications clears all of the user's notifications and resets unread", async () => {
+    await seedNotification(tenantAId, adminAId);
+    await seedNotification(tenantAId, adminAId, { dedupEventId: "clear-2" });
+    // Another user's notification must survive (scoped to the actor).
+    const otherId = await seedNotification(tenantAId, employeeAId, { dedupEventId: "clear-3" });
+
+    const res = await request("/notifications", {
+      method: "DELETE",
+      token: adminAToken,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.matchedCount).toBe(2);
+
+    const remaining = await NotificationModel.countDocuments({ deletedAt: null });
+    expect(remaining).toBe(1);
+    expect((await NotificationModel.findById(otherId).lean())?.deletedAt).toBeNull();
+
+    const unread = await request("/notifications/unread-count", {
+      token: adminAToken,
+    });
+    expect(unread.body.data.count).toBe(0);
+  });
+
   it("POST /notifications/bulk-read marks the given ids read", async () => {
     const id1 = await seedNotification(tenantAId, adminAId, {
       dedupEventId: "bulk-1",

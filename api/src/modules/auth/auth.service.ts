@@ -136,7 +136,7 @@ function isResendVerificationEligible(
   return user.status === "pending_email_verification";
 }
 
-function safeAuditLog(input: AuditEventInput) {
+async function safeAuditLog(input: AuditEventInput): Promise<void> {
   try {
     const actorRole = normalizeAuditActorRole(input.actorRole);
     const actorKind = resolveAuditActorKind({
@@ -152,15 +152,13 @@ function safeAuditLog(input: AuditEventInput) {
       userId = new mongoose.Types.ObjectId(input.actorId);
     }
 
-    createAuditLog({
+    await createAuditLog({
       ...input,
       tenantId: input.tenantId ?? "system",
       actorKind,
       actorId: userId,
       actorRole,
       userId,
-    }).catch((err) => {
-      console.error("[audit-log-failed]", err);
     });
   } catch (err) {
     console.error("[audit-log-failed]", err);
@@ -1320,7 +1318,7 @@ export async function logoutAll(
     identity.userId,
   ).catch(() => null);
 
-  safeAuditLog({
+  await safeAuditLog({
     tenantId: identity.tenantId,
     resourceType: "Session",
     resourceId: identity.userId,

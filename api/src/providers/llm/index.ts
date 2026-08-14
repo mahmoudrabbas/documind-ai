@@ -10,7 +10,7 @@ import { createStudentBedrockProvider } from "../bedrock/index.js";
 
 let singleton: ModelAdapter | null = null;
 
-const SUPPORTED_PROVIDERS = ["groq", "iti-bedrock"] as const;
+const SUPPORTED_PROVIDERS = ["groq", "iti-bedrock", "student-bedrock"] as const;
 type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 function isSupportedProvider(value: string): value is SupportedProvider {
@@ -60,6 +60,9 @@ function buildSupportedProvider(key: SupportedProvider): ModelAdapter {
         retryDelayMs: parseInt(process.env.BEDROCK_RETRY_DELAY_MS || "500", 10),
       });
     }
+    case "student-bedrock": {
+      return createStudentBedrockProvider();
+    }
   }
 }
 
@@ -90,7 +93,7 @@ export async function getModelAdapterAsync(): Promise<ModelAdapter> {
  *
  * Routing strategy 1 — explicit env-driven routing (default when
  * LLM_PRIMARY_PROVIDER is set):
- *   LLM_PRIMARY_PROVIDER   (required)  first provider, e.g. groq | iti-bedrock
+ *   LLM_PRIMARY_PROVIDER   (required)  first provider, e.g. groq | iti-bedrock | student-bedrock
  *   LLM_FALLBACK_PROVIDER  (optional)  failover provider; must differ from primary
  *   → FailoverModelAdapter (proactive availability probing, skips downed
  *     providers). A single configured provider is returned unwrapped.

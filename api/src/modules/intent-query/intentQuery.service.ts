@@ -19,6 +19,8 @@ import {
   hasDomainAgnosticQuestionShape,
   hasSemanticRetrievalSubject,
   isContextualAcknowledgement,
+  isLikelyAccessContextFollowUp,
+  buildContextualFollowUpQuestion,
   isLikelyGibberish,
   isRetrievableIntent,
   selectSafeRetrievalQuestion,
@@ -477,6 +479,7 @@ export class IntentQueryService {
     ];
     let conversationHistoryAvailable = false;
     let latestAssistantMessage = "";
+    let latestUserMessage = "";
 
     if (input.conversationId) {
       try {
@@ -511,6 +514,8 @@ export class IntentQueryService {
           conversationHistoryAvailable = fitHistory.length > 0;
           latestAssistantMessage =
             [...fitHistory].reverse().find((message) => message.role === "assistant")?.content ?? "";
+          latestUserMessage =
+            [...fitHistory].reverse().find((message) => message.role === "user")?.content ?? "";
 
           // Add history to system prompt execution context
           for (const msg of fitHistory) {
@@ -536,6 +541,20 @@ export class IntentQueryService {
     ) {
       return buildAndPersistSocialPlan();
     }
+
+    // This narrow bridge is evaluated before provider routing. The current
+    // turn is not independently meaningful, but the immediately preceding
+    // user turn supplies a remote-work subject for the security-access
+    // question. Provider labels must not be able to turn this valid
+    // cross-document follow-up into an unsupported request.
+    const deterministicAccessFollowUp =
+      conversationHistoryAvailable &&
+      latestUserMessage.length > 0 &&
+      isLikelyAccessContextFollowUp(routingQuestion) &&
+      /\b(?:remote|work\s+remotely|home)\b/iu.test(latestUserMessage);
+    const deterministicFollowUpQuestion = deterministicAccessFollowUp
+      ? buildContextualFollowUpQuestion(latestUserMessage, routingQuestion)
+      : "";
 
     // Append the current question
     messagesPayload.push({
@@ -779,7 +798,8 @@ export class IntentQueryService {
       }
       if (
         isRetrievableIntent(rawDetectedIntent) &&
-        isLikelyGibberish(routingQuestion)
+        isLikelyGibberish(routingQuestion) &&
+        !deterministicAccessFollowUp
       ) {
         rawOutput = {
           detectedIntent: "unsupported",
@@ -795,6 +815,19 @@ export class IntentQueryService {
         };
       } else if (!isRetrievableIntent(rawDetectedIntent) && rawDetectedIntent == null) {
         rawOutput.detectedIntent = "unsupported";
+      }
+
+      // Apply the bridge after parsing provider output so it also overrides
+      // unsupported, low-confidence, and otherwise valid-but-wrong labels.
+      if (deterministicAccessFollowUp) {
+        rawOutput.detectedIntent = "follow_up";
+        rawOutput.intentConfidence = Math.max(
+          typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0,
+          0.85,
+        );
+        rawOutput.normalizedQuestion = deterministicFollowUpQuestion;
+        rawOutput.clarificationNeeded = false;
+        rawOutput.clarification = null;
       }
 
       // If semanticQueries/keywordQueries are empty, use local bilingual expansion
@@ -910,7 +943,7 @@ export class IntentQueryService {
               normalizedQuestion,
               [
                 ...localEntities
-                  .filter((entity) => entity.preserveExact)
+                  .filter((entity) => entity.preserveExact || entity.type === "number")
                   .map((entity) => entity.text),
                 ...deterministicTitleHints,
               ],
@@ -1037,8 +1070,11 @@ export class IntentQueryService {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       const isKnowledgeQuestion = knowledgeSignals.positive;
-      const fallbackQuestion = knowledgeSignals.retrievalText || routingQuestion.trim();
-      const expansion = isKnowledgeQuestion
+      const isDeterministicFollowUp = deterministicAccessFollowUp;
+      const fallbackQuestion = isDeterministicFollowUp
+        ? deterministicFollowUpQuestion
+        : knowledgeSignals.retrievalText || routingQuestion.trim();
+      const expansion = isKnowledgeQuestion || isDeterministicFollowUp
         ? expandBilingual(fallbackQuestion, language, localEntities)
         : { semanticQueries: [], keywordQueries: [] };
       const exactTerms = localEntities.filter(e => e.preserveExact).map(e => e.text);
@@ -1061,8 +1097,10 @@ export class IntentQueryService {
 
       validatedPlan = validateAndNormalizeQueryPlan(
         {
-          detectedIntent: isKnowledgeQuestion ? "knowledge_question" : "unsupported",
-          intentConfidence: knowledgeSignals.positive ? 0.75 : 0,
+          detectedIntent: isDeterministicFollowUp
+            ? "follow_up"
+            : isKnowledgeQuestion ? "knowledge_question" : "unsupported",
+          intentConfidence: isDeterministicFollowUp ? 0.85 : knowledgeSignals.positive ? 0.75 : 0,
           normalizedQuestion: fallbackQuestion,
           language,
           entities: localEntities,
@@ -1072,8 +1110,8 @@ export class IntentQueryService {
           keywordQueries: expansion.keywordQueries,
           clarificationNeeded: false,
           clarification: null,
-          isFollowUp: false,
-          conversationContextUsed: false,
+          isFollowUp: isDeterministicFollowUp,
+          conversationContextUsed: isDeterministicFollowUp,
           referencedDocumentIds: fallbackHints.referencedDocumentIds,
           referencedDocumentTitles: fallbackHints.referencedDocumentTitles,
         },
@@ -1090,6 +1128,15 @@ export class IntentQueryService {
 
     // 7b. Assistant plans are source-less by contract even if a provider
     // recognized a natural variant outside the deterministic fast path.
+    if (
+      assistantIntent.kind &&
+      !assistantIntent.isAssistantOnly &&
+      validatedPlan.route === "rag"
+    ) {
+      // Preserve the independent assistant request while keeping the
+      // knowledge remainder on the normal RAG route.
+      validatedPlan.assistantKind = assistantIntent.kind;
+    }
     if (validatedPlan.route === "assistant") {
       validatedPlan.semanticQueries = [];
       validatedPlan.keywordQueries = [];
