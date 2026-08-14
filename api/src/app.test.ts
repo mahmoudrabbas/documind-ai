@@ -270,6 +270,14 @@ function assertNoAuditSessionFields(value: unknown) {
   );
 }
 
+/** Minimal valid 1x1 transparent PNG used as a fake logo upload payload. */
+function tinyPngBuffer(): Buffer {
+  return Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+}
+
 function assertDisposableDatabase(): void {
   const uri = process.env.MONGODB_URI ?? "";
   let dbName = "";
@@ -3800,6 +3808,154 @@ test("PUT /settings succeeds for legacy tenants missing the settingsVersion fiel
 
     const storedTenant = await TenantModel.findById(tenant.id).lean().exec();
     assert.equal(storedTenant?.settingsVersion, 1);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("POST /settings/logo uploads, serves publicly, and removes the previous file", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+    const authorization = { Authorization: `Bearer ${loginBody.data.tokens.accessToken}` };
+
+    const uploadPng = (fileName: string) => {
+      const form = new FormData();
+      form.append("file", new Blob([new Uint8Array(tinyPngBuffer())], { type: "image/png" }), fileName);
+      return fetch(`http://127.0.0.1:${address.port}/settings/logo`, {
+        method: "POST",
+        headers: authorization,
+        body: form,
+      });
+    };
+
+    const firstResponse = await uploadPng("logo.png");
+    const firstBody = (await firstResponse.json()) as {
+      success: boolean;
+      data: { settings: { profile: { logoUrl: string } }; settingsVersion: number };
+    };
+    assert.equal(firstResponse.status, 200);
+    assert.equal(firstBody.success, true);
+    assert.equal(firstBody.data.settingsVersion, 1);
+    const firstLogoUrl = firstBody.data.settings.profile.logoUrl;
+    assert.ok(firstLogoUrl.startsWith(`${config.PUBLIC_API_URL}/public/logos/${tenant.id}/`));
+
+    const storedTenant = await TenantModel.findById(tenant.id).lean().exec();
+    assert.equal(storedTenant?.settings?.profile?.logoUrl, firstLogoUrl);
+    assert.equal(storedTenant?.settingsVersion, 1);
+
+    const firstPath = new URL(firstLogoUrl).pathname;
+    const publicResponse = await fetch(`http://127.0.0.1:${address.port}${firstPath}`);
+    assert.equal(publicResponse.status, 200);
+    assert.equal(publicResponse.headers.get("content-type"), "image/png");
+    assert.equal(
+      publicResponse.headers.get("cache-control"),
+      "public, max-age=31536000, immutable",
+    );
+    const servedBody = Buffer.from(await publicResponse.arrayBuffer());
+    assert.deepEqual(servedBody, tinyPngBuffer());
+
+    const secondResponse = await uploadPng("replacement.png");
+    const secondBody = (await secondResponse.json()) as {
+      success: boolean;
+      data: { settings: { profile: { logoUrl: string } }; settingsVersion: number };
+    };
+    assert.equal(secondResponse.status, 200);
+    const secondLogoUrl = secondBody.data.settings.profile.logoUrl;
+    assert.notEqual(secondLogoUrl, firstLogoUrl);
+    assert.equal(secondBody.data.settingsVersion, 2);
+
+    const oldPath = new URL(firstLogoUrl).pathname;
+    const oldResponse = await fetch(`http://127.0.0.1:${address.port}${oldPath}`);
+    assert.equal(oldResponse.status, 404);
+
+    const auditCount = await AuditLogModel.countDocuments({
+      tenantId: tenant._id,
+      action: "TENANT_SETTINGS_UPDATED",
+    });
+    assert.equal(auditCount, 2);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("POST /settings/logo rejects unsupported file types", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    await createActiveTenantAdmin();
+    const loginResponse = await postLogin(address.port);
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([Buffer.from("hello world")], { type: "text/plain" }),
+      "notes.txt",
+    );
+    const response = await fetch(`http://127.0.0.1:${address.port}/settings/logo`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${loginBody.data.tokens.accessToken}` },
+      body: form,
+    });
+    const body = (await response.json()) as {
+      success: boolean;
+      error: { code: string };
+    };
+
+    assert.equal(response.status, 400);
+    assert.equal(body.success, false);
+    assert.equal(body.error.code, "UNSUPPORTED_FILE_TYPE");
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test("POST /settings/logo requires the COMPANY_SETTINGS_UPDATE permission", async () => {
+  const server = await createServer();
+
+  try {
+    const address = server.address() as AddressInfo;
+    const { tenant } = await createActiveTenantAdmin();
+    const employee = await UserModel.create({
+      tenantId: tenant.id,
+      name: "Alex Employee",
+      email: "alex@acme.com",
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      role: "EMPLOYEE",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    void employee;
+
+    const loginResponse = await postLogin(address.port, "acme-consulting", "alex@acme.com");
+    const loginBody = (await loginResponse.json()) as {
+      data: { tokens: { accessToken: string } };
+    };
+
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([new Uint8Array(tinyPngBuffer())], { type: "image/png" }),
+      "logo.png",
+    );
+    const response = await fetch(`http://127.0.0.1:${address.port}/settings/logo`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${loginBody.data.tokens.accessToken}` },
+      body: form,
+    });
+
+    assert.equal(response.status, 403);
   } finally {
     await closeServer(server);
   }

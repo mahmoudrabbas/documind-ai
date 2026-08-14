@@ -41,6 +41,11 @@ export interface NotificationCreatePort {
    *  tenantId comes from the outbox entry (the draft carries no tenantId — all
    *  metadata schemas are z.strictObject). */
   create(tenantId: string, draft: NotificationDraft, recipientUserIds: string[]): Promise<NotificationCreateResult>;
+  /** Apply the "enqueue" lifecycle transition (CREATED → QUEUED) to the
+   *  created docs once the 'notification.dispatch' job is enqueued — the
+   *  dispatch worker only delivers QUEUED|DISPATCHED docs. Optional so fakes
+   *  and pre-T6 callers keep working. */
+  markEnqueued?(tenantId: string, notificationIds: string[]): Promise<void>;
 }
 
 export interface DispatchTotals {
@@ -163,8 +168,13 @@ export class NotificationOutboxDispatcher implements OutboxTriggerPort {
       const recipientUserIds = extractRecipientUserIds(payload);
       const result = await this.create.create(entry.tenantId.toString(), draft, recipientUserIds);
 
-      // 'created' → enqueue ONE 'notification.dispatch' for the created batch.
+      // 'created' → advance the batch CREATED → QUEUED FIRST, then enqueue ONE
+      // 'notification.dispatch' job for it. Order matters: the worker consumes
+      // the job near-instantly, and if the docs were still CREATED when it
+      // claimed them it would skip them (job contract: delivers QUEUED|DISPATCHED
+      // only) — that race permanently lost the toast.
       if (result.createdIds.length > 0) {
+        await this.create.markEnqueued?.(entry.tenantId.toString(), result.createdIds);
         await this.queue.enqueueDispatch({
           notificationIds: result.createdIds,
           tenantId: entry.tenantId.toString(),

@@ -51,6 +51,9 @@ vi.mock("@/providers/permission-provider", () => ({
 vi.mock("@/providers/tenant-provider", () => ({
   useTenantSettings: () => state.tenantSettings,
 }));
+vi.mock("@/providers/copilot-provider", () => ({
+  useCopilot: () => ({ setOpen: vi.fn() }),
+}));
 
 import { AppNavigation } from "./app-navigation";
 

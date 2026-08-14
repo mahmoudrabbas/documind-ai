@@ -153,6 +153,7 @@ function ConversationPanel({
         <button
           type="button"
           onClick={onNew}
+          data-guide-id="chat-new-conversation"
           className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           <span className="material-symbols-outlined text-[17px]">add</span>
@@ -889,14 +890,20 @@ export function ChatClient() {
                 </span>
               </div>
               <div className="space-y-1.5">
-                <h2 className="text-title-lg font-semibold text-on-surface">
+                <h2
+                  data-guide-id="page-heading-chat"
+                  className="text-title-lg font-semibold text-on-surface"
+                >
                   {t("chat.emptyTitle")}
                 </h2>
                 <p className="mx-auto max-w-md text-sm leading-6 text-on-surface-variant">
                   {t("chat.emptyDescription")}
                 </p>
               </div>
-              <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
+              <div
+                className="flex max-w-2xl flex-wrap items-center justify-center gap-2"
+                data-guide-id="chat-suggestions"
+              >
                 {SUGGESTED_QUESTION_KEYS.map((key) => (
                   <button
                     key={key}
@@ -990,16 +997,20 @@ export function ChatClient() {
                         )}
                       </div>
                       {msg.sources && msg.sources.length > 0 && (
-                        <SourceList
-                          sources={msg.sources}
-                          onOpen={handleOpenSource}
-                        />
+                        <div data-guide-id="chat-sources" className="w-full">
+                          <SourceList
+                            sources={msg.sources}
+                            onOpen={handleOpenSource}
+                          />
+                        </div>
                       )}
                       {msg.role === "assistant" && activeConversation && (
-                        <FeedbackWidget
-                          messageId={msg.id}
-                          conversationId={activeConversation}
-                        />
+                        <div data-guide-id="chat-feedback" className="w-full">
+                          <FeedbackWidget
+                            messageId={msg.id}
+                            conversationId={activeConversation}
+                          />
+                        </div>
                       )}
                     </div>
                     {msg.role === "user" && (
@@ -1125,6 +1136,7 @@ export function ChatClient() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={retryAfterSeconds !== null}
                 aria-label={t("chat.attachImage")}
+                data-guide-id="chat-image-attach"
                 title={t("chat.attachImage")}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant/75 transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1150,6 +1162,7 @@ export function ChatClient() {
                   isRecording ? t("chat.stopRecording") : t("chat.voiceInput")
                 }
                 title={isRecording ? t("chat.stopRecording") : t("chat.voiceInput")}
+                data-guide-id="chat-voice-input"
                 className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
                   isRecording
                     ? "bg-error/15 text-error ring-1 ring-error/40 hover:bg-error/25"
@@ -1183,6 +1196,7 @@ export function ChatClient() {
               <textarea
                 ref={textareaRef}
                 value={input}
+                data-guide-id="chat-message-input"
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -1198,6 +1212,7 @@ export function ChatClient() {
               <button
                 type="button"
                 onClick={() => handleSend()}
+                data-guide-id="chat-send-button"
                 disabled={!input.trim() || isTyping || retryAfterSeconds !== null}
                 aria-label={t("chat.sendAriaLabel")}
                 title={t("chat.sendAriaLabel")}

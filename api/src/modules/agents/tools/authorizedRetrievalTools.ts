@@ -175,7 +175,7 @@ const TRUSTED_CONTEXT_FIELDS = [
   "baseRole",
 ] as const satisfies readonly string[];
 
-function assertNoTrustedContextFields(
+export function assertNoTrustedContextFields(
   input: unknown,
   toolName: string,
 ): void {
@@ -199,6 +199,16 @@ function assertNoTrustedContextFields(
 }
 
 /**
+ * The only dependency `resolveTrustedActor` needs: the document-access
+ * authorization service used to fall back to persisted-actor resolution when
+ * the run context does not carry `actorRole`. Callers must not be forced to
+ * fabricate the full retrieval dependency set.
+ */
+export interface TrustedActorDependencies {
+  readonly authorization: DocumentAccessAuthorizationService;
+}
+
+/**
  * Resolves the authenticated actor identity for a tool invocation.
  *
  * Order of authority:
@@ -209,9 +219,9 @@ function assertNoTrustedContextFields(
  * If neither is available the tool fails closed — no default role is ever
  * assumed.
  */
-async function resolveTrustedActor(
+export async function resolveTrustedActor(
   context: RunContext,
-  deps: AuthorizedRetrievalDependencies,
+  deps?: TrustedActorDependencies,
 ): Promise<{
   tenantId: string;
   actorId: string;
@@ -228,6 +238,14 @@ async function resolveTrustedActor(
       actorRole: partial.actorRole,
       traceId: context.traceId,
     };
+  }
+
+  if (!deps) {
+    throw new AppError(
+      401,
+      "UNAUTHORIZED",
+      "Tool execution requires an authenticated agent context with actorRole",
+    );
   }
 
   let actor: DocumentAccessActorContext | null = null;

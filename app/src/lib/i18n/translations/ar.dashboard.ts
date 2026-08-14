@@ -84,6 +84,7 @@ const arDashboard: TranslationDictionary = {
   "dashboard.users.actionUpdate": "تحديث",
   "dashboard.users.resending": "جاري إعادة الإرسال...",
   "dashboard.users.actionResend": "إعادة الإرسال",
+  "dashboard.users.revoking": "جارٍ الإلغاء...",
   "dashboard.users.deleting": "جاري الحذف...",
   "dashboard.users.actionDelete": "حذف",
   "dashboard.users.noMatchingUsers": "لا يوجد مستخدمون يطابقون البحث الحالي أو تصفية الأدوار.",

@@ -37,15 +37,39 @@ vi.mock("@/components/auth/auth-guard", () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+vi.mock("@/components/ui/NotificationToasts", () => ({
+  NotificationToasts: () => <div data-testid="notification-toasts" />,
+}));
+
+vi.mock("@/providers/copilot-provider", () => ({
+  CopilotProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock("@/components/copilot/CopilotPanel", () => ({
+  CopilotPanel: () => <div data-testid="copilot-panel" />,
+}));
+
+vi.mock("@/components/copilot/CopilotLauncher", () => ({
+  CopilotLauncher: () => <div data-testid="copilot-launcher" />,
+}));
+
+vi.mock("@/components/copilot/guide/GuideOverlay", () => ({
+  GuideOverlay: () => <div data-testid="guide-overlay" />,
+}));
+
 import DashboardLayout from "./layout";
+
+function renderShell() {
+  render(
+    <DashboardLayout>
+      <div data-testid="page-content">page</div>
+    </DashboardLayout>,
+  );
+}
 
 describe("dashboard shell layout", () => {
   it("offsets content for the expanded sidebar only on desktop", () => {
-    render(
-      <DashboardLayout>
-        <div data-testid="page-content">page</div>
-      </DashboardLayout>,
-    );
+    renderShell();
 
     const content = screen.getByTestId("topbar").parentElement;
     expect(content).not.toBeNull();
@@ -56,11 +80,7 @@ describe("dashboard shell layout", () => {
   });
 
   it("keeps the shell free of horizontal overflow", () => {
-    render(
-      <DashboardLayout>
-        <div data-testid="page-content">page</div>
-      </DashboardLayout>,
-    );
+    renderShell();
 
     const root = screen.getByTestId("app-navigation").parentElement;
     expect(root!.className).toContain("overflow-x-clip");
@@ -68,11 +88,7 @@ describe("dashboard shell layout", () => {
 
   it("opens the mobile drawer from the topbar and closes it again", async () => {
     const user = userEvent.setup();
-    render(
-      <DashboardLayout>
-        <div data-testid="page-content">page</div>
-      </DashboardLayout>,
-    );
+    renderShell();
 
     expect(screen.getByTestId("app-navigation")).toHaveAttribute(
       "data-open",

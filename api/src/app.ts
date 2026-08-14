@@ -98,6 +98,11 @@ import analyticsRoutes from "./modules/analytics/analytics.routes.js";
 import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
 import { MongoQuotaCounter } from "./modules/entitlement/adapters/mongo-quota-counter.js";
 import { MongoEntitlementProvider } from "./modules/entitlement/adapters/mongo-entitlement-provider.js";
+import copilotRoutes from "./modules/copilot/copilot.routes.js";
+import { initializeCopilotService } from "./modules/copilot/copilot.service.js";
+import { storageProvider } from "./providers/storage/index.js";
+import { LocalFileSignatureScanner } from "./providers/security-scanner/index.js";
+import { StubProcessingDispatcher, RealProcessingDispatcher } from "./providers/processing/index.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -352,6 +357,19 @@ registerAuthorizedRetrievalTools(authorizedRetrievalDependencies);
 
 await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
+
+if (config.COPILOT_ENABLED) {
+  app.use("/copilot", copilotRoutes);
+  await initializeCopilotService({
+    storageProvider,
+    securityScanner: new LocalFileSignatureScanner(),
+    processingDispatcher:
+      config.NODE_ENV === "test"
+        ? new StubProcessingDispatcher()
+        : new RealProcessingDispatcher(),
+  });
+  logger.info("Copilot runtime initialized (COPILOT_ENABLED=true).");
+}
 
 const modelAdapter = getModelAdapter();
 const chatWorkflowService = createProductionChatWorkflowService({

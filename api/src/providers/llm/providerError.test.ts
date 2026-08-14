@@ -42,6 +42,26 @@ test("maps nested provider rate-limit codes without exposing payloads", () => {
   assert.ok(!mapped.message.includes("sensitive"));
 });
 
+test("maps SBG gateway rate-limit and quota errors to the controlled 429", () => {
+  for (const code of ["RATE_LIMIT_ERROR", "QUOTA_EXCEEDED"]) {
+    const mapped = mapLlmProviderError({ statusCode: 429, code });
+    assert.equal(mapped.statusCode, 429, code);
+    assert.equal(mapped.code, "LLM_RATE_LIMITED", code);
+  }
+});
+
+test("reads the statusCode field (SBG errors) in addition to status", () => {
+  const mapped = mapLlmProviderError({ statusCode: 503 });
+  assert.equal(mapped.statusCode, 503);
+  assert.equal(mapped.code, "LLM_PROVIDER_UNAVAILABLE");
+});
+
+test("maps SBG timeout code to the controlled timeout", () => {
+  const mapped = mapLlmProviderError({ code: "TIMEOUT_ERROR" });
+  assert.equal(mapped.statusCode, 503);
+  assert.equal(mapped.code, "LLM_TIMEOUT");
+});
+
 test("maps provider 5xx and connection failures to unavailable", () => {
   for (const error of [{ status: 500 }, { status: 503 }, { name: "APIConnectionError" }]) {
     const mapped = mapLlmProviderError(error);

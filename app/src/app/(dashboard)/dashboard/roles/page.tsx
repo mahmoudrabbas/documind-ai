@@ -982,6 +982,7 @@ export default function RolesPage() {
   return (
     <DashboardPage dir={dir}>
       <DashboardPageHeader
+        guideId="page-heading-roles"
         title={t("dashboard.roles.title")}
         description={t("dashboard.roles.description")}
         actions={
@@ -993,6 +994,7 @@ export default function RolesPage() {
                 setShowCreateForm((current) => !current);
                 setCreateError(null);
               }}
+              data-guide-id="roles-create-button"
             >
               <span className="material-symbols-outlined text-[18px]">
                 {showCreateForm ? "close" : "add"}
@@ -1234,6 +1236,7 @@ function CreateRolePanel({
               maxLength={50}
               className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
               aria-describedby="create-role-name-help"
+              data-guide-id="roles-create-name"
             />
             <p
               id="create-role-name-help"
@@ -1309,6 +1312,7 @@ function CreateRolePanel({
             type="submit"
             disabled={submitting}
             className="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+            data-guide-id="roles-create-submit"
           >
             {submitting
               ? t("dashboard.roles.creating")
@@ -1337,7 +1341,7 @@ function RoleFilters({
 }) {
   const { t } = useI18n();
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" data-guide-id="roles-filter-bar">
       <label className="relative block max-w-sm flex-1">
         <span className="sr-only">{t("dashboard.roles.searchRolesSr")}</span>
         <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
@@ -1490,7 +1494,7 @@ function RoleListContent({
 
   return (
     <>
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden overflow-x-auto md:block" data-guide-id="roles-table">
         <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-surface-container-low text-start">
             <tr>
@@ -1785,7 +1789,7 @@ function PermissionEditor({
     return <CenteredStatus text={t("dashboard.roles.catalogLoadError")} />;
 
   return (
-    <section aria-labelledby="permission-editor-title" className="space-y-4">
+    <section aria-labelledby="permission-editor-title" className="space-y-4" data-guide-id="roles-permissions-editor">
       <div>
         <h3 id="permission-editor-title" className="font-bold text-on-surface">
           {t("dashboard.roles.permissions")}

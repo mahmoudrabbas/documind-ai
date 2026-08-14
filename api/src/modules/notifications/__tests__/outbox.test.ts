@@ -24,6 +24,7 @@ const hasMongo = Boolean(process.env.MONGODB_URI);
 
 class FakeCreatePort implements NotificationCreatePort {
   calls: Array<{ tenantId: string; draft: unknown; recipientUserIds: string[] }> = [];
+  enqueuedCalls: Array<{ tenantId: string; notificationIds: string[] }> = [];
   result: NotificationCreateResult = {
     results: [],
     createdIds: [],
@@ -33,6 +34,9 @@ class FakeCreatePort implements NotificationCreatePort {
   async create(tenantId: string, draft: unknown, recipientUserIds: string[]): Promise<NotificationCreateResult> {
     this.calls.push({ tenantId, draft, recipientUserIds });
     return this.result;
+  }
+  async markEnqueued(tenantId: string, notificationIds: string[]): Promise<void> {
+    this.enqueuedCalls.push({ tenantId, notificationIds });
   }
 }
 
@@ -148,6 +152,13 @@ describe.skipIf(!hasMongo)("NotificationOutboxDispatcher", () => {
       traceId: EVENT_ID,
       idempotencyKey: EVENT_ID,
     });
+    // The created batch must be advanced CREATED → QUEUED ("enqueue" lifecycle
+    // event) right after the job is enqueued, so the dispatch worker delivers it.
+    expect(createPort.enqueuedCalls).toHaveLength(1);
+    expect(createPort.enqueuedCalls[0]).toEqual({
+      tenantId: TENANT_ID.toString(),
+      notificationIds: ["notif-0", "notif-1", "notif-2"],
+    });
     const updated = await NotificationOutboxModel.findById(entry._id).lean();
     expect(updated!.state).toBe("dispatched");
     expect(updated!.claimExpiresAt).toBeNull();
@@ -194,6 +205,13 @@ describe.skipIf(!hasMongo)("NotificationOutboxDispatcher", () => {
     const outcome = await dispatcher.dispatchEvent(TENANT_ID.toString(), entry.eventId);
 
     expect(outcome).toBe("retry_pending");
+    // markEnqueued runs BEFORE enqueue (delivery-ready first, then the job), so
+    // the batch is QUEUED even though the enqueue failed here.
+    expect(createPort.enqueuedCalls).toHaveLength(1);
+    expect(createPort.enqueuedCalls[0]).toEqual({
+      tenantId: TENANT_ID.toString(),
+      notificationIds: ["notif-0"],
+    });
     const updated = await NotificationOutboxModel.findById(entry._id).lean();
     expect(updated!.state).toBe("retry_pending");
     expect(updated!.attempts).toBe(1);

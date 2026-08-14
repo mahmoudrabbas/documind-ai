@@ -7,6 +7,7 @@ import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
 import { useDocuments } from "@/hooks/features/useDocuments";
+import { emitGuideTrigger } from "@/lib/copilot/guide-triggers";
 import { FileDropzone } from "@/components/ui/FileDropzone";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Button } from "@/components/ui/Button";
@@ -80,6 +81,7 @@ export default function DocumentsPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [classificationId, setClassificationId] = useState("");
@@ -139,6 +141,17 @@ export default function DocumentsPage() {
     }
   }, [deepLinkId, deepLinkPage, isLoading, documents, openDrawer]);
 
+  // Behavioral triggers (§: suggestions): a search that returns no results or
+  // a failed upload prompts the copilot to offer the matching guide flow.
+  useEffect(() => {
+    if (isLoading || error || !filters.search || documents.length > 0) return;
+    emitGuideTrigger("documents.search_zero_results");
+  }, [isLoading, error, filters.search, documents.length]);
+
+  useEffect(() => {
+    if (uploadError) emitGuideTrigger("documents.upload_failed");
+  }, [uploadError]);
+
   const handleSearch = useCallback(() => {
     updateFilters({ ...filters, search: searchInput || undefined, isArchived: showArchived });
   }, [searchInput, showArchived, filters, updateFilters]);
@@ -160,6 +173,7 @@ export default function DocumentsPage() {
     setSelectedFiles([]);
     setTitle("");
     setDescription("");
+    setTags("");
     setCategoryId("");
     setDepartmentId("");
     setClassificationId("");
@@ -205,9 +219,15 @@ export default function DocumentsPage() {
       return;
     }
 
+    const tagsArray = tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
     await upload(file, {
       title: title.trim(),
       description: description.trim(),
+      tags: tagsArray.join(","),
       categoryId: categoryId || undefined,
       departmentId: departmentId || undefined,
       classificationId: classificationId || undefined,
@@ -217,6 +237,7 @@ export default function DocumentsPage() {
   return (
     <DashboardPage dir={dir}>
       <DashboardPageHeader
+        guideId="page-heading-documents"
         eyebrow={
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary">
             <span className="material-symbols-outlined text-[16px]">folder</span>
@@ -257,16 +278,19 @@ export default function DocumentsPage() {
               </Alert>
             ) : null}
 
-            <FileDropzone
-              onFilesSelected={handleFilesSelected}
-              disabled={isUploading}
-              error={fileError}
-              accept={fileExtensions.join(",")}
-              dragDropText={t("documents.dragDropText")}
-              dragDropActiveText={t("documents.dragDropActive")}
-              browseText={t("documents.browseFiles")}
-              fileRequirementsText={fileRequirementsText}
-            />
+            <div data-guide-id="documents-dropzone">
+              <FileDropzone
+                guideId="documents-upload-button"
+                onFilesSelected={handleFilesSelected}
+                disabled={isUploading}
+                error={fileError}
+                accept={fileExtensions.join(",")}
+                dragDropText={t("documents.dragDropText")}
+                dragDropActiveText={t("documents.dragDropActive")}
+                browseText={t("documents.browseFiles")}
+                fileRequirementsText={fileRequirementsText}
+              />
+            </div>
 
             {selectedFiles.length > 0 && !isUploading ? (
               <div className="mt-4 space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container p-4">
@@ -275,6 +299,7 @@ export default function DocumentsPage() {
                   <input
                     id="doc-title"
                     type="text"
+                    data-guide-id="documents-title-input"
                     value={title}
                     onChange={(e) => { setTitle(e.target.value); setTitleError(null); }}
                     placeholder={t("documents.metadataTitlePlaceholder")}
@@ -287,12 +312,26 @@ export default function DocumentsPage() {
                   <label htmlFor="doc-description" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataDescription")}</label>
                   <textarea
                     id="doc-description"
+                    data-guide-id="documents-description-input"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder={t("documents.metadataDescriptionPlaceholder")}
                     rows={2}
                     className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                   />
+                </div>
+                <div>
+                  <label htmlFor="doc-tags" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataTags")}</label>
+                  <input
+                    id="doc-tags"
+                    type="text"
+                    data-guide-id="documents-tags-input"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    placeholder={t("documents.metadataTagsPlaceholder")}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <p className="mt-1 text-xs text-outline">{t("documents.metadataTagsHint")}</p>
                 </div>
                 {uploadOptions ? (
                   <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
@@ -329,14 +368,14 @@ export default function DocumentsPage() {
                   </div>
                 ) : null}
                 <div className="flex flex-wrap gap-3 pt-2">
-                  <Button onClick={handleUpload}>{t("documents.upload")}</Button>
+                  <Button data-guide-id="documents-upload-submit" onClick={handleUpload}>{t("documents.upload")}</Button>
                   <Button variant="ghost" onClick={resetForm}>{t("common.cancel")}</Button>
                 </div>
               </div>
             ) : null}
 
             {isUploading && uploadProgress !== null ? (
-              <div className="mt-8">
+              <div className="mt-8" data-guide-id="documents-upload-progress">
                 <ProgressBar value={uploadProgress} label={t("documents.uploading")} size="md" />
               </div>
             ) : null}
@@ -346,7 +385,7 @@ export default function DocumentsPage() {
             ) : null}
 
             {duplicateWarning ? (
-              <div className="mt-4 rounded-xl border border-warning/20 bg-warning-container p-3 text-sm text-on-warning-container">
+              <div className="mt-4 rounded-xl border border-warning/20 bg-warning-container p-3 text-sm text-on-warning-container" data-guide-id="documents-duplicate-warning">
                 <p className="font-medium">{t("documents.duplicateDetected")}</p>
                 <p className="mt-1 text-xs">{t("documents.duplicateHint", { title: duplicateWarning.existingTitle })}</p>
               </div>
@@ -395,6 +434,7 @@ export default function DocumentsPage() {
                 <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">search</span>
                 <input
                   type="text"
+                  data-guide-id="documents-search-input"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -402,11 +442,11 @@ export default function DocumentsPage() {
                   className="w-full rounded-lg border border-outline-variant bg-surface py-2 ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-primary sm:w-64"
                 />
               </div>
-              <Button size="sm" variant="outline" onClick={handleSearch}>
+              <Button size="sm" variant="outline" data-guide-id="documents-search-button" onClick={handleSearch}>
                 <span className="material-symbols-outlined text-[18px]">search</span>
               </Button>
               {canArchive && (
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-outline-variant px-3 py-2 text-sm text-on-surface-variant hover:bg-surface-container-high">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-outline-variant px-3 py-2 text-sm text-on-surface-variant hover:bg-surface-container-high" data-guide-id="documents-archived-filter">
                   <input
                     type="checkbox"
                     checked={showArchived}
@@ -456,7 +496,7 @@ export default function DocumentsPage() {
         ) : null}
 
         {!isLoading && !error && documents.length > 0 ? (
-          <div className="max-w-full overflow-x-auto">
+          <div className="max-w-full overflow-x-auto" data-guide-id="documents-table">
             <table className="w-full min-w-[860px] border-collapse text-start text-sm">
               <thead className="border-b border-outline-variant/30 bg-surface-container-low">
                 <tr>
@@ -514,13 +554,14 @@ export default function DocumentsPage() {
                     <td className="px-lg py-4 whitespace-nowrap text-body-sm text-on-surface-variant">{new Date(doc.createdAt).toLocaleDateString(intlLocale)}</td>
                     <td className="px-lg py-4 text-end">
                       {canDelete ? (
-                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1" data-guide-id="documents-table-row-menu" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="ghost"
                             size="sm"
                             className="text-on-surface-variant hover:bg-surface-container-high"
                             onClick={() => openDrawer(doc)}
                             title={t("documents.viewDocument")}
+                            data-guide-id="documents-view-button"
                           >
                             <span className="material-symbols-outlined text-[20px]">visibility</span>
                           </Button>
@@ -553,7 +594,7 @@ export default function DocumentsPage() {
         ) : null}
 
         {totalPages > 1 ? (
-          <div className="flex flex-col gap-3 border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between sm:px-lg">
+          <div data-guide-id="documents-pagination" className="flex flex-col gap-3 border-t border-outline-variant/30 bg-surface-container-lowest px-4 py-4 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between sm:px-lg">
             <p className="rounded-full bg-surface-container-low px-3 py-1 text-label-sm font-medium text-on-surface-variant">
               {t("common.page")} {page} / {totalPages}
             </p>

@@ -40,3 +40,9 @@ export interface UpdateSettingsResponse {
   message: string;
   data: UpdateTenantSettingsResult;
 }
+
+export interface UploadLogoResponse {
+  success: true;
+  message: string;
+  data: UpdateTenantSettingsResult;
+}

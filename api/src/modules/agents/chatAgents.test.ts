@@ -11,13 +11,16 @@ import {
 } from "./chatAgents.js";
 
 describe("approved chat agent ids", () => {
-  it("are exactly the approved five chat agent ids", () => {
+  it("are exactly the approved chat agent ids", () => {
     assert.deepEqual(CHAT_AGENT_IDS, [
       "chat-supervisor",
       "intent-query-agent",
       "answer-writer-agent",
       "citation-verification-agent",
       "compliance-agent",
+      "copilot-supervisor",
+      "platform-guide-agent",
+      "platform-action-agent",
     ]);
   });
 

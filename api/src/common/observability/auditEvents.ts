@@ -203,7 +203,11 @@ export type AuditAction =
   | "KNOWLEDGE_GAP_DOCUMENTS_LINKED"
   | "KNOWLEDGE_GAP_REEVALUATED"
   | "FEEDBACK_SUBMITTED"
-  | "FEEDBACK_ACCESS_DENIED";
+  | "FEEDBACK_ACCESS_DENIED"
+  // Copilot
+  | "COPILOT_ACTION_EXECUTED"
+  | "COPILOT_ACTION_FAILED"
+  | "COPILOT_ACTION_REJECTED";
 
 export type AuditResourceType =
   | "User"
@@ -242,7 +246,8 @@ export type AuditResourceType =
   | "GapReevaluation"
   | "Feedback"
   | "EntitlementOverride"
-  | "EntitlementReconciliation";
+  | "EntitlementReconciliation"
+  | "CopilotAction";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

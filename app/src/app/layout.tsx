@@ -4,6 +4,8 @@ import { I18nProvider } from "@/providers/i18n-provider";
 import { AuthProvider } from "@/providers/auth-provider";
 import { PermissionProvider } from "@/providers/permission-provider";
 import { TenantProvider } from "@/providers/tenant-provider";
+import { ToastProvider } from "@/providers/toast-provider";
+import { Toaster } from "@/components/ui/Toaster";
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE_NAME,
@@ -48,7 +50,7 @@ export default async function RootLayout({
         className="min-h-full flex flex-col bg-background text-on-background"
         suppressHydrationWarning
       >
-        <I18nProvider initialLocale={locale}><AuthProvider><PermissionProvider><TenantProvider>{children}</TenantProvider></PermissionProvider></AuthProvider></I18nProvider>
+        <I18nProvider initialLocale={locale}><AuthProvider><PermissionProvider><TenantProvider><ToastProvider>{children}<Toaster /></ToastProvider></TenantProvider></PermissionProvider></AuthProvider></I18nProvider>
       </body>
     </html>
   );
