@@ -198,7 +198,12 @@ export function chatRagV1Definition(): ChatWorkflowDefinition {
       "citation-verification-agent": ["answer-writer-agent", "chat-supervisor", "compliance-agent"],
       "compliance-agent": ["chat-supervisor"],
     },
-    metadata: { schemaVersion: "1.1.0" },
+    metadata: {
+      schemaVersion: "1.1.0",
+      budget: {
+        maxTotalTokens: 50_000,
+      },
+    },
   });
 }
 

@@ -102,9 +102,19 @@ type CreatedUserRecord = {
     | { _id?: { toString(): string }; toString(): string; name?: string }
     | string
     | null;
+  employeeProfile?: {
+    departmentId?:
+      | { _id?: { toString(): string }; toString(): string; name?: string }
+      | string
+      | null;
+    department?: string;
+  };
 };
 
-function serializeUser(user: CreatedUserRecord): UserPublicView {
+function serializeUser(
+  user: CreatedUserRecord,
+  resolvedDepartment?: { id: string; name: string } | null,
+): UserPublicView {
   const result: UserPublicView = {
     id: user.id ?? user._id.toString(),
     tenantId: user.tenantId?.toString() ?? "",
@@ -126,7 +136,28 @@ function serializeUser(user: CreatedUserRecord): UserPublicView {
     }
   }
 
+  const department = resolvedDepartment ?? departmentViewFromUser(user);
+  if (department) {
+    result.departmentId = department.id || null;
+    result.departmentName = department.name || null;
+  } else {
+    result.departmentId = null;
+    result.departmentName = user.employeeProfile?.department?.trim() || null;
+  }
+
   return result;
+}
+
+function departmentViewFromUser(user: CreatedUserRecord): { id: string; name: string } | null {
+  const value = user.employeeProfile?.departmentId;
+  if (!value) return null;
+  if (typeof value === "object") {
+    return {
+      id: value._id?.toString() ?? value.toString(),
+      name: value.name ?? "",
+    };
+  }
+  return { id: value, name: "" };
 }
 
 function buildVerificationUrl(token: string) {
@@ -188,6 +219,7 @@ export async function inviteUser(
     throw new AppError(404, NOT_FOUND, "Tenant not found");
   }
   assertCustomerTenantForUserManagement(tenant);
+  const department = await resolveAssignableDepartment(tenantId, payload.departmentId);
 
   const inviter = await findUserByTenantAndId(tenantId, context.actorId);
   const inviterName = inviter?.name ?? "Your administrator";
@@ -201,6 +233,9 @@ export async function inviteUser(
     status: "pending_email_verification",
     emailVerified: false,
     emailVerifiedAt: null,
+    ...(department
+      ? { employeeProfile: { departmentId: department.id } }
+      : {}),
   };
 
   let createdUser: UserDocument | null = null;
@@ -232,14 +267,19 @@ export async function inviteUser(
     }
 
     const result = {
-      user: serializeUser(createdUser),
+      user: serializeUser(createdUser, department ?? null),
       emailDelivery,
     };
     await auditUserOperation(
       context,
       "USER_INVITED",
       createdUser._id.toString(),
-      { role: createdUser.role, status: createdUser.status, emailDelivery },
+      {
+        role: createdUser.role,
+        status: createdUser.status,
+        departmentId: department?.id ?? null,
+        emailDelivery,
+      },
     );
     return result;
   } catch (error) {
@@ -299,6 +339,17 @@ export async function updateUser(
   }
   assertCustomerTenantForUserManagement(tenant);
 
+  const department = payload.departmentId !== undefined
+    ? await resolveAssignableDepartment(tenantId, payload.departmentId)
+    : undefined;
+  if (payload.departmentId !== undefined) {
+    await authorizeUserOperationForResource(context, Permission.USERS_UPDATE, {
+      tenantId,
+      ownerId: existingUser._id.toString(),
+      ...(department ? { departmentId: department.id } : {}),
+    });
+  }
+
   const changes: Record<string, unknown> = {};
   const update: Record<string, unknown> = {};
 
@@ -330,6 +381,21 @@ export async function updateUser(
     };
   }
 
+  if (payload.departmentId !== undefined) {
+    const beforeDepartment = await resolveUserDepartment(tenantId, existingUser);
+    const nextDepartmentId = department?.id ?? null;
+    if ((beforeDepartment?.id ?? null) !== nextDepartmentId) {
+      update["employeeProfile.departmentId"] = nextDepartmentId;
+      // Canonical assignments supersede the legacy free-text field. Clear it
+      // on first managed edit so it can never reappear after a later clear.
+      update["employeeProfile.department"] = null;
+      changes.department = {
+        before: beforeDepartment,
+        after: department ?? null,
+      };
+    }
+  }
+
   const selfDestructive = context.actorId === targetUserId && existingUser.role === "COMPANY_ADMIN" &&
     ((update.role !== undefined && update.role !== "COMPANY_ADMIN") ||
       (update.status !== undefined && update.status !== "active"));
@@ -338,7 +404,7 @@ export async function updateUser(
   }
 
   if (Object.keys(update).length === 0) {
-    return { user: serializeUser(existingUser) };
+    return { user: serializeUser(existingUser, await resolveUserDepartment(tenantId, existingUser)) };
   }
 
   try {
@@ -357,7 +423,7 @@ export async function updateUser(
     }
 
     const action =
-      changes.role && changes.status
+      changes.department || changes.role && changes.status
         ? "USER_UPDATED"
         : changes.role
           ? "USER_ROLE_CHANGED"
@@ -394,7 +460,12 @@ export async function updateUser(
     }
 
     return {
-      user: serializeUser(updatedUser),
+      user: serializeUser(
+        updatedUser,
+        department !== undefined
+          ? department
+          : await resolveUserDepartment(tenantId, updatedUser as UserDocument),
+      ),
     };
   } catch (error) {
     if (error instanceof AppError) {
@@ -690,12 +761,17 @@ async function userCollectionScopeFilter(
   if (scopes.departmentIds.length > 0) {
     const names = await departmentNamesForScope(tenantId, scopes.departmentIds);
     constraints.push({
-      $expr: {
-        $in: [
-          { $toLower: { $ifNull: ["$employeeProfile.department", ""] } },
-          names,
-        ],
-      },
+      $or: [
+        { "employeeProfile.departmentId": { $in: scopes.departmentIds } },
+        {
+          $expr: {
+            $in: [
+              { $toLower: { $ifNull: ["$employeeProfile.department", ""] } },
+              names,
+            ],
+          },
+        },
+      ],
     });
   }
   return constraints.length > 0 ? { $and: constraints } : {};
@@ -703,8 +779,16 @@ async function userCollectionScopeFilter(
 
 async function userPermissionResource(
   tenantId: string,
-  user: Pick<UserDocument, "_id" | "employeeProfile">,
+  user: { _id: { toString(): string }; employeeProfile?: UserDepartmentProfile },
 ): Promise<PermissionResourceContext> {
+  const canonicalDepartmentId = profileDepartmentId(user.employeeProfile);
+  if (canonicalDepartmentId && mongoose.isObjectIdOrHexString(canonicalDepartmentId)) {
+    return {
+      tenantId,
+      ownerId: user._id.toString(),
+      departmentId: canonicalDepartmentId,
+    };
+  }
   const department = user.employeeProfile?.department?.trim();
   let departmentId: string | undefined;
   if (department) {
@@ -721,6 +805,60 @@ async function userPermissionResource(
     ownerId: user._id.toString(),
     ...(departmentId ? { departmentId } : {}),
   };
+}
+
+async function resolveAssignableDepartment(
+  tenantId: string,
+  departmentId: string | null | undefined,
+): Promise<{ id: string; name: string } | null> {
+  if (departmentId === undefined || departmentId === null) return null;
+  const department = await DepartmentModel.findOne({ _id: departmentId, tenantId })
+    .select("name status")
+    .lean()
+    .exec();
+  if (!department) {
+    throw new AppError(404, "TAXONOMY_RECORD_NOT_FOUND", "Department not found");
+  }
+  if (department.status !== "active") {
+    throw new AppError(409, "TAXONOMY_RECORD_ARCHIVED", "Department is archived");
+  }
+  return { id: department._id.toString(), name: department.name };
+}
+
+async function resolveUserDepartment(
+  tenantId: string,
+  user: { employeeProfile?: UserDepartmentProfile },
+): Promise<{ id: string; name: string } | null> {
+  const departmentId = profileDepartmentId(user.employeeProfile);
+  if (departmentId && mongoose.isObjectIdOrHexString(departmentId)) {
+    const department = await DepartmentModel.findOne({ _id: departmentId, tenantId })
+      .select("name")
+      .lean()
+      .exec();
+    return department ? { id: department._id.toString(), name: department.name } : null;
+  }
+  const legacyName = user.employeeProfile?.department?.trim();
+  if (!legacyName) return null;
+  const department = await DepartmentModel.findOne({
+    tenantId,
+    normalizedName: legacyName.toLocaleLowerCase(),
+  }).select("name").lean().exec();
+  return department ? { id: department._id.toString(), name: department.name } : null;
+}
+
+type UserDepartmentProfile = {
+  departmentId?:
+    | string
+    | { _id?: { toString(): string }; toString(): string }
+    | null;
+  department?: string;
+};
+
+function profileDepartmentId(profile: UserDepartmentProfile | undefined): string | null {
+  const value = profile?.departmentId;
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  return value._id?.toString() ?? value.toString();
 }
 
 async function auditUserOperation(
@@ -907,7 +1045,7 @@ export async function listUsers(
   const totalPages = Math.max(1, Math.ceil(totalRecords / payload.pageSize));
 
   return {
-    users: users.map(serializeUser),
+    users: users.map((user) => serializeUser(user)),
     pagination: {
       page: payload.page,
       pageSize: payload.pageSize,

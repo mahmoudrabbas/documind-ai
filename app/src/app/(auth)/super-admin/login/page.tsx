@@ -8,10 +8,8 @@ import {
   type AuthTenant,
   type AuthUser,
 } from "@/providers/auth-provider";
-import { AuthHeroPanel } from "@/components/ui/AuthHeroPanel";
-import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
-import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
+import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { useI18n } from "@/providers/i18n-provider";
 
 type Response = {
@@ -28,7 +26,9 @@ export default function SuperAdminLoginPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
-  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(
+    null,
+  );
 
   function messageForError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
@@ -74,130 +74,102 @@ export default function SuperAdminLoginPage() {
   }, []);
 
   return (
-    <main
+    <AuthSplitShell
       key={locale}
       dir={dir}
-      className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
+      backToHomeLabel={t("auth.backToHome")}
+      description={t("auth.platformAdmin")}
+      securityLabel={t("auth.encryptedBadge")}
+      rightsLabel={t("auth.rightsReserved", {
+        year: String(new Date().getFullYear()),
+      })}
+      showBackToHome={false}
     >
-      {/* Left panel (Form Panel) */}
-      <section className="z-10 flex h-full w-full flex-col p-lg shadow-xl md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
-        {/* Language switcher */}
-        <div className="absolute top-6 end-6 z-20">
-          <LanguageSwitcher />
-        </div>
+      <div>
+        <h2 className="mb-sm text-headline-lg-mobile font-bold text-primary sm:text-headline-lg">
+          {t("auth.superAdminSignIn")}
+        </h2>
+        <p className="mb-[clamp(1rem,2.5dvh,2rem)] text-body-md text-on-surface-variant">
+          {t("auth.superAdminCredentials")}
+        </p>
 
-        {/* Brand Header */}
-        <div className="mb-12">
-          <DocuMindLogo className="mb-sm" />
-          <p className="max-w-sm text-body-md text-on-surface-variant">
-            {t("auth.platformAdmin")}
-          </p>
-        </div>
-
-        {/* Login Form */}
-        <div className="flex flex-grow flex-col justify-center">
-          <h2 className="mb-base text-headline-lg font-bold text-primary">
-            {t("auth.superAdminSignIn")}
-          </h2>
-          <p className="mb-xl text-body-md text-on-surface-variant">
-            {t("auth.superAdminCredentials")}
-          </p>
-
-          <form className="space-y-md w-full" onSubmit={submit} noValidate>
-            <div aria-live="polite" className="w-full">
-              {rateLimitRetryAfter !== null ? (
-                <div className="mb-4">
-                  <RateLimitAlert
-                    retryAfterSeconds={rateLimitRetryAfter}
-                    onRetry={handleRetryLogin}
-                  />
-                </div>
-              ) : formError ? (
-                <div
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
-                  role="alert"
-                >
-                  {formError}
-                </div>
-              ) : null}
-            </div>
-
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-xs block text-label-md text-on-surface-variant"
+        <form
+          className="w-full space-y-[clamp(0.75rem,1.6dvh,1rem)]"
+          onSubmit={submit}
+          noValidate
+        >
+          <div aria-live="polite" className="w-full">
+            {rateLimitRetryAfter !== null ? (
+              <div className="mb-md">
+                <RateLimitAlert
+                  retryAfterSeconds={rateLimitRetryAfter}
+                  onRetry={handleRetryLogin}
+                />
+              </div>
+            ) : formError ? (
+              <div
+                className="mb-md w-full rounded-lg border border-red-200 bg-red-50 px-md py-sm text-sm text-red-700"
+                role="alert"
               >
-                {t("auth.email")}
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
-                placeholder={t("auth.emailPlaceholder")}
-                disabled={submitting}
-                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.password")}
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                placeholder={t("auth.passwordPlaceholder")}
-                disabled={submitting}
-                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
-            >
-              {submitting ? (
-                <span className="material-symbols-outlined animate-spin">
-                  progress_activity
-                </span>
-              ) : null}
-              {submitting ? t("auth.signingIn") : t("auth.signIn")}
-            </button>
-          </form>
-        </div>
-
-        {/* Security Footer */}
-        <div className="mt-auto flex flex-col gap-sm border-t border-outline-variant pt-xl">
-          <div className="flex items-center gap-sm">
-            <span
-              className="material-symbols-outlined text-xl text-on-tertiary-container"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              verified_user
-            </span>
-            <span className="text-label-sm text-on-surface-variant">
-              {t("auth.encryptedBadge")}
-            </span>
+                {formError}
+              </div>
+            ) : null}
           </div>
-          <p className="text-body-sm text-outline">
-            {t("auth.rightsReserved", { year: String(new Date().getFullYear()) })}
-          </p>
-        </div>
-      </section>
 
-      {/* Right Section: Visual Panel */}
-      <AuthHeroPanel />
-    </main>
+          <div>
+            <label
+              htmlFor="email"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.email")}
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              placeholder={t("auth.emailPlaceholder")}
+              disabled={submitting}
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="password"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.password")}
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              placeholder={t("auth.passwordPlaceholder")}
+              disabled={submitting}
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="mt-xs flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-md py-sm text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? (
+              <span className="material-symbols-outlined animate-spin">
+                progress_activity
+              </span>
+            ) : null}
+            {submitting ? t("auth.signingIn") : t("auth.signIn")}
+          </button>
+        </form>
+      </div>
+    </AuthSplitShell>
   );
 }

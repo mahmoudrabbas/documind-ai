@@ -100,12 +100,32 @@ const SNAPSHOT: EntitlementSnapshot = {
 };
 
 /** Stub the entitlement service with a deterministic snapshot result. */
-function stubService(snapshot: EntitlementSnapshot | null) {
+function stubService(
+  snapshot: EntitlementSnapshot | null,
+  effectiveLimits: Partial<Record<string, number>> = {},
+) {
   vi.mocked(getEntitlementService).mockReturnValue({
     getUsage: vi.fn().mockResolvedValue({ documents: 3 }),
     getEntitlementSnapshot: vi.fn().mockResolvedValue(snapshot),
     getPeriodStart: vi.fn().mockResolvedValue("2026-01-01T00:00:00.000Z"),
     getPeriodReset: vi.fn().mockResolvedValue("2026-02-01T00:00:00.000Z"),
+    getEffectiveLimit: vi.fn().mockImplementation(
+      async (_tenantId: string, dimension: string) => {
+        if (effectiveLimits[dimension] !== undefined) {
+          return effectiveLimits[dimension];
+        }
+
+        if (!snapshot) {
+          return 0;
+        }
+
+        const value = (
+          snapshot as unknown as Record<string, unknown>
+        )[dimension];
+
+        return typeof value === "number" ? value : 0;
+      },
+    ),
   } as unknown as EntitlementService);
 }
 
@@ -262,6 +282,30 @@ describe("entitlement read controllers — null-snapshot cause distinction", () 
         data: expect.objectContaining({
           limit: expect.objectContaining({ documents: 100, storageMb: 1024, queriesPerMonth: 1000 }),
           actual: { documents: 0, storageBytes: 0, questions: 0 },
+        }),
+      });
+    });
+
+    it("GET /entitlement/usage → returns effective override limits instead of base plan limits", async () => {
+      const tenantId = new mongoose.Types.ObjectId().toString();
+
+      stubService(SNAPSHOT, {
+        tokensPerMonth: 60_000,
+      });
+
+      const { req, res, next, json } = createHarness(tenantId);
+
+      await getUsageController(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          limit: expect.objectContaining({
+            tokensPerMonth: 60_000,
+            queriesPerMonth: 1_000,
+            documents: 100,
+          }),
         }),
       });
     });

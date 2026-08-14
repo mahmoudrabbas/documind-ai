@@ -69,7 +69,7 @@ export function QuotaProgressBar({
   const isUnlimited = safeLimit === 0;
   const percent = isUnlimited
     ? 100
-    : Math.min(Math.round((safeCurrent / safeLimit) * 100), 100);
+    : Math.min((safeCurrent / safeLimit) * 100, 100);
   const isFull = !isUnlimited && safeCurrent >= safeLimit;
   const almostFull = !isUnlimited && !isFull && safeLimit - safeCurrent <= 5;
 

@@ -83,8 +83,13 @@ interface HarnessOptions {
   permissionState?: ResolvedPermissions["customRoleState"];
   permissions?: readonly string[];
   runtimeFailure?: boolean;
+  runtimeThrow?: boolean;
+  runtimeTokensUsed?: number;
   runtimeErrorCode?: string;
   runtimeErrorMessage?: string;
+  quotaEnabled?: boolean;
+  quotaDenied?: boolean;
+  quotaReservedAmount?: number;
   verifierError?: string;
   approvedIds?: string[];
   writerCitations?: string[];
@@ -234,6 +239,11 @@ function makeHarness(options: HarnessOptions = {}) {
     execute: vi.fn(async (runInput, hooks?: SupervisorRuntimeHooks) => {
       observations.executeCalls += 1;
       observations.startCalls += 1;
+
+      if (options.runtimeThrow) {
+        throw new Error("runtime threw before returning a result");
+      }
+
       if (options.runtimeFailure) {
         return {
           runId: runInput.runId,
@@ -246,7 +256,7 @@ function makeHarness(options: HarnessOptions = {}) {
           },
           totalSteps: 1,
           totalToolCalls: 0,
-          totalTokensUsed: 0,
+          totalTokensUsed: options.runtimeTokensUsed ?? 0,
           estimatedCost: 0,
           latencyMs: 1,
           handoffsCount: 0,
@@ -551,7 +561,7 @@ function makeHarness(options: HarnessOptions = {}) {
         error: null,
         totalSteps: 1,
         totalToolCalls: observations.tools.length,
-        totalTokensUsed: 1,
+        totalTokensUsed: options.runtimeTokensUsed ?? 1,
         estimatedCost: 0,
         latencyMs: 1,
         handoffsCount: observations.handoffs.length,
@@ -622,6 +632,37 @@ function makeHarness(options: HarnessOptions = {}) {
   }));
   const reportKnowledgeGap = vi.fn(async () => undefined);
   const auditWriter = { write: vi.fn(async () => true) };
+
+  const reserveTokenQuota = vi.fn(async () => {
+    if (options.quotaDenied) {
+      return {
+        allowed: false as const,
+        current: 10_000,
+        limit: 10_000,
+        remaining: 0,
+        periodReset: "2026-09-01T00:00:00.000Z",
+      };
+    }
+
+    const reservedAmount =
+      options.quotaReservedAmount ?? 2_000;
+
+    return {
+      allowed: true as const,
+      reservation: {
+        reservationId: "tqr-chat-test",
+        reservedAmount,
+      },
+      current: 10_000 - reservedAmount,
+      limit: 10_000,
+      remaining: reservedAmount,
+      periodReset: "2026-09-01T00:00:00.000Z",
+    };
+  });
+
+  const commitTokenQuota = vi.fn(async () => undefined);
+  const releaseTokenQuota = vi.fn(async () => undefined);
+
   const dependencies: ChatWorkflowServiceDependencies = {
     composition: { runtime, workflow: { id: "chat-rag-v1" } },
     repository,
@@ -641,6 +682,15 @@ function makeHarness(options: HarnessOptions = {}) {
       maxTokens: 1024,
     })),
     createRun,
+    ...(options.quotaEnabled
+      ? {
+          tokenQuota: {
+            reserve: reserveTokenQuota,
+            commit: commitTokenQuota,
+            release: releaseTokenQuota,
+          },
+        }
+      : {}),
     authorizedRetrieval: {
       authorization: { authorizeDocumentAction } as never,
       loadChunksByIds: vi.fn(async () => options.loadedChunks ?? defaultLoaded),
@@ -666,6 +716,9 @@ function makeHarness(options: HarnessOptions = {}) {
     loadPersistedActor,
     authorizeDocumentAction,
     reportKnowledgeGap,
+    reserveTokenQuota,
+    commitTokenQuota,
+    releaseTokenQuota,
   };
 }
 
@@ -684,6 +737,148 @@ async function executeHarness(harness: ReturnType<typeof makeHarness>, message =
 }
 
 describe("ChatWorkflowService lifecycle and trusted context", () => {
+  it("fails with ENTITLEMENT_EXCEEDED before persistence and runtime when token quota is exhausted", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaDenied: true,
+    });
+
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      statusCode: 429,
+      code: "ENTITLEMENT_EXCEEDED",
+      details: {
+        current: 10_000,
+        limit: 10_000,
+        dimension: "tokensPerMonth",
+        remaining: 0,
+        periodReset: "2026-09-01T00:00:00.000Z",
+        canUpgrade: false,
+      },
+    });
+
+    expect(harness.reserveTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      requestId: "request-1",
+      maxAmount: 50_000,
+    });
+
+    expect(harness.messages).toHaveLength(0);
+    expect(harness.createRun).not.toHaveBeenCalled();
+    expect(
+      harness.dependencies.composition.runtime.execute,
+    ).not.toHaveBeenCalled();
+    expect(harness.commitTokenQuota).not.toHaveBeenCalled();
+    expect(harness.releaseTokenQuota).not.toHaveBeenCalled();
+  });
+
+  it("releases a too-small reservation and fails before creating an AgentRun", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 90,
+    });
+
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      statusCode: 429,
+      code: "ENTITLEMENT_EXCEEDED",
+      details: {
+        current: 9_910,
+        limit: 10_000,
+        dimension: "tokensPerMonth",
+        remaining: 90,
+        periodReset: "2026-09-01T00:00:00.000Z",
+        canUpgrade: false,
+      },
+    });
+
+    expect(harness.releaseTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.releaseTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+    });
+
+    expect(harness.createRun).not.toHaveBeenCalled();
+    expect(
+      harness.dependencies.composition.runtime.execute,
+    ).not.toHaveBeenCalled();
+    expect(harness.commitTokenQuota).not.toHaveBeenCalled();
+    expect(harness.messages).toHaveLength(0);
+  });
+
+  it("passes the durable reservation amount as the Supervisor total-token budget", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 1_750,
+    });
+
+    await executeHarness(harness);
+
+    const runtimeInput = vi.mocked(
+      harness.dependencies.composition.runtime.execute,
+    ).mock.calls[0][0];
+
+    expect(runtimeInput.budgetLimits).toEqual({
+      maxTotalTokens: 1_750,
+    });
+  });
+
+  it("commits actual runtime token usage after a returned runtime result", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 2_000,
+      runtimeTokensUsed: 621,
+    });
+
+    await executeHarness(harness);
+
+    expect(harness.commitTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.commitTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+      actualAmount: 621,
+    });
+    expect(harness.releaseTokenQuota).not.toHaveBeenCalled();
+  });
+
+  it("commits reported usage instead of releasing when the runtime returns a failed result", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 2_000,
+      runtimeFailure: true,
+      runtimeTokensUsed: 317,
+    });
+
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "CHAT_WORKFLOW_FAILED",
+    });
+
+    expect(harness.commitTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.commitTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+      actualAmount: 317,
+    });
+    expect(harness.releaseTokenQuota).not.toHaveBeenCalled();
+  });
+
+  it("releases the reservation when runtime execution throws before returning usage", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 2_000,
+      runtimeThrow: true,
+    });
+
+    await expect(executeHarness(harness)).rejects.toThrow(
+      "runtime threw before returning a result",
+    );
+
+    expect(harness.releaseTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.releaseTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+    });
+    expect(harness.commitTokenQuota).not.toHaveBeenCalled();
+  });
+
   it("creates one AgentRun and executes the Supervisor runtime once", async () => {
     const harness = makeHarness();
     await executeHarness(harness);

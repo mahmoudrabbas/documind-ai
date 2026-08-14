@@ -29,6 +29,9 @@ import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import ProcessingRunModel from "../../db/models/processingRun.model.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
+import DocumentChunkModel from "../../db/models/documentChunk.model.js";
+import ChunkEmbeddingModel from "../../db/models/chunkEmbedding.model.js";
+import IndexGenerationModel from "../../db/models/indexGeneration.model.js";
 import { signJwt } from "../auth/jwtTokens.js";
 import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 
@@ -926,7 +929,7 @@ void test("use_in_ai continues to require exact policy authorization for Company
   ));
 });
 
-void test("DELETE /documents/:id — soft deletes document", async () => {
+void test("DELETE /documents/:id — soft deletes document and removes stale RAG retrieval artifacts", async () => {
   const server = await createServer();
   const port = (server.address() as { port: number }).port;
   const { tenant, user } = await createActiveTenantAdmin();
@@ -936,6 +939,114 @@ void test("DELETE /documents/:id — soft deletes document", async () => {
     tenant.id, user.id, "internal",
     ["discover", "read", "download", "delete"],
     { metadata: { title: "To Delete", description: "", tags: [] } },
+  );
+
+  const tenantObjectId = new Types.ObjectId(tenant.id);
+  const documentObjectId = new Types.ObjectId(doc.id);
+
+  const generation = await IndexGenerationModel.create({
+    tenantId: tenantObjectId,
+    documentId: documentObjectId,
+    documentVersion: 1,
+    generationNumber: 1,
+    status: "ACTIVE",
+    expectedChunkCount: 1,
+    actualChunkCount: 1,
+    expectedEmbeddingCount: 1,
+    actualEmbeddingCount: 1,
+    atlasIndexName: "vidx_chunk_embeddings_v1",
+    atlasIndexStatus: "READY",
+    failureReason: null,
+    triggeredBy: "INITIAL",
+    chunkingConfig: {
+      targetTokens: 400,
+      hardCeiling: 800,
+      overlap: 50,
+      tokenizerVersion: "cl100k_base",
+    },
+    activatedAt: new Date(),
+    retiredAt: null,
+  });
+
+  const chunk = await DocumentChunkModel.create({
+    tenantId: tenantObjectId,
+    documentId: documentObjectId,
+    documentVersion: 1,
+    generationId: generation._id,
+    chunkIndex: 0,
+    sectionPath: [],
+    pageStart: 1,
+    pageEnd: 1,
+    offsetStart: 0,
+    offsetEnd: 39,
+    contentType: "paragraph",
+    language: "en",
+    department: null,
+    category: null,
+    classification: "internal",
+    text: "This content must disappear after deletion.",
+    checksum: "soft-delete-rag-regression-chunk",
+    tokenCount: 8,
+    status: "EMBEDDED",
+    partIndex: null,
+    partCount: null,
+  });
+
+  await ChunkEmbeddingModel.create({
+    chunkId: chunk._id,
+    generationId: generation._id,
+    tenantId: tenantObjectId,
+    documentId: documentObjectId,
+    provider: "test",
+    modelName: "test-embedding",
+    modelVersion: "1",
+    dimensions: 3,
+    vector: [0.1, 0.2, 0.3],
+    embeddingChecksum: "soft-delete-rag-regression-embedding",
+    department: null,
+    category: null,
+    classification: "internal",
+    accessPolicyVersion: null,
+    language: "en",
+    contentType: "paragraph",
+    tokenUsage: 8,
+    costUsd: 0,
+  });
+
+  await DocumentModel.updateOne(
+    { _id: documentObjectId, tenantId: tenantObjectId },
+    {
+      $set: {
+        searchStatus: "READY",
+        activeChunkGeneration: generation._id,
+      },
+    },
+  ).exec();
+
+  // Precondition: the document has live retrieval artifacts before deletion.
+  assert.equal(
+    await DocumentChunkModel.countDocuments({
+      tenantId: tenantObjectId,
+      documentId: documentObjectId,
+    }),
+    1,
+  );
+
+  assert.equal(
+    await ChunkEmbeddingModel.countDocuments({
+      tenantId: tenantObjectId,
+      documentId: documentObjectId,
+    }),
+    1,
+  );
+
+  assert.equal(
+    await IndexGenerationModel.countDocuments({
+      tenantId: tenantObjectId,
+      documentId: documentObjectId,
+      status: "ACTIVE",
+    }),
+    1,
   );
 
   const response = await fetch(`http://127.0.0.1:${port}/documents/${doc.id}`, {
@@ -948,6 +1059,43 @@ void test("DELETE /documents/:id — soft deletes document", async () => {
   const softDeleted = await DocumentModel.findById(doc.id);
   assert.ok(softDeleted);
   assert.ok(softDeleted.deletedAt);
+
+  // Regression: a soft-deleted document must immediately become
+  // ineligible for both vector and keyword RAG retrieval.
+  assert.equal(softDeleted.searchStatus, "STALE");
+  assert.equal(softDeleted.activeChunkGeneration, null);
+  assert.equal(softDeleted.currentGeneration, null);
+  assert.equal(softDeleted.pendingGeneration, null);
+
+  assert.equal(
+    await DocumentChunkModel.countDocuments({
+      tenantId: tenantObjectId,
+      documentId: documentObjectId,
+    }),
+    0,
+  );
+
+  assert.equal(
+    await ChunkEmbeddingModel.countDocuments({
+      tenantId: tenantObjectId,
+      documentId: documentObjectId,
+    }),
+    0,
+  );
+
+  assert.equal(
+    await IndexGenerationModel.countDocuments({
+      tenantId: tenantObjectId,
+      documentId: documentObjectId,
+      status: "ACTIVE",
+    }),
+    0,
+  );
+
+  const retiredGeneration = await IndexGenerationModel.findById(generation._id);
+  assert.ok(retiredGeneration);
+  assert.equal(retiredGeneration.status, "RETIRED");
+  assert.ok(retiredGeneration.retiredAt);
 
   const response2 = await fetch(`http://127.0.0.1:${port}/documents`, {
     headers: { Authorization: `Bearer ${accessToken}` },

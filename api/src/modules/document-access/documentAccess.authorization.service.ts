@@ -84,13 +84,17 @@ export class DocumentAccessAuthorizationService {
   private async loadActor(context: DocumentAuthorizationContext): Promise<DocumentAccessActorContext> {
     if (!mongoose.isObjectIdOrHexString(context.tenantId) || !mongoose.isObjectIdOrHexString(context.actorId)) return hidden();
     const user = await UserModel.findOne({ _id: context.actorId, tenantId: context.tenantId, status: "active" })
-      .select("role customRoleId employeeProfile.department").lean().exec();
+      .select("role customRoleId employeeProfile.departmentId employeeProfile.department").lean().exec();
     if (!user) return hidden();
     const resolved = await getPermissionEvaluator().resolve({ tenantId: context.tenantId, actorId: context.actorId, baseRole: user.role, customRoleId: user.customRoleId?.toString() });
     if (resolved.customRoleState === "invalid" || resolved.customRoleState === "missing" || resolved.customRoleState === "archived") return hidden();
     const departmentIds: string[] = [];
-    const legacyDepartment = user.employeeProfile?.department;
-    if (legacyDepartment) {
+    const canonicalDepartmentId = user.employeeProfile?.departmentId?.toString();
+    if (canonicalDepartmentId && mongoose.isObjectIdOrHexString(canonicalDepartmentId)) {
+      const department = await DepartmentModel.exists({ _id: canonicalDepartmentId, tenantId: context.tenantId, status: "active" });
+      if (department) departmentIds.push(canonicalDepartmentId);
+    } else if (user.employeeProfile?.department) {
+      const legacyDepartment = user.employeeProfile.department;
       const department = await DepartmentModel.findOne({ tenantId: context.tenantId, normalizedName: normalizeTaxonomyName(legacyDepartment), status: "active" }).select("_id").lean().exec();
       if (department) departmentIds.push(department._id.toString());
     }

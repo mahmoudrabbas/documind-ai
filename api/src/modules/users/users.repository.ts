@@ -45,6 +45,10 @@ export function findUsersByTenant(
       "customRoleId",
       "name",
     )
+    .populate<{ employeeProfile: { departmentId: { _id: Types.ObjectId; name: string } | null } }>(
+      "employeeProfile.departmentId",
+      "name",
+    )
     .lean<UserSingleRecord[]>()
     .exec();
 }
@@ -52,11 +56,15 @@ export function findUsersByTenant(
 export interface ListUsersFilter {
   search?: string;
   role?: "COMPANY_ADMIN" | "EMPLOYEE";
+  status?: "active" | "pending" | "pending_email_verification" | "disabled";
+  departmentId?: string;
 }
 
 function buildListFilter(filter: ListUsersFilter): Record<string, unknown> {
   const query: Record<string, unknown> = {};
   if (filter.role) query.role = filter.role;
+  if (filter.status) query.status = filter.status;
+  if (filter.departmentId) query["employeeProfile.departmentId"] = filter.departmentId;
   if (filter.search) {
     const escaped = filter.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     query.$or = [

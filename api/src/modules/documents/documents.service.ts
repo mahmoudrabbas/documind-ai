@@ -58,6 +58,9 @@ import type {
 } from "./documents.types.js";
 import type { DocumentDocument, DocumentClassification, DocumentQuarantineStatus } from "../../db/models/document.model.js";
 import type { DocumentVersionDocument } from "../../db/models/documentVersion.model.js";
+import DocumentChunkModel from "../../db/models/documentChunk.model.js";
+import ChunkEmbeddingModel from "../../db/models/chunkEmbedding.model.js";
+import IndexGenerationModel from "../../db/models/indexGeneration.model.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { authorizePermission, authorizePermissionCapability } from "../permissions/permissions.authorization.js";
 import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
@@ -824,6 +827,41 @@ export function createDocumentServiceProviders(deps: {
     return { document: serializeDocument(updated) };
   }
 
+  async function removeDocumentFromRetrieval(
+    tenantId: string,
+    documentId: string,
+  ): Promise<void> {
+    const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
+    const documentObjectId = new mongoose.Types.ObjectId(documentId);
+    const retiredAt = new Date();
+
+    await Promise.all([
+      ChunkEmbeddingModel.deleteMany({
+        tenantId: tenantObjectId,
+        documentId: documentObjectId,
+      }).exec(),
+
+      DocumentChunkModel.deleteMany({
+        tenantId: tenantObjectId,
+        documentId: documentObjectId,
+      }).exec(),
+
+      IndexGenerationModel.updateMany(
+        {
+          tenantId: tenantObjectId,
+          documentId: documentObjectId,
+          status: { $ne: "RETIRED" },
+        },
+        {
+          $set: {
+            status: "RETIRED",
+            retiredAt,
+          },
+        },
+      ).exec(),
+    ]);
+  }
+
   async function softDeleteDocument(
     documentId: string,
     tenantId: string,
@@ -844,7 +882,13 @@ export function createDocumentServiceProviders(deps: {
     await updateDocumentByTenantAndId(tenantId, documentId, {
       deletedAt: new Date(),
       deletedBy: actor.userId as unknown as DocumentDocument["deletedBy"],
+      searchStatus: "STALE",
+      activeChunkGeneration: null,
+      currentGeneration: null,
+      pendingGeneration: null,
     } as unknown as Partial<DocumentDocument>);
+
+    await removeDocumentFromRetrieval(tenantId, documentId);
 
     await getAuditWriter().write({
       tenantId,
@@ -887,6 +931,14 @@ export function createDocumentServiceProviders(deps: {
 
     const DocumentVersionModel = (await import("../../db/models/documentVersion.model.js")).default;
     await DocumentVersionModel.deleteMany({ documentId: document._id, tenantId: tenantId }).exec();
+
+    // Defensive/idempotent cleanup for documents soft-deleted before retrieval
+    // lifecycle cleanup was introduced.
+    await removeDocumentFromRetrieval(tenantId, documentId);
+    await IndexGenerationModel.deleteMany({
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+      documentId: new mongoose.Types.ObjectId(documentId),
+    }).exec();
 
     await deleteDocumentByTenantAndId(tenantId, documentId);
 

@@ -182,7 +182,10 @@ export class IntentQueryService {
    */
   async analyzeQuery(
     rawInput: unknown,
-    context: OperationAuthorizationContext
+    context: OperationAuthorizationContext,
+    executionOptions: {
+      tokenAccounting?: "internal" | "external";
+    } = {},
   ): Promise<QueryPlan> {
     const start = Date.now();
     const traceId = context.traceId ?? `iq-${Date.now()}`;
@@ -607,7 +610,7 @@ export class IntentQueryService {
       const response = await this.modelAdapter.complete({
         messages: messagesPayload,
         temperature: 0,
-        maxTokens: 1000,
+        maxTokens: Math.min(1000, input.maxTokens ?? 1000),
         structuredOutput: { type: "json_object" },
       });
 
@@ -676,12 +679,13 @@ export class IntentQueryService {
           logger.warn({ err, traceId }, "[IntentQueryService] Failed to record usage event");
         });
 
-      try {
-        const consumed = await entitlementService.consume(
-          tenantIdStr,
-          "tokensPerMonth",
-          tokensUsed,
-        );
+      if (executionOptions.tokenAccounting !== "external") {
+        try {
+          const consumed = await entitlementService.consume(
+            tenantIdStr,
+            "tokensPerMonth",
+            tokensUsed,
+          );
 
         if (!consumed.committed) {
           logger.warn(
@@ -755,10 +759,11 @@ export class IntentQueryService {
           });
         }
 
-        logger.warn(
-          { err: error, traceId, tenantId: tenantIdStr, tokensUsed },
-          "Failed to enforce tokensPerMonth quota for intent query — continuing without token accounting",
-        );
+          logger.warn(
+            { err: error, traceId, tenantId: tenantIdStr, tokensUsed },
+            "Failed to enforce tokensPerMonth quota for intent query — continuing without token accounting",
+          );
+        }
       }
     }
 

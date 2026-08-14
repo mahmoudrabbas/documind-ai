@@ -5,6 +5,7 @@ import { connectRedis, disconnectRedis } from "./db/redis.js";
 import { config } from "./config/index.js";
 import { logger } from "./common/logger/logger.js";
 import { startEntitlementReconciliation } from "./modules/entitlement/reconciliation.scheduler.js";
+import { startTokenQuotaReservationScheduler } from "./modules/entitlement/tokenQuotaReservation.scheduler.js";
 import { getReconciliationService } from "./modules/entitlement/reconciliation.service.js";
 import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
 import { startNotificationOutboxScheduler } from "./modules/notifications/outbox/notificationOutbox.scheduler.js";
@@ -120,6 +121,7 @@ async function ensureSearchIndexes(): Promise<void> {
 }
 
 let shuttingDown = false;
+let tokenQuotaReservationTimer: NodeJS.Timeout | null = null;
 
 async function gracefulShutdown(signal: string) {
   if (shuttingDown) {
@@ -128,6 +130,12 @@ async function gracefulShutdown(signal: string) {
   shuttingDown = true;
 
   logger.info({ signal }, "graceful shutdown started");
+
+  if (tokenQuotaReservationTimer) {
+    clearInterval(tokenQuotaReservationTimer);
+    tokenQuotaReservationTimer = null;
+    logger.info("Token quota reservation scheduler stopped");
+  }
 
   await new Promise<void>((resolve) => {
     server.close(() => {
@@ -201,6 +209,26 @@ if (process.env.ENTITLEMENT_RECONCILE_ENABLED !== "false") {
     logger.warn(
       { err: error },
       "Failed to start entitlement reconciliation scheduler",
+    );
+  }
+}
+
+// ── Token quota reservation expiry scheduler ────────────────────────────────
+//
+// Fast sweep for durable ACTIVE token reservations whose TTL has expired.
+// This is intentionally separate from the daily entitlement reconciliation
+// scheduler because token reservations have short-lived execution TTLs.
+
+if (process.env.TOKEN_QUOTA_RESERVATION_SWEEP_ENABLED !== "false") {
+  try {
+    tokenQuotaReservationTimer =
+      startTokenQuotaReservationScheduler();
+
+    logger.info("Token quota reservation scheduler started");
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      "Failed to start token quota reservation scheduler",
     );
   }
 }

@@ -657,6 +657,101 @@ test("K7: cited tier evidence restores an omitted P1/P2 contrast", async () => {
   }
 });
 
+test("BUDGET-1: total runtime budget subtracts the prompt before setting provider completion maxTokens", async () => {
+  const { service, adapter } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "CivicOps runs an annual flood-response drill every Q1.",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs({
+    maxTokens: 5_000,
+    maxTotalTokens: 2_000,
+  }));
+
+  assert.equal(result.outcome, "usable");
+  assert.equal(adapter.calls.length, 1);
+
+  const providerMaxTokens = adapter.calls[0]?.maxTokens;
+  assert.equal(typeof providerMaxTokens, "number");
+  assert.ok(
+    (providerMaxTokens as number) > 0 &&
+      (providerMaxTokens as number) < 2_000,
+    `expected prompt-aware completion allowance below total budget, got ${String(providerMaxTokens)}`,
+  );
+  assert.ok(
+    (providerMaxTokens as number) <= 5_000,
+    "configured completion cap must still be respected",
+  );
+});
+
+test("BUDGET-2: correction retry shares the remaining total budget and aggregates both calls", async () => {
+  const bad = JSON.stringify({
+    decision: "grounded_answer",
+    answer: "نعم، بعد إكمال فترة الاختبار يمكن التقديم.",
+    citedChunkIds: ["remote-eligibility"],
+  });
+  const goodAnswer =
+    "نعم، إكمال ١٢٠ يومًا يستوفي الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.";
+  const good = JSON.stringify({
+    decision: "grounded_answer",
+    answer: goodAnswer,
+    citedChunkIds: ["remote-eligibility"],
+  });
+
+  const adapter = new SequenceRecordingAdapter([bad, good]);
+
+  const result = await new AnswerWriterService(adapter).generate({
+    conversationId: "budget-shared-retry",
+    question: "أنا شغال بقالى ١٢٠ يوم، ينفع أطلب العمل عن بعد؟",
+    language: "ar",
+    citationsEnabled: true,
+    maxTokens: 5_000,
+    maxTotalTokens: 3_000,
+    evidence: [{
+      chunkId: "remote-eligibility",
+      documentId: "remote-policy",
+      documentTitle: "Remote_Work_Policy",
+      text: "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+    }],
+  });
+
+  assert.equal(adapter.calls.length, 2);
+
+  const firstMaxTokens = adapter.calls[0]?.maxTokens as number;
+  const secondMaxTokens = adapter.calls[1]?.maxTokens as number;
+
+  assert.ok(firstMaxTokens > 0);
+  assert.ok(secondMaxTokens > 0);
+  assert.ok(
+    secondMaxTokens < firstMaxTokens,
+    `expected correction allowance ${secondMaxTokens} < initial allowance ${firstMaxTokens}`,
+  );
+
+  assert.equal(result.outcome, "usable");
+  assert.equal(result.totalTokens, 60);
+  assert.equal(result.promptTokens, 20);
+  assert.equal(result.completionTokens, 40);
+  assert.equal(result.latencyMs, 2);
+});
+
+test("BUDGET-3: total budget too small for the prompt makes zero provider calls", async () => {
+  const { service, adapter } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "This must never be generated.",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs({
+    maxTokens: 2_048,
+    maxTotalTokens: 1,
+  }));
+
+  assert.equal(adapter.calls.length, 0);
+  assert.equal(result.outcome, "unusable");
+  assert.equal(result.totalTokens, 0);
+});
+
 test("K5: retries and removes a named employment phase absent from the threshold evidence", async () => {
   const bad = JSON.stringify({
     decision: "grounded_answer",
