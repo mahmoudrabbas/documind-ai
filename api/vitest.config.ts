@@ -57,8 +57,12 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/subscription-provisioning.contract.test.ts",
-    "src/modules/chat/__tests__/chat.productionWorkflow.e2e.test.ts",
+      "src/modules/chat/__tests__/chat.productionWorkflow.e2e.test.ts",
       "**/indexing/__tests__/indexing.tenant-isolation.test.ts",
+      "src/modules/copilot/__tests__/classifierFallback.test.ts",
+      "src/modules/copilot/__tests__/copilotSupervisorDecision.test.ts",
+      "src/modules/copilot/__tests__/eval.test.ts",
+      "src/modules/public/__tests__/public.routes.test.ts",
     ],
   },
 });

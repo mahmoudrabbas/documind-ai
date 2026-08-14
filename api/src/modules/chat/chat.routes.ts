@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
@@ -78,12 +78,16 @@ const sttUpload = multer({
   },
 });
 
+function buildSttIpKey(req: Request): string {
+  return buildHashedIpRateLimitKey(req.ip);
+}
+
 const sttRateLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
   message: "Too many audio transcription requests. Please wait a minute before trying again.",
   keyGenerator: (req) =>
-    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${buildHashedIpRateLimitKey(req.ip)}`,
+    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${buildSttIpKey(req)}`,
 });
 
 export function createChatRoutes(service: ChatService): Router {

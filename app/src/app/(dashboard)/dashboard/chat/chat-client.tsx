@@ -153,6 +153,7 @@ function ConversationPanel({
         <button
           type="button"
           onClick={onNew}
+          data-guide-id="chat-new-conversation"
           className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low px-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           <span className="material-symbols-outlined text-[17px]">add</span>

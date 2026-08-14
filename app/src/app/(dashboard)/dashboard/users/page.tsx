@@ -782,6 +782,7 @@ export default function UsersPage() {
                     const isPending =
                       user.status === "pending_email_verification";
                     const isResending = resendingIds[user.id] === true;
+                    const isRevoking = revokingIds[user.id] === true;
 
                     return (
                       <tr
@@ -912,6 +913,25 @@ export default function UsersPage() {
                                 {isResending
                                   ? t("dashboard.users.resending")
                                   : t("dashboard.users.actionResend")}
+                              </button>
+                            ) : null}
+                            {isPending && canDeleteUsers ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md border border-warning/40 bg-surface px-3 py-1.5 text-xs font-bold text-warning shadow-sm transition-colors hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isRevoking || isDeleting}
+                                onClick={() =>
+                                  setConfirmAction({
+                                    type: "revoke",
+                                    userId: user.id,
+                                    userName: user.name,
+                                  })
+                                }
+                                data-guide-id="users-revoke-button"
+                              >
+                                {isRevoking
+                                  ? t("dashboard.users.revoking")
+                                  : t("dashboard.users.actionRevoke")}
                               </button>
                             ) : null}
                             {canDeleteUsers ? (

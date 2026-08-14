@@ -81,6 +81,7 @@ export default function DocumentsPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [classificationId, setClassificationId] = useState("");
@@ -172,6 +173,7 @@ export default function DocumentsPage() {
     setSelectedFiles([]);
     setTitle("");
     setDescription("");
+    setTags("");
     setCategoryId("");
     setDepartmentId("");
     setClassificationId("");
@@ -217,9 +219,15 @@ export default function DocumentsPage() {
       return;
     }
 
+    const tagsArray = tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
     await upload(file, {
       title: title.trim(),
       description: description.trim(),
+      tags: tagsArray.join(","),
       categoryId: categoryId || undefined,
       departmentId: departmentId || undefined,
       classificationId: classificationId || undefined,
@@ -311,6 +319,19 @@ export default function DocumentsPage() {
                     rows={2}
                     className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                   />
+                </div>
+                <div>
+                  <label htmlFor="doc-tags" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataTags")}</label>
+                  <input
+                    id="doc-tags"
+                    type="text"
+                    data-guide-id="documents-tags-input"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    placeholder={t("documents.metadataTagsPlaceholder")}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <p className="mt-1 text-xs text-outline">{t("documents.metadataTagsHint")}</p>
                 </div>
                 {uploadOptions ? (
                   <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">

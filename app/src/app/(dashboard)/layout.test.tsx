@@ -41,6 +41,22 @@ vi.mock("@/components/ui/NotificationToasts", () => ({
   NotificationToasts: () => <div data-testid="notification-toasts" />,
 }));
 
+vi.mock("@/providers/copilot-provider", () => ({
+  CopilotProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock("@/components/copilot/CopilotPanel", () => ({
+  CopilotPanel: () => <div data-testid="copilot-panel" />,
+}));
+
+vi.mock("@/components/copilot/CopilotLauncher", () => ({
+  CopilotLauncher: () => <div data-testid="copilot-launcher" />,
+}));
+
+vi.mock("@/components/copilot/guide/GuideOverlay", () => ({
+  GuideOverlay: () => <div data-testid="guide-overlay" />,
+}));
+
 import DashboardLayout from "./layout";
 
 function renderShell() {
