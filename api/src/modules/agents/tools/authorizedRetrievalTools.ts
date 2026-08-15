@@ -364,6 +364,12 @@ const HybridSearchOutputSchema = z
     candidates: z.array(SearchCandidateSummarySchema),
     totalCandidates: z.number().int().nonnegative(),
     reasonCode: z.string().min(1).max(200),
+    /**
+     * True when raw candidates existed but every one was filtered out by
+     * document-level access authorization (`use_in_ai`). Authorization
+     * denials must never be misread as genuine knowledge gaps.
+     */
+    authorizationRestricted: z.boolean().optional(),
   })
   .strict();
 
@@ -373,6 +379,11 @@ const EvaluateEvidenceOutputSchema = z
     approvedEvidenceIds: z.array(z.string()),
     rejectedEvidenceIds: z.array(z.string()),
     reasonCode: z.string().min(1).max(200),
+    /**
+     * True when loaded candidate documents existed but were denied by
+     * document-level access authorization during evidence evaluation.
+     */
+    authorizationRestricted: z.boolean().optional(),
   })
   .strict();
 
@@ -604,6 +615,8 @@ export function createAuthorizedHybridSearchTool(
         totalCandidates: eligibleCandidates.length,
         reasonCode:
           eligibleCandidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+        authorizationRestricted:
+          result.diagnostics?.zeroCandidateReason === "NO_AUTHORIZED_CANDIDATES",
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -670,6 +683,7 @@ export function createEvaluateEvidenceTool(
 
     // 3. Reauthorize each candidate document for use_in_ai.
     const authorizedCandidates: RetrievalCandidate[] = [];
+    let authorizationRestricted = false;
     for (const chunk of eligibleChunks) {
       if (!eligibleDocumentIds.has(chunk.documentId)) continue;
       try {
@@ -679,6 +693,7 @@ export function createEvaluateEvidenceTool(
           "use_in_ai",
         );
       } catch {
+        authorizationRestricted = true;
         continue;
       }
       authorizedCandidates.push(
@@ -697,6 +712,7 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: rejectedBase,
         reasonCode: "NO_EVIDENCE",
+        ...(authorizationRestricted ? { authorizationRestricted } : {}),
       };
     }
 
