@@ -285,3 +285,179 @@ describe("GuideOverlay wait fallback", () => {
     expect(state.actions.skip).not.toHaveBeenCalled();
   });
 });
+
+describe("GuideOverlay tooltip collision avoidance (roles-create-button)", () => {
+  // The overlay must stay transparent to pointer events except the tooltip card
+  // itself, so a target the tooltip no longer covers remains clickable.
+  it("keeps the overlay pointer-transparent except for the tooltip card", () => {
+    const clickStep = makeStep({
+      stepId: "step-2",
+      target: { targetId: "roles-create-button" },
+      placement: "top",
+      interaction: "click",
+      completion: { event: "click" },
+    });
+    state.guide = runningGuide([clickStep]);
+    state.target = {
+      targetId: "roles-create-button",
+      status: "found",
+      rect: { top: 210, left: 1210, width: 120, height: 40 },
+      element: null,
+    };
+
+    renderOverlay();
+    const overlay = document.querySelector("[data-copilot-guide-overlay]");
+    expect(overlay).toBeTruthy();
+    expect(overlay?.className).toContain("pointer-events-none");
+
+    const interactive = Array.from(document.querySelectorAll("div")).filter(
+      (el) => el.className.includes("pointer-events-auto"),
+    );
+    expect(interactive.length).toBe(1);
+    expect(interactive[0].className).toContain("fixed");
+  });
+
+  it("clicking the interactive target dispatches completion and advances the guide", () => {
+    const clickStep = makeStep({
+      stepId: "step-2",
+      target: { targetId: "roles-create-button" },
+      placement: "top",
+      interaction: "click",
+      completion: { event: "click" },
+    });
+    state.guide = runningGuide([clickStep]);
+    state.target = {
+      targetId: "roles-create-button",
+      status: "found",
+      rect: { top: 210, left: 1210, width: 120, height: 40 },
+      element: null,
+    };
+
+    const targetEl = document.createElement("button");
+    targetEl.setAttribute("data-guide-id", "roles-create-button");
+    document.body.appendChild(targetEl);
+
+    renderOverlay();
+    expect(state.actions.dispatch).not.toHaveBeenCalled();
+
+    act(() => {
+      targetEl.click();
+    });
+    expect(state.actions.dispatch).toHaveBeenCalledWith({
+      type: "completion",
+      event: { type: "click", targetId: "roles-create-button" },
+    });
+    targetEl.remove();
+  });
+});
+
+describe("GuideOverlay missing navigation target recovery", () => {
+  // The roles.create flow opens with a nav-roles step (interaction "navigate",
+  // completion route_change to /dashboard/roles, default fallback skip). A
+  // missing nav target must never auto-skip into a silently completed guide.
+  const navRolesStep = () =>
+    makeStep({
+      stepId: "step-1",
+      target: { targetId: "nav-roles" },
+      interaction: "navigate",
+      completion: { event: "route_change", routeMatch: "/dashboard/roles" },
+      fallback: { onMissing: "skip" },
+    });
+
+  it("never auto-skips a missing navigation target, even with skip fallback", () => {
+    vi.useFakeTimers();
+    state.guide = runningGuide([navRolesStep()]);
+    state.target = {
+      targetId: "nav-roles",
+      status: "missing",
+      rect: null,
+      element: null,
+    };
+
+    renderOverlay();
+    expect(state.actions.skip).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(state.actions.skip).not.toHaveBeenCalled();
+    expect(state.guide.status).toBe("running");
+  });
+
+  it("renders a recovery card with go-to-route and cancel instead of the waiting pill", () => {
+    state.guide = runningGuide([navRolesStep()]);
+    state.target = {
+      targetId: "nav-roles",
+      status: "missing",
+      rect: null,
+      element: null,
+    };
+
+    renderOverlay();
+    const buttons = Array.from(document.querySelectorAll("button")).map(
+      (button) => button.textContent?.trim(),
+    );
+    expect(buttons).toContain("copilot.guide.goToRoute");
+    expect(buttons).toContain("copilot.guide.cancel");
+    expect(document.body.textContent).not.toContain("copilot.guide.waiting");
+
+    const goToRoute = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "copilot.guide.goToRoute",
+    );
+    act(() => {
+      goToRoute?.click();
+    });
+    expect(state.routerPush).toHaveBeenCalledWith("/dashboard/roles");
+  });
+
+  it("resumes the guide when the recovery action reaches the route", () => {
+    state.guide = runningGuide([navRolesStep()]);
+    state.target = {
+      targetId: "nav-roles",
+      status: "missing",
+      rect: null,
+      element: null,
+    };
+
+    renderOverlay();
+    const goToRoute = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "copilot.guide.goToRoute",
+    );
+    act(() => {
+      goToRoute?.click();
+    });
+    expect(state.routerPush).toHaveBeenCalledWith("/dashboard/roles");
+
+    state.pathname = "/dashboard/roles";
+    state.target = {
+      targetId: "nav-roles",
+      status: "found",
+      rect: { top: 0, left: 0, width: 200, height: 200 },
+      element: null,
+    };
+    renderOverlay();
+    expect(state.actions.dispatch).toHaveBeenCalledWith({
+      type: "completion",
+      event: { type: "route_change", route: "/dashboard/roles" },
+    });
+  });
+
+  it("cancel from the recovery card ends the guide", () => {
+    state.guide = runningGuide([navRolesStep()]);
+    state.target = {
+      targetId: "nav-roles",
+      status: "missing",
+      rect: null,
+      element: null,
+    };
+
+    renderOverlay();
+    const cancel = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "copilot.guide.cancel",
+    );
+    act(() => {
+      cancel?.click();
+    });
+    expect(state.actions.cancel).toHaveBeenCalledTimes(1);
+  });
+});

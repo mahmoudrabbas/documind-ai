@@ -106,6 +106,10 @@ export interface ClarifyPayload {
   message: string;
   suggestedFlows: string[];
   suggestedActions: string[];
+  /** Why the clarification was shown; the panel renders a tailored heading.
+   * "capability_unavailable" = the user asked for an action no tool supports
+   * yet (e.g. creating a role directly) — the guide is offered instead. */
+  kind?: "generic" | "capability_unavailable";
 }
 
 export type CopilotMode = "guide" | "action" | "clarify";

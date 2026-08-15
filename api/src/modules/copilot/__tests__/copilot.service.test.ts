@@ -1,6 +1,14 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
-const { mockExecute } = vi.hoisted(() => ({ mockExecute: vi.fn() }));
+const { mockExecute, mockCreateRun } = vi.hoisted(() => ({
+  mockExecute: vi.fn(),
+  mockCreateRun: vi.fn(),
+}));
+
+vi.mock("../../agents/agents.repository.js", () => ({
+  createRun: mockCreateRun,
+  listApprovals: vi.fn().mockResolvedValue({ approvals: [], totalRecords: 0 }),
+}));
 
 vi.mock("../copilotComposition.js", () => ({
   initializeCopilotRuntime: vi.fn().mockResolvedValue(undefined),
@@ -25,7 +33,7 @@ vi.mock("../guide/guide.service.js", async (importOriginal) => {
 });
 
 import type { AgentExecutionContext } from "../../agents/agentExecutionContext.js";
-import { processCopilotMessage } from "../copilot.service.js";
+import { createActionPlan, processCopilotMessage } from "../copilot.service.js";
 
 const baseContext = {
   tenantId: "tenant-1",
@@ -36,6 +44,11 @@ const baseContext = {
 describe("processCopilotMessage", () => {
   beforeEach(() => {
     mockExecute.mockReset();
+    mockCreateRun.mockReset();
+    mockCreateRun.mockResolvedValue({
+      id: "run-test",
+      status: "pending",
+    });
   });
 
   it("enriches a completed clarify outcome with a full payload", async () => {
@@ -155,5 +168,79 @@ describe("processCopilotMessage", () => {
     };
     expect(runInput.context).not.toHaveProperty("resolved");
     expect(runInput.context.tenantId).toBe("tenant-1");
+  });
+
+  it("executes with the persisted run id returned by createRun, not a separately minted one", async () => {
+    // createRun returns a persisted run whose id can never collide with any
+    // caller-pre-generated ObjectId: "run-persisted-1" is not an ObjectId
+    // string. If a caller-side id were reintroduced, execute would receive it
+    // instead of this value and the assertion would fail.
+    mockCreateRun.mockResolvedValueOnce({
+      id: "run-persisted-1",
+      status: "pending",
+    });
+    mockExecute.mockResolvedValue({
+      status: "completed",
+      output: { mode: "clarify", reasonCode: "low_confidence" },
+    });
+
+    await processCopilotMessage(
+      { utterance: "help me with this" },
+      baseContext,
+    );
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    const runInput = mockExecute.mock.calls[0][0] as {
+      runId: string;
+    };
+    expect(runInput.runId).toBe("run-persisted-1");
+  });
+});
+
+describe("createActionPlan", () => {
+  beforeEach(() => {
+    mockExecute.mockReset();
+    mockCreateRun.mockReset();
+    mockCreateRun.mockResolvedValue({
+      id: "run-test",
+      status: "pending",
+    });
+  });
+
+  it("executes with the persisted run id returned by createRun", async () => {
+    // Same invariant as processCopilotMessage: the runId handed to the
+    // runtime must be the Mongo-persisted AgentRun id, not a separately
+    // pre-generated caller-side id.
+    mockCreateRun.mockResolvedValueOnce({
+      id: "run-persisted-2",
+      status: "pending",
+    });
+    mockExecute.mockResolvedValue({
+      status: "completed",
+      output: {
+        mode: "action",
+        actionPlan: {
+          runId: "run-persisted-2",
+          intent: "delete this document",
+          toolName: "document.softDelete",
+          risk: "destructive",
+          requiresConfirmation: true,
+          summary: "Soft delete the document",
+          target: null,
+        },
+      },
+    });
+
+    const plan = await createActionPlan(
+      { utterance: "delete this document" },
+      baseContext,
+    );
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    const runInput = mockExecute.mock.calls[0][0] as {
+      runId: string;
+    };
+    expect(runInput.runId).toBe("run-persisted-2");
+    expect(plan.runId).toBe("run-persisted-2");
   });
 });

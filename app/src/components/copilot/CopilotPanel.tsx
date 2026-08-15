@@ -230,7 +230,9 @@ export function CopilotPanel() {
             <div className="space-y-3">
               <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
                 <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                  {t("copilot.clarify.title")}
+                  {clarify.kind === "capability_unavailable"
+                    ? t("copilot.clarify.capabilityUnavailableTitle")
+                    : t("copilot.clarify.title")}
                 </p>
                 <p className="mt-1 text-body-md text-on-surface">
                   {clarify.message}

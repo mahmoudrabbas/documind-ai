@@ -5,6 +5,7 @@ import {
   doesRouteMatch,
   getCurrentStep,
   guideReducer,
+  isNavigationStep,
   isStepCompletedByEvent,
   normalizeRoute,
   resolveMissingTarget,
@@ -341,5 +342,65 @@ describe("resolveMissingTarget fallback policies", () => {
     const session = makeSession([makeStep({ stepId: "s1" })]);
     const resolution = resolveMissingTarget(createInitialGuideState(session));
     expect(resolution.mode).toBe("none");
+  });
+});
+
+describe("resolveMissingTarget never skips navigation steps", () => {
+  it("a missing navigation step stays wait even with skip fallback", () => {
+    const session = makeSession([
+      makeStep({
+        stepId: "s1",
+        interaction: "navigate",
+        completion: { event: "route_change", routeMatch: "/dashboard/roles" },
+        fallback: { onMissing: "skip" },
+      }),
+      makeStep({ stepId: "s2" }),
+    ]);
+    let state = guideReducer(createInitialGuideState(session), {
+      type: "start",
+    });
+    const resolution = resolveMissingTarget(state);
+    expect(resolution.mode).toBe("wait");
+    expect(resolution.state.currentIndex).toBe(0);
+    expect(resolution.state.status).toBe("running");
+    expect(resolution.state.skipped).toEqual([]);
+    state = resolution.state;
+    const again = resolveMissingTarget(state);
+    expect(again.mode).toBe("wait");
+    expect(again.state.status).toBe("running");
+  });
+
+  it("a route_change completion marks a step as a navigation step", () => {
+    const nav = makeStep({
+      stepId: "s1",
+      interaction: "click",
+      completion: { event: "route_change", routeMatch: "/dashboard/roles" },
+    });
+    expect(isNavigationStep(nav)).toBe(true);
+    const navigate = makeStep({
+      stepId: "s2",
+      interaction: "navigate",
+      completion: { event: "route_change", routeMatch: "/dashboard/roles" },
+    });
+    expect(isNavigationStep(navigate)).toBe(true);
+  });
+
+  it("isNavigationStep is false for click, value_present, and manual steps", () => {
+    expect(
+      isNavigationStep(makeStep({ stepId: "s1", completion: { event: "click" } })),
+    ).toBe(false);
+    const input = makeStep({
+      stepId: "s2",
+      interaction: "input",
+      completion: { event: "value_present" },
+    });
+    expect(isNavigationStep(input)).toBe(false);
+    const manual = makeStep({
+      stepId: "s3",
+      completion: { event: "manual" },
+    });
+    expect(isNavigationStep(manual)).toBe(false);
+    expect(isNavigationStep(null)).toBe(false);
+    expect(isNavigationStep(undefined)).toBe(false);
   });
 });

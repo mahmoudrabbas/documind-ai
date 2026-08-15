@@ -865,6 +865,14 @@ export const GUIDE_I18N: Record<string, GuideMessage> = {
     en: "I couldn't understand your request. Could you please clarify?",
     ar: "لم أتمكن من فهم طلبك. هل يمكنك التوضيح؟",
   },
+  "copilot.clarify.capabilityUnavailable": {
+    en: "I can walk you through this, but I can't do it directly for you yet.",
+    ar: "يمكنني أن أرشدك خطوة بخطوة، لكن لا أستطيع تنفيذ ذلك مباشرةً لك بعد.",
+  },
+  "copilot.clarify.roleCreateUnavailable": {
+    en: "I can guide you through creating a role, but I can't create roles directly for you yet.",
+    ar: "يمكنني أن أرشدك خلال إنشاء الدور، لكن لا أستطيع إنشاء الأدوار مباشرةً لك بعد.",
+  },
 };
 
 export function localizeGuideKey(key: string, locale: Locale): string {

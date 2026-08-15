@@ -240,6 +240,11 @@ const FLOW_KEYWORDS: Record<string, readonly string[]> = {
   "roles.create": [
     "create a role",
     "create role",
+    "create the role",
+    "create a new role",
+    "creating a role",
+    "create a new role called",
+    "create a role named",
     "add a role",
     "new role",
     "create a custom role",
@@ -381,7 +386,8 @@ const FLOW_KEYWORDS: Record<string, readonly string[]> = {
  * Frame markers. "how-to" framing (كيف/أرشدني/طريقة) means a step-by-step flow
  * is wanted; "navigation" framing (أين/افتح صفحة/find the X page) means the
  * user wants to reach a section. Arabic verbs conjugate, so these are checked
- * as substrings of the normalized utterance.
+ * as substrings of the normalized utterance. A marker negated directly before
+ * it ("do not guide me") does not count as how-to framing.
  */
 const HOW_TO_FRAMING = [
   "how do i",
@@ -406,6 +412,7 @@ const NAV_FRAMING_EN = [
   "where is",
   "where's",
   "where can i find",
+  "show me",
   "show me the",
   "take me to",
   "go to the",
@@ -504,9 +511,96 @@ function getEntryRoute(flowId: string): string {
   return getFlowIntents().find((flow) => flow.flowId === flowId)?.entryRoute ?? "";
 }
 
+/**
+ * Negations that reverse a how-to marker ("do not guide me", "don't walk me
+ * through", "لا ترشدني"). "no need to" and "without" are included because
+ * they carry the same direct-execution intent ("no need to guide me").
+ */
+const NEGATION_MARKERS = [
+  "do not",
+  "don't",
+  "dont",
+  "does not",
+  "doesn't",
+  "no need to",
+  "without",
+  "never",
+  "stop",
+  "avoid",
+  "please don't",
+  "لا",
+  "لن",
+  "دون",
+];
+
+/** How-to markers that a user might explicitly decline ("do not guide me"). */
+const NEGATABLE_HOW_TO_MARKERS = ["guide me", "walk me through"];
+
+/** Arabic phrases that decline a guided walkthrough outright. */
+const NO_GUIDE_PHRASES_AR = [
+  "لا ترشدني",
+  "لا ارشدني",
+  "دون ارشاد",
+  "بدون ارشاد",
+];
+
+/** Whether the gap between a negation and the marker is a knowledge gap. */
+function hasKnowledgeGap(gap: string): boolean {
+  return /\bknow\b/.test(gap) || /اعرف|عرفه|عرف/.test(gap);
+}
+
+/**
+ * Whether a framing marker occurrence is negated ("do not guide me", "don't
+ * walk me through"). A negation only counts when it appears within a short
+ * window immediately before the marker; a knowledge gap is explicitly excluded
+ * so "I do not know how to upload a document" still reads as how-to framing.
+ */
+function isNegatedMarker(normalized: string, marker: string): boolean {
+  const index = normalized.indexOf(marker);
+  if (index <= 0) return false;
+  const windowStart = Math.max(0, index - 24);
+  const before = normalized.slice(windowStart, index);
+  return NEGATION_MARKERS.some((negation) => {
+    const negIndex = before.lastIndexOf(negation);
+    if (negIndex === -1) return false;
+    const distance = before.length - (negIndex + negation.length);
+    if (distance > 10) return false;
+    if (hasKnowledgeGap(before.slice(negIndex + negation.length))) return false;
+    return true;
+  });
+}
+
+/**
+ * Whether the user explicitly declined a guided walkthrough ("do not guide
+ * me", "don't walk me through the UI", "لا ترشدني"). Such requests are direct
+ * execution requests — the classifier must never hand them to the guide agent,
+ * and when no action tool covers the request they must be reported as an
+ * unsupported capability rather than clarified into a generic "could you
+ * clarify?".
+ */
+export function isExplicitNoGuide(utterance: string): boolean {
+  const normalized = normalizeText(utterance);
+  if (
+    NO_GUIDE_PHRASES_AR.some((phrase) =>
+      normalized.includes(normalizeText(phrase)),
+    )
+  ) {
+    return true;
+  }
+  return NEGATABLE_HOW_TO_MARKERS.some((marker) => {
+    const markerNormalized = normalizeText(marker);
+    if (!normalized.includes(markerNormalized)) return false;
+    return isNegatedMarker(normalized, markerNormalized);
+  });
+}
+
 export function hasHowToFraming(utterance: string): boolean {
   const normalized = normalizeText(utterance);
-  return HOW_TO_FRAMING.some((marker) => normalized.includes(normalizeText(marker)));
+  return HOW_TO_FRAMING.some((marker) => {
+    const markerNormalized = normalizeText(marker);
+    if (!normalized.includes(markerNormalized)) return false;
+    return !isNegatedMarker(normalized, markerNormalized);
+  });
 }
 
 export function hasNavFraming(utterance: string): boolean {

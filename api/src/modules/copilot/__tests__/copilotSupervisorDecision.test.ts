@@ -6,6 +6,7 @@ import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
 import DocumentModel from "../../../db/models/document.model.js";
 import AuditLogModel from "../../../db/models/auditLog.model.js";
+import AgentRunModel from "../../../db/models/agentRun.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import type { BaseRole } from "../../../common/auth/baseRoles.js";
@@ -767,6 +768,57 @@ test("POST /copilot/action idempotency", async (t) => {
 
       const doc = await DocumentModel.findById(documentId).lean().exec();
       assert.ok(doc?.deletedAt, "the tool must have executed exactly once");
+    },
+  );
+});
+
+test("createActionPlan AgentRun lifecycle", async (t) => {
+  await t.test(
+    "the Mongo-persisted AgentRun _id is the runId handed to runtime.execute",
+    async () => {
+      const documentId = await seedDocument();
+      const { runtime, persistence } = await buildRuntime();
+      const context = actionExecutionContext();
+      const input = {
+        utterance: "delete this document",
+        toolName: "document.softDelete",
+        toolInput: { documentId },
+      };
+      const deps = { runtime, persistence };
+
+      // Capture the runId the runtime actually received. Before the P0 fix,
+      // createActionPlan minted its own ObjectId, so the id executed here did
+      // not match the Mongo-persisted AgentRun `_id` and the lookup below
+      // returned null (the production 409).
+      let executedRunId: string | null = null;
+      const originalExecute = runtime.execute.bind(runtime);
+      runtime.execute = async (
+        runInput: SupervisorRunInput,
+        hooks?: Parameters<SupervisorRuntime["execute"]>[1],
+      ) => {
+        executedRunId = runInput.runId;
+        return originalExecute(runInput, hooks);
+      };
+
+      const plan = await createActionPlan(input, context, { deps });
+
+      assert.ok(executedRunId, "runtime.execute must have been called");
+      assert.equal(
+        plan.runId,
+        executedRunId,
+        "plan must reference the executed run id",
+      );
+
+      const persisted = await AgentRunModel.findById(executedRunId)
+        .lean()
+        .exec();
+      assert.ok(
+        persisted,
+        "executed runId must be a Mongo-persisted AgentRun _id",
+      );
+      // The run was persisted as pending by createRun under the executed id,
+      // which is exactly the precondition SupervisorRuntime.startRun requires.
+      assert.equal(persisted.status, "pending");
     },
   );
 });

@@ -99,6 +99,22 @@ test("guide agent returns NO_MATCHING_FLOW for unknown requests", async () => {
   });
 });
 
+test("guide agent refuses explicit no-guide requests even with a matching flow hint", async () => {
+  await withEvaluator("COMPANY_ADMIN", async () => {
+    const result = await platformGuideAgent.execute(
+      makeRunContext("COMPANY_ADMIN"),
+      {
+        utterance: "Create the role HR Manager for me. Do not guide me through the UI.",
+        locale: "en",
+        flowIdHint: "roles.create",
+      },
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "CAPABILITY_UNAVAILABLE");
+  });
+});
+
 test("guide agent expands the platform tour for a newcomer request", async () => {
   await withEvaluator("COMPANY_ADMIN", async () => {
     const result = await platformGuideAgent.execute(
