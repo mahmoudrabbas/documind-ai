@@ -37,8 +37,8 @@ class InMemoryCounter implements QuotaCounterPort {
   }
 
   async getAllUsage(
-    tenantId: string,
-    periodStart: string,
+    _tenantId: string,
+    _periodStart: string,
   ): Promise<Record<EntitlementDimension, number>> {
     return {} as Record<EntitlementDimension, number>;
   }

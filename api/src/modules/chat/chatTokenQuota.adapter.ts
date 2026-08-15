@@ -1,6 +1,5 @@
 import type {
   ChatTokenQuotaPort,
-  ChatTokenQuotaReservation,
   ChatTokenQuotaReserveResult,
 } from "./chatWorkflowService.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
