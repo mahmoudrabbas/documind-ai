@@ -7,6 +7,7 @@ import UserModel from "../../../db/models/user.model.js";
 import DocumentModel from "../../../db/models/document.model.js";
 import AuditLogModel from "../../../db/models/auditLog.model.js";
 import AgentRunModel from "../../../db/models/agentRun.model.js";
+import DocumentAccessPolicyModel from "../../../db/models/documentAccessPolicy.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import type { BaseRole } from "../../../common/auth/baseRoles.js";
@@ -25,6 +26,7 @@ import { createPlatformActionAgent } from "../agents/platformActionAgent.js";
 import { registerActionTools } from "../action/registerActionTools.js";
 import { resumeCopilotAction, createActionPlan } from "../copilot.service.js";
 import CopilotActionIdempotencyModel from "../idempotency/actionIdempotency.model.js";
+import { DOCUMENT_ACCESS_ACTIONS } from "../../document-access/documentAccess.actions.js";
 import type { StorageProvider, SecurityScanner, ProcessingDispatcher } from "../../../providers/storage/types.js";
 import { Readable } from "node:stream";
 
@@ -104,6 +106,7 @@ beforeEach(async () => {
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
   await DocumentModel.deleteMany({});
+  await DocumentAccessPolicyModel.deleteMany({});
   await AuditLogModel.deleteMany({});
   await CopilotActionIdempotencyModel.deleteMany({});
   await seedActor();
@@ -341,6 +344,8 @@ async function buildRuntime() {
 }
 
 async function seedDocument() {
+  const policyId = new mongoose.Types.ObjectId();
+  const now = new Date();
   const doc = await DocumentModel.create({
     tenantId: new mongoose.Types.ObjectId(tenantId),
     fileName: "policy.pdf",
@@ -358,7 +363,44 @@ async function seedDocument() {
     classification: "internal",
     uploadedBy: new mongoose.Types.ObjectId(actorId),
     owner: new mongoose.Types.ObjectId(actorId),
+    activePolicyId: policyId,
+    activePolicyVersion: 1,
+    policyChangedAt: now,
   });
+
+  await DocumentAccessPolicyModel.create({
+    tenantId: doc.tenantId,
+    documentId: doc._id,
+    policyId,
+    policyVersion: 1,
+    contractVersion: 1,
+    status: "active",
+    effectiveFrom: new Date(now.getTime() - 60_000),
+    effectiveUntil: null,
+    inherits: null,
+    rules: [
+      {
+        ruleId: "seed-owner-rule",
+        effect: "allow",
+        subject: { type: "owner" },
+        actions: [...DOCUMENT_ACCESS_ACTIONS],
+      },
+    ],
+    provenance: {
+      createdBy: new mongoose.Types.ObjectId(actorId),
+      createdAt: now,
+      reason: "Copilot supervisor test fixture",
+    },
+    indexMetadata: {
+      policyId,
+      policyVersion: 1,
+      classificationId: null,
+      categoryId: null,
+      departmentId: null,
+    },
+    createdAt: now,
+  });
+
   return doc.id;
 }
 
