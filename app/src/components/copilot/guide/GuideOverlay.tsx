@@ -163,14 +163,20 @@ export function GuideOverlay() {
       if (isNavigationStep(step)) return;
       // "wait" keeps the overlay in a waiting state while useGuideTarget
       // re-scans on DOM mutations. Bound it with `fallback.waitMs` so a target
-      // that never appears can't hang the guide forever.
+      // that never appears can't hang the guide forever. A `wait-stop` step
+      // stops with a recoverable message instead of skipping, so a temporarily
+      // unavailable target never cascades the guide to a silent completion.
       const waitMs = step.fallback.waitMs ?? 5000;
       const timer = window.setTimeout(() => {
-        guideActions.skip();
+        if (step.fallback.onMissing === "wait-stop") {
+          guideActions.stop(t("copilot.guide.waitStopReason"));
+        } else {
+          guideActions.skip();
+        }
       }, waitMs);
       return () => window.clearTimeout(timer);
     }
-  }, [step, guide, targetState.status, targetState.targetId, guideActions]);
+  }, [step, guide, targetState.status, targetState.targetId, guideActions, t]);
 
   const viewport = {
     width: typeof window === "undefined" ? 0 : window.innerWidth,
@@ -274,10 +280,17 @@ export function GuideOverlay() {
           {targetState.status === "missing" &&
           targetCurrent &&
           !isNavigationStep(step) ? (
-            <div className="fixed left-1/2 top-8 z-85 -translate-x-1/2">
+            <div className="pointer-events-auto fixed left-1/2 top-8 z-85 -translate-x-1/2">
               <div className="flex items-center gap-2 rounded-full border border-outline-variant bg-surface-bright px-4 py-2 text-label-md text-on-surface-variant shadow-lg">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
                 {t("copilot.guide.waiting")}
+                <button
+                  type="button"
+                  className="text-label-md font-semibold text-primary hover:text-primary-container"
+                  onClick={guideActions.cancel}
+                >
+                  {t("copilot.guide.cancel")}
+                </button>
               </div>
             </div>
           ) : null}

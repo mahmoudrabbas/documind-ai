@@ -34,6 +34,7 @@ vi.mock("../guide/guide.service.js", async (importOriginal) => {
 
 import type { AgentExecutionContext } from "../../agents/agentExecutionContext.js";
 import { createActionPlan, processCopilotMessage } from "../copilot.service.js";
+import { listAvailableGuideFlows } from "../guide/guide.service.js";
 
 const baseContext = {
   tenantId: "tenant-1",
@@ -90,6 +91,94 @@ describe("processCopilotMessage", () => {
 
     expect(result.mode).toBe("clarify");
     expect(result.clarify?.message).toContain("لم أتمكن من فهم");
+  });
+
+  describe("capability_unavailable payload", () => {
+    beforeEach(() => {
+      // The role flow is available so the role-creation recommendation can
+      // resolve; other flows stay visible alongside it.
+      vi.mocked(listAvailableGuideFlows).mockResolvedValue([
+        "roles.create",
+        "documents.upload",
+        "documents.search",
+      ]);
+    });
+
+    it("exposes the classifier flowIdHint as recommendedFlowId while keeping every flow visible", async () => {
+      mockExecute.mockResolvedValue({
+        status: "completed",
+        output: {
+          mode: "clarify",
+          reasonCode: "capability_unavailable",
+          flowIdHint: "roles.create",
+        },
+      });
+
+      const result = await processCopilotMessage(
+        { utterance: "Don't guide me, just create the role." },
+        baseContext,
+      );
+
+      expect(result.mode).toBe("clarify");
+      expect(result.clarify?.kind).toBe("capability_unavailable");
+      expect(result.clarify?.recommendedFlowId).toBe("roles.create");
+      expect(result.clarify?.suggestedFlows).toEqual([
+        "roles.create",
+        "documents.upload",
+        "documents.search",
+      ]);
+      expect(result.clarify?.message).toContain("guide you through creating a role");
+    });
+
+    it("does not promote roles.create merely because it is available for a no-hint request", async () => {
+      // Regression: a capability_unavailable request that matched no flow must
+      // not recommend roles.create simply because it lives in the catalog. Such
+      // a request must instead render the generic capability-unavailable
+      // message with the full catalog visible and no promoted CTA.
+      mockExecute.mockResolvedValue({
+        status: "completed",
+        output: {
+          mode: "clarify",
+          reasonCode: "capability_unavailable",
+        },
+      });
+
+      const result = await processCopilotMessage(
+        {
+          utterance:
+            "Create HR Manager for me. Do not guide me through the UI.",
+        },
+        baseContext,
+      );
+
+      expect(result.clarify?.recommendedFlowId).toBeUndefined();
+      expect(result.clarify?.message).toContain("guide you through creating a role");
+      // The full catalog stays visible in the suggested flows.
+      expect(result.clarify?.suggestedFlows).toEqual([
+        "roles.create",
+        "documents.upload",
+        "documents.search",
+      ]);
+    });
+
+    it("recommends a non-role flow hint without a role-creation message", async () => {
+      mockExecute.mockResolvedValue({
+        status: "completed",
+        output: {
+          mode: "clarify",
+          reasonCode: "capability_unavailable",
+          flowIdHint: "documents.upload",
+        },
+      });
+
+      const result = await processCopilotMessage(
+        { utterance: "Don't guide me, just upload the file." },
+        baseContext,
+      );
+
+      expect(result.clarify?.recommendedFlowId).toBe("documents.upload");
+      expect(result.clarify?.message).not.toContain("creating a role");
+    });
   });
 
   it("passes guide sessions through untouched", async () => {

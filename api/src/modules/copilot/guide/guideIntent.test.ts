@@ -57,6 +57,9 @@ test("hasHowToFraming is negation-aware: declined walkthroughs are not how-to", 
   // request for help, so it must keep counting as how-to framing.
   assert.equal(hasHowToFraming("I do not know how to create a role"), true);
   assert.equal(hasHowToFraming("لا أعرف كيف أرفع مستنداً"), true);
+  // "show me" is now a negatable how-to marker too.
+  assert.equal(hasHowToFraming("do not show me the steps"), false);
+  assert.equal(hasHowToFraming("show me how to create a role"), true);
 });
 
 test("isExplicitNoGuide detects declined walkthroughs only", () => {
@@ -69,6 +72,11 @@ test("isExplicitNoGuide detects declined walkthroughs only", () => {
   assert.equal(isExplicitNoGuide("how do I create a role?"), false);
   assert.equal(isExplicitNoGuide("I do not know how to create a role"), false);
   assert.equal(isExplicitNoGuide("walk me through the platform"), false);
+  // Declined "show me the steps" framing is an explicit no-guide request, but a
+  // positive "show me how" is not.
+  assert.equal(isExplicitNoGuide("do not show me the steps"), true);
+  assert.equal(isExplicitNoGuide("Do not show me the steps. Create it for me."), true);
+  assert.equal(isExplicitNoGuide("show me how to create a role"), false);
 });
 
 test("hasNavFraming recognizes navigation phrasing only for real destinations", () => {
@@ -79,6 +87,11 @@ test("hasNavFraming recognizes navigation phrasing only for real destinations", 
   assert.equal(hasNavFraming("find the document I uploaded"), false);
   assert.equal(hasNavFraming("how do I search documents"), false);
   assert.equal(hasNavFraming("show me the email logs"), true);
+  // Negated nav framing ("do not show me the steps") must not count as a
+  // navigation request.
+  assert.equal(hasNavFraming("do not show me the steps"), false);
+  assert.equal(hasNavFraming("Do not show me the steps. Create it for me."), false);
+  assert.equal(hasNavFraming("show me how to create a role"), true);
 });
 
 test("matchFlowToUtterance: how-to phrasing routes to flows", () => {

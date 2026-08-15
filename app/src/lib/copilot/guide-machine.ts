@@ -251,8 +251,11 @@ export type MissingTargetResolution =
 
 /**
  * Apply a step's `fallback.onMissing` policy when the current target is absent.
- * `wait` returns the state unchanged so the caller re-scans after `waitMs`;
- * `stop` halts with a friendly reason; `skip` advances past the step.
+ * `wait` and `wait-stop` return the state unchanged so the caller re-scans after
+ * `waitMs`; `stop` halts with a friendly reason; `skip` advances past the step.
+ * The overlay decides the end of the wait window: `wait` skips, `wait-stop`
+ * stops so a temporarily unavailable target never cascades a guide to a
+ * silent completion.
  *
  * Navigation steps are an exception: they always resolve to `wait`. A skipped
  * nav step cascades through the rest of the flow (every flow leads with one)
@@ -268,7 +271,9 @@ export function resolveMissingTarget(
   if (!step) return { mode: "none", state };
   if (isNavigationStep(step)) return { mode: "wait", state };
   const fallback = step.fallback.onMissing;
-  if (fallback === "wait") return { mode: "wait", state };
+  if (fallback === "wait" || fallback === "wait-stop") {
+    return { mode: "wait", state };
+  }
   if (fallback === "stop") {
     return {
       mode: "stop",

@@ -42,6 +42,8 @@ interface CopilotMessageOutput {
     suggestedActions: string[];
     /** Why the clarification was shown; the panel renders a tailored heading. */
     kind?: "generic" | "capability_unavailable";
+    /** The guide flow the panel should promote as the recommended next step. */
+    recommendedFlowId?: string;
   };
 }
 
@@ -279,22 +281,31 @@ async function buildCapabilityUnavailablePayload(
     actorRole: context.actorRole as "SUPER_ADMIN" | "COMPANY_ADMIN" | "EMPLOYEE",
     locale,
   });
-  let hint = flowIdHint;
-  if (!hint) {
-    hint = matchFlowToUtterance(utterance, locale, availableFlows)?.flowId ?? undefined;
-  }
-  const suggestedFlows =
-    hint && availableFlows.includes(hint) ? [hint] : availableFlows;
-  const messageKey = suggestedFlows.includes("roles.create")
-    ? "copilot.clarify.roleCreateUnavailable"
-    : "copilot.clarify.capabilityUnavailable";
+  const hint = flowIdHint
+    ? flowIdHint
+    : matchFlowToUtterance(utterance, locale, availableFlows)?.flowId ??
+      undefined;
+  // A recommendation is only safe when a flow was confidently matched to the
+  // request. We must NOT promote roles.create merely because it happens to be
+  // in the actor's catalog: an unrelated capability-unavailable request (no
+  // matched flow) must not render "Create a role" as recommended. The message
+  // key keeps its existing catalog-aware semantics (unchanged) so the displayed
+  // message never diverges from what was already shown.
+  const recommendedFlowId =
+    hint && availableFlows.includes(hint) ? hint : undefined;
+  const messageKey =
+    (hint === "roles.create" && availableFlows.includes(hint)) ||
+    (!hint && availableFlows.includes("roles.create"))
+      ? "copilot.clarify.roleCreateUnavailable"
+      : "copilot.clarify.capabilityUnavailable";
   return {
     mode: "clarify",
     clarify: {
       kind: "capability_unavailable",
       message: localizeGuideKey(messageKey, locale),
-      suggestedFlows,
+      suggestedFlows: availableFlows,
       suggestedActions: [],
+      recommendedFlowId,
     },
   };
 }

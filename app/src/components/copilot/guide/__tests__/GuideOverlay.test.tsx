@@ -107,6 +107,7 @@ beforeEach(() => {
   state.actions.next.mockClear();
   state.actions.skip.mockClear();
   state.actions.stop.mockClear();
+  state.actions.cancel.mockClear();
   state.routerPush.mockClear();
 });
 
@@ -283,6 +284,139 @@ describe("GuideOverlay wait fallback", () => {
       vi.advanceTimersByTime(1000);
     });
     expect(state.actions.skip).not.toHaveBeenCalled();
+  });
+});
+
+describe("GuideOverlay wait-stop fallback", () => {
+  // roles.create steps 2-4 use onMissing "wait-stop": a temporarily missing
+  // target must never cascade the guide to a silent completion. The overlay
+  // waits for fallback.waitMs and then STOPS with a recoverable reason (not
+  // skip), while a Cancel button stays available during the wait window.
+  const waitStopStep = () =>
+    makeStep({
+      stepId: "step-2",
+      target: { targetId: "roles-create-button" },
+      completion: { event: "click" },
+      fallback: { onMissing: "wait-stop", waitMs: 8000 },
+    });
+
+  function missingTarget() {
+    state.target = {
+      targetId: "roles-create-button",
+      status: "missing",
+      rect: null,
+      element: null,
+    };
+  }
+
+  it("stops with a recoverable reason after waitMs instead of skipping", () => {
+    vi.useFakeTimers();
+    state.guide = runningGuide([waitStopStep()]);
+    missingTarget();
+
+    renderOverlay();
+    expect(state.actions.skip).not.toHaveBeenCalled();
+    expect(state.actions.stop).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(state.actions.skip).not.toHaveBeenCalled();
+    expect(state.actions.stop).toHaveBeenCalledTimes(1);
+    expect(state.actions.stop).toHaveBeenCalledWith(
+      "copilot.guide.waitStopReason",
+    );
+  });
+
+  it("does not stop or skip before waitMs elapses", () => {
+    vi.useFakeTimers();
+    state.guide = runningGuide([waitStopStep()]);
+    missingTarget();
+
+    renderOverlay();
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(state.actions.skip).not.toHaveBeenCalled();
+    expect(state.actions.stop).not.toHaveBeenCalled();
+  });
+
+  it("continues the guide when the target appears during the wait window", () => {
+    vi.useFakeTimers();
+    state.guide = runningGuide([waitStopStep()]);
+    missingTarget();
+
+    renderOverlay();
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(state.actions.skip).not.toHaveBeenCalled();
+    expect(state.actions.stop).not.toHaveBeenCalled();
+
+    // Target materializes within the bounded window: the effect re-runs, the
+    // pending timer is cleared, and no skip/stop fires after waitMs.
+    state.target = {
+      targetId: "roles-create-button",
+      status: "found",
+      rect: { top: 0, left: 0, width: 200, height: 200 },
+      element: null,
+    };
+    renderOverlay();
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(state.actions.skip).not.toHaveBeenCalled();
+    expect(state.actions.stop).not.toHaveBeenCalled();
+    expect(state.actions.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("renders the waiting pill with a working Cancel during the wait window", () => {
+    state.guide = runningGuide([waitStopStep()]);
+    missingTarget();
+
+    renderOverlay();
+    expect(document.body.textContent).toContain("copilot.guide.waiting");
+    const cancel = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "copilot.guide.cancel",
+    );
+    expect(cancel).toBeTruthy();
+    act(() => {
+      cancel?.click();
+    });
+    expect(state.actions.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the recoverable stopped card with Cancel after the window elapses", () => {
+    vi.useFakeTimers();
+    state.guide = runningGuide([waitStopStep()]);
+    missingTarget();
+
+    renderOverlay();
+    act(() => {
+      vi.advanceTimersByTime(8000);
+    });
+
+    // Simulate the machine reacting to the stop: the overlay must surface the
+    // recoverable stopped card (element unavailable, user can cancel) rather
+    // than a completion.
+    state.guide = {
+      ...state.guide!,
+      status: "stopped",
+      stoppedReason: "copilot.guide.waitStopReason",
+    };
+    renderOverlay();
+    expect(document.body.textContent).toContain("copilot.guide.stopped");
+    expect(document.body.textContent).toContain(
+      "copilot.guide.waitStopReason",
+    );
+    const cancel = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "copilot.guide.cancel",
+    );
+    expect(cancel).toBeTruthy();
+    act(() => {
+      cancel?.click();
+    });
+    expect(state.actions.cancel).toHaveBeenCalledTimes(1);
   });
 });
 
