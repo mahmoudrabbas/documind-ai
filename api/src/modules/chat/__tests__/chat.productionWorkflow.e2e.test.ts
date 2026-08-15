@@ -18,6 +18,8 @@ import MessageModel from "../../../db/models/message.model.js";
 import NotificationOutboxModel from "../../../db/models/notificationOutbox.model.js";
 import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
+import PackageModel from "../../../db/models/package.model.js";
+import SubscriptionModel from "../../../db/models/subscription.model.js";
 import {
   FakeEmbeddingAdapter,
   FakeModelAdapter,
@@ -523,6 +525,7 @@ async function seedWorkflowState(): Promise<SeededWorkflow> {
     status: "active",
     plan: "free",
   });
+  await seedChatEntitlement(tenant._id);
   const user = await UserModel.create({
     tenantId: tenant._id,
     name: "Workflow Admin",
@@ -861,6 +864,52 @@ async function seedAdditionalChunkInDocument(
     question: input.question,
     text: input.text,
   };
+}
+
+async function seedChatEntitlement(tenantId: Types.ObjectId) {
+  const pkg = await PackageModel.create({
+    code: `chat-test-${new Types.ObjectId().toString()}`,
+    name: "Chat Test Package",
+    description: "Chat quota test package",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    currency: "USD",
+    entitlements: {
+      tokensPerMonth: 100000,
+      queriesPerMonth: 1000,
+      storageMb: 10240,
+      documents: 1000,
+      employees: 100,
+    },
+    versions: [
+      {
+        version: 1,
+        monthlyPrice: 0,
+        entitlements: {
+          tokensPerMonth: 100000,
+          queriesPerMonth: 1000,
+          storageMb: 10240,
+          documents: 1000,
+          employees: 100,
+        },
+        createdAt: new Date(),
+      },
+    ],
+  });
+
+  await SubscriptionModel.create({
+    tenantId,
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    paymentState: "paid",
+    currentPeriodStart: new Date(),
+    currentPeriodEnd: new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    ),
+    billingInterval: "monthly",
+  });
 }
 
 async function seedOtherTenantScope(): Promise<{
