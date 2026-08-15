@@ -385,7 +385,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/send",
     authenticate,
     tenantScoping,
-    requireSelfPermission(Permission.CHAT_CREATE),
+    requirePermission(Permission.CHAT_CREATE),
     queryGuard,
     controller.sendMessage,
   );
