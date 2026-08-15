@@ -75,7 +75,7 @@ export class EmailService {
       recipientEmail: normalizedEmail,
       recipientHash,
       templateId: input.templateId,
-      templateVersion: "1.0",
+      templateVersion: "2.0",
       language: input.language,
       variables: input.variables as Record<string, unknown>,
       subject: preview.subject,

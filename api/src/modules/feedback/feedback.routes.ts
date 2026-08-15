@@ -12,6 +12,9 @@ import {
 import { validateSubmitFeedback, validateListFeedbackQuery } from "./feedback.validator.js";
 
 const router = Router();
+const selfResourceContext = (request: import("express").Request) => request.auth && request.tenantId
+  ? { tenantId: request.tenantId, ownerId: request.auth.userId }
+  : undefined;
 
 router.use(authenticate, tenantScoping);
 
@@ -83,7 +86,7 @@ router.use(authenticate, tenantScoping);
  *       '403':
  *         description: Insufficient permissions
  */
-router.post("/", requirePermission(Permission.FEEDBACK_CREATE), validateSubmitFeedback, submitFeedbackController);
+router.post("/", requirePermission(Permission.FEEDBACK_CREATE, { resourceContext: selfResourceContext }), validateSubmitFeedback, submitFeedbackController);
 /**
  * @openapi
  * /feedback/mine/messages/{messageId}:
@@ -128,7 +131,7 @@ router.post("/", requirePermission(Permission.FEEDBACK_CREATE), validateSubmitFe
  *       '403':
  *         description: Insufficient permissions
  */
-router.get("/mine/messages/:messageId", requirePermission(Permission.FEEDBACK_READ), getMyFeedbackForMessageController);
+router.get("/mine/messages/:messageId", requirePermission(Permission.FEEDBACK_READ, { resourceContext: selfResourceContext }), getMyFeedbackForMessageController);
 /**
  * @openapi
  * /feedback:
@@ -213,6 +216,7 @@ router.get("/mine/messages/:messageId", requirePermission(Permission.FEEDBACK_RE
  *       '403':
  *         description: Insufficient permissions
  */
+
 router.get("/", requirePermission(Permission.FEEDBACK_READ), validateListFeedbackQuery, listFeedbackController);
 /**
  * @openapi

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
+import { usePermissions } from "@/providers/permission-provider";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
-import { isStandardUserRole } from "@/lib/role-home";
+import { Permission } from "@/types/api/permissions.types";
 import {
   DashboardPage as DashboardPageShell,
   DashboardPageHeader,
@@ -27,9 +27,9 @@ type SummaryViewState =
 
 export default function DashboardPage() {
   const auth = useAuth();
+  const permissions = usePermissions();
   const { t, tPlural, dir } = useI18n();
   const intlLocale = useIntlLocale();
-  const router = useRouter();
   const [view, setView] = useState<SummaryViewState>({ status: "loading" });
   const [retryCount, setRetryCount] = useState(0);
 
@@ -52,21 +52,18 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (auth.status !== "authenticated") return;
-    if (isStandardUserRole(auth.user.role)) {
-      router.replace("/dashboard/chat");
-    }
-  }, [auth, router]);
-
-  useEffect(() => {
-    if (auth.status !== "authenticated") return;
-    if (isStandardUserRole(auth.user.role)) return;
+    if (permissions.status !== "ready") return;
+    if (!permissions.can(Permission.ANALYTICS_READ)) return;
     const ctrl = new AbortController();
     void fetchSummary(ctrl.signal);
     return () => ctrl.abort();
-  }, [fetchSummary, retryCount, auth]);
+  }, [fetchSummary, retryCount, auth, permissions]);
 
   if (auth.status !== "authenticated") return null;
-  if (isStandardUserRole(auth.user.role)) return null;
+  if (
+    permissions.status !== "ready" ||
+    !permissions.can(Permission.ANALYTICS_READ)
+  ) return null;
 
   const summary = view.status === "success" ? view.summary : null;
   const hasOpenGaps = (summary?.knowledgeGaps.open ?? 0) > 0;

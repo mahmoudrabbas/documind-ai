@@ -164,6 +164,43 @@ export class ReconciliationService {
   }
 
   /**
+   * Repair a stale-low counter for a single dimension without ever lowering
+   * newer concurrent consumption.
+   *
+   * Intended for request-path quota enforcement. Unlike reconcile(...,
+   * "execute"), this method uses ensureAtLeast() rather than set().
+   */
+  async reconcileAtLeast(
+    tenantId: string,
+    dimension: EntitlementDimension,
+  ): Promise<number> {
+    if (!RECONCILABLE_DIMENSIONS.includes(dimension)) {
+      throw new Error(
+        `Dimension ${dimension} does not have an authoritative reconciliation source`,
+      );
+    }
+
+    const range = await this.provider.getPeriodRange(tenantId);
+    const periodStart =
+      `${range.periodStart.getFullYear()}-` +
+      `${String(range.periodStart.getMonth() + 1).padStart(2, "0")}`;
+
+    const authoritative = await this.countFromSource(
+      tenantId,
+      dimension,
+      range.periodStart,
+      range.periodEnd,
+    );
+
+    return this.counter.ensureAtLeast(
+      tenantId,
+      dimension,
+      periodStart,
+      authoritative,
+    );
+  }
+
+  /**
    * Reconcile every tenant with a serviceable subscription.
    *
    * Enumerates all tenant ids from the Subscription collection restricted to

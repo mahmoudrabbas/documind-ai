@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../common/logger/logger.js";
 import { mapLlmProviderError } from "../../providers/llm/providerError.js";
+import { getTokenizer } from "../processing/chunking/tiktoken.adapter.js";
 import {
   hasUnclosedReasoningBlock,
   sanitizeAssistantOutput,
@@ -283,6 +284,32 @@ export function buildRagMessages(options: {
   return messages;
 }
 
+const ANSWER_WRITER_PROMPT_SAFETY_TOKENS = 32;
+
+interface AnswerWriterTokenBudget {
+  remainingTotalTokens: number;
+}
+
+function estimateAnswerWriterPromptTokens(
+  messages: readonly { role: string; content: string }[],
+): number {
+  const tokenizer = getTokenizer("cl100k_base");
+
+  const contentTokens = messages.reduce(
+    (total, message) =>
+      total +
+      tokenizer.countTokens(message.role) +
+      tokenizer.countTokens(message.content),
+    0,
+  );
+
+  return (
+    contentTokens +
+    messages.length * 4 +
+    ANSWER_WRITER_PROMPT_SAFETY_TOKENS
+  );
+}
+
 // ── Reusable AnswerWriter service ──────────────────────────────────────────
 
 export interface AnswerWriterEvidenceItem {
@@ -302,7 +329,15 @@ export interface AnswerWriterServiceOptions {
   task?: AnswerTask;
   citationsEnabled: boolean;
   evidence: readonly AnswerWriterEvidenceItem[];
+
+  /** Provider completion/output-token cap configured for Answer Writer. */
   maxTokens: number;
+
+  /**
+   * Total prompt + completion tokens still available to this agent invocation.
+   * When omitted, only maxTokens limits provider completion size.
+   */
+  maxTotalTokens?: number;
 }
 
 interface AnswerWriterServiceCommon {
@@ -401,6 +436,7 @@ export class AnswerWriterService {
       citationsEnabled,
       evidence,
       maxTokens,
+      maxTotalTokens,
     } = options;
 
     const sources: ChatSource[] = evidence.map((item) => ({
@@ -416,6 +452,15 @@ export class AnswerWriterService {
     const writerSources = task === "direct_question"
       ? narrowDispositiveThresholdSources(question, sources)
       : sources;
+
+    const budget: AnswerWriterTokenBudget = {
+      remainingTotalTokens:
+        typeof maxTotalTokens === "number" && Number.isFinite(maxTotalTokens)
+          ? Math.max(0, maxTotalTokens)
+          : Number.POSITIVE_INFINITY,
+    };
+    const responses: ModelCompletionResponse[] = [];
+
     const messages = buildRagMessages({
       citationsEnabled,
       sources: writerSources,
@@ -424,21 +469,91 @@ export class AnswerWriterService {
       language,
     });
 
-    let response: ModelCompletionResponse;
-    try {
-      response = await this.modelAdapter.complete({
-        messages,
-        temperature: 0.3,
+    const completeWithinBudget = async (
+      callMessages: readonly {
+        role: "system" | "user" | "assistant";
+        content: string;
+      }[],
+      temperature: number,
+    ): Promise<ModelCompletionResponse | null> => {
+      const estimatedPromptTokens =
+        estimateAnswerWriterPromptTokens(callMessages);
+
+      const finiteTotalBudget =
+        Number.isFinite(budget.remainingTotalTokens);
+
+      if (
+        finiteTotalBudget &&
+        budget.remainingTotalTokens <= estimatedPromptTokens
+      ) {
+        return null;
+      }
+
+      const remainingCompletionAllowance = finiteTotalBudget
+        ? Math.floor(
+            budget.remainingTotalTokens - estimatedPromptTokens,
+          )
+        : maxTokens;
+
+      const completionAllowance = Math.min(
         maxTokens,
-        // Enforce structured output at the provider boundary: the strict
-        // AnswerWriter contract requires a JSON object, so request JSON mode
-        // instead of relying on the system prompt alone. The provider returns
-        // syntactically valid JSON, but server-side JSON.parse + strict Zod
-        // validation remain the security boundary (see parseAnswerWriterJson).
-        structuredOutput: { type: "json_object" },
+        remainingCompletionAllowance,
+      );
+
+      if (completionAllowance < 1) {
+        return null;
+      }
+
+      let providerResponse: ModelCompletionResponse;
+      try {
+        providerResponse = await this.modelAdapter.complete({
+          messages: [...callMessages],
+          temperature,
+          maxTokens: completionAllowance,
+          // Enforce structured output at the provider boundary: the strict
+          // AnswerWriter contract requires a JSON object, so request JSON mode
+          // instead of relying on the system prompt alone.
+          structuredOutput: { type: "json_object" },
+        });
+      } catch (error) {
+        throw mapLlmProviderError(error);
+      }
+
+      responses.push(providerResponse);
+
+      const reportedTotal = providerResponse.usage?.totalTokens;
+      const consumedTokens =
+        typeof reportedTotal === "number" &&
+        Number.isFinite(reportedTotal) &&
+        reportedTotal >= 0
+          ? reportedTotal
+          : estimatedPromptTokens + completionAllowance;
+
+      if (finiteTotalBudget) {
+        budget.remainingTotalTokens = Math.max(
+          0,
+          budget.remainingTotalTokens - consumedTokens,
+        );
+      }
+
+      return providerResponse;
+    };
+
+    let response = await completeWithinBudget(messages, 0.3);
+
+    if (!response) {
+      return this.emitGeneration({
+        outcome: "unusable",
+        rawContent: "",
+        sanitizedContent: "",
+        providerKey: this.modelAdapter.providerKey,
+        modelName: this.modelAdapter.providerKey,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        latencyMs: 0,
+        estimatedCost: 0,
       });
-    } catch (error) {
-      throw mapLlmProviderError(error);
     }
 
     let rawContent = response.choices[0]?.message?.content ?? "";
@@ -457,16 +572,53 @@ export class AnswerWriterService {
         { stage: "answer_writer", reasonCode: "UNSUPPORTED_THRESHOLD_RELABEL", retryCount: 1 },
         "answer writer candidate introduced an unsupported threshold relabel",
       );
-      try {
-        response = await this.modelAdapter.complete({
-          messages: correctionMessages(messages),
-          temperature: 0,
-          maxTokens,
-          structuredOutput: { type: "json_object" },
+      const correctedResponse = await completeWithinBudget(
+        correctionMessages(messages),
+        0,
+      );
+
+      if (!correctedResponse) {
+        const promptTokens = responses.reduce(
+          (total, item) => total + (item.usage?.promptTokens ?? 0),
+          0,
+        );
+        const completionTokens = responses.reduce(
+          (total, item) => total + (item.usage?.completionTokens ?? 0),
+          0,
+        );
+        const totalTokens = responses.reduce(
+          (total, item) => total + (item.usage?.totalTokens ?? 0),
+          0,
+        );
+        const latencyMs = responses.reduce(
+          (total, item) => total + item.latencyMs,
+          0,
+        );
+        const estimatedCost = responses.reduce(
+          (total, item) => total + item.estimatedCost,
+          0,
+        );
+
+        return this.emitGeneration({
+          outcome: "usable",
+          structured: false,
+          parsedDecision: "insufficient_evidence",
+          decision: "insufficient_evidence",
+          answer: insufficientEvidenceMessage(language),
+          citedChunkIds: [],
+          rawContent: "",
+          sanitizedContent: "",
+          providerKey: this.modelAdapter.providerKey,
+          modelName: response.model || this.modelAdapter.providerKey,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          latencyMs,
+          estimatedCost,
         });
-      } catch (error) {
-        throw mapLlmProviderError(error);
       }
+
+      response = correctedResponse;
       rawContent = response.choices[0]?.message?.content ?? "";
       parsed = parseAnswerWriterJson(rawContent);
     }
@@ -477,11 +629,26 @@ export class AnswerWriterService {
       sanitizedContent,
       providerKey: this.modelAdapter.providerKey,
       modelName: response.model || this.modelAdapter.providerKey,
-      promptTokens: response.usage?.promptTokens ?? 0,
-      completionTokens: response.usage?.completionTokens ?? 0,
-      totalTokens: response.usage?.totalTokens ?? 0,
-      latencyMs: response.latencyMs,
-      estimatedCost: response.estimatedCost,
+      promptTokens: responses.reduce(
+        (total, item) => total + (item.usage?.promptTokens ?? 0),
+        0,
+      ),
+      completionTokens: responses.reduce(
+        (total, item) => total + (item.usage?.completionTokens ?? 0),
+        0,
+      ),
+      totalTokens: responses.reduce(
+        (total, item) => total + (item.usage?.totalTokens ?? 0),
+        0,
+      ),
+      latencyMs: responses.reduce(
+        (total, item) => total + item.latencyMs,
+        0,
+      ),
+      estimatedCost: responses.reduce(
+        (total, item) => total + item.estimatedCost,
+        0,
+      ),
     };
 
     if (!sanitizedContent) {

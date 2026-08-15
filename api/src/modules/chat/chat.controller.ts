@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   LLM_PROVIDER_UNAVAILABLE,
+  ENTITLEMENT_EXCEEDED,
   LLM_RATE_LIMITED,
   LLM_TIMEOUT,
   UNAUTHORIZED,
@@ -35,11 +36,29 @@ function toSafeStreamError(error: unknown): {
   code: string;
   message: string;
   statusCode: number;
+  details?: unknown;
 } {
   if (error instanceof AppError) {
-    const safe = SAFE_STREAM_ERRORS[error.code as keyof typeof SAFE_STREAM_ERRORS];
+    if (error.code === ENTITLEMENT_EXCEEDED) {
+      return {
+        code: error.code,
+        message: error.message,
+        statusCode: error.statusCode,
+        details: error.details,
+      };
+    }
+
+    const safe =
+      SAFE_STREAM_ERRORS[
+        error.code as keyof typeof SAFE_STREAM_ERRORS
+      ];
+
     if (safe) {
-      return { code: error.code, message: safe.message, statusCode: safe.statusCode };
+      return {
+        code: error.code,
+        message: safe.message,
+        statusCode: safe.statusCode,
+      };
     }
   }
   return {
@@ -174,6 +193,9 @@ export function createChatController(service: ChatService) {
           error: safeError.code,
           message: safeError.message,
           statusCode: safeError.statusCode,
+          ...(safeError.details !== undefined
+            ? { details: safeError.details }
+            : {}),
         });
         res.end();
       }

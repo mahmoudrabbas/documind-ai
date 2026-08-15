@@ -239,20 +239,220 @@ describe("RetrievalService - multi-variant queries", () => {
       makeAccessContext(),
     );
 
-    assert.equal(vectorAdapter.calls.length, 3, "primary + variants capped at 3 total texts");
+    assert.equal(
+      vectorAdapter.calls.filter((call) => call.filter?.classification).length,
+      3,
+      "authorized execution remains capped at 3 total texts",
+    );
+    assert.equal(vectorAdapter.calls.length, 6, "a zero-result scope probe repeats the bounded set");
   });
 
-  it("caps the number of keyword variants at three", async () => {
+  it("preserves the canonical query and balances exact and generated keyword plans", async () => {
     const keywordAdapter = createRecordingKeywordAdapter(() => []);
     const service = createRetrievalService(
       buildDeps([], { keywordAdapter }),
     );
 
     await service.hybridSearch(
-      makeQuery({ keywordTexts: ["k1", "k2", "k3", "k4", "k5"] }),
+      makeQuery({
+        exactTerms: ["P1", "$25"],
+        keywordTexts: ["remote work policy"],
+        filter: { documentIds: [VALID_IDS.doc1] },
+      }),
       makeAccessContext(),
     );
 
-    assert.equal(keywordAdapter.calls.length, 3, "primary + variants capped at 3 total texts");
+    const scopedCalls = keywordAdapter.calls.filter((call) => call.filter?.classification);
+    assert.deepEqual(
+      scopedCalls.map((call) => call.queryText),
+      ["what is the remote work policy", "$25", "remote work policy"],
+    );
+    assert.ok(scopedCalls.every((call) =>
+      call.filter?.documentIds?.includes(VALID_IDS.doc1)
+    ));
+    assert.equal(keywordAdapter.calls.length, 6, "a zero-result scope probe repeats the bounded set");
+  });
+
+  it("selects diverse high-precision anchors deterministically when only exact terms exist", async () => {
+    const keywordAdapter = createRecordingKeywordAdapter(() => []);
+    const service = createRetrievalService(buildDeps([], { keywordAdapter }));
+
+    await service.hybridSearch(
+      makeQuery({ exactTerms: ["$25", "90 days", "P1", "30 minutes", "MFA", "VPN"] }),
+      makeAccessContext(),
+    );
+
+    assert.deepEqual(
+      keywordAdapter.calls
+        .filter((call) => call.filter?.classification)
+        .map((call) => call.queryText),
+      ["what is the remote work policy", "$25", "P1"],
+    );
+  });
+
+  it("keeps exact-term representation when many generated keyword plans exist", async () => {
+    const keywordAdapter = createRecordingKeywordAdapter(() => []);
+    const service = createRetrievalService(buildDeps([], { keywordAdapter }));
+
+    await service.hybridSearch(
+      makeQuery({
+        exactTerms: ["$25"],
+        keywordTexts: [
+          "hybrid schedule",
+          "remote work policy",
+          "company-wide flexible remote work eligibility policy",
+        ],
+      }),
+      makeAccessContext(),
+    );
+
+    assert.deepEqual(
+      keywordAdapter.calls
+        .filter((call) => call.filter?.classification)
+        .map((call) => call.queryText),
+      [
+        "what is the remote work policy",
+        "$25",
+        "company-wide flexible remote work eligibility policy",
+      ],
+    );
+  });
+
+  it("deduplicates lexical plans case-insensitively and ignores empty or malformed entries", async () => {
+    const keywordAdapter = createRecordingKeywordAdapter(() => []);
+    const service = createRetrievalService(buildDeps([], { keywordAdapter }));
+
+    await service.hybridSearch(
+      makeQuery({
+        exactTerms: [" MFA ", "mfa", "", 42 as unknown as string],
+        keywordTexts: [
+          "MFA",
+          " WHAT IS THE REMOTE WORK POLICY ",
+          " remote work policy ",
+          "REMOTE WORK POLICY",
+          "   ",
+        ],
+      }),
+      makeAccessContext(),
+    );
+
+    assert.deepEqual(
+      keywordAdapter.calls
+        .filter((call) => call.filter?.classification)
+        .map((call) => call.queryText),
+      ["what is the remote work policy", "MFA", "remote work policy"],
+    );
+  });
+
+  it("does not let a selected exact anchor bypass document authorization", async () => {
+    const hidden = makeChunk("hidden-chunk", VALID_IDS.doc1);
+    const keywordAdapter = createRecordingKeywordAdapter((call) =>
+      call.queryText === "$25" ? [{ chunkId: "hidden-chunk", score: 0.9 }] : []
+    );
+    const service = createRetrievalService(buildDeps([hidden], {
+      keywordAdapter,
+      authorizeDocumentForAi: async () => {
+        throw new Error("denied");
+      },
+    }));
+
+    const result = await service.hybridSearch(
+      makeQuery({ exactTerms: ["$25"], keywordTexts: ["remote work policy"] }),
+      makeAccessContext(),
+    );
+
+    assert.deepEqual(result.candidates, []);
+    assert.equal(result.diagnostics.authorizationFiltered, true);
+  });
+});
+
+describe("RetrievalService - authorization provenance", () => {
+  for (const scope of ["department", "category", "classification"] as const) {
+    it(`detects ${scope} scope filtering without exposing candidates`, async () => {
+      const hidden = makeChunk("hidden-chunk", VALID_IDS.doc1, {
+        classification: "confidential",
+        department: "Executive",
+        category: "Compensation",
+      });
+      const vectorAdapter = createRecordingVectorAdapter((call) =>
+        call.filter?.[scope] ? [] : [{ chunkId: "hidden-chunk", score: 0.9 }]
+      );
+      const keywordAdapter = createRecordingKeywordAdapter((call) =>
+        call.filter?.[scope] ? [] : [{ chunkId: "hidden-chunk", score: 0.9 }]
+      );
+      const contextOverrides: Partial<AccessContext> = scope === "department"
+        ? { resolvedDepartmentFilter: ["HR"] }
+        : scope === "category"
+          ? { resolvedCategoryFilter: ["Policies"] }
+          : { permissionScopes: {
+              selfOnly: false,
+              departmentIds: [],
+              documentCategories: [],
+              documentClassifications: ["public"],
+            } };
+      const service = createRetrievalService(buildDeps([hidden], {
+        vectorAdapter,
+        keywordAdapter,
+        findActiveDocumentIds: async () => [VALID_IDS.doc1],
+      }));
+
+      const result = await service.hybridSearch(
+        makeQuery(),
+        makeAccessContext(contextOverrides),
+      );
+
+      assert.deepEqual(result.candidates, []);
+      assert.equal(result.diagnostics.authorizationFiltered, true);
+    });
+  }
+
+  it("detects self-only filtering after candidate retrieval", async () => {
+    const hidden = makeChunk("hidden-chunk", VALID_IDS.doc1);
+    const candidates = [{ chunkId: "hidden-chunk", score: 0.9 }];
+    const service = createRetrievalService(buildDeps([hidden], {
+      vectorAdapter: createRecordingVectorAdapter(() => candidates),
+      keywordAdapter: createRecordingKeywordAdapter(() => candidates),
+      findActiveDocumentIds: async () => [VALID_IDS.doc1],
+      findOwnedDocumentIds: async () => [],
+    }));
+
+    const result = await service.hybridSearch(
+      makeQuery(),
+      makeAccessContext({
+        permissionScopes: {
+          selfOnly: true,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: [],
+        },
+      }),
+    );
+
+    assert.deepEqual(result.candidates, []);
+    assert.equal(result.diagnostics.authorizationFiltered, true);
+  });
+
+  it("does not let a cross-tenant probe candidate affect authorization provenance", async () => {
+    const foreignChunk = makeChunk("foreign-chunk", VALID_IDS.doc2, {
+      tenantId: { toString: () => "64a1b2c3d4e5f6a7b8c90009" },
+    });
+    const vectorAdapter = createRecordingVectorAdapter((call) =>
+      call.filter?.classification ? [] : [{ chunkId: "foreign-chunk", score: 0.9 }]
+    );
+    const service = createRetrievalService(buildDeps([], {
+      vectorAdapter,
+      keywordAdapter: createRecordingKeywordAdapter(() => []),
+      repository: {
+        findChunksByIds: async (tenantId: string, ids: string[]) =>
+          foreignChunk.tenantId.toString() === tenantId && ids.includes("foreign-chunk")
+            ? [foreignChunk]
+            : [],
+      } as unknown as RetrievalRepository,
+    }));
+
+    const result = await service.hybridSearch(makeQuery(), makeAccessContext());
+
+    assert.deepEqual(result.candidates, []);
+    assert.equal(result.diagnostics.authorizationFiltered, false);
   });
 });

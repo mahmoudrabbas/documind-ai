@@ -123,9 +123,30 @@ describe("FilterCompiler", () => {
           documentCategories: [],
           documentClassifications: ["public"],
         },
+        // The explicit scope's canonical names are server-side resolved to
+        // sensitivity levels before they may be placed in the datastore filter.
+        // The `classification` field on document/chunk records stores level
+        // enums, so the resolved levels are the effective override.
+        resolvedClassificationFilter: ["public"],
       };
       const filter = compileAccessFilters(ctx);
       assert.deepEqual(filter.classification, { $in: ["public"] });
+    });
+
+    it("explicit classification scope with no server-side resolution fails closed", () => {
+      const ctx: AccessContext = {
+        tenantId: "t6",
+        actorId: "a6",
+        baseRole: "EMPLOYEE",
+        permissionScopes: {
+          selfOnly: false,
+          departmentIds: [],
+          documentCategories: [],
+          documentClassifications: ["public"],
+        },
+      };
+      const filter = compileAccessFilters(ctx);
+      assert.deepEqual(filter.classification, { $in: [] });
     });
 
     it("empty department/category scopes are not applied", () => {

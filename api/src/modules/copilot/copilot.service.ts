@@ -15,6 +15,7 @@ import { authorizeTenantOperation, type OperationAuthorizationContext } from "..
 import { Permission } from "../permissions/permissions.catalog.js";
 import { expandGuideFlow, listAvailableGuideFlows } from "./guide/guide.service.js";
 import { localizeGuideKey } from "./guide/guide.i18n.js";
+import { matchFlowToUtterance } from "./guide/guideIntent.js";
 import type { GuideSession } from "./guide/guide.contracts.js";
 import type { ActionPlan } from "./action/action.contracts.js";
 import { initializeCopilotRuntime, getCopilotSupervisorRuntime, getCopilotSupervisorPersistence } from "./copilotComposition.js";
@@ -22,6 +23,7 @@ import { evaluatorReauthorize } from "./action/reauthorize.js";
 import { writeCopilotActionAudit } from "./copilot.audit.js";
 import type { StorageProvider, SecurityScanner, ProcessingDispatcher } from "../../providers/storage/types.js";
 import CopilotActionIdempotencyModel from "./idempotency/actionIdempotency.model.js";
+import { createRun } from "../agents/agents.repository.js";
 
 interface CopilotMessageInput {
   utterance: string;
@@ -38,6 +40,8 @@ interface CopilotMessageOutput {
     message: string;
     suggestedFlows: string[];
     suggestedActions: string[];
+    /** Why the clarification was shown; the panel renders a tailored heading. */
+    kind?: "generic" | "capability_unavailable";
   };
 }
 
@@ -78,9 +82,29 @@ export async function processCopilotMessage(
 ): Promise<CopilotMessageOutput> {
   const runtime = getCopilotSupervisorRuntime();
 
-  // The Mongo-backed supervisor persistence keys AgentRun/steps/approvals by an
-  // ObjectId `_id`, so the run id must be an ObjectId string (not a UUID).
-  const runId = new MongooseTypes.ObjectId().toString();
+  // Create the pending AgentRun first and adopt its persisted `_id` as the
+  // canonical run id. SupervisorRuntime.execute() requires the AgentRun to
+  // already exist in a pending state keyed by that exact id, so the runId must
+  // be the one Mongo persisted (run.id), never a separately minted ObjectId.
+  const run = await createRun({
+    tenantId: context.tenantId,
+    actorId: context.actorId,
+    workflowName: "guider-v1",
+    agentName: "platform-guide-agent",
+    input: {
+      utterance: input.utterance,
+      locale: input.locale ?? "en",
+      ...(input.routeContext ? { routeContext: input.routeContext } : {}),
+    },
+    modelProvider: "copilot",
+    modelName: "supervisor",
+    promptVersion: null,
+    promptVersionId: null,
+    toolVersionSnapshot: null,
+    traceId: context.traceId,
+    requestId: context.requestId,
+  });
+  const runId = run.id;
   const runInput: SupervisorRunInput = {
     runId,
     workflowId: "guider-v1",
@@ -108,11 +132,22 @@ export async function processCopilotMessage(
   });
 
   if (result.status === "completed" && result.output) {
-    const output = result.output as { mode: string; guideSession?: GuideSession; actionPlan?: ActionPlan };
+    const output = result.output as { mode: string; reasonCode?: string; flowIdHint?: string; guideSession?: GuideSession; actionPlan?: ActionPlan };
     if (output.mode === "clarify") {
       // The supervisor's clarify completion carries only the mode; the panel
       // needs the full payload (message + suggestions) to render anything,
-      // so enrich it here for every clarify outcome.
+      // so enrich it here for every clarify outcome. An explicit no-guide
+      // request with no matching tool ("create the role X for me — do not
+      // guide me through the UI") gets a tailored unsupported-capability
+      // payload instead of the generic "could you clarify?".
+      if (output.reasonCode === "capability_unavailable") {
+        return await buildCapabilityUnavailablePayload(
+          context,
+          input.locale ?? "en",
+          input.utterance,
+          output.flowIdHint,
+        );
+      }
       return await buildClarifyPayload(context, input.locale ?? "en");
     }
     return {
@@ -162,6 +197,17 @@ export async function processCopilotMessage(
       return buildClarifyPayload(context, input.locale ?? "en");
     }
 
+    // The guide agent rejected an explicit no-guide request (defense-in-depth;
+    // the classifier normally routes these to the capability-unavailable
+    // clarify before the guide agent is ever called).
+    if (code === "CAPABILITY_UNAVAILABLE") {
+      return buildCapabilityUnavailablePayload(
+        context,
+        input.locale ?? "en",
+        input.utterance,
+      );
+    }
+
     const message =
       typeof result.error.message === "string" &&
       result.error.message !== result.error.code
@@ -202,6 +248,7 @@ async function buildClarifyPayload(
   return {
     mode: "clarify",
     clarify: {
+      kind: "generic",
       message: localizeGuideKey("copilot.clarify.defaultMessage", locale),
       suggestedFlows: await listAvailableGuideFlows({
         tenantId: context.tenantId,
@@ -210,6 +257,44 @@ async function buildClarifyPayload(
         locale,
       }),
       suggestedActions: ["document.search", "document.get", "user.invite", "settings.update"],
+    },
+  };
+}
+
+/**
+ * The user asked to perform an action no tool supports directly ("create the
+ * role HR Manager for me — do not guide me through the UI"). Instead of the
+ * generic clarify, say the capability isn't available yet and surface the
+ * matching guide flow so they can complete the task step by step.
+ */
+async function buildCapabilityUnavailablePayload(
+  context: AgentExecutionContext,
+  locale: "en" | "ar",
+  utterance: string,
+  flowIdHint?: string,
+): Promise<CopilotMessageOutput> {
+  const availableFlows = await listAvailableGuideFlows({
+    tenantId: context.tenantId,
+    actorId: context.actorId,
+    actorRole: context.actorRole as "SUPER_ADMIN" | "COMPANY_ADMIN" | "EMPLOYEE",
+    locale,
+  });
+  let hint = flowIdHint;
+  if (!hint) {
+    hint = matchFlowToUtterance(utterance, locale, availableFlows)?.flowId ?? undefined;
+  }
+  const suggestedFlows =
+    hint && availableFlows.includes(hint) ? [hint] : availableFlows;
+  const messageKey = suggestedFlows.includes("roles.create")
+    ? "copilot.clarify.roleCreateUnavailable"
+    : "copilot.clarify.capabilityUnavailable";
+  return {
+    mode: "clarify",
+    clarify: {
+      kind: "capability_unavailable",
+      message: localizeGuideKey(messageKey, locale),
+      suggestedFlows,
+      suggestedActions: [],
     },
   };
 }
@@ -252,9 +337,31 @@ export async function createActionPlan(
 
   const runtime = options.deps?.runtime ?? getCopilotSupervisorRuntime();
 
-  // Must be an ObjectId string so Mongo persistence (AgentRun `_id`, steps,
-  // approvals) can index this run consistently.
-  const runId = new MongooseTypes.ObjectId().toString();
+  // Create the pending AgentRun first and adopt its persisted `_id` as the
+  // canonical run id, mirroring the chat production flow. The runtime requires
+  // the AgentRun to already exist in pending state keyed by run.id, so the
+  // runId passed to execute() is the Mongo-persisted id, never a pre-generated
+  // caller-side ObjectId.
+  const run = await createRun({
+    tenantId: context.tenantId,
+    actorId: context.actorId,
+    workflowName: "guider-v1",
+    agentName: "platform-guide-agent",
+    input: {
+      utterance: input.utterance ?? "",
+      locale: input.locale ?? "en",
+      toolName: input.toolName,
+      toolInput: input.toolInput,
+    },
+    modelProvider: "copilot",
+    modelName: "supervisor",
+    promptVersion: null,
+    promptVersionId: null,
+    toolVersionSnapshot: null,
+    traceId: context.traceId,
+    requestId: context.requestId,
+  });
+  const runId = run.id;
   const runInput: SupervisorRunInput = {
     runId,
     workflowId: "guider-v1",

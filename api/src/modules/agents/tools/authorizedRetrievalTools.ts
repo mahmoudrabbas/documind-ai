@@ -28,6 +28,11 @@ import type { DocumentChunkDocument } from "../../../db/models/documentChunk.mod
 import DocumentModel from "../../../db/models/document.model.js";
 import { createRetrievalRepository } from "../../retrieval/retrieval.repository.js";
 import { Permission } from "../../permissions/permissions.catalog.js";
+import {
+  buildRetrievableDocumentFilter,
+  EXCLUDED_SEARCH_STATUSES,
+  RETRIEVABLE_DOCUMENT_STATUSES,
+} from "../../retrieval/retrievalEligibility.js";
 
 /**
  * Trusted dependencies injected from production wiring in app.ts.
@@ -93,12 +98,7 @@ export interface LoadedChunkCandidate {
  * Document lifecycle statuses that are eligible for AI use. `failed` and
  * `canceled` documents never participate.
  */
-export const RETRIEVABLE_DOCUMENT_STATUSES: ReadonlyArray<
-  "uploading" | "uploaded" | "processing" | "processed" | "reprocessing"
-> = ["uploading", "uploaded", "processing", "processed", "reprocessing"];
-
-/** Search-index statuses that make a document ineligible (stale index). */
-export const EXCLUDED_SEARCH_STATUSES = ["FAILED", "STALE"] as const;
+export { EXCLUDED_SEARCH_STATUSES, RETRIEVABLE_DOCUMENT_STATUSES };
 
 /** Chunk statuses eligible for evidence evaluation. */
 export const RETRIEVABLE_CHUNK_STATUSES: ReadonlyArray<
@@ -132,14 +132,9 @@ export function createDefaultLoadEligibleDocumentIds(): AuthorizedRetrievalDepen
       mongoose.Types.ObjectId.isValid(id),
     );
     if (validIds.length === 0) return [];
-    const docs = await DocumentModel.find({
-      _id: { $in: validIds.map((id) => new mongoose.Types.ObjectId(id)) },
-      tenantId,
-      deletedAt: null,
-      isArchived: false,
-      status: { $in: [...RETRIEVABLE_DOCUMENT_STATUSES] },
-      searchStatus: { $nin: [...EXCLUDED_SEARCH_STATUSES] },
-    })
+    const docs = await DocumentModel.find(
+      buildRetrievableDocumentFilter(tenantId, validIds),
+    )
       .select("_id")
       .lean()
       .exec();
@@ -326,6 +321,9 @@ const HybridSearchInputSchema = z
     queryText: z.string().min(1).max(2000),
     topK: z.number().int().min(1).max(50).default(10),
     documentIds: boundedIdArraySchema(20).optional(),
+    queryVariants: z.array(z.string().trim().min(1).max(1000)).max(10).default([]),
+    exactTerms: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
+    keywordTexts: z.array(z.string().trim().min(1).max(1000)).max(30).default([]),
   })
   .strict();
 
@@ -364,6 +362,9 @@ const HybridSearchOutputSchema = z
     candidates: z.array(SearchCandidateSummarySchema),
     totalCandidates: z.number().int().nonnegative(),
     reasonCode: z.string().min(1).max(200),
+    retrievalOutcome: z
+      .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
+      .default("NO_MATCHES"),
     /**
      * True when raw candidates existed but every one was filtered out by
      * document-level access authorization (`use_in_ai`). Authorization
@@ -567,6 +568,9 @@ export function createAuthorizedHybridSearchTool(
         queryText: parsed.queryText,
         topK: parsed.topK,
       };
+      if (parsed.queryVariants.length > 0) query.queryVariants = parsed.queryVariants;
+      if (parsed.exactTerms.length > 0) query.exactTerms = parsed.exactTerms;
+      if (parsed.keywordTexts.length > 0) query.keywordTexts = parsed.keywordTexts;
       if (parsed.documentIds && parsed.documentIds.length > 0) {
         query.filter = { documentIds: parsed.documentIds };
       }
@@ -586,6 +590,25 @@ export function createAuthorizedHybridSearchTool(
       const eligibleCandidates = result.candidates.filter((candidate) =>
         eligibleDocumentIds.has(candidate.documentId),
       );
+      const rawVectorCandidateCount =
+        result.diagnostics.rawVectorCandidateCount ?? result.diagnostics.vectorCandidateCount;
+      const rawKeywordCandidateCount =
+        result.diagnostics.rawKeywordCandidateCount ?? result.diagnostics.keywordCandidateCount;
+      const postAuthorizationVectorCandidateCount =
+        result.diagnostics.postAuthorizationVectorCandidateCount ?? result.diagnostics.vectorCandidateCount;
+      const postAuthorizationKeywordCandidateCount =
+        result.diagnostics.postAuthorizationKeywordCandidateCount ?? result.diagnostics.keywordCandidateCount;
+      const rawCandidateCount = rawVectorCandidateCount !== undefined || rawKeywordCandidateCount !== undefined
+        ? (rawVectorCandidateCount ?? 0) + (rawKeywordCandidateCount ?? 0)
+        : result.candidates.length;
+      const postAuthorizationCandidateCount = postAuthorizationVectorCandidateCount !== undefined || postAuthorizationKeywordCandidateCount !== undefined
+        ? (postAuthorizationVectorCandidateCount ?? 0) + (postAuthorizationKeywordCandidateCount ?? 0)
+        : result.candidates.length;
+      const retrievalOutcome = eligibleCandidates.length > 0
+        ? "AUTHORIZED_RESULTS"
+        : result.diagnostics.authorizationFiltered || rawCandidateCount > postAuthorizationCandidateCount
+          ? "AUTHORIZATION_FILTERED"
+          : "NO_MATCHES";
       if (trustedCandidateCatalog) {
         // Bounded, request-private provenance cache. Only the server-produced
         // and currently retrievable candidates are retained; the model sees
@@ -615,6 +638,7 @@ export function createAuthorizedHybridSearchTool(
         totalCandidates: eligibleCandidates.length,
         reasonCode:
           eligibleCandidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+        retrievalOutcome,
         authorizationRestricted:
           result.diagnostics?.zeroCandidateReason === "NO_AUTHORIZED_CANDIDATES",
       };

@@ -168,6 +168,7 @@ export class CitationVerificationAgentExecutor implements AgentContract {
       const semantic = await this.deps.semanticVerifier.verify({
         answerText: agentInput.answerText ?? "",
         questionText: agentInput.questionText,
+        maxTokens: context.maxTokens,
         evidence: authorizedChunks
           .filter((chunk) => validated.has(chunk.chunkId))
           .map((chunk) => ({ chunkId: chunk.chunkId, text: chunk.text })),

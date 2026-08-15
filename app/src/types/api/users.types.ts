@@ -21,10 +21,13 @@ export interface UserView {
   role: Role;
   customRoleId?: string;
   customRoleName?: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
   status: "active" | "pending" | "pending_email_verification" | "disabled";
   emailVerified: boolean;
   employeeProfile?: {
     employeeId?: string;
+    departmentId?: string;
     department?: string;
     jobTitle?: string;
     phone?: string;

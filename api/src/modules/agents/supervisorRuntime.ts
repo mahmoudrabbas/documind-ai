@@ -635,7 +635,18 @@ export class SupervisorRuntime {
       // chain-of-thought are never part of the result.
       if (executorResult.metadata) {
         if (typeof executorResult.metadata.tokensUsed === "number") {
-          state.totalTokensUsed += executorResult.metadata.tokensUsed;
+          const executorTokens = executorResult.metadata.tokensUsed;
+          state.totalTokensUsed += executorTokens;
+
+          // Specialized-agent LLM usage is part of the same workflow budget.
+          // Previously it was recorded only for telemetry, which meant the
+          // AgentBudgetTracker enforced supervisor-model tokens but ignored
+          // Intent/Answer Writer/Citation Verifier usage.
+          tracker.recordUsage({
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: executorTokens,
+          });
         }
         if (typeof executorResult.metadata.estimatedCost === "number") {
           state.estimatedCost += executorResult.metadata.estimatedCost;
@@ -1142,7 +1153,7 @@ export class SupervisorRuntime {
       stepIndex,
       maxSteps: state.budget.maxSteps,
       maxToolCalls: state.budget.maxToolCalls,
-      maxTokens: state.budget.maxTotalTokens,
+      maxTokens: state.tracker.remainingTotalTokens,
       budgetMs: state.budget.budgetMs,
     };
   }

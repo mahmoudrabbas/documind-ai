@@ -89,6 +89,7 @@ import { getPermissionEvaluator } from "./modules/permissions/permissions.evalua
 import { Permission } from "./modules/permissions/permissions.catalog.js";
 import {
   resolveCategoryScopeValues,
+  resolveClassificationScopeValues,
   resolveDepartmentNames,
 } from "./modules/roles/roles.taxonomy.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
@@ -310,6 +311,15 @@ const retrievalService = createRetrievalService({
       resolvedCategory === undefined
         ? undefined
         : [...new Set([...resolvedCategory.names, ...resolvedCategory.normalizedNames])].sort();
+    const classificationNames: string[] | undefined =
+      scope?.documentClassifications && scope.documentClassifications.length > 0
+        ? [...scope.documentClassifications]
+        : undefined;
+    const resolvedClassification = await resolveClassificationScopeValues(
+      classificationNames,
+      context.tenantId,
+    );
+    const resolvedClassificationFilter = resolvedClassification?.levels;
 
     return {
       ...context,
@@ -319,6 +329,7 @@ const retrievalService = createRetrievalService({
       permissionScopes: scope,
       resolvedDepartmentFilter,
       resolvedCategoryFilter,
+      resolvedClassificationFilter,
       requiredAction: "use_in_ai",
     };
   },

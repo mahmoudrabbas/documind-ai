@@ -7,6 +7,7 @@ import {
   matchFlowToUtterance as guideIntentMatchFlowToUtterance,
   hasHowToFraming,
   hasNavFraming,
+  isExplicitNoGuide,
 } from "../guide/guideIntent.js";
 import {
   matchSectionToUtterance,
@@ -92,6 +93,23 @@ export const platformGuideAgent: AgentContract<z.infer<typeof guideAgentInputSch
       runContext.actorRole === "SUPER_ADMIN" ? "platform" : "tenant";
 
     const availableFlows = await listAvailableFlowsForContext(runContext);
+
+    // The user explicitly declined a guided walkthrough ("do not guide me",
+    // "don't walk me through the UI"). The guide agent has no tools, so it
+    // must never fabricate a session for such a request — the classifier
+    // routes these to the unsupported-capability path, and this guard keeps
+    // direct calls safe too.
+    if (isExplicitNoGuide(utterance)) {
+      return {
+        ok: false,
+        status: "failed",
+        error: {
+          code: "CAPABILITY_UNAVAILABLE",
+          message: "Direct execution is not supported by the guide agent",
+        },
+        latencyMs: Date.now() - start,
+      };
+    }
 
     let session: Awaited<ReturnType<typeof expandGuideFlow>> = null;
 

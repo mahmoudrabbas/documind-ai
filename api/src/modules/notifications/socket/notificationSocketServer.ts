@@ -28,6 +28,7 @@ import {
 import { isBaseRole } from "../../../common/auth/baseRoles.js";
 import { resolveCorsOrigin } from "../../../common/cors/corsOrigins.js";
 import { verifyJwt } from "../../auth/jwtTokens.js";
+import { requireActiveTenantAccess } from "../../../common/auth/tenantAccess.js";
 import type { AuthTokenClaims } from "../../auth/auth.types.js";
 
 export interface NotificationSocketServerHandle {
@@ -213,28 +214,31 @@ export function createSocketServer(
       return next(new Error("unauthorized"));
     }
 
-    if (typeof claims.sessionVersion === "number") {
-      void UserModel.findById(claims.sub)
-        .select("sessionVersion")
-        .lean()
-        .exec()
-        .then((user) => {
-          if (!user || (user.sessionVersion ?? 0) !== claims.sessionVersion) {
-            return next(new Error("unauthorized"));
-          }
-          socket.data.role = "user";
-          socket.data.tenantId = claims.tenantId;
-          socket.data.userId = claims.sub;
-          next();
-        })
-        .catch(() => next(new Error("unauthorized")));
-      return;
-    }
-
-    socket.data.role = "user";
-    socket.data.tenantId = claims.tenantId;
-    socket.data.userId = claims.sub;
-    next();
+    // A token proves only that the session was issued. Every new handshake
+    // reloads current membership and account state so disabled/deleted/moved
+    // users cannot reconnect with an otherwise unexpired token.
+    const userCheck = UserModel.findOne({
+      _id: claims.sub,
+      tenantId: claims.tenantId,
+      status: "active",
+    }).select("sessionVersion").lean().exec();
+    void Promise.all([
+      requireActiveTenantAccess(claims.tenantId),
+      userCheck,
+    ])
+      .then(([, user]) => {
+        if (!user || (
+          typeof claims.sessionVersion === "number" &&
+          (user.sessionVersion ?? 0) !== claims.sessionVersion
+        )) {
+          return next(new Error("unauthorized"));
+        }
+        socket.data.role = "user";
+        socket.data.tenantId = claims.tenantId;
+        socket.data.userId = claims.sub;
+        next();
+      })
+      .catch(() => next(new Error("unauthorized")));
   });
 
   io.on("connection", (socket) => {

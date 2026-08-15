@@ -154,6 +154,139 @@ function mountMockDb(db: ReturnType<typeof buildMockDb>) {
   return db._documentRecord;
 }
 
+function mountQuotaAwareMockDb(
+  db: ReturnType<typeof buildMockDb>,
+  options: {
+    reservationId: string;
+    reservedAmount: number;
+    missingCollection?: "documentversions" | "documents";
+  },
+) {
+  const reservation = {
+    _id: new ObjectId(),
+    tenantId: db._documentRecord.tenantId,
+    reservationId: options.reservationId,
+    dimension: "ocrPagesPerMonth",
+    periodStart: "2026-08",
+    reservedAmount: options.reservedAmount,
+    actualAmount: null as number | null,
+    status: "active",
+    settledAt: null as Date | null,
+  };
+
+  let counterValue = options.reservedAmount;
+
+  const originalCollection = db.collection.bind(db);
+
+  const quotaDb = {
+    ...db,
+
+    collection: (name: string) => {
+      if (name === "ocrquotareservations") {
+        return {
+          findOne: async () => reservation,
+
+          updateOne: async (
+            _query: Record<string, unknown>,
+            update: Record<string, unknown>,
+          ) => {
+            const set = update.$set as
+              | Record<string, unknown>
+              | undefined;
+
+            if (set) {
+              Object.assign(reservation, set);
+            }
+
+            return {
+              matchedCount: 1,
+              modifiedCount: 1,
+            };
+          },
+        };
+      }
+
+      if (name === "quotacounters") {
+        return {
+          updateOne: async (
+            query: Record<string, unknown>,
+            update: Record<string, unknown>,
+          ) => {
+            const valueCondition = query.value as
+              | { $lt?: number }
+              | undefined;
+
+            if (
+              typeof valueCondition?.$lt === "number" &&
+              !(counterValue < valueCondition.$lt)
+            ) {
+              return {
+                matchedCount: 0,
+                modifiedCount: 0,
+              };
+            }
+
+            const inc = update.$inc as
+              | { value?: number }
+              | undefined;
+
+            const set = update.$set as
+              | { value?: number }
+              | undefined;
+
+            if (typeof inc?.value === "number") {
+              counterValue += inc.value;
+            }
+
+            if (typeof set?.value === "number") {
+              counterValue = set.value;
+            }
+
+            return {
+              matchedCount: 1,
+              modifiedCount: 1,
+            };
+          },
+        };
+      }
+
+      if (
+        options.missingCollection &&
+        name === options.missingCollection
+      ) {
+        const original = originalCollection(name);
+
+        return {
+          ...original,
+          findOne: async () => null,
+        };
+      }
+
+      return originalCollection(name);
+    },
+  };
+
+  const session = {
+    withTransaction: async (
+      fn: () => Promise<void>,
+    ) => {
+      await fn();
+    },
+
+    endSession: async () => {},
+  };
+
+  setMockClient({
+    db: () => quotaDb,
+    startSession: () => session,
+  } as unknown as MongoClient);
+
+  return {
+    reservation,
+    getCounterValue: () => counterValue,
+  };
+}
+
 test("1. PDF.js receives an independent Uint8Array copy", async () => {
   const { readFile: fsReadFile } = await import("node:fs/promises");
   const pdfBuffer = await fsReadFile(path.join(FIXTURES_DIR, "minimal.pdf"));
@@ -1254,5 +1387,114 @@ test("17. quality assessment treats blank pages as warnings, not critical issues
     pageStatuses["1"],
     "READY_WITH_WARNINGS",
     "Per-page status for a blank page must be a warning, not REVIEW_REQUIRED",
+  );
+});
+
+
+test("OCR quota settlement commits actual processed pages and refunds unused reservation", async () => {
+  const db = buildMockDb();
+
+  const quota = mountQuotaAwareMockDb(db, {
+    reservationId: "oqr_worker_partial",
+    reservedAmount: 2,
+  });
+
+  const handler = createDocumentOcrJobHandler();
+
+  const result = (await handler.handle(
+    {
+      documentId: db._documentRecord._id.toString(),
+      tenantId: db._documentRecord.tenantId.toString(),
+      documentVersion: 1,
+      pageNumbers: [1],
+      ocrProvider: "fake",
+      quotaReservationId: "oqr_worker_partial",
+      quotaReservedPages: 2,
+    } as Parameters<typeof handler.handle>[0],
+    mockCtx,
+  )) as {
+    summary: {
+      success: boolean;
+      totalPagesProcessed: number;
+    };
+  };
+
+  assert.ok(result);
+  assert.equal(
+    result.summary.totalPagesProcessed,
+    1,
+  );
+
+  assert.equal(
+    quota.reservation.status,
+    "committed",
+  );
+
+  assert.equal(
+    quota.reservation.actualAmount,
+    1,
+  );
+
+  assert.equal(
+    quota.getCounterValue(),
+    1,
+    "one unused reserved OCR page must be refunded",
+  );
+});
+
+test("OCR quota settlement releases the full reservation when document version disappeared", async () => {
+  const db = buildMockDb();
+
+  const quota = mountQuotaAwareMockDb(db, {
+    reservationId: "oqr_worker_missing_version",
+    reservedAmount: 3,
+    missingCollection: "documentversions",
+  });
+
+  const handler = createDocumentOcrJobHandler();
+
+  const result = (await handler.handle(
+    {
+      documentId: db._documentRecord._id.toString(),
+      tenantId: db._documentRecord.tenantId.toString(),
+      documentVersion: 1,
+      pageNumbers: [1, 2, 3],
+      ocrProvider: "fake",
+      quotaReservationId:
+        "oqr_worker_missing_version",
+      quotaReservedPages: 3,
+    } as Parameters<typeof handler.handle>[0],
+    mockCtx,
+  )) as {
+    summary: {
+      discarded?: boolean;
+      reason?: string;
+    };
+  };
+
+  assert.equal(
+    result.summary.discarded,
+    true,
+  );
+
+  assert.equal(
+    result.summary.reason,
+    "version_not_found",
+  );
+
+  assert.equal(
+    quota.reservation.status,
+    "released",
+  );
+
+  assert.equal(
+    quota.reservation.actualAmount,
+    0,
+  );
+
+  assert.equal(
+    quota.getCounterValue(),
+    0,
+    "the complete abandoned OCR reservation must be refunded",
   );
 });

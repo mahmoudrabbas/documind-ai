@@ -217,4 +217,16 @@ export class FakeQuotaCounter implements QuotaCounterPort {
     const key = this.counterKey(tenantId, dimension, periodStart);
     this.counters.set(key, Math.max(0, value));
   }
+
+  async ensureAtLeast(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    periodStart: string,
+    value: number,
+  ): Promise<number> {
+    const current = await this.getUsage(tenantId, dimension, periodStart);
+    const next = Math.max(current, value);
+    await this.set(tenantId, dimension, periodStart, next);
+    return next;
+  }
 }

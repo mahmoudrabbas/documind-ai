@@ -130,7 +130,6 @@ const updateDocumentMetadataSchema = z
     category: z.string().trim().max(100).optional(),
     department: z.string().trim().max(100).optional(),
     classification: z.enum(classificationValues).optional(),
-    owner: z.string().optional(),
     effectiveDate: z
       .string()
       .nullable()

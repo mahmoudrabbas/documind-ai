@@ -11,13 +11,14 @@ import { GuideSpotlight } from "./GuideSpotlight";
 import { GuideArrow } from "./GuideArrow";
 import { GuideTooltip } from "./GuideTooltip";
 import {
-  computeTooltipPlacement,
-  resolvePlacement,
+  resolveGuideTooltipPosition,
   type Size,
+  type TooltipPlacement,
 } from "@/lib/copilot/placement";
 import {
   doesRouteMatch,
   getCurrentStep,
+  isNavigationStep,
   resolveMissingTarget,
   shouldNavigateOnNext,
 } from "@/lib/copilot/guide-machine";
@@ -155,6 +156,11 @@ export function GuideOverlay() {
     } else if (resolution.mode === "stop") {
       guideActions.stop(resolution.state.stoppedReason);
     } else if (resolution.mode === "wait") {
+      // Navigation steps never auto-skip: a skipped nav step cascades through
+      // the flow and silently completes the whole guide. Keep waiting on the
+      // useGuideTarget re-scan and render the recovery card below (go to the
+      // step's route or cancel) instead of arming a skip timer.
+      if (isNavigationStep(step)) return;
       // "wait" keeps the overlay in a waiting state while useGuideTarget
       // re-scans on DOM mutations. Bound it with `fallback.waitMs` so a target
       // that never appears can't hang the guide forever.
@@ -171,7 +177,7 @@ export function GuideOverlay() {
     height: typeof window === "undefined" ? 0 : window.innerHeight,
   };
 
-  let placement: ReturnType<typeof computeTooltipPlacement> | null = null;
+  let placement: TooltipPlacement | null = null;
   if (
     step &&
     targetState.rect &&
@@ -179,11 +185,11 @@ export function GuideOverlay() {
     tooltipSize.width > 0 &&
     tooltipSize.height > 0
   ) {
-    const side = resolvePlacement(step.placement, dir);
-    placement = computeTooltipPlacement(
+    placement = resolveGuideTooltipPosition(
       targetState.rect,
       tooltipSize,
-      side,
+      step.placement,
+      dir,
       viewport,
     );
   }
@@ -229,7 +235,45 @@ export function GuideOverlay() {
 
       {guide.status === "running" && step ? (
         <>
-          {targetState.status === "missing" && targetCurrent ? (
+          {targetState.status === "missing" && targetCurrent && isNavigationStep(step) ? (
+            <div className="pointer-events-auto fixed left-1/2 top-8 z-85 w-full max-w-sm -translate-x-1/2 px-4">
+              <div className="rounded-xl border border-outline-variant bg-surface-bright p-4 shadow-xl">
+                <p className="text-body-md font-bold text-on-surface">
+                  {t("copilot.guide.missingNavTitle")}
+                </p>
+                <p className="mt-0.5 text-body-sm text-on-surface-variant">
+                  {t("copilot.guide.missingNavBody", {
+                    route: step.completion.routeMatch ?? step.target.route ?? "",
+                  })}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => {
+                      const route = step.completion.routeMatch ?? step.target.route;
+                      if (route) router.push(route);
+                    }}
+                  >
+                    {t("copilot.guide.goToRoute")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={guideActions.cancel}
+                  >
+                    {t("copilot.guide.cancel")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {targetState.status === "missing" &&
+          targetCurrent &&
+          !isNavigationStep(step) ? (
             <div className="fixed left-1/2 top-8 z-85 -translate-x-1/2">
               <div className="flex items-center gap-2 rounded-full border border-outline-variant bg-surface-bright px-4 py-2 text-label-md text-on-surface-variant shadow-lg">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />

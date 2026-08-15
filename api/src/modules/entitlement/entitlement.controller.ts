@@ -55,22 +55,6 @@ const COUNTER_DIMENSIONS: CounterDimension[] = [
   "ocrPagesPerMonth",
 ];
 
-/**
- * Extract numeric limit values from an EntitlementSnapshot keyed by the
- * counter dimensions present in the usage record.
- */
-function buildLimitMap(
-  snapshot: EntitlementSnapshot,
-): Record<string, number> {
-  const limit: Record<string, number> = {};
-  const source = snapshot as unknown as Record<string, unknown>;
-  for (const key of COUNTER_DIMENSIONS) {
-    const value = source[key];
-    limit[key] = typeof value === "number" ? value : 0;
-  }
-  return limit;
-}
-
 // ── Controllers ──────────────────────────────────────────────────────────
 
 /**
@@ -140,8 +124,15 @@ export const getUsageController = endpoint(async (req) => {
 
   const resolvedSnapshot = await resolveSnapshot(tenantId, snapshot);
 
-  const limit = resolvedSnapshot
-    ? buildLimitMap(resolvedSnapshot)
+  const limit: Record<string, number> = resolvedSnapshot
+    ? Object.fromEntries(
+        await Promise.all(
+          COUNTER_DIMENSIONS.map(async (dimension) => [
+            dimension,
+            await svc.getEffectiveLimit(tenantId, dimension),
+          ] as const),
+        ),
+      )
     : {};
 
   // Dashboard totals are projections of tenant-owned records, not quota

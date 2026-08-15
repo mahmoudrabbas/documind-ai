@@ -228,6 +228,10 @@ export class AgentBudgetTracker {
     return Math.max(0, this.deadline - this.clock());
   }
 
+  get remainingTotalTokens(): number {
+    return Math.max(0, this.budget.maxTotalTokens - this.totalTokens);
+  }
+
   /** Checks the wall-clock deadline. Call before and after async operations. */
   assertWithinDeadline(): void {
     if (this.clock() > this.deadline) {

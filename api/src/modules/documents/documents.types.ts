@@ -107,7 +107,6 @@ export interface UpdateDocumentMetadataInput {
   category?: string;
   department?: string;
   classification?: DocumentClassification;
-  owner?: string;
   effectiveDate?: string | Date | null;
   expiryDate?: string | Date | null;
   versionLabel?: string;

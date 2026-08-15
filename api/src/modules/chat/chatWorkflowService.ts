@@ -61,6 +61,12 @@ import type {
 import { getTenantSettings } from "../settings/settings.service.js";
 import { findUserDocumentByTenantAndId } from "../auth/auth.repository.js";
 import {
+  buildQuotaExceededError,
+} from "../entitlement/middlewares/entitlement.middleware.js";
+import {
+  createProductionChatTokenQuotaPort,
+} from "./chatTokenQuota.adapter.js";
+import {
   detectAnalyticsRequest,
   detectReplyLanguage,
   formatAnalyticsAnswer,
@@ -75,6 +81,8 @@ import * as chatRepo from "./chat.repository.js";
 
 const WORKFLOW_ID = "chat-rag-v1" as const;
 const DEFAULT_MAX_TOKENS = 1024;
+const CHAT_WORKFLOW_MAX_TOTAL_TOKENS = 50_000;
+const CHAT_MIN_RUNNABLE_TOTAL_TOKENS = 1_000;
 export const CHAT_DIRECT_RETRIEVAL_TOP_K = 5;
 export const CHAT_SUMMARIZATION_RETRIEVAL_TOP_K = 12;
 const SUMMARY_MAX_TOKENS = 2048;
@@ -176,6 +184,50 @@ export function buildAuthorizedSearchQueryText(
     : englishExpansion.slice(0, MAX_SEARCH_QUERY_CHARS);
 }
 
+function buildAuthorizedSearchVariants(intent: IntentAgentOutput): {
+  queryVariants?: string[];
+  exactTerms?: string[];
+  keywordTexts?: string[];
+} {
+  const base = intent.normalizedQuestion.trim();
+  const dedupe = (
+    values: readonly string[],
+    limit: number,
+    caseInsensitive = false,
+  ): string[] => {
+    const keyOf = (value: string): string =>
+      caseInsensitive ? value.toLowerCase() : value;
+    const seen = new Set<string>([keyOf(base)]);
+    const result: string[] = [];
+    for (const value of values) {
+      const trimmed = value.trim();
+      const key = keyOf(trimmed);
+      if (!trimmed || seen.has(key)) continue;
+      seen.add(key);
+      result.push(trimmed);
+      if (result.length >= limit) break;
+    }
+    return result;
+  };
+
+  const queryVariants = dedupe(
+    intent.semanticQueries.map((query) => query.text),
+    10,
+  );
+  const exactTerms = dedupe(intent.exactTerms, 30, true);
+  const keywordTexts = dedupe(
+    intent.keywordQueries.map((query) => query.terms.join(" ")),
+    10,
+    true,
+  );
+
+  return {
+    ...(queryVariants.length > 0 ? { queryVariants } : {}),
+    ...(exactTerms.length > 0 ? { exactTerms } : {}),
+    ...(keywordTexts.length > 0 ? { keywordTexts } : {}),
+  };
+}
+
 const SearchCandidateSchema = z
   .object({
     chunkId: z.string().min(1),
@@ -201,6 +253,9 @@ const SearchOutputSchema = z
     candidates: z.array(SearchCandidateSchema),
     totalCandidates: z.number().int().nonnegative(),
     reasonCode: z.string(),
+    retrievalOutcome: z
+      .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
+      .default("NO_MATCHES"),
     authorizationRestricted: z.boolean().optional(),
   })
   .strict();
@@ -261,6 +316,47 @@ interface RuntimeComposition {
   readonly workflow: { readonly id: typeof WORKFLOW_ID };
 }
 
+export interface ChatTokenQuotaReservation {
+  readonly reservationId: string;
+  readonly reservedAmount: number;
+}
+
+export type ChatTokenQuotaReserveResult =
+  | {
+      readonly allowed: true;
+      readonly reservation: ChatTokenQuotaReservation;
+      readonly current: number;
+      readonly limit: number;
+      readonly remaining: number;
+      readonly periodReset: string | null;
+    }
+  | {
+      readonly allowed: false;
+      readonly current: number;
+      readonly limit: number;
+      readonly remaining: number;
+      readonly periodReset: string | null;
+    };
+
+export interface ChatTokenQuotaPort {
+  reserve(input: {
+    tenantId: string;
+    requestId: string;
+    maxAmount: number;
+  }): Promise<ChatTokenQuotaReserveResult>;
+
+  commit(input: {
+    tenantId: string;
+    reservationId: string;
+    actualAmount: number;
+  }): Promise<void>;
+
+  release(input: {
+    tenantId: string;
+    reservationId: string;
+  }): Promise<void>;
+}
+
 export interface ChatWorkflowServiceDependencies {
   readonly composition: RuntimeComposition;
   readonly repository: ChatWorkflowRepository;
@@ -283,6 +379,13 @@ export interface ChatWorkflowServiceDependencies {
     maxTokens: number;
   }>;
   readonly createRun: (input: Parameters<typeof createRun>[0]) => Promise<Pick<RunRecord, "id">>;
+
+  /**
+   * Optional by design so isolated evaluation workflows remain detached from
+   * tenant billing/quota persistence. Production Chat supplies this port.
+   */
+  readonly tokenQuota?: ChatTokenQuotaPort;
+
   readonly authorizedRetrieval: Pick<
     AuthorizedRetrievalDependencies,
     "authorization" | "loadChunksByIds" | "loadEligibleDocumentIds"
@@ -357,6 +460,7 @@ interface ChatRunArtifacts {
   approvedEvidenceIds: string[];
   rejectedEvidenceIds: string[];
   evidenceReasonCode: string | null;
+  retrievalOutcome: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED" | null;
   analyticsRequest: ChatAnalyticsRequest | null;
   analyticsOutput: unknown;
   complianceRequested: boolean;
@@ -525,6 +629,7 @@ function createChatRuntimePolicy(input: {
     approvedEvidenceIds: [],
     rejectedEvidenceIds: [],
     evidenceReasonCode: null,
+    retrievalOutcome: null,
     analyticsRequest: null,
     analyticsOutput: undefined,
     complianceRequested: false,
@@ -909,6 +1014,7 @@ function createChatRuntimePolicy(input: {
           ...artifacts.resolvedDocumentIds,
         ]);
         const queryText = buildAuthorizedSearchQueryText(intent);
+        const queryVariants = buildAuthorizedSearchVariants(intent);
         const task = detectAnswerTask(
           { detectedIntent: intent.intent },
           intent.normalizedQuestion,
@@ -920,6 +1026,7 @@ function createChatRuntimePolicy(input: {
             ? CHAT_SUMMARIZATION_RETRIEVAL_TOP_K
             : CHAT_DIRECT_RETRIEVAL_TOP_K,
           ...(documentIds.length > 0 ? { documentIds } : {}),
+          ...queryVariants,
         };
       }
       if (args.toolName === "evaluate_evidence") {
@@ -951,6 +1058,7 @@ function createChatRuntimePolicy(input: {
       }
       if (args.toolName === "authorized_hybrid_search") {
         const output = SearchOutputSchema.parse(args.validatedOutput);
+        artifacts.retrievalOutcome = output.retrievalOutcome;
         const restrictedDocumentIds = unique([
           ...(artifacts.intent?.referencedDocumentIds ?? []),
           ...artifacts.resolvedDocumentIds,
@@ -1101,66 +1209,167 @@ export class ChatWorkflowService {
       throw new AppError(403, "PERMISSION_REQUIRED", "Permission denied");
     }
 
-    const conversationId = await this.resolveConversation(input, tenantId, actorId);
-    const sequenceNumber = await this.deps.repository.countMessages(tenantId, conversationId);
-    await this.deps.repository.addMessage(
-      tenantId,
-      conversationId,
-      "user",
-      input.message,
-      sequenceNumber,
-    );
+    let tokenReservation: ChatTokenQuotaReservation | null = null;
 
-    let settings = { citationsEnabled: true, maxTokens: DEFAULT_MAX_TOKENS };
-    try {
-      settings = await this.deps.loadSettings(tenantId);
-    } catch {
-      // Preserve the legacy availability policy: settings failure uses safe defaults.
+    if (this.deps.tokenQuota) {
+      const reservationResult = await this.deps.tokenQuota.reserve({
+        tenantId,
+        requestId,
+        maxAmount: CHAT_WORKFLOW_MAX_TOTAL_TOKENS,
+      });
+
+      if (!reservationResult.allowed) {
+        throw buildQuotaExceededError({
+          dimension: "tokensPerMonth",
+          current: reservationResult.current,
+          limit: reservationResult.limit,
+          remaining: reservationResult.remaining,
+          periodReset: reservationResult.periodReset,
+          canUpgrade:
+            persistedActor.baseRole === "SUPER_ADMIN" ||
+            persistedActor.baseRole === "COMPANY_ADMIN",
+        });
+      }
+
+      tokenReservation = reservationResult.reservation;
+
+      if (
+        tokenReservation.reservedAmount <
+        CHAT_MIN_RUNNABLE_TOTAL_TOKENS
+      ) {
+        await this.deps.tokenQuota.release({
+          tenantId,
+          reservationId: tokenReservation.reservationId,
+        });
+
+        throw buildQuotaExceededError({
+          dimension: "tokensPerMonth",
+          current: reservationResult.current,
+          limit: reservationResult.limit,
+          remaining: reservationResult.remaining,
+          periodReset: reservationResult.periodReset,
+          canUpgrade:
+            persistedActor.baseRole === "SUPER_ADMIN" ||
+            persistedActor.baseRole === "COMPANY_ADMIN",
+        });
+      }
     }
 
-    const { hooks, artifacts } = createChatRuntimePolicy({
-      question: input.message,
-      conversationId,
-      citationsEnabled: settings.citationsEnabled,
-      maxTokens: settings.maxTokens,
-      onStage: context.onStage,
-    });
+    let conversationId: string;
+    let sequenceNumber: number;
+    let artifacts: ChatRunArtifacts;
+    let runtimeResult: SupervisorRunResult;
+    let settings = {
+      citationsEnabled: true,
+      maxTokens: DEFAULT_MAX_TOKENS,
+    };
+    let runId: string | null = null;
 
-    const run = await this.deps.createRun({
-      tenantId,
-      actorId,
-      workflowName: this.deps.composition.workflow.id,
-      agentName: "chat-supervisor",
-      input: { conversationId, question: input.message },
-      modelProvider: this.deps.runMetadata.modelProvider,
-      modelName: this.deps.runMetadata.modelName,
-      promptVersion: null,
-      promptVersionId: null,
-      toolVersionSnapshot: null,
-      traceId,
-      requestId,
-    });
+    try {
+      conversationId = await this.resolveConversation(input, tenantId, actorId);
+      sequenceNumber = await this.deps.repository.countMessages(
+        tenantId,
+        conversationId,
+      );
 
-    const runtimeResult = await this.deps.composition.runtime.execute(
-      {
-        runId: run.id,
-        workflowId: this.deps.composition.workflow.id,
-        context: {
-          tenantId,
-          actorId,
-          actorRole: permissions.baseRole,
-          actorEmail: actor.actorEmail,
-          permissions: [...permissions.permissions],
-          traceId,
-          requestId,
+      await this.deps.repository.addMessage(
+        tenantId,
+        conversationId,
+        "user",
+        input.message,
+        sequenceNumber,
+      );
+
+      try {
+        settings = await this.deps.loadSettings(tenantId);
+      } catch {
+        // Preserve the legacy availability policy:
+        // settings failure uses safe defaults.
+      }
+
+      const runtimePolicy = createChatRuntimePolicy({
+        question: input.message,
+        conversationId,
+        citationsEnabled: settings.citationsEnabled,
+        maxTokens: settings.maxTokens,
+        onStage: context.onStage,
+      });
+
+      artifacts = runtimePolicy.artifacts;
+
+      const run = await this.deps.createRun({
+        tenantId,
+        actorId,
+        workflowName: this.deps.composition.workflow.id,
+        agentName: "chat-supervisor",
+        input: {
           conversationId,
-          workflowId: this.deps.composition.workflow.id,
-          ...(context.locale ? { locale: context.locale } : {}),
+          question: input.message,
         },
-        input: { conversationId, question: input.message },
-      },
-      hooks,
-    );
+        modelProvider: this.deps.runMetadata.modelProvider,
+        modelName: this.deps.runMetadata.modelName,
+        promptVersion: null,
+        promptVersionId: null,
+        toolVersionSnapshot: null,
+        traceId,
+        requestId,
+      });
+
+      runId = run.id;
+
+      runtimeResult = await this.deps.composition.runtime.execute(
+        {
+          runId: run.id,
+          workflowId: this.deps.composition.workflow.id,
+          ...(tokenReservation
+            ? {
+                budgetLimits: {
+                  maxTotalTokens: tokenReservation.reservedAmount,
+                },
+              }
+            : {}),
+          context: {
+            tenantId,
+            actorId,
+            actorRole: permissions.baseRole,
+            actorEmail: actor.actorEmail,
+            permissions: [...permissions.permissions],
+            traceId,
+            requestId,
+            conversationId,
+            workflowId: this.deps.composition.workflow.id,
+            ...(context.locale ? { locale: context.locale } : {}),
+          },
+          input: {
+            conversationId,
+            question: input.message,
+          },
+        },
+        runtimePolicy.hooks,
+      );
+    } catch (error) {
+      if (tokenReservation && this.deps.tokenQuota) {
+        await this.deps.tokenQuota.release({
+          tenantId,
+          reservationId: tokenReservation.reservationId,
+        });
+      }
+
+      throw error;
+    }
+
+    if (tokenReservation && this.deps.tokenQuota) {
+      const actualTokens = Math.max(
+        0,
+        Math.trunc(runtimeResult.totalTokensUsed ?? 0),
+      );
+
+      await this.deps.tokenQuota.commit({
+        tenantId,
+        reservationId: tokenReservation.reservationId,
+        actualAmount: actualTokens,
+      });
+    }
 
     if (runtimeResult.status !== "completed" || !runtimeResult.output) {
       const providerError = safeRuntimeProviderError(runtimeResult.error?.code);
@@ -1194,7 +1403,11 @@ export class ChatWorkflowService {
     const reportableGap =
       terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
       terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE";
-    if (reportableGap && !artifacts.authorizationRestricted) {
+    if (
+      reportableGap &&
+      artifacts.retrievalOutcome !== "AUTHORIZATION_FILTERED" &&
+      !artifacts.authorizationRestricted
+    ) {
       await this.deps.reportKnowledgeGap?.({
         tenantId,
         actorId,
@@ -1225,7 +1438,7 @@ export class ChatWorkflowService {
             artifacts.intent?.conversationContextUsed ?? false,
           historyMessagesSuppliedToWriter: 0,
           retrievalUsedNormalizedQuestion: true,
-          runId: run.id,
+          runId: runId ?? failClosed("Chat run identifier unavailable"),
           traceId,
           requestId,
         },
@@ -1504,6 +1717,7 @@ export function createProductionChatWorkflowService(
       };
     },
     createRun,
+    tokenQuota: createProductionChatTokenQuotaPort(),
     authorizedRetrieval: deps.authorizedRetrieval,
     loadDocumentTitles: async (tenantId, documentIds) => {
       if (documentIds.length === 0) return new Map();

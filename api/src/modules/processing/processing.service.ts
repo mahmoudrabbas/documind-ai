@@ -42,7 +42,66 @@ import {
   type ResolvedOperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
-import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import {
+  reserveOcrQuota,
+  releaseOcrQuotaReservation,
+} from "../entitlement/ocrQuotaReservation.repository.js";
+import { buildRetrievableDocumentFilter } from "../retrieval/retrievalEligibility.js";
+import type { VersionConflictAgent } from "./ports/versionConflictAgent.port.js";
+import { buildDocumentPermissionResource } from "../documents/documents.permissionResource.js";
+
+const OCR_QUOTA_RESERVATION_TTL_SECONDS = 6 * 60 * 60;
+
+async function reserveManualOcrQuota(
+  tenantId: string,
+  pageCount: number,
+  requestId?: string,
+): Promise<string> {
+  const svc = getEntitlementService();
+
+  const [limit, periodStart] = await Promise.all([
+    svc.getEffectiveLimit(tenantId, "ocrPagesPerMonth"),
+    svc.getCounterPeriodKey(tenantId),
+  ]);
+
+  const reservation = await reserveOcrQuota({
+    tenantId,
+    requestId,
+    periodStart,
+    amount: pageCount,
+    limit,
+    ttlSeconds: OCR_QUOTA_RESERVATION_TTL_SECONDS,
+  });
+
+  if (reservation) {
+    return reservation.reservationId;
+  }
+
+  const usage = await svc.getUsage(tenantId);
+  const current = usage.ocrPagesPerMonth ?? 0;
+  const remaining = Math.max(0, limit - current);
+
+  throw new AppError(
+    429,
+    "OCR_QUOTA_EXCEEDED",
+    `OCR quota exceeded. Used ${current} of ${limit} pages this month. Requested ${pageCount}, only ${remaining} remaining.`,
+  );
+}
+
+async function releaseManualOcrQuota(
+  tenantId: string,
+  reservationId: string,
+): Promise<void> {
+  try {
+    await releaseOcrQuotaReservation({
+      tenantId,
+      reservationId,
+    });
+  } catch {
+    // Best-effort here. Durable expiry recovery will handle abandoned claims.
+  }
+}
 
 const metadataAgent = new FakeMetadataAgent();
 const versionConflictAgent = new FakeVersionConflictAgent();
@@ -51,8 +110,20 @@ async function authorizeProcessingOperation(
   tenantId: string,
   context: OperationAuthorizationContext,
   permission: PermissionValue,
+  documentId?: string,
 ): Promise<ResolvedOperationAuthorizationContext> {
-  const actor = await authorizeTenantOperation(context, permission);
+  let actor: ResolvedOperationAuthorizationContext;
+  if (documentId) {
+    const document = await DocumentModel.findOne({ _id: documentId, tenantId }).lean().exec();
+    if (!document) throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found or access denied");
+    actor = await authorizeTenantOperation(
+      context,
+      permission,
+      await buildDocumentPermissionResource(tenantId, document),
+    );
+  } else {
+    actor = await authorizeTenantOperation(context, permission);
+  }
   if (tenantId !== actor.tenantId) {
     throw new AppError(
       404,
@@ -94,6 +165,7 @@ export async function triggerOcrProcessing(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_OCR_PROCESS,
+    input.documentId,
   );
   const tenId = new Types.ObjectId(tenantId);
   const docId = new Types.ObjectId(input.documentId);
@@ -119,32 +191,54 @@ export async function triggerOcrProcessing(
     throw new AppError(400, OCR_LANGUAGE_UNSUPPORTED, `Language '${input.language}' is not supported by the OCR provider`);
   }
 
-  const pageCount = input.pageNumbers?.length || 1;
-  await checkOcrPageQuota(tenantId, pageCount);
+  const pageNumbers =
+    input.pageNumbers && input.pageNumbers.length > 0
+      ? [...new Set(input.pageNumbers)].sort((a, b) => a - b)
+      : [1];
+
+  const pageCount = pageNumbers.length;
+  const quotaReservationId = await reserveManualOcrQuota(
+    tenantId,
+    pageCount,
+    actor.requestId,
+  );
 
   const traceId = randomUUID();
   const idempotencyKey = `ocr-${docId.toString()}-${version}-${ver.checksum}-${Date.now()}`;
 
-  await upsertOcrPageResults(tenId, docId, version, input.pageNumbers || []);
+  let enqueueResult: Awaited<ReturnType<ReturnType<typeof getApiJobDispatcher>["enqueue"]>>;
 
-  const dispatcher = getApiJobDispatcher();
-  const enqueueResult = await dispatcher.enqueue({
-    jobType: "document.ocr",
-    tenantId: tenId.toString(),
-    actorId: actId.toString(),
-    traceId,
-    idempotencyKey,
-    payload: {
-      documentId: docId.toString(),
+  try {
+    await upsertOcrPageResults(tenId, docId, version, pageNumbers);
+
+    const dispatcher = getApiJobDispatcher();
+    enqueueResult = await dispatcher.enqueue({
+      jobType: "document.ocr",
       tenantId: tenId.toString(),
-      documentVersion: version,
-      language: input.language || "ar+en",
-      pageNumbers: input.pageNumbers,
-    },
-  });
+      actorId: actId.toString(),
+      traceId,
+      idempotencyKey,
+      payload: {
+        documentId: docId.toString(),
+        tenantId: tenId.toString(),
+        documentVersion: version,
+        language: input.language || "ar+en",
+        pageNumbers,
+        quotaReservationId,
+        quotaReservedPages: pageCount,
+      },
+    });
 
-  if (!enqueueResult.ok) {
-    throw new AppError(500, "OCR_QUEUE_FAILED", enqueueResult.error || "Failed to enqueue OCR job");
+    if (!enqueueResult.ok) {
+      throw new AppError(
+        500,
+        "OCR_QUEUE_FAILED",
+        enqueueResult.error || "Failed to enqueue OCR job",
+      );
+    }
+  } catch (error) {
+    await releaseManualOcrQuota(tenantId, quotaReservationId);
+    throw error;
   }
 
   await getAuditWriter().write({
@@ -206,6 +300,7 @@ export async function getOcrPageResults(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const pages = await findOcrPageResults(tenantId, documentId, documentVersion);
   return pages.map((page) => ({
@@ -241,6 +336,7 @@ export async function getDocumentQuality(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const quality = await findDocumentQuality(tenantId, documentId, documentVersion);
   if (!quality) {
@@ -285,11 +381,13 @@ export async function assessDocumentQuality(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_QUALITY_REVIEW,
+    documentId,
   );
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const ocrPages = await findOcrPageResults(tenantId, documentId, documentVersion);
 
@@ -357,11 +455,13 @@ export async function reviewDocumentQuality(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_QUALITY_REVIEW,
+    documentId,
   );
   await authorizeProcessingOperation(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
   const quality = await findDocumentQuality(tenantId, documentId, documentVersion);
   if (!quality) {
@@ -425,6 +525,7 @@ export async function retryOcrPages(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_OCR_PROCESS,
+    documentId,
   );
   const tenId = new Types.ObjectId(tenantId);
   const docId = new Types.ObjectId(documentId);
@@ -446,26 +547,49 @@ export async function retryOcrPages(
     throw new AppError(400, "NO_PAGES_TO_RETRY", "No pages available for retry");
   }
 
+  const normalizedRetryPages = [...new Set(retryPages)].sort(
+    (a, b) => a - b,
+  );
+
+  const quotaReservationId = await reserveManualOcrQuota(
+    tenantId,
+    normalizedRetryPages.length,
+    actor.requestId,
+  );
+
   const traceId = randomUUID();
-  const idempotencyKey = `ocr-retry-${docId.toString()}-${documentVersion}-${retryPages.join(",")}-${Date.now()}`;
+  const idempotencyKey = `ocr-retry-${docId.toString()}-${documentVersion}-${normalizedRetryPages.join(",")}-${Date.now()}`;
 
-  const enqueueResult = await (dispatcher ?? getApiJobDispatcher()).enqueue({
-    jobType: "document.ocr",
-    tenantId: tenId.toString(),
-    actorId: actor.actorId,
-    traceId,
-    idempotencyKey,
-    payload: {
-      documentId: docId.toString(),
+  let enqueueResult: Awaited<ReturnType<ReturnType<typeof getApiJobDispatcher>["enqueue"]>>;
+
+  try {
+    enqueueResult = await (dispatcher ?? getApiJobDispatcher()).enqueue({
+      jobType: "document.ocr",
       tenantId: tenId.toString(),
-      documentVersion,
-      language: "ar+en",
-      pageNumbers: retryPages,
-    },
-  });
+      actorId: actor.actorId,
+      traceId,
+      idempotencyKey,
+      payload: {
+        documentId: docId.toString(),
+        tenantId: tenId.toString(),
+        documentVersion,
+        language: "ar+en",
+        pageNumbers: normalizedRetryPages,
+        quotaReservationId,
+        quotaReservedPages: normalizedRetryPages.length,
+      },
+    });
 
-  if (!enqueueResult.ok) {
-    throw new AppError(500, "OCR_QUEUE_FAILED", enqueueResult.error || "Failed to enqueue OCR retry job");
+    if (!enqueueResult.ok) {
+      throw new AppError(
+        500,
+        "OCR_QUEUE_FAILED",
+        enqueueResult.error || "Failed to enqueue OCR retry job",
+      );
+    }
+  } catch (error) {
+    await releaseManualOcrQuota(tenantId, quotaReservationId);
+    throw error;
   }
 
   await getAuditWriter().write({
@@ -522,7 +646,8 @@ export async function triggerMetadataAnalysis(
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
-    Permission.DOCUMENTS_READ,
+    Permission.DOCUMENTS_OCR_PROCESS,
+    input.documentId,
   );
 
   const tenId = new Types.ObjectId(tenantId);
@@ -652,6 +777,7 @@ export async function getMetadataCandidates(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
 
   const candidates = await MetadataCandidateModel.find({
@@ -753,6 +879,7 @@ export async function triggerVersionConflictAnalysis(
   tenantId: string,
   input: TriggerVersionConflictAnalysisInput,
   inputContext: OperationAuthorizationContext,
+  conflictAgent: VersionConflictAgent = versionConflictAgent,
 ): Promise<{
   relationships: DocumentRelationshipView[];
   conflicts: ConflictFindingView[];
@@ -762,7 +889,8 @@ export async function triggerVersionConflictAnalysis(
   const actor = await authorizeProcessingOperation(
     tenantId,
     inputContext,
-    Permission.DOCUMENTS_READ,
+    Permission.DOCUMENTS_OCR_PROCESS,
+    input.documentId,
   );
 
   const tenId = new Types.ObjectId(tenantId);
@@ -792,40 +920,78 @@ export async function triggerVersionConflictAnalysis(
 
   const sourceExtractedText = sourceOcrPages.map((p) => p.text).join("\n\n");
 
-  let candidateDocIds: Types.ObjectId[];
+  const authorizeCandidateIds = async (candidateIds: readonly Types.ObjectId[]): Promise<string[]> => {
+    const distinctIds = [...new Set(candidateIds.map((id) => id.toString()))];
+    if (distinctIds.length === 0) return [];
+    const eligibleIds = new Set(
+      (await DocumentModel.find(
+        buildRetrievableDocumentFilter(tenantId, distinctIds),
+        { _id: 1 },
+      ).lean().exec()).map((candidate) => candidate._id.toString()),
+    );
+    const authorizedIds: string[] = [];
+    for (const candidateId of distinctIds) {
+      if (!eligibleIds.has(candidateId)) continue;
+      try {
+        await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+          { tenantId, actorId: actor.actorId },
+          candidateId,
+          "use_in_ai",
+        );
+        authorizedIds.push(candidateId);
+      } catch {
+        // Inaccessible and nonexistent candidates are deliberately indistinguishable.
+      }
+    }
+    return authorizedIds;
+  };
+
+  let authorizedCandidateIds: string[];
   if (input.candidateDocumentIds && input.candidateDocumentIds.length > 0) {
-    candidateDocIds = input.candidateDocumentIds.map((id) => new Types.ObjectId(id));
+    authorizedCandidateIds = await authorizeCandidateIds(
+      input.candidateDocumentIds.map((id) => new Types.ObjectId(id)),
+    );
   } else {
     const sameChecksumDocs = await DocumentModel.find({
       tenantId: tenId,
       _id: { $ne: docId },
       checksum: doc.checksum,
-    }).limit(10);
+    }).select("_id").lean().limit(10);
     const sameNameDocs = await DocumentModel.find({
       tenantId: tenId,
       _id: { $ne: docId },
       fileName: doc.fileName,
-    }).limit(10);
+    }).select("_id").lean().limit(10);
     const candidateIds = new Set<string>();
     for (const d of [...sameChecksumDocs, ...sameNameDocs]) {
       candidateIds.add(d._id.toString());
     }
-    candidateDocIds = [...candidateIds].map((id) => new Types.ObjectId(id));
+    const primaryCandidateIds = [...candidateIds].map((id) => new Types.ObjectId(id));
+    authorizedCandidateIds = await authorizeCandidateIds(primaryCandidateIds);
 
-    if (candidateDocIds.length === 0) {
+    // Restricted primary matches must not suppress fallback discovery. Decide
+    // from the authorized set, and exclude raw primary ids so their existence
+    // cannot crowd authorized fallback candidates out of the bounded query.
+    if (authorizedCandidateIds.length === 0) {
       const recentDocs = await DocumentModel.find({
         tenantId: tenId,
-        _id: { $ne: docId },
+        _id: {
+          $ne: docId,
+          ...(primaryCandidateIds.length > 0 ? { $nin: primaryCandidateIds } : {}),
+        },
         status: "processed",
       })
+        .select("_id")
+        .lean()
         .sort({ createdAt: -1 })
         .limit(20);
-      candidateDocIds = recentDocs.map((d) => d._id);
+      authorizedCandidateIds = await authorizeCandidateIds(recentDocs.map((d) => d._id));
     }
   }
 
   const candidateDocuments = [];
-  for (const cId of candidateDocIds) {
+  for (const candidateId of authorizedCandidateIds) {
+    const cId = new Types.ObjectId(candidateId);
     const cDoc = await DocumentModel.findOne({ _id: cId, tenantId: tenId });
     if (!cDoc) continue;
 
@@ -867,7 +1033,7 @@ export async function triggerVersionConflictAnalysis(
     };
   }
 
-  const analysisResult = await versionConflictAgent.analyzeDocument({
+  const analysisResult = await conflictAgent.analyzeDocument({
     sourceDocument: {
       id: input.documentId,
       fileName: doc.fileName,
@@ -1006,6 +1172,7 @@ export async function getDocumentRelationships(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
 
   const relationships = await DocumentRelationshipModel.find({
@@ -1173,6 +1340,7 @@ export async function getConflictFindings(
     tenantId,
     inputContext,
     Permission.DOCUMENTS_READ,
+    documentId,
   );
 
   const conflicts = await ConflictFindingModel.find({

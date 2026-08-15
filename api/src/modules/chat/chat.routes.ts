@@ -3,7 +3,7 @@ import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
-import { Permission } from "../permissions/permissions.catalog.js";
+import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
 import { createChatController } from "./chat.controller.js";
 import type { ChatService } from "./chat.service.js";
 import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
@@ -16,6 +16,12 @@ import {
   getVisionMaxFileSizeBytes,
   isAllowedVisionMimeType,
 } from "./chat.vision.js";
+
+const requireSelfPermission = (permission: PermissionValue) => requirePermission(permission, {
+  resourceContext: (request) => request.auth && request.tenantId
+    ? { tenantId: request.tenantId, ownerId: request.auth.userId }
+    : undefined,
+});
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
@@ -161,7 +167,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/conversations",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_READ),
+    requireSelfPermission(Permission.CHAT_READ),
     controller.listConversations,
   );
 
@@ -250,7 +256,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/conversations/:conversationId/messages",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_READ),
+    requireSelfPermission(Permission.CHAT_READ),
     controller.getConversationMessages,
   );
 
@@ -299,7 +305,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/conversations/:conversationId",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_DELETE),
+    requireSelfPermission(Permission.CHAT_DELETE),
     controller.deleteConversation,
   );
 
@@ -431,7 +437,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/send/stream",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    requireSelfPermission(Permission.CHAT_CREATE),
     queryGuard,
     controller.sendMessageStream,
   );
@@ -515,7 +521,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/vision",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    requireSelfPermission(Permission.CHAT_CREATE),
     queryGuard,
     visionUpload.single("image"),
     controller.sendVisionMessage,
@@ -557,7 +563,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/attachments/:attachmentId",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_READ),
+    requireSelfPermission(Permission.CHAT_READ),
     controller.getAttachment,
   );
 
@@ -595,7 +601,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/stt",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    requireSelfPermission(Permission.CHAT_CREATE),
     sttRateLimiter,
     sttUpload.single("audio"),
     controller.transcribeAudio,

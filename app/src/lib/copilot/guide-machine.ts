@@ -149,6 +149,24 @@ function advance(state: GuideMachineState): GuideMachineState {
   return { ...state, currentIndex: nextIndex };
 }
 
+/**
+ * Whether a step is a navigation step — one that moves the user to a page
+ * (`interaction: "navigate"` or a `route_change` completion). Navigation steps
+ * are never auto-skipped when their target is missing: every flow leads with
+ * one, and skipping it cascades through the rest of the flow (the remaining
+ * targets live on the page the user was never taken to), silently collapsing
+ * the whole guide to "completed".
+ */
+export function isNavigationStep(
+  step: GuideStep | null | undefined,
+): boolean {
+  if (!step) return false;
+  return (
+    step.interaction === "navigate" ||
+    step.completion.event === "route_change"
+  );
+}
+
 export function guideReducer(
   state: GuideMachineState,
   action: GuideAction,
@@ -235,6 +253,12 @@ export type MissingTargetResolution =
  * Apply a step's `fallback.onMissing` policy when the current target is absent.
  * `wait` returns the state unchanged so the caller re-scans after `waitMs`;
  * `stop` halts with a friendly reason; `skip` advances past the step.
+ *
+ * Navigation steps are an exception: they always resolve to `wait`. A skipped
+ * nav step cascades through the rest of the flow (every flow leads with one)
+ * and silently completes the whole guide while the user is still on the wrong
+ * page — the overlay must instead surface a recovery action ("go to the step's
+ * route") or keep waiting on a DOM re-scan.
  */
 export function resolveMissingTarget(
   state: GuideMachineState,
@@ -242,6 +266,7 @@ export function resolveMissingTarget(
   if (state.status !== "running") return { mode: "none", state };
   const step = state.session.steps[state.currentIndex];
   if (!step) return { mode: "none", state };
+  if (isNavigationStep(step)) return { mode: "wait", state };
   const fallback = step.fallback.onMissing;
   if (fallback === "wait") return { mode: "wait", state };
   if (fallback === "stop") {

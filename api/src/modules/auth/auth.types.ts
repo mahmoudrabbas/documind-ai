@@ -64,10 +64,13 @@ export interface UserPublicView {
   role?: BaseRole;
   customRoleId?: string;
   customRoleName?: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
   status: string;
   emailVerified: boolean;
   employeeProfile?: {
     employeeId?: string;
+    departmentId?: string;
     department?: string;
     jobTitle?: string;
     phone?: string;
