@@ -38,6 +38,17 @@ vi.mock("../../../common/observability/index.js", () => ({
   getAuditWriter: () => ({ write: vi.fn(async () => undefined) }),
 }));
 
+// The upload path enforces DOCUMENTS_CREATE via authorizePermission. This unit
+// test exercises the trigger producer, not the authorization boundary, so the
+// permission check is faked at the module seam exactly like the other seams
+// above; production enforcement itself is untouched.
+vi.mock("../../permissions/permissions.authorization.js", () => ({
+  authorizePermission: vi.fn(async () => ({ allowed: true })),
+  authorizePermissionCapability: vi.fn(
+    async () => ({ allowed: true, denialCode: null, scope: null, source: null }),
+  ),
+}));
+
 vi.mock("../../documents/documentUpload.repository.js", () => ({
   createDocumentWithPrivatePolicy: vi.fn(
     async (documentData: {

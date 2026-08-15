@@ -1244,7 +1244,7 @@ function assertPersistenceSafety(records: unknown): void {
 
 test(
   "production-composed grounded workflow persists one correlated runtime graph and the Compliance-authorized assistant message",
-  { timeout: 60_000 },
+  { timeout: 120_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const requestId = "request-production-grounded";

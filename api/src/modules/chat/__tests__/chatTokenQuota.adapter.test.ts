@@ -101,6 +101,10 @@ describe("production Chat token quota adapter", () => {
         reservationId: "tqr_remaining",
         reservedAmount: 2_000,
       },
+      current: 8_000,
+      limit: 10_000,
+      remaining: 2_000,
+      periodReset: "2026-09-01T00:00:00.000Z",
     });
 
     expect(mocks.reserveTokenQuota).toHaveBeenCalledWith({
@@ -171,6 +175,10 @@ describe("production Chat token quota adapter", () => {
         reservationId: "tqr_retry",
         reservedAmount: 1_000,
       },
+      current: 9_000,
+      limit: 10_000,
+      remaining: 1_000,
+      periodReset: "2026-09-01T00:00:00.000Z",
     });
 
     expect(mocks.reserveTokenQuota).toHaveBeenCalledTimes(2);
