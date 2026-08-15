@@ -26,8 +26,11 @@ import {
   type AnswerWriterOutput,
   type CitationVerifierOutput,
   type ComplianceAgentOutput,
+  type ComplianceReasonCodeValue,
   type IntentAgentOutput,
 } from "../agents/chatAgentIO.js";
+import { isArabicContext } from "../agents/answerWriter.service.js";
+import type { QueryLanguageValue } from "../intent-query/intentQuery.types.js";
 import { createRun } from "../agents/agents.repository.js";
 import type { RunRecord } from "../agents/agents.types.js";
 import type {
@@ -84,6 +87,57 @@ export const CHAT_DIRECT_RETRIEVAL_TOP_K = 5;
 export const CHAT_SUMMARIZATION_RETRIEVAL_TOP_K = 12;
 const SUMMARY_MAX_TOKENS = 2048;
 const MAX_SEARCH_QUERY_CHARS = 2_000;
+
+// ── Fallback reply templates ──────────────────────────────────────────────
+// The Compliance agent's deterministic refusal answers are replaced at the
+// chat boundary with the exact message that matches the run's retrieval and
+// authorization outcome. A permission restriction is never described as a
+// plain "no information" reply (and vice versa), and out-of-domain prompts get
+// their own scoped message. The Knowledge Gap logging guard is untouched: it
+// keys off the terminal reasonCode and the authorizationRestricted artifact.
+
+const FALLBACK_AUTHORIZATION_RESTRICTED =
+  "I don't have sufficient authorized access to the documents needed to answer this question.";
+const FALLBACK_AUTHORIZATION_RESTRICTED_AR =
+  "عذراً، لا تملك صلاحية الوصول إلى المستندات اللازمة للإجابة على هذا السؤال.";
+
+const FALLBACK_KNOWLEDGE_GAP =
+  "I couldn't find any information regarding your query in the available company documents.";
+const FALLBACK_KNOWLEDGE_GAP_AR =
+  "لم أتمكن من العثور على أي معلومات تخص استفسارك في مستندات الشركة المتاحة.";
+
+const FALLBACK_OUT_OF_DOMAIN =
+  "This question appears to be outside the scope of company documents and policies.";
+const FALLBACK_OUT_OF_DOMAIN_AR =
+  "يبدو أن هذا السؤال خارج نطاق مستندات وسياسات الشركة.";
+
+/**
+ * Selects the exact user-facing fallback reply for a refusal terminal based on
+ * the run's retrieval/authorization outcome. Returns `null` when the reason
+ * code is not a fallback so the trusted Compliance answer is kept as-is.
+ */
+function fallbackReplyFor(
+  reasonCode: ComplianceReasonCodeValue,
+  authorizationRestricted: boolean,
+  language: QueryLanguageValue,
+): string | null {
+  const ar = isArabicContext(language);
+  if (reasonCode === "UNSUPPORTED_REQUEST") {
+    return ar ? FALLBACK_OUT_OF_DOMAIN_AR : FALLBACK_OUT_OF_DOMAIN;
+  }
+  if (
+    reasonCode === "INSUFFICIENT_EVIDENCE" ||
+    reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
+  ) {
+    if (authorizationRestricted) {
+      return ar
+        ? FALLBACK_AUTHORIZATION_RESTRICTED_AR
+        : FALLBACK_AUTHORIZATION_RESTRICTED;
+    }
+    return ar ? FALLBACK_KNOWLEDGE_GAP_AR : FALLBACK_KNOWLEDGE_GAP;
+  }
+  return null;
+}
 
 const SAFE_RUNTIME_PROVIDER_ERRORS = {
   [LLM_RATE_LIMITED]: {
@@ -202,6 +256,7 @@ const SearchOutputSchema = z
     retrievalOutcome: z
       .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
       .default("NO_MATCHES"),
+    authorizationRestricted: z.boolean().optional(),
   })
   .strict();
 
@@ -211,6 +266,7 @@ const EvidenceOutputSchema = z
     approvedEvidenceIds: z.array(z.string()),
     rejectedEvidenceIds: z.array(z.string()),
     reasonCode: z.string(),
+    authorizationRestricted: z.boolean().optional(),
   })
   .strict();
 
@@ -408,6 +464,12 @@ interface ChatRunArtifacts {
   analyticsRequest: ChatAnalyticsRequest | null;
   analyticsOutput: unknown;
   complianceRequested: boolean;
+  /**
+   * True when this run's retrieval was restricted by document-level access
+   * authorization (permissions, access control, or insufficient authorized
+   * evidence). Such denials must never be reported as knowledge gaps.
+   */
+  authorizationRestricted: boolean;
 }
 
 export interface ChatWorkflowRankedCandidateArtifact {
@@ -571,6 +633,7 @@ function createChatRuntimePolicy(input: {
     analyticsRequest: null,
     analyticsOutput: undefined,
     complianceRequested: false,
+    authorizationRestricted: false,
   };
 
   const syncIntentDerivedState = (): void => {
@@ -1016,6 +1079,9 @@ function createChatRuntimePolicy(input: {
         const batch = { id: batchId, candidates };
         artifacts.searchBatches.push(batch);
         artifacts.activeSearchBatch = batch;
+        if (output.authorizationRestricted === true) {
+          artifacts.authorizationRestricted = true;
+        }
         return;
       }
       if (args.toolName === "evaluate_evidence") {
@@ -1029,6 +1095,9 @@ function createChatRuntimePolicy(input: {
         artifacts.evidenceSufficiency = output.sufficiency;
         artifacts.evidenceReasonCode = output.reasonCode;
         artifacts.evidenceEvaluated = true;
+        if (output.authorizationRestricted === true) {
+          artifacts.authorizationRestricted = true;
+        }
         return;
       }
       if (args.toolName === "analytics_query") {
@@ -1331,12 +1400,13 @@ export class ChatWorkflowService {
       persisted,
     );
 
+    const reportableGap =
+      terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
+      terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE";
     if (
-      (
-        terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
-        terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
-      ) &&
-      artifacts.retrievalOutcome !== "AUTHORIZATION_FILTERED"
+      reportableGap &&
+      artifacts.retrievalOutcome !== "AUTHORIZATION_FILTERED" &&
+      !artifacts.authorizationRestricted
     ) {
       await this.deps.reportKnowledgeGap?.({
         tenantId,
@@ -1503,16 +1573,28 @@ export class ChatWorkflowService {
     if (!artifacts.compliance || JSON.stringify(terminal) !== JSON.stringify(artifacts.compliance)) {
       return failClosed("Runtime output does not equal this run's Compliance authority");
     }
+    // Select the exact user-facing fallback for refusal terminals. The
+    // authorizationRestricted artifact distinguishes a permission restriction
+    // from a genuine knowledge gap; only the displayed answer is replaced, so
+    // the Knowledge Gap logging decision (reasonCode + artifact) is unchanged.
+    const fallback = fallbackReplyFor(
+      terminal.reasonCode,
+      artifacts.authorizationRestricted,
+      artifacts.intent?.language ?? "en",
+    );
+    const resolvedTerminal = fallback
+      ? ComplianceAgentOutputSchema.parse({ ...terminal, answer: fallback })
+      : terminal;
     if (artifacts.intent?.route === "rag" && artifacts.intent.assistantKind) {
       // Compose only after the original Compliance output has passed the
       // run-authority equality check. The added identity text is deterministic
       // and source-less; the RAG answer and its sources remain unchanged.
       return ComplianceAgentOutputSchema.parse({
-        ...terminal,
-        answer: `${assistantReplyFor(artifacts.intent.language, artifacts.intent.assistantKind)}\n\n${terminal.answer}`,
+        ...resolvedTerminal,
+        answer: `${assistantReplyFor(artifacts.intent.language, artifacts.intent.assistantKind)}\n\n${resolvedTerminal.answer}`,
       });
     }
-    return terminal;
+    return resolvedTerminal;
   }
 
   private async materializeSources(
