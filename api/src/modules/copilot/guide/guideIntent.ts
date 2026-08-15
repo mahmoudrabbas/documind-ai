@@ -534,7 +534,7 @@ const NEGATION_MARKERS = [
 ];
 
 /** How-to markers that a user might explicitly decline ("do not guide me"). */
-const NEGATABLE_HOW_TO_MARKERS = ["guide me", "walk me through"];
+const NEGATABLE_HOW_TO_MARKERS = ["guide me", "walk me through", "show me"];
 
 /** Arabic phrases that decline a guided walkthrough outright. */
 const NO_GUIDE_PHRASES_AR = [
@@ -605,12 +605,17 @@ export function hasHowToFraming(utterance: string): boolean {
 
 export function hasNavFraming(utterance: string): boolean {
   const normalized = normalizeText(utterance);
-  if (NAV_FRAMING_AR.some((marker) => normalized.includes(normalizeText(marker)))) return true;
-  for (const marker of NAV_FRAMING_EN) {
-    const markerNormalized = normalizeText(marker);
-    if (!normalized.includes(markerNormalized)) continue;
+  const navMarker = (markerNormalized: string): boolean => {
+    if (!normalized.includes(markerNormalized)) return false;
+    if (isNegatedMarker(normalized, markerNormalized)) return false;
     if (markerNormalized === "find the") return NAV_DESTINATION.test(normalized);
     return true;
+  };
+  for (const marker of NAV_FRAMING_AR) {
+    if (navMarker(normalizeText(marker))) return true;
+  }
+  for (const marker of NAV_FRAMING_EN) {
+    if (navMarker(normalizeText(marker))) return true;
   }
   return false;
 }

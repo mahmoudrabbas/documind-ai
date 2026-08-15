@@ -319,6 +319,26 @@ describe("resolveMissingTarget fallback policies", () => {
     expect(resolution.state.status).toBe("running");
   });
 
+  it("wait-stop keeps the current step so the overlay can stop instead of skip", () => {
+    const session = makeSession([
+      makeStep({
+        stepId: "s1",
+        fallback: { onMissing: "wait-stop", waitMs: 8000 },
+      }),
+      makeStep({ stepId: "s2" }),
+      makeStep({ stepId: "s3" }),
+    ]);
+    const state = guideReducer(createInitialGuideState(session), {
+      type: "start",
+    });
+    const resolution = resolveMissingTarget(state);
+    expect(resolution.mode).toBe("wait");
+    expect(resolution.state.currentIndex).toBe(0);
+    expect(resolution.state.status).toBe("running");
+    expect(resolution.state.skipped).toEqual([]);
+    expect(resolution.state.progressCount).toBe(0);
+  });
+
   it("stop halts with a reason", () => {
     const session = makeSession([
       makeStep({

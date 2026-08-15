@@ -50,7 +50,7 @@ const guideAgentOutputSchema = z.object({
         routeMatch: z.string().optional(),
       }),
       fallback: z.object({
-        onMissing: z.enum(["skip", "stop", "wait"]),
+        onMissing: z.enum(["skip", "stop", "wait", "wait-stop"]),
         waitMs: z.number().optional(),
       }),
     })),

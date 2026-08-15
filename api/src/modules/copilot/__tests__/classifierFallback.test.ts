@@ -266,6 +266,43 @@ test("CopilotClassifier treats explicit no-guide role requests as capability_una
       assert.equal(decision.reasonCode, "capability_unavailable");
     },
   );
+
+  await t.test(
+    "a negated 'show me the steps' request is never routed to the guide agent",
+    async () => {
+      // Regression: "Do not show me the steps. Create it for me." used to be
+      // classified as guide_keywords because hasNavFraming treated the "show
+      // me" marker as navigation framing. It must resolve to an unsupported
+      // capability instead.
+      const classifier = new CopilotClassifier(
+        new StubClassifierAdapter(CLARIFY_JSON),
+      );
+      const decision = await classifier.classify(
+        "Do not show me the steps. Create it for me.",
+        "en",
+      );
+      assert.equal(decision.mode, "clarify");
+      assert.equal(decision.reasonCode, "capability_unavailable");
+      assert.equal(decision.toolNameHint, null);
+    },
+  );
+
+  await t.test(
+    "a negated guide request with a covered subject hints the roles.create flow",
+    async () => {
+      const classifier = new CopilotClassifier(
+        new StubClassifierAdapter(CLARIFY_JSON),
+      );
+      const decision = await classifier.classify(
+        "Don't guide me, just create the role.",
+        "en",
+      );
+      assert.equal(decision.mode, "clarify");
+      assert.equal(decision.reasonCode, "capability_unavailable");
+      assert.equal(decision.flowIdHint, "roles.create");
+      assert.equal(decision.toolNameHint, null);
+    },
+  );
 });
 
 test("CopilotClassifier keeps real tools working for explicit no-guide requests", async (t) => {

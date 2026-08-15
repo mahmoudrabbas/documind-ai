@@ -29,12 +29,12 @@ export const guideStepCompletionSchema = z.object({
 });
 
 export interface GuideStepFallback {
-  onMissing: "skip" | "stop" | "wait";
+  onMissing: "skip" | "stop" | "wait" | "wait-stop";
   waitMs?: number;
 }
 
 export const guideStepFallbackSchema = z.object({
-  onMissing: z.enum(["skip", "stop", "wait"]),
+  onMissing: z.enum(["skip", "stop", "wait", "wait-stop"]),
   waitMs: z.number().int().positive().max(60000).optional(),
 });
 

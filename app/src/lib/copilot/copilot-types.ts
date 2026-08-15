@@ -10,7 +10,7 @@ export type GuideInteraction =
   "click" | "input" | "navigate" | "observe" | "none";
 export type CompletionEventType =
   "click" | "route_change" | "value_present" | "manual";
-export type FallbackPolicy = "skip" | "stop" | "wait";
+export type FallbackPolicy = "skip" | "stop" | "wait" | "wait-stop";
 
 export interface GuideTargetRef {
   targetId: string;
@@ -110,6 +110,8 @@ export interface ClarifyPayload {
    * "capability_unavailable" = the user asked for an action no tool supports
    * yet (e.g. creating a role directly) — the guide is offered instead. */
   kind?: "generic" | "capability_unavailable";
+  /** Flow the server promotes as the recommended next step for this request. */
+  recommendedFlowId?: string;
 }
 
 export type CopilotMode = "guide" | "action" | "clarify";
