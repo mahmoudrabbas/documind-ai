@@ -6,6 +6,7 @@ import { config } from "./config/index.js";
 import { logger } from "./common/logger/logger.js";
 import { startEntitlementReconciliation } from "./modules/entitlement/reconciliation.scheduler.js";
 import { startTokenQuotaReservationScheduler } from "./modules/entitlement/tokenQuotaReservation.scheduler.js";
+import { startOcrQuotaReservationScheduler } from "./modules/entitlement/ocrQuotaReservation.scheduler.js";
 import { getReconciliationService } from "./modules/entitlement/reconciliation.service.js";
 import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
 import { startNotificationOutboxScheduler } from "./modules/notifications/outbox/notificationOutbox.scheduler.js";
@@ -122,6 +123,7 @@ async function ensureSearchIndexes(): Promise<void> {
 
 let shuttingDown = false;
 let tokenQuotaReservationTimer: NodeJS.Timeout | null = null;
+let ocrQuotaReservationTimer: NodeJS.Timeout | null = null;
 
 async function gracefulShutdown(signal: string) {
   if (shuttingDown) {
@@ -135,6 +137,12 @@ async function gracefulShutdown(signal: string) {
     clearInterval(tokenQuotaReservationTimer);
     tokenQuotaReservationTimer = null;
     logger.info("Token quota reservation scheduler stopped");
+  }
+
+  if (ocrQuotaReservationTimer) {
+    clearInterval(ocrQuotaReservationTimer);
+    ocrQuotaReservationTimer = null;
+    logger.info("OCR quota reservation scheduler stopped");
   }
 
   await new Promise<void>((resolve) => {
@@ -229,6 +237,26 @@ if (process.env.TOKEN_QUOTA_RESERVATION_SWEEP_ENABLED !== "false") {
     logger.warn(
       { err: error },
       "Failed to start token quota reservation scheduler",
+    );
+  }
+}
+
+// ── OCR quota reservation expiry scheduler ──────────────────────────────────
+//
+// Manual OCR uses durable Mongo reservations because OCR jobs are asynchronous
+// and may outlive short Redis reservation TTLs. Expired ACTIVE claims are
+// refunded here if a job never reaches settlement.
+
+if (process.env.OCR_QUOTA_RESERVATION_SWEEP_ENABLED !== "false") {
+  try {
+    ocrQuotaReservationTimer =
+      startOcrQuotaReservationScheduler();
+
+    logger.info("OCR quota reservation scheduler started");
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      "Failed to start OCR quota reservation scheduler",
     );
   }
 }

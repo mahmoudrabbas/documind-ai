@@ -14,6 +14,8 @@ import DocumentAccessPolicyModel from "../../db/models/documentAccessPolicy.mode
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import QuotaOverrideModel from "../../db/models/quotaOverride.model.js";
+import OcrQuotaReservationModel from "../../db/models/ocrQuotaReservation.model.js";
+import { QuotaCounterModel } from "../entitlement/adapters/mongo-quota-counter.js";
 import DocumentRelationshipModel from "../../db/models/documentRelationship.model.js";
 import ConflictFindingModel from "../../db/models/conflictFinding.model.js";
 import {
@@ -64,6 +66,8 @@ afterEach(async () => {
   await OcrPageResultModel.deleteMany({});
   await DocumentQualityModel.deleteMany({});
   await OcrUsageRecordModel.deleteMany({});
+  await OcrQuotaReservationModel.deleteMany({});
+  await QuotaCounterModel.deleteMany({});
   await DocumentModel.deleteMany({});
   await DocumentVersionModel.deleteMany({});
   await UserModel.deleteMany({});
@@ -471,6 +475,7 @@ test("processing.service", async (t) => {
   });
 
   await t.test("retryOcrPages enqueues retry job for failed pages", async () => {
+    await seedActiveSubscription();
     const doc = await createTestDocument();
     const docId = doc._id.toString();
     await seedOcrPages(docId, [

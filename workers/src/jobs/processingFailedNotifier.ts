@@ -72,10 +72,26 @@ export interface ProcessingFailedNotifierOptions<TPayload> {
   ) => Promise<JobHandlerResult | void>;
   /** Optional errorCode override; defaults to deriveErrorCode(error, stage). */
   resolveErrorCode?: (error: unknown) => string;
+
+  /**
+   * Optional best-effort cleanup invoked only for terminal failures.
+   * A cleanup failure is logged and never replaces the original job error.
+   */
+  onTerminalFailure?: (
+    payload: TPayload,
+    ctx: JobHandlerContext,
+    error: unknown,
+  ) => Promise<void>;
 }
 
 export function withProcessingFailedOutbox<TPayload>(opts: ProcessingFailedNotifierOptions<TPayload>) {
-  const { outbox, stage, handle, resolveErrorCode } = opts;
+  const {
+    outbox,
+    stage,
+    handle,
+    resolveErrorCode,
+    onTerminalFailure,
+  } = opts;
   return async (
     payload: TPayload,
     ctx: JobHandlerContext,
@@ -84,8 +100,31 @@ export function withProcessingFailedOutbox<TPayload>(opts: ProcessingFailedNotif
       return await handle(payload, ctx);
     } catch (error) {
       if (isTerminalFailure(ctx, error)) {
+        if (onTerminalFailure) {
+          try {
+            await onTerminalFailure(payload, ctx, error);
+          } catch (cleanupErr) {
+            // Best-effort — never replace the original terminal job error.
+            logger.error(
+              {
+                err: cleanupErr,
+                stage,
+                traceId: ctx.traceId,
+              },
+              "terminal processing cleanup failed",
+            );
+          }
+        }
+
         try {
-          await emitProcessingFailed(outbox, stage, payload, ctx, error, resolveErrorCode);
+          await emitProcessingFailed(
+            outbox,
+            stage,
+            payload,
+            ctx,
+            error,
+            resolveErrorCode,
+          );
         } catch (emitErr) {
           // Best-effort — never interrupt job processing on a notify failure.
           logger.error(

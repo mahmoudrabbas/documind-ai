@@ -490,7 +490,7 @@ export function DocumentDetailDrawer({
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto">
               {canDownload ? (
                 <Button size="sm" data-guide-id="documents-drawer-download" onClick={handleDownload}>
                   <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">download</span>
@@ -515,9 +515,14 @@ export function DocumentDetailDrawer({
                   {t("documents.restore")}
                 </Button>
               )}
-              <div className="ms-auto">
+              <div className="ms-auto shrink-0 ps-2">
                 {canDelete && !doc.deletedAt && (
-                  <Button size="sm" variant="danger" onClick={() => setConfirmAction("softDelete")}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0 whitespace-nowrap border-amber-300 bg-amber-50 px-3 text-amber-800 hover:bg-amber-100 hover:text-amber-900"
+                    onClick={() => setConfirmAction("softDelete")}
+                  >
                     <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">delete</span>
                     {t("documents.moveToTrash")}
                   </Button>

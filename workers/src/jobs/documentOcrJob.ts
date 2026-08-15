@@ -43,6 +43,14 @@ const PayloadSchema = z.object({
   ocrProvider: z.string().optional(),
   /** Present when OCR was triggered by the ingest pipeline (auto-OCR). */
   generationId: z.string().optional(),
+
+  /**
+   * Durable paid OCR quota reservation created by the API for manual OCR.
+   * Auto-OCR never carries these fields.
+   */
+  quotaReservationId: z.string().min(1).optional(),
+  quotaReservedPages: z.number().int().positive().optional(),
+
   department: z.string().nullable().optional(),
   classification: z.string().nullable().optional(),
 });
@@ -921,6 +929,160 @@ async function renderImagePageToBuffer(
   return Buffer.from(fileBuffer);
 }
 
+
+async function settleManualOcrQuotaReservation(
+  tenantId: ObjectId,
+  reservationId: string,
+  actualAmount: number,
+): Promise<void> {
+  if (
+    !Number.isInteger(actualAmount) ||
+    actualAmount < 0
+  ) {
+    throw new Error("Invalid actual OCR quota amount");
+  }
+
+  const client = getMongoClient();
+
+  if (!client) {
+    throw new Error(
+      "MongoDB unavailable while settling OCR quota reservation",
+    );
+  }
+
+  const session = client.startSession();
+
+  try {
+    await session.withTransaction(async () => {
+      const db = client.db();
+
+      const reservations =
+        db.collection("ocrquotareservations");
+
+      const counters =
+        db.collection("quotacounters");
+
+      const reservation = await reservations.findOne(
+        {
+          tenantId,
+          reservationId,
+        },
+        { session },
+      );
+
+      if (!reservation) {
+        throw new Error(
+          `OCR quota reservation not found: ${reservationId}`,
+        );
+      }
+
+      if (reservation.status === "committed") {
+        return;
+      }
+
+      if (reservation.status === "released") {
+        return;
+      }
+
+      if (reservation.status !== "active") {
+        throw new Error(
+          `Unsupported OCR quota reservation status: ${String(
+            reservation.status,
+          )}`,
+        );
+      }
+
+      const reservedAmount =
+        Number(reservation.reservedAmount);
+
+      if (
+        !Number.isInteger(reservedAmount) ||
+        reservedAmount <= 0
+      ) {
+        throw new Error(
+          "OCR quota reservation has invalid reservedAmount",
+        );
+      }
+
+      if (actualAmount > reservedAmount) {
+        throw new Error(
+          "Actual OCR usage exceeds reserved OCR pages",
+        );
+      }
+
+      const refund =
+        reservedAmount - actualAmount;
+
+      if (refund > 0) {
+        await counters.updateOne(
+          {
+            tenantId,
+            dimension: "ocrPagesPerMonth",
+            periodStart: reservation.periodStart,
+          },
+          {
+            $inc: {
+              value: -refund,
+            },
+          },
+          { session },
+        );
+
+        await counters.updateOne(
+          {
+            tenantId,
+            dimension: "ocrPagesPerMonth",
+            periodStart: reservation.periodStart,
+            value: { $lt: 0 },
+          },
+          {
+            $set: {
+              value: 0,
+            },
+          },
+          { session },
+        );
+      }
+
+      await reservations.updateOne(
+        {
+          _id: reservation._id,
+          status: "active",
+        },
+        {
+          $set: {
+            status:
+              actualAmount === 0
+                ? "released"
+                : "committed",
+            actualAmount,
+            settledAt: new Date(),
+            updatedAt: new Date(),
+          },
+        },
+        { session },
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function releaseManualOcrQuotaReservation(
+  tenantId: ObjectId,
+  reservationId: string | undefined,
+): Promise<void> {
+  if (!reservationId) {
+    return;
+  }
+
+  await settleManualOcrQuotaReservation(
+    tenantId,
+    reservationId,
+    0,
+  );
+}
+
 export function createDocumentOcrJobHandler(
   outbox: OutboxTriggerPort = new RawOutboxWriter(),
 ): JobHandlerDefinition<DocumentOcrPayload> {
@@ -934,6 +1096,21 @@ export function createDocumentOcrJobHandler(
     handle: withProcessingFailedOutbox<DocumentOcrPayload>({
       outbox,
       stage: "ocr",
+
+      onTerminalFailure: async (payload) => {
+        if (
+          payload.generationId ||
+          !payload.quotaReservationId
+        ) {
+          return;
+        }
+
+        await releaseManualOcrQuotaReservation(
+          new ObjectId(payload.tenantId),
+          payload.quotaReservationId,
+        );
+      },
+
       handle: async (
         payload,
         ctx,
@@ -963,6 +1140,16 @@ export function createDocumentOcrJobHandler(
         });
 
       if (!version) {
+        if (
+          !payload.generationId &&
+          payload.quotaReservationId
+        ) {
+          await releaseManualOcrQuotaReservation(
+            tenantId,
+            payload.quotaReservationId,
+          );
+        }
+
         ctx.progress(
           "Document version not found; skipping OCR job execution.",
         );
@@ -983,6 +1170,16 @@ export function createDocumentOcrJobHandler(
         });
 
       if (!document) {
+        if (
+          !payload.generationId &&
+          payload.quotaReservationId
+        ) {
+          await releaseManualOcrQuotaReservation(
+            tenantId,
+            payload.quotaReservationId,
+          );
+        }
+
         ctx.progress(
           "Document record not found; skipping OCR job execution.",
         );
@@ -1739,6 +1936,21 @@ export function createDocumentOcrJobHandler(
               enqueueError.message,
           );
         }
+      }
+
+      if (
+        !isAutoOcr &&
+        payload.quotaReservationId
+      ) {
+        await settleManualOcrQuotaReservation(
+          tenantId,
+          payload.quotaReservationId,
+          totalPagesProcessed,
+        );
+
+        ctx.progress(
+          `Settled OCR quota reservation: ${totalPagesProcessed} page(s) committed.`,
+        );
       }
 
       return {

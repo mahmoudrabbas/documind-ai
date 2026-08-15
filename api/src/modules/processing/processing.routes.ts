@@ -23,29 +23,11 @@ import {
   dismissConflictFindingController,
   getPendingReviewItemsController,
 } from "./processing.controller.js";
-import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
-import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import indexingRoutes from "./indexing/indexing.routes.js";
 
 const router = Router();
 
 router.use(indexingRoutes);
-
-// ── Entitlement guards ─────────────────────────────────────────────────────
-
-const svc = getEntitlementService();
-
-const ocrGuard = createEntitlementGuard(svc, {
-  dimension: "ocrPagesPerMonth",
-  amount: (req) => req.body.pageCount || 1,
-  failMode: "fail-closed",
-});
-
-const ocrRetryGuard = createEntitlementGuard(svc, {
-  dimension: "ocrPagesPerMonth",
-  amount: (req) => req.body?.pageCount ?? 1,
-  failMode: "fail-closed",
-});
 
 /**
  * @openapi
@@ -123,7 +105,6 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
-  ocrGuard,
   triggerOcrController,
 );
 
@@ -491,7 +472,6 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
-  ocrRetryGuard,
   retryOcrController,
 );
 

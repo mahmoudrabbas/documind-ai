@@ -42,10 +42,66 @@ import {
   type ResolvedOperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
-import { checkOcrPageQuota } from "../entitlement/entitlement-checks.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
+import {
+  reserveOcrQuota,
+  releaseOcrQuotaReservation,
+} from "../entitlement/ocrQuotaReservation.repository.js";
 import { buildRetrievableDocumentFilter } from "../retrieval/retrievalEligibility.js";
 import type { VersionConflictAgent } from "./ports/versionConflictAgent.port.js";
 import { buildDocumentPermissionResource } from "../documents/documents.permissionResource.js";
+
+const OCR_QUOTA_RESERVATION_TTL_SECONDS = 6 * 60 * 60;
+
+async function reserveManualOcrQuota(
+  tenantId: string,
+  pageCount: number,
+  requestId?: string,
+): Promise<string> {
+  const svc = getEntitlementService();
+
+  const [limit, periodStart] = await Promise.all([
+    svc.getEffectiveLimit(tenantId, "ocrPagesPerMonth"),
+    svc.getCounterPeriodKey(tenantId),
+  ]);
+
+  const reservation = await reserveOcrQuota({
+    tenantId,
+    requestId,
+    periodStart,
+    amount: pageCount,
+    limit,
+    ttlSeconds: OCR_QUOTA_RESERVATION_TTL_SECONDS,
+  });
+
+  if (reservation) {
+    return reservation.reservationId;
+  }
+
+  const usage = await svc.getUsage(tenantId);
+  const current = usage.ocrPagesPerMonth ?? 0;
+  const remaining = Math.max(0, limit - current);
+
+  throw new AppError(
+    429,
+    "OCR_QUOTA_EXCEEDED",
+    `OCR quota exceeded. Used ${current} of ${limit} pages this month. Requested ${pageCount}, only ${remaining} remaining.`,
+  );
+}
+
+async function releaseManualOcrQuota(
+  tenantId: string,
+  reservationId: string,
+): Promise<void> {
+  try {
+    await releaseOcrQuotaReservation({
+      tenantId,
+      reservationId,
+    });
+  } catch {
+    // Best-effort here. Durable expiry recovery will handle abandoned claims.
+  }
+}
 
 const metadataAgent = new FakeMetadataAgent();
 const versionConflictAgent = new FakeVersionConflictAgent();
@@ -135,32 +191,54 @@ export async function triggerOcrProcessing(
     throw new AppError(400, OCR_LANGUAGE_UNSUPPORTED, `Language '${input.language}' is not supported by the OCR provider`);
   }
 
-  const pageCount = input.pageNumbers?.length || 1;
-  await checkOcrPageQuota(tenantId, pageCount);
+  const pageNumbers =
+    input.pageNumbers && input.pageNumbers.length > 0
+      ? [...new Set(input.pageNumbers)].sort((a, b) => a - b)
+      : [1];
+
+  const pageCount = pageNumbers.length;
+  const quotaReservationId = await reserveManualOcrQuota(
+    tenantId,
+    pageCount,
+    actor.requestId,
+  );
 
   const traceId = randomUUID();
   const idempotencyKey = `ocr-${docId.toString()}-${version}-${ver.checksum}-${Date.now()}`;
 
-  await upsertOcrPageResults(tenId, docId, version, input.pageNumbers || []);
+  let enqueueResult: Awaited<ReturnType<ReturnType<typeof getApiJobDispatcher>["enqueue"]>>;
 
-  const dispatcher = getApiJobDispatcher();
-  const enqueueResult = await dispatcher.enqueue({
-    jobType: "document.ocr",
-    tenantId: tenId.toString(),
-    actorId: actId.toString(),
-    traceId,
-    idempotencyKey,
-    payload: {
-      documentId: docId.toString(),
+  try {
+    await upsertOcrPageResults(tenId, docId, version, pageNumbers);
+
+    const dispatcher = getApiJobDispatcher();
+    enqueueResult = await dispatcher.enqueue({
+      jobType: "document.ocr",
       tenantId: tenId.toString(),
-      documentVersion: version,
-      language: input.language || "ar+en",
-      pageNumbers: input.pageNumbers,
-    },
-  });
+      actorId: actId.toString(),
+      traceId,
+      idempotencyKey,
+      payload: {
+        documentId: docId.toString(),
+        tenantId: tenId.toString(),
+        documentVersion: version,
+        language: input.language || "ar+en",
+        pageNumbers,
+        quotaReservationId,
+        quotaReservedPages: pageCount,
+      },
+    });
 
-  if (!enqueueResult.ok) {
-    throw new AppError(500, "OCR_QUEUE_FAILED", enqueueResult.error || "Failed to enqueue OCR job");
+    if (!enqueueResult.ok) {
+      throw new AppError(
+        500,
+        "OCR_QUEUE_FAILED",
+        enqueueResult.error || "Failed to enqueue OCR job",
+      );
+    }
+  } catch (error) {
+    await releaseManualOcrQuota(tenantId, quotaReservationId);
+    throw error;
   }
 
   await getAuditWriter().write({
@@ -469,26 +547,49 @@ export async function retryOcrPages(
     throw new AppError(400, "NO_PAGES_TO_RETRY", "No pages available for retry");
   }
 
+  const normalizedRetryPages = [...new Set(retryPages)].sort(
+    (a, b) => a - b,
+  );
+
+  const quotaReservationId = await reserveManualOcrQuota(
+    tenantId,
+    normalizedRetryPages.length,
+    actor.requestId,
+  );
+
   const traceId = randomUUID();
-  const idempotencyKey = `ocr-retry-${docId.toString()}-${documentVersion}-${retryPages.join(",")}-${Date.now()}`;
+  const idempotencyKey = `ocr-retry-${docId.toString()}-${documentVersion}-${normalizedRetryPages.join(",")}-${Date.now()}`;
 
-  const enqueueResult = await (dispatcher ?? getApiJobDispatcher()).enqueue({
-    jobType: "document.ocr",
-    tenantId: tenId.toString(),
-    actorId: actor.actorId,
-    traceId,
-    idempotencyKey,
-    payload: {
-      documentId: docId.toString(),
+  let enqueueResult: Awaited<ReturnType<ReturnType<typeof getApiJobDispatcher>["enqueue"]>>;
+
+  try {
+    enqueueResult = await (dispatcher ?? getApiJobDispatcher()).enqueue({
+      jobType: "document.ocr",
       tenantId: tenId.toString(),
-      documentVersion,
-      language: "ar+en",
-      pageNumbers: retryPages,
-    },
-  });
+      actorId: actor.actorId,
+      traceId,
+      idempotencyKey,
+      payload: {
+        documentId: docId.toString(),
+        tenantId: tenId.toString(),
+        documentVersion,
+        language: "ar+en",
+        pageNumbers: normalizedRetryPages,
+        quotaReservationId,
+        quotaReservedPages: normalizedRetryPages.length,
+      },
+    });
 
-  if (!enqueueResult.ok) {
-    throw new AppError(500, "OCR_QUEUE_FAILED", enqueueResult.error || "Failed to enqueue OCR retry job");
+    if (!enqueueResult.ok) {
+      throw new AppError(
+        500,
+        "OCR_QUEUE_FAILED",
+        enqueueResult.error || "Failed to enqueue OCR retry job",
+      );
+    }
+  } catch (error) {
+    await releaseManualOcrQuota(tenantId, quotaReservationId);
+    throw error;
   }
 
   await getAuditWriter().write({
