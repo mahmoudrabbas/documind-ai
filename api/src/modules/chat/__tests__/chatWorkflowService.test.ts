@@ -106,6 +106,8 @@ interface HarnessOptions {
   intentReferencedDocumentTitles?: string[];
   resolvedTitleDocumentIds?: string[];
   secondSearchCandidates?: HarnessOptions["searchCandidates"];
+  searchAuthorizationRestricted?: boolean;
+  evidenceAuthorizationRestricted?: boolean;
   skipComplianceOutput?: boolean;
   authorizationReject?: boolean;
   missingPersistedActor?: boolean;
@@ -358,7 +360,10 @@ function makeHarness(options: HarnessOptions = {}) {
         const searchOutput = {
           candidates,
           totalCandidates: candidates.length,
-          reasonCode: "SEARCH_COMPLETED",
+          reasonCode: candidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+          ...(options.searchAuthorizationRestricted !== undefined
+            ? { authorizationRestricted: options.searchAuthorizationRestricted }
+            : {}),
         };
         observations.sourceCatalogOutput = searchOutput;
         hooks.onToolResult?.({
@@ -422,6 +427,9 @@ function makeHarness(options: HarnessOptions = {}) {
             approvedEvidenceIds: scenario === "grounded" ? approvedIds : [],
             rejectedEvidenceIds: scenario === "grounded" ? [] : candidates.map((candidate) => candidate.chunkId),
             reasonCode: scenario === "grounded" ? "EVIDENCE_SUFFICIENT" : scenario === "weak" ? "EVIDENCE_WEAK" : "NO_EVIDENCE",
+            ...(options.evidenceAuthorizationRestricted !== undefined
+              ? { authorizationRestricted: options.evidenceAuthorizationRestricted }
+              : {}),
           };
           hooks.onToolResult?.({
             workflowId: "chat-rag-v1",
@@ -1368,7 +1376,9 @@ describe("ChatWorkflowService controlled short paths", () => {
       nextAgent: "compliance-agent",
       reasonCode: "NO_SEARCH_RESULTS",
     });
-    expect(response.answer).toContain("sufficient authorized evidence");
+    expect(response.answer).toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
+    );
     expect(response.sources).toEqual([]);
   });
 
@@ -1379,7 +1389,9 @@ describe("ChatWorkflowService controlled short paths", () => {
       intentLanguage: "ar",
     });
     const response = await executeHarness(harness, "هل توفر الشركة تأميناً صحياً للعائلة؟");
-    expect(response.answer).toContain("لم أتمكن من العثور على معلومات كافية");
+    expect(response.answer).toContain(
+      "لم أتمكن من العثور على أي معلومات تخص استفسارك في مستندات الشركة المتاحة.",
+    );
     expect(response.sources).toEqual([]);
   });
 
@@ -1514,7 +1526,9 @@ describe("ChatWorkflowService controlled short paths", () => {
       route: "rag",
       answerDecision: "insufficient_evidence",
     });
-    expect(response.answer).toContain("sufficient authorized evidence");
+    expect(response.answer).toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
+    );
     expect(response.sources).toEqual([]);
   });
 
@@ -1602,6 +1616,33 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(harness.reportKnowledgeGap).toHaveBeenCalledTimes(1);
   });
 
+  it("does not record a Knowledge Gap when search was restricted by document authorization", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      searchCandidates: [],
+      searchAuthorizationRestricted: true,
+    });
+    const response = await executeHarness(harness);
+    expect(response.answer).toContain(
+      "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("does not record a Knowledge Gap when evidence evaluation was denied by document authorization", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      evidenceAuthorizationRestricted: true,
+    });
+    const response = await executeHarness(harness);
+    expect(response.answer).toContain(
+      "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
   it("records an unverified-grounded Knowledge Gap and never releases the draft", async () => {
     const harness = makeHarness({ verifierIds: [], complianceSourceIds: [] });
     const response = await executeHarness(harness);
@@ -1640,7 +1681,9 @@ describe("ChatWorkflowService controlled short paths", () => {
     const harness = makeHarness({ scenario: "insufficient" });
     harness.reportKnowledgeGap.mockRejectedValueOnce(new Error("gap unavailable"));
     const response = await executeHarness(harness);
-    expect(response.answer).toContain("sufficient authorized evidence");
+    expect(response.answer).toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
+    );
     expect(harness.messages.at(-1)?.role).toBe("assistant");
   });
 });
