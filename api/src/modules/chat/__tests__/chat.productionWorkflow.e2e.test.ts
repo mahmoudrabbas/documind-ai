@@ -1574,7 +1574,7 @@ test(
     const fixture = await seedWorkflowState();
     const supportedClaims = Array.from(
       { length: MAX_SEMANTIC_CLAIMS },
-      (_unused, index) => `The remote-work policy factual statement in the series is documented.`,
+      () => `The remote-work policy factual statement in the series is documented.`,
     );
     const unsupportedTail = "Employees receive an undocumented monthly internet allowance.";
     const candidate = [...supportedClaims, unsupportedTail].join("\n");

@@ -19,8 +19,9 @@ import {
   hasDomainAgnosticQuestionShape,
   hasSemanticRetrievalSubject,
   isContextualAcknowledgement,
-  isLikelyAccessContextFollowUp,
   buildContextualFollowUpQuestion,
+  hasSubstantivePriorTurn,
+  isLikelyContextualFollowUp,
   isLikelyGibberish,
   isRetrievableIntent,
   selectSafeRetrievalQuestion,
@@ -567,17 +568,18 @@ export class IntentQueryService {
       return buildAndPersistSocialPlan();
     }
 
-    // This narrow bridge is evaluated before provider routing. The current
-    // turn is not independently meaningful, but the immediately preceding
-    // user turn supplies a remote-work subject for the security-access
-    // question. Provider labels must not be able to turn this valid
-    // cross-document follow-up into an unsupported request.
-    const deterministicAccessFollowUp =
+    // Generic contextual bridge, evaluated before provider routing. The
+    // current turn is a short continuation-led question whose subject lives
+    // in the immediately preceding substantive user turn — for ANY document
+    // topic (travel, procurement, onboarding, remote work, ...). Provider
+    // labels must not be able to turn this valid cross-document follow-up
+    // into an unsupported request or a 502.
+    const deterministicContextualFollowUp =
       conversationHistoryAvailable &&
       latestUserMessage.length > 0 &&
-      isLikelyAccessContextFollowUp(routingQuestion) &&
-      /\b(?:remote|work\s+remotely|home)\b/iu.test(latestUserMessage);
-    const deterministicFollowUpQuestion = deterministicAccessFollowUp
+      isLikelyContextualFollowUp(routingQuestion) &&
+      hasSubstantivePriorTurn(latestUserMessage);
+    const deterministicFollowUpQuestion = deterministicContextualFollowUp
       ? buildContextualFollowUpQuestion(latestUserMessage, routingQuestion)
       : "";
 
@@ -826,7 +828,7 @@ export class IntentQueryService {
       if (
         isRetrievableIntent(rawDetectedIntent) &&
         isLikelyGibberish(routingQuestion) &&
-        !deterministicAccessFollowUp
+        !deterministicContextualFollowUp
       ) {
         rawOutput = {
           detectedIntent: "unsupported",
@@ -846,7 +848,7 @@ export class IntentQueryService {
 
       // Apply the bridge after parsing provider output so it also overrides
       // unsupported, low-confidence, and otherwise valid-but-wrong labels.
-      if (deterministicAccessFollowUp) {
+      if (deterministicContextualFollowUp) {
         rawOutput.detectedIntent = "follow_up";
         rawOutput.intentConfidence = Math.max(
           typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0,
@@ -1097,7 +1099,7 @@ export class IntentQueryService {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       const isKnowledgeQuestion = knowledgeSignals.positive;
-      const isDeterministicFollowUp = deterministicAccessFollowUp;
+      const isDeterministicFollowUp = deterministicContextualFollowUp;
       const fallbackQuestion = isDeterministicFollowUp
         ? deterministicFollowUpQuestion
         : knowledgeSignals.retrievalText || routingQuestion.trim();

@@ -225,6 +225,48 @@ export function isLikelyAccessContextFollowUp(raw: string): boolean {
   return hasContinuation && hasAccessTopic;
 }
 
+/**
+ * Domain-agnostic marker for a contextual follow-up: a short, continuation-led
+ * turn whose subject lives in the previous user message ("Does that apply to
+ * contractors?", "What about the hotel limit?", "And the per-diem rate?").
+ * The topic vocabulary is deliberately NOT constrained — the previous turn
+ * supplies the subject, and retrieval over the authorized corpus stays the
+ * authority on answerability.
+ */
+export function isLikelyContextualFollowUp(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  const words = normalized.trim().split(/\s+/u).filter(Boolean);
+  if (words.length === 0 || words.length > 15) return false;
+  const hasContinuation =
+    /\b(?:that|this|it|they|those|these|the\s+same|such|also|too|there|then)\b/u.test(normalized) ||
+    /\b(?:what|how)\s+about\b/iu.test(normalized) ||
+    /^\s*(?:and|و)\b/iu.test(normalized) ||
+    /(?:أيضاً|ايضاً|هل هذا|وماذا عن|وكيف|كذلك)/u.test(normalized);
+  if (!hasContinuation) return false;
+  // The continuation must lead the turn: a deictic subject (that/this/it/…)
+  // within the first few words, or an explicit continuation opener. A long
+  // independent question that merely contains a pronoun is not a follow-up.
+  const leadFour = words.slice(0, 4).join(" ").toLowerCase();
+  const deicticLead =
+    /\b(?:that|this|it|they|those|these|the same|such|also|too)\b/u.test(leadFour);
+  const phraseLead =
+    /^(?:what about|how about|what if|and the|and what|and how|and does|and is|and are|and can|and do|and)\b/u.test(leadFour);
+  const arabicLead =
+    /^(?:وماذا عن|وكيف|هل هذا|أيضاً|ايضاً|كذلك)/u.test(normalized.trim());
+  return deicticLead || phraseLead || arabicLead;
+}
+
+/**
+ * A prior user turn can anchor a contextual follow-up only when it is itself
+ * substantive: not social small talk, not gibberish, and carries real tokens.
+ */
+export function hasSubstantivePriorTurn(message: string): boolean {
+  if (!message.trim()) return false;
+  if (detectSocialMessage(message).isSocial) return false;
+  if (isLikelyGibberish(message)) return false;
+  return preprocessIntentText(message).normalizedTokens.length >= 2;
+}
+
 export function buildContextualFollowUpQuestion(
   previousUserQuestion: string,
   currentQuestion: string,

@@ -424,6 +424,70 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
+  await t.test("generic contextual follow-ups keep any prior document topic and become RAG deterministically", async () => {
+    const cases = [
+      {
+        topic: "travel",
+        priorUser: "What is the flights allowance in the travel policy?",
+        current: "What about the hotel limit?",
+      },
+      {
+        topic: "procurement",
+        priorUser: "How do I raise a purchase request for new laptops?",
+        current: "Does that apply to contractors too?",
+      },
+      {
+        topic: "onboarding",
+        priorUser: "What does the onboarding policy say about the first week?",
+        current: "And the mentor assignment?",
+      },
+    ] as const;
+
+    for (const entry of cases) {
+      const providerVariants = [
+        planAdapter({ detectedIntent: "knowledge_question" }),
+        planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+        {
+          providerKey: "malformed-follow-up-adapter",
+          async complete() {
+            return { choices: [{ message: { content: "not json" } }] } as Awaited<ReturnType<ModelAdapter["complete"]>>;
+          },
+        },
+      ];
+
+      for (const adapter of providerVariants) {
+        const conversationId = new Types.ObjectId().toString();
+        fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+          { role: "user", content: entry.priorUser, timestamp: new Date(1).toISOString() },
+          { role: "assistant", content: "Answered from company documents.", timestamp: new Date(2).toISOString() },
+        ]);
+        const plan = await new IntentQueryService(adapter, fakeConvoAdapter).analyzeQuery(
+          {
+            question: entry.current,
+            conversationId,
+          },
+          companyAdminContext,
+        );
+        assert.equal(plan.route, "rag", `${entry.topic}/${entry.current}`);
+        assert.equal(plan.detectedIntent, "follow_up", `${entry.topic}/${entry.current}`);
+        assert.equal(plan.isFollowUp, true, `${entry.topic}/${entry.current}`);
+        assert.match(
+          plan.normalizedQuestion,
+          /Regarding the previous question/u,
+          `${entry.topic}/${entry.current}`,
+        );
+        assert.ok(
+          plan.normalizedQuestion.includes(entry.priorUser),
+          `${entry.topic}/${entry.current} must keep the prior subject: ${plan.normalizedQuestion}`,
+        );
+        assert.ok(
+          plan.normalizedQuestion.includes(entry.current),
+          `${entry.topic}/${entry.current} must keep the current question: ${plan.normalizedQuestion}`,
+        )
+      }
+    }
+  });
+
   await t.test("assistant capability follow-up stays coherent and a later knowledge turn returns to RAG", async () => {
     const conversationId = new Types.ObjectId().toString();
     const assistantReply = "أنا DocuMind AI، مساعد خاص لمعرفة الشركة.";
