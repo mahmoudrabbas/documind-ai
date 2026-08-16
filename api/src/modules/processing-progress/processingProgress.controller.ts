@@ -20,11 +20,11 @@ function requireAuth(req: Request): { tenantId: string; userId: string } {
   return { tenantId: req.tenantId, userId: req.auth.userId };
 }
 
-function requireSuperAdminAuth(req: Request): { tenantId: string; userId: string } {
+function requireProcessingDashboardAuth(req: Request, platformOnly = false): { tenantId: string; userId: string } {
   if (!req.auth || !req.tenantId) {
     throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   }
-  if (req.auth.role !== "SUPER_ADMIN" && req.auth.role !== "COMPANY_ADMIN") {
+  if (platformOnly && req.permissionDecision?.source !== "platform") {
     throw new AppError(403, "FORBIDDEN", "Insufficient permissions");
   }
   return { tenantId: req.tenantId, userId: req.auth.userId };
@@ -36,8 +36,8 @@ function extractDocumentId(req: Request): string {
   return id;
 }
 
-function isSuperAdmin(req: Request): boolean {
-  return req.auth?.role === "SUPER_ADMIN";
+function hasCurrentPlatformAuthority(req: Request): boolean {
+  return req.permissionDecision?.allowed === true && req.permissionDecision.source === "platform";
 }
 
 export async function getProcessingStatusController(
@@ -48,7 +48,7 @@ export async function getProcessingStatusController(
   try {
     const { tenantId, userId } = requireAuth(req);
     const documentId = extractDocumentId(req);
-    const result = await getProcessingStatus(tenantId, documentId, userId, isSuperAdmin(req));
+    const result = await getProcessingStatus(tenantId, documentId, userId, hasCurrentPlatformAuthority(req));
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.json({ success: true, data: result });
   } catch (error) {
@@ -71,7 +71,7 @@ export async function getProcessingHistoryController(
       documentId,
       { page, pageSize },
       userId,
-      isSuperAdmin(req),
+      hasCurrentPlatformAuthority(req),
     );
     res.json({ success: true, data: result });
   } catch (error) {
@@ -88,7 +88,7 @@ export async function initiateProcessingController(
     const { tenantId, userId } = requireAuth(req);
     const documentId = extractDocumentId(req);
     const version = req.body?.version ? parseInt(String(req.body.version), 10) : undefined;
-    const result = await initiateProcessingRun(tenantId, documentId, version ?? 1, userId, isSuperAdmin(req));
+    const result = await initiateProcessingRun(tenantId, documentId, version ?? 1, userId, hasCurrentPlatformAuthority(req));
     res.json({ success: true, data: { runId: result.id, status: result.status, message: "Processing initiated" } });
   } catch (error) {
     next(error);
@@ -106,7 +106,7 @@ export async function retryProcessingStageController(
     const input: RetryStageInput = {
       stageName: req.body?.stageName,
     };
-    const result = await retryProcessingStage(tenantId, documentId, input, userId, isSuperAdmin(req));
+    const result = await retryProcessingStage(tenantId, documentId, input, userId, hasCurrentPlatformAuthority(req));
     res.json({ success: true, message: "Processing retry queued", data: result });
   } catch (error) {
     next(error);
@@ -121,7 +121,7 @@ export async function reprocessDocumentController(
   try {
     const { tenantId, userId } = requireAuth(req);
     const documentId = extractDocumentId(req);
-    const result = await reprocessDocument(tenantId, documentId, userId, isSuperAdmin(req));
+    const result = await reprocessDocument(tenantId, documentId, userId, hasCurrentPlatformAuthority(req));
     res.json({ success: true, message: "Document reprocessing initiated", data: result });
   } catch (error) {
     next(error);
@@ -139,7 +139,7 @@ export async function cancelProcessingController(
     const input: CancelProcessingInput = {
       reason: req.body?.reason,
     };
-    const result = await cancelProcessing(tenantId, documentId, input, userId, isSuperAdmin(req));
+    const result = await cancelProcessing(tenantId, documentId, input, userId, hasCurrentPlatformAuthority(req));
     res.json({ success: true, message: "Processing canceled", data: result });
   } catch (error) {
     next(error);
@@ -152,7 +152,7 @@ export async function getFailedProcessingDashboardController(
   next: NextFunction,
 ): Promise<void> {
   try {
-    requireSuperAdminAuth(req);
+    requireProcessingDashboardAuth(req);
     const tenantId = req.tenantId!;
     const page = parseInt(String(req.query.page || "1"), 10);
     const pageSize = parseInt(String(req.query.pageSize || "20"), 10);
@@ -169,7 +169,7 @@ export async function getAllFailedProcessingDashboardController(
   next: NextFunction,
 ): Promise<void> {
   try {
-    requireSuperAdminAuth(req);
+    requireProcessingDashboardAuth(req, true);
     const page = parseInt(String(req.query.page || "1"), 10);
     const pageSize = parseInt(String(req.query.pageSize || "20"), 10);
     const result = await getAllFailedProcessingDashboard(page, pageSize);

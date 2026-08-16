@@ -197,6 +197,64 @@ describe("POST /chat/send/stream SSE progress", () => {
     expect(workflowExecute).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves ENTITLEMENT_EXCEEDED across the SSE error boundary", async () => {
+    const workflowExecute = vi.fn(async () => {
+      throw new AppError(
+        429,
+        "ENTITLEMENT_EXCEEDED",
+        "Quota exceeded for tokensPerMonth: 53330/2000",
+        {
+          current: 53_330,
+          limit: 2_000,
+          dimension: "tokensPerMonth",
+          remaining: 0,
+          periodReset: "2026-09-01T00:00:00.000Z",
+          canUpgrade: true,
+        },
+      );
+    });
+
+    const { port } = await startApp(workflowExecute);
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/chat/send/stream`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "What is the remote work policy?",
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      "text/event-stream",
+    );
+
+    const frames = parseFrames(await response.text());
+    const errorFrames = frames.filter(
+      (frame) => frame.event === "error",
+    );
+
+    expect(errorFrames).toHaveLength(1);
+    expect(errorFrames[0]!.data).toEqual({
+      success: false,
+      error: "ENTITLEMENT_EXCEEDED",
+      message:
+        "Quota exceeded for tokensPerMonth: 53330/2000",
+      statusCode: 429,
+      details: {
+        current: 53_330,
+        limit: 2_000,
+        dimension: "tokensPerMonth",
+        remaining: 0,
+        periodReset: "2026-09-01T00:00:00.000Z",
+        canUpgrade: true,
+      },
+    });
+  });
+
   it("dedupes the opening intent stage against the workflow's own intent emission", async () => {
     const workflowExecute = vi.fn(
       async (_raw: unknown, context: { onStage?: (stage: string) => void }) => {

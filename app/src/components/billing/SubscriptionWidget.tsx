@@ -10,6 +10,7 @@ import type { SubscriptionStatus } from "@/types/api/billing.types";
 import { ApiError } from "@/lib/api-client";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
+import { mbToGb } from "@/lib/storage";
 import {
   formatPrice,
   formatNullableDate,
@@ -35,8 +36,7 @@ type PluralFn = (key: string, count: number, params?: Record<string, string>) =>
 
 function formatStorage(mb: number, t: TranslateFn): string {
   if (mb >= 1000) {
-    const gb = Math.round(mb % 1000 === 0 ? mb / 1000 : mb / 1024);
-    return `${gb} ${t("common.unitGB")}`;
+    return `${Math.round(mbToGb(mb))} ${t("common.unitGB")}`;
   }
   return `${mb} ${t("common.unitMB")}`;
 }
@@ -124,21 +124,21 @@ export function SubscriptionWidget() {
     return () => controller.abort();
   }, [canReadBilling, fetchKey]);
 
-  /* ── Retry handler ────────────────────────────────────────────── */
+  /* ── Retry handler ─────────────────────────────── */
 
   const handleRetry = useCallback(() => {
     setFetchKey((k) => k + 1);
   }, []);
 
-  /* ── Render: No permission ────────────────────────────────────── */
+  /* ── Render: No permission ─────────────────────── */
 
   if (!canReadBilling) return null;
 
-  /* ── Render: Loading ──────────────────────────────────────────── */
+  /* ── Render: Loading ──────────────────────────── */
 
   if (state.phase === "loading") {
     return (
-      <DashboardPanel padding="compact">
+      <DashboardPanel padding="compact" className="h-full flex flex-col justify-between shadow-card">
         <div className="space-y-3" role="status">
           <Skeleton className="h-6 w-48 rounded-lg" />
           <Skeleton className="h-4 w-32 rounded-lg" />
@@ -149,12 +149,12 @@ export function SubscriptionWidget() {
     );
   }
 
-  /* ── Render: Error / No subscription ──────────────────────────── */
+  /* ── Render: Error / No subscription ────────────── */
 
   if (state.phase === "error") {
     if (state.isNotFound) {
       return (
-        <DashboardPanel padding="compact">
+        <DashboardPanel padding="compact" className="h-full flex flex-col justify-center shadow-card">
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <span className="material-symbols-outlined text-[36px] text-on-surface-variant">
               credit_card_off
@@ -178,7 +178,7 @@ export function SubscriptionWidget() {
     }
 
     return (
-      <DashboardPanel padding="compact">
+      <DashboardPanel padding="compact" className="h-full flex flex-col justify-center shadow-card">
         <div className="flex flex-col items-center gap-3 py-6 text-center">
           <span className="material-symbols-outlined text-[36px] text-error">
             error
@@ -194,7 +194,7 @@ export function SubscriptionWidget() {
     );
   }
 
-  /* ── Render: Active subscription ──────────────────────────────── */
+  /* ── Render: Active subscription ────────────────── */
 
   const { subscription: sub } = state;
   const pkg = sub.packageId;
@@ -207,7 +207,7 @@ export function SubscriptionWidget() {
   const trialDaysLeft = getDaysRemaining(sub.trialEnd);
 
   return (
-    <DashboardPanel padding="compact">
+    <DashboardPanel padding="compact" className="h-full flex flex-col justify-between shadow-card transition-all duration-200 hover:shadow-popover hover:border-outline-variant/60">
       {/* Header row: plan name + status badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">

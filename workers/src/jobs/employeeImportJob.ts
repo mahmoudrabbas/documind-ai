@@ -438,7 +438,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           recipientEmail: rowEmail,
           recipientHash: emailHash,
           templateId: "user_invitation",
-          templateVersion: "1.0.0",
+          templateVersion: "2.0",
           language: preferredLang,
           variables: {
             companyName: (tenant?.name as string) || "DocuMind",

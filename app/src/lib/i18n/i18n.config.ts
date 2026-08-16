@@ -14,6 +14,18 @@ export const SUPPORTED_LOCALES: readonly Locale[] = ["en", "ar"] as const;
 /** Cookie name used to persist the user's locale preference. */
 export const LOCALE_COOKIE_NAME = "documind-locale";
 
+/**
+ * Companion marker recording that the active locale was chosen by the user
+ * rather than derived from configuration.
+ *
+ * `LOCALE_COOKIE_NAME` is written in both cases — the server reads it to
+ * render the right direction on first paint — so its presence cannot
+ * distinguish the two. Keeping the source in a second cookie is what lets a
+ * tenant's `defaultLanguage` keep reaching users who never picked a
+ * language, while never overriding those who did.
+ */
+export const LOCALE_EXPLICIT_COOKIE_NAME = "documind-locale-explicit";
+
 /** Per-locale metadata. */
 export const LOCALE_CONFIGS: Record<Locale, LocaleConfig> = {
   en: {

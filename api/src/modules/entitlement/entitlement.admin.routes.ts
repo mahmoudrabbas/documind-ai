@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { authorize } from "../../common/middlewares/authorize.middleware.js";
+import { requirePlatformTenant } from "../../common/middlewares/platformTenant.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./entitlement.admin.controller.js";
 
 const router = Router();
+router.use(authenticate, requirePlatformTenant);
 
 /**
  * @openapi
@@ -76,7 +78,6 @@ const router = Router();
  */
 router.get(
   "/overrides",
-  authenticate,
   requirePermission(Permission.BILLING_MANAGE),
   authorize("SUPER_ADMIN"),
   listOverridesController,
@@ -149,7 +150,6 @@ router.get(
  */
 router.put(
   "/overrides/:tenantId",
-  authenticate,
   requirePermission(Permission.BILLING_MANAGE),
   authorize("SUPER_ADMIN"),
   setOverrideController,
@@ -210,7 +210,6 @@ router.put(
  */
 router.delete(
   "/overrides/:tenantId/:dimension",
-  authenticate,
   requirePermission(Permission.BILLING_MANAGE),
   authorize("SUPER_ADMIN"),
   removeOverrideController,
@@ -268,7 +267,6 @@ router.delete(
  */
 router.post(
   "/reconcile",
-  authenticate,
   requirePermission(Permission.BILLING_MANAGE),
   authorize("SUPER_ADMIN"),
   reconcileController,
@@ -338,7 +336,6 @@ router.post(
  */
 router.get(
   "/reconcile/reports",
-  authenticate,
   requirePermission(Permission.BILLING_MANAGE),
   authorize("SUPER_ADMIN"),
   listReconciliationReportsController,

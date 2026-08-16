@@ -256,6 +256,52 @@ describe("AnswerWriterAgentExecutor", () => {
     assert.deepEqual(authorizeCalls, [DOC_ID]);
   });
 
+  it("caps Answer Writer generation by the remaining runtime token budget", async () => {
+    const { answerWriter, generateCalls } = fakeAnswerWriter();
+    const { deps } = makeDeps({ answerWriter });
+
+    const result = await makeExecutor(deps).execute(
+      runContext({ maxTokens: 300 }),
+      {
+        ...VALID_INPUT,
+        maxTokens: 1_024,
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(generateCalls.length, 1);
+
+    const generateInput = generateCalls[0] as {
+      maxTokens?: number;
+      maxTotalTokens?: number;
+    };
+    assert.equal(generateInput.maxTokens, 1_024);
+    assert.equal(generateInput.maxTotalTokens, 300);
+  });
+
+  it("preserves the configured Answer Writer limit when runtime budget is larger", async () => {
+    const { answerWriter, generateCalls } = fakeAnswerWriter();
+    const { deps } = makeDeps({ answerWriter });
+
+    const result = await makeExecutor(deps).execute(
+      runContext({ maxTokens: 1_000 }),
+      {
+        ...VALID_INPUT,
+        maxTokens: 256,
+      },
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(generateCalls.length, 1);
+
+    const generateInput = generateCalls[0] as {
+      maxTokens?: number;
+      maxTotalTokens?: number;
+    };
+    assert.equal(generateInput.maxTokens, 256);
+    assert.equal(generateInput.maxTotalTokens, 1_000);
+  });
+
   it("accepts stale allowAiUse metadata after active-policy authorization and drops invalid status", async () => {
     const { deps, generateCalls } = makeDeps({
       loadChunksByIds: async () => [

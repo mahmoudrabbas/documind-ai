@@ -107,6 +107,9 @@ const STATUS_WORD_MAP: Record<string, BadgeStatus> = {
   allowed: "success",
   clean: "success",
   processed: "success",
+  /* Audit-log outcomes (`SUCCESS` / `FAILURE` / `DENIED`). */
+  success: "success",
+  succeeded: "success",
 
   processing: "warning",
   pending: "warning",
@@ -115,6 +118,7 @@ const STATUS_WORD_MAP: Record<string, BadgeStatus> = {
   reviewing: "warning",
 
   failed: "error",
+  failure: "error",
   refused: "error",
   error: "error",
   disconnected: "error",

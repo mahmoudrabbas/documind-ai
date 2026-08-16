@@ -53,9 +53,20 @@ describe("user custom-role workflows", () => {
     await inviteUserWithRole({ name: "User", email: user.email, role: "EMPLOYEE" });
     expect(apiClient).toHaveBeenCalledWith("/users", {
       method: "POST",
-      body: { name: "User", email: user.email, role: "EMPLOYEE" },
+      body: { name: "User", email: user.email, role: "EMPLOYEE", departmentId: null },
     });
     expect(assignRole).not.toHaveBeenCalled();
+  });
+
+  it("sends departmentId independently from base or custom role selection", async () => {
+    apiClient.mockResolvedValue({ data: { user: { ...user, departmentId: "department-1" } } });
+    assignRole.mockResolvedValue({ data: { changed: true } });
+    await inviteUserWithRole({ name: "User", email: user.email, role, departmentId: "department-1" });
+    expect(apiClient).toHaveBeenCalledWith("/users", {
+      method: "POST",
+      body: { name: "User", email: user.email, role: "EMPLOYEE", departmentId: "department-1" },
+    });
+    expect(assignRole).toHaveBeenCalledWith(role.id, user.id, role.version);
   });
 
   it("invites then assigns a custom role with the observed version", async () => {

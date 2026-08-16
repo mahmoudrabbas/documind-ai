@@ -51,6 +51,13 @@ export interface I18nContextValue {
     count: number,
     params?: Record<string, string>,
   ) => string;
-  /** Switch the active locale (persists to cookie). */
-  setLocale: (locale: Locale) => void;
+  /**
+   * Switch the active locale (persists to cookie).
+   *
+   * `explicit` defaults to `true`, meaning the user chose this language
+   * themselves and nothing should override it. Pass `false` when the locale
+   * is derived from configuration — a tenant's `defaultLanguage`, say — so
+   * that later changes to that configuration can still move the user.
+   */
+  setLocale: (locale: Locale, options?: { explicit?: boolean }) => void;
 }

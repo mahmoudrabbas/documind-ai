@@ -230,29 +230,66 @@ export function CopilotPanel() {
             <div className="space-y-3">
               <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
                 <p className="text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">
-                  {t("copilot.clarify.title")}
+                  {clarify.kind === "capability_unavailable"
+                    ? t("copilot.clarify.capabilityUnavailableTitle")
+                    : t("copilot.clarify.title")}
                 </p>
                 <p className="mt-1 text-body-md text-on-surface">
                   {clarify.message}
                 </p>
               </div>
 
-              {clarify.suggestedFlows.length > 0 ? (
+              {clarify.recommendedFlowId ? (
+                <div>
+                  <p className="text-label-sm font-semibold text-primary">
+                    {t("copilot.clarify.recommendedTitle")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    className="mt-2 w-full justify-between"
+                    onClick={() => void startGuide(clarify.recommendedFlowId!)}
+                  >
+                    <span>
+                      {flowTitleById.get(clarify.recommendedFlowId) ??
+                        clarify.recommendedFlowId}
+                    </span>
+                    <span
+                      className="material-symbols-outlined text-[20px] rtl:rotate-180"
+                      aria-hidden="true"
+                    >
+                      arrow_forward
+                    </span>
+                  </Button>
+                </div>
+              ) : null}
+
+              {clarify.suggestedFlows.length > 0 &&
+              clarify.suggestedFlows.some(
+                (flowId) => flowId !== clarify.recommendedFlowId,
+              ) ? (
                 <div>
                   <p className="text-label-sm font-semibold text-on-surface-variant">
-                    {t("copilot.clarify.flowsHeading")}
+                    {clarify.recommendedFlowId
+                      ? t("copilot.clarify.otherFlowsHeading")
+                      : t("copilot.clarify.flowsHeading")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {clarify.suggestedFlows.map((flowId) => (
-                      <button
-                        key={flowId}
-                        type="button"
-                        onClick={() => void startGuide(flowId)}
-                        className="rounded-full border border-outline-variant/40 bg-surface-bright px-3 py-1.5 text-label-md text-on-surface transition-colors hover:border-primary hover:text-primary"
-                      >
-                        {flowTitleById.get(flowId) ?? flowId}
-                      </button>
-                    ))}
+                    {clarify.suggestedFlows
+                      .filter(
+                        (flowId) => flowId !== clarify.recommendedFlowId,
+                      )
+                      .map((flowId) => (
+                        <button
+                          key={flowId}
+                          type="button"
+                          onClick={() => void startGuide(flowId)}
+                          className="rounded-full border border-outline-variant/40 bg-surface-bright px-3 py-1.5 text-label-md text-on-surface transition-colors hover:border-primary hover:text-primary"
+                        >
+                          {flowTitleById.get(flowId) ?? flowId}
+                        </button>
+                      ))}
                   </div>
                 </div>
               ) : null}

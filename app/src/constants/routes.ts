@@ -2,7 +2,6 @@ import {
   Permission,
   type PermissionValue,
 } from "@/types/api/permissions.types";
-import { isStandardUserRole } from "@/lib/role-home";
 import { PLATFORM_NAV_ITEMS } from "@/constants/platform-navigation";
 
 export const ROLES = {
@@ -174,12 +173,10 @@ export function filterNavigationLinks(
   links: readonly NavLink[],
   permissionStatus: "loading" | "idle" | "ready" | "denied" | "error" | "maintenance",
   can: (permission: PermissionValue) => boolean,
-  role?: string,
+  _role?: string,
 ): readonly NavLink[] {
   if (permissionStatus !== "ready") return [];
-  return links.filter(
-    (link) =>
-      link.requiredPermissions.every((permission) => can(permission)) &&
-      (!isStandardUserRole(role ?? "") || link.href !== "/dashboard"),
+  return links.filter((link) =>
+    link.requiredPermissions.every((permission) => can(permission)),
   );
 }

@@ -43,6 +43,9 @@ export interface UserCreateInput {
   emailVerified: boolean;
   emailVerifiedAt: Date | null;
   customRoleId?: string;
+  employeeProfile?: {
+    departmentId?: string | null;
+  };
 }
 
 export type PopulatedCustomRoleRecord = {
@@ -66,6 +69,10 @@ export type UserSingleRecord = {
   passwordResetTokenHash?: string | null;
   passwordResetExpiresAt?: Date | null;
   customRoleId?: mongoose.Types.ObjectId | PopulatedCustomRoleRecord | null;
+  employeeProfile?: {
+    departmentId?: mongoose.Types.ObjectId | { _id: mongoose.Types.ObjectId; name: string } | null;
+    department?: string;
+  };
   sessionVersion?: number;
   createdAt?: Date;
 };

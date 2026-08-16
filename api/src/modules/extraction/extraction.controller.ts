@@ -4,6 +4,23 @@ import DocumentModel from "../../db/models/document.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { Types } from "mongoose";
+import { authorizePermission } from "../permissions/permissions.authorization.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
+import { buildDocumentPermissionResource } from "../documents/documents.permissionResource.js";
+
+async function authorizeDocumentGrant(
+  tenantId: string,
+  actorId: string,
+  permission: typeof Permission.DOCUMENTS_READ | typeof Permission.DOCUMENTS_OCR_PROCESS,
+  doc: NonNullable<Awaited<ReturnType<typeof DocumentModel.findOne>>>,
+): Promise<void> {
+  await authorizePermission(
+    { tenantId, actorId },
+    permission,
+    await buildDocumentPermissionResource(tenantId, doc),
+  );
+}
 
 export async function getDocumentExtractionStatusController(
   req: Request,
@@ -31,6 +48,7 @@ export async function getDocumentExtractionStatusController(
     if (!doc) {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found or access denied");
     }
+    await authorizeDocumentGrant(tenantId, auth.userId, Permission.DOCUMENTS_READ, doc);
 
     const versionQuery = req.query.version;
     let version = doc.version;
@@ -97,6 +115,12 @@ export async function retriggerDocumentExtractionController(
     if (!doc) {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found or access denied");
     }
+    await authorizeDocumentGrant(tenantId, auth.userId, Permission.DOCUMENTS_OCR_PROCESS, doc);
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+      { tenantId, actorId: auth.userId },
+      documentId,
+      "reprocess",
+    );
 
     const versionVal = req.body?.version || req.query?.version;
     let version = doc.version;

@@ -243,7 +243,7 @@ const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
  *       403:
  *         description: Insufficient permissions
  */
-router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
+router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE, { allowScoped: true }), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
 router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentsController);
 
@@ -313,7 +313,7 @@ router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUME
  *       403:
  *         description: Insufficient permissions
  */
-router.get("/upload-options", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), uploadOptionsController);
+router.get("/upload-options", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE, { allowScoped: true }), uploadOptionsController);
 
 router.post("/access-policy/batch/preview", authenticate, tenantScoping, requirePolicyManagement, batchPreviewPolicyController);
 router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePolicyManagement, batchApplyPolicyController);
@@ -328,7 +328,7 @@ router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePoli
 
 router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentExtractionStatusController);
 
-router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
+router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
 
 router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentController);
 
@@ -355,16 +355,16 @@ router.get(
 
 router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentVersionsController);
 
-router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
+router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE, { allowScoped: true }), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
 
-router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), updateDocumentMetadataController);
+router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE, { allowScoped: true }), updateDocumentMetadataController);
 
-router.post("/:id/archive", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE), archiveDocumentController);
+router.post("/:id/archive", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE, { allowScoped: true }), archiveDocumentController);
 
-router.post("/:id/restore", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE), restoreDocumentController);
+router.post("/:id/restore", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE, { allowScoped: true }), restoreDocumentController);
 
-router.delete("/:id/permanent", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), permanentDeleteDocumentController);
+router.delete("/:id/permanent", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE, { allowScoped: true }), permanentDeleteDocumentController);
 
-router.delete("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), softDeleteDocumentController);
+router.delete("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE, { allowScoped: true }), softDeleteDocumentController);
 
 export default router;

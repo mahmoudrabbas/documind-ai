@@ -4,6 +4,9 @@ import { classifierDecisionSchema } from "../action/action.contracts.js";
 import {
   matchFlowToUtterance,
   getAllFlowIds,
+  hasHowToFraming,
+  hasNavFraming,
+  isExplicitNoGuide,
 } from "../guide/guideIntent.js";
 
 const CLASSIFIER_SYSTEM_PROMPT = `
@@ -170,10 +173,13 @@ export class CopilotClassifier {
       return { mode: "clarify", confidence: 0.9, flowIdHint: null, toolNameHint: null, reasonCode: "injection_guard" };
     }
 
-    const guideKeywords = [
-      "how do i", "how can i", "where is", "show me", "guide me", "walk me through",
-      "كيف", "أين", "كيف يمكنني", "أين أجد", "أرشدني",
-    ];
+    // "do not guide me through the UI" is a request for direct execution, not a
+    // guide. Route it to the real tool when one exists; otherwise surface an
+    // unsupported-capability clarify instead of a generic "could you clarify?".
+    if (isExplicitNoGuide(lower)) {
+      return this.explicitNoGuideDecision(lower);
+    }
+
     const actionKeywords = [
       "delete", "archive", "invite", "create", "update", "change", "remove", "add",
       "احذف", "أرشف", "ادعُ", "أنشئ", "حدث", "غير", "أزل", "أضف",
@@ -183,7 +189,7 @@ export class CopilotClassifier {
       "ساعدني", "يمكنك", "أريد أن", "أود أن",
     ];
 
-    const hasGuide = guideKeywords.some((k) => lower.includes(k));
+    const hasGuide = hasHowToFraming(utterance) || hasNavFraming(utterance);
     const hasAction = actionKeywords.some((k) => lower.includes(k));
     const hasAmbiguous = ambiguousKeywords.some((k) => lower.includes(k));
 
@@ -246,6 +252,33 @@ export class CopilotClassifier {
     return null;
   }
 
+  /**
+   * Decision for an explicit "do not guide me" request. These are direct
+   * execution requests: run the matching action tool when one exists, otherwise
+   * report the capability as unavailable (with the matching flow as a hint) so
+   * the user can complete the task step by step instead of being met with a
+   * generic clarify.
+   */
+  private explicitNoGuideDecision(lower: string): ClassifierDecision {
+    const toolHint = this.guessToolName(lower);
+    if (toolHint) {
+      return {
+        mode: "action",
+        confidence: 0.9,
+        flowIdHint: null,
+        toolNameHint: toolHint,
+        reasonCode: "direct_execution",
+      };
+    }
+    return {
+      mode: "clarify",
+      confidence: 0.95,
+      flowIdHint: this.guessFlowId(lower),
+      toolNameHint: null,
+      reasonCode: "capability_unavailable",
+    };
+  }
+
   private postProcessDecision(
     decision: ClassifierDecision,
     utterance: string,
@@ -261,6 +294,13 @@ export class CopilotClassifier {
 
     if (hasInjectionKeywords(lower)) {
       return { mode: "clarify", confidence: 0.9, flowIdHint: null, toolNameHint: null, reasonCode: "injection_guard" };
+    }
+
+    // Same direct-execution contract as the fallback: an explicit no-guide
+    // request must never reach the guide agent, regardless of what the LLM
+    // decided ("create the role X for me — do not guide me through the UI").
+    if (isExplicitNoGuide(lower)) {
+      return this.explicitNoGuideDecision(lower);
     }
 
     if (decision.mode === "action" && decision.toolNameHint && destructiveTools.includes(decision.toolNameHint) && hasAmbiguous) {

@@ -3,7 +3,7 @@ import { authenticate } from "../../common/middlewares/authenticate.middleware.j
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
-import { createRateLimiter } from "../../common/middlewares/rateLimit.middleware.js";
+import { invitationRateLimiters } from "./users.inviteRateLimit.js";
 import {
   inviteUserController,
   listUsersController,
@@ -23,11 +23,12 @@ import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.m
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 
 const router = Router();
-const invitationRateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-  message: "Too many invitation attempts. Please try again later.",
-});
+
+// Invitation endpoints use separate rate-limit buckets per operation so that
+// the low-risk automatic validate-invite read never consumes the quota of the
+// security-sensitive set-password-from-invite or the email-abuse-sensitive
+// resend-invitation. Each limiter carries its own Redis store prefix and
+// hashed key scope; see users.inviteRateLimit.ts for the definitions.
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ const employeeInviteGuard = createEntitlementGuard(svc, {
   amount: 1,
   failMode: "fail-closed",
 });
-const requireUserUpdate = requirePermission(Permission.USERS_UPDATE);
+const requireUserUpdate = requirePermission(Permission.USERS_UPDATE, { allowScoped: true });
 const requireRoleAssignment = requirePermission(Permission.USERS_ASSIGN_ROLE);
 const validateInvite: import("express").RequestHandler = (req, _res, next) => {
   try {
@@ -126,6 +127,16 @@ const requireRoleAssignmentForAdminInvite: import("express").RequestHandler =
  *           type: string
  *           enum: [COMPANY_ADMIN, EMPLOYEE]
  *         description: Filter by base role
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by account status
+ *       - in: query
+ *         name: departmentId
+ *         schema:
+ *           type: string
+ *         description: Filter by canonical tenant department id
  *     responses:
  *       200:
  *         description: Paginated list of users
@@ -182,7 +193,7 @@ router.get(
   "/",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.USERS_READ),
+  requirePermission(Permission.USERS_READ, { allowScoped: true }),
   validateList,
   listUsersController,
 );
@@ -220,6 +231,10 @@ router.get(
  *                 type: string
  *                 enum: [active, pending, pending_email_verification, disabled]
  *                 description: New user status
+ *               departmentId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Active same-tenant department id, or null to clear
  *     responses:
  *       200:
  *         description: User updated successfully
@@ -292,6 +307,10 @@ router.patch(
  *               customRoleId:
  *                 type: string
  *                 description: Optional custom role id to assign
+ *               departmentId:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Active same-tenant department id
  *     responses:
  *       201:
  *         description: Invitation created
@@ -392,7 +411,7 @@ router.post(
   authenticate,
   tenantScoping,
   requirePermission(Permission.USERS_CREATE),
-  invitationRateLimiter,
+  invitationRateLimiters.resendInvitation,
   employeeInviteGuard,
   resendInvitationController,
 );
@@ -551,7 +570,7 @@ router.delete(
  */
 router.post(
   "/set-password-from-invite",
-  invitationRateLimiter,
+  invitationRateLimiters.setPasswordFromInvite,
   setPasswordFromInviteController,
 );
 /**
@@ -608,7 +627,7 @@ router.post(
  */
 router.post(
   "/validate-invite",
-  invitationRateLimiter,
+  invitationRateLimiters.validateInvite,
   getInviteDetailsController,
 );
 

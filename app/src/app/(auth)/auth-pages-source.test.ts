@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const authDir = new URL("./", import.meta.url);
 const verifyEmailDir = new URL("../verify-email/", authDir);
 const authComponentsDir = new URL("../../components/auth/", authDir);
+const splitShellUrl = new URL("auth-split-shell.tsx", authComponentsDir);
 
 async function readSource(relativePath: string, base = authDir) {
   return readFile(new URL(relativePath, base), "utf8");
@@ -11,13 +12,17 @@ async function readSource(relativePath: string, base = authDir) {
 
 describe("auth page source", () => {
   it("keeps the login form fields and in-memory token behavior", async () => {
-    const source = await readSource("login/page.tsx");
+    const [source, shell] = await Promise.all([
+      readSource("login/page.tsx"),
+      readFile(splitShellUrl, "utf8"),
+    ]);
 
     expect(source).toContain('name="companySlug"');
     expect(source).toContain('name="email"');
     expect(source).toContain('name="password"');
     expect(source).toContain('credentials: "include"');
-    expect(source).toContain('href="/"');
+    expect(source).toContain("<AuthSplitShell");
+    expect(shell).toContain('href="/"');
     expect(source).toContain('t("auth.backToHome")');
     expect(source).toContain('href={resendVerificationHref}');
     expect(source).toContain("rateLimitRetryAfter !== null");
@@ -28,7 +33,10 @@ describe("auth page source", () => {
   });
 
   it("keeps the register form fields available", async () => {
-    const source = await readSource("register/page.tsx");
+    const [source, shell] = await Promise.all([
+      readSource("register/page.tsx"),
+      readFile(splitShellUrl, "utf8"),
+    ]);
 
     for (const field of [
       "companyName",
@@ -40,7 +48,8 @@ describe("auth page source", () => {
     ]) {
       expect(source).toContain(`name="${field}"`);
     }
-    expect(source).toContain('href="/"');
+    expect(source).toContain("<AuthSplitShell");
+    expect(shell).toContain('href="/"');
     expect(source).toContain('t("auth.backToHome")');
     expect(source).toContain("rateLimitRetryAfter !== null");
   });

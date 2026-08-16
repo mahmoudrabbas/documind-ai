@@ -20,13 +20,21 @@ export {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   LOCALE_COOKIE_NAME,
+  LOCALE_EXPLICIT_COOKIE_NAME,
   LOCALE_CONFIGS,
   getDirection,
   isValidLocale,
 } from "./i18n.config";
 
 /* ── utils ────────────────────────────────────────────────────────── */
-export { t, getLocaleFromCookie, setLocaleCookie } from "./i18n.utils";
+export {
+  t,
+  getLocaleFromCookie,
+  hasExplicitLocalePreference,
+  setLocaleCookie,
+  setExplicitLocalePreference,
+  clearExplicitLocalePreference,
+} from "./i18n.utils";
 
 /* ── content direction ───────────────────────────────────────────── */
 export {

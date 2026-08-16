@@ -100,14 +100,28 @@ describe("permission-driven navigation", () => {
     expect(links.map((link) => link.href)).not.toContain("/dashboard");
   });
 
-  it("hides the System Overview link for standard employees even with analytics access", () => {
+  it("shows analytics navigation to Employees with effective analytics access", () => {
     const links = filterNavigationLinks(
       TENANT_SIDEBAR_LINKS,
       "ready",
       withPermissions(Permission.ANALYTICS_READ, Permission.DOCUMENTS_READ),
       "EMPLOYEE",
     );
-    expect(links.map((link) => link.href)).toEqual(["/dashboard/documents", "/dashboard/analytics"]);
+    expect(links.map((link) => link.href)).toEqual([
+      "/dashboard",
+      "/dashboard/documents",
+      "/dashboard/analytics",
+    ]);
+  });
+
+  it("hides analytics navigation from Employees without effective analytics access", () => {
+    const links = filterNavigationLinks(
+      TENANT_SIDEBAR_LINKS,
+      "ready",
+      withPermissions(Permission.DOCUMENTS_READ),
+      "EMPLOYEE",
+    );
+    expect(links.map((link) => link.href)).toEqual(["/dashboard/documents"]);
   });
 
   it("keeps the System Overview link for company admins with analytics access", () => {

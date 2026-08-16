@@ -39,16 +39,25 @@ function completion(content: unknown, provider = "scripted-verifier"): ModelComp
   };
 }
 
-function scriptedModel(script: Script): ModelAdapter & { calls: Payload[] } {
+function scriptedModel(script: Script): ModelAdapter & {
+  calls: Payload[];
+  maxTokensByCall: Array<number | undefined>;
+} {
   const calls: Payload[] = [];
+  const maxTokensByCall: Array<number | undefined> = [];
+
   return {
     providerKey: "scripted-verifier",
     calls,
+    maxTokensByCall,
     async complete(params) {
       assert.equal(params.temperature, 0);
       assert.deepEqual(params.structuredOutput, { type: "json_object" });
+
       const payload = payloadFrom(params.messages.at(-1)?.content ?? "");
       calls.push(payload);
+      maxTokensByCall.push(params.maxTokens);
+
       const value = script(payload, calls.length);
       if (value instanceof Error) throw value;
       return completion(value);
@@ -308,6 +317,118 @@ test("scripted incomplete variations have deterministic safe release semantics a
     assert.doesNotMatch(result.releasedAnswerText ?? "", /undefined|null/u);
     assert.ok(result.claimResults.some((claim) => claim.state === "UNKNOWN") || result.claimResults.every((claim) => claim.state === "SUPPORTED"));
   }
+});
+
+test("finite semantic budget lowers the provider completion allowance", async () => {
+  const model = scriptedModel(supportAll);
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Employees receive 21 days of annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Employees receive 21 days of annual leave." }],
+    maxTokens: 700,
+  });
+
+  assert.ok(model.maxTokensByCall.length >= 1);
+  assert.ok(
+    (model.maxTokensByCall[0] ?? 0) > 0 &&
+      (model.maxTokensByCall[0] ?? 0) < 700,
+    `expected provider completion budget below total budget, got ${String(model.maxTokensByCall[0])}`,
+  );
+  assert.ok(result.claimResults.length > 0);
+});
+
+test("actual usage from an earlier pass reduces the budget available to the next pass", async () => {
+  const calls: Payload[] = [];
+  const maxTokensByCall: Array<number | undefined> = [];
+  let call = 0;
+
+  const model: ModelAdapter = {
+    providerKey: "budget-scripted",
+    async complete(params) {
+      const payload = payloadFrom(params.messages.at(-1)?.content ?? "");
+      calls.push(payload);
+      maxTokensByCall.push(params.maxTokens);
+      call += 1;
+
+      const response = completion(judgments(payload));
+      return {
+        ...response,
+        usage: {
+          promptTokens: 50,
+          completionTokens: 50,
+          totalTokens: call === 1 ? 250 : 5,
+        },
+      };
+    },
+  };
+
+  await new CitationSemanticVerificationService(model).verify({
+    answerText: "Employees receive 21 days of annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Employees receive 21 days of annual leave." }],
+    maxTokens: 1_000,
+  });
+
+  assert.equal(calls.length, 2, "initial and final verification should run");
+  assert.ok(
+    (maxTokensByCall[1] ?? 0) < (maxTokensByCall[0] ?? 0),
+    `expected second call budget ${String(maxTokensByCall[1])} < first ${String(maxTokensByCall[0])}`,
+  );
+});
+
+test("exhausted shared budget prevents additional semantic provider calls and fails closed", async () => {
+  let calls = 0;
+
+  const model: ModelAdapter = {
+    providerKey: "budget-exhaustion",
+    async complete(params) {
+      calls += 1;
+      const payload = payloadFrom(params.messages.at(-1)?.content ?? "");
+      const response = completion(judgments(payload));
+
+      return {
+        ...response,
+        usage: {
+          promptTokens: 350,
+          completionTokens: 350,
+          totalTokens: 700,
+        },
+      };
+    },
+  };
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Employees receive 21 days of annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Employees receive 21 days of annual leave." }],
+    maxTokens: 900,
+  });
+
+  assert.equal(calls, 1, "final verification must not start after the shared budget is exhausted");
+  assert.equal(result.releasedAnswerText, undefined);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
+});
+
+test("budget too small for the semantic prompt makes zero provider calls and leaves claims unresolved", async () => {
+  let calls = 0;
+
+  const model: ModelAdapter = {
+    providerKey: "budget-too-small",
+    async complete() {
+      calls += 1;
+      throw new Error("provider must not be called");
+    },
+  };
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Employees receive 21 days of annual leave.",
+    evidence,
+    maxTokens: 1,
+  });
+
+  assert.equal(calls, 0);
+  assert.deepEqual(result.claimResults.map((claim) => claim.state), ["UNKNOWN"]);
+  assert.deepEqual(result.unknownClaims, ["Employees receive 21 days of annual leave."]);
+  assert.equal(result.releasedAnswerText, undefined);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
 });
 
 async function assertProviderError(error: Error, expectedCode: string): Promise<void> {

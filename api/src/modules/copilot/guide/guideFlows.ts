@@ -12,7 +12,7 @@ function step(
   completionEvent: "click" | "route_change" | "value_present" | "manual" = "click",
   routeMatch?: string,
   optional = false,
-  fallbackOnMissing: "skip" | "stop" | "wait" = "skip",
+  fallbackOnMissing: "skip" | "stop" | "wait" | "wait-stop" = "skip",
   waitMs?: number,
 ): GuideStepTemplate {
   return {
@@ -837,6 +837,10 @@ export const GUIDE_FLOWS: readonly GuideFlow[] = [
         "top",
         "click",
         "click",
+        undefined,
+        undefined,
+        "wait-stop",
+        8000,
       ),
       step(
         "step-3",
@@ -847,6 +851,10 @@ export const GUIDE_FLOWS: readonly GuideFlow[] = [
         "top",
         "input",
         "value_present",
+        undefined,
+        undefined,
+        "wait-stop",
+        8000,
       ),
       step(
         "step-4",
@@ -857,6 +865,10 @@ export const GUIDE_FLOWS: readonly GuideFlow[] = [
         "top",
         "click",
         "click",
+        undefined,
+        undefined,
+        "wait-stop",
+        8000,
       ),
     ],
   },

@@ -24,6 +24,7 @@ import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
+import { mbToGb } from "@/lib/storage";
 import {
   classifyCheckoutError,
   getCurrentPackageId,
@@ -534,7 +535,7 @@ function EntitlementList({ pkg }: { pkg: PublicPackage }) {
     const count = { count: value.toLocaleString(intlLocale) };
     switch (key) {
       case "storageMb": {
-        const gbVal = Math.round(value % 1000 === 0 ? value / 1000 : value / 1024);
+        const gbVal = Math.round(mbToGb(value));
         return value >= 1000
           ? t("billing.entitlementStorageGb", { value: String(gbVal) })
           : t("billing.entitlementStorageMb", { value: String(value) });

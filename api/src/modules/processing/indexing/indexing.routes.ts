@@ -166,7 +166,7 @@ router.get(
   "/:id/index/status",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   getIndexStatusController,
 );
 

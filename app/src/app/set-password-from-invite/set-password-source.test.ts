@@ -26,4 +26,14 @@ describe("invite password page source", () => {
     expect(source).toContain("AuthPageShell");
     expect(source).toContain('t("auth.showPassword")');
   });
+
+  it("performs a single validation request on page load with stable deps", async () => {
+    const source = await readFile(sourceUrl, "utf8");
+    const validateCallCount = source.split('"/users/validate-invite"').length - 1;
+    expect(validateCallCount).toBe(1);
+    // The validation effect depends only on the memoized token and the
+    // stable `t` translation function, so no render loop can re-fire it.
+    expect(source).toMatch(/},\s*\[token,\s*t\]\);/);
+    expect(source).not.toContain("router.push(\"/login\")");
+  });
 });

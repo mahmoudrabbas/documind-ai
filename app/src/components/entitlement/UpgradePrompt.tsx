@@ -115,14 +115,21 @@ export function UpgradePrompt({
   const isCritical = ratio >= 0.95;
   const isExceeded = ratio >= 1;
   const label = codeLabel(t, "usage.dimension", dimension);
-  const percent = Math.min(Math.round(ratio * 100), 100);
+
+  const rawPercent = Math.min(ratio * 100, 100);
+  const percent =
+    rawPercent >= 100
+      ? "100"
+      : rawPercent >= 99
+        ? rawPercent.toFixed(1)
+        : String(Math.round(rawPercent));
 
   // ── Container classes ───────────────────────────────────────────────
   const containerClasses = cn(
-    "flex items-start justify-between gap-4 rounded-xl border p-4",
+    "flex items-start justify-between gap-5 rounded-2xl border p-5 shadow-sm",
     isCritical
-      ? "border-error/20 bg-error-container text-on-error-container"
-      : "border-warning/20 bg-warning-container text-on-warning-container",
+      ? "border-error/25 bg-error-container/55"
+      : "border-warning/30 bg-warning-container/55",
     className,
   );
 
@@ -132,7 +139,7 @@ export function UpgradePrompt({
         {/* Title */}
         <p
           className={cn(
-            "text-label-md font-semibold",
+            "text-body-md font-bold",
             isCritical ? "text-on-error-container" : "text-on-warning-container",
           )}
         >
@@ -145,7 +152,7 @@ export function UpgradePrompt({
         {/* Description */}
         <p
           className={cn(
-            "mt-1 text-body-sm",
+            "mt-1.5 max-w-xl text-body-sm leading-relaxed",
             isCritical
               ? "text-on-error-container/80"
               : "text-on-warning-container/80",
@@ -154,14 +161,14 @@ export function UpgradePrompt({
           {description ??
             (isExceeded
               ? t("entitlement.upgrade.limitReachedDescription", {
-                  percent: String(percent),
+                  percent,
                   /* Casing only — the label is already translated, and
                      `toLowerCase` is a no-op for Arabic script. Keeps the
                      English sentence reading "your documents quota". */
                   dimension: label.toLowerCase(),
                 })
               : t("entitlement.upgrade.nearlyFullDescription", {
-                  percent: String(percent),
+                  percent,
                   dimension: label.toLowerCase(),
                 }))}
         </p>
@@ -175,7 +182,7 @@ export function UpgradePrompt({
           aria-valuemax={limit}
           aria-label={t("entitlement.upgrade.usageAria", {
             dimension: label,
-            percent: String(percent),
+            percent,
           })}
         >
           <div
@@ -183,7 +190,7 @@ export function UpgradePrompt({
               "h-full rounded-full transition-all duration-300",
               isCritical ? "bg-error" : "bg-warning",
             )}
-            style={{ width: `${Math.min(percent, 100)}%` }}
+            style={{ width: `${rawPercent}%` }}
           />
         </div>
       </div>
@@ -192,9 +199,10 @@ export function UpgradePrompt({
       <div className="shrink-0 self-center">
         {hasBillingPermission ? (
           <Button
-            variant={isCritical ? "danger" : "warning"}
+            variant="primary"
             size="sm"
             onClick={onUpgradeClick}
+            className="min-w-24 rounded-xl px-4 font-bold shadow-sm"
           >
             {ctaLabel ?? t("entitlement.upgrade.cta")}
           </Button>

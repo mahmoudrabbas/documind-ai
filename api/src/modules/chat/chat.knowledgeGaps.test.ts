@@ -3,6 +3,8 @@ import test, { after, before, beforeEach } from "node:test";
 import mongoose from "mongoose";
 import { connectDB, disconnectDB } from "../../db/connection.js";
 import KnowledgeGapModel from "../../db/models/knowledgeGap.model.js";
+import ConversationModel from "../../db/models/conversation.model.js";
+import MessageModel from "../../db/models/message.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { disconnectRedis } from "../../db/redis.js";
@@ -23,6 +25,8 @@ beforeEach(async () => {
     TenantModel.deleteMany({}),
     UserModel.deleteMany({}),
     KnowledgeGapModel.deleteMany({}),
+    ConversationModel.deleteMany({}),
+    MessageModel.deleteMany({}),
   ]);
 });
 
@@ -44,9 +48,15 @@ test("thumbs-down feedback still creates a negative-feedback knowledge gap", asy
     emailVerifiedAt: new Date(),
   });
 
+  const conversation = await ConversationModel.create({
+    tenantId: tenant._id, userId: user._id, title: "Gap conversation", lastMessageAt: new Date(), messageCount: 1,
+  });
+  const message = await MessageModel.create({
+    tenantId: tenant._id, conversationId: conversation._id, role: "assistant", content: "Gap answer", sequenceNumber: 1,
+  });
   await new FeedbackService().submitFeedback(tenant.id, user.id, {
-    messageId: new mongoose.Types.ObjectId().toString(),
-    conversationId: new mongoose.Types.ObjectId().toString(),
+    messageId: message.id,
+    conversationId: conversation.id,
     rating: "thumbs_down",
     category: "inaccurate",
   });

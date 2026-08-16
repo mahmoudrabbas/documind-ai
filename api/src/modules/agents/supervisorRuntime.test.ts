@@ -10,6 +10,7 @@ import {
   AGENT_OUTPUT_SCHEMA_INVALID,
   AGENT_STATE_TRANSITION_INVALID,
   AGENT_TOOL_PERMISSION_DENIED,
+  AGENT_TOTAL_TOKEN_BUDGET_EXCEEDED,
   AGENT_UNREGISTERED_TOOL,
   SUPERVISOR_DECISION_INVALID,
 } from "../../common/errors/errorCodes.js";
@@ -124,6 +125,7 @@ interface HarnessOptions {
   intentOutput?: unknown;
   toolRegistry?: ToolRegistry;
   intentTokensUsed?: number;
+  onIntentMaxTokens?: (maxTokens: number | undefined) => void;
 }
 
 function buildHarness(
@@ -148,19 +150,22 @@ function buildHarness(
       capabilities: ["read", "search"] as const,
       inputSchema: z.object({ query: z.string().optional() }),
       outputSchema: z.object({ intent: z.string() }),
-      execute: async () => ({
-        ok: true,
-        status: "completed",
-        output:
-          options.intentOutput === undefined
-            ? { intent: "general" }
-            : options.intentOutput,
-        latencyMs: 0,
-        metadata:
-          options.intentTokensUsed === undefined
-            ? undefined
-            : { tokensUsed: options.intentTokensUsed },
-      }),
+      execute: async (context) => {
+        options.onIntentMaxTokens?.(context.maxTokens);
+        return {
+          ok: true,
+          status: "completed",
+          output:
+            options.intentOutput === undefined
+              ? { intent: "general" }
+              : options.intentOutput,
+          latencyMs: 0,
+          metadata:
+            options.intentTokensUsed === undefined
+              ? undefined
+              : { tokensUsed: options.intentTokensUsed },
+        };
+      },
     };
     executorRegistry.register(contract);
   }
@@ -280,6 +285,57 @@ describe("SupervisorRuntime", () => {
     assert.equal(result.status, "failed");
     assert.equal(result.error?.code, "AGENT_CUSTOM_FAILURE");
     assert.equal(result.error?.message, "cannot proceed");
+  });
+
+  it("passes only the remaining total-token budget to specialized agents", async () => {
+    const { model } = scriptedModel([
+      handoffDecision("intent-query-agent"),
+    ]);
+    let observedMaxTokens: number | undefined;
+
+    const { runtime } = buildHarness(model, {
+      intentTokensUsed: 7,
+      onIntentMaxTokens: (maxTokens) => {
+        observedMaxTokens = maxTokens;
+      },
+    });
+
+    const result = await runtime.execute(
+      baseRunInput({
+        budgetLimits: {
+          maxTotalTokens: 35,
+        },
+      }),
+    );
+
+    // The supervisor decision consumes 30 tokens first, so the intent
+    // executor must receive only the 5 tokens still available to the run.
+    assert.equal(observedMaxTokens, 5);
+    assert.equal(result.status, "failed");
+    assert.equal(result.error?.code, AGENT_TOTAL_TOKEN_BUDGET_EXCEEDED);
+  });
+
+  it("enforces maxTotalTokens against specialized-agent usage", async () => {
+    const { model } = scriptedModel([
+      handoffDecision("intent-query-agent"),
+    ]);
+    const { runtime } = buildHarness(model, {
+      intentTokensUsed: 7,
+    });
+
+    const result = await runtime.execute(
+      baseRunInput({
+        budgetLimits: {
+          maxTotalTokens: 35,
+        },
+      }),
+    );
+
+    // The supervisor decision consumes 30 tokens. The specialized intent
+    // executor then reports 7 more, taking the shared run total to 37.
+    assert.equal(result.status, "failed");
+    assert.equal(result.error?.code, AGENT_TOTAL_TOKEN_BUDGET_EXCEEDED);
+    assert.equal(result.totalTokensUsed, 37);
   });
 
   it("fails closed on a malformed prose decision", async () => {

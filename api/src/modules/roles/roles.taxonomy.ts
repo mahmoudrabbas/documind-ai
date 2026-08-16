@@ -369,3 +369,42 @@ export async function resolveCategoryScopeValues(
     normalizedNames: records.map((rec) => rec.normalizedName).sort(),
   };
 }
+
+export interface ResolvedClassificationScopeValues {
+  ids: string[];
+  names: string[];
+  normalizedNames: string[];
+  levels: string[];
+}
+
+/** Resolve canonical classification scope names to same-tenant active records. */
+export async function resolveClassificationScopeValues(
+  documentClassifications: string[] | undefined,
+  tenantId: string | undefined,
+): Promise<ResolvedClassificationScopeValues | undefined> {
+  if (!documentClassifications?.length) return undefined;
+  const empty = { ids: [], names: [], normalizedNames: [], levels: [] };
+  if (!tenantId) return empty;
+  let tenantObjectId: Types.ObjectId;
+  try {
+    tenantObjectId = new Types.ObjectId(tenantId);
+  } catch {
+    return empty;
+  }
+  const normalizedNames = [
+    ...new Set(documentClassifications.map(normalizeTaxonomyName).filter(Boolean)),
+  ];
+  if (normalizedNames.length === 0) return empty;
+  const records = await DocumentClassificationModel.find({
+    tenantId: tenantObjectId,
+    normalizedName: { $in: normalizedNames },
+    status: "active",
+  }).select("name normalizedName level").lean();
+  if (records.length !== normalizedNames.length) return empty;
+  return {
+    ids: records.map((record) => record._id.toString()).sort(),
+    names: records.map((record) => record.name).sort(),
+    normalizedNames: records.map((record) => record.normalizedName).sort(),
+    levels: [...new Set(records.map((record) => record.level))].sort(),
+  };
+}

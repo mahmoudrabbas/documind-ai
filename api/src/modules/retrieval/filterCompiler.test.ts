@@ -64,6 +64,7 @@ describe("compileAccessFilters", () => {
       ctx({
         baseRole: "COMPANY_ADMIN",
         permissionScopes: scopes({ documentClassifications: ["confidential"] }),
+        resolvedClassificationFilter: ["confidential"],
       })
     );
     assert.deepEqual(f.classification, { $in: ["confidential"] });
@@ -210,6 +211,7 @@ describe("compileAccessFilters", () => {
         baseRole: "COMPANY_ADMIN",
         resolvedDepartmentFilter: ["finance"],
         resolvedCategoryFilter: ["Finance", "finance"],
+        resolvedClassificationFilter: ["confidential"],
         permissionScopes: scopes({
           documentClassifications: ["confidential"],
           departmentIds: ["d1"],

@@ -35,6 +35,7 @@ export {
   DashboardPage,
   DashboardPageHeader,
   DashboardPanel,
+  DashboardPanelHeader,
 } from "./DashboardPage";
 export { Modal, ConfirmDialog, type ModalProps, type ConfirmDialogProps } from "./Modal";
 export { Tabs, Tab, TabPanel, type TabsProps, type TabProps, type TabPanelProps } from "./Tabs";

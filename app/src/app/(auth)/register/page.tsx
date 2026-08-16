@@ -5,9 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useI18n } from "@/providers/i18n-provider";
-import { AuthHeroPanel, LanguageSwitcher } from "@/components/ui";
 import { RateLimitAlert } from "@/components/auth/rate-limit-alert";
-import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
+import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import {
   validateCompanyName,
   validateCompanySlug,
@@ -243,338 +242,318 @@ export default function RegisterPage() {
   }, []);
 
   return (
-    <main
+    <AuthSplitShell
       key={locale}
       dir={dir}
-      className="flex min-h-screen w-full flex-row overflow-x-hidden bg-surface-container-lowest"
+      backToHomeLabel={t("auth.backToHome")}
+      description={t("auth.registerDescription")}
+      securityLabel={t("auth.encryptedBadge")}
+      rightsLabel={t("auth.rightsReserved", {
+        year: String(new Date().getFullYear()),
+      })}
+      variant="register"
     >
-      {/* Left panel (Form Panel) */}
-      <section className="z-10 flex min-h-screen w-full flex-col border-r border-outline-variant p-lg md:p-xl lg:w-[480px] lg:p-2xl xl:w-[560px]">
-        {/* Language switcher */}
-        <div className="absolute top-6 end-6 z-20">
-          <LanguageSwitcher />
-        </div>
+      <div>
+        <h2 className="mb-sm text-headline-lg-mobile font-bold text-primary sm:text-headline-lg">
+          {t("auth.signUp")}
+        </h2>
+        <p className="mb-[clamp(1rem,2.5dvh,2rem)] text-body-md text-on-surface-variant">
+          {t("auth.createAccount")}
+        </p>
 
-        {/* Brand Header */}
-        <div className="mb-12">
-          <Link
-            href="/"
-            aria-label={t("auth.backToHome")}
-            className="mb-lg inline-flex items-center gap-xs text-label-md font-semibold text-primary transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-          >
-            <span className="material-symbols-outlined text-lg rtl:rotate-180" aria-hidden="true">
-              arrow_back
-            </span>
-            {t("auth.backToHome")}
-          </Link>
-          <DocuMindLogo className="mb-sm" />
-          <p className="max-w-sm text-body-md text-on-surface-variant">
-            {t("auth.registerDescription")}
-          </p>
-        </div>
+        <form
+          className="grid w-full grid-cols-1 gap-x-md gap-y-[clamp(0.625rem,1.4dvh,1rem)] lg:grid-cols-2"
+          onSubmit={handleSubmit}
+          noValidate
+        >
+          <div aria-live="polite" className="w-full lg:col-span-2">
+            {rateLimitRetryAfter !== null ? (
+              <div className="mb-md">
+                <RateLimitAlert
+                  retryAfterSeconds={rateLimitRetryAfter}
+                  onRetry={handleRetry}
+                />
+              </div>
+            ) : formError ? (
+              <div
+                className="mb-md w-full rounded-lg border border-red-200 bg-red-50 px-md py-sm text-sm text-red-700"
+                role="alert"
+              >
+                {formError}
+              </div>
+            ) : null}
 
-        {/* Register Form */}
-        <div className="flex flex-grow flex-col justify-start">
-          <h2 className="mb-base text-headline-lg font-bold text-primary">
-            {t("auth.signUp")}
-          </h2>
-          <p className="mb-xl text-body-md text-on-surface-variant">
-            {t("auth.createAccount")}
-          </p>
-
-          <form
-            className="space-y-md w-full"
-            onSubmit={handleSubmit}
-            noValidate
-          >
-            <div aria-live="polite" className="w-full">
-              {rateLimitRetryAfter !== null ? (
-                <div className="mb-4">
-                  <RateLimitAlert
-                    retryAfterSeconds={rateLimitRetryAfter}
-                    onRetry={handleRetry}
-                  />
-                </div>
-              ) : formError ? (
-                <div
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 w-full mb-4"
-                  role="alert"
-                >
-                  {formError}
-                </div>
-              ) : null}
-
-              {successMessage ? (
-                <div
-                  className="w-full mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"
-                  role="status"
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      className="material-symbols-outlined mt-0.5 text-2xl text-emerald-600"
-                      style={{ fontVariationSettings: "'FILL' 1" }}
-                    >
-                      check_circle
-                    </span>
-                    <div className="flex-1 space-y-2">
-                      <p className="text-sm font-semibold text-emerald-800">
-                        {successMessage}
+            {successMessage ? (
+              <div
+                className="mb-md w-full rounded-lg border border-emerald-200 bg-emerald-50 p-md"
+                role="status"
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className="material-symbols-outlined mt-0.5 text-2xl text-emerald-600"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    check_circle
+                  </span>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm font-semibold text-emerald-800">
+                      {successMessage}
+                    </p>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm text-emerald-700">
+                      <p className="font-medium">
+                        {packageInfo.name === "Free"
+                          ? t("auth.subscriptionPlan", {
+                              plan: packageInfo.name,
+                            })
+                          : t("auth.subscriptionPlan", {
+                              plan: packageInfo.name,
+                            })}
                       </p>
-                      <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm text-emerald-700">
-                        <p className="font-medium">
-                          {packageInfo.name === "Free"
-                            ? t("auth.subscriptionPlan", { plan: packageInfo.name })
-                            : t("auth.subscriptionPlan", { plan: packageInfo.name })}
-                        </p>
-                        <p className="mt-1 text-emerald-600">
-                          {packageInfo.trialDays > 0
-                            ? t("auth.trialStarted", { days: String(packageInfo.trialDays) })
-                            : t("auth.freePlanActive")}
-                        </p>
-                      </div>
-                      <p className="text-xs text-emerald-600">
-                        {t("auth.afterRegisterNextSteps")}
+                      <p className="mt-1 text-emerald-600">
+                        {packageInfo.trialDays > 0
+                          ? t("auth.trialStarted", {
+                              days: String(packageInfo.trialDays),
+                            })
+                          : t("auth.freePlanActive")}
                       </p>
                     </div>
+                    <p className="text-xs text-emerald-600">
+                      {t("auth.afterRegisterNextSteps")}
+                    </p>
                   </div>
                 </div>
-              ) : null}
-            </div>
-
-            <div>
-              <label
-                htmlFor="companyName"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.companyName")}
-              </label>
-              <input
-                id="companyName"
-                name="companyName"
-                type="text"
-                value={companyName}
-                onChange={(e) => handleCompanyNameChange(e.target.value)}
-                autoComplete="organization"
-                placeholder={t("auth.companyNamePlaceholder")}
-                disabled={isSubmitting || rateLimitRetryAfter !== null}
-                aria-invalid={Boolean(errors.companyName)}
-                aria-describedby={errors.companyName ? "companyName-error" : undefined}
-                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              {errors.companyName && (
-                <p id="companyName-error" className="mt-1.5 text-xs text-error">
-                  {errors.companyName}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="companySlug"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.companySlug")}
-              </label>
-              <input
-                id="companySlug"
-                name="companySlug"
-                type="text"
-                value={companySlug}
-                onChange={(e) => handleCompanySlugChange(e.target.value)}
-                placeholder={t("auth.companySlugPlaceholder")}
-                disabled={isSubmitting || rateLimitRetryAfter !== null}
-                aria-invalid={Boolean(errors.companySlug)}
-                aria-describedby={
-                  errors.companySlug ? "companySlug-error" : "companySlug-help"
-                }
-                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              {errors.companySlug ? (
-                <p id="companySlug-error" className="mt-1.5 text-xs text-error">
-                  {errors.companySlug}
-                </p>
-              ) : (
-                <p id="companySlug-help" className="mt-1.5 text-xs text-outline">
-                  {t("auth.companySlugHelp")}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="adminName"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.adminName")}
-              </label>
-              <input
-                id="adminName"
-                name="adminName"
-                type="text"
-                value={adminName}
-                onChange={(e) => {
-                  setAdminName(e.target.value);
-                  clearFieldError(setErrors, "adminName");
-                }}
-                autoComplete="name"
-                placeholder={t("auth.adminNamePlaceholder")}
-                disabled={isSubmitting || rateLimitRetryAfter !== null}
-                aria-invalid={Boolean(errors.adminName)}
-                aria-describedby={errors.adminName ? "adminName-error" : undefined}
-                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              {errors.adminName && (
-                <p id="adminName-error" className="mt-1.5 text-xs text-error">{errors.adminName}</p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.email")}
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  clearFieldError(setErrors, "email");
-                }}
-                autoComplete="email"
-                placeholder={t("auth.emailPlaceholder")}
-                disabled={isSubmitting || rateLimitRetryAfter !== null}
-                aria-invalid={Boolean(errors.email)}
-                aria-describedby={errors.email ? "email-error" : undefined}
-                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              {errors.email && (
-                <p id="email-error" className="mt-1.5 text-xs text-error">{errors.email}</p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.password")}
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    clearFieldError(setErrors, "password");
-                  }}
-                  autoComplete="new-password"
-                  placeholder={t("auth.passwordPlaceholder")}
-                  disabled={isSubmitting || rateLimitRetryAfter !== null}
-                  aria-invalid={Boolean(errors.password)}
-                  aria-describedby={errors.password ? "password-error" : undefined}
-                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                <PasswordVisibilityToggle
-                  visible={showPassword}
-                  onToggle={() => setShowPassword((prev) => !prev)}
-                  disabled={isSubmitting || rateLimitRetryAfter !== null}
-                />
               </div>
-              {errors.password && (
-                <p id="password-error" className="mt-1.5 text-xs text-error">{errors.password}</p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="mb-xs block text-label-md text-on-surface-variant"
-              >
-                {t("auth.confirmPassword")}
-              </label>
-              <div className="relative">
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    clearFieldError(setErrors, "confirmPassword");
-                  }}
-                  autoComplete="new-password"
-                  placeholder={t("auth.confirmPasswordPlaceholder")}
-                  disabled={isSubmitting || rateLimitRetryAfter !== null}
-                  aria-invalid={Boolean(errors.confirmPassword)}
-                  aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
-                  className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                <PasswordVisibilityToggle
-                  visible={showConfirmPassword}
-                  onToggle={() => setShowConfirmPassword((prev) => !prev)}
-                  disabled={isSubmitting || rateLimitRetryAfter !== null}
-                />
-              </div>
-              {errors.confirmPassword && (
-                <p id="confirmPassword-error" className="mt-1.5 text-xs text-error">
-                  {errors.confirmPassword}
-                </p>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting || rateLimitRetryAfter !== null}
-              aria-busy={isSubmitting || undefined}
-              className="w-full rounded-lg bg-primary py-md text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 flex justify-center items-center gap-2 mt-4"
-            >
-              {isSubmitting ? (
-                <span className="material-symbols-outlined animate-spin">
-                  progress_activity
-                </span>
-              ) : null}
-              {isSubmitting ? t("auth.registering") : t("auth.register")}
-            </button>
-
-            <div className="text-center mt-5">
-              <Link
-                href="/login"
-                className="text-sm font-semibold text-primary hover:underline transition"
-              >
-                {t("auth.alreadyHaveAccount")}
-              </Link>
-            </div>
-          </form>
-        </div>
-
-        {/* Security Footer */}
-        <div className="mt-auto flex flex-col gap-sm border-t border-outline-variant pt-xl">
-          <div className="flex items-center gap-sm">
-            <span
-              className="material-symbols-outlined text-xl text-on-tertiary-container"
-              style={{ fontVariationSettings: "'FILL' 1" }}
-            >
-              verified_user
-            </span>
-            <span className="text-label-sm text-on-surface-variant">
-              AES-256 Encrypted & SOC2 Compliant
-            </span>
+            ) : null}
           </div>
-          <p className="text-body-sm text-outline">
-            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
-            rights reserved.
-          </p>
-        </div>
-      </section>
 
-      {/* Right Section: Visual Panel */}
-      <AuthHeroPanel />
-    </main>
+          <div>
+            <label
+              htmlFor="companyName"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.companyName")}
+            </label>
+            <input
+              id="companyName"
+              name="companyName"
+              type="text"
+              value={companyName}
+              onChange={(e) => handleCompanyNameChange(e.target.value)}
+              autoComplete="organization"
+              placeholder={t("auth.companyNamePlaceholder")}
+              disabled={isSubmitting || rateLimitRetryAfter !== null}
+              aria-invalid={Boolean(errors.companyName)}
+              aria-describedby={
+                errors.companyName ? "companyName-error" : undefined
+              }
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {errors.companyName && (
+              <p id="companyName-error" className="mt-1.5 text-xs text-error">
+                {errors.companyName}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="companySlug"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.companySlug")}
+            </label>
+            <input
+              id="companySlug"
+              name="companySlug"
+              type="text"
+              value={companySlug}
+              onChange={(e) => handleCompanySlugChange(e.target.value)}
+              placeholder={t("auth.companySlugPlaceholder")}
+              disabled={isSubmitting || rateLimitRetryAfter !== null}
+              aria-invalid={Boolean(errors.companySlug)}
+              aria-describedby={
+                errors.companySlug ? "companySlug-error" : "companySlug-help"
+              }
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {errors.companySlug ? (
+              <p id="companySlug-error" className="mt-1.5 text-xs text-error">
+                {errors.companySlug}
+              </p>
+            ) : (
+              <p id="companySlug-help" className="mt-1.5 text-xs text-outline">
+                {t("auth.companySlugHelp")}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="adminName"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.adminName")}
+            </label>
+            <input
+              id="adminName"
+              name="adminName"
+              type="text"
+              value={adminName}
+              onChange={(e) => {
+                setAdminName(e.target.value);
+                clearFieldError(setErrors, "adminName");
+              }}
+              autoComplete="name"
+              placeholder={t("auth.adminNamePlaceholder")}
+              disabled={isSubmitting || rateLimitRetryAfter !== null}
+              aria-invalid={Boolean(errors.adminName)}
+              aria-describedby={
+                errors.adminName ? "adminName-error" : undefined
+              }
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {errors.adminName && (
+              <p id="adminName-error" className="mt-1.5 text-xs text-error">
+                {errors.adminName}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="email"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.email")}
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearFieldError(setErrors, "email");
+              }}
+              autoComplete="email"
+              placeholder={t("auth.emailPlaceholder")}
+              disabled={isSubmitting || rateLimitRetryAfter !== null}
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? "email-error" : undefined}
+              className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {errors.email && (
+              <p id="email-error" className="mt-1.5 text-xs text-error">
+                {errors.email}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="password"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.password")}
+            </label>
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearFieldError(setErrors, "password");
+                }}
+                autoComplete="new-password"
+                placeholder={t("auth.passwordPlaceholder")}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
+                aria-invalid={Boolean(errors.password)}
+                aria-describedby={
+                  errors.password ? "password-error" : undefined
+                }
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <PasswordVisibilityToggle
+                visible={showPassword}
+                onToggle={() => setShowPassword((prev) => !prev)}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
+              />
+            </div>
+            {errors.password && (
+              <p id="password-error" className="mt-1.5 text-xs text-error">
+                {errors.password}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="confirmPassword"
+              className="mb-xs block text-label-md text-on-surface-variant"
+            >
+              {t("auth.confirmPassword")}
+            </label>
+            <div className="relative">
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  clearFieldError(setErrors, "confirmPassword");
+                }}
+                autoComplete="new-password"
+                placeholder={t("auth.confirmPasswordPlaceholder")}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
+                aria-invalid={Boolean(errors.confirmPassword)}
+                aria-describedby={
+                  errors.confirmPassword ? "confirmPassword-error" : undefined
+                }
+                className="w-full rounded-lg border border-outline-variant bg-surface px-md py-sm pe-11 transition-all outline-none focus:border-transparent focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <PasswordVisibilityToggle
+                visible={showConfirmPassword}
+                onToggle={() => setShowConfirmPassword((prev) => !prev)}
+                disabled={isSubmitting || rateLimitRetryAfter !== null}
+              />
+            </div>
+            {errors.confirmPassword && (
+              <p
+                id="confirmPassword-error"
+                className="mt-1.5 text-xs text-error"
+              >
+                {errors.confirmPassword}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting || rateLimitRetryAfter !== null}
+            aria-busy={isSubmitting || undefined}
+            className="mt-xs flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-md py-sm text-title-lg text-on-primary shadow-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 lg:col-span-2"
+          >
+            {isSubmitting ? (
+              <span className="material-symbols-outlined animate-spin">
+                progress_activity
+              </span>
+            ) : null}
+            {isSubmitting ? t("auth.registering") : t("auth.register")}
+          </button>
+
+          <div className="mt-xs text-center lg:col-span-2">
+            <Link
+              href="/login"
+              className="text-sm font-semibold text-primary hover:underline transition"
+            >
+              {t("auth.alreadyHaveAccount")}
+            </Link>
+          </div>
+        </form>
+      </div>
+    </AuthSplitShell>
   );
 }

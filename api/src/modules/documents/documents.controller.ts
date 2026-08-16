@@ -133,7 +133,11 @@ export async function uploadDocumentController(req: Request, res: Response, next
 export async function uploadOptionsController(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth || !req.tenantId) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    const result = await service.uploadOptions(req.tenantId);
+    const result = await service.uploadOptions(req.tenantId, {
+      userId: req.auth.userId,
+      email: req.auth.email,
+      role: requireAuthRole(req),
+    });
     res.status(200).json({ success: true, data: result });
   } catch (error) { handleDocumentError(error, res, next); }
 }
@@ -199,7 +203,7 @@ export async function previewDocumentController(req: Request, res: Response, nex
     const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!documentId) throw new AppError(400, "BAD_REQUEST", "Missing document id parameter");
     const { stream, contentType, fileSize } =
-      await service.downloadDocument(documentId, req.tenantId, {
+      await service.previewDocument(documentId, req.tenantId, {
         userId: req.auth.userId,
         email: req.auth.email,
         role: requireAuthRole(req),

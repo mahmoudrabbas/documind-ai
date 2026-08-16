@@ -146,6 +146,9 @@ export const AnalyzeQueryInputSchema = z.object({
   // intent agent runs and must not be injected as history and then appended a
   // second time as the current question.
   currentMessageAlreadyPersisted: z.boolean().optional(),
+  // Internal runtime budget propagated by the multi-agent chat workflow.
+  // Standalone intent-query requests may omit it and keep the service default.
+  maxTokens: z.number().int().min(1).max(1000).optional(),
   maxContext: z.number().int().min(1).max(50).default(10),
 });
 

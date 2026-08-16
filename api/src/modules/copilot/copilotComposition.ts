@@ -100,6 +100,9 @@ function classifierToDecision(
       result: {
         mode: "clarify",
         reasonCode: classifierDecision.reasonCode,
+        ...(classifierDecision.flowIdHint
+          ? { flowIdHint: classifierDecision.flowIdHint }
+          : {}),
       },
     }),
     usage: ZERO_USAGE,

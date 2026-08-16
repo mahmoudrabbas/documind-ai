@@ -4,14 +4,49 @@ import { feedbackRepository, FeedbackRepository } from "./feedback.repository.js
 import { knowledgeGapsService, KnowledgeGapsService } from "../knowledge-gaps/knowledge-gaps.service.js";
 import type { SubmitFeedbackInput, ListFeedbackQueryInput } from "./feedback.dto.js";
 import type { JudgeEvaluationService } from "../analytics/judgeEvaluation.service.js";
+import mongoose from "mongoose";
+import ConversationModel from "../../db/models/conversation.model.js";
+import MessageModel from "../../db/models/message.model.js";
+import { AppError } from "../../common/errors/AppError.js";
 
 const auditWriter = new MongoAuditWriter();
+
+export interface FeedbackTargetAuthorizer {
+  assertOwnedMessage(tenantId: string, userId: string, conversationId: string, messageId: string): Promise<void>;
+}
+
+class MongoFeedbackTargetAuthorizer implements FeedbackTargetAuthorizer {
+  async assertOwnedMessage(tenantId: string, userId: string, conversationId: string, messageId: string): Promise<void> {
+    if (![tenantId, userId, conversationId, messageId].every(mongoose.isObjectIdOrHexString)) {
+      throw hiddenFeedbackTarget();
+    }
+    const conversation = await ConversationModel.findOne({
+      _id: conversationId,
+      tenantId,
+      userId,
+    }).select("_id").lean().exec();
+    if (!conversation) throw hiddenFeedbackTarget();
+
+    const message = await MessageModel.findOne({
+      _id: messageId,
+      tenantId,
+      conversationId: conversation._id,
+      role: "assistant",
+    }).select("_id").lean().exec();
+    if (!message) throw hiddenFeedbackTarget();
+  }
+}
+
+function hiddenFeedbackTarget(): AppError {
+  return new AppError(404, "FEEDBACK_TARGET_NOT_FOUND", "Feedback target not found");
+}
 
 export class FeedbackService {
   constructor(
     private repo: FeedbackRepository = feedbackRepository,
     private gapService: KnowledgeGapsService = knowledgeGapsService,
     private judge?: Pick<JudgeEvaluationService, "evaluateAsync"> | null,
+    private targetAuthorizer: FeedbackTargetAuthorizer = new MongoFeedbackTargetAuthorizer(),
   ) {}
 
   setJudge(judge: Pick<JudgeEvaluationService, "evaluateAsync"> | null): void {
@@ -19,6 +54,12 @@ export class FeedbackService {
   }
 
   async submitFeedback(tenantId: string, userId: string, input: SubmitFeedbackInput) {
+    await this.targetAuthorizer.assertOwnedMessage(
+      tenantId,
+      userId,
+      input.conversationId,
+      input.messageId,
+    );
     const feedback = await this.repo.upsertFeedback({
       tenantId,
       userId,

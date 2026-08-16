@@ -58,6 +58,14 @@ describe("WorkflowRegistry", () => {
     assert.ok(!(workflow.allowedHandoffs["answer-writer-agent"] ?? []).includes("compliance-agent"));
   });
 
+  it("defines an explicit total-token budget for chat-rag-v1", () => {
+    const workflow = chatRagV1Definition();
+
+    assert.deepEqual(workflow.metadata?.budget, {
+      maxTotalTokens: 50_000,
+    });
+  });
+
   it("rejects unknown workflows", () => {
     const registry = createChatWorkflowRegistry();
     expectAppError(

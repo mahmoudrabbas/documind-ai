@@ -30,6 +30,9 @@ export interface UserDocument extends mongoose.Document {
   sessionVersion: number;
   employeeProfile?: {
     employeeId?: string;
+    /** Canonical tenant taxonomy reference. */
+    departmentId?: mongoose.Types.ObjectId | null;
+    /** @deprecated Legacy display-name assignment retained for existing records. */
     department?: string;
     jobTitle?: string;
     phone?: string;
@@ -61,6 +64,7 @@ function sanitizeUserTransform(
 const EmployeeProfileSchema = new Schema(
   {
     employeeId: { type: String, trim: true, maxlength: 50 },
+    departmentId: { type: Schema.Types.ObjectId, ref: "Department", default: null },
     department: { type: String, trim: true, maxlength: 100 },
     jobTitle: { type: String, trim: true, maxlength: 100 },
     phone: { type: String, trim: true, maxlength: 30 },
@@ -203,8 +207,8 @@ userSchema.index(
 );
 
 userSchema.index(
-  { "employeeProfile.department": 1 },
-  { name: "idx_employee_department" },
+  { tenantId: 1, "employeeProfile.departmentId": 1 },
+  { name: "idx_user_tenant_department" },
 );
 
 const UserModel = mongoose.model<UserDocument>("User", userSchema);

@@ -23,29 +23,11 @@ import {
   dismissConflictFindingController,
   getPendingReviewItemsController,
 } from "./processing.controller.js";
-import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
-import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import indexingRoutes from "./indexing/indexing.routes.js";
 
 const router = Router();
 
 router.use(indexingRoutes);
-
-// ── Entitlement guards ─────────────────────────────────────────────────────
-
-const svc = getEntitlementService();
-
-const ocrGuard = createEntitlementGuard(svc, {
-  dimension: "ocrPagesPerMonth",
-  amount: (req) => req.body.pageCount || 1,
-  failMode: "fail-closed",
-});
-
-const ocrRetryGuard = createEntitlementGuard(svc, {
-  dimension: "ocrPagesPerMonth",
-  amount: (req) => req.body?.pageCount ?? 1,
-  failMode: "fail-closed",
-});
 
 /**
  * @openapi
@@ -122,8 +104,7 @@ router.post(
   "/:id/ocr/trigger",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
-  ocrGuard,
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   triggerOcrController,
 );
 
@@ -195,7 +176,7 @@ router.get(
   "/:id/ocr/pages",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   getOcrPageResultsController,
 );
 
@@ -271,7 +252,7 @@ router.get(
   "/:id/quality",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   getDocumentQualityController,
 );
 
@@ -336,8 +317,8 @@ router.post(
   "/:id/quality/assess",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
-  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW, { allowScoped: true }),
   assessDocumentQualityController,
 );
 
@@ -418,8 +399,8 @@ router.post(
   "/:id/quality/review",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
-  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
+  requirePermission(Permission.DOCUMENTS_QUALITY_REVIEW, { allowScoped: true }),
   reviewDocumentQualityController,
 );
 
@@ -490,8 +471,7 @@ router.post(
   "/:id/ocr/retry",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
-  ocrRetryGuard,
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   retryOcrController,
 );
 
@@ -617,7 +597,7 @@ router.post(
   "/:id/metadata/analyze",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_OCR_PROCESS),
+  requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }),
   triggerMetadataAnalysisController,
 );
 
@@ -682,7 +662,7 @@ router.get(
   "/:id/metadata/candidates",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   getMetadataCandidatesController,
 );
 

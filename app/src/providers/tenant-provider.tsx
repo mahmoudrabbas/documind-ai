@@ -28,7 +28,7 @@ import { usePermissions } from "@/providers/permission-provider";
 import { useI18n } from "@/providers/i18n-provider";
 import { getAppContext, isKnownRole } from "@/constants/routes";
 import { Permission } from "@/types/api/permissions.types";
-import { isValidLocale } from "@/lib/i18n/i18n.config";
+import { isValidLocale, hasExplicitLocalePreference } from "@/lib/i18n";
 import { getTenantSettings } from "@/services/settings.service";
 import type {
   GetTenantSettingsResult,
@@ -66,6 +66,9 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<TenantSettingsState>({ status: "idle" });
   const mountedRef = useRef(true);
   const reqGenRef = useRef(0);
+  /** The tenant `defaultLanguage` last seen from the API, so that a settings
+      save can tell a genuine language change from an unrelated edit. */
+  const tenantLanguageRef = useRef<string | null>(null);
 
   const canReadSettings =
     permissions.status === "ready" &&
@@ -90,6 +93,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           settingsVersion: response.data.settingsVersion,
           settingsUpdatedAt: response.data.settingsUpdatedAt,
         };
+        tenantLanguageRef.current = result.settings.defaultLanguage;
         setState({ status: "ready", ...result });
         return result;
       } catch (error) {
@@ -107,10 +111,26 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const applyUpdated = useCallback((result: GetTenantSettingsResult) => {
-    ++reqGenRef.current; // invalidate any in-flight refresh
-    setState({ status: "ready", ...result });
-  }, []);
+  const applyUpdated = useCallback(
+    (result: GetTenantSettingsResult) => {
+      ++reqGenRef.current; // invalidate any in-flight refresh
+      setState({ status: "ready", ...result });
+
+      const next = result.settings.defaultLanguage;
+      const languageChanged = tenantLanguageRef.current !== next;
+      tenantLanguageRef.current = next;
+
+      /* Only a real change to the tenant default moves the active locale.
+         Re-applying it on every save meant an admin editing something
+         unrelated — a timezone, a logo — had their own chosen language
+         silently replaced by the tenant's. Applied non-explicitly so it
+         stays a default rather than masquerading as their choice. */
+      if (languageChanged && isValidLocale(next)) {
+        setLocale(next, { explicit: false });
+      }
+    },
+    [setLocale],
+  );
 
   /* Load once per authenticated tenant identity / permission availability. */
   useEffect(() => {
@@ -126,11 +146,16 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     };
   }, [appContext, canReadSettings, refresh]);
 
-  /* Bind the tenant defaultLanguage to the active locale (drives dir). */
+  /* Bind the tenant defaultLanguage to the active locale (drives dir), unless
+     the user has chosen a language for themselves. Applied non-explicitly, so
+     that a later change to the tenant default still reaches everyone who
+     never made a choice — writing it as an explicit preference would pin each
+     user to whichever default was current on their first visit. */
   useEffect(() => {
     if (state.status !== "ready") return;
+    if (hasExplicitLocalePreference()) return;
     if (!isValidLocale(state.settings.defaultLanguage)) return;
-    setLocale(state.settings.defaultLanguage);
+    setLocale(state.settings.defaultLanguage, { explicit: false });
   }, [state, setLocale]);
 
   const value = useMemo<TenantContextValue>(

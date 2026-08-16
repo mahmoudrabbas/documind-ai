@@ -168,6 +168,7 @@ export class AnswerWriterAgentExecutor implements AgentContract {
         citationsEnabled: agentInput.citationsEnabled,
         evidence,
         maxTokens: agentInput.maxTokens,
+        maxTotalTokens: context.maxTokens,
       });
 
       const safeAnswer = insufficientEvidenceMessage(agentInput.language ?? "en");

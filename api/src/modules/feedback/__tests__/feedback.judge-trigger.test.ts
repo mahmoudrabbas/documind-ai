@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { FeedbackService, wireFeedbackJudge } from "../feedback.service.js";
+import { FeedbackService, wireFeedbackJudge, type FeedbackTargetAuthorizer } from "../feedback.service.js";
 import type { FeedbackRepository } from "../feedback.repository.js";
 import type { KnowledgeGapsService } from "../../knowledge-gaps/knowledge-gaps.service.js";
 import type { JudgeEvaluationService } from "../../analytics/judgeEvaluation.service.js";
@@ -22,6 +22,8 @@ function makeGapService() {
     reportCandidate: async () => ({}),
   } as unknown as KnowledgeGapsService;
 }
+
+const targetAuthorizer: FeedbackTargetAuthorizer = { assertOwnedMessage: async () => {} };
 
 interface RecordedJudge {
   calls: Array<{ tenantId: string; actorId: string; messageId: string; conversationId: string }>;
@@ -45,7 +47,7 @@ function makeJudge(reject = false): RecordedJudge {
 describe("FeedbackService judge trigger", () => {
   it("fires evaluateAsync after a thumbs_down submission", async () => {
     const judge = makeJudge();
-    const service = new FeedbackService(makeRepo(), makeGapService(), judge);
+    const service = new FeedbackService(makeRepo(), makeGapService(), judge, targetAuthorizer);
     await service.submitFeedback("tenant_1", "user_1", {
       messageId: "msg_1",
       conversationId: "conv_1",
@@ -62,7 +64,7 @@ describe("FeedbackService judge trigger", () => {
 
   it("fires evaluateAsync for any rating, not only thumbs_down", async () => {
     const judge = makeJudge();
-    const service = new FeedbackService(makeRepo(), makeGapService(), judge);
+    const service = new FeedbackService(makeRepo(), makeGapService(), judge, targetAuthorizer);
     await service.submitFeedback("tenant_1", "user_1", {
       messageId: "msg_2",
       conversationId: "conv_2",
@@ -74,7 +76,7 @@ describe("FeedbackService judge trigger", () => {
 
   it("does not call the judge when none is configured", async () => {
     const judge = makeJudge();
-    const service = new FeedbackService(makeRepo(), makeGapService());
+    const service = new FeedbackService(makeRepo(), makeGapService(), null, targetAuthorizer);
     await service.submitFeedback("tenant_1", "user_1", {
       messageId: "msg_3",
       conversationId: "conv_3",
@@ -85,7 +87,7 @@ describe("FeedbackService judge trigger", () => {
 
   it("returns the feedback even if the judge rejects (fire-and-forget)", async () => {
     const judge = makeJudge(true);
-    const service = new FeedbackService(makeRepo(), makeGapService(), judge);
+    const service = new FeedbackService(makeRepo(), makeGapService(), judge, targetAuthorizer);
     const result = await service.submitFeedback("tenant_1", "user_1", {
       messageId: "msg_4",
       conversationId: "conv_4",

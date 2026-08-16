@@ -6,6 +6,8 @@ import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
 import DocumentModel from "../../../db/models/document.model.js";
 import AuditLogModel from "../../../db/models/auditLog.model.js";
+import AgentRunModel from "../../../db/models/agentRun.model.js";
+import DocumentAccessPolicyModel from "../../../db/models/documentAccessPolicy.model.js";
 import { hashPassword } from "../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import type { BaseRole } from "../../../common/auth/baseRoles.js";
@@ -24,6 +26,7 @@ import { createPlatformActionAgent } from "../agents/platformActionAgent.js";
 import { registerActionTools } from "../action/registerActionTools.js";
 import { resumeCopilotAction, createActionPlan } from "../copilot.service.js";
 import CopilotActionIdempotencyModel from "../idempotency/actionIdempotency.model.js";
+import { DOCUMENT_ACCESS_ACTIONS } from "../../document-access/documentAccess.actions.js";
 import type { StorageProvider, SecurityScanner, ProcessingDispatcher } from "../../../providers/storage/types.js";
 import { Readable } from "node:stream";
 
@@ -103,6 +106,7 @@ beforeEach(async () => {
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
   await DocumentModel.deleteMany({});
+  await DocumentAccessPolicyModel.deleteMany({});
   await AuditLogModel.deleteMany({});
   await CopilotActionIdempotencyModel.deleteMany({});
   await seedActor();
@@ -340,6 +344,8 @@ async function buildRuntime() {
 }
 
 async function seedDocument() {
+  const policyId = new mongoose.Types.ObjectId();
+  const now = new Date();
   const doc = await DocumentModel.create({
     tenantId: new mongoose.Types.ObjectId(tenantId),
     fileName: "policy.pdf",
@@ -357,7 +363,44 @@ async function seedDocument() {
     classification: "internal",
     uploadedBy: new mongoose.Types.ObjectId(actorId),
     owner: new mongoose.Types.ObjectId(actorId),
+    activePolicyId: policyId,
+    activePolicyVersion: 1,
+    policyChangedAt: now,
   });
+
+  await DocumentAccessPolicyModel.create({
+    tenantId: doc.tenantId,
+    documentId: doc._id,
+    policyId,
+    policyVersion: 1,
+    contractVersion: 1,
+    status: "active",
+    effectiveFrom: new Date(now.getTime() - 60_000),
+    effectiveUntil: null,
+    inherits: null,
+    rules: [
+      {
+        ruleId: "seed-owner-rule",
+        effect: "allow",
+        subject: { type: "owner" },
+        actions: [...DOCUMENT_ACCESS_ACTIONS],
+      },
+    ],
+    provenance: {
+      createdBy: new mongoose.Types.ObjectId(actorId),
+      createdAt: now,
+      reason: "Copilot supervisor test fixture",
+    },
+    indexMetadata: {
+      policyId,
+      policyVersion: 1,
+      classificationId: null,
+      categoryId: null,
+      departmentId: null,
+    },
+    createdAt: now,
+  });
+
   return doc.id;
 }
 
@@ -767,6 +810,57 @@ test("POST /copilot/action idempotency", async (t) => {
 
       const doc = await DocumentModel.findById(documentId).lean().exec();
       assert.ok(doc?.deletedAt, "the tool must have executed exactly once");
+    },
+  );
+});
+
+test("createActionPlan AgentRun lifecycle", async (t) => {
+  await t.test(
+    "the Mongo-persisted AgentRun _id is the runId handed to runtime.execute",
+    async () => {
+      const documentId = await seedDocument();
+      const { runtime, persistence } = await buildRuntime();
+      const context = actionExecutionContext();
+      const input = {
+        utterance: "delete this document",
+        toolName: "document.softDelete",
+        toolInput: { documentId },
+      };
+      const deps = { runtime, persistence };
+
+      // Capture the runId the runtime actually received. Before the P0 fix,
+      // createActionPlan minted its own ObjectId, so the id executed here did
+      // not match the Mongo-persisted AgentRun `_id` and the lookup below
+      // returned null (the production 409).
+      let executedRunId: string | null = null;
+      const originalExecute = runtime.execute.bind(runtime);
+      runtime.execute = async (
+        runInput: SupervisorRunInput,
+        hooks?: Parameters<SupervisorRuntime["execute"]>[1],
+      ) => {
+        executedRunId = runInput.runId;
+        return originalExecute(runInput, hooks);
+      };
+
+      const plan = await createActionPlan(input, context, { deps });
+
+      assert.ok(executedRunId, "runtime.execute must have been called");
+      assert.equal(
+        plan.runId,
+        executedRunId,
+        "plan must reference the executed run id",
+      );
+
+      const persisted = await AgentRunModel.findById(executedRunId)
+        .lean()
+        .exec();
+      assert.ok(
+        persisted,
+        "executed runId must be a Mongo-persisted AgentRun _id",
+      );
+      // The run was persisted as pending by createRun under the executed id,
+      // which is exactly the precondition SupervisorRuntime.startRun requires.
+      assert.equal(persisted.status, "pending");
     },
   );
 });

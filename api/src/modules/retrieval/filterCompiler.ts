@@ -34,7 +34,7 @@ function resolveClassifications(context: AccessContext): string[] | undefined {
     context.permissionScopes?.documentClassifications;
 
   if (documentClassifications !== undefined && documentClassifications.length > 0) {
-    return documentClassifications;
+    return context.resolvedClassificationFilter ?? [];
   }
 
   return DEFAULT_ROLE_CLASSIFICATIONS[context.baseRole];

@@ -5,6 +5,7 @@ import {
   normalizeText,
   hasHowToFraming,
   hasNavFraming,
+  isExplicitNoGuide,
   matchFlowToUtterance,
   getFlowCategory,
   getFlowKeywords,
@@ -46,6 +47,38 @@ test("hasHowToFraming recognizes English and Arabic how-to phrasing", () => {
   assert.equal(hasHowToFraming("archive this document"), false);
 });
 
+test("hasHowToFraming is negation-aware: declined walkthroughs are not how-to", () => {
+  assert.equal(hasHowToFraming("guide me through creating a role"), true);
+  assert.equal(hasHowToFraming("do not guide me through the UI"), false);
+  assert.equal(hasHowToFraming("don't walk me through the UI"), false);
+  assert.equal(hasHowToFraming("please do not guide me"), false);
+  assert.equal(hasHowToFraming("no need to guide me"), false);
+  // A knowledge gap is not a declined guide: "I do not know how to ..." is a
+  // request for help, so it must keep counting as how-to framing.
+  assert.equal(hasHowToFraming("I do not know how to create a role"), true);
+  assert.equal(hasHowToFraming("لا أعرف كيف أرفع مستنداً"), true);
+  // "show me" is now a negatable how-to marker too.
+  assert.equal(hasHowToFraming("do not show me the steps"), false);
+  assert.equal(hasHowToFraming("show me how to create a role"), true);
+});
+
+test("isExplicitNoGuide detects declined walkthroughs only", () => {
+  assert.equal(isExplicitNoGuide("do not guide me through the UI"), true);
+  assert.equal(isExplicitNoGuide("don't walk me through the UI"), true);
+  assert.equal(isExplicitNoGuide("please do not guide me"), true);
+  assert.equal(isExplicitNoGuide("لا ترشدني"), true);
+  assert.equal(isExplicitNoGuide("أريد إنشاء دور دون ارشاد"), true);
+  assert.equal(isExplicitNoGuide("guide me through creating a role"), false);
+  assert.equal(isExplicitNoGuide("how do I create a role?"), false);
+  assert.equal(isExplicitNoGuide("I do not know how to create a role"), false);
+  assert.equal(isExplicitNoGuide("walk me through the platform"), false);
+  // Declined "show me the steps" framing is an explicit no-guide request, but a
+  // positive "show me how" is not.
+  assert.equal(isExplicitNoGuide("do not show me the steps"), true);
+  assert.equal(isExplicitNoGuide("Do not show me the steps. Create it for me."), true);
+  assert.equal(isExplicitNoGuide("show me how to create a role"), false);
+});
+
 test("hasNavFraming recognizes navigation phrasing only for real destinations", () => {
   assert.equal(hasNavFraming("find the roles page"), true);
   assert.equal(hasNavFraming("open the users tab"), true);
@@ -54,6 +87,11 @@ test("hasNavFraming recognizes navigation phrasing only for real destinations", 
   assert.equal(hasNavFraming("find the document I uploaded"), false);
   assert.equal(hasNavFraming("how do I search documents"), false);
   assert.equal(hasNavFraming("show me the email logs"), true);
+  // Negated nav framing ("do not show me the steps") must not count as a
+  // navigation request.
+  assert.equal(hasNavFraming("do not show me the steps"), false);
+  assert.equal(hasNavFraming("Do not show me the steps. Create it for me."), false);
+  assert.equal(hasNavFraming("show me how to create a role"), true);
 });
 
 test("matchFlowToUtterance: how-to phrasing routes to flows", () => {
@@ -85,6 +123,19 @@ test("matchFlowToUtterance: neutral phrasing picks the strongest keyword", () =>
   assert.equal(flowOf("update my password", "en"), "settings.open");
   assert.equal(flowOf("usage and limits", "en"), "usage.view");
   assert.equal(flowOf("storage usage", "en"), "usage.view");
+});
+
+test("matchFlowToUtterance: role creation phrasing matches roles.create", () => {
+  assert.equal(flowOf("create a role", "en"), "roles.create");
+  assert.equal(flowOf("create role", "en"), "roles.create");
+  assert.equal(flowOf("create the role", "en"), "roles.create");
+  assert.equal(flowOf("create a new role", "en"), "roles.create");
+  assert.equal(flowOf("creating a role", "en"), "roles.create");
+  assert.equal(flowOf("create a new role called HR Manager", "en"), "roles.create");
+  assert.equal(flowOf("create a role named HR Manager", "en"), "roles.create");
+  assert.equal(flowOf("guide me through creating a role called HR Manager", "en"), "roles.create");
+  assert.equal(flowOf("create the role HR Manager for me", "en"), "roles.create");
+  assert.equal(flowOf("كيف أنشئ دور جديد؟", "ar"), "roles.create");
 });
 
 test("matchFlowToUtterance: tour requests route to platform.tour", () => {

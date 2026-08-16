@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { FeedbackService } from "../feedback.service.js";
+import { FeedbackService, type FeedbackTargetAuthorizer } from "../feedback.service.js";
 import type { FeedbackRepository } from "../feedback.repository.js";
 import type { KnowledgeGapsService } from "../../knowledge-gaps/knowledge-gaps.service.js";
 
@@ -27,7 +27,8 @@ describe("FeedbackService", () => {
       reportCandidate: async () => ({}),
     } as unknown as KnowledgeGapsService;
 
-    const service = new FeedbackService(mockRepo as FeedbackRepository, mockGapService as KnowledgeGapsService);
+    const targetAuthorizer: FeedbackTargetAuthorizer = { assertOwnedMessage: async () => {} };
+    const service = new FeedbackService(mockRepo as FeedbackRepository, mockGapService as KnowledgeGapsService, null, targetAuthorizer);
 
     const result = await service.submitFeedback("tenant_1", "user_1", {
       messageId: "msg_1",

@@ -26,7 +26,14 @@ export interface QuotaProgressBarProps {
 
 /* ---- colour bands ------------------------------------------------------ */
 
-function getBarColor(percent: number, isUnlimited: boolean): string {
+/**
+ * Quota fill colour for a usage percentage.
+ *
+ * Exported so every quota bar in the app agrees on both the palette and the
+ * thresholds — the overview's usage panel used to hand-roll its own bands at
+ * 90/70 with raw hex, which drifted from these.
+ */
+export function getQuotaBarColor(percent: number, isUnlimited: boolean): string {
   if (isUnlimited) return "bg-success";
   if (percent >= 95) return "bg-error";
   if (percent >= 60) return "bg-warning";
@@ -69,7 +76,7 @@ export function QuotaProgressBar({
   const isUnlimited = safeLimit === 0;
   const percent = isUnlimited
     ? 100
-    : Math.min(Math.round((safeCurrent / safeLimit) * 100), 100);
+    : Math.min((safeCurrent / safeLimit) * 100, 100);
   const isFull = !isUnlimited && safeCurrent >= safeLimit;
   const almostFull = !isUnlimited && !isFull && safeLimit - safeCurrent <= 5;
 
@@ -84,7 +91,7 @@ export function QuotaProgressBar({
     badgeVariant = "warning";
   }
 
-  const barColor = getBarColor(percent, isUnlimited);
+  const barColor = getQuotaBarColor(percent, isUnlimited);
 
   return (
     <Card className={cn("flex flex-col gap-3 p-4 lg:p-5", className)}>

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../common/logger/logger.js";
 import { mapLlmProviderError } from "../../providers/llm/providerError.js";
+import { getTokenizer } from "../processing/chunking/tiktoken.adapter.js";
 import type { ModelAdapter, ModelCompletionResponse } from "./agents.types.js";
 import {
   formatThresholdComparisons,
@@ -14,6 +15,33 @@ export const MAX_UNKNOWN_RETRIES = 1;
 const MAX_EVIDENCE_CHARS = 30_000;
 const MAX_CHUNK_CHARS = 4_000;
 const MAX_SEMANTIC_VERIFICATION_TOKENS = 2_000;
+const SEMANTIC_PROMPT_SAFETY_TOKENS = 32;
+
+interface SemanticTokenBudget {
+  remainingTotalTokens: number;
+}
+
+function estimateSemanticPromptTokens(
+  messages: readonly { role: string; content: string }[],
+): number {
+  const tokenizer = getTokenizer("cl100k_base");
+
+  // Count the exact message contents plus a conservative allowance for
+  // provider-specific chat framing that is not represented in content text.
+  const contentTokens = messages.reduce(
+    (total, message) =>
+      total +
+      tokenizer.countTokens(message.role) +
+      tokenizer.countTokens(message.content),
+    0,
+  );
+
+  return (
+    contentTokens +
+    messages.length * 4 +
+    SEMANTIC_PROMPT_SAFETY_TOKENS
+  );
+}
 
 export type SemanticClaimState = "SUPPORTED" | "UNSUPPORTED" | "UNKNOWN";
 
@@ -26,6 +54,11 @@ export interface CitationSemanticVerificationInput {
   readonly answerText: string;
   readonly questionText?: string;
   readonly evidence: readonly CitationSemanticEvidence[];
+  /**
+   * Total token budget still available to this verifier invocation.
+   * All semantic verification passes/retries share this single budget.
+   */
+  readonly maxTokens?: number;
 }
 
 export interface PreparedSemanticClaim {
@@ -402,35 +435,83 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     private readonly maxUnknownRetries = MAX_UNKNOWN_RETRIES,
   ) {}
 
-  private async completeClaims(input: {
-    claims: readonly PreparedSemanticClaim[];
-    evidence: readonly CitationSemanticEvidence[];
-    questionText: string;
-    thresholdComparisons: unknown[];
-  }): Promise<ModelCompletionResponse> {
+  private async completeClaims(
+    input: {
+      claims: readonly PreparedSemanticClaim[];
+      evidence: readonly CitationSemanticEvidence[];
+      questionText: string;
+      thresholdComparisons: unknown[];
+    },
+    budget: SemanticTokenBudget,
+  ): Promise<ModelCompletionResponse | null> {
+    const messages = buildSemanticVerificationMessages({
+      claims: input.claims.map((claim) => claim.text),
+      evidence: input.evidence,
+      currentQuestion: input.questionText,
+      thresholdComparisons: input.thresholdComparisons,
+    });
+
+    const estimatedPromptTokens = estimateSemanticPromptTokens(messages);
+    const finiteBudget = Number.isFinite(budget.remainingTotalTokens);
+
+    if (
+      finiteBudget &&
+      budget.remainingTotalTokens <= estimatedPromptTokens
+    ) {
+      return null;
+    }
+
+    const availableCompletionTokens = finiteBudget
+      ? budget.remainingTotalTokens - estimatedPromptTokens
+      : MAX_SEMANTIC_VERIFICATION_TOKENS;
+
+    const maxTokens = Math.min(
+      MAX_SEMANTIC_VERIFICATION_TOKENS,
+      Math.max(0, Math.floor(availableCompletionTokens)),
+    );
+
+    if (maxTokens < 1) {
+      return null;
+    }
+
     try {
-      return await this.model.complete({
-        messages: buildSemanticVerificationMessages({
-          claims: input.claims.map((claim) => claim.text),
-          evidence: input.evidence,
-          currentQuestion: input.questionText,
-          thresholdComparisons: input.thresholdComparisons,
-        }),
+      const response = await this.model.complete({
+        messages,
         temperature: 0,
-        maxTokens: MAX_SEMANTIC_VERIFICATION_TOKENS,
+        maxTokens,
         structuredOutput: { type: "json_object" },
       });
+
+      if (finiteBudget) {
+        const reportedTotal = response.usage?.totalTokens;
+        const consumedTokens =
+          typeof reportedTotal === "number" &&
+          Number.isFinite(reportedTotal) &&
+          reportedTotal >= 0
+            ? reportedTotal
+            : estimatedPromptTokens + maxTokens;
+
+        budget.remainingTotalTokens = Math.max(
+          0,
+          budget.remainingTotalTokens - consumedTokens,
+        );
+      }
+
+      return response;
     } catch (error) {
       throw mapLlmProviderError(error);
     }
   }
 
-  private async verificationPass(input: {
-    prepared: PreparedSemanticAnswer;
-    evidence: readonly CitationSemanticEvidence[];
-    questionText: string;
-    thresholdComparisons: unknown[];
-  }): Promise<VerificationPass> {
+  private async verificationPass(
+    input: {
+      prepared: PreparedSemanticAnswer;
+      evidence: readonly CitationSemanticEvidence[];
+      questionText: string;
+      thresholdComparisons: unknown[];
+    },
+    budget: SemanticTokenBudget,
+  ): Promise<VerificationPass> {
     const evidenceIds = new Set(input.evidence.map((item) => item.chunkId));
     const evidenceText = input.evidence.map((item) => item.text).join("\n");
     const results = new Map<number, SemanticClaimVerification>();
@@ -458,7 +539,12 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     let pending = retryable;
     let retryCount = 0;
     for (let attempt = 0; pending.length > 0; attempt += 1) {
-      const response = await this.completeClaims({ ...input, claims: pending });
+      const response = await this.completeClaims(
+        { ...input, claims: pending },
+        budget,
+      );
+      if (!response) break;
+
       responses.push(response);
       const parsed = parseProviderJudgments(
         response.choices[0]?.message.content ?? "",
@@ -500,6 +586,14 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
   }
 
   async verify(input: CitationSemanticVerificationInput): Promise<CitationSemanticVerificationResult> {
+    const budget: SemanticTokenBudget = {
+      remainingTotalTokens:
+        typeof input.maxTokens === "number" &&
+        Number.isFinite(input.maxTokens)
+          ? Math.max(0, input.maxTokens)
+          : Number.POSITIVE_INFINITY,
+    };
+
     const evidence = boundedEvidence(input.evidence);
     const prepared = prepareSemanticClaims(input.answerText);
     const base = {
@@ -538,12 +632,15 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
 
     const thresholdComparisons = formatThresholdComparisons(input.questionText ?? "", evidence);
     const thresholdComparisonItems = thresholdComparisons ? z.array(z.unknown()).parse(JSON.parse(thresholdComparisons)) : [];
-    const initial = await this.verificationPass({
-      prepared,
-      evidence,
-      questionText: input.questionText ?? "",
-      thresholdComparisons: thresholdComparisonItems,
-    });
+    const initial = await this.verificationPass(
+      {
+        prepared,
+        evidence,
+        questionText: input.questionText ?? "",
+        thresholdComparisons: thresholdComparisonItems,
+      },
+      budget,
+    );
     const supported = initial.results.filter((result) => result.state === "SUPPORTED");
     const candidate = initial.results.every((result) => result.state === "SUPPORTED")
       ? input.answerText.trim()
@@ -554,12 +651,15 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     if (candidate) {
       finalPrepared = prepareSemanticClaims(candidate);
       if (!finalPrepared.diagnostics.overflowType && finalPrepared.factualClaims.length > 0) {
-        finalPass = await this.verificationPass({
-          prepared: finalPrepared,
-          evidence,
-          questionText: input.questionText ?? "",
-          thresholdComparisons: thresholdComparisonItems,
-        });
+        finalPass = await this.verificationPass(
+          {
+            prepared: finalPrepared,
+            evidence,
+            questionText: input.questionText ?? "",
+            thresholdComparisons: thresholdComparisonItems,
+          },
+          budget,
+        );
       }
     }
 

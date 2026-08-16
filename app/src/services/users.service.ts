@@ -21,6 +21,7 @@ export function inviteUser(input: {
   name: string;
   email: string;
   role: "COMPANY_ADMIN" | "EMPLOYEE";
+  departmentId?: string | null;
 }) {
   return apiClient<{
     success: true;
@@ -34,6 +35,7 @@ export function updateUser(
   input: {
     role?: "COMPANY_ADMIN" | "EMPLOYEE";
     status?: UserView["status"];
+    departmentId?: string | null;
   },
 ) {
   return apiClient<{ success: true; message: string; data: { user: UserView } }>(
@@ -56,12 +58,14 @@ export async function inviteUserWithRole(input: {
   name: string;
   email: string;
   role: "COMPANY_ADMIN" | "EMPLOYEE" | RoleView;
+  departmentId?: string | null;
 }): Promise<InvitationResult> {
   const baseRole = typeof input.role === "string" ? input.role : input.role.baseRole;
   const invitation = await inviteUser({
     name: input.name,
     email: input.email,
     role: baseRole,
+    departmentId: input.departmentId ?? null,
   });
   const emailDelivery = invitation.data.emailDelivery;
   if (typeof input.role === "string") {
@@ -90,20 +94,29 @@ export async function updateUserWithRole(input: {
   user: UserView;
   selectedRole: "COMPANY_ADMIN" | "EMPLOYEE" | RoleView;
   status: UserView["status"];
+  departmentId?: string | null;
 }): Promise<UserView> {
   if (typeof input.selectedRole === "string") {
     const response = await updateUser(input.user.id, {
       role: input.selectedRole,
       status: input.status,
+      ...(input.departmentId !== undefined ? { departmentId: input.departmentId } : {}),
     });
     return response.data.user;
   }
 
   let user = input.user;
-  if (user.role !== input.selectedRole.baseRole || user.status !== input.status) {
+  if (
+    user.role !== input.selectedRole.baseRole ||
+    user.status !== input.status ||
+    input.departmentId !== undefined && user.departmentId !== input.departmentId
+  ) {
     const response = await updateUser(user.id, {
       ...(user.role !== input.selectedRole.baseRole ? { role: input.selectedRole.baseRole } : {}),
       ...(user.status !== input.status ? { status: input.status } : {}),
+      ...(input.departmentId !== undefined && user.departmentId !== input.departmentId
+        ? { departmentId: input.departmentId }
+        : {}),
     });
     user = response.data.user;
   }

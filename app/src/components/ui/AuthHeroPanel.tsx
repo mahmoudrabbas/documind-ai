@@ -15,7 +15,11 @@ export function AuthHeroPanel() {
   const { t } = useI18n();
 
   return (
-    <aside className="relative hidden flex-1 items-center justify-center overflow-hidden bg-surface-dim p-2xl lg:flex">
+    <aside
+      data-auth-hero-panel
+      aria-hidden="true"
+      className="relative hidden h-full min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-surface-dim p-[clamp(1.5rem,3vw,3rem)] lg:flex"
+    >
       {/* Dot-grid background */}
       <div
         className="absolute inset-0 opacity-20"
@@ -27,13 +31,13 @@ export function AuthHeroPanel() {
 
       {/* Oversized watermark icon */}
       <span
-        className="material-symbols-outlined pointer-events-none absolute select-none text-[400px] text-primary opacity-[0.03]"
+        className="material-symbols-outlined pointer-events-none absolute select-none text-[clamp(16rem,32vw,25rem)] text-primary opacity-[0.03]"
         style={{ fontVariationSettings: "'wght' 200" }}
       >
         lock
       </span>
 
-      <div className="relative h-[600px] w-full max-w-2xl">
+      <div className="relative h-[min(70dvh,37.5rem)] w-full max-w-2xl">
         {/* Connector lines — drawn first so cards sit on top */}
         <svg
           className="pointer-events-none absolute inset-0 h-full w-full"
@@ -78,7 +82,7 @@ export function AuthHeroPanel() {
 
         {/* Document card 1 — top left */}
         <div
-          className="card-shadow animate-float absolute left-10 top-10 z-20 w-64 rounded-xl bg-white p-md"
+          className="card-shadow animate-float absolute start-[4%] top-[6%] z-20 w-[clamp(12rem,18vw,16rem)] rounded-xl bg-white p-md"
           style={{ animationDelay: "-1s" }}
         >
           <div className="mb-sm flex items-center gap-sm">
@@ -89,7 +93,9 @@ export function AuthHeroPanel() {
               <p className="truncate text-label-md text-on-surface">
                 Q4_Market_Report.pdf
               </p>
-              <p className="text-[10px] text-outline">{t("auth.heroDocSize")}</p>
+              <p className="text-[10px] text-outline">
+                {t("auth.heroDocSize")}
+              </p>
             </div>
           </div>
           <div className="h-2 w-full rounded-full bg-surface-container">
@@ -101,7 +107,7 @@ export function AuthHeroPanel() {
         </div>
 
         {/* AI answer bubble — center */}
-        <div className="card-shadow animate-float ai-glow absolute left-1/2 top-1/2 z-30 w-80 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-tertiary-container/10 p-lg">
+        <div className="card-shadow ai-glow absolute left-1/2 top-[46%] z-30 w-[min(82%,20rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-tertiary-container/10 p-[clamp(1rem,2vw,1.5rem)]">
           <div className="mb-md flex items-start gap-sm">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary">
               <span
@@ -127,7 +133,7 @@ export function AuthHeroPanel() {
 
         {/* Document card 2 — bottom right */}
         <div
-          className="card-shadow animate-float absolute bottom-12 right-10 z-20 w-56 rounded-xl bg-white p-md"
+          className="card-shadow animate-float absolute bottom-[12%] end-[4%] z-20 w-[clamp(11rem,16vw,14rem)] rounded-xl bg-white p-md"
           style={{ animationDelay: "-3s" }}
         >
           <div className="mb-sm flex items-center gap-sm">
@@ -138,7 +144,9 @@ export function AuthHeroPanel() {
               <p className="truncate text-label-md text-on-surface">
                 Legal_Contract_v2.doc
               </p>
-              <p className="text-[10px] text-outline">{t("auth.heroDocAddedAgo")}</p>
+              <p className="text-[10px] text-outline">
+                {t("auth.heroDocAddedAgo")}
+              </p>
             </div>
           </div>
           <div className="mt-sm flex gap-xs">
@@ -150,7 +158,7 @@ export function AuthHeroPanel() {
       </div>
 
       {/* Bottom caption */}
-      <div className="absolute bottom-16 left-1/2 max-w-sm -translate-x-1/2 text-center">
+      <div className="absolute inset-x-lg bottom-[clamp(1.25rem,4dvh,4rem)] mx-auto max-w-sm text-center">
         <h3 className="mb-xs text-title-lg text-primary">
           {t("auth.heroSecurityTitle")}
         </h3>

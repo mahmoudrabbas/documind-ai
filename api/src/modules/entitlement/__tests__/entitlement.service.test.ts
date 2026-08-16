@@ -308,6 +308,44 @@ describe("EntitlementService", () => {
       expect(check.current).toBe(5);
     });
 
+    it("reconciles stale employee usage before consume so an already-full seat quota cannot be exceeded", async () => {
+      const EMPLOYEES: EntitlementDimension = "employees";
+      const now = new Date();
+      const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      provider.setSnapshot({
+        ...(await provider.getSnapshot(TENANT_A))!,
+        employees: 6,
+      });
+
+      // Simulate a stale quota counter that says only two seats are used.
+      await counter.set(TENANT_A, EMPLOYEES, periodKey, 2);
+
+      const reconciledService = new EntitlementService(
+        counter,
+        provider,
+        undefined,
+        async (tenantId) => {
+          // Authoritative source says all six employee seats are already occupied.
+          await counter.set(tenantId, EMPLOYEES, periodKey, 6);
+        },
+      );
+
+      const result = await reconciledService.consume(
+        TENANT_A,
+        EMPLOYEES,
+        1,
+      );
+
+      expect(result.committed).toBe(false);
+      expect(result.current).toBe(6);
+      expect(result.limit).toBe(6);
+      expect(result.remaining).toBe(0);
+      await expect(
+        counter.getUsage(TENANT_A, EMPLOYEES, periodKey),
+      ).resolves.toBe(6);
+    });
+
     it("exceed limit: consume when at limit returns committed=false and does not increment", async () => {
       // Consume to the limit (100)
       await service.consume(TENANT_A, DIM_DOCUMENTS, 100);

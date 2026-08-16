@@ -55,6 +55,12 @@ typography:
     fontWeight: '700'
     lineHeight: 60px
     letterSpacing: -0.02em
+  display-sm:
+    fontFamily: Inter
+    fontSize: 36px
+    fontWeight: '700'
+    lineHeight: 44px
+    letterSpacing: -0.02em
   headline-lg:
     fontFamily: Inter
     fontSize: 32px
@@ -76,6 +82,16 @@ typography:
     fontSize: 20px
     fontWeight: '600'
     lineHeight: 28px
+  title-md:
+    fontFamily: Inter
+    fontSize: 18px
+    fontWeight: '600'
+    lineHeight: 24px
+  title-sm:
+    fontFamily: Inter
+    fontSize: 16px
+    fontWeight: '600'
+    lineHeight: 24px
   body-lg:
     fontFamily: Inter
     fontSize: 18px
@@ -91,6 +107,16 @@ typography:
     fontSize: 14px
     fontWeight: '400'
     lineHeight: 20px
+  body-xs:
+    fontFamily: Inter
+    fontSize: 12px
+    fontWeight: '400'
+    lineHeight: 18px
+  label-lg:
+    fontFamily: Inter
+    fontSize: 16px
+    fontWeight: '500'
+    lineHeight: 24px
   label-md:
     fontFamily: Inter
     fontSize: 14px
@@ -102,6 +128,12 @@ typography:
     fontWeight: '600'
     lineHeight: 16px
     letterSpacing: 0.05em
+  label-xs:
+    fontFamily: Inter
+    fontSize: 11px
+    fontWeight: '600'
+    lineHeight: 16px
+    letterSpacing: 0.06em
 rounded:
   sm: 0.25rem
   DEFAULT: 0.5rem
@@ -141,9 +173,9 @@ The palette is anchored by "Deep Navy" and "Oxford Blue," establishing immediate
 
 This design system utilizes **Inter** exclusively to leverage its exceptional legibility in data-heavy SaaS environments. 
 
-- **Hierarchy:** Use `display-lg` for dashboard welcomes and `headline-lg` for page titles. `title-lg` is optimized for card headers and modal titles.
-- **Body Text:** Standardize on `body-md` for most content. `body-sm` is strictly for sidebars, metadata, and secondary descriptions.
-- **Labels:** `label-sm` uses uppercase styling for metadata tags and table headers to provide clear visual distinction from interactive content.
+- **Hierarchy:** Use `display-lg` for dashboard welcomes and `headline-lg` for page titles. `title-lg` is optimized for card headers and modal titles, with `title-md` for panel headers nested inside a card and `title-sm` for the sub-headings below them. `display-sm` is reserved for single large figures — KPI values and pricing.
+- **Body Text:** Standardize on `body-md` for most content. `body-sm` is strictly for sidebars, metadata, and secondary descriptions, and `body-xs` for captions beneath a value or chart.
+- **Labels:** `label-sm` uses uppercase styling for metadata tags and table headers to provide clear visual distinction from interactive content. `label-xs` is the same treatment one step down, for pills and badges; `label-lg` is for list-row labels that need to read as primary text.
 - **Responsiveness:** On mobile devices, headline sizes scale down significantly to ensure text remains within the viewport without excessive wrapping.
 
 ## Layout & Spacing

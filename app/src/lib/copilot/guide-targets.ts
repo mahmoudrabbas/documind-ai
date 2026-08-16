@@ -463,6 +463,18 @@ export const GUIDE_TARGETS: readonly GuideTargetEntry[] = [
     requiredPermissions: ["users:create"],
   },
   {
+    targetId: "users-edit-button",
+    route: "/dashboard/users",
+    description: "Edit user button",
+    requiredPermissions: ["users:update"],
+  },
+  {
+    targetId: "users-invite-form-department",
+    route: "/dashboard/users",
+    description: "Invitee department select field",
+    requiredPermissions: ["users:create"],
+  },
+  {
     targetId: "chat-message-input",
     route: "/dashboard/chat",
     description: "Chat message textarea",

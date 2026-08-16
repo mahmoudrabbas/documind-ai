@@ -211,13 +211,17 @@ type UsageMode = "normal" | "omitted" | "nullTotal";
 
 class TokenReportingModelAdapter implements ModelAdapter {
   readonly providerKey = "token-reporting";
+  observedMaxTokens: number | undefined;
 
   constructor(
     private readonly totalTokens: number,
     private readonly usageMode: UsageMode = "normal",
   ) {}
 
-  async complete(): Promise<ModelCompletionResponse> {
+  async complete(
+    params: Parameters<ModelAdapter["complete"]>[0],
+  ): Promise<ModelCompletionResponse> {
+    this.observedMaxTokens = params.maxTokens;
     const question = "What is our remote work policy?";
     const plan = {
       schemaVersion: "1.1.0",
@@ -289,6 +293,39 @@ class TokenReportingModelAdapter implements ModelAdapter {
 // ── Suite ────────────────────────────────────────────────────────────────────
 
 test("IntentQueryService — tokensPerMonth quota enforcement", async (t) => {
+  await t.test("passes request-local maxTokens to the model adapter", async () => {
+    const model = new TokenReportingModelAdapter(1);
+    const service = new IntentQueryService(
+      model,
+      new FakeConversationContextAdapter(),
+    );
+
+    await service.analyzeQuery(
+      {
+        question: "What is our remote work policy?",
+        maxTokens: 5,
+      },
+      adminContext,
+    );
+
+    assert.equal(model.observedMaxTokens, 5);
+  });
+
+  await t.test("keeps the 1000-token standalone default when maxTokens is omitted", async () => {
+    const model = new TokenReportingModelAdapter(1);
+    const service = new IntentQueryService(
+      model,
+      new FakeConversationContextAdapter(),
+    );
+
+    await service.analyzeQuery(
+      { question: "What is our remote work policy?" },
+      adminContext,
+    );
+
+    assert.equal(model.observedMaxTokens, 1000);
+  });
+
   await t.test("consumes the actual token count against tokensPerMonth after a successful query", async () => {
     const service = new IntentQueryService(
       new TokenReportingModelAdapter(500),
@@ -302,6 +339,29 @@ test("IntentQueryService — tokensPerMonth quota enforcement", async (t) => {
 
     assert.equal(plan.detectedIntent, "knowledge_question");
     assert.equal(await readTokensCounter(), 500);
+  });
+
+  await t.test("external token accounting reports usage without consuming tokensPerMonth", async () => {
+    const service = new IntentQueryService(
+      new TokenReportingModelAdapter(500),
+      new FakeConversationContextAdapter(),
+    );
+
+    const plan = await service.analyzeQuery(
+      { question: "What is our remote work policy?" },
+      adminContext,
+      { tokenAccounting: "external" },
+    );
+
+    assert.equal(plan.detectedIntent, "knowledge_question");
+
+    // The Intent Agent still reports its real model usage so the enclosing
+    // workflow can account for it centrally.
+    assert.equal(plan.processingMetadata.tokensUsed, 500);
+
+    // But it must not independently consume the tenant's monthly token quota;
+    // Chat will settle the complete workflow exactly once.
+    assert.equal(await readTokensCounter(), 0);
   });
 
   await t.test("denies with 429 ENTITLEMENT_EXCEEDED when tokensPerMonth quota is exhausted", async () => {

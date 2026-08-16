@@ -70,6 +70,21 @@ export interface QuotaCounterPort {
   ): Promise<void>;
 
   /**
+   * Atomically raises a counter to at least `value` without ever lowering it.
+   *
+   * Used by request-path reconciliation so an authoritative recount can repair
+   * a stale-low counter without overwriting newer concurrent consumption.
+   *
+   * Returns the resulting counter value.
+   */
+  ensureAtLeast(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    periodStart: string,
+    value: number,
+  ): Promise<number>;
+
+  /**
    * Check if a request has already been processed (idempotency gate).
    */
   getIdempotencyGate(
