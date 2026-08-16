@@ -219,6 +219,37 @@ function toolOf(name: string, deps: AuthorizedRetrievalDependencies) {
   return createAuthorizedRetrievalTools(deps).find((t) => t.schema.name === name)!;
 }
 
+/**
+ * Runs authorized_hybrid_search (populating the trusted same-run provenance
+ * catalog) before evaluate_evidence, mirroring the production workflow where
+ * evidence evaluation only ever consumes candidates the search produced.
+ */
+async function evaluateWithProvenance(
+  deps: AuthorizedRetrievalDependencies,
+  input: { question: string; candidateIds: string[] },
+  options: { candidates?: RetrievalCandidate[] } = {},
+) {
+  const candidates = options.candidates ?? [makeCandidate()];
+  const tools = createAuthorizedRetrievalTools({
+    ...deps,
+    retrieval: {
+      hybridSearch: async () => ({
+        candidates,
+        totalCandidates: candidates.length,
+        filterSummary: {} as never,
+        diagnostics: {} as never,
+      }),
+      vectorSearch: async () => ({}) as never,
+      keywordSearch: async () => ({}) as never,
+    } as unknown as HybridRetrievalService,
+  });
+  const search = tools.find((tool) => tool.schema.name === "authorized_hybrid_search")!;
+  const evaluate = tools.find((tool) => tool.schema.name === "evaluate_evidence")!;
+  const context = agentRunContext({ runId: "run-evidence" });
+  await search.handler(context, { queryText: input.question, topK: 10 });
+  return evaluate.handler(context, input) as Promise<unknown>;
+}
+
 // ── Schema validation + trusted context rejection ─────────────────────────
 
 describe("authorizedRetrievalTools — schema & input validation", () => {
@@ -764,9 +795,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
         },
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
+    const result = (await evaluateWithProvenance(deps, {
       question: "what is the leave policy?",
       candidateIds: [chunkId],
     })) as {
@@ -796,9 +825,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
           makeBundle("WEAK", { items: [{ chunkId, documentId: docId, score: 0.3 }] }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
+    const result = (await evaluateWithProvenance(deps, {
       question: "test",
       candidateIds: [chunkId],
     })) as {
@@ -819,9 +846,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
         buildEvidenceBundle: async () => makeBundle("NO_EVIDENCE", { items: [] }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
+    const result = (await evaluateWithProvenance(deps, {
       question: "test",
       candidateIds: [chunkId],
     })) as {
@@ -849,12 +874,14 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
           }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
-      question: "test",
-      candidateIds: [chunkId, chunkIdB],
-    })) as {
+    const result = (await evaluateWithProvenance(
+      deps,
+      {
+        question: "test",
+        candidateIds: [chunkId, chunkIdB],
+      },
+      { candidates: [makeCandidate(), makeCandidate({ chunkId: chunkIdB, documentId: docIdB })] },
+    )) as {
       sufficiency: string;
       approvedEvidenceIds: string[];
       rejectedEvidenceIds: string[];
@@ -864,6 +891,32 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
     assert.equal(result.sufficiency, "CONFLICTING");
     assert.deepEqual(result.approvedEvidenceIds, []);
     assert.deepEqual(result.rejectedEvidenceIds, [chunkId, chunkIdB]);
+    assert.deepEqual(
+      (result as { conflictEvidenceIds?: string[] }).conflictEvidenceIds,
+      [chunkId, chunkIdB],
+    );
+  });
+
+  test("direct evaluation without same-run search fails closed with CANDIDATE_PROVENANCE_MISSING", async () => {
+    const { deps, rerankerCalls } = makeDeps();
+    const tool = toolOf("evaluate_evidence", deps);
+
+    const result = (await tool.handler(agentRunContext({ runId: "run-no-search" }), {
+      question: "test",
+      candidateIds: [chunkId],
+    })) as {
+      sufficiency: string;
+      approvedEvidenceIds: string[];
+      rejectedEvidenceIds: string[];
+      reasonCode: string;
+    };
+
+    assert.equal(result.sufficiency, "NO_EVIDENCE");
+    assert.equal(result.reasonCode, "CANDIDATE_PROVENANCE_MISSING");
+    assert.deepEqual(result.approvedEvidenceIds, []);
+    // Every requested candidate is rejected — none silently zero-scored.
+    assert.deepEqual(result.rejectedEvidenceIds, [chunkId]);
+    assert.equal(rerankerCalls.length, 0);
   });
 
   test("reranker failure approves nothing (fails closed)", async () => {
@@ -874,9 +927,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
         },
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
+    const result = (await evaluateWithProvenance(deps, {
       question: "test",
       candidateIds: [chunkId],
     })) as {
@@ -902,9 +953,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
           }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
+    const result = (await evaluateWithProvenance(deps, {
       question: "test",
       candidateIds: [chunkId],
     })) as {
@@ -930,9 +979,7 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
           }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
+    const result = (await evaluateWithProvenance(deps, {
       question: "test",
       candidateIds: [chunkId],
     })) as {
@@ -966,12 +1013,14 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
           }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
-      question: "test",
-      candidateIds: [chunkId, chunkIdB, chunkIdC],
-    })) as {
+    const result = (await evaluateWithProvenance(
+      deps,
+      {
+        question: "test",
+        candidateIds: [chunkId, chunkIdB, chunkIdC],
+      },
+      { candidates: [makeCandidate(), makeCandidate({ chunkId: chunkIdB, documentId: docIdB })] },
+    )) as {
       sufficiency: string;
       approvedEvidenceIds: string[];
       rejectedEvidenceIds: string[];
@@ -1000,12 +1049,14 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
           }),
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
-      question: "test",
-      candidateIds: [chunkId, chunkIdB],
-    })) as {
+    const result = (await evaluateWithProvenance(
+      deps,
+      {
+        question: "test",
+        candidateIds: [chunkId, chunkIdB],
+      },
+      { candidates: [makeCandidate(), makeCandidate({ chunkId: chunkIdB, documentId: docIdB })] },
+    )) as {
       sufficiency: string;
       approvedEvidenceIds: string[];
       rejectedEvidenceIds: string[];
@@ -1039,12 +1090,14 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
         },
       } as RerankerService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
-      question: "test",
-      candidateIds: [chunkId, chunkIdB, chunkIdC],
-    })) as {
+    const result = (await evaluateWithProvenance(
+      deps,
+      {
+        question: "test",
+        candidateIds: [chunkId, chunkIdB, chunkIdC],
+      },
+      { candidates: [makeCandidate(), makeCandidate({ chunkId: chunkIdB, documentId: docIdB })] },
+    )) as {
       sufficiency: string;
       approvedEvidenceIds: string[];
       rejectedEvidenceIds: string[];
@@ -1080,12 +1133,14 @@ describe("authorizedRetrievalTools — evaluate_evidence handler", () => {
         buildDiscoverPipeline: async () => [],
       } as unknown as DocumentAccessAuthorizationService,
     });
-    const tool = toolOf("evaluate_evidence", deps);
-
-    const result = (await tool.handler(agentRunContext(), {
-      question: "test",
-      candidateIds: [chunkId, chunkIdB, chunkIdC],
-    })) as {
+    const result = (await evaluateWithProvenance(
+      deps,
+      {
+        question: "test",
+        candidateIds: [chunkId, chunkIdB, chunkIdC],
+      },
+      { candidates: [makeCandidate(), makeCandidate({ chunkId: chunkIdB, documentId: docIdB })] },
+    )) as {
       sufficiency: string;
       approvedEvidenceIds: string[];
       rejectedEvidenceIds: string[];

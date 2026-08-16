@@ -780,7 +780,7 @@ export function createEvaluateEvidenceTool(
       return {
         sufficiency: "NO_EVIDENCE",
         approvedEvidenceIds: [],
-        rejectedEvidenceIds: rejectedBase,
+        rejectedEvidenceIds: [...requestedIds],
         reasonCode: "CANDIDATE_PROVENANCE_MISSING",
         ...(authorizationRestricted ? { authorizationRestricted } : {}),
       };
