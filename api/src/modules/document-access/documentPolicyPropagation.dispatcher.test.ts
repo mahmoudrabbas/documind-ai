@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import mongoose from "mongoose";
 import DocumentPolicyPropagationOutboxModel from "../../db/models/documentPolicyPropagationOutbox.model.js";
-import { DocumentPolicyPropagationDispatcher, type PolicyPropagationQueuePort } from "./documentPolicyPropagation.dispatcher.js";
+import { DocumentPolicyPropagationDispatcher, startPolicyPropagationRecoveryScheduler, stopPolicyPropagationRecoveryScheduler, type PolicyPropagationQueuePort } from "./documentPolicyPropagation.dispatcher.js";
 import { setAuditWriter } from "../../common/observability/index.js";
 import { InMemoryAuditWriter } from "../../common/observability/auditWriter.js";
 
@@ -41,4 +41,35 @@ test("dispatcher maps publication failure to retry_pending without storing raw e
   assert.equal(await new DocumentPolicyPropagationDispatcher(queue).dispatchEvent(tenantId.toString(), payload.eventId), "retry_pending");
   const serialized = JSON.stringify(update); assert.equal(serialized.includes("raw provider details"), false);
   assert.equal(serialized.includes("DOCUMENT_POLICY_PROPAGATION_DISPATCH_FAILED"), true);
+});
+
+test("recovery scheduler reclaims pending events across all tenants in bounded batches", async () => {
+  const calls: Array<{ tenantId?: string; limit?: number }> = [];
+  const stop = startPolicyPropagationRecoveryScheduler({
+    dispatchPending: async (tenantId?: string, limit?: number) => {
+      calls.push({ tenantId, limit });
+      return { claimed: 0, dispatched: 0, retryPending: 0, deadLetter: 0 };
+    },
+  }, 10);
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  stop();
+  stopPolicyPropagationRecoveryScheduler();
+  assert.ok(calls.length >= 2, "scheduler must fire repeatedly");
+  for (const call of calls) {
+    assert.equal(call.tenantId, undefined, "recovery is tenant-wide");
+    assert.ok((call.limit ?? 0) <= 50 && (call.limit ?? 0) >= 1, "batch bounded to 50");
+  }
+});
+
+test("dispatchPending without tenant scans every tenant's recoverable events", async (context) => {
+  const calls: unknown[] = [];
+  context.mock.method(DocumentPolicyPropagationOutboxModel, "find", (filter: unknown) => {
+    calls.push(filter);
+    return { sort: () => ({ limit: () => ({ select: () => ({ lean: () => ({ exec: async () => [] }) }) }) }) };
+  });
+  const queue: PolicyPropagationQueuePort = { async enqueue() { return { ok: true }; } };
+  const totals = await new DocumentPolicyPropagationDispatcher(queue).dispatchPending(undefined, 50);
+  assert.deepEqual(totals, { claimed: 0, dispatched: 0, retryPending: 0, deadLetter: 0 });
+  assert.equal(calls.length, 1);
+  assert.equal(Object.hasOwn(calls[0] as object, "tenantId"), false);
 });

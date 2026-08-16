@@ -1,5 +1,9 @@
 import mongoose from "mongoose";
+import DepartmentModel from "../../db/models/department.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
 import DocumentModel from "../../db/models/document.model.js";
+import { normalizeTaxonomyName } from "../document-taxonomy/documentTaxonomy.normalization.js";
 import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { PermissionEvaluatorDocumentCapabilityAdapter } from "./documentAccess.capability.js";
@@ -25,7 +29,9 @@ export type RetrievalAuthorizationDenialReason =
   | "RESOLVER_FAILED"
   | "NO_AUTHORIZED_DOCUMENTS"
   /** Actor can read at least one candidate document but none are AI-usable. */
-  | "READABLE_NOT_AI_USABLE";
+  | "READABLE_NOT_AI_USABLE"
+  /** A restrictive grant scope references archived or missing taxonomy records. */
+  | "TAXONOMY_SCOPE_UNRESOLVABLE";
 
 export interface DocumentRetrievalAuthorizationResult {
   readonly filter: DocumentRetrievalAccessFilter;
@@ -54,10 +60,15 @@ export interface RetrievalAuthorizationDeps {
   readonly resolveActor: (
     context: { tenantId: string; actorId: string },
   ) => Promise<DocumentAccessActorContext>;
-  /** Returns the live permission grant map; a missing map entry means no grant. */
+  /**
+   * Returns the live permission grant map; a missing map entry means no grant.
+   * `taxonomyResolvable: false` marks a restrictive grant scope whose
+   * department/category/classification references no longer resolve to
+   * active taxonomy records — a typed fail-closed condition.
+   */
   readonly resolveUseInAiGrant: (
     actor: DocumentAccessActorContext,
-  ) => Promise<{ scope: unknown } | null>;
+  ) => Promise<{ scope: unknown; taxonomyResolvable?: boolean } | null>;
   readonly findCandidateDocuments: (
     tenantId: string,
   ) => Promise<readonly CanonicalRetrievalDocument[]>;
@@ -161,7 +172,7 @@ export async function resolveCanonicalRetrievalAuthorization(
     return denyAll(context.tenantId, context.actorId, "ACTOR_INVALID");
   }
 
-  let grant: { scope: unknown } | null;
+  let grant: { scope: unknown; taxonomyResolvable?: boolean } | null;
   try {
     grant = await deps.resolveUseInAiGrant(actor);
   } catch {
@@ -169,6 +180,13 @@ export async function resolveCanonicalRetrievalAuthorization(
   }
   if (!grant) {
     return denyAll(context.tenantId, context.actorId, "PERMISSION_REQUIRED");
+  }
+  if (grant.taxonomyResolvable === false) {
+    return denyAll(
+      context.tenantId,
+      context.actorId,
+      "TAXONOMY_SCOPE_UNRESOLVABLE",
+    );
   }
 
   let documents: readonly CanonicalRetrievalDocument[];
@@ -287,8 +305,55 @@ export async function resolveCanonicalRetrievalAuthorization(
   };
 }
 
-/** Production Mongo-backed dependency set for the canonical resolver. */
-export function createDefaultRetrievalAuthorizationDeps(
+/**
+ * True when every restrictive scope dimension of the use-in-ai grant resolves
+ * to at least one active tenant taxonomy record. Archived or deleted scope
+ * references yield false so callers can deny with TAXONOMY_SCOPE_UNRESOLVABLE
+ * instead of silently matching nothing.
+ */
+async function grantScopeTaxonomyResolvable(
+  tenantId: string,
+  scope: {
+    departmentIds?: string[];
+    documentCategories?: string[];
+    documentClassifications?: string[];
+  },
+): Promise<boolean> {
+  const tenantFilter = {
+    tenantId: new mongoose.Types.ObjectId(tenantId),
+    status: "active",
+  };
+  try {
+    if (scope.departmentIds?.length) {
+      const count = await DepartmentModel.countDocuments({
+        ...tenantFilter,
+        _id: { $in: scope.departmentIds },
+      } as never).exec();
+      if (count < new Set(scope.departmentIds).size) return false;
+    }
+    if (scope.documentCategories?.length) {
+      const names = scope.documentCategories.map(normalizeTaxonomyName);
+      const count = await DocumentCategoryModel.countDocuments({
+        ...tenantFilter,
+        normalizedName: { $in: names },
+      } as never).exec();
+      if (count < new Set(names).size) return false;
+    }
+    if (scope.documentClassifications?.length) {
+      const names = scope.documentClassifications.map(normalizeTaxonomyName);
+      const count = await DocumentClassificationModel.countDocuments({
+        ...tenantFilter,
+        normalizedName: { $in: names },
+      } as never).exec();
+      if (count < new Set(names).size) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Production Mongo-backed dependency set for the canonical resolver. */export function createDefaultRetrievalAuthorizationDeps(
   authorization: {
     resolveActor: (context: {
       tenantId: string;
@@ -307,7 +372,25 @@ export function createDefaultRetrievalAuthorizationDeps(
         customRoleId: actor.customRoleId,
       });
       const grant = resolved.grants.get(Permission.DOCUMENTS_USE_IN_AI);
-      return grant ? { scope: grant.scope } : null;
+      if (!grant) return null;
+      const scope = grant.scope as
+        | {
+            departmentIds?: string[];
+            documentCategories?: string[];
+            documentClassifications?: string[];
+          }
+        | null
+        | undefined;
+      const restrictive =
+        (scope?.departmentIds?.length ?? 0) > 0 ||
+        (scope?.documentCategories?.length ?? 0) > 0 ||
+        (scope?.documentClassifications?.length ?? 0) > 0;
+      if (!restrictive) return { scope: grant.scope };
+      const taxonomyResolvable = await grantScopeTaxonomyResolvable(
+        actor.tenantId,
+        scope!,
+      );
+      return { scope: grant.scope, taxonomyResolvable };
     },
     findCandidateDocuments: async (tenantId) => {
       if (!mongoose.isObjectIdOrHexString(tenantId)) return [];

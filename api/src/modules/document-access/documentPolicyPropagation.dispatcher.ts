@@ -23,10 +23,11 @@ export class DocumentPolicyPropagationDispatcher {
     return this.publish(event);
   }
 
-  async dispatchPending(tenantId: string, limit = 20): Promise<{ claimed: number; dispatched: number; retryPending: number; deadLetter: number }> {
+  async dispatchPending(tenantId?: string, limit = 50): Promise<{ claimed: number; dispatched: number; retryPending: number; deadLetter: number }> {
     const bounded = Math.max(1, Math.min(MAX_BATCH, Math.trunc(limit)));
     const now = new Date();
-    const candidates = await DocumentPolicyPropagationOutboxModel.find({ tenantId,
+    const candidates = await DocumentPolicyPropagationOutboxModel.find({
+      ...(tenantId ? { tenantId } : {}),
       $or: [{ state: { $in: ["pending", "retry_pending"] }, nextAttemptAt: { $lte: now } }, { state: "dispatching", claimExpiresAt: { $lte: now } }],
     }).sort({ nextAttemptAt: 1, _id: 1 }).limit(bounded).select("tenantId eventId").lean().exec();
     const totals = { claimed: 0, dispatched: 0, retryPending: 0, deadLetter: 0 };
@@ -68,4 +69,32 @@ let singleton: DocumentPolicyPropagationDispatcher | null = null;
 export function getDocumentPolicyPropagationDispatcher() { singleton ??= new DocumentPolicyPropagationDispatcher(getApiJobDispatcher()); return singleton; }
 export function schedulePolicyPropagationDispatch(tenantId: string, eventId: string) {
   setImmediate(() => { void getDocumentPolicyPropagationDispatcher().dispatchEvent(tenantId, eventId).catch(() => undefined); });
+}
+
+/**
+ * Production recovery scheduler: every five seconds it reclaims `pending`,
+ * claim-expired `dispatching`, and `retry_pending` outbox events in batches
+ * of 50 across all tenants. Recovery is idempotent — claims are conditional
+ * and events carry deterministic identities — so running alongside the
+ * immediate dispatch path is safe.
+ */
+let recoveryTimer: NodeJS.Timeout | null = null;
+export const POLICY_PROPAGATION_RECOVERY_INTERVAL_MS = 5_000;
+export const POLICY_PROPAGATION_RECOVERY_BATCH = 50;
+
+export function startPolicyPropagationRecoveryScheduler(
+  dispatcher: Pick<DocumentPolicyPropagationDispatcher, "dispatchPending"> = getDocumentPolicyPropagationDispatcher(),
+  intervalMs: number = POLICY_PROPAGATION_RECOVERY_INTERVAL_MS,
+): () => void {
+  if (recoveryTimer) return () => undefined;
+  recoveryTimer = setInterval(() => {
+    void dispatcher.dispatchPending(undefined, POLICY_PROPAGATION_RECOVERY_BATCH).catch(() => undefined);
+  }, intervalMs);
+  recoveryTimer.unref?.();
+  return stopPolicyPropagationRecoveryScheduler;
+}
+
+export function stopPolicyPropagationRecoveryScheduler(): void {
+  if (recoveryTimer) clearInterval(recoveryTimer);
+  recoveryTimer = null;
 }

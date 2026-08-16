@@ -58,7 +58,7 @@ function policy(
 function deps(input: {
   documents: CanonicalRetrievalDocument[];
   policies: Map<string, DocumentAccessPolicy>;
-  grant?: { scope: unknown } | null;
+  grant?: { scope: unknown; taxonomyResolvable?: boolean } | null;
   failCandidates?: boolean;
 }): RetrievalAuthorizationDeps {
   const evaluator = new InMemoryDocumentAccessPolicyEvaluator(
@@ -200,6 +200,19 @@ describe("canonical retrieval authorization allowlist", () => {
       member.documentId,
       owned.documentId,
     ].sort());
+  });
+
+  test("archived or missing scoped taxonomy references deny with TAXONOMY_SCOPE_UNRESOLVABLE", async () => {
+    const result = await resolveCanonicalRetrievalAuthorization(
+      { tenantId, actorId },
+      deps({
+        documents: [],
+        policies: new Map(),
+        grant: { scope: { departmentIds: ["64a0000000000000000000de" ] }, taxonomyResolvable: false },
+      }),
+    );
+    assert.equal(result.filter.mode, "deny_all");
+    assert.equal(result.denialReason, "TAXONOMY_SCOPE_UNRESOLVABLE");
   });
 
   test("readable but not AI-usable documents produce the distinct READABLE_NOT_AI_USABLE denial", async () => {

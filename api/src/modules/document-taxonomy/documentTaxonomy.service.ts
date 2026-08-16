@@ -31,7 +31,7 @@ import {
 } from "./documentTaxonomy.validator.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { AuditAction } from "../../common/observability/auditEvents.js";
-import { requestClassificationPropagation } from "../document-access/documentTaxonomyPropagation.service.js";
+import { requestClassificationPropagation, requestCategoryPropagation, requestDepartmentPropagation } from "../document-access/documentTaxonomyPropagation.service.js";
 
 export interface TaxonomyAuthorizationPort {
   authorize(context: TaxonomyOperationContext, permission: PermissionValue): Promise<void>;
@@ -67,7 +67,9 @@ export interface DocumentTaxonomyService {
 export function createDocumentTaxonomyService(dependencies: {
   repository: DocumentTaxonomyRepository;
   authorization: TaxonomyAuthorizationPort;
-  propagation?: { requestClassification(input: { tenantId: string; classificationId: string; taxonomyVersion: number; actorId: string }): Promise<void> };
+  propagation?: { requestClassification(input: { tenantId: string; classificationId: string; taxonomyVersion: number; actorId: string }): Promise<void>;
+    requestCategory?(input: { tenantId: string; categoryId: string; taxonomyVersion: number; actorId: string }): Promise<void>;
+    requestDepartment?(input: { tenantId: string; departmentId: string; taxonomyVersion: number; actorId: string }): Promise<void> };
   audit?: (input: { context: TaxonomyOperationContext; kind: TaxonomyKind; operation: "created" | "updated" | "archived" | "restored"; resourceId: string }) => Promise<void>;
 }): DocumentTaxonomyService {
   const { repository, authorization } = dependencies;
@@ -173,8 +175,7 @@ export function createDocumentTaxonomyService(dependencies: {
       });
       if (!updated) throw versionConflict();
       await dependencies.audit?.({ context, kind, operation: "updated", resourceId: updated.id });
-      if (kind === "classification" && existing.level !== updated.level) await dependencies.propagation?.requestClassification({ tenantId: context.tenantId,
-        classificationId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
+      await requestKindPropagation(kind, updated, context);
       return toView(updated);
     } catch (error) {
       if (isDuplicateKeyError(error)) throw duplicate(kind);
@@ -207,9 +208,30 @@ export function createDocumentTaxonomyService(dependencies: {
     );
     if (!updated) throw versionConflict();
     await dependencies.audit?.({ context, kind, operation: target === "archived" ? "archived" : "restored", resourceId: updated.id });
-    if (kind === "classification") await dependencies.propagation?.requestClassification({ tenantId: context.tenantId,
-      classificationId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
+    await requestKindPropagation(kind, updated, context);
     return toView(updated);
+  }
+
+  /**
+   * Canonical IDs are authoritative for authorization, so renames, archives,
+   * and restores of any taxonomy kind request chunk/embedding metadata
+   * propagation without interrupting retrieval.
+   */
+  async function requestKindPropagation(
+    kind: TaxonomyKind,
+    updated: TaxonomyRecord,
+    context: TaxonomyOperationContext,
+  ): Promise<void> {
+    if (kind === "classification") {
+      await dependencies.propagation?.requestClassification({ tenantId: context.tenantId,
+        classificationId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
+    } else if (kind === "category") {
+      await dependencies.propagation?.requestCategory?.({ tenantId: context.tenantId,
+        categoryId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
+    } else if (kind === "department") {
+      await dependencies.propagation?.requestDepartment?.({ tenantId: context.tenantId,
+        departmentId: updated.id, taxonomyVersion: updated.version, actorId: context.actorId });
+    }
   }
 
   return {
@@ -230,7 +252,7 @@ export const documentTaxonomyService = createDocumentTaxonomyService({
       await authorizeTenantOperation(context, permission);
     },
   },
-  propagation: { requestClassification: requestClassificationPropagation },
+  propagation: { requestClassification: requestClassificationPropagation, requestCategory: requestCategoryPropagation, requestDepartment: requestDepartmentPropagation },
   audit: ({ context, kind, operation, resourceId }) => auditTaxonomy(context, kind, operation, resourceId),
 });
 
