@@ -213,7 +213,7 @@ async function invoiceForRefundDto(refund: RefundDocument) {
       .lean()
       .exec(),
     RefundModel.find({ invoiceId: refund.invoiceId, _id: { $ne: refund._id } })
-      .select("status amountMinor")
+      .select("status amountMinor retainedConsumedMinor")
       .lean()
       .exec(),
   ]);
@@ -251,18 +251,28 @@ async function invoiceForRefundDto(refund: RefundDocument) {
       pendingAmountMinor: 0,
     },
   );
+  const amountPaidMinor = Number(invoice.amountPaidMinor ?? 0);
+  const refundedAmountMinor = Number(invoice.refundedAmountMinor ?? 0);
+  const reservedRefundAmountMinor = Number(invoice.reservedRefundAmountMinor ?? 0);
+  const retainedConsumedMinor = Number(invoice.retainedConsumedMinor ?? 0);
+  const pendingRetainedConsumedMinor = Math.max(
+    Math.max(0, Number(refund.retainedConsumedMinor ?? 0)),
+    refunds.reduce((floor, item) => Math.max(floor, Math.max(0, Number(item.retainedConsumedMinor ?? 0))), 0),
+  );
+  const refundableRemainingMinor = calculateRemainingRefundableMinor({
+    amountPaidMinor,
+    retainedConsumedMinor,
+    pendingRetainedConsumedMinor,
+    confirmedRefundedMinor: refundedAmountMinor,
+    pendingReservedMinor: reservedRefundAmountMinor,
+  });
   return {
     invoiceNumber: String(invoice.invoiceNumber || ""),
-    refundableRemainingMinor: refundableRemaining({
-      amountPaidMinor: Number(invoice.amountPaidMinor ?? 0),
-      refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0),
-      reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0),
-      retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0),
-    }),
-    refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0),
-    reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0),
-    retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0),
-    settlementCompleted: refundableRemaining({ amountPaidMinor: Number(invoice.amountPaidMinor ?? 0), refundedAmountMinor: Number(invoice.refundedAmountMinor ?? 0), reservedRefundAmountMinor: Number(invoice.reservedRefundAmountMinor ?? 0), retainedConsumedMinor: Number(invoice.retainedConsumedMinor ?? 0) }) === 0 && Number(invoice.retainedConsumedMinor ?? 0) > 0,
+    refundableRemainingMinor,
+    refundedAmountMinor,
+    reservedRefundAmountMinor,
+    retainedConsumedMinor,
+    settlementCompleted: refundableRemainingMinor === 0 && retainedConsumedMinor > 0 && refundedAmountMinor > 0,
     previousRefundSummary,
   };
 }
@@ -348,6 +358,7 @@ async function reserveRefundAmountInSession(
   tenantId: string,
   amountMinor: number,
   session: mongoose.ClientSession,
+  consumedFloorMinor = 0,
 ): Promise<void> {
   const updated = await InvoiceModel.updateOne(
     {
@@ -358,7 +369,13 @@ async function reserveRefundAmountInSession(
           {
             $subtract: [
               "$amountPaidMinor",
-              { $add: ["$refundedAmountMinor", "$reservedRefundAmountMinor"] },
+              {
+                $add: [
+                  "$refundedAmountMinor",
+                  "$reservedRefundAmountMinor",
+                  consumedFloorMinor,
+                ],
+              },
             ],
           },
           amountMinor,
@@ -504,18 +521,19 @@ export async function createRefundRequest(input: {
     throw new AppError(400, BILLING_REFUND_AMOUNT_INVALID, "Refund mode is required");
   }
   let maximumEligibleRefundMinor = refundableRemaining(invoice);
+  let currentEligibility: Awaited<ReturnType<typeof calculateRefundEligibilitySnapshot>> | null = null;
   if (preview && !preview.consumedAt) {
-    const current = await calculateRefundEligibilitySnapshot({ tenantId: input.tenantId, invoiceId: invoice.id, reason: preview.reason });
-    if (current.decisionReason === "REFUND_WINDOW_EXPIRED") {
+    currentEligibility = await calculateRefundEligibilitySnapshot({ tenantId: input.tenantId, invoiceId: invoice.id, reason: preview.reason });
+    if (currentEligibility.decisionReason === "REFUND_WINDOW_EXPIRED") {
       throw new AppError(409, BILLING_REFUND_WINDOW_EXPIRED, "Refunds are only available within 7 days of the subscription payment");
     }
-    const usageChanged = JSON.stringify(current.includedUsageMetrics) !== JSON.stringify(preview.includedUsageMetrics.map((metric) => ({ dimension: metric.dimension, usage: metric.usage, limit: metric.limit, ratioBps: metric.ratioBps })));
-    if (current.subscriptionRevision !== preview.subscriptionRevision || current.amountPaidMinor !== preview.amountPaidMinor || current.currency !== preview.currency || current.maximumEligibleRefundMinor !== preview.maximumEligibleRefundMinor || usageChanged) {
-      throw new AppError(409, BILLING_REFUND_ELIGIBILITY_CHANGED, "Refund eligibility changed", { maximumEligibleRefundMinor: current.maximumEligibleRefundMinor });
+    const usageChanged = JSON.stringify(currentEligibility.includedUsageMetrics) !== JSON.stringify(preview.includedUsageMetrics.map((metric) => ({ dimension: metric.dimension, usage: metric.usage, limit: metric.limit, ratioBps: metric.ratioBps })));
+    if (currentEligibility.subscriptionRevision !== preview.subscriptionRevision || currentEligibility.amountPaidMinor !== preview.amountPaidMinor || currentEligibility.currency !== preview.currency || currentEligibility.maximumEligibleRefundMinor !== preview.maximumEligibleRefundMinor || usageChanged) {
+      throw new AppError(409, BILLING_REFUND_ELIGIBILITY_CHANGED, "Refund eligibility changed", { maximumEligibleRefundMinor: currentEligibility.maximumEligibleRefundMinor });
     }
-    if (current.reviewRequired) throw new AppError(409, BILLING_REFUND_USAGE_DATA_UNAVAILABLE, "Authoritative usage data is unavailable");
-    if (current.decisionReason === "DUPLICATE_PAYMENT_NOT_PROVEN") throw new AppError(409, BILLING_REFUND_DUPLICATE_PAYMENT_NOT_PROVEN, "Duplicate payment was not proven");
-    maximumEligibleRefundMinor = current.maximumEligibleRefundMinor;
+    if (currentEligibility.reviewRequired) throw new AppError(409, BILLING_REFUND_USAGE_DATA_UNAVAILABLE, "Authoritative usage data is unavailable");
+    if (currentEligibility.decisionReason === "DUPLICATE_PAYMENT_NOT_PROVEN") throw new AppError(409, BILLING_REFUND_DUPLICATE_PAYMENT_NOT_PROVEN, "Duplicate payment was not proven");
+    maximumEligibleRefundMinor = currentEligibility.maximumEligibleRefundMinor;
   } else if (preview) {
     maximumEligibleRefundMinor = preview.maximumEligibleRefundMinor;
   }
@@ -609,7 +627,11 @@ export async function createRefundRequest(input: {
       if (duplicatePending) {
         throw new AppError(409, BILLING_OPERATION_ALREADY_PENDING, "A refund request is already pending");
       }
-      await reserveRefundAmountInSession(invoice.id, input.tenantId, amountMinor, session);
+      const consumedFloorMinor = Math.max(
+        Number(invoice.retainedConsumedMinor ?? 0),
+        currentEligibility?.consumedValueMinor ?? preview?.consumedValueMinor ?? 0,
+      );
+      await reserveRefundAmountInSession(invoice.id, input.tenantId, amountMinor, session, consumedFloorMinor);
       const [refund] = await RefundModel.create([{
         tenantId: new Types.ObjectId(input.tenantId),
         invoiceId: new Types.ObjectId(invoice.id),
@@ -931,17 +953,8 @@ async function executeApprovedRefund(
 ): Promise<{ refund: RefundDto; replayed: boolean }> {
   const { invoice, expectedCustomerId } = await loadRefundExecutionContext(refund);
   const refreshedInvoice = await ensureInvoicePaymentReference(invoice, expectedCustomerId, provider);
-  if (refund.eligibilityPolicyVersion && refund.eligibilityPolicyVersion !== "legacy") {
-    const currentEligibility = await calculateRefundEligibilitySnapshot({
-      tenantId: String(refund.tenantId), invoiceId: refreshedInvoice.id, reason: refund.reasonCode,
-      reservationExclusionMinor: refund.amountMinor,
-    });
-    if (currentEligibility.maximumEligibleRefundMinor < refund.amountMinor) {
-      await getAuditWriter().write({ action: "BILLING_REFUND_ELIGIBILITY_CHANGED", resourceType: "Refund", resourceId: String(refund._id), tenantId: String(refund.tenantId), changes: { policyVersion: currentEligibility.policyVersion } });
-      throw new AppError(409, BILLING_REFUND_ELIGIBILITY_CHANGED, "Refund eligibility changed", { maximumEligibleRefundMinor: currentEligibility.maximumEligibleRefundMinor });
-    }
-    refund.confirmationEligibilitySnapshotHash = currentEligibility.snapshotHash;
-    refund.maximumEligibleRefundMinor = currentEligibility.maximumEligibleRefundMinor;
+  if (refreshedInvoice.reservedRefundAmountMinor < refund.amountMinor) {
+    throw new AppError(409, BILLING_OPERATION_NOT_ALLOWED, "Refund reservation is no longer held");
   }
   const availableForConfirmation = Math.max(
     0,
@@ -949,7 +962,12 @@ async function executeApprovedRefund(
       - refreshedInvoice.refundedAmountMinor
       - Math.max(0, refreshedInvoice.reservedRefundAmountMinor - refund.amountMinor),
   );
-  if (refund.currency !== refreshedInvoice.currency || refund.amountMinor > availableForConfirmation) {
+  if (
+    !["paid", "open", "uncollectible"].includes(refreshedInvoice.status)
+    || refreshedInvoice.amountPaidMinor <= 0
+    || refund.currency !== refreshedInvoice.currency
+    || refund.amountMinor > availableForConfirmation
+  ) {
     throw new AppError(409, BILLING_REFUND_AMOUNT_INVALID, "Refund amount is invalid");
   }
   if (isSystemSettlementRefund(refund)) {
@@ -957,6 +975,7 @@ async function executeApprovedRefund(
     await assertSystemRefundTransitionReady({
       tenantId: String(refund.tenantId),
       subscriptionId: String(refund.subscriptionId),
+      refund: { subscriptionImpactStatus: refund.subscriptionImpactStatus, localTransitionStatus: refund.localTransitionStatus },
     });
   }
   const operation = await BillingOperationModel.findOne({ _id: refund.operationId, tenantId: refund.tenantId }).select("+requestFingerprint").exec();
@@ -1093,6 +1112,7 @@ export async function retryRefundRequest(input: {
     await assertSystemRefundTransitionReady({
       tenantId: String(refund.tenantId),
       subscriptionId: String(refund.subscriptionId),
+      refund: { subscriptionImpactStatus: refund.subscriptionImpactStatus, localTransitionStatus: refund.localTransitionStatus },
     });
   }
   try {
@@ -1494,13 +1514,16 @@ function isRefundStale(requestedAt: Date, now: Date, staleMs: number): boolean {
   return requestedAt.getTime() < now.getTime() - staleMs;
 }
 
-export function refundInvoiceSummary(invoice: Record<string, unknown>) {
+export function refundInvoiceSummary(invoice: Record<string, unknown>, refunds?: Array<{ retainedConsumedMinor?: unknown }>) {
   const amountPaidMinor = Number(invoice.amountPaidMinor ?? 0);
   const refundedAmountMinor = Number(invoice.refundedAmountMinor ?? 0);
   const reservedRefundAmountMinor = Number(invoice.reservedRefundAmountMinor ?? 0);
   const retainedConsumedMinor = Number(invoice.retainedConsumedMinor ?? 0);
+  const pendingRetainedConsumedMinor = Array.isArray(refunds) && refunds.length > 0
+    ? refunds.reduce((floor, item) => Math.max(floor, Math.max(0, Number(item.retainedConsumedMinor ?? 0))), 0)
+    : undefined;
   const grossUnrefundedMinor = Math.max(0, amountPaidMinor - refundedAmountMinor - reservedRefundAmountMinor);
-  const remainingRefundableMinor = calculateRemainingRefundableMinor({ amountPaidMinor, retainedConsumedMinor, confirmedRefundedMinor: refundedAmountMinor, pendingReservedMinor: reservedRefundAmountMinor });
+  const remainingRefundableMinor = calculateRemainingRefundableMinor({ amountPaidMinor, retainedConsumedMinor, pendingRetainedConsumedMinor, confirmedRefundedMinor: refundedAmountMinor, pendingReservedMinor: reservedRefundAmountMinor });
   return {
     refundedAmountMinor,
     reservedRefundAmountMinor,

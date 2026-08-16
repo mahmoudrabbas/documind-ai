@@ -35,6 +35,10 @@
     "migrate:document-policy:v1:apply": "tsx src/scripts/migrate-document-access-policy-v1.ts --apply",
     "migrate:policy:use-in-ai": "tsx src/scripts/migrate-policy-use-in-ai.ts --dry-run",
     "migrate:policy:use-in-ai:apply": "tsx src/scripts/migrate-policy-use-in-ai.ts --apply",
+    "migrate:repair-free-periods": "tsx src/scripts/migrate-repair-free-periods.ts --dry-run",
+    "migrate:repair-free-periods:apply": "tsx src/scripts/migrate-repair-free-periods.ts --apply",
+    "migrate:repair-free-periods:repaired": "tsx src/scripts/migrate-repair-free-periods.ts --dry-run --include-repaired",
+    "migrate:repair-free-periods:repaired:apply": "tsx src/scripts/migrate-repair-free-periods.ts --apply --include-repaired",
     "pretypecheck": "npm run build --workspace workers",
     "prebuild": "npm run build --workspace workers",
     "pretest": "npm run build --workspace workers"

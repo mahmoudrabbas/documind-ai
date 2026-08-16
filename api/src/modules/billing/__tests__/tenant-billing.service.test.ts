@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/index.js", () => ({ config: { NODE_ENV: "test", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example.test", BILLING_PAST_DUE_GRACE_DAYS: 7, STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "" } }));
+vi.mock("../../../config/index.js", () => ({ config: { NODE_ENV: "test", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example.test", BILLING_PAST_DUE_GRACE_DAYS: 7, STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "", STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID: "" } }));
 vi.mock("../../../db/models/subscription.model.js", () => ({ default: { findOne: vi.fn() } }));
-vi.mock("../../../db/models/refund.model.js", () => ({ default: { findOne: vi.fn() } }));
+vi.mock("../../../db/models/refund.model.js", () => ({ default: { findOne: vi.fn(), find: vi.fn() } }));
 vi.mock("../../../db/models/invoice.model.js", () => ({ default: { findOne: vi.fn(), find: vi.fn(), countDocuments: vi.fn(), aggregate: vi.fn() } }));
 vi.mock("../../../db/models/billingOperation.model.js", () => ({ default: { findOne: vi.fn(), exists: vi.fn() } }));
 vi.mock("../../../common/observability/index.js", () => ({
@@ -18,7 +18,7 @@ import InvoiceModel from "../../../db/models/invoice.model.js";
 import BillingOperationModel from "../../../db/models/billingOperation.model.js";
 import { authorizePermission } from "../../permissions/permissions.authorization.js";
 import { FakePaymentProvider } from "../ports/fakes/fake-payment-provider.js";
-import { createCompanyPortalSession, getCompanyBillingSummary, getCompanyInvoiceLinks, listCompanyInvoices } from "../tenant-billing.service.js";
+import { createCompanyPortalSession, getCompanyBillingSummary, getCompanyInvoice, getCompanyInvoiceLinks, getCompanyInvoicePdf, listCompanyInvoices } from "../tenant-billing.service.js";
 import { invoiceListSchema, portalSessionSchema } from "../tenant-billing.validator.js";
 
 const tenantId = "507f1f77bcf86cd799439011";
@@ -46,6 +46,7 @@ describe("tenant billing service", () => {
     vi.useFakeTimers({ now: new Date("2026-07-31T12:00:00.000Z") });
     vi.mocked(SubscriptionModel.findOne).mockReturnValue(chain(subscription) as never);
     vi.mocked(RefundModel.findOne).mockReturnValue(chain(null) as never);
+    vi.mocked(RefundModel.find).mockReturnValue(chain([]) as never);
     vi.mocked(BillingOperationModel.findOne).mockReturnValue(chain(null) as never);
     vi.mocked(BillingOperationModel.exists).mockResolvedValue(null);
     vi.mocked(InvoiceModel.aggregate).mockResolvedValue([{ _id: "paid", count: 2 }, { _id: "open", count: 1 }]);
@@ -112,11 +113,11 @@ describe("tenant billing service", () => {
     expect(JSON.stringify(payment)).not.toContain("cus_owned");
   });
 
-  it("fails safe for Stripe-backed general portal flows until a restricted configuration exists", async () => {
+  it("fails safe for Stripe-backed portal flows until explicit configurations exist", async () => {
     vi.mocked(SubscriptionModel.findOne).mockReturnValue(chain({ ...subscription, provider: "stripe" }) as never);
     const provider = new FakePaymentProvider();
     await expect(createCompanyPortalSession({ tenantId, flow: "general", returnUrl: "https://app.example.test/dashboard/settings/billing", provider, context })).rejects.toMatchObject({ code: "BILLING_PROVIDER_CONFIGURATION_INVALID" });
-    expect(await createCompanyPortalSession({ tenantId, flow: "payment_method_update", returnUrl: "https://app.example.test/dashboard/settings/billing", provider, context })).toMatchObject({ url: expect.stringContaining("flow=payment_method_update") });
+    await expect(createCompanyPortalSession({ tenantId, flow: "payment_method_update", returnUrl: "https://app.example.test/dashboard/settings/billing", provider, context })).rejects.toMatchObject({ code: "BILLING_PROVIDER_CONFIGURATION_INVALID" });
   });
 
   it("denies an attempted cross-tenant service call without querying invoices", async () => {
@@ -125,11 +126,35 @@ describe("tenant billing service", () => {
   });
 
   it("paginates local tenant invoices without provider identifiers or links", async () => {
-    vi.mocked(InvoiceModel.find).mockReturnValue(chain([{ _id: invoiceId, tenantId, subscriptionId, providerInvoiceId: "in_private", invoiceNumber: "INV-1", status: "paid", currency: "USD", amountDueMinor: 1000, amountPaidMinor: 1000, amountRemainingMinor: 0, subtotalMinor: 1000, taxMinor: 0, createdAtProvider: new Date("2026-07-01"), dueAt: null, paidAt: new Date("2026-07-01"), periodStart: null, periodEnd: null, hostedInvoiceAvailable: true, hostedInvoiceUrl: "https://secret" }]) as never);
+    vi.mocked(InvoiceModel.find).mockReturnValue(chain([{ _id: invoiceId, tenantId, subscriptionId, providerInvoiceId: "in_private", invoiceNumber: "INV-1", status: "paid", currency: "USD", amountDueMinor: 1000, amountPaidMinor: 1000, amountRemainingMinor: 0, subtotalMinor: 1000, taxMinor: 0, createdAtProvider: new Date("2026-07-01"), dueAt: null, paidAt: new Date("2026-07-01"), periodStart: null, periodEnd: null, retainedConsumedMinor: 0, refundedAmountMinor: 0, reservedRefundAmountMinor: 0, hostedInvoiceAvailable: true, hostedInvoiceUrl: "https://secret" }]) as never);
     const result = await listCompanyInvoices({ tenantId, page: 1, pageSize: 10, status: "paid", context });
     expect(result.pagination).toEqual({ page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 });
-    expect(result.invoices[0]).toMatchObject({ id: invoiceId, amountPaidMinor: 1000, hostedInvoiceAvailable: true });
+    expect(result.invoices[0]).toMatchObject({ id: invoiceId, amountPaidMinor: 1000, hostedInvoiceAvailable: true, remainingRefundableMinor: 1000, canRequestRefund: true });
     expect(JSON.stringify(result)).not.toMatch(/in_private|hostedInvoiceUrl|https:\/\/secret/);
+  });
+
+  it("reports zero remaining refundable balance for an invoice fully consumed by a pending reserved refund", async () => {
+    vi.mocked(InvoiceModel.find).mockReturnValue(chain([{ _id: invoiceId, tenantId, subscriptionId, providerInvoiceId: "in_private", invoiceNumber: "INV-1", status: "paid", currency: "USD", amountDueMinor: 500, amountPaidMinor: 500, amountRemainingMinor: 0, subtotalMinor: 500, taxMinor: 0, createdAtProvider: new Date("2026-07-01"), dueAt: null, paidAt: new Date("2026-07-01"), periodStart: null, periodEnd: null, retainedConsumedMinor: 0, refundedAmountMinor: 0, reservedRefundAmountMinor: 488, hostedInvoiceAvailable: true, hostedInvoiceUrl: "https://secret" }]) as never);
+    vi.mocked(RefundModel.find).mockReturnValue(chain([{ invoiceId, retainedConsumedMinor: 12 }]) as never);
+    const result = await listCompanyInvoices({ tenantId, page: 1, pageSize: 10, status: "paid", context });
+    expect(result.invoices[0]).toMatchObject({
+      remainingRefundableMinor: 0,
+      reservedRefundAmountMinor: 488,
+      retainedConsumedMinor: 0,
+      grossUnrefundedMinor: 12,
+      canRequestRefund: false,
+    });
+  });
+
+  it("returns a fully-reserved invoice with zero remaining refundable balance via the single-invoice endpoint", async () => {
+    vi.mocked(InvoiceModel.findOne).mockReturnValue(chain({ _id: invoiceId, tenantId, subscriptionId, providerInvoiceId: "in_private", invoiceNumber: "INV-1", status: "paid", currency: "USD", amountDueMinor: 500, amountPaidMinor: 500, amountRemainingMinor: 0, subtotalMinor: 500, taxMinor: 0, createdAtProvider: new Date("2026-07-01"), dueAt: null, paidAt: new Date("2026-07-01"), periodStart: null, periodEnd: null, retainedConsumedMinor: 0, refundedAmountMinor: 0, reservedRefundAmountMinor: 488, hostedInvoiceAvailable: true }) as never);
+    vi.mocked(RefundModel.find).mockReturnValue(chain([{ retainedConsumedMinor: 12 }]) as never);
+    const result = await getCompanyInvoice(invoiceId, tenantId, context);
+    expect(result).toMatchObject({
+      remainingRefundableMinor: 0,
+      reservedRefundAmountMinor: 488,
+      canRequestRefund: false,
+    });
   });
 
   it("uses a local tenant invoice ID and revalidates provider ownership for links", async () => {
@@ -139,5 +164,34 @@ describe("tenant billing service", () => {
     expect(await getCompanyInvoiceLinks({ invoiceId, tenantId, provider, context })).toEqual({ hostedInvoiceUrl: "https://invoice.stripe.com/i/owned", invoicePdfUrl: null, receiptUrl: null });
     vi.mocked(InvoiceModel.findOne).mockReturnValue(chain(null) as never);
     await expect(getCompanyInvoiceLinks({ invoiceId, tenantId, provider, context })).rejects.toMatchObject({ statusCode: 404, code: "BILLING_INVOICE_NOT_FOUND" });
+  });
+
+  it("streams an owned invoice PDF inline without exposing provider URLs", async () => {
+    vi.mocked(InvoiceModel.findOne).mockReturnValue(chain({ _id: invoiceId, tenantId, subscriptionId, providerInvoiceId: "in_owned", invoiceNumber: "INV-1" }) as never);
+    const provider = new FakePaymentProvider();
+    provider.seedInvoice({ id: "in_owned", customerId: "cus_owned", subscriptionId: "sub_owned", number: "INV-1", status: "paid", currency: "USD", amountDueMinor: 100, amountPaidMinor: 100, amountRemainingMinor: 0, subtotalMinor: 100, taxMinor: 0, createdAt: new Date(), dueAt: null, paidAt: new Date(), periodStart: null, periodEnd: null, providerVersion: "v1" }, { hostedInvoiceUrl: "https://invoice.stripe.com/i/owned", invoicePdfUrl: "https://pay.stripe.com/i/owned.pdf", receiptUrl: null });
+
+    const result = await getCompanyInvoicePdf({ invoiceId, tenantId, provider, context });
+
+    expect(result.contentType).toBe("application/pdf");
+    expect(result.contentDisposition).toBe('inline; filename="Invoice-INV-1.pdf"');
+    expect(result.contentDisposition.startsWith("inline")).toBe(true);
+    expect(result.contentDisposition.startsWith("attachment")).toBe(false);
+    expect(result.data.toString()).toContain("%PDF");
+    expect(JSON.stringify(result)).not.toMatch(/pay\.stripe\.com|invoice\.stripe\.com|cus_owned/);
+  });
+
+  it("denies cross-tenant invoice PDF retrieval before touching the provider", async () => {
+    vi.mocked(InvoiceModel.findOne).mockReturnValue(chain(null) as never);
+    const provider = new FakePaymentProvider();
+    await expect(getCompanyInvoicePdf({ invoiceId, tenantId: otherTenantId, provider, context })).rejects.toMatchObject({ statusCode: 404 });
+    expect(InvoiceModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it("rejects invoice PDF retrieval when the provider cannot serve the document", async () => {
+    vi.mocked(InvoiceModel.findOne).mockReturnValue(chain({ _id: invoiceId, tenantId, subscriptionId, providerInvoiceId: "in_owned" }) as never);
+    const provider = new FakePaymentProvider();
+    provider.seedInvoice({ id: "in_owned", customerId: "cus_owned", subscriptionId: "sub_owned", number: "INV-1", status: "paid", currency: "USD", amountDueMinor: 100, amountPaidMinor: 100, amountRemainingMinor: 0, subtotalMinor: 100, taxMinor: 0, createdAt: new Date(), dueAt: null, paidAt: new Date(), periodStart: null, periodEnd: null, providerVersion: "v1" }, { hostedInvoiceUrl: "https://invoice.stripe.com/i/owned", invoicePdfUrl: null, receiptUrl: null });
+    await expect(getCompanyInvoicePdf({ invoiceId, tenantId, provider, context })).rejects.toMatchObject({ statusCode: 503, code: "BILLING_PROVIDER_UNAVAILABLE" });
   });
 });

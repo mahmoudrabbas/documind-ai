@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import { SUBSCRIPTION_INDEX_MIGRATION_REQUIRED } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
@@ -11,6 +11,7 @@ import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import type { RefundDocument } from "../../db/models/refund.model.js";
 import { calculateRemainingRefundableMinor } from "./refund-balances.js";
+import { resolveFreePeriod } from "./free-fallback.service.js";
 
 function transitionNotReady(): AppError {
   return new AppError(
@@ -25,26 +26,90 @@ function transitionNotReady(): AppError {
  * cannot preserve subscription history safely. This prevents an authoritative
  * refund from leaving a tenant without an effective subscription merely
  * because the subscription-history index migration was not applied.
+ *
+ * The historical paid subscription is the durable source of truth for which
+ * state applies:
+ *
+ * - CASE A — the paid subscription is still effective: the paid-to-Free
+ *   transition has not happened yet, so the exact effective-subscription index
+ *   must exist and the canonical Free package must be available. This keeps the
+ *   original protection intact.
+ *
+ * - CASE B — the historical paid subscription is already CANCELED: the
+ *   paid-to-Free requirement is already satisfied, but ONLY if the tenant is
+ *   authoritatively on a single serviceable canonical Free subscription right
+ *   now. A CANCELED paid subscription alone is never enough — confirmation
+ *   fails closed unless that proof holds.
  */
 export async function assertSystemRefundTransitionReady(input: {
   tenantId: string;
   subscriptionId: string;
+  refund?: Pick<RefundDocument, "subscriptionImpactStatus" | "localTransitionStatus">;
 }): Promise<void> {
   try {
-    const freePackage = await PackageModel.exists({ code: "free", active: true, visibility: "public" });
-    const paidSubscription = await SubscriptionModel.exists({
-      _id: input.subscriptionId,
-      tenantId: input.tenantId,
-      status: { $in: EFFECTIVE_SUBSCRIPTION_STATUSES },
-    });
-    if (!freePackage || !paidSubscription) throw transitionNotReady();
+    const freePackage = await PackageModel.findOne({ code: "free", active: true, visibility: "public" }).lean().exec();
+    if (!freePackage) throw transitionNotReady();
 
-    const invariant = await inspectSubscriptionIndexInvariant(SubscriptionModel.collection);
-    if (!invariant.valid) throw transitionNotReady();
+    const paidSubscription = await SubscriptionModel.findOne({ _id: input.subscriptionId, tenantId: input.tenantId }).lean().exec();
+    if (!paidSubscription) throw transitionNotReady();
+
+    if (EFFECTIVE_SUBSCRIPTION_STATUSES.includes(paidSubscription.status as (typeof EFFECTIVE_SUBSCRIPTION_STATUSES)[number])) {
+      const invariant = await inspectSubscriptionIndexInvariant(SubscriptionModel.collection);
+      if (!invariant.valid) throw transitionNotReady();
+      return;
+    }
+
+    if (paidSubscription.status !== "CANCELED") {
+      // EXPIRED / UNPAID / any other terminal state is not provably a completed
+      // paid-to-Free transition — fail closed rather than infer one.
+      throw transitionNotReady();
+    }
+
+    await assertAlreadyFree(input.tenantId, String(freePackage._id), input.refund);
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw transitionNotReady();
   }
+}
+
+/**
+ * CASE B proof: the historical paid subscription is already CANCELED, so the
+ * paid-to-Free requirement is satisfied only when the tenant is, right now,
+ * on exactly one serviceable canonical Free subscription. This is never
+ * inferred from a CANCELED subscription by itself, from package display text,
+ * or from a missing transition status — each condition must hold authoritatively.
+ */
+async function assertAlreadyFree(
+  tenantId: string,
+  freePackageId: string,
+  refund?: Pick<RefundDocument, "subscriptionImpactStatus" | "localTransitionStatus">,
+): Promise<void> {
+  const effective = await SubscriptionModel.find({
+    tenantId: new Types.ObjectId(tenantId),
+    status: { $in: [...EFFECTIVE_SUBSCRIPTION_STATUSES] },
+  }).lean().exec();
+
+  // Exactly one effective subscription must exist: none means the transition
+  // never produced Free, more than one is ambiguous. Both fail closed.
+  if (effective.length !== 1) throw transitionNotReady();
+
+  const current = effective[0];
+  // The current subscription must BE the canonical Free package by authoritative
+  // package identity — never by name or UI text.
+  if (!current.packageId || String(current.packageId) !== freePackageId) throw transitionNotReady();
+  // Must be serviceable (canonical Free is always ACTIVE with no provider cycle).
+  if (current.status !== "ACTIVE") throw transitionNotReady();
+  if (current.provider !== "local" || Boolean(current.providerSubscriptionId)) throw transitionNotReady();
+
+  // No unresolved transition state on the refund being confirmed.
+  if (refund) {
+    if (refund.subscriptionImpactStatus === "RETRY_PENDING" || refund.localTransitionStatus === "RETRY_PENDING") throw transitionNotReady();
+  }
+
+  // The effective-subscription uniqueness guarantee must still hold so the
+  // "actual current subscription" proof cannot drift.
+  const invariant = await inspectSubscriptionIndexInvariant(SubscriptionModel.collection);
+  if (!invariant.valid) throw transitionNotReady();
 }
 
 export function isSystemSettlementRefund(refund: Pick<RefundDocument, "reasonCode" | "subscriptionImpact" | "amountMinor" | "maximumEligibleRefundMinor">): boolean {
@@ -109,28 +174,34 @@ export async function completeVoluntaryCancellationLocally(
     tenantId: refund.tenantId,
     packageId: freePackage._id,
   }).sort({ createdAt: -1 }).session(session).exec();
-  if (!existingFree) {
-    await SubscriptionModel.create([{
-      tenantId: refund.tenantId,
-      packageId: freePackage._id,
-      packageVersion: freePackage.version,
-      packageVersionId: null,
-      status: "ACTIVE",
-      startedAt: new Date(),
-      periodStart: null,
-      periodEnd: null,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      trialStart: null,
-      trialEnd: null,
-      cancelledAt: null,
-      cancellationReason: "",
-      cancelAtPeriodEnd: false,
-      providerCustomerId: "",
-      providerSubscriptionId: "",
-      providerPriceId: "",
-      provider: "local",
-      billingInterval: null,
+
+  const retained = resolveFreePeriod({
+    periodStart: paidSubscription.periodStart,
+    periodEnd: paidSubscription.periodEnd,
+  });
+
+   if (!existingFree) {
+     await SubscriptionModel.create([{
+       tenantId: refund.tenantId,
+       packageId: freePackage._id,
+       packageVersion: freePackage.version,
+       packageVersionId: null,
+       status: "ACTIVE",
+       startedAt: new Date(),
+       periodStart: retained.periodStart,
+       periodEnd: retained.periodEnd,
+       currentPeriodStart: retained.periodStart,
+       currentPeriodEnd: retained.periodEnd,
+       trialStart: null,
+       trialEnd: null,
+       cancelledAt: null,
+       cancellationReason: "",
+       cancelAtPeriodEnd: false,
+       providerCustomerId: paidSubscription.providerCustomerId ?? "",
+       providerSubscriptionId: "",
+       providerPriceId: "",
+       provider: "local",
+       billingInterval: "monthly",
       paymentState: "paid",
       providerMetadata: {},
       lastProviderEventId: "",
@@ -139,6 +210,10 @@ export async function completeVoluntaryCancellationLocally(
       revision: 0,
     }], { session });
   } else if (!EFFECTIVE_SUBSCRIPTION_STATUSES.includes(existingFree.status as (typeof EFFECTIVE_SUBSCRIPTION_STATUSES)[number])) {
+    // Preserve any already-valid period boundaries; only fill in missing ones
+    // from the retained period or a fresh local cycle.
+    const periodStart = existingFree.periodStart ?? retained.periodStart;
+    const periodEnd = existingFree.periodEnd ?? retained.periodEnd;
     await SubscriptionModel.updateOne(
       { _id: existingFree._id, tenantId: refund.tenantId },
       {
@@ -148,15 +223,15 @@ export async function completeVoluntaryCancellationLocally(
           cancelAtPeriodEnd: false,
           cancelledAt: null,
           cancellationReason: "",
-          periodStart: null,
-          periodEnd: null,
-          currentPeriodStart: null,
-          currentPeriodEnd: null,
-          providerCustomerId: "",
-          providerSubscriptionId: "",
-          providerPriceId: "",
-          provider: "local",
-          billingInterval: null,
+          periodStart,
+          periodEnd,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+         providerCustomerId: paidSubscription.providerCustomerId ?? "",
+       providerSubscriptionId: "",
+       providerPriceId: "",
+       provider: "local",
+       billingInterval: "monthly",
           providerMetadata: {},
         },
       },

@@ -74,8 +74,9 @@ test("Stripe general portal configuration remains optional so Phase 2 can fail s
     EMAIL_WEBHOOK_SECRET: "test-only-secret-value-with-32-characters-minimum-webhook",
     NOTIFICATION_SOCKET_SERVICE_TOKEN: "test-only-secret-value-with-32-characters-minimum-socket",
   });
-  assert.equal(env.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID, "");
-});
+   assert.equal(env.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID, "");
+   assert.equal(env.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID, "");
+ });
 
 test("past-due grace rejects negative or non-integer policy values", () => {
   const secret = "test-only-secret-value-with-32-characters-minimum";

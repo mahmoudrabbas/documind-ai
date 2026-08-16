@@ -174,30 +174,79 @@ export class ReconciliationService {
     tenantId: string,
     dimension: EntitlementDimension,
   ): Promise<number> {
+    const range = await this.provider.getPeriodRange(tenantId);
+    return this.reconcilePeriodAtLeast(
+      tenantId,
+      dimension,
+      range.periodStart,
+      range.periodEnd,
+    );
+  }
+
+  /**
+   * Monotonic authoritative repair for a single period-scoped dimension
+   * against an EXPLICIT period range.
+   *
+   * Unlike `reconcileAtLeast` (which uses the tenant's current period via the
+   * entitlement provider), this variant accepts the exact `periodStart` /
+   * `periodEnd` boundaries so a repair can target a retained entitlement
+   * period that is being restored without depending on rollover behavior.
+   *
+   * Never lowers a counter that newer concurrent consumption raised above the
+   * authoritative recount — `ensureAtLeast` is used rather than `set()`.
+   * Returns the resulting counter value.
+   */
+  async reconcilePeriodAtLeast(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    periodStart: Date,
+    periodEnd: Date | null,
+  ): Promise<number> {
     if (!RECONCILABLE_DIMENSIONS.includes(dimension)) {
       throw new Error(
         `Dimension ${dimension} does not have an authoritative reconciliation source`,
       );
     }
 
-    const range = await this.provider.getPeriodRange(tenantId);
-    const periodStart =
-      `${range.periodStart.getFullYear()}-` +
-      `${String(range.periodStart.getMonth() + 1).padStart(2, "0")}`;
-
     const authoritative = await this.countFromSource(
       tenantId,
       dimension,
-      range.periodStart,
-      range.periodEnd,
+      periodStart,
+      periodEnd,
     );
+
+    const counterPeriodStart =
+      `${periodStart.getFullYear()}-` +
+      `${String(periodStart.getMonth() + 1).padStart(2, "0")}`;
 
     return this.counter.ensureAtLeast(
       tenantId,
       dimension,
-      periodStart,
+      counterPeriodStart,
       authoritative,
     );
+  }
+
+  /**
+   * Authoritative recount for a single dimension within an explicit period
+   * range, without touching any counter.
+   *
+   * Used by repair tooling to preview period-scoped usage continuity (e.g. a
+   * legacy Free migration restoring an outgoing paid entitlement period) and
+   * to drive the monotonic `reconcilePeriodAtLeast` repair.
+   */
+  async countPeriodAuthoritative(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    periodStart: Date,
+    periodEnd: Date | null,
+  ): Promise<number> {
+    if (!RECONCILABLE_DIMENSIONS.includes(dimension)) {
+      throw new Error(
+        `Dimension ${dimension} does not have an authoritative reconciliation source`,
+      );
+    }
+    return this.countFromSource(tenantId, dimension, periodStart, periodEnd);
   }
 
   /**
