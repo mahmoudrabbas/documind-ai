@@ -30,6 +30,7 @@ import {
   type IntentAgentOutput,
 } from "../agents/chatAgentIO.js";
 import { isArabicContext } from "../agents/answerWriter.service.js";
+import type { AnswerTask } from "../agents/answerWriter.service.js";
 import type { QueryLanguageValue } from "../intent-query/intentQuery.types.js";
 import { createRun } from "../agents/agents.repository.js";
 import type { RunRecord } from "../agents/agents.types.js";
@@ -159,6 +160,11 @@ export function resolveChatOutcome(
 ): ChatOutcome {
   if (reasonCode === "UNSUPPORTED_REQUEST") return "unsupported";
   if (reasonCode === "UNVERIFIED_GROUNDED_RESPONSE") return "verification_failed";
+  if (artifacts.evidenceReasonCode === "CANDIDATE_PROVENANCE_MISSING") {
+    // Repeated provenance failure is an infrastructure defect, not a content
+    // gap: never answer it with a knowledge-gap response.
+    return "verification_failed";
+  }
   if (artifacts.authorizationRestricted) return "authorization_restricted";
   if (
     artifacts.evidenceSufficiency === "CONFLICTING" ||
@@ -313,6 +319,7 @@ const EvidenceOutputSchema = z
     rejectedEvidenceIds: z.array(z.string()),
     reasonCode: z.string(),
     authorizationRestricted: z.boolean().optional(),
+    conflictEvidenceIds: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -506,6 +513,16 @@ interface ChatRunArtifacts {
   approvedEvidenceIds: string[];
   rejectedEvidenceIds: string[];
   evidenceReasonCode: string | null;
+  /**
+   * Authorized chunk ids from detected conflict groups. When set with
+   * CONFLICTING sufficiency, the run answers with a conflict_explanation
+   * task instead of refusing, presenting both supported positions with
+   * verified citations and never selecting a winner.
+   */
+  conflictEvidenceIds: string[];
+  conflictExplanationMode: boolean;
+  /** Bounded retry counter for CANDIDATE_PROVENANCE_MISSING (max 1 retry). */
+  provenanceRetryCount: number;
   retrievalOutcome: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED" | null;
   analyticsRequest: ChatAnalyticsRequest | null;
   analyticsOutput: unknown;
@@ -675,6 +692,9 @@ function createChatRuntimePolicy(input: {
     approvedEvidenceIds: [],
     rejectedEvidenceIds: [],
     evidenceReasonCode: null,
+    conflictEvidenceIds: [],
+    conflictExplanationMode: false,
+    provenanceRetryCount: 0,
     retrievalOutcome: null,
     analyticsRequest: null,
     analyticsOutput: undefined,
@@ -843,6 +863,31 @@ function createChatRuntimePolicy(input: {
           toolInput: {},
           reasonCode: "EVIDENCE_EVALUATION_REQUIRED",
         };
+      } else if (
+        artifacts.evidenceReasonCode === "CANDIDATE_PROVENANCE_MISSING" &&
+        artifacts.provenanceRetryCount === 0
+      ) {
+        // One bounded retry: repeat authorized_hybrid_search with the
+        // identical trusted query, document restrictions, actor, tenant, and
+        // canonical allowlist. Authorization is never broadened — the same
+        // deterministic tool-input builder reconstructs the same request.
+        artifacts.provenanceRetryCount = 1;
+        artifacts.evidenceEvaluated = false;
+        artifacts.evidenceSufficiency = null;
+        artifacts.evidenceReasonCode = null;
+        artifacts.approvedEvidenceIds = [];
+        artifacts.rejectedEvidenceIds = [];
+        artifacts.conflictEvidenceIds = [];
+        artifacts.evidenceSearchBatch = null;
+        artifacts.activeSearchBatch = null;
+        trusted = {
+          action: "tool_call",
+          currentAgent,
+          nextAgent: null,
+          toolName: "authorized_hybrid_search",
+          toolInput: {},
+          reasonCode: "PROVENANCE_RETRY_SEARCH_REQUIRED",
+        };
       } else if (artifacts.approvedEvidenceIds.length === 0) {
         trusted = artifacts.compliance
           ? {
@@ -926,10 +971,12 @@ function createChatRuntimePolicy(input: {
         if (intent.route !== "rag" || artifacts.approvedEvidenceIds.length === 0) {
           failClosed("Answer Writer requires approved RAG evidence");
         }
-        const task = detectAnswerTask(
-          { detectedIntent: intent.intent },
-          intent.normalizedQuestion,
-        );
+        const task: AnswerTask = artifacts.conflictExplanationMode
+          ? "conflict_explanation"
+          : detectAnswerTask(
+              { detectedIntent: intent.intent },
+              intent.normalizedQuestion,
+            );
         emitStage("answer");
         resolved = {
           conversationId: input.conversationId,
@@ -1136,11 +1183,29 @@ function createChatRuntimePolicy(input: {
         if (!isSubset(output.approvedEvidenceIds, [...batch.candidates.keys()])) {
           failClosed("Approved evidence exceeds this run's evaluated candidate set");
         }
+        if (
+          output.conflictEvidenceIds &&
+          !isSubset(output.conflictEvidenceIds, [...batch.candidates.keys()])
+        ) {
+          failClosed("Conflict evidence exceeds this run's evaluated candidate set");
+        }
         artifacts.approvedEvidenceIds = [...output.approvedEvidenceIds];
         artifacts.rejectedEvidenceIds = [...output.rejectedEvidenceIds];
         artifacts.evidenceSufficiency = output.sufficiency;
         artifacts.evidenceReasonCode = output.reasonCode;
         artifacts.evidenceEvaluated = true;
+        artifacts.conflictEvidenceIds = [...(output.conflictEvidenceIds ?? [])];
+        if (
+          output.sufficiency === "CONFLICTING" &&
+          artifacts.conflictEvidenceIds.length > 0
+        ) {
+          // Genuine source conflicts are explained from authorized evidence:
+          // the conflicting chunk ids become the writer's evidence set so
+          // both sides are answered and cited — never a silent refusal that
+          // would read as a knowledge gap.
+          artifacts.conflictExplanationMode = true;
+          artifacts.approvedEvidenceIds = [...artifacts.conflictEvidenceIds];
+        }
         if (output.authorizationRestricted === true) {
           artifacts.authorizationRestricted = true;
         }

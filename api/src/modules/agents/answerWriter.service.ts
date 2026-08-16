@@ -28,7 +28,10 @@ export const ANSWER_WRITER_PROMPT_VERSION = "answer-writer-v1";
  * should produce. Summary requests must not be forced into the concise style
  * used for direct questions.
  */
-export type AnswerTask = "direct_question" | "document_summary";
+export type AnswerTask =
+  | "direct_question"
+  | "document_summary"
+  | "conflict_explanation";
 
 const ANSWER_WRITER_JSON_CONTRACT = `Return JSON ONLY with the exact keys: {"decision","answer","citedChunkIds"}. decision must be one of: "grounded_answer","insufficient_evidence","clarification","unsupported","unsafe". answer must be a string. citedChunkIds must be an array containing only supplied chunkId strings actually used for the answer (and may be empty for non-grounded decisions). Do NOT include any other keys, markdown fences, conversational preamble, or prose outside the JSON object.`;
 
@@ -69,7 +72,11 @@ function systemPromptFor(
       ? useAr
         ? "يجب أن تكون قيمة answer ملخصاً منظماً: مقدمة قصيرة، ثم نقاط مختلفة مدعومة بالسياق، وخاتمة قصيرة عندما يدعمها السياق. لا تضف نقاطاً غير موجودة في الأدلة."
         : "The answer value must be a structured summary: a short opening, distinct evidence-grounded points, and a brief conclusion when supported. Do not add points absent from the evidence."
-      : useAr
+      : task === "conflict_explanation"
+        ? useAr
+          ? "تتعارض المصادر المقدمة بشأن هذا السؤال. يجب أن تشرح قيمة answer الموقفين المتعارضين كما وردا في الأدلة، مع الاستشهاد بكل جانب من المصادر المتعارضة، ودون اختيار جانب كالفائز أو ترجيح أحدهما دون دليل صريح. اذكر أن المستندات تختلف إن أمكن ذلك من نص الأدلة فقط."
+          : "The supplied evidence conflicts on this question. The answer value must explain BOTH supported positions as stated in the evidence, cite every conflicting source for its side, and never select a winner or prefer one side without explicit documentation. Note that the documents disagree only when that is stated in the evidence text."
+        : useAr
         ? "يجب أن تكون قيمة answer موجزة ومفيدة وتجيب عن السؤال الحالي فقط، مع الحفاظ على الشروط والاستثناءات والقيود والمقارنات المادية الواردة في قاعدة السياسة الحاسمة."
         : "The answer value must be concise and answer only the current question, while preserving every material condition, exception, qualifier, threshold, and contrast stated in the dispositive policy rule.";
   const languageInstruction = useAr

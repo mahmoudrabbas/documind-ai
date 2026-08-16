@@ -1568,18 +1568,21 @@ test(
 );
 
 test(
-  "production-composed workflow blocks a writer answer with an unsupported claim after MAX_SEMANTIC_CLAIMS",
+  "production-composed workflow drops only the unsupported claim when a batched summary exceeds MAX_SEMANTIC_CLAIMS",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const supportedClaims = Array.from(
       { length: MAX_SEMANTIC_CLAIMS },
-      (_unused, index) => `The remote-work policy factual statement ${index + 1} is documented.`,
+      (_unused, index) => `The remote-work policy factual statement in the series is documented.`,
     );
     const unsupportedTail = "Employees receive an undocumented monthly internet allowance.";
     const candidate = [...supportedClaims, unsupportedTail].join("\n");
     const requestId = "request-semantic-claim-count-overflow";
-    const model = new RecordingFakeModelAdapter(new Map([[QUESTION, candidate]]));
+    const model = new SelectiveSemanticRecordingFakeModelAdapter(
+      new Map([[QUESTION, candidate]]),
+      /undocumented monthly internet allowance/u,
+    );
     const service = await productionService(fixture, { model });
 
     const response = await service.execute(
@@ -1587,36 +1590,40 @@ test(
       executionContext(fixture, requestId),
     );
 
+    // Batching verifies the 21-claim answer claim-by-claim: the supported
+    // majority releases and only the unsupported tail is removed.
     assert.notEqual(response.answer, candidate);
     assert.equal(response.answer.includes(unsupportedTail), false);
-    assert.deepEqual(response.sources, []);
+    assert.ok(response.answer.includes("factual statement in the series is documented"));
+    assert.ok((response.sources?.length ?? 0) > 0);
     const verifierStep = await AgentStepModel.findOne({
       requestId,
       agentName: "citation-verification-agent",
       action: "execute",
     }).lean().exec();
-    assert.equal(verifierStep?.output?.verified, false);
-    assert.equal(verifierStep?.output?.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
-    assert.deepEqual(verifierStep?.output?.validatedCitationIds, []);
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.ok(((verifierStep?.output?.validatedCitationIds as string[] | undefined) ?? []).length > 0);
     const complianceStep = await AgentStepModel.findOne({
       requestId,
       agentName: "compliance-agent",
       action: "execute",
     }).lean().exec();
-    assert.equal(complianceStep?.output?.action, "refuse");
-    assert.deepEqual(complianceStep?.output?.sourceIds, []);
+    assert.equal(complianceStep?.output?.action, "release");
   },
 );
 
 test(
-  "production-composed workflow blocks an unsupported suffix after the old semantic claim-length boundary",
+  "production-composed workflow splits an oversized claim and blocks its unsupported suffix",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const unsupportedSuffix = " Executives also receive an undocumented annual bonus.";
     const candidate = `${"A".repeat(MAX_SEMANTIC_CLAIM_LENGTH)}${unsupportedSuffix}`;
     const requestId = "request-semantic-claim-length-overflow";
-    const model = new RecordingFakeModelAdapter(new Map([[QUESTION, candidate]]));
+    const model = new SelectiveSemanticRecordingFakeModelAdapter(
+      new Map([[QUESTION, candidate]]),
+      /undocumented annual bonus/u,
+    );
     const service = await productionService(fixture, { model });
 
     const response = await service.execute(
@@ -1624,17 +1631,18 @@ test(
       executionContext(fixture, requestId),
     );
 
+    // The oversized claim is split on the word boundary; the unsupported
+    // suffix piece is dropped and the supported remainder is released.
     assert.notEqual(response.answer, candidate);
     assert.equal(response.answer.includes(unsupportedSuffix.trim()), false);
-    assert.deepEqual(response.sources, []);
+    assert.ok((response.sources?.length ?? 0) > 0);
     const verifierStep = await AgentStepModel.findOne({
       requestId,
       agentName: "citation-verification-agent",
       action: "execute",
     }).lean().exec();
-    assert.equal(verifierStep?.output?.verified, false);
-    assert.equal(verifierStep?.output?.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
-    assert.deepEqual(verifierStep?.output?.validatedCitationIds, []);
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.ok(((verifierStep?.output?.validatedCitationIds as string[] | undefined) ?? []).length > 0);
   },
 );
 
@@ -1737,12 +1745,13 @@ test(
 );
 
 test(
-  "production-composed workflow fails closed on unresolved cross-document remote-work limits",
+  "production-composed workflow explains cross-document conflicts with both sides cited",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const question = "How many remote work days are allowed?";
-    const arbitraryAnswer = "Remote work is allowed 2 days per week.";
+    const bothSidesAnswer =
+      "The documents differ: Remote Work Policy v1 allows remote work 1 day per week, while Remote Work Policy v2 allows remote work 2 days per week.";
     const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
       fileName: "remote-work-policy-v1.pdf",
       title: "Remote Work Policy v1",
@@ -1760,7 +1769,9 @@ test(
       pageNumber: 2,
     });
     const requestId = "request-cross-document-policy-conflict";
-    const model = new RecordingFakeModelAdapter(new Map([[question, arbitraryAnswer]]));
+    const model = new RecordingFakeModelAdapter(
+      new Map([[question, bothSidesAnswer]]),
+    );
     const service = await productionService(fixture, {
       evidence: [versionOne, versionTwo],
       model,
@@ -1774,9 +1785,31 @@ test(
     const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
     assert.equal(evaluation?.output?.sufficiency, "CONFLICTING");
     assert.deepEqual(evaluation?.output?.approvedEvidenceIds, []);
-    assert.notEqual(response.answer, arbitraryAnswer);
-    assert.deepEqual(response.sources, []);
-    assert.equal(graph.steps.some((step) => step.agentName === "answer-writer-agent"), false);
+    // The conflicting evidence itself is exposed for the explanation path.
+    assert.deepEqual(
+      [...((evaluation?.output?.conflictEvidenceIds as string[] | undefined) ?? [])].sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+
+    // The writer runs a conflict_explanation task and the released answer
+    // presents BOTH supported values without selecting a winner.
+    assert.equal(
+      graph.steps.some((step) => step.agentName === "answer-writer-agent"),
+      true,
+    );
+    assert.equal(response.answer, bothSidesAnswer);
+    assert.match(response.answer, /1 day per week/);
+    assert.match(response.answer, /2 days per week/);
+    assert.deepEqual(
+      (response.sources?.map((source) => source.chunkId) ?? []).sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+    assert.equal(response.outcome, "evidence_conflict");
+    // A genuine source conflict is not a knowledge gap.
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
   },
 );
 
