@@ -39,6 +39,11 @@ export interface DocumentRetrievalAuthorizationResult {
   readonly denialReason?: RetrievalAuthorizationDenialReason;
   /** Number of canonical tenant documents considered before policy evaluation. */
   readonly resolvedDocumentCount: number;
+  /**
+   * Rollout control: when false (shadow mode) the allowlist is resolved and
+   * its metrics observed but retrieval is not restricted by it.
+   */
+  readonly enforce?: boolean;
 }
 
 /** Canonical tenant document projection used for allowlist resolution. */

@@ -257,6 +257,8 @@ import {
   createDefaultRetrievalAuthorizationDeps,
   resolveCanonicalRetrievalAuthorization,
 } from "./modules/document-access/documentAccess.retrievalAuthorization.js";
+import { createDocumentRetrievalAccessFilter } from "./modules/document-access/documentAccess.filters.js";
+
 
 // Use the deterministic FakeRerankerAdapter as the default runtime adapter.
 // NOTE: This is a deterministic lexical reranker intended for tests and as a
@@ -340,13 +342,29 @@ const retrievalService = createRetrievalService({
   // Canonical live allowlist: resolved from canonical documents and current
   // policy snapshots before search. Fail-closed; a resolver failure never
   // falls back to tenant-wide scope-based search.
-  resolveRetrievalAuthorization: async (context) =>
-    resolveCanonicalRetrievalAuthorization(
+  resolveRetrievalAuthorization: async (context) => {
+    if (config.RAG_CANONICAL_ALLOWLIST_MODE === "deny_all") {
+      // Emergency rollback: returning to stale-metadata authorization is
+      // unsafe, so the corpus fails closed instead.
+      return {
+        filter: createDocumentRetrievalAccessFilter({
+          tenantId: context.tenantId,
+          actorId: context.actorId,
+          mode: "deny_all",
+        }),
+        resolvedDocumentCount: 0,
+      };
+    }
+    const result = await resolveCanonicalRetrievalAuthorization(
       { tenantId: context.tenantId, actorId: context.actorId },
       createDefaultRetrievalAuthorizationDeps(
         getDocumentAccessAuthorizationService(),
       ),
-    ),
+    );
+    return config.RAG_CANONICAL_ALLOWLIST_MODE === "shadow"
+      ? { ...result, enforce: false }
+      : result;
+  },
   authorizeDocumentForAi: async (context, documentId) => {
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId: context.tenantId, actorId: context.actorId }, documentId, "use_in_ai");
   },

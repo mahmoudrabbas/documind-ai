@@ -88,6 +88,7 @@ interface HarnessOptions {
     mode: "deny_all" | "constrained";
     allowedDocumentIds?: string[];
     denialReason?: string;
+    enforce?: boolean;
   };
 }
 
@@ -163,6 +164,9 @@ function harness(options: HarnessOptions) {
               ? {
                   denialReason: options.corpusAuthorization!.denialReason as DocumentRetrievalAuthorizationResult["denialReason"],
                 }
+              : {}),
+            ...(options.corpusAuthorization!.enforce === false
+              ? { enforce: false as const }
               : {}),
             resolvedDocumentCount: 0,
           }),
@@ -308,6 +312,31 @@ describe("retrieval diagnostics typed outcomes", () => {
     );
     for (const [filter] of searchFilters) {
       assert.deepEqual((filter as { documentIds?: string[] }).documentIds, [other]);
+    }
+  });
+
+  test("shadow mode observes the allowlist without restricting search filters", async () => {
+    const { service, searchFilters } = harness({
+      raw: [{ chunkId: "chunk-a", score: 0.9 }],
+      chunks: [chunk("chunk-a", { classification: "public" })],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+        enforce: false,
+      },
+    });
+    const result = await service.hybridSearch(
+      { queryText: "leave policy", topK: 5 },
+      context(),
+    );
+    assert.equal(result.diagnostics.retrievalOutcome, "AUTHORIZED_RESULTS");
+    // Shadow mode: the legacy scope prefilters (not the allowlist) apply.
+    for (const [filter] of searchFilters) {
+      assert.equal(
+        (filter as { documentIds?: string[] }).documentIds,
+        undefined,
+        "shadow mode must not restrict search to the allowlist",
+      );
     }
   });
 

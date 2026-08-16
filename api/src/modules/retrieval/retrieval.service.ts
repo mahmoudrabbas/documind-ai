@@ -442,6 +442,19 @@ async function resolveAuthorizationContext(deps: RetrievalServiceDeps, context: 
         corpusDenialReason: authorization.denialReason ?? "DENY_ALL",
       };
     }
+    if (authorization.enforce === false) {
+      // Shadow rollout: observe allowlist metrics without restricting search.
+      logger.info(
+        {
+          tenantId: withAction.tenantId,
+          allowlistMode: "shadow",
+          allowlistSize: authorization.filter.allowedDocumentIds.length,
+          resolvedDocumentCount: authorization.resolvedDocumentCount,
+        },
+        "Canonical retrieval allowlist shadow observation",
+      );
+      return withAction;
+    }
     return {
       ...withAction,
       authorizedDocumentIds: [...authorization.filter.allowedDocumentIds],
