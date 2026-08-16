@@ -75,7 +75,7 @@ import {
 import { socialReplyFor } from "./chat.social.js";
 import { assistantReplyFor } from "./chat.assistant.js";
 import { detectAnswerTask } from "./chat.answerTask.js";
-import type { ChatResponse, ChatSource } from "./chat.types.js";
+import type { ChatOutcome, ChatResponse, ChatSource } from "./chat.types.js";
 import { ChatSendBodySchema, type ChatSendBody } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
 
@@ -137,6 +137,52 @@ function fallbackReplyFor(
     return ar ? FALLBACK_KNOWLEDGE_GAP_AR : FALLBACK_KNOWLEDGE_GAP;
   }
   return null;
+}
+
+/**
+ * Coarse chat-turn outcome derived from the terminal reason code plus the
+ * run's authorization/evidence artifacts. Public responses use this value
+ * directly; it never reveals hidden document ids, titles, or policy rules.
+ */
+export function resolveChatOutcome(
+  reasonCode: ComplianceReasonCodeValue | string,
+  artifacts: {
+    authorizationRestricted: boolean;
+    evidenceSufficiency:
+      | "SUFFICIENT"
+      | "WEAK"
+      | "NO_EVIDENCE"
+      | "CONFLICTING"
+      | null;
+    evidenceReasonCode: string | null;
+  },
+): ChatOutcome {
+  if (reasonCode === "UNSUPPORTED_REQUEST") return "unsupported";
+  if (reasonCode === "UNVERIFIED_GROUNDED_RESPONSE") return "verification_failed";
+  if (artifacts.authorizationRestricted) return "authorization_restricted";
+  if (
+    artifacts.evidenceSufficiency === "CONFLICTING" ||
+    artifacts.evidenceReasonCode === "EVIDENCE_CONFLICTING"
+  ) {
+    return "evidence_conflict";
+  }
+  if (
+    reasonCode === "INSUFFICIENT_EVIDENCE" ||
+    reasonCode === "NO_SEARCH_RESULTS"
+  ) {
+    return "no_relevant_content";
+  }
+  return "answered";
+}
+
+/**
+ * Only a genuine content gap may be recorded as a knowledge gap.
+ * Authorization restrictions, evidence conflicts, verification failures,
+ * unsupported requests, and successful answers must never pollute the
+ * knowledge-gap backlog with non-retrieval problems.
+ */
+export function isReportableKnowledgeGap(outcome: ChatOutcome): boolean {
+  return outcome === "no_relevant_content";
 }
 
 const SAFE_RUNTIME_PROVIDER_ERRORS = {
@@ -1400,13 +1446,9 @@ export class ChatWorkflowService {
       persisted,
     );
 
-    const reportableGap =
-      terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
-      terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE";
+    const outcome = resolveChatOutcome(terminal.reasonCode, artifacts);
     if (
-      reportableGap &&
-      artifacts.retrievalOutcome !== "AUTHORIZATION_FILTERED" &&
-      !artifacts.authorizationRestricted
+      isReportableKnowledgeGap(outcome)
     ) {
       await this.deps.reportKnowledgeGap?.({
         tenantId,
@@ -1448,6 +1490,7 @@ export class ChatWorkflowService {
     return {
       messageId: idOf(assistant),
       answer: terminal.answer,
+      outcome,
       sources:
         terminal.reasonCode === "ASSISTANT_INTENT"
           ? []

@@ -75,9 +75,27 @@ export interface AccessContext {
    * document before content is returned.
    */
   resolvedClassificationFilter?: string[] | null;
+  /**
+   * Trusted request trace ID supplied by the caller (chat turn, debug route).
+   * Production retrieval must propagate this value through diagnostics, audit,
+   * and evidence events; it never generates a replacement UUID when present.
+   */
+  traceId?: string;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }
+
+/**
+ * Typed, machine-readable retrieval outcome. Distinguishes the four
+ * zero/decline situations that previously collapsed into one user-visible
+ * refusal: authorization restriction, no similar content, and lifecycle
+ * ineligibility.
+ */
+export type RetrievalOutcome =
+  | "AUTHORIZED_RESULTS"
+  | "NO_AUTHORIZED_DOCUMENTS"
+  | "NO_SEARCH_MATCHES"
+  | "NO_RETRIEVABLE_CONTENT";
 
 export interface ScoreBreakdown {
   vectorScore?: number;
@@ -129,7 +147,17 @@ export interface RetrievalDiagnostics {
   hydratedCandidateCount?: number;
   evidenceItemCount?: number;
   evidenceSufficiency?: string;
+  /** First sufficiency reason from the evidence bundle; never contains chunk text. */
+  evidenceSufficiencyReason?: string;
+  /** Evidence items meeting the reranker approval threshold. */
+  approvedEvidenceCount?: number;
+  /** Evidence items below the reranker approval threshold. */
+  rejectedEvidenceCount?: number;
   zeroCandidateReason?: string;
+  /** Typed outcome distinguishing authorization restriction from no content. */
+  retrievalOutcome?: RetrievalOutcome;
+  /** True when actor authorization removed otherwise tenant-matching candidates. */
+  authorizationRestricted?: boolean;
   traceId: string;
 }
 

@@ -19,9 +19,11 @@ import type {
   RetrievalCandidate,
   RetrievalDiagnostics,
   RetrievalMethod,
+  RetrievalOutcome,
   RetrievalQuery,
   RetrievalResult,
 } from "./retrieval.types.js";
+import { EVIDENCE_ITEM_MIN_TOTAL_SCORE } from "../reranker/reranker.types.js";
 import { buildRetrievableDocumentFilter } from "./retrievalEligibility.js";
 
 // ---------------------------------------------------------------------------
@@ -149,6 +151,47 @@ function buildFilterSummary(
 // Diagnostics builder
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolves the trusted trace ID for a retrieval run. The caller-supplied
+ * request trace ID is authoritative; a fresh UUID is only generated for
+ * callers (tests, demo paths) that have no request to join.
+ */
+function resolveTraceId(context: AccessContext): string {
+  return context.traceId ?? crypto.randomUUID();
+}
+
+function resolveRetrievalOutcome(params: {
+  hydratedCount: number;
+  rawCandidateCount: number;
+  postAuthorizationCandidateCount: number;
+}): RetrievalOutcome {
+  if (params.hydratedCount > 0) return "AUTHORIZED_RESULTS";
+  if (params.rawCandidateCount === 0) return "NO_SEARCH_MATCHES";
+  if (params.postAuthorizationCandidateCount === 0) {
+    return "NO_AUTHORIZED_DOCUMENTS";
+  }
+  return "NO_RETRIEVABLE_CONTENT";
+}
+
+function countEvidenceApprovals(
+  evidenceBundle: import("../reranker/reranker.types.js").EvidenceBundle | undefined,
+): { approved: number; rejected: number; reason: string | undefined } {
+  if (!evidenceBundle) {
+    return { approved: 0, rejected: 0, reason: undefined };
+  }
+  let approved = 0;
+  for (const item of evidenceBundle.items) {
+    if (item.scoreBreakdown.totalScore >= EVIDENCE_ITEM_MIN_TOTAL_SCORE) {
+      approved += 1;
+    }
+  }
+  return {
+    approved,
+    rejected: evidenceBundle.items.length - approved,
+    reason: evidenceBundle.sufficiency.reasons[0],
+  };
+}
+
 function buildDiagnostics(params: {
   traceId: string;
   vectorLatencyMs?: number;
@@ -166,7 +209,12 @@ function buildDiagnostics(params: {
   hydratedCandidateCount?: number;
   evidenceItemCount?: number;
   evidenceSufficiency?: string;
+  evidenceSufficiencyReason?: string;
+  approvedEvidenceCount?: number;
+  rejectedEvidenceCount?: number;
   zeroCandidateReason?: string;
+  retrievalOutcome?: RetrievalOutcome;
+  authorizationRestricted?: boolean;
 }): RetrievalDiagnostics {
   return params;
 }
@@ -673,7 +721,7 @@ export function createRetrievalService(
   return {
     // ── hybridSearch ──────────────────────────────────────────────────
     async hybridSearch(query, context) {
-      const traceId = crypto.randomUUID();
+      const traceId = resolveTraceId(context);
       const totalStartTime = Date.now();
 
       validateQuery(query);
@@ -840,6 +888,7 @@ export function createRetrievalService(
       const totalLatencyMs = Date.now() - totalStartTime;
       const filterSummary = buildFilterSummary(authorizationContext, query.filter);
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      const evidenceCounts = countEvidenceApprovals(evidenceBundle);
       const zeroCandidateReason =
         rawVectorCandidateCount + rawKeywordCandidateCount === 0
           ? "NO_RAW_SEARCH_RESULTS"
@@ -850,6 +899,11 @@ export function createRetrievalService(
               : hydrated.length === 0
                 ? "NO_HYDRATED_CANDIDATES"
                 : undefined;
+      const retrievalOutcome = resolveRetrievalOutcome({
+        hydratedCount: hydrated.length,
+        rawCandidateCount: rawVectorCandidateCount + rawKeywordCandidateCount,
+        postAuthorizationCandidateCount: vectorResults.length + keywordResults.length,
+      });
       const diagnostics = buildDiagnostics({
         traceId,
         vectorLatencyMs,
@@ -863,11 +917,16 @@ export function createRetrievalService(
         postAuthorizationVectorCandidateCount: vectorResults.length,
         postAuthorizationKeywordCandidateCount: keywordResults.length,
         authorizationFiltered,
+        authorizationRestricted: authorizationFiltered,
         fusedCandidateCount: fused.length,
         hydratedCandidateCount: hydrated.length,
         evidenceItemCount: evidenceBundle?.items.length ?? 0,
         evidenceSufficiency: evidenceBundle?.sufficiency.level,
+        evidenceSufficiencyReason: evidenceCounts.reason,
+        approvedEvidenceCount: evidenceCounts.approved,
+        rejectedEvidenceCount: evidenceCounts.rejected,
         zeroCandidateReason,
+        retrievalOutcome,
       });
 
       try {
@@ -907,7 +966,8 @@ export function createRetrievalService(
           evidenceItemCount: evidenceBundle?.items.length ?? 0,
           evidenceSufficiency: evidenceBundle?.sufficiency.level,
           zeroCandidateReason,
-          authorizationFiltered,
+          retrievalOutcome,
+          authorizationRestricted: authorizationFiltered,
         },
         "Hybrid retrieval stage counts",
       );
@@ -936,7 +996,7 @@ export function createRetrievalService(
 
     // ── vectorSearch ─────────────────────────────────────────────────
     async vectorSearch(query, context) {
-      const traceId = crypto.randomUUID();
+      const traceId = resolveTraceId(context);
       const totalStartTime = Date.now();
 
       validateQuery(query);
@@ -1026,7 +1086,7 @@ export function createRetrievalService(
 
     // ── keywordSearch ────────────────────────────────────────────────
     async keywordSearch(query, context) {
-      const traceId = crypto.randomUUID();
+      const traceId = resolveTraceId(context);
       const totalStartTime = Date.now();
 
       validateQuery(query);

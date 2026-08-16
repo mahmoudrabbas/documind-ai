@@ -20,9 +20,29 @@ export interface ChatAttachment {
   sizeBytes: number;
 }
 
+/**
+ * Coarse, machine-readable outcome of a chat turn. Never reveals hidden
+ * document ids, titles, classifications, or policy rules — only the category
+ * of the result.
+ */
+export type ChatOutcome =
+  | "answered"
+  | "authorization_restricted"
+  | "no_relevant_content"
+  | "evidence_conflict"
+  | "verification_failed"
+  | "unsupported";
+
 export interface ChatResponse {
   messageId: string;
   answer: string;
+  /**
+   * Optional coarse outcome so clients can distinguish authorization
+   * restriction from genuine knowledge gaps, conflicts, and verification
+   * failures. Omitted by older callers; new callers should treat absence as
+   * "answered".
+   */
+  outcome?: ChatOutcome;
   /**
    * Present only when the tenant's AI runtime preferences enable citations.
    * Omitted (not empty) when citations are disabled so clients never render
