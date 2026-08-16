@@ -61,6 +61,7 @@ const enShell: TranslationDictionary = {
   "shell.companyLogo": "Company logo",
   "shell.defaultUserName": "Admin User",
   "shell.roleCompanyAdmin": "Company Admin",
+  "shell.roleSuperAdmin": "Super Admin",
   "shell.roleUser": "User",
 
   /* ── Shared component defaults ─────────────────────────────────── */

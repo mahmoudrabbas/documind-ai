@@ -17,6 +17,8 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.estimatedCost": "التكلفة المقدرة",
   "superAdmin.failedJobs": "المهام الفاشلة",
   "superAdmin.storage": "التخزين",
+  "superAdmin.recentActivity": "آخر النشاطات الإدارية",
+  "superAdmin.noRecentActivity": "لا يوجد نشاط إداري بعد.",
   "superAdmin.statusDistribution": "توزيع الحالات",
   "superAdmin.auditLogTitle": "سجل تدقيق المنصة",
   "superAdmin.auditLogDesc": "فحص الإجراءات الإدارية عبر المنصة.",

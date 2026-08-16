@@ -22,6 +22,7 @@ import { useI18n } from "@/providers/i18n-provider";
 import { useCopilot } from "@/providers/copilot-provider";
 import { getNavGuideTargetId } from "@/lib/copilot/guide-targets";
 import { COPILOT_ENABLED } from "@/config/public-env";
+import { cn } from "@/lib/utils";
 
 type AppNavigationProps = {
   open: boolean;
@@ -71,13 +72,19 @@ function NavItem({
       title={label}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
-      className={`flex min-w-0 items-center gap-3 px-4 py-3 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
+      className={cn(
+        "flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-3",
         isActive
-          ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
-          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-      }`}
+          ? "bg-secondary-container/20 font-semibold text-primary hover:bg-secondary-container/30"
+          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
+      )}
     >
-      <span className="material-symbols-outlined shrink-0">{icon}</span>
+      <span
+        className="material-symbols-outlined shrink-0 text-[20px]"
+        style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+      >
+        {icon}
+      </span>
       <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
         {labelKey ? t(labelKey) : label}
       </span>
@@ -275,7 +282,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                     onClick={() => toggleGroup(group.id)}
                     aria-expanded={!collapsed}
                     aria-controls={`nav-group-${group.id}`}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-4"
+                    className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-3"
                   >
                     {group.icon ? (
                       <span className="material-symbols-outlined text-[18px]">

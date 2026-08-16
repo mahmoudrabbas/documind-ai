@@ -21,6 +21,8 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.estimatedCost": "Estimated Cost",
   "superAdmin.failedJobs": "Failed Jobs",
   "superAdmin.storage": "Storage",
+  "superAdmin.recentActivity": "Recent administrative activity",
+  "superAdmin.noRecentActivity": "No administrative activity yet.",
   "superAdmin.statusDistribution": "Status Distribution",
   "superAdmin.auditLogTitle": "Platform Audit Log",
   "superAdmin.auditLogDesc": "Inspect administrative actions across the platform.",
