@@ -90,8 +90,8 @@ services:
         ]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 8
+      start_period: 60s
     volumes:
       - ./api:/repo/api
       - api_node_modules:/repo/api/node_modules
@@ -115,8 +115,8 @@ services:
         ]
       interval: 10s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 8
+      start_period: 60s
     volumes:
       - ./app:/repo/app
       - app_node_modules:/repo/app/node_modules

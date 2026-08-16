@@ -29,6 +29,8 @@ import {
   tPlural as pluralizeKey,
   getLocaleFromCookie,
   setLocaleCookie,
+  setExplicitLocalePreference,
+  clearExplicitLocalePreference,
 } from "@/lib/i18n/i18n.utils";
 import dictionaries from "@/lib/i18n/translations";
 
@@ -65,10 +67,21 @@ export function I18nProvider({
     html.dir = dir;
   }, [locale, dir]);
 
-  const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next);
-    setLocaleCookie(next);
-  }, []);
+  /* The locale cookie is written either way so the server paints the right
+     direction on the next request; the marker records whether the choice was
+     the user's, which is what config-derived updates must not clobber. */
+  const setLocale = useCallback(
+    (next: Locale, options?: { explicit?: boolean }) => {
+      setLocaleState(next);
+      setLocaleCookie(next);
+      if (options?.explicit === false) {
+        clearExplicitLocalePreference();
+      } else {
+        setExplicitLocalePreference();
+      }
+    },
+    [],
+  );
 
   const t = useCallback(
     (key: string, params?: Record<string, string>) =>

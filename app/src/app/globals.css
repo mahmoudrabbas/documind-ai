@@ -184,6 +184,11 @@
   --text-display-lg--letter-spacing: -0.02em;
   --text-display-lg--font-weight: 700;
 
+  --text-display-sm: 2.25rem; /* 36px */
+  --text-display-sm--line-height: 2.75rem; /* 44px */
+  --text-display-sm--letter-spacing: -0.02em;
+  --text-display-sm--font-weight: 700;
+
   --text-headline-lg: 2rem; /* 32px */
   --text-headline-lg--line-height: 2.5rem; /* 40px */
   --text-headline-lg--letter-spacing: -0.01em;
@@ -201,6 +206,14 @@
   --text-title-lg--line-height: 1.75rem; /* 28px */
   --text-title-lg--font-weight: 600;
 
+  --text-title-md: 1.125rem; /* 18px */
+  --text-title-md--line-height: 1.5rem; /* 24px */
+  --text-title-md--font-weight: 600;
+
+  --text-title-sm: 1rem; /* 16px */
+  --text-title-sm--line-height: 1.5rem; /* 24px */
+  --text-title-sm--font-weight: 600;
+
   --text-body-lg: 1.125rem; /* 18px */
   --text-body-lg--line-height: 1.75rem; /* 28px */
   --text-body-lg--font-weight: 400;
@@ -213,6 +226,14 @@
   --text-body-sm--line-height: 1.25rem; /* 20px */
   --text-body-sm--font-weight: 400;
 
+  --text-body-xs: 0.75rem; /* 12px */
+  --text-body-xs--line-height: 1.125rem; /* 18px */
+  --text-body-xs--font-weight: 400;
+
+  --text-label-lg: 1rem; /* 16px */
+  --text-label-lg--line-height: 1.5rem; /* 24px */
+  --text-label-lg--font-weight: 500;
+
   --text-label-md: 0.875rem; /* 14px */
   --text-label-md--line-height: 1.25rem; /* 20px */
   --text-label-md--font-weight: 500;
@@ -221,6 +242,11 @@
   --text-label-sm--line-height: 1rem; /* 16px */
   --text-label-sm--letter-spacing: 0.05em;
   --text-label-sm--font-weight: 600;
+
+  --text-label-xs: 0.6875rem; /* 11px */
+  --text-label-xs--line-height: 1rem; /* 16px */
+  --text-label-xs--letter-spacing: 0.06em;
+  --text-label-xs--font-weight: 600;
 
   /* ---- Radius: rounded-* (DESIGN.md > rounded) -------------------------- */
   --radius-sm: 0.25rem;

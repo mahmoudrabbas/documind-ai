@@ -6,7 +6,15 @@
  */
 
 import type { Locale, TranslationDictionary } from "./i18n.types";
-import { DEFAULT_LOCALE, LOCALE_COOKIE_NAME, isValidLocale } from "./i18n.config";
+import {
+  DEFAULT_LOCALE,
+  LOCALE_COOKIE_NAME,
+  LOCALE_EXPLICIT_COOKIE_NAME,
+  isValidLocale,
+} from "./i18n.config";
+
+/** 1 year, in seconds — the lifetime of both locale cookies. */
+const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 
 /**
  * Look up `key` in `dictionary` and optionally interpolate `{{param}}`
@@ -83,6 +91,25 @@ export function getLocaleFromCookie(): Locale {
 }
 
 /**
+ * Whether the user has picked a locale themselves.
+ *
+ * Deliberately keyed on the marker cookie rather than on the locale cookie:
+ * the locale cookie is also written when a tenant's `defaultLanguage` is
+ * applied, so treating its presence as consent would pin every user to
+ * whatever the default happened to be on their first visit and silently
+ * ignore later changes to it.
+ */
+export function hasExplicitLocalePreference(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  return document.cookie
+    .split("; ")
+    .some((row) => row.trim() === `${LOCALE_EXPLICIT_COOKIE_NAME}=1`);
+}
+
+/**
  * Persist `locale` to a first-party cookie with a 1-year expiry.
  * `SameSite=Lax` is used to keep the cookie available on normal
  * navigations while preventing CSRF in cross-origin POST requests.
@@ -92,6 +119,23 @@ export function setLocaleCookie(locale: Locale): void {
     return;
   }
 
-  const maxAge = 365 * 24 * 60 * 60; // 1 year in seconds
-  document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
+/** Record that the active locale was chosen by the user. */
+export function setExplicitLocalePreference(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.cookie = `${LOCALE_EXPLICIT_COOKIE_NAME}=1; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
+/** Forget any recorded user choice, so a tenant default applies again. */
+export function clearExplicitLocalePreference(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.cookie = `${LOCALE_EXPLICIT_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
 }

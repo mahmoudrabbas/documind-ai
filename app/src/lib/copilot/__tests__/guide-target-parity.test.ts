@@ -46,13 +46,16 @@ function extractGuideIds(source: string): string[] {
 
 describe("guide target parity (registry ⇄ app anchors)", () => {
   const files = listSourceFiles(SRC_ROOT).filter((file) =>
-    /src\/(app|components|lib)\//.test(file),
+    /src\/(app|components|lib)\//.test(file.replaceAll("\\", "/")),
   );
   const occurrences: Array<{ file: string; ids: string[] }> = [];
   for (const file of files) {
     const ids = extractGuideIds(readFileSync(file, "utf8"));
     if (ids.length > 0)
-      occurrences.push({ file: relative(SRC_ROOT, file), ids });
+      occurrences.push({
+        file: relative(SRC_ROOT, file).replaceAll("\\", "/"),
+        ids,
+      });
   }
 
   it("every data-guide-id used in the app is registered", () => {
