@@ -156,6 +156,7 @@ export function resolveChatOutcome(
       | "CONFLICTING"
       | null;
     evidenceReasonCode: string | null;
+    retrievalOutcome?: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED" | null;
   },
 ): ChatOutcome {
   if (reasonCode === "UNSUPPORTED_REQUEST") return "unsupported";
@@ -165,7 +166,12 @@ export function resolveChatOutcome(
     // gap: never answer it with a knowledge-gap response.
     return "verification_failed";
   }
-  if (artifacts.authorizationRestricted) return "authorization_restricted";
+  if (
+    artifacts.authorizationRestricted ||
+    artifacts.retrievalOutcome === "AUTHORIZATION_FILTERED"
+  ) {
+    return "authorization_restricted";
+  }
   if (
     artifacts.evidenceSufficiency === "CONFLICTING" ||
     artifacts.evidenceReasonCode === "EVIDENCE_CONFLICTING"
