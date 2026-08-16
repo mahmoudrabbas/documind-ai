@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { config } from "../../config/index.js";
+import { isAuthenticableTenantStatus } from "../../common/auth/tenantAccess.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   EMAIL_ALREADY_EXISTS,
@@ -769,7 +770,7 @@ function assertAccountCanSignIn(
     throw new AppError(403, ACCOUNT_NOT_ACTIVE, "Account is not active");
   }
 
-  if (tenant.status !== "active") {
+  if (!isAuthenticableTenantStatus(tenant.status)) {
     throw new AppError(403, TENANT_NOT_ACTIVE, "Tenant is not active");
   }
 }
