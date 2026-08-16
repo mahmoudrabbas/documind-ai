@@ -23,7 +23,9 @@ export type RetrievalAuthorizationDenialReason =
   | "ACTOR_INVALID"
   | "PERMISSION_REQUIRED"
   | "RESOLVER_FAILED"
-  | "NO_AUTHORIZED_DOCUMENTS";
+  | "NO_AUTHORIZED_DOCUMENTS"
+  /** Actor can read at least one candidate document but none are AI-usable. */
+  | "READABLE_NOT_AI_USABLE";
 
 export interface DocumentRetrievalAuthorizationResult {
   readonly filter: DocumentRetrievalAccessFilter;
@@ -178,6 +180,8 @@ export async function resolveCanonicalRetrievalAuthorization(
 
   const evaluatedAt = context.evaluatedAt ?? new Date().toISOString();
   const authorizedDocumentIds = new Set<string>();
+  const deniedEvaluations: (() => Promise<void>)[] = [];
+  let readableButNotAiUsable = false;
   const batches: CanonicalRetrievalDocument[][] = [];
   for (let index = 0; index < documents.length; index += POLICY_BATCH_SIZE) {
     batches.push(documents.slice(index, index + POLICY_BATCH_SIZE));
@@ -211,28 +215,50 @@ export async function resolveCanonicalRetrievalAuthorization(
             )
           : null;
         if (policy.inherits && !inherited) continue;
+        const resource = {
+          tenantId: context.tenantId,
+          documentId: document.documentId,
+          ownerId: document.ownerId,
+          categoryId: document.categoryId,
+          departmentId: document.departmentId,
+          classificationId: document.classificationId,
+          classification: document.classification,
+          legacyCategory: document.category,
+          legacyDepartment: null,
+          lifecycleStatus: document.lifecycleStatus ?? "processed",
+          activePolicyId: document.activePolicyId,
+          activePolicyVersion: document.activePolicyVersion,
+        };
         const decision = await deps.evaluate({
           actor,
-          resource: {
-            tenantId: context.tenantId,
-            documentId: document.documentId,
-            ownerId: document.ownerId,
-            categoryId: document.categoryId,
-            departmentId: document.departmentId,
-            classificationId: document.classificationId,
-            classification: document.classification,
-            legacyCategory: document.category,
-            legacyDepartment: null,
-            lifecycleStatus: document.lifecycleStatus ?? "processed",
-            activePolicyId: document.activePolicyId,
-            activePolicyVersion: document.activePolicyVersion,
-          },
+          resource,
           action: "use_in_ai",
           policy,
           inheritedPolicy: inherited,
           evaluatedAt,
         });
-        if (decision.allowed) authorizedDocumentIds.add(document.documentId);
+        if (decision.allowed) {
+          authorizedDocumentIds.add(document.documentId);
+        } else {
+          // Deferred read probe for the distinct readable-not-AI-usable
+          // outcome; only executed when the whole corpus is AI-denied.
+          deniedEvaluations.push(async () => {
+            if (readableButNotAiUsable) return;
+            try {
+              const readDecision = await deps.evaluate({
+                actor,
+                resource,
+                action: "read",
+                policy,
+                inheritedPolicy: inherited,
+                evaluatedAt,
+              });
+              if (readDecision.allowed) readableButNotAiUsable = true;
+            } catch {
+              // Fail closed: no distinct outcome.
+            }
+          });
+        }
       } catch {
         // Fail closed for this document: it is simply not in the allowlist.
       }
@@ -240,10 +266,13 @@ export async function resolveCanonicalRetrievalAuthorization(
   });
 
   if (authorizedDocumentIds.size === 0) {
+    if (deniedEvaluations.length > 0) {
+      await mapWithConcurrency(deniedEvaluations, POLICY_BATCH_CONCURRENCY, (probe) => probe());
+    }
     return denyAll(
       context.tenantId,
       context.actorId,
-      "NO_AUTHORIZED_DOCUMENTS",
+      readableButNotAiUsable ? "READABLE_NOT_AI_USABLE" : "NO_AUTHORIZED_DOCUMENTS",
       documents.length,
     );
   }

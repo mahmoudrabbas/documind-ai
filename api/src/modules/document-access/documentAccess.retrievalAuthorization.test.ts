@@ -202,6 +202,29 @@ describe("canonical retrieval authorization allowlist", () => {
     ].sort());
   });
 
+  test("readable but not AI-usable documents produce the distinct READABLE_NOT_AI_USABLE denial", async () => {
+    const doc = document({ documentId: "64a000000000000000000107" });
+    const policies = new Map([
+      [
+        doc.documentId,
+        policy(doc, [
+          {
+            ruleId: "user-read",
+            effect: "allow",
+            subject: { type: "user", id: actorId },
+            actions: ["read"],
+          },
+        ]),
+      ],
+    ]);
+    const result = await resolveCanonicalRetrievalAuthorization(
+      { tenantId, actorId },
+      deps({ documents: [doc], policies }),
+    );
+    assert.equal(result.filter.mode, "deny_all");
+    assert.equal(result.denialReason, "READABLE_NOT_AI_USABLE");
+  });
+
   test("documents without an active policy or with stale index metadata are excluded", async () => {
     const noPolicy = document({
       documentId: "64a000000000000000000105",
