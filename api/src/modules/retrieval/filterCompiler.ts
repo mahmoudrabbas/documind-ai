@@ -68,6 +68,19 @@ function mergeInField(
  * current active document policy after tenant-scoped candidate hydration.
  */
 export function compileAccessFilters(context: AccessContext): AdapterFilter {
+  // Canonical allowlist mode: the live authorized-document-ID set resolved
+  // from canonical documents and current policy snapshots IS the mandatory
+  // authorization filter. Base-role classification ceilings and chunk
+  // department/category/classification text metadata are intentionally not
+  // applied here — they may only affect ranking, never authorization. An
+  // empty allowlist fails closed ({$in: []} matches nothing).
+  if (context.authorizedDocumentIds !== undefined) {
+    return {
+      tenantId: context.tenantId,
+      documentIds: [...context.authorizedDocumentIds],
+    };
+  }
+
   const classifications = resolveClassifications(context);
 
   const filter: AdapterFilter = {

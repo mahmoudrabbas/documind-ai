@@ -11,6 +11,7 @@ import { FusionEngine } from "./fusionEngine.js";
 import type { RetrievalRepository } from "./retrieval.repository.js";
 import { createRetrievalService } from "./retrieval.service.js";
 import type { AccessContext, RetrievalCandidate } from "./retrieval.types.js";
+import type { DocumentRetrievalAuthorizationResult } from "../document-access/documentAccess.retrievalAuthorization.js";
 
 const tenantA = "64a000000000000000000001";
 const omar = "64a000000000000000000003";
@@ -83,6 +84,11 @@ interface HarnessOptions {
   authorizedActors?: string[];
   activeDocumentIds?: string[];
   bundleItems?: (candidates: RetrievalCandidate[]) => EvidenceBundle;
+  corpusAuthorization?: {
+    mode: "deny_all" | "constrained";
+    allowedDocumentIds?: string[];
+    denialReason?: string;
+  };
 }
 
 function harness(options: HarnessOptions) {
@@ -90,15 +96,21 @@ function harness(options: HarnessOptions) {
   const rerankerInputs: RetrievalCandidate[][] = [];
   const authorizedActors = new Set(options.authorizedActors ?? [omar]);
   const activeDocumentIds = new Set(options.activeDocumentIds ?? [documentA]);
+  const searchFilters: unknown[][] = [];
   const vectorAdapter = {
     providerKey: "test-vector",
-    search: async () => options.raw,
+    search: async (request: { filter?: unknown }) => {
+      searchFilters.push([request.filter]);
+      return options.raw;
+    },
   } as unknown as VectorStoreAdapter;
   const keywordAdapter = {
     providerKey: "test-keyword",
-    search: async () => options.raw,
-  } as unknown as KeywordAdapter;
-  const repository = {
+    search: async (request: { filter?: unknown }) => {
+      searchFilters.push([request.filter]);
+      return options.raw;
+    },
+  } as unknown as KeywordAdapter;  const repository = {
     findChunksByIds: async (tenant: string, ids: string[]) =>
       options.chunks.filter(
         (item) =>
@@ -127,6 +139,35 @@ function harness(options: HarnessOptions) {
     }),
     findActiveDocumentIds: async (_tenantId: string, ids: string[]) =>
       ids.filter((id) => activeDocumentIds.has(id)),
+    ...(options.corpusAuthorization
+      ? {
+          resolveRetrievalAuthorization: async (): Promise<DocumentRetrievalAuthorizationResult> => ({
+            filter: {
+              schemaVersion: 1,
+              evaluationContractVersion: 1,
+              tenantId: tenantA,
+              actorId: omar,
+              action: "use_in_ai" as const,
+              mode: options.corpusAuthorization!.mode,
+              failClosed: true as const,
+              requiresCurrentPolicyRevalidation: true as const,
+              allowedDocumentIds: options.corpusAuthorization!.allowedDocumentIds ?? [],
+              deniedDocumentIds: [],
+              allowedOwnerIds: [],
+              allowedCategoryIds: [],
+              allowedDepartmentIds: [],
+              allowedClassifications: [],
+              policyVersions: [],
+            },
+            ...(options.corpusAuthorization!.denialReason
+              ? {
+                  denialReason: options.corpusAuthorization!.denialReason as DocumentRetrievalAuthorizationResult["denialReason"],
+                }
+              : {}),
+            resolvedDocumentCount: 0,
+          }),
+        }
+      : {}),
     authorizeDocumentForAi: async (input, documentId) => {
       authorizationContexts.push(input);
       if (
@@ -137,7 +178,7 @@ function harness(options: HarnessOptions) {
       }
     },
   });
-  return { service, authorizationContexts, rerankerInputs };
+  return { service, authorizationContexts, rerankerInputs, searchFilters };
 }
 
 describe("retrieval diagnostics typed outcomes", () => {
@@ -204,5 +245,92 @@ describe("retrieval diagnostics typed outcomes", () => {
       context(),
     );
     assert.equal(result.diagnostics.retrievalOutcome, "NO_RETRIEVABLE_CONTENT");
+  });
+
+  test("deny_all corpus returns a typed fail-closed result without searching", async () => {
+    const { service, searchFilters } = harness({
+      raw: [{ chunkId: "chunk-a", score: 0.9 }],
+      chunks: [chunk("chunk-a")],
+      corpusAuthorization: {
+        mode: "deny_all",
+        denialReason: "PERMISSION_REQUIRED",
+      },
+    });
+    const result = await service.hybridSearch(
+      { queryText: "leave policy", topK: 5 },
+      context(),
+    );
+    assert.equal(result.totalCandidates, 0);
+    assert.equal(result.diagnostics.retrievalOutcome, "NO_AUTHORIZED_DOCUMENTS");
+    assert.equal(result.diagnostics.zeroCandidateReason, "PERMISSION_REQUIRED");
+    assert.equal(result.diagnostics.authorizationRestricted, true);
+    assert.equal(searchFilters.length, 0);
+  });
+
+  test("constrained corpus prefilters search by authorized document ids and ignores chunk metadata scopes", async () => {
+    const { service, searchFilters } = harness({
+      raw: [{ chunkId: "chunk-a", score: 0.9 }],
+      chunks: [chunk("chunk-a", { classification: "confidential" })],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+    const result = await service.hybridSearch(
+      { queryText: "leave policy", topK: 5 },
+      context(),
+    );
+    // An EMPLOYEE reaching a confidential document through an explicit policy
+    // grant must not be blocked by the base-role classification ceiling.
+    assert.equal(result.diagnostics.retrievalOutcome, "AUTHORIZED_RESULTS");
+    assert.ok(searchFilters.length > 0);
+    for (const [filter] of searchFilters) {
+      assert.deepEqual((filter as { documentIds?: string[] }).documentIds, [documentA]);
+      assert.equal((filter as { classification?: unknown }).classification, undefined);
+      assert.equal((filter as { department?: unknown }).department, undefined);
+      assert.equal((filter as { category?: unknown }).category, undefined);
+    }
+  });
+
+  test("user-requested document filters only narrow the authorized corpus", async () => {
+    const other = "64a0000000000000000000ab";
+    const { service, searchFilters } = harness({
+      raw: [],
+      chunks: [],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA, other],
+      },
+    });
+    await service.hybridSearch(
+      { queryText: "leave policy", topK: 5, filter: { documentIds: [other] } },
+      context(),
+    );
+    for (const [filter] of searchFilters) {
+      assert.deepEqual((filter as { documentIds?: string[] }).documentIds, [other]);
+    }
+  });
+
+  test("large authorized corpora are searched in batches of at most 500 without truncation", async () => {
+    const allowedDocumentIds = Array.from(
+      { length: 501 },
+      (_, index) =>
+        `64a000000000000000000${String(index).padStart(3, "0")}`,
+    );
+    const { service, searchFilters } = harness({
+      raw: [],
+      chunks: [],
+      corpusAuthorization: { mode: "constrained", allowedDocumentIds },
+    });
+    await service.hybridSearch({ queryText: "leave policy", topK: 5 }, context());
+    const batches = searchFilters
+      .map(([filter]) => (filter as { documentIds?: string[] }).documentIds ?? [])
+      .filter((ids) => ids.length > 0);
+    assert.ok(batches.length >= 2);
+    for (const ids of batches) {
+      assert.ok(ids.length <= 500);
+    }
+    const union = new Set(batches.flat());
+    assert.equal(union.size, 501);
   });
 });

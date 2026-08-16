@@ -253,6 +253,10 @@ const filterCompiler: FilterCompiler = {
 };
 
 import { logger } from "./common/logger/logger.js";
+import {
+  createDefaultRetrievalAuthorizationDeps,
+  resolveCanonicalRetrievalAuthorization,
+} from "./modules/document-access/documentAccess.retrievalAuthorization.js";
 
 // Use the deterministic FakeRerankerAdapter as the default runtime adapter.
 // NOTE: This is a deterministic lexical reranker intended for tests and as a
@@ -333,6 +337,16 @@ const retrievalService = createRetrievalService({
       requiredAction: "use_in_ai",
     };
   },
+  // Canonical live allowlist: resolved from canonical documents and current
+  // policy snapshots before search. Fail-closed; a resolver failure never
+  // falls back to tenant-wide scope-based search.
+  resolveRetrievalAuthorization: async (context) =>
+    resolveCanonicalRetrievalAuthorization(
+      { tenantId: context.tenantId, actorId: context.actorId },
+      createDefaultRetrievalAuthorizationDeps(
+        getDocumentAccessAuthorizationService(),
+      ),
+    ),
   authorizeDocumentForAi: async (context, documentId) => {
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId: context.tenantId, actorId: context.actorId }, documentId, "use_in_ai");
   },

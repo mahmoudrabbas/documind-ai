@@ -81,6 +81,17 @@ export interface AccessContext {
    * and evidence events; it never generates a replacement UUID when present.
    */
   traceId?: string;
+  /**
+   * Canonical, live authorized-document allowlist resolved server-side from
+   * canonical documents and current policy snapshots (never from chunk or
+   * embedding metadata, and never from request input).
+   *
+   * `undefined` = legacy scope-based prefiltering (no canonical resolver ran).
+   * `[]` = fail-closed deny-all corpus.
+   */
+  authorizedDocumentIds?: string[];
+  /** Typed fail-closed reason when the authorized corpus resolves to deny_all. */
+  corpusDenialReason?: string;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }
