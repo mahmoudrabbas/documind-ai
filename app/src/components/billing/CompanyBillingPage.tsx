@@ -16,6 +16,7 @@ import {
   getBillingOperation,
   getBillingSummary,
   getInvoiceLinks,
+  getInvoicePdfBlobUrl,
   listRefundRequests,
   listInvoices,
   listPublicBillingPackages,
@@ -75,6 +76,8 @@ function BillingContent() {
   const [refundEligibility, setRefundEligibility] = useState<Loadable<RefundEligibilityPreview> | null>(null);
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState("");
+  const isCurrentSubscriptionFree = summary.kind === "ready" && summary.data.packageId.code === "free";
+  const refundTransitionsToFree = refundEligibility?.kind === "ready" && !isCurrentSubscriptionFree && refundEligibility.data.subscriptionImpact === "CANCEL_AND_MOVE_TO_FREE";
   const errorRef = useRef<HTMLDivElement>(null);
   const portalRequestRef = useRef(false);
   const previewSubmitKeyRef = useRef<string | null>(null);
@@ -201,17 +204,43 @@ function BillingContent() {
   }, [t]);
 
   const openLinks = useCallback(async (invoice: BillingInvoice) => {
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      setAnnouncement(t("billingAdmin.popupBlocked"));
+      return;
+    }
+    popup.opener = null;
+    popup.document.write(renderInvoicePopup(t, locale, dir, "loading"));
+    popup.document.close();
     try {
       setAnnouncement(t("billingAdmin.linkLoading"));
       const response = await getInvoiceLinks(invoice.id);
-      const url = response.data.invoicePdfUrl ?? response.data.hostedInvoiceUrl ?? response.data.receiptUrl;
-      if (!url) throw new Error("unavailable");
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (response.data.invoicePdfUrl) {
+        const blobUrl = await getInvoicePdfBlobUrl(invoice.id);
+        if (popup.closed) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        popup.location.replace(blobUrl);
+        const cleanup = () => URL.revokeObjectURL(blobUrl);
+        popup.addEventListener("load", cleanup, { once: true });
+        window.setTimeout(cleanup, 60_000);
+      } else {
+        const url = response.data.hostedInvoiceUrl ?? response.data.receiptUrl;
+        if (!url) {
+          throw new Error("unavailable");
+        }
+        popup.location.replace(url);
+      }
       setAnnouncement(t("billingAdmin.linkOpened"));
     } catch (error) {
+      if (!popup.closed) {
+        popup.document.write(renderInvoicePopup(t, locale, dir, "error"));
+        popup.document.close();
+      }
       setAnnouncement(safeMessage(error, t));
     }
-  }, [t]);
+  }, [t, locale, dir]);
 
   const loadRefundEligibility = useCallback(async (invoice: BillingInvoice) => {
     setRefundEligibility({ kind: "loading" });
@@ -552,7 +581,7 @@ function BillingContent() {
         footer={(
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setRefundDialogInvoice(null)} className="rounded-lg border px-4 py-2 font-semibold">{t("common.cancel")}</button>
-            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || refundEligibility?.kind !== "ready" || refundEligibility.data.maximumEligibleRefundMinor <= 0} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : refundEligibility?.kind === "ready" ? `${t("billingAdmin.refundRemainingAction")} ${new Intl.NumberFormat(intlLocale, { style: "currency", currency: refundEligibility.data.currency }).format(refundEligibility.data.maximumEligibleRefundMinor / 100)}` : t("billingAdmin.submitRefund")}</button>
+            <button type="button" onClick={submitRefund} disabled={!refundDialogInvoice || refundSubmitting || refundEligibility?.kind !== "ready" || refundEligibility.data.maximumEligibleRefundMinor <= 0} className="rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary disabled:opacity-60">{refundSubmitting ? t("billingAdmin.submitting") : refundEligibility?.kind === "ready" ? `${t(refundTransitionsToFree ? "billingAdmin.refundRemainingAction" : "billingAdmin.refundAction")} ${new Intl.NumberFormat(intlLocale, { style: "currency", currency: refundEligibility.data.currency }).format(refundEligibility.data.maximumEligibleRefundMinor / 100)}` : t("billingAdmin.submitRefund")}</button>
           </div>
         )}
       >
@@ -563,6 +592,7 @@ function BillingContent() {
             t={t}
             eligibility={refundEligibility}
             error={refundError}
+            transitionsToFree={refundTransitionsToFree}
           />
         ) : null}
       </Modal>
@@ -680,11 +710,11 @@ function InvoiceAction({ invoice, t, onLinks, onRefund, canManage }: { invoice: 
   return (
     <div className="flex flex-wrap gap-2">
       {invoice.hostedInvoiceAvailable || invoice.invoicePdfAvailable || invoice.receiptAvailable ? <button type="button" onClick={() => onLinks(invoice)} aria-label={`${t("billingAdmin.openInvoice")} ${invoice.invoiceNumber}`} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.openInvoice")} <span className="sr-only">{t("billingAdmin.externalLink")}</span></button> : <span className="text-sm text-on-surface-variant">{t("billingAdmin.noLinks")}</span>}
-      {canManage && invoice.canRequestRefund ? <button type="button" onClick={() => onRefund(invoice)} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.requestRefund")}</button> : null}
+      {canManage && invoice.reservedRefundAmountMinor > 0 ? <span role="status" className="text-sm font-semibold text-on-surface-variant">{t("billingAdmin.refundPendingAction")}</span> : canManage && invoice.canRequestRefund ? <button type="button" onClick={() => onRefund(invoice)} className="rounded-lg border border-outline px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">{t("billingAdmin.requestRefund")}</button> : canManage && invoice.status === "paid" ? <span role="status" className="text-sm text-on-surface-variant">{t("billingAdmin.noRefundableBalance")}</span> : null}
     </div>
   );
 }
-function RefundRequestForm({ invoice, locale, t, eligibility, error }: { invoice: BillingInvoice; locale: string; t: (key: string) => string; eligibility: Loadable<RefundEligibilityPreview> | null; error: string }) {
+function RefundRequestForm({ invoice, locale, t, eligibility, error, transitionsToFree }: { invoice: BillingInvoice; locale: string; t: (key: string) => string; eligibility: Loadable<RefundEligibilityPreview> | null; error: string; transitionsToFree: boolean }) {
   const currentLocale = useIntlLocale();
   const money = (minor: number) => new Intl.NumberFormat(currentLocale, { style: "currency", currency: invoice.currency }).format(minor / 100);
   return <div className="space-y-4">
@@ -697,7 +727,7 @@ function RefundRequestForm({ invoice, locale, t, eligibility, error }: { invoice
       <Detail label={t("billingAdmin.refundableRemaining")} value={money(eligibility.data.maximumEligibleRefundMinor)} />
       <p className="text-sm">{t("billingAdmin.periodElapsed")}: {eligibility.data.periodElapsedPercent}%</p>
       {eligibility.data.usage.map((metric) => <p key={metric.dimension} className="text-sm">{t(`billingAdmin.entitlement.${metric.dimension}`)}: {metric.percent}%</p>)}
-      {eligibility.data.decisionReason === "REFUND_WINDOW_EXPIRED" ? <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.refundWindowExpired")}</p> : eligibility.data.maximumEligibleRefundMinor > 0 ? <p role="note" className="rounded-xl bg-warning-container p-3 text-sm text-on-warning-container">{t("billingAdmin.systemRefundWarning")}</p> : <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.noRefundableBalance")}</p>}
+      {eligibility.data.decisionReason === "REFUND_WINDOW_EXPIRED" ? <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.refundWindowExpired")}</p> : eligibility.data.maximumEligibleRefundMinor > 0 ? <p role="note" className="rounded-xl bg-warning-container p-3 text-sm text-on-warning-container">{t(transitionsToFree ? "billingAdmin.systemRefundWarning" : "billingAdmin.refundFreeNote")}</p> : <p role="status" className="rounded-xl bg-surface-container-high p-3 text-sm">{t("billingAdmin.noRefundableBalance")}</p>}
     </div> : null}
     {error ? <p role="alert" className="rounded-xl border border-error/40 bg-error-container p-3 text-on-error-container">{error}</p> : null}
   </div>;
@@ -723,6 +753,22 @@ function Th({ children }: { children: React.ReactNode }) { return <th scope="col
 function Td({ children }: { children: React.ReactNode }) { return <td className="px-4 py-3 text-sm">{children}</td>; }
 function Loading({ label }: { label: string }) { return <div role="status" aria-busy="true" className="animate-pulse space-y-3"><div className="h-5 w-40 rounded bg-surface-container-high"/><div className="h-14 rounded bg-surface-container-high"/><span className="sr-only">{label}</span></div>; }
 function ErrorState({ message, retry, label }: { message: string; retry: () => void; label: string }) { return <div role="alert"><p>{message}</p><button type="button" onClick={retry} className="mt-3 rounded-lg border px-3 py-2 font-semibold">{label}</button></div>; }
+
+const invoicePopupStyle = `html,body{margin:0;height:100%}body{display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#f9fafb;color:#111827}.dm-card{text-align:center;padding:2rem;max-width:26rem}.dm-spinner{width:2rem;height:2rem;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;margin:0 auto 1rem;animation:dm-spin .9s linear infinite}@keyframes dm-spin{to{transform:rotate(360deg)}}.dm-brand{font-size:1.1rem;font-weight:600;margin:0 0 .75rem}.dm-title{font-size:1rem;font-weight:600;margin:0 0 .5rem}.dm-message{font-size:.875rem;line-height:1.5;color:#4b5563;margin:0}.dm-close{margin-top:1rem;padding:.5rem 1rem;border:1px solid #d1d5db;border-radius:.375rem;background:#fff;cursor:pointer;font-size:.875rem}.dm-close:hover{background:#f3f4f6}`;
+
+function escapeHtml(value: string): string {
+  const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return value.replace(/[&<>"']/g, (char) => entities[char] ?? char);
+}
+
+function renderInvoicePopup(t: (key: string) => string, locale: string, dir: string, kind: "loading" | "error"): string {
+  const isError = kind === "error";
+  const title = isError ? t("billingAdmin.popupErrorTitle") : t("billingAdmin.popupLoadingTitle");
+  const message = isError ? t("billingAdmin.popupErrorMessage") : t("billingAdmin.popupLoadingMessage");
+  const spinner = isError ? "" : `<div class="dm-spinner" aria-hidden="true"></div>`;
+  const closeButton = isError ? `<button type="button" class="dm-close" onclick="window.close()">${escapeHtml(t("billingAdmin.popupErrorClose"))}</button>` : "";
+  return `<!doctype html><html lang="${escapeHtml(locale)}" dir="${escapeHtml(dir)}"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${invoicePopupStyle}</style></head><body><main class="dm-card" role="${isError ? "alert" : "status"}">${spinner}<p class="dm-brand">${escapeHtml(t("landing.appName"))}</p><p class="dm-title">${escapeHtml(title)}</p><p class="dm-message">${escapeHtml(message)}</p>${closeButton}</main></body></html>`;
+}
 
 function safeMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof ApiError) {

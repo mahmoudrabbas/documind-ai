@@ -16,6 +16,7 @@ import {
   type ProviderInvoice,
   type ProviderInvoicePage,
   type ProviderInvoiceLinks,
+  type ProviderInvoicePdf,
   type ProviderSubscriptionState,
   type ProviderSubscriptionChangePreview,
   type ProviderSubscriptionMutationResult,
@@ -312,6 +313,17 @@ export class StripePaymentProvider implements PaymentProvider {
       invoicePdfUrl: secureStripeUrl(invoice.invoice_pdf),
       receiptUrl: await this.invoiceReceiptUrl(stripe, invoice.id, params.expectedCustomerId),
     };
+  }
+
+  async retrieveInvoicePdf(params: InvoiceRetrieveParams): Promise<ProviderInvoicePdf> {
+    const stripe = await this.client();
+    const invoice = await stripe.invoices.retrieve(params.invoiceId);
+    assertProviderOwnership(customerId(invoice.customer), params.expectedCustomerId);
+    const pdfUrl = secureStripeUrl(invoice.invoice_pdf);
+    if (!pdfUrl) throw new Error("Invoice PDF is unavailable");
+    const response = await fetch(pdfUrl);
+    if (!response.ok) throw new Error("Invoice PDF retrieval failed");
+    return { contentType: "application/pdf", data: Buffer.from(await response.arrayBuffer()) };
   }
 
   async retrieveCurrentSubscriptionState(params: SubscriptionReadParams): Promise<ProviderSubscriptionState> {

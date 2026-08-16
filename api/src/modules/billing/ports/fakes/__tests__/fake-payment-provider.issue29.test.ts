@@ -16,6 +16,15 @@ describe("FakePaymentProvider Issue 29 contract", () => {
     await expect(fake.retrieveInvoice({ invoiceId: "in_1", expectedCustomerId: "cus_other" })).rejects.toThrow(/ownership/);
   });
 
+  it("serves an inline PDF for seeded invoices and enforces ownership", async () => {
+    const pdf = await fake.retrieveInvoicePdf({ invoiceId: "in_1", expectedCustomerId: "cus_1" });
+    expect(pdf.contentType).toBe("application/pdf");
+    expect(pdf.data.toString()).toContain("%PDF");
+    await expect(fake.retrieveInvoicePdf({ invoiceId: "in_1", expectedCustomerId: "cus_other" })).rejects.toThrow(/ownership/);
+    fake.seedInvoice({ id: "in_2", customerId: "cus_1", subscriptionId: "sub_1", number: "INV-2", status: "paid", currency: "USD", amountDueMinor: 100, amountPaidMinor: 100, amountRemainingMinor: 0, subtotalMinor: 100, taxMinor: 0, createdAt: new Date("2026-01-03"), dueAt: null, paidAt: new Date("2026-01-03"), periodStart: null, periodEnd: null, providerVersion: "v1" });
+    await expect(fake.retrieveInvoicePdf({ invoiceId: "in_2", expectedCustomerId: "cus_1" })).rejects.toThrow(/PDF is unavailable/);
+  });
+
   it("previews, changes, cancels, and reactivates normalized state", async () => {
     const preview = await fake.previewSubscriptionChange({ subscriptionId: "sub_1", expectedCustomerId: "cus_1", targetPriceReference: "price_2", operationContext: context() });
     expect(preview).toMatchObject({ amountDueMinor: 500, currency: "USD" });

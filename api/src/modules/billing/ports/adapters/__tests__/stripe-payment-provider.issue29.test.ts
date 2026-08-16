@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 import { StripePaymentProvider } from "../stripe-payment-provider.js";
 import { billingFoundationProviderContractTests, paymentProviderContractTests } from "../../__tests__/payment-provider.contract.suite.js";
@@ -114,5 +114,39 @@ describe("StripePaymentProvider Issue 29 security boundary", () => {
     stripe.charges.retrieve.mockResolvedValue({ id: "ch_shared", customer: "cus_shared", currency: "usd", amount: 1000, amount_refunded: 0, receipt_url: null } as unknown as Stripe.Charge);
     const invoice = await new StripePaymentProvider(stripe as unknown as Stripe).retrieveInvoice({ invoiceId: "in_shared", expectedCustomerId: "cus_shared" });
     expect(invoice.paymentReference).toBe("ch_shared");
+  });
+
+  describe("retrieveInvoicePdf", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("fetches the signed provider PDF and returns it with application/pdf", async () => {
+      const stripe = createMockStripe();
+      const provider = new StripePaymentProvider(stripe as unknown as Stripe);
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new Uint8Array([37, 80, 68, 70]) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const pdf = await provider.retrieveInvoicePdf({ invoiceId: "in_shared", expectedCustomerId: "cus_shared" });
+      expect(pdf.contentType).toBe("application/pdf");
+      expect(pdf.data.toString()).toBe("%PDF");
+      expect(fetchMock).toHaveBeenCalledWith("https://pay.stripe.com/i/shared.pdf");
+    });
+
+    it("rejects an invoice returned under another customer before fetching", async () => {
+      const stripe = createMockStripe();
+      stripe.invoices.retrieve.mockResolvedValue(stripeInvoice("cus_foreign") as never);
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(new StripePaymentProvider(stripe as unknown as Stripe).retrieveInvoicePdf({ invoiceId: "in_shared", expectedCustomerId: "cus_shared" })).rejects.toThrow(/ownership/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects missing or insecure PDF links without fetching", async () => {
+      const stripe = createMockStripe();
+      stripe.invoices.retrieve.mockResolvedValue({ ...stripeInvoice(), invoice_pdf: null } as never);
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(new StripePaymentProvider(stripe as unknown as Stripe).retrieveInvoicePdf({ invoiceId: "in_shared", expectedCustomerId: "cus_shared" })).rejects.toThrow(/PDF is unavailable/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });

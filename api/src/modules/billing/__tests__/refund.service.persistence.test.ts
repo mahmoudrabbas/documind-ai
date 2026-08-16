@@ -1,11 +1,15 @@
 import mongoose, { Types } from "mongoose";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditWriter, setMetricRecorder } from "../../../common/observability/index.js";
 import BillingOperationModel from "../../../db/models/billingOperation.model.js";
 import InvoiceModel from "../../../db/models/invoice.model.js";
+import PackageModel from "../../../db/models/package.model.js";
 import RefundModel from "../../../db/models/refund.model.js";
+import SubscriptionModel from "../../../db/models/subscription.model.js";
+import UsageLogModel from "../../../db/models/usageLog.model.js";
 import { resetPermissionEvaluator, setPermissionEvaluator } from "../../permissions/permissions.evaluator.js";
 import { FakePaymentProvider } from "../ports/fakes/fake-payment-provider.js";
+import { calculateRefundEligibilitySnapshot, createRefundEligibilityPreview } from "../refund-eligibility.service.js";
 import {
   confirmRefundRequest,
   createRefundRequest,
@@ -112,6 +116,7 @@ refundPersistence("refund service persistence", () => {
       BillingOperationModel.syncIndexes(),
       InvoiceModel.syncIndexes(),
       RefundModel.syncIndexes(),
+      SubscriptionModel.syncIndexes(),
     ]);
   }, 60_000);
 
@@ -616,5 +621,463 @@ refundPersistence("refund service persistence", () => {
       refundId: requested.refund.id,
       context: foreignTenantContext,
     })).rejects.toMatchObject({ code: "BILLING_REFUND_NOT_FOUND" });
+  });
+
+  const fixtureCleanupTenantIds: Types.ObjectId[] = [];
+
+  afterEach(async () => {
+    if (fixtureCleanupTenantIds.length === 0) return;
+    const tenants = [...fixtureCleanupTenantIds];
+    fixtureCleanupTenantIds.length = 0;
+    await Promise.all([
+      RefundModel.deleteMany({ tenantId: { $in: tenants } }),
+      BillingOperationModel.deleteMany({ tenantId: { $in: tenants } }),
+      InvoiceModel.deleteMany({ tenantId: { $in: tenants } }),
+      SubscriptionModel.deleteMany({ tenantId: { $in: tenants } }),
+      PackageModel.deleteMany({}),
+      mongoose.connection.collection("users").deleteMany({ tenantId: { $in: tenants } }),
+      mongoose.connection.collection("tenants").deleteMany({ _id: { $in: tenants } }),
+    ]);
+  });
+
+  async function seedConfirmationFixture(queriesUsed: number) {
+    const now = new Date();
+    const periodStart = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+    const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const fixtureTenantId = new Types.ObjectId();
+    fixtureCleanupTenantIds.push(fixtureTenantId);
+    const fixtureAdminId = new Types.ObjectId();
+    await mongoose.connection.collection("tenants").insertOne({
+      _id: fixtureTenantId,
+      name: "Tenant Confirmation",
+      slug: `tenant-confirmation-${Date.now()}`,
+      status: "active",
+      plan: "pro",
+      isSystemTenant: false,
+    });
+    await mongoose.connection.collection("users").insertOne({
+      _id: fixtureAdminId,
+      tenantId: fixtureTenantId,
+      name: "Billing Admin",
+      email: `billing-conf-${Date.now()}@example.test`,
+      passwordHash: "hash",
+      role: "COMPANY_ADMIN",
+      status: "active",
+      emailVerified: true,
+      permissionBaseline: "standard",
+      roleMigrationState: "complete",
+      sessionGuardVersion: 0,
+    });
+    const providerInvoiceId = `in_conf_${Date.now()}`;
+    const paymentReference = `ch_conf_${Date.now()}`;
+    const packageObjectId = new Types.ObjectId();
+    const subscriptionObjectId = new Types.ObjectId();
+    const invoiceObjectId = new Types.ObjectId();
+    const entitlement = {
+      employees: 5,
+      admins: 2,
+      documents: 10,
+      storageMb: 100,
+      fileSizeMb: 10,
+      queriesPerMonth: 1000,
+      tokensPerMonth: 10000,
+      ocrPagesPerMonth: 100,
+    };
+    await PackageModel.create({
+      _id: packageObjectId,
+      name: "Confirmation",
+      code: `confirmation-${Date.now()}`,
+      description: "",
+      active: true,
+      version: 1,
+      monthlyPrice: 500,
+      annualPrice: 5000,
+      currency: "USD",
+      entitlements: entitlement,
+      versions: [
+        {
+          version: 1,
+          name: "Confirmation",
+          code: "confirmation",
+          description: "",
+          monthlyPrice: 500,
+          annualPrice: 5000,
+          entitlements: entitlement,
+          createdAt: now,
+        },
+      ],
+    });
+    await SubscriptionModel.create({
+      _id: subscriptionObjectId,
+      tenantId: fixtureTenantId,
+      packageId: packageObjectId,
+      packageVersion: 1,
+      status: "ACTIVE",
+      startedAt: periodStart,
+      periodStart,
+      periodEnd,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+      providerCustomerId: "cus_refund_conf",
+      providerSubscriptionId: "sub_refund_conf",
+      providerPriceId: "price_conf",
+      provider: "fake",
+      billingInterval: "monthly",
+      paymentState: "paid",
+      revision: 1,
+    });
+    await InvoiceModel.create({
+      _id: invoiceObjectId,
+      tenantId: fixtureTenantId,
+      subscriptionId: subscriptionObjectId,
+      provider: "fake",
+      providerInvoiceId,
+      invoiceNumber: `INV-CONF-${Date.now()}`,
+      status: "paid",
+      currency: "USD",
+      amountDueMinor: 500,
+      amountPaidMinor: 500,
+      amountRemainingMinor: 0,
+      refundedAmountMinor: 0,
+      reservedRefundAmountMinor: 0,
+      retainedConsumedMinor: 0,
+      subtotalMinor: 500,
+      taxMinor: 0,
+      createdAtProvider: periodStart,
+      dueAt: null,
+      paidAt: periodStart,
+      periodStart,
+      periodEnd,
+      synchronizedAt: now,
+      paymentReference,
+      providerVersion: "v1",
+    });
+    await UsageLogModel.create(
+      Array.from({ length: queriesUsed }, (_, index) => ({
+        tenantId: fixtureTenantId,
+        eventType: "QUESTION_ASKED" as const,
+        requestId: `conf-${Date.now()}-${index}`,
+      })),
+    );
+    const confirmationProvider = new FakePaymentProvider();
+    confirmationProvider.seedSubscription({
+      id: "sub_refund_conf",
+      customerId: "cus_refund_conf",
+      status: "active",
+      metadata: { tenantId: String(fixtureTenantId) },
+      priceId: "price_conf",
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+    });
+    confirmationProvider.seedInvoice({
+      id: providerInvoiceId,
+      customerId: "cus_refund_conf",
+      subscriptionId: "sub_refund_conf",
+      paymentReference,
+      number: `INV-CONF-${Date.now()}`,
+      status: "paid",
+      currency: "USD",
+      amountDueMinor: 500,
+      amountPaidMinor: 500,
+      amountRemainingMinor: 0,
+      refundedAmountMinor: 0,
+      subtotalMinor: 500,
+      taxMinor: 0,
+      createdAt: periodStart,
+      dueAt: null,
+      paidAt: periodStart,
+      periodStart,
+      periodEnd,
+      providerVersion: "v1",
+    });
+    return {
+      tenantId: fixtureTenantId,
+      invoiceId: invoiceObjectId,
+      confirmationProvider,
+      tenantContext: {
+        tenantId: String(fixtureTenantId),
+        actorId: String(fixtureAdminId),
+        actorEmail: "billing-admin@example.test",
+        actorRole: "COMPANY_ADMIN" as const,
+      },
+    };
+  }
+
+  it("confirms a reserved request despite fresh usage drift lowering eligibility", async () => {
+    const { tenantId: fixtureTenantId, invoiceId: confInvoiceId, confirmationProvider, tenantContext: fixtureTenantContext } = await seedConfirmationFixture(24);
+
+    const initialSnapshot = await calculateRefundEligibilitySnapshot({
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      reason: "VOLUNTARY_CANCELLATION",
+    });
+    expect(initialSnapshot.maximumEligibleRefundMinor).toBe(488);
+
+    const requested = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      mode: "PARTIAL",
+      amountMinor: 488,
+      reason: "customer_request",
+      idempotencyKey: "confirmation-drift-request",
+      context: fixtureTenantContext,
+    });
+    expect(requested.refund.status).toBe("REQUESTED");
+    expect(requested.refund.amountMinor).toBe(488);
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(488);
+
+    await UsageLogModel.create([
+      { tenantId: fixtureTenantId, eventType: "QUESTION_ASKED", requestId: `conf-drift-a-${Date.now()}` },
+      { tenantId: fixtureTenantId, eventType: "QUESTION_ASKED", requestId: `conf-drift-b-${Date.now()}` },
+    ]);
+
+    const driftedSnapshot = await calculateRefundEligibilitySnapshot({
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      reason: "VOLUNTARY_CANCELLATION",
+      reservationExclusionMinor: 488,
+    });
+    expect(driftedSnapshot.maximumEligibleRefundMinor).toBe(487);
+
+    const confirmed = await confirmRefundRequest({
+      refundId: requested.refund.id,
+      provider: confirmationProvider,
+      context: platformContext,
+    });
+    expect(confirmed.refund.status).toBe("PROVIDER_PENDING");
+    expect(confirmed.refund.amountMinor).toBe(488);
+    expect(confirmationProvider.mutationCalls.filter((call) => call === "refund")).toHaveLength(1);
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(488);
+
+    const postReservedSnapshot = await calculateRefundEligibilitySnapshot({
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      reason: "VOLUNTARY_CANCELLATION",
+    });
+    expect(postReservedSnapshot.maximumEligibleRefundMinor).toBe(0);
+  });
+
+  it("re-exposes capacity for a new request once a reservation is released on rejection", async () => {
+    const { tenantId: fixtureTenantId, invoiceId: confInvoiceId, tenantContext: fixtureTenantContext } = await seedConfirmationFixture(24);
+
+    const first = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      mode: "PARTIAL",
+      amountMinor: 350,
+      reason: "customer_request",
+      idempotencyKey: "confirmation-released-first",
+      context: fixtureTenantContext,
+    });
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(350);
+
+    await rejectRefundRequest({ refundId: first.refund.id, reason: "policy", context: platformContext });
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(0);
+
+    const second = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      mode: "PARTIAL",
+      amountMinor: 350,
+      reason: "customer_request",
+      idempotencyKey: "confirmation-released-second",
+      context: fixtureTenantContext,
+    });
+    expect(second.refund.status).toBe("REQUESTED");
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(350);
+  });
+
+  it("fails confirmation when the reservation is no longer held", async () => {
+    const { tenantId: fixtureTenantId, invoiceId: confInvoiceId, confirmationProvider, tenantContext: fixtureTenantContext } = await seedConfirmationFixture(24);
+
+    const requested = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      mode: "PARTIAL",
+      amountMinor: 488,
+      reason: "customer_request",
+      idempotencyKey: "confirmation-no-reservation",
+      context: fixtureTenantContext,
+    });
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(488);
+
+    await InvoiceModel.updateOne({ _id: confInvoiceId }, { $set: { reservedRefundAmountMinor: 0 } });
+
+    await expect(confirmRefundRequest({
+      refundId: requested.refund.id,
+      provider: confirmationProvider,
+      context: platformContext,
+    })).rejects.toMatchObject({ code: "BILLING_OPERATION_NOT_ALLOWED", message: "Refund reservation is no longer held" });
+    expect(confirmationProvider.mutationCalls).toHaveLength(0);
+  });
+
+  it("fails confirmation when external confirmed refunds leave no available balance", async () => {
+    const { tenantId: fixtureTenantId, invoiceId: confInvoiceId, confirmationProvider, tenantContext: fixtureTenantContext } = await seedConfirmationFixture(24);
+
+    const requested = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      mode: "PARTIAL",
+      amountMinor: 488,
+      reason: "customer_request",
+      idempotencyKey: "confirmation-external-refund",
+      context: fixtureTenantContext,
+    });
+
+    await InvoiceModel.updateOne({ _id: confInvoiceId }, { $set: { refundedAmountMinor: 300 } });
+
+    await expect(confirmRefundRequest({
+      refundId: requested.refund.id,
+      provider: confirmationProvider,
+      context: platformContext,
+    })).rejects.toMatchObject({ code: "BILLING_REFUND_AMOUNT_INVALID" });
+    expect(confirmationProvider.mutationCalls).toHaveLength(0);
+  });
+
+  it("confirms exactly once under concurrent confirmation attempts", async () => {
+    const { tenantId: fixtureTenantId, invoiceId: confInvoiceId, confirmationProvider, tenantContext: fixtureTenantContext } = await seedConfirmationFixture(24);
+
+    const requested = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      mode: "PARTIAL",
+      amountMinor: 488,
+      reason: "customer_request",
+      idempotencyKey: "confirmation-concurrent",
+      context: fixtureTenantContext,
+    });
+
+    const results = await Promise.allSettled([
+      confirmRefundRequest({
+        refundId: requested.refund.id,
+        provider: confirmationProvider,
+        context: platformContext,
+      }),
+      confirmRefundRequest({
+        refundId: requested.refund.id,
+        provider: confirmationProvider,
+        context: platformContext,
+      }),
+    ]);
+
+    const concurrentSettled = results.filter((result) => result.status === "fulfilled");
+    if (concurrentSettled.length === 0) {
+      await confirmRefundRequest({
+        refundId: requested.refund.id,
+        provider: confirmationProvider,
+        context: platformContext,
+      });
+    }
+
+    expect((await RefundModel.findById(requested.refund.id).lean())?.status).toBe("PROVIDER_PENDING");
+    expect((await RefundModel.findById(requested.refund.id).lean())?.amountMinor).toBe(488);
+    expect(confirmationProvider.mutationCalls.filter((call) => call === "refund")).toHaveLength(1);
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(488);
+  });
+
+  it("confirms a settlement refund for an already-Free tenant without recreating Free or reactivating the paid subscription", async () => {
+    const { tenantId: fixtureTenantId, invoiceId: confInvoiceId, confirmationProvider, tenantContext: fixtureTenantContext } = await seedConfirmationFixture(24);
+
+    const paid = await SubscriptionModel.findOne({ tenantId: fixtureTenantId, status: "ACTIVE" }).lean();
+    expect(paid).toBeTruthy();
+    const freePackage = await PackageModel.create({
+      _id: new Types.ObjectId(),
+      name: "Free",
+      code: "free",
+      description: "Canonical Free plan",
+      active: true,
+      version: 1,
+      monthlyPrice: 0,
+      annualPrice: 0,
+      currency: "USD",
+      entitlements: { employees: 1, admins: 1, documents: 1, storageMb: 1, fileSizeMb: 1, queriesPerMonth: 100, tokensPerMonth: 1, ocrPagesPerMonth: 1 },
+      versions: [
+        {
+          version: 1,
+          name: "Free",
+          code: "free",
+          description: "Canonical Free plan",
+          monthlyPrice: 0,
+          annualPrice: 0,
+          entitlements: { employees: 1, admins: 1, documents: 1, storageMb: 1, fileSizeMb: 1, queriesPerMonth: 100, tokensPerMonth: 1, ocrPagesPerMonth: 1 },
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const freeSubId = new Types.ObjectId();
+    await SubscriptionModel.updateOne({ _id: paid?._id }, { $set: { status: "CANCELED", cancelAtPeriodEnd: false } });
+    await SubscriptionModel.create({
+      _id: freeSubId,
+      tenantId: fixtureTenantId,
+      packageId: freePackage._id,
+      packageVersion: 1,
+      status: "ACTIVE",
+      paymentState: "paid",
+      provider: "local",
+      providerSubscriptionId: "",
+      providerCustomerId: "cus_refund_conf",
+      providerPriceId: "",
+      billingInterval: "monthly",
+      startedAt: paid?.startedAt,
+      periodStart: paid?.periodStart,
+      periodEnd: paid?.periodEnd,
+      currentPeriodStart: paid?.currentPeriodStart,
+      currentPeriodEnd: paid?.currentPeriodEnd,
+      cancelAtPeriodEnd: false,
+    });
+
+    const preview = await createRefundEligibilityPreview({
+      tenantId: String(fixtureTenantId),
+      invoiceId: String(confInvoiceId),
+      reason: "VOLUNTARY_CANCELLATION",
+      context: fixtureTenantContext,
+    });
+    expect(preview.maximumEligibleRefundMinor).toBe(488);
+
+    const requested = await createRefundRequest({
+      provider: requestProvider,
+      tenantId: String(fixtureTenantId),
+      previewId: preview.id,
+      mode: "PARTIAL",
+      amountMinor: 488,
+      idempotencyKey: "confirmation-already-free",
+      context: fixtureTenantContext,
+    });
+    expect(requested.refund.status).toBe("REQUESTED");
+    expect(requested.refund.reasonCode).toBe("VOLUNTARY_CANCELLATION");
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(488);
+
+    const confirmed = await confirmRefundRequest({
+      refundId: requested.refund.id,
+      provider: confirmationProvider,
+      context: platformContext,
+    });
+    expect(confirmed.refund.status).toBe("PROVIDER_PENDING");
+    expect(confirmed.refund.amountMinor).toBe(488);
+    expect(confirmationProvider.mutationCalls.filter((call) => call === "refund")).toHaveLength(1);
+    expect((await InvoiceModel.findById(confInvoiceId).lean())?.reservedRefundAmountMinor).toBe(488);
+
+    expect((await SubscriptionModel.findById(paid?._id).lean())?.status).toBe("CANCELED");
+    const effective = await SubscriptionModel.find({
+      tenantId: fixtureTenantId,
+      status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] },
+    }).lean();
+    expect(effective).toHaveLength(1);
+    expect(effective[0]).toMatchObject({
+      _id: freeSubId,
+      packageId: freePackage._id,
+      status: "ACTIVE",
+      provider: "local",
+      periodStart: paid?.periodStart,
+      periodEnd: paid?.periodEnd,
+    });
   });
 });

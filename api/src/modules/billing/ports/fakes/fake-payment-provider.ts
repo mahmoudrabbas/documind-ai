@@ -15,6 +15,7 @@ import {
   type ProviderInvoice,
   type ProviderInvoicePage,
   type ProviderInvoiceLinks,
+  type ProviderInvoicePdf,
   type ProviderSubscriptionState,
   type ProviderSubscriptionChangePreview,
   type ProviderSubscriptionMutationResult,
@@ -364,6 +365,13 @@ export class FakePaymentProvider implements PaymentProvider {
       invoicePdfUrl: invoice.invoicePdfUrl,
       receiptUrl: invoice.receiptUrl,
     };
+  }
+
+  async retrieveInvoicePdf(params: InvoiceRetrieveParams): Promise<ProviderInvoicePdf> {
+    this.failInvoiceReadIfConfigured();
+    const invoice = this.ownedInvoice(params);
+    if (!invoice.invoicePdfUrl) throw new Error("Fake provider: invoice PDF is unavailable");
+    return { contentType: "application/pdf", data: Buffer.from("%PDF-1.4\n%fake-documind-invoice-pdf\n%%EOF") };
   }
 
   async retrieveCurrentSubscriptionState(params: SubscriptionReadParams): Promise<ProviderSubscriptionState> {

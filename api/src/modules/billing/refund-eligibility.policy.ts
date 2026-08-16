@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { RefundReasonCode, RefundSubscriptionImpact } from "../../db/models/refundEligibilityPreview.model.js";
 
-export const REFUND_ELIGIBILITY_POLICY_VERSION = "2026-08-conservative-attribution-v1";
+export const REFUND_ELIGIBILITY_POLICY_VERSION = "2026-08-conservative-attribution-v2";
 export const REFUND_USAGE_DIMENSIONS = ["queriesPerMonth", "tokensPerMonth", "ocrPagesPerMonth"] as const;
 export const REFUND_PREVIEW_TTL_MS = 15 * 60 * 1000;
 export const REFUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -86,8 +86,14 @@ export function evaluateRefundEligibility(input: RefundEligibilityInput): Refund
     proportionalMinor(input.amountPaidMinor, consumedRatioBps),
     Number.isSafeInteger(input.directProviderCostMinor) ? Math.max(0, input.directProviderCostMinor!) : 0,
   );
+  // Prior reservations and confirmed refunds were carved out of this same pool, so
+  // the unconsumed remainder must be charged against the higher of the recorded
+  // retained consumption and the freshly-measured usage consumption. This keeps
+  // total(consumed + confirmed + reserved + pending) bounded by the amount paid.
+  const consumedFloorMinor = Math.max(input.retainedConsumedMinor ?? 0, consumedValueMinor);
+  const protectedRemaining = Math.max(0, input.amountPaidMinor - consumedFloorMinor - input.confirmedRefundAmountMinor - input.pendingReservedRefundAmountMinor);
   const rawEligible = Math.max(0, input.amountPaidMinor - consumedValueMinor);
-  return decision("CANCEL_AND_MOVE_TO_FREE", consumedRatioBps, consumedValueMinor, Math.min(rawEligible, financialRemaining), false, "USAGE_PROPORTIONAL");
+  return decision("CANCEL_AND_MOVE_TO_FREE", consumedRatioBps, consumedValueMinor, Math.min(rawEligible, protectedRemaining), false, "USAGE_PROPORTIONAL");
 
   function decision(subscriptionImpact: RefundSubscriptionImpact, consumedRatioBps: number, consumedValueMinor: number, maximumEligibleRefundMinor: number, reviewRequired: boolean, decisionReason: string): RefundEligibilityDecision {
     return { policyVersion: REFUND_ELIGIBILITY_POLICY_VERSION, subscriptionImpact, elapsedPeriodRatioBps,

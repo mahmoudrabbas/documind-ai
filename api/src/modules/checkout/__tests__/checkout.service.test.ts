@@ -664,6 +664,7 @@ describe("CheckoutService", () => {
           listInvoices: vi.fn(),
           retrieveInvoice: vi.fn(),
           getSecureInvoiceLinks: vi.fn(),
+          retrieveInvoicePdf: vi.fn(),
           previewSubscriptionChange: vi.fn(),
           updateSubscription: vi.fn(),
           scheduleCancellation: vi.fn(),

@@ -96,6 +96,10 @@ export interface ProviderInvoiceLinks {
   invoicePdfUrl: string | null;
   receiptUrl: string | null;
 }
+export interface ProviderInvoicePdf {
+  contentType: string;
+  data: Buffer;
+}
 
 export interface ProviderSubscriptionChangePreview {
   id: string;
@@ -212,6 +216,7 @@ export interface PaymentProvider {
   listInvoices(params: InvoiceListParams): Promise<ProviderInvoicePage>;
   retrieveInvoice(params: InvoiceRetrieveParams): Promise<ProviderInvoice>;
   getSecureInvoiceLinks(params: InvoiceRetrieveParams): Promise<ProviderInvoiceLinks>;
+  retrieveInvoicePdf(params: InvoiceRetrieveParams): Promise<ProviderInvoicePdf>;
   previewSubscriptionChange(params: SubscriptionChangeParams): Promise<ProviderSubscriptionChangePreview>;
   updateSubscription(params: SubscriptionChangeParams): Promise<ProviderSubscriptionMutationResult>;
   scheduleCancellation(params: CancellationParams): Promise<ProviderCancellationResult>;

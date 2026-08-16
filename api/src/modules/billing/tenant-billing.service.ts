@@ -177,12 +177,23 @@ export async function listCompanyInvoices(input: {
   if (input.status) query.status = input.status;
   if (input.subscriptionId) query.subscriptionId = new Types.ObjectId(input.subscriptionId);
   if (input.from || input.to) query.createdAtProvider = { ...(input.from ? { $gte: input.from } : {}), ...(input.to ? { $lte: input.to } : {}) };
-  const [invoices, totalRecords] = await Promise.all([
-    InvoiceModel.find(query).sort({ createdAtProvider: -1, _id: -1 }).skip((input.page - 1) * input.pageSize).limit(input.pageSize).lean().exec(),
-    InvoiceModel.countDocuments(query),
-  ]);
+  const totalRecords = await InvoiceModel.countDocuments(query);
+  const invoices = await InvoiceModel.find(query).sort({ createdAtProvider: -1, _id: -1 }).skip((input.page - 1) * input.pageSize).limit(input.pageSize).lean().exec();
+  const refundRows = invoices.length > 0
+    ? await RefundModel.find({ invoiceId: { $in: invoices.map((invoice) => invoice._id) } })
+      .select("invoiceId retainedConsumedMinor")
+      .lean()
+      .exec()
+    : [];
+  const refundsByInvoice = new Map<string, Array<{ retainedConsumedMinor?: unknown }>>();
+  for (const row of refundRows) {
+    const key = String(row.invoiceId);
+    const bucket = refundsByInvoice.get(key);
+    if (bucket) bucket.push(row);
+    else refundsByInvoice.set(key, [row]);
+  }
   return {
-    invoices: invoices.map((invoice) => invoiceDto(invoice as unknown as Record<string, unknown>)),
+    invoices: invoices.map((invoice) => invoiceDto(invoice as unknown as Record<string, unknown>, refundsByInvoice.get(String(invoice._id)) ?? [])),
     pagination: { page: input.page, pageSize: input.pageSize, totalRecords, totalPages: Math.ceil(totalRecords / input.pageSize) },
   };
 }
@@ -192,7 +203,8 @@ export async function getCompanyInvoice(invoiceId: string, tenantId: string, con
   assertTenant(tenantId, actor.tenantId);
   const invoice = await InvoiceModel.findOne({ _id: new Types.ObjectId(invoiceId), tenantId: new Types.ObjectId(tenantId) }).lean().exec();
   if (!invoice) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
-  return invoiceDto(invoice as unknown as Record<string, unknown>);
+  const refunds = await RefundModel.find({ invoiceId: invoice._id }).select("retainedConsumedMinor").lean().exec();
+  return invoiceDto(invoice as unknown as Record<string, unknown>, refunds);
 }
 
 export async function getCompanyInvoiceLinks(input: { invoiceId: string; tenantId: string; provider: PaymentProvider; context: OperationAuthorizationContext }) {
@@ -221,8 +233,29 @@ export async function getCompanyInvoiceLinks(input: { invoiceId: string; tenantI
   }
 }
 
-function invoiceDto(invoice: Record<string, unknown>) {
-  const refund = refundInvoiceSummary(invoice);
+export async function getCompanyInvoicePdf(input: { invoiceId: string; tenantId: string; provider: PaymentProvider; context: OperationAuthorizationContext }) {
+  const actor = await authorizeTenantOperation(input.context, Permission.BILLING_READ);
+  assertTenant(input.tenantId, actor.tenantId);
+  const invoice = await InvoiceModel.findOne({ _id: new Types.ObjectId(input.invoiceId), tenantId: new Types.ObjectId(input.tenantId) }).lean().exec();
+  if (!invoice) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
+  const subscription = invoice.subscriptionId
+    ? await SubscriptionModel.findOne({ _id: invoice.subscriptionId, tenantId: new Types.ObjectId(input.tenantId) }).lean().exec()
+    : null;
+  if (!subscription?.providerCustomerId) throw new AppError(404, BILLING_INVOICE_NOT_FOUND, "Invoice not found");
+  try {
+    const pdf = await input.provider.retrieveInvoicePdf({ invoiceId: invoice.providerInvoiceId, expectedCustomerId: subscription.providerCustomerId });
+    const filename = `Invoice-${String(invoice.invoiceNumber || invoice.providerInvoiceId).replace(/[^A-Za-z0-9._-]/g, "_")}.pdf`;
+    await getAuditWriter().write({ action: "BILLING_INVOICE_PDF_ACCESSED", resourceType: "Invoice", resourceId: input.invoiceId, tenantId: input.tenantId });
+    return { contentType: pdf.contentType, contentDisposition: `inline; filename="${filename}"`, data: pdf.data };
+  } catch (error) {
+    getMetricRecorder().increment("billing.invoice.pdf_failed");
+    if (error instanceof AppError) throw error;
+    throw new AppError(503, BILLING_PROVIDER_UNAVAILABLE, "Billing provider is temporarily unavailable");
+  }
+}
+
+function invoiceDto(invoice: Record<string, unknown>, refunds?: Array<{ retainedConsumedMinor?: unknown }>) {
+  const refund = refundInvoiceSummary(invoice, refunds);
   return {
     id: String(invoice._id), invoiceNumber: String(invoice.invoiceNumber || ""), status: invoice.status,
     currency: invoice.currency, amountDueMinor: invoice.amountDueMinor, amountPaidMinor: invoice.amountPaidMinor,
