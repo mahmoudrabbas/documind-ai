@@ -224,8 +224,10 @@ export class IntentQueryService {
     const localTemporalConstraints = extractTemporalConstraints(routingQuestion);
     const deterministicTitleHints = extractNaturalDocumentTitleHints(routingQuestion);
 
-    // Check for prompt injections/unsafe inputs upfront deterministically
-    const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
+    // Check for prompt injections/unsafe inputs upfront deterministically.
+    // Word-anchored so legitimate compound words ("hackathon policy") never
+    // trigger the unsafe short-circuit while genuine injection attempts do.
+    const hasUnsafeKeywords = containsUnsafeRoutingKeyword(input.question);
     if (hasUnsafeKeywords) {
       if (persistRuntimeArtifacts) await auditWriter.write({
         action: "INTENT_QUERY_UNSAFE_BLOCKED",
@@ -422,26 +424,14 @@ export class IntentQueryService {
     // are outside the tenant document scope and should route to 'unsupported'.
     // Exemptions: when the user explicitly references documents or reports.
     function isLikelyExternalCurrent(question: string): boolean {
-      const q = question.toLowerCase();
-      // Temporal markers that imply 'current' or 'latest'. English terms are
-      // word-anchored so substrings ("now" in "knowledge") cannot trigger the
-      // short-circuit; Arabic tokens are not reliably matched by \b.
-      const temporal = /\b(?:today|now|yesterday|latest)\b|this (?:morning|evening)|الآن|اليوم|أمس|آخر/i;
-      // Topics typically requiring live external data
-      const topics = /\b(?:gold|dollar|weather|news|score)\b|الذهب|دollar|طقس|أخبار|نتيجة|مباراة|أسعار/i;
-      // Phrases that indicate the user is asking about a document/report
-      const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
-
-      if (docIndicators.test(q)) return false;
-      const clearlyExternalGeneral = /(?:capital of|weather|طقس|latest news|اخر الاخبار|نتيجه مباراه|match score|recipe|وصفه|who is (?:the )?president)/i;
-      return (temporal.test(q) && topics.test(q)) || clearlyExternalGeneral.test(q);
+      return isLikelyExternalCurrentQuestion(question);
     }
 
     // Deterministic short-circuit: clear live external-data questions with NO
     // explicit document context must route to 'unsupported' and skip retrieval.
     if (isLikelyExternalCurrent(input.question)) {
       // If the user explicitly references a document or report, do not short-circuit.
-      const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
+      const docIndicators = /(report|document|contract|agreement|policy|policies|ملف|مستند|تقرير|عقد|اتفاقية|في المستند|في التقرير|ما ورد في)/i;
       if (!docIndicators.test(input.question)) {
         const unsupportedPlan = validateAndNormalizeQueryPlan(
           {
@@ -1323,4 +1313,32 @@ export class IntentQueryService {
 
     return validatedPlan;
   }
+}
+
+// ── Exported deterministic routing predicates ──────────────────────────────
+
+/**
+ * Word-anchored unsafe/injection detector. Legitimate compound words such as
+ * "hackathon policy" must reach RAG; genuine injection attempts ("hack the
+ * assistant", "ignore previous instructions") still short-circuit to unsafe.
+ */
+export function containsUnsafeRoutingKeyword(question: string): boolean {
+  return /\bunsafe\b|\bhack(?:s|ing|ed|er)?\b|ignore\s+previous|system\s+prompt/i.test(question);
+}
+
+/**
+ * Deterministic external/current-data detector. Questions about live external
+ * facts (prices now, weather today, latest news) route to unsupported UNLESS
+ * the user explicitly references tenant documents — including contracts,
+ * agreements, and policies, so "latest prices in the vendor contract" reaches
+ * RAG retrieval.
+ */
+export function isLikelyExternalCurrentQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  const temporal = /\b(?:today|now|yesterday|latest)\b|this (?:morning|evening)|الآن|اليوم|أمس|آخر/i;
+  const topics = /\b(?:gold|dollar|weather|news|score)\b|الذهب|دollar|طقس|أخبار|نتيجة|مباراة|أسعار/i;
+  const docIndicators = /(report|document|contract|agreement|policy|policies|ملف|مستند|تقرير|عقد|اتفاقية|في المستند|في التقرير|ما ورد في)/i;
+  if (docIndicators.test(q)) return false;
+  const clearlyExternalGeneral = /(?:capital of|weather|طقس|latest news|اخر الاخبار|نتيجه مباراه|match score|recipe|وصفه|who is (?:the )?president)/i;
+  return (temporal.test(q) && topics.test(q)) || clearlyExternalGeneral.test(q);
 }
