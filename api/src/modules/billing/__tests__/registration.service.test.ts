@@ -158,6 +158,8 @@ describe("RegistrationService", () => {
         "TRIALING",
         undefined,
         0,
+        undefined,
+        undefined,
       );
       expect(result).toBeDefined();
     });

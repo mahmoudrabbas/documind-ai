@@ -4,7 +4,7 @@ import { StripePaymentProvider } from "../stripe-payment-provider.js";
 import { billingFoundationProviderContractTests, paymentProviderContractTests } from "../../__tests__/payment-provider.contract.suite.js";
 import { config } from "../../../../../config/index.js";
 
-vi.mock("../../../../../config/index.js", () => ({ config: { STRIPE_SECRET_KEY: "sk_test_not_real", STRIPE_WEBHOOK_SECRET: "whsec_test_not_real", BILLING_PORTAL_ALLOWED_ORIGIN: "https://example.com", STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "bpc_test_restricted", NODE_ENV: "test" } }));
+vi.mock("../../../../../config/index.js", () => ({ config: { STRIPE_SECRET_KEY: "sk_test_not_real", STRIPE_WEBHOOK_SECRET: "whsec_test_not_real", BILLING_PORTAL_ALLOWED_ORIGIN: "https://example.com", STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "bpc_test_restricted", STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID: "bpc_test_payment_method", NODE_ENV: "test" } }));
 
 function stripeSubscription(cancelAtPeriodEnd = false) {
   return { id: "sub_shared", customer: "cus_shared", status: "active", metadata: { tenantId: "tenant-1" }, cancel_at_period_end: cancelAtPeriodEnd, cancel_at: cancelAtPeriodEnd ? 1_769_904_000 : null,
@@ -58,7 +58,24 @@ describe("StripePaymentProvider Issue 29 security boundary", () => {
   it("keeps payment-method portal configuration and idempotency inside the adapter", async () => {
     const stripe = createMockStripe(); const provider = new StripePaymentProvider(stripe as unknown as Stripe);
     await provider.createBillingPortalSession({ customerId: "cus_shared", returnUrl: "https://example.com/dashboard/settings/billing", flow: "payment_method_update", operationContext: { idempotencyKey: "portal-idem", requestFingerprint: "portal-fp", tenantReference: "tenant", operationReference: "request" } });
-    expect(stripe.billingPortal.sessions.create).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_shared", flow_data: { type: "payment_method_update" } }), { idempotencyKey: "portal-idem" });
+    expect(stripe.billingPortal.sessions.create).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_shared", configuration: "bpc_test_payment_method", flow_data: { type: "payment_method_update" } }), { idempotencyKey: "portal-idem" });
+  });
+  it("rejects the payment_method_update flow without an explicit configuration and never calls Stripe", async () => {
+    const previousPm = config.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID;
+    config.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID = "";
+    const stripe = createMockStripe();
+    const provider = new StripePaymentProvider(stripe as unknown as Stripe);
+    await expect(provider.createBillingPortalSession({ customerId: "cus_shared", returnUrl: "https://example.com/dashboard/settings/billing", flow: "payment_method_update", operationContext: { idempotencyKey: "portal-missing", requestFingerprint: "portal-missing", tenantReference: "tenant", operationReference: "request" } })).rejects.toMatchObject({ code: "BILLING_PROVIDER_CONFIGURATION_INVALID" });
+    expect(stripe.billingPortal.sessions.create).not.toHaveBeenCalled();
+    config.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID = previousPm;
+  });
+  it("does not reuse the general configuration for the payment_method_update flow", async () => {
+    const stripe = createMockStripe(); const provider = new StripePaymentProvider(stripe as unknown as Stripe);
+    await provider.createBillingPortalSession({ customerId: "cus_shared", returnUrl: "https://example.com/dashboard/settings/billing", flow: "payment_method_update", operationContext: { idempotencyKey: "portal-pm", requestFingerprint: "portal-pm", tenantReference: "tenant", operationReference: "request" } });
+    const calls = stripe.billingPortal.sessions.create.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].configuration).toBe("bpc_test_payment_method");
+    expect(calls[0][0].configuration).not.toBe(config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID);
   });
   it("requires a restricted Stripe configuration for the general Phase 2 portal flow", async () => {
     const previous = config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID;

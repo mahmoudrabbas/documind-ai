@@ -187,6 +187,38 @@ describe("SubscriptionService", () => {
         expect.objectContaining({ status: "ACTIVE" }),
       );
     });
+
+    it("sets periodStart and periodEnd when provided (local Free subscriptions)", async () => {
+      const sub = makeSubscription({ status: "TRIALING", periodStart: new Date("2026-08-16"), periodEnd: new Date("2026-09-15") });
+      mockSubscriptionModel.create.mockResolvedValue(sub);
+
+      const ps = new Date("2026-08-16T00:00:00.000Z");
+      const pe = new Date("2026-09-15T00:00:00.000Z");
+      await createSubscription(TENANT_ID, PACKAGE_ID, 1, "TRIALING", undefined, 0, ps, pe);
+
+      expect(mockSubscriptionModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          periodStart: ps,
+          periodEnd: pe,
+          currentPeriodStart: ps,
+          currentPeriodEnd: pe,
+        }),
+      );
+    });
+
+    it("leaves period fields null when not provided (provider-managed subscriptions)", async () => {
+      const sub = makeSubscription({ status: "ACTIVE" });
+      mockSubscriptionModel.create.mockResolvedValue(sub);
+
+      await createSubscription(TENANT_ID, PACKAGE_ID, 1, "ACTIVE");
+
+      expect(mockSubscriptionModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          periodStart: null,
+          periodEnd: null,
+        }),
+      );
+    });
   });
 
   // ── transitionSubscription — legal paths ─────────────────────────────────

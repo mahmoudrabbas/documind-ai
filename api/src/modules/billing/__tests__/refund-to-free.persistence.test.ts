@@ -166,7 +166,14 @@ persistence("refund-to-Free persistence", () => {
     expect({ first, paidStatus: paid?.status, freeStatus: free?.status, impactStatus: synchronizedRefund?.subscriptionImpactStatus })
       .toMatchObject({ first: { examined: 1, eligibleForTransitionRepair: 1, transitionsCompleted: 1, transitionOperationsCreated: 1, failed: 0 }, paidStatus: "CANCELED", freeStatus: "ACTIVE" });
     expect(paid).toMatchObject({ status: "CANCELED", paymentState: "paid", providerSubscriptionId: "synthetic-subscription" });
-    expect(free).toMatchObject({ status: "ACTIVE", paymentState: "paid", provider: "local", providerCustomerId: "", providerSubscriptionId: "", providerPriceId: "" });
+    // Free fallback is a local entitlement (provider=local, no providerSubscriptionId)
+    // but preserves the paid subscription's providerCustomerId so a later Free → Paid
+    // checkout reuses the same Stripe customer instead of creating a duplicate.
+    expect(free).toMatchObject({ status: "ACTIVE", paymentState: "paid", provider: "local", providerCustomerId: "synthetic-customer", providerSubscriptionId: "", providerPriceId: "" });
+    expect(free).toMatchObject({ periodStart: periodStart, periodEnd: periodEnd, currentPeriodStart: periodStart, currentPeriodEnd: periodEnd, billingInterval: "monthly" });
+    const range = await new MongoEntitlementProvider().getPeriodRange(String(tenantId));
+    expect(range.periodStart).toEqual(periodStart);
+    expect(range.periodEnd).toEqual(periodEnd);
     expect(await SubscriptionModel.countDocuments({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } })).toBe(1);
     expect(await new MongoEntitlementProvider().getSnapshot(String(tenantId))).toMatchObject({ documents: 10, storageMb: 100, queriesPerMonth: 100 });
     expect(await InvoiceModel.countDocuments({ _id: invoiceId, refundedAmountMinor: 999, retainedConsumedMinor: 1 })).toBe(1);

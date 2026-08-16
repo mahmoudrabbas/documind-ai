@@ -14,6 +14,7 @@ import {
 import { getGlobalSettings } from "../platform/global-settings.js";
 import type { SubscriptionDocument } from "../../db/models/subscription.model.js";
 import type { SubscriptionStatus } from "./billing.types.js";
+import { resolveFreePeriod } from "./free-fallback.service.js";
 
 // ── Default free-package values ─────────────────────────────────────────────
 
@@ -111,6 +112,13 @@ export async function provisionSubscription(
     }
   }
 
+  // Local Free subscriptions (no provider integration) must carry a
+  // concrete entitlement period so the quota counter and reset boundary
+  // are deterministic.  Paid/provider subscriptions have their period
+  // populated later by the provider-sync webhook.
+  const isFree = code === DEFAULT_FREE_CODE;
+  const freePeriod = isFree ? resolveFreePeriod() : { periodStart: undefined, periodEnd: undefined };
+
   const subscription = await createSubscription(
     tenantId,
     snapshot.packageId,
@@ -118,6 +126,8 @@ export async function provisionSubscription(
     "TRIALING" as SubscriptionStatus,
     actor,
     resolvedTrialDays,
+    freePeriod.periodStart,
+    freePeriod.periodEnd,
   );
 
   return subscription;

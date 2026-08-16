@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/index.js", () => ({ config: { NODE_ENV: "test", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example.test", BILLING_PAST_DUE_GRACE_DAYS: 7, STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "" } }));
+vi.mock("../../../config/index.js", () => ({ config: { NODE_ENV: "test", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example.test", BILLING_PAST_DUE_GRACE_DAYS: 7, STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: "", STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID: "" } }));
 vi.mock("../../../db/models/subscription.model.js", () => ({ default: { findOne: vi.fn() } }));
 vi.mock("../../../db/models/refund.model.js", () => ({ default: { findOne: vi.fn() } }));
 vi.mock("../../../db/models/invoice.model.js", () => ({ default: { findOne: vi.fn(), find: vi.fn(), countDocuments: vi.fn(), aggregate: vi.fn() } }));
@@ -112,11 +112,11 @@ describe("tenant billing service", () => {
     expect(JSON.stringify(payment)).not.toContain("cus_owned");
   });
 
-  it("fails safe for Stripe-backed general portal flows until a restricted configuration exists", async () => {
+  it("fails safe for Stripe-backed portal flows until explicit configurations exist", async () => {
     vi.mocked(SubscriptionModel.findOne).mockReturnValue(chain({ ...subscription, provider: "stripe" }) as never);
     const provider = new FakePaymentProvider();
     await expect(createCompanyPortalSession({ tenantId, flow: "general", returnUrl: "https://app.example.test/dashboard/settings/billing", provider, context })).rejects.toMatchObject({ code: "BILLING_PROVIDER_CONFIGURATION_INVALID" });
-    expect(await createCompanyPortalSession({ tenantId, flow: "payment_method_update", returnUrl: "https://app.example.test/dashboard/settings/billing", provider, context })).toMatchObject({ url: expect.stringContaining("flow=payment_method_update") });
+    await expect(createCompanyPortalSession({ tenantId, flow: "payment_method_update", returnUrl: "https://app.example.test/dashboard/settings/billing", provider, context })).rejects.toMatchObject({ code: "BILLING_PROVIDER_CONFIGURATION_INVALID" });
   });
 
   it("denies an attempted cross-tenant service call without querying invoices", async () => {

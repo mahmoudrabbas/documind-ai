@@ -91,8 +91,8 @@ export async function getCompanyBillingSummary(tenantId: string, context: Operat
       pastDue: byStatus.uncollectible ?? 0,
     },
     capabilities: {
-      canOpenPortal: canManageBilling && Boolean(record.providerCustomerId) && isBillingPortalFlowAvailable(String(record.provider || ""), "general"),
-      canUpdatePaymentMethod: canManageBilling && Boolean(record.providerCustomerId) && Boolean(record.providerSubscriptionId),
+      canOpenPortal: canManageBilling && Boolean(record.providerCustomerId) && Boolean(record.providerSubscriptionId) && isBillingPortalFlowAvailable(String(record.provider || ""), "general"),
+      canUpdatePaymentMethod: canManageBilling && Boolean(record.providerCustomerId) && Boolean(record.providerSubscriptionId) && isBillingPortalFlowAvailable(String(record.provider || ""), "payment_method_update"),
       canViewInvoices: Boolean(record.providerSubscriptionId),
       canChangePlan: canManageBilling && Boolean(record.providerSubscriptionId) && lifecycle.eligible && !pendingMutation,
       canCancel: canManageBilling && Boolean(record.providerSubscriptionId) && !pendingMutation && ["TRIALING", "ACTIVE", "PAST_DUE"].includes(String(record.status)) && !record.cancelAtPeriodEnd,

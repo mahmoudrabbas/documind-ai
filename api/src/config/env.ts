@@ -192,6 +192,7 @@ const envSchema = z
     STRIPE_CANCEL_URL: z.string().url().default("http://localhost:3000/checkout/cancel"),
     STRIPE_BILLING_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3000/dashboard/settings/billing"),
     STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: z.string().default(""),
+    STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID: z.string().default(""),
     BILLING_PORTAL_ALLOWED_ORIGIN: z.string().url().default("http://localhost:3000"),
     BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(90).default(7),
     BILLING_GOODWILL_REFUND_CAP_MINOR: z.coerce.number().int().min(0).default(0),

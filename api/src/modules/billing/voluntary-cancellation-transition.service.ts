@@ -11,6 +11,7 @@ import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import type { RefundDocument } from "../../db/models/refund.model.js";
 import { calculateRemainingRefundableMinor } from "./refund-balances.js";
+import { resolveFreePeriod } from "./free-fallback.service.js";
 
 function transitionNotReady(): AppError {
   return new AppError(
@@ -109,28 +110,34 @@ export async function completeVoluntaryCancellationLocally(
     tenantId: refund.tenantId,
     packageId: freePackage._id,
   }).sort({ createdAt: -1 }).session(session).exec();
-  if (!existingFree) {
-    await SubscriptionModel.create([{
-      tenantId: refund.tenantId,
-      packageId: freePackage._id,
-      packageVersion: freePackage.version,
-      packageVersionId: null,
-      status: "ACTIVE",
-      startedAt: new Date(),
-      periodStart: null,
-      periodEnd: null,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      trialStart: null,
-      trialEnd: null,
-      cancelledAt: null,
-      cancellationReason: "",
-      cancelAtPeriodEnd: false,
-      providerCustomerId: "",
-      providerSubscriptionId: "",
-      providerPriceId: "",
-      provider: "local",
-      billingInterval: null,
+
+  const retained = resolveFreePeriod({
+    periodStart: paidSubscription.periodStart,
+    periodEnd: paidSubscription.periodEnd,
+  });
+
+   if (!existingFree) {
+     await SubscriptionModel.create([{
+       tenantId: refund.tenantId,
+       packageId: freePackage._id,
+       packageVersion: freePackage.version,
+       packageVersionId: null,
+       status: "ACTIVE",
+       startedAt: new Date(),
+       periodStart: retained.periodStart,
+       periodEnd: retained.periodEnd,
+       currentPeriodStart: retained.periodStart,
+       currentPeriodEnd: retained.periodEnd,
+       trialStart: null,
+       trialEnd: null,
+       cancelledAt: null,
+       cancellationReason: "",
+       cancelAtPeriodEnd: false,
+       providerCustomerId: paidSubscription.providerCustomerId ?? "",
+       providerSubscriptionId: "",
+       providerPriceId: "",
+       provider: "local",
+       billingInterval: "monthly",
       paymentState: "paid",
       providerMetadata: {},
       lastProviderEventId: "",
@@ -139,6 +146,10 @@ export async function completeVoluntaryCancellationLocally(
       revision: 0,
     }], { session });
   } else if (!EFFECTIVE_SUBSCRIPTION_STATUSES.includes(existingFree.status as (typeof EFFECTIVE_SUBSCRIPTION_STATUSES)[number])) {
+    // Preserve any already-valid period boundaries; only fill in missing ones
+    // from the retained period or a fresh local cycle.
+    const periodStart = existingFree.periodStart ?? retained.periodStart;
+    const periodEnd = existingFree.periodEnd ?? retained.periodEnd;
     await SubscriptionModel.updateOne(
       { _id: existingFree._id, tenantId: refund.tenantId },
       {
@@ -148,15 +159,15 @@ export async function completeVoluntaryCancellationLocally(
           cancelAtPeriodEnd: false,
           cancelledAt: null,
           cancellationReason: "",
-          periodStart: null,
-          periodEnd: null,
-          currentPeriodStart: null,
-          currentPeriodEnd: null,
-          providerCustomerId: "",
-          providerSubscriptionId: "",
-          providerPriceId: "",
-          provider: "local",
-          billingInterval: null,
+          periodStart,
+          periodEnd,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+         providerCustomerId: paidSubscription.providerCustomerId ?? "",
+       providerSubscriptionId: "",
+       providerPriceId: "",
+       provider: "local",
+       billingInterval: "monthly",
           providerMetadata: {},
         },
       },

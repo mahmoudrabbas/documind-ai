@@ -425,11 +425,23 @@ export class EntitlementService {
   }
 
   /**
-   * Get the ISO date string of the period end.
+   * Get the ISO date string of the period end (the next quota reset boundary).
+   *
+   * Throws ENTITLEMENT_UNAVAILABLE when the subscription has no valid period
+   * end rather than silently returning "now" as a reset boundary. Callers that
+   * treat the reset as informational (e.g. the middleware's
+   * `resolvePeriodReset`) already catch this and degrade to null.
    */
   async getPeriodReset(tenantId: string): Promise<string> {
     const range = await this.provider.getPeriodRange(tenantId);
-    return range.periodEnd?.toISOString() ?? new Date().toISOString();
+    if (!range.periodEnd) {
+      throw new AppError(
+        503,
+        ENTITLEMENT_UNAVAILABLE,
+        "Entitlement period end is unavailable",
+      );
+    }
+    return range.periodEnd.toISOString();
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────

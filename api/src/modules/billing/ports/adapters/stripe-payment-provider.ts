@@ -185,15 +185,17 @@ export class StripePaymentProvider implements PaymentProvider {
   ): Promise<BillingPortalSession> {
     assertBillingPortalReturnUrl(params.returnUrl, config.BILLING_PORTAL_ALLOWED_ORIGIN);
     const stripe = await this.client();
-    if (params.flow === "general" && !config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID.trim()) {
+    const configurationId =
+      params.flow === "general"
+        ? config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID
+        : config.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID;
+    if (!configurationId.trim()) {
       throw new AppError(503, BILLING_PROVIDER_CONFIGURATION_INVALID, "Billing provider configuration is invalid");
     }
     const session = await stripe.billingPortal.sessions.create({
       customer: params.customerId,
       return_url: params.returnUrl,
-      ...(params.flow === "general"
-        ? { configuration: config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID }
-        : {}),
+      configuration: configurationId,
       ...(params.flow === "payment_method_update"
         ? { flow_data: { type: "payment_method_update" as const } }
         : {}),

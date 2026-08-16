@@ -754,6 +754,42 @@ describe("CheckoutService", () => {
         expect(checkoutCall.customerId).toBe("cus_real_existing");
       });
 
+      it("reuses providerCustomerId from a local Free fallback subscription (paid → cancellation → Free → Paid)", async () => {
+        // Simulate the scenario:
+        //  1. Paid subscription with Stripe customer cus_paid_A
+        //  2. Provider subscription deleted → Free fallback with providerCustomerId
+        //     preserved from the paid subscription (provider = "local")
+        //  3. Customer upgrades to Paid → checkout must reuse cus_paid_A, NOT create
+        //     a duplicate customer
+        const provider = makeMockProvider();
+        (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+          mockQueryChain(mockPkg),
+        );
+        (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+          mockQueryChain({
+            providerCustomerId: "cus_paid_A",
+            providerSubscriptionId: "",
+            provider: "local",
+            status: "ACTIVE",
+          }),
+        );
+        (CheckoutSessionModel.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+          _id: "cs_free_to_paid",
+        });
+
+        await createCheckoutSession(
+          TENANT_ID, PACKAGE_ID, "monthly", provider,
+          "https://ok", "https://cancel", TEST_ACTOR,
+        );
+
+        // Must NOT create a new customer — the preserved providerCustomerId
+        // should be retrieved and reused.
+        expect(provider.createCustomer).not.toHaveBeenCalled();
+        expect(provider.retrieveCustomer).toHaveBeenCalledWith("cus_paid_A");
+        const checkoutCall = provider.createCheckoutSession.mock.calls[0][0];
+        expect(checkoutCall.customerId).toBe("cus_paid_A");
+      });
+
       it("recreates and persists a customer missing from the current provider account", async () => {
         const provider = makeMockProvider();
         provider.retrieveCustomer.mockRejectedValue({ status: 404, code: "resource_missing" });
