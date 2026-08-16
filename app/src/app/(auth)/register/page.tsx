@@ -247,8 +247,10 @@ export default function RegisterPage() {
       dir={dir}
       backToHomeLabel={t("auth.backToHome")}
       description={t("auth.registerDescription")}
-      securityLabel="AES-256 Encrypted & SOC2 Compliant"
-      rightsLabel={`© ${new Date().getFullYear()} DocuMind Intelligence Systems. All rights reserved.`}
+      securityLabel={t("auth.encryptedBadge")}
+      rightsLabel={t("auth.rightsReserved", {
+        year: String(new Date().getFullYear()),
+      })}
       variant="register"
     >
       <div>

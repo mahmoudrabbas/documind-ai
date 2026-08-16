@@ -32,11 +32,18 @@ import { Button, Badge, Card, CardHeader, CardTitle, CardContent, StatCard, Avat
 ### Typography
 
 Every DESIGN.md typography role is a Tailwind text utility:
-`text-display-lg`, `text-headline-lg`, `text-headline-lg-mobile`,
-`text-headline-md`, `text-title-lg`, `text-body-lg`, `text-body-md`,
-`text-body-sm`, `text-label-md`, `text-label-sm`. Each already carries the
+`text-display-lg`, `text-display-sm`, `text-headline-lg`,
+`text-headline-lg-mobile`, `text-headline-md`, `text-title-lg`,
+`text-title-md`, `text-title-sm`, `text-body-lg`, `text-body-md`,
+`text-body-sm`, `text-body-xs`, `text-label-lg`, `text-label-md`,
+`text-label-sm`, `text-label-xs`. Each already carries the
 correct line-height, tracking, and weight — no need to add `font-semibold`
 etc. alongside it.
+
+Only these roles exist. A `text-*` utility naming a role that is *not*
+defined in `globals.css` compiles to nothing at all — the element silently
+inherits its parent's size instead of failing loudly — so check this list
+before reaching for a new one.
 
 ### Colors
 

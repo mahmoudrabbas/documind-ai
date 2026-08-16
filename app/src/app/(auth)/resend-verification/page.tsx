@@ -269,12 +269,13 @@ export default function ResendVerificationPage() {
               verified_user
             </span>
             <span className="text-label-sm text-on-surface-variant">
-              AES-256 Encrypted & SOC2 Compliant
+              {t("auth.encryptedBadge")}
             </span>
           </div>
           <p className="text-body-sm text-outline">
-            © {new Date().getFullYear()} DocuMind Intelligence Systems. All
-            rights reserved.
+            {t("auth.rightsReserved", {
+              year: String(new Date().getFullYear()),
+            })}
           </p>
         </div>
       </section>
