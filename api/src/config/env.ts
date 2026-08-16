@@ -121,7 +121,7 @@ const envSchema = z
     NOTIFICATION_SWEEP_TTL_BATCH: z.coerce.number().int().positive().default(500),
     COPILOT_ENABLED: z
       .string()
-      .default("false")
+      .default("true")
       .transform((value) => value.toLowerCase() === "true"),
     SMTP_HOST: z.string().default(""),
     SMTP_PORT: z

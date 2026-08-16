@@ -11,7 +11,8 @@ export class PublicEnvironmentValidationError extends Error {
 }
 
 export function resolveCopilotEnabled(configured: string | undefined): boolean {
-  return configured?.trim().toLowerCase() === "true";
+  if (configured === undefined) return true;
+  return configured.trim().toLowerCase() === "true";
 }
 
 /** Build-time constant: whether the Copilot feature is enabled for this build. */

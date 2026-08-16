@@ -19,8 +19,8 @@ describe("public environment validation", () => {
     expect(resolvePublicApiUrl("production", "https://api.example.invalid/")).toBe("https://api.example.invalid");
   });
 
-  it("enables copilot only on an explicit true value", () => {
-    expect(resolveCopilotEnabled(undefined)).toBe(false);
+  it("enables copilot by default and disables only on an explicit false value", () => {
+    expect(resolveCopilotEnabled(undefined)).toBe(true);
     expect(resolveCopilotEnabled("")).toBe(false);
     expect(resolveCopilotEnabled("false")).toBe(false);
     expect(resolveCopilotEnabled("FALSE")).toBe(false);

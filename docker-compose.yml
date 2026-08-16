@@ -53,6 +53,7 @@ services:
       - BEDROCK_TIMEOUT_MS=${BEDROCK_TIMEOUT_MS:-8000}
       - BEDROCK_MAX_RETRIES=${BEDROCK_MAX_RETRIES:-1}
       - BEDROCK_RETRY_DELAY_MS=${BEDROCK_RETRY_DELAY_MS:-500}
+      - COPILOT_ENABLED=${COPILOT_ENABLED:-true}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GROQ_STT_API_KEY=${GROQ_STT_API_KEY}
       - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
@@ -117,6 +118,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    environment:
+      - NEXT_PUBLIC_COPILOT_ENABLED=${NEXT_PUBLIC_COPILOT_ENABLED:-true}
     volumes:
       - ./app:/repo/app
       - app_node_modules:/repo/app/node_modules
