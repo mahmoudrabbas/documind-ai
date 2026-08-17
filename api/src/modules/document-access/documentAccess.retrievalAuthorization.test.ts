@@ -4,6 +4,7 @@ import { InMemoryDocumentCapabilityEvaluator } from "./documentAccess.capability
 import { InMemoryDocumentAccessPolicyEvaluator } from "./documentAccess.evaluator.inMemory.js";
 import { tenantAActor } from "./documentAccess.fixtures.js";
 import {
+  createDefaultRetrievalAuthorizationDeps,
   resolveCanonicalRetrievalAuthorization,
   type CanonicalRetrievalDocument,
   type RetrievalAuthorizationDeps,
@@ -85,6 +86,24 @@ function deps(input: {
 }
 
 describe("canonical retrieval authorization allowlist", () => {
+  test("production dependencies preserve authorization service method binding", async () => {
+    class BindingSensitiveAuthorization {
+      calls = 0;
+
+      async resolveActor(): Promise<typeof tenantAActor> {
+        this.calls += 1;
+        return tenantAActor;
+      }
+    }
+
+    const authorization = new BindingSensitiveAuthorization();
+    const productionDeps = createDefaultRetrievalAuthorizationDeps(authorization);
+    const actor = await productionDeps.resolveActor({ tenantId, actorId });
+
+    assert.equal(actor, tenantAActor);
+    assert.equal(authorization.calls, 1);
+  });
+
   test("missing documents:use-in-ai grant fails closed with PERMISSION_REQUIRED", async () => {
     const result = await resolveCanonicalRetrievalAuthorization(
       { tenantId, actorId },

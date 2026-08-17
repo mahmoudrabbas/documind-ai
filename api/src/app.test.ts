@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 process.env.NODE_ENV = "test";
 
 import app from "./app.js";
+import { assertDisposableMongoDatabaseName } from "./common/testing/disposableMongo.js";
 import {
   calculateRetryDelay,
   connectDB,
@@ -286,12 +287,7 @@ function assertDisposableDatabase(): void {
   } catch {
     dbName = "";
   }
-  if (!/test/i.test(dbName) && process.env.ALLOW_DESTRUCTIVE_APP_TESTS !== "true") {
-    throw new Error(
-      `app.test.ts wipes collections via deleteMany({}) and refuses to run against database "${dbName || "<none>"}". ` +
-        `Point MONGODB_URI at a disposable database (name containing "test") or set ALLOW_DESTRUCTIVE_APP_TESTS=true to override.`,
-    );
-  }
+  assertDisposableMongoDatabaseName(dbName);
 }
 
 before(async () => {

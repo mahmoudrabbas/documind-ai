@@ -1,6 +1,10 @@
 import mongoose, { Types } from "mongoose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditWriter } from "../../../common/observability/index.js";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import BillingOperationModel from "../../../db/models/billingOperation.model.js";
 import BillingPreviewModel from "../../../db/models/billingPreview.model.js";
 import RefundModel from "../../../db/models/refund.model.js";
@@ -15,13 +19,22 @@ const actor = { tenantId: String(tenantId), actorId: String(actorId), actorEmail
 function input(key: string, normalizedRequest: Record<string, unknown> = { targetPackage: "pro" }, operationType: "PLAN_CHANGE" | "CANCEL_PERIOD_END" | "CANCEL_IMMEDIATELY" | "REACTIVATE" | "REFUND" = "PLAN_CHANGE") { return { tenantId: String(tenantId), actor, operationType, idempotencyKey: key, normalizedRequest, subscriptionId: String(subscriptionId), provider: "fake", expectedSubscriptionRevision: 1 }; }
 
 describe("BillingOperation durable persistence", () => {
+  const testDatabaseName = "billing-operation-persistence-test";
   beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) await mongoose.connect(process.env.MONGODB_URI!);
+    if (mongoose.connection.readyState === 0) {
+      await connectToDisposableMongoDatabase(
+        mongoose,
+        process.env.MONGODB_URI!,
+        testDatabaseName,
+      );
+    }
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     setAuditWriter({ write: async () => true });
     await BillingOperationModel.syncIndexes();
     await BillingPreviewModel.syncIndexes();
   });
   beforeEach(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([
       BillingOperationModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
       BillingPreviewModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
@@ -29,6 +42,7 @@ describe("BillingOperation durable persistence", () => {
     ]);
   });
   afterAll(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([
       BillingOperationModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
       BillingPreviewModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),

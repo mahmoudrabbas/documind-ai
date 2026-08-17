@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import mongoose from "mongoose";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import NotificationModel, {
   isNotificationExpired,
 } from "../../../db/models/notification.model.js";
@@ -55,13 +59,19 @@ function buildFullPayload(overrides: Record<string, unknown> = {}): Record<strin
 }
 
 describe.skipIf(!hasMongo)("NotificationModel", () => {
+  const testDatabaseName = "notification-model-test";
   let connectedByThisFile = false;
 
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(process.env.MONGODB_URI as string);
+      await connectToDisposableMongoDatabase(
+        mongoose,
+        process.env.MONGODB_URI as string,
+        testDatabaseName,
+      );
       connectedByThisFile = true;
     }
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await NotificationModel.init();
   });
 
@@ -70,6 +80,7 @@ describe.skipIf(!hasMongo)("NotificationModel", () => {
   });
 
   beforeEach(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await NotificationModel.deleteMany({});
   });
 

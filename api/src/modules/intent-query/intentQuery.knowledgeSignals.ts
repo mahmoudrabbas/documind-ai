@@ -54,7 +54,9 @@ const QUESTION_TERMS = new Set([
 
 const REQUEST_TERMS = new Set([
   "show", "find", "explain", "summarize", "compare", "list", "locate", "upload", "delete",
+  "tell", "give", "describe", "detail", "details", "provide", "inform", "clarify", "get", "fetch", "check", "lookup", "search",
   "اعرض", "اجد", "اشرح", "لخص", "قارن", "اذكر", "قولي", "اريد", "عايز", "احذف", "ارفع",
+  "اخبرني", "عرفني", "اعطني", "وضح", "هات", "ابحث", "شوف", "اقرا",
 ]);
 
 const CONTEXTUAL_ACKNOWLEDGEMENTS = new Set([
@@ -119,7 +121,7 @@ export function hasSemanticRetrievalSubject(raw: string): boolean {
   return !hasTrailingUnresolvedReference;
 }
 
-function isBareGeneralDefinitionText(normalized: string): boolean {
+export function isBareGeneralDefinitionText(normalized: string): boolean {
   return (
     /^(?:what\s+is|explain|define)\s+(?:a\s+|an\s+|the\s+)?(?:vpn|mfa|procurement|sla|hotel\s+management)(?:\s+in\s+general)?$/u.test(normalized) ||
     /^(?:ما|ماذا)\s+(?:هو|هي)\s+(?:vpn|mfa|sla|المشتريات)$/u.test(normalized)
@@ -304,7 +306,13 @@ export function hasDomainAgnosticQuestionShape(raw: string): boolean {
   const prepared = preprocessIntentText(stripped.text);
   const tokens = prepared.normalizedTokens;
   if (tokens.length === 0) return false;
-  if (isBareGeneralDefinitionText(prepared.elongationReducedText)) return false;
+  if (
+    /^(?:(?:simple|generic|test|example|sample)\s+)?(?:knowledge\s+)?(?:query|question)(?:\s+here)?[?\s]*$/u.test(
+      prepared.elongationReducedText,
+    )
+  ) {
+    return false;
+  }
   const substantiveTokens = tokens.filter(
     (token) => !QUESTION_TERMS.has(token) && !OVERLAP_STOP_WORDS.has(token),
   );
@@ -313,6 +321,28 @@ export function hasDomainAgnosticQuestionShape(raw: string): boolean {
   const hasRequestShape = tokens.some((token) => REQUEST_TERMS.has(token));
   const hasQuestionMark = /[?؟]/u.test(stripped.text);
   return hasQuestionShape || hasQuestionMark || hasRequestShape;
+}
+
+export function hasInterrogativeQuestionShape(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  const tokens = prepared.normalizedTokens;
+  const hasQuestionShape = tokens.some((token) => QUESTION_TERMS.has(token));
+  const hasQuestionMark = /[?؟]/u.test(stripped.text);
+  return hasQuestionShape || hasQuestionMark;
+}
+
+export function hasEnterpriseSubjectTerm(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  return prepared.normalizedTokens.some((token) => ENTERPRISE_SUBJECT_TERMS.has(token));
+}
+
+export function isLikelySensitivePersonalDataRequest(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  return /\b(?:personal|private)\s+(?:mobile|phone|telephone|email|address|contact|number)\b/u.test(
+    normalized,
+  );
 }
 
 export function isLikelyGibberish(raw: string): boolean {

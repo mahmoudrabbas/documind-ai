@@ -2,8 +2,8 @@
  * Global vitest guard: several test files wipe whole collections via
  * deleteMany({}). Redirect any non-"test" MONGODB_URI to a sibling
  * "<name>-test" database before test files load, so persistence suites can
- * never touch a real database. Set ALLOW_DESTRUCTIVE_APP_TESTS=true only to
- * opt out of the redirect when the URI already points at a disposable DB.
+ * never touch a real database. Individual destructive suites also verify the
+ * active database immediately before cleanup.
  */
 const uri = process.env.MONGODB_URI ?? "";
 if (uri) {

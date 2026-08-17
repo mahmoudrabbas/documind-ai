@@ -1,6 +1,10 @@
 import mongoose, { Types } from "mongoose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuditWriter, setMetricRecorder } from "../../../common/observability/index.js";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import BillingOperationModel from "../../../db/models/billingOperation.model.js";
 import InvoiceModel from "../../../db/models/invoice.model.js";
 import RefundModel from "../../../db/models/refund.model.js";
@@ -87,10 +91,16 @@ function seededProvider() {
 const refundPersistence = process.env.MONGODB_URI ? describe : describe.skip;
 
 refundPersistence("refund service persistence", () => {
+  const testDatabaseName = "billing-refund-service-persistence-test";
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(process.env.MONGODB_URI!);
+      await connectToDisposableMongoDatabase(
+        mongoose,
+        process.env.MONGODB_URI!,
+        testDatabaseName,
+      );
     }
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     setAuditWriter({ write: async () => true });
     setMetricRecorder({ increment() {}, histogram() {}, gauge() {} });
     setPermissionEvaluator({
@@ -116,6 +126,7 @@ refundPersistence("refund service persistence", () => {
   }, 60_000);
 
   beforeEach(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([
       mongoose.connection.collection("tenants").deleteMany({ _id: { $in: [tenantId, platformTenantId] } }),
       mongoose.connection.collection("tenants").deleteMany({ _id: foreignTenantId }),
@@ -210,6 +221,7 @@ refundPersistence("refund service persistence", () => {
 
   afterAll(async () => {
     if (mongoose.connection.readyState !== 0) {
+      assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
       await Promise.all([
         mongoose.connection.collection("tenants").deleteMany({ _id: { $in: [tenantId, platformTenantId] } }),
         mongoose.connection.collection("tenants").deleteMany({ _id: foreignTenantId }),

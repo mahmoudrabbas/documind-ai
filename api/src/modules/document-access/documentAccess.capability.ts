@@ -62,9 +62,8 @@ export class PermissionEvaluatorDocumentCapabilityAdapter
     // permission evaluator normalizes it. `categoryId` is never passed.
     const categoryName =
       input.resource.canonicalCategoryName ?? input.resource.legacyCategory;
-    const classificationName = input.resource.classificationId
-      ? input.resource.canonicalClassificationName
-      : input.resource.classification;
+    const classificationName =
+      input.resource.canonicalClassificationName ?? input.resource.classification;
 
     const decision = await this.permissionEvaluator.evaluate({
       actorId: input.actor.actorId,

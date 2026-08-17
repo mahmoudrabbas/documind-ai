@@ -1,6 +1,10 @@
 import mongoose, { Types } from "mongoose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setAuditWriter, setMetricRecorder } from "../../../common/observability/index.js";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import InvoiceModel from "../../../db/models/invoice.model.js";
 import { FakePaymentProvider } from "../ports/fakes/fake-payment-provider.js";
 import { BILLING_SUBSCRIPTION_NOT_READY, projectProviderInvoice, reconcileTenantInvoices, synchronizeInvoiceFromReference } from "../invoice-synchronization.service.js";
@@ -17,13 +21,22 @@ const baseInvoice = {
 };
 
 describe("invoice synchronization persistence", () => {
+  const testDatabaseName = "billing-invoice-synchronization-test";
   beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) await mongoose.connect(process.env.MONGODB_URI!);
+    if (mongoose.connection.readyState === 0) {
+      await connectToDisposableMongoDatabase(
+        mongoose,
+        process.env.MONGODB_URI!,
+        testDatabaseName,
+      );
+    }
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     setAuditWriter({ write: async () => true });
     setMetricRecorder({ increment() {}, histogram() {}, gauge() {} });
     await InvoiceModel.syncIndexes();
   });
   beforeEach(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([
       InvoiceModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }),
       mongoose.connection.collection("subscriptions").deleteMany({ _id: subscriptionId }),
@@ -33,6 +46,7 @@ describe("invoice synchronization persistence", () => {
     await mongoose.connection.collection("subscriptions").insertOne({ _id: subscriptionId, tenantId, provider: "fake", providerCustomerId: "cus_phase2", providerSubscriptionId: "sub_phase2", status: "ACTIVE" });
   });
   afterAll(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([InvoiceModel.deleteMany({ tenantId: { $in: [tenantId, otherTenantId] } }), mongoose.connection.collection("subscriptions").deleteMany({ _id: subscriptionId }), mongoose.connection.collection("tenants").deleteMany({ _id: tenantId })]);
     setAuditWriter(null); setMetricRecorder(null);
   });

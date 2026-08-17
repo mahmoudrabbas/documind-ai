@@ -3,6 +3,10 @@ import test, { after, before, beforeEach } from "node:test";
 import mongoose, { Types } from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { AppError } from "../../../common/errors/AppError.js";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import AgentRunModel from "../../../db/models/agentRun.model.js";
 import AgentStepModel from "../../../db/models/agentStep.model.js";
@@ -112,10 +116,15 @@ const PROHIBITED_PERSISTENCE_MARKERS = [
 ] as const;
 
 let mongoServer: MongoMemoryReplSet | null = null;
+const TEST_DATABASE_NAME = "chat-production-workflow-e2e-test";
 
 before(async () => {
   if (process.env.MONGODB_URI) {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await connectToDisposableMongoDatabase(
+      mongoose,
+      process.env.MONGODB_URI,
+      TEST_DATABASE_NAME,
+    );
     return;
   }
   mongoServer = await MongoMemoryReplSet.create({
@@ -125,9 +134,11 @@ before(async () => {
       { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
     ],
   });
-  await mongoose.connect(mongoServer.getUri(), {
-    dbName: "chat-production-workflow-e2e-test",
-  });
+  await connectToDisposableMongoDatabase(
+    mongoose,
+    mongoServer.getUri(),
+    TEST_DATABASE_NAME,
+  );
 });
 
 after(async () => {
@@ -137,6 +148,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
+  assertDisposableMongoConnection(mongoose.connection, TEST_DATABASE_NAME);
   await Promise.all([
     AgentToolCallModel.deleteMany({}),
     AgentStepModel.deleteMany({}),

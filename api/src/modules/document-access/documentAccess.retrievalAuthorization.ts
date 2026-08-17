@@ -246,7 +246,9 @@ export async function resolveCanonicalRetrievalAuthorization(
           departmentId: document.departmentId,
           classificationId: document.classificationId,
           classification: document.classification,
+          canonicalClassificationName: document.classification,
           legacyCategory: document.category,
+          canonicalCategoryName: document.category,
           legacyDepartment: null,
           lifecycleStatus: document.lifecycleStatus ?? "processed",
           activePolicyId: document.activePolicyId,
@@ -368,7 +370,7 @@ async function grantScopeTaxonomyResolvable(
 ): RetrievalAuthorizationDeps {
   const policies = new MongoDocumentAccessPolicyRepository();
   return {
-    resolveActor: authorization.resolveActor,
+    resolveActor: (context) => authorization.resolveActor(context),
     resolveUseInAiGrant: async (actor) => {
       const resolved = await getPermissionEvaluator().resolve({
         tenantId: actor.tenantId,

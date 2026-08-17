@@ -17,13 +17,17 @@ import {
   assessPositiveKnowledgeSeeking,
   assistantRequestsUserResponse,
   hasDomainAgnosticQuestionShape,
+  hasEnterpriseSubjectTerm,
+  hasInterrogativeQuestionShape,
   hasSemanticRetrievalSubject,
   isContextualAcknowledgement,
   buildContextualFollowUpQuestion,
   hasSubstantivePriorTurn,
+  isBareGeneralDefinitionText,
   isLikelyContextualFollowUp,
   isLikelyPriorDocumentTurn,
   isLikelyGibberish,
+  isLikelySensitivePersonalDataRequest,
   isRetrievableIntent,
   selectSafeRetrievalQuestion,
 } from "./intentQuery.knowledgeSignals.js";
@@ -419,7 +423,7 @@ export class IntentQueryService {
       return buildAndPersistSocialPlan();
     }
 
-    // 5. Deterministic unsupported external/current-data detector
+    // 5. Deterministic unsupported request detector
     //
     // Conservative rule: questions that explicitly ask about current external
     // facts (prices now, weather today, latest news, yesterday's match score)
@@ -431,10 +435,11 @@ export class IntentQueryService {
 
     // Deterministic short-circuit: clear live external-data questions with NO
     // explicit document context must route to 'unsupported' and skip retrieval.
-    if (isLikelyExternalCurrent(input.question)) {
+    const sensitivePersonalDataRequest = isLikelySensitivePersonalDataRequest(input.question);
+    if (isLikelyExternalCurrent(input.question) || sensitivePersonalDataRequest) {
       // If the user explicitly references a document or report, do not short-circuit.
       const docIndicators = /(report|document|contract|agreement|policy|policies|ملف|مستند|تقرير|عقد|اتفاقية|في المستند|في التقرير|ما ورد في)/i;
-      if (!docIndicators.test(input.question)) {
+      if (sensitivePersonalDataRequest || !docIndicators.test(input.question)) {
         const unsupportedPlan = validateAndNormalizeQueryPlan(
           {
             detectedIntent: "unsupported",
@@ -1050,14 +1055,13 @@ export class IntentQueryService {
       // Additionally, a valid provider "unsupported" verdict never blocks a
       // well-formed question about an arbitrary topic: the corpus (not the
       // provider's topic judgement) is the authority, so the question is sent
-      // to retrieval and the evidence gate decides. Schema-invalid output
-      // (fallbackUsed) and gibberish stay fail-closed.
+      // to retrieval and the evidence gate decides. This also covers
+      // schema-invalid provider output; gibberish stays fail-closed.
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       const unsupportedQuestionOverride =
         validatedPlan.route === "unsupported" &&
-        !validatedPlan.processingMetadata.fallbackUsed &&
         !isLikelyGibberish(routingQuestion) &&
-        hasDomainAgnosticQuestionShape(routingQuestion) &&
+        (deterministicTitleHints.length > 0 || (hasDomainAgnosticQuestionShape(routingQuestion) && (hasInterrogativeQuestionShape(routingQuestion) || hasEnterpriseSubjectTerm(routingQuestion)))) &&
         (!isLikelyContextualFollowUp(routingQuestion) || deterministicContextualFollowUp);
       const semanticSummarizationOverride =
         validatedPlan.detectedIntent === "summarization" &&
@@ -1128,8 +1132,18 @@ export class IntentQueryService {
     } else {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
-      const isKnowledgeQuestion = knowledgeSignals.positive;
+      // When the intent provider is unavailable or returns malformed output,
+      // a well-formed question may still target any uploaded-document topic.
+      // Retrieval plus the evidence gate decides whether the corpus can answer;
+      // the fallback must not require an enterprise keyword list.
       const isDeterministicFollowUp = deterministicContextualFollowUp;
+      const normalizedRoutingText = preprocessIntentText(routingQuestion).elongationReducedText;
+      const isBareDefinition = isBareGeneralDefinitionText(normalizedRoutingText);
+      const corpusFirstQuestion =
+        hasDomainAgnosticQuestionShape(routingQuestion) &&
+        !isBareDefinition &&
+        (!isLikelyContextualFollowUp(routingQuestion) || isDeterministicFollowUp);
+      const isKnowledgeQuestion = knowledgeSignals.positive || corpusFirstQuestion;
       const fallbackQuestion = isDeterministicFollowUp
         ? deterministicFollowUpQuestion
         : knowledgeSignals.retrievalText || routingQuestion.trim();

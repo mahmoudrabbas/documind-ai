@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import mongoose, { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../common/testing/disposableMongo.js";
 import AuditLogModel from "../../db/models/auditLog.model.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
@@ -65,6 +69,7 @@ it("provider-managed mutation and inactive package assignment fail closed", () =
 });
 
 describe("admin subscription persistence", () => {
+  const testDatabaseName = "billing-subscription-admin-test";
   const tenantId = new Types.ObjectId("6a668bed76ec8e0569d93101");
   const packageOneId = new Types.ObjectId("6a668bed76ec8e0569d93102");
   const packageTwoId = new Types.ObjectId("6a668bed76ec8e0569d93103");
@@ -73,9 +78,17 @@ describe("admin subscription persistence", () => {
   const entitlements = packageA.entitlements;
 
   beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) await mongoose.connect(process.env.MONGODB_URI!);
+    if (mongoose.connection.readyState === 0) {
+      await connectToDisposableMongoDatabase(
+        mongoose,
+        process.env.MONGODB_URI!,
+        testDatabaseName,
+      );
+    }
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
   });
   beforeEach(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([
       SubscriptionModel.deleteMany({ tenantId }),
       PackageModel.deleteMany({ _id: { $in: [packageOneId, packageTwoId] } }),
@@ -91,6 +104,7 @@ describe("admin subscription persistence", () => {
     ]);
   });
   afterAll(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await Promise.all([
       SubscriptionModel.deleteMany({ tenantId }), PackageModel.deleteMany({ _id: { $in: [packageOneId, packageTwoId] } }),
       TenantModel.deleteMany({ _id: tenantId }), AuditLogModel.deleteMany({ "changes.targetTenantId": String(tenantId) }),

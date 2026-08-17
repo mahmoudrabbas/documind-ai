@@ -724,7 +724,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.deepEqual(externalPlan.semanticQueries, []);
   });
 
-  await t.test("invalid JSON and unknown intents fail closed unless positive knowledge signals exist", async () => {
+  await t.test("invalid JSON and unknown intents use corpus-first routing for self-contained questions", async () => {
     const invalidJson = new IntentQueryService({
       providerKey: "invalid-json",
       async complete() {
@@ -835,7 +835,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
-  await t.test("deterministic precedence does not promote general, social or assistant input", async () => {
+  await t.test("deterministic precedence promotes corpus questions but not gibberish, social or assistant input", async () => {
     const suppressingProvider = new IntentQueryService(
       planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
       fakeConvoAdapter,
@@ -853,7 +853,11 @@ test("IntentQueryService - query routing contract", async (t) => {
         { question },
         companyAdminContext,
       );
-      assert.notEqual(plan.route, "rag", question);
+      if (question === "asdasdasd" || question.startsWith("?!")) {
+        assert.notEqual(plan.route, "rag", question);
+      } else {
+        assert.equal(plan.route, "rag", question);
+      }
     }
     for (const question of ["شكرا", "شجرا"]) {
       assert.equal(
@@ -1155,7 +1159,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
-  await t.test("unsupported override stays closed for degraded output and non-questions", async () => {
+  await t.test("unsupported override stays closed for non-questions but rescues schema-invalid questions", async () => {
     const suppressingProvider = new IntentQueryService(
       planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
       fakeConvoAdapter,
@@ -1169,23 +1173,34 @@ test("IntentQueryService - query routing contract", async (t) => {
       planAdapter({ detectedIntent: "unsupported", entities: "not-an-array" }),
       fakeConvoAdapter,
     );
-    assert.equal(
-      (await invalidSchema.analyzeQuery({ question: "What is the primary key in a relational database?" }, companyAdminContext)).route,
-      "unsupported",
+    const plan = await invalidSchema.analyzeQuery(
+      { question: "what is js" },
+      companyAdminContext,
     );
+    assert.equal(plan.processingMetadata.fallbackUsed, true);
+    assert.equal(plan.detectedIntent, "knowledge_question");
+    assert.equal(plan.route, "rag");
+    assert.ok(plan.semanticQueries.length > 0);
   });
 
-  await t.test("provider failure stays fail-closed for out-of-vocabulary domain questions", async () => {
+  await t.test("provider failure uses corpus-first routing for out-of-vocabulary domain questions", async () => {
     const failingService = new IntentQueryService({
       providerKey: "failing-provider",
       async complete() { throw new Error("Provider Offline"); },
     }, fakeConvoAdapter);
-    const plan = await failingService.analyzeQuery(
-      { question: "What is the primary key in a relational database?" },
-      companyAdminContext,
-    );
-    assert.equal(plan.route, "unsupported");
-    assert.equal(plan.processingMetadata.fallbackUsed, true);
+    for (const question of [
+      "What is the primary key in a relational database?",
+      "How do I install MySQL?",
+    ]) {
+      const plan = await failingService.analyzeQuery(
+        { question },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "rag", question);
+      assert.equal(plan.detectedIntent, "knowledge_question", question);
+      assert.equal(plan.processingMetadata.fallbackUsed, true, question);
+      assert.ok(plan.semanticQueries.length > 0, question);
+    }
   });
 
   await t.test("external-data short-circuit uses word boundaries, not substrings", async () => {
