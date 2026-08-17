@@ -11,6 +11,7 @@ import { HeroSection } from "@/components/marketing/HeroSection";
 import { BuriedKnowledgeSection } from "@/components/marketing/BuriedKnowledgeSection";
 import { HowDocuMindWorksSection } from "@/components/marketing/HowDocuMindWorksSection";
 import { PermissionAwareIntelligenceSection } from "@/components/marketing/PermissionAwareIntelligenceSection";
+import { GroundedAnswersEvidenceSection } from "@/components/marketing/GroundedAnswersEvidenceSection";
 
 type PackageData = {
   id: string;
@@ -714,6 +715,7 @@ export default function LandingPage() {
       <BuriedKnowledgeSection />
       <HowDocuMindWorksSection />
       <PermissionAwareIntelligenceSection />
+      <GroundedAnswersEvidenceSection />
       <FeaturesSection />
       <SecuritySection />
       <UseCasesSection />

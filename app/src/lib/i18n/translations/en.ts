@@ -488,6 +488,50 @@ const en: TranslationDictionary = {
   /* closing */
   "landing.permClosing": "The right answer starts with the right access.",
 
+  /* ── landing / grounded answers & evidence ───────────────── */
+  "landing.groundEyebrow": "Grounded answers",
+  "landing.groundTitle1": "Every answer should show",
+  "landing.groundTitle2": "why it can be trusted.",
+  "landing.groundSupport":
+    "DocuMind keeps answers connected to the company evidence that supports them, so users can inspect the source, verify the context, and know when the available knowledge is not enough.",
+
+  /* evidence trace */
+  "landing.groundToggleLabel": "Evidence state",
+  "landing.groundToggleSupported": "Grounded answer",
+  "landing.groundToggleInsufficient": "Insufficient evidence",
+  "landing.groundCanvasLabel": "Evidence trace",
+
+  /* supported state */
+  "landing.groundQuestionSupported": "What is our P1 initial response target?",
+  "landing.groundAnswerSupported": "15 minutes",
+  "landing.groundAnswerBody": "P1 incidents require an initial response within 15 minutes.",
+  "landing.groundCitationSource": "Customer Support SLA",
+  "landing.groundVerifiedLabel": "Verified source",
+  "landing.groundEvidenceContext": "P1 Incident Response",
+  "landing.groundExcerptBefore": "P1 incidents require an initial response ",
+  "landing.groundExcerptMark": "within 15 minutes",
+  "landing.groundExcerptAfter": ".",
+  "landing.groundMetaPolicy": "Policy",
+  "landing.groundMetaAuthorized": "Authorized source",
+
+  /* insufficient evidence */
+  "landing.groundQuestionInsufficient": "What is our reimbursement policy for home office furniture?",
+  "landing.groundNoEvidenceTitle": "Evidence unavailable",
+  "landing.groundNoEvidenceBody":
+    "I couldn't find enough information in the authorized company sources to answer this confidently.",
+  "landing.groundNoSourceLabel": "No source found",
+  "landing.groundNoSourceBody": "No answer was generated without supporting evidence.",
+
+  /* why it matters */
+  "landing.groundWhyTitle": "Traceability changes how people use AI.",
+  "landing.groundWhyBody":
+    "When users can see the evidence behind an answer, they can verify it, challenge it, and use it with greater confidence.",
+
+  /* principles */
+  "landing.groundPrinciple1Title": "Answers stay connected to their sources.",
+  "landing.groundPrinciple2Title": "Evidence can be inspected and verified.",
+  "landing.groundPrinciple3Title": "No evidence means no fabricated answer.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",
   "auth.noPackage": "No package selected",

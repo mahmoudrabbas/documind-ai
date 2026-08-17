@@ -488,6 +488,50 @@ const ar: TranslationDictionary = {
   /* closing */
   "landing.permClosing": "الإجابة الموثوقة تبدأ من نطاق وصول صحيح.",
 
+  /* ── landing / إجابات مدعومة بالأدلة ────────────────────── */
+  "landing.groundEyebrow": "إجابات مدعومة بالأدلة",
+  "landing.groundTitle1": "كل إجابة يجب أن توضّح",
+  "landing.groundTitle2": "لماذا يمكن الوثوق بها.",
+  "landing.groundSupport":
+    "يربط DocuMind كل إجابة بالأدلة التي تدعمها من مستندات الشركة، ليتمكن المستخدم من مراجعة المصدر والتحقق من السياق، ومعرفة متى لا تكون المعلومات المتاحة كافية لتقديم إجابة موثوقة.",
+
+  /* evidence trace */
+  "landing.groundToggleLabel": "حالة الأدلة",
+  "landing.groundToggleSupported": "إجابة مدعومة",
+  "landing.groundToggleInsufficient": "أدلة غير كافية",
+  "landing.groundCanvasLabel": "مسار الأدلة",
+
+  /* supported state */
+  "landing.groundQuestionSupported": "ما هو هدف زمن الاستجابة الأولية لحوادث P1؟",
+  "landing.groundAnswerSupported": "15 دقيقة",
+  "landing.groundAnswerBody": "تتطلب حوادث P1 استجابة أولية خلال 15 دقيقة.",
+  "landing.groundCitationSource": "Customer Support SLA",
+  "landing.groundVerifiedLabel": "مصدر موثّق",
+  "landing.groundEvidenceContext": "الاستجابة لحوادث P1",
+  "landing.groundExcerptBefore": "تتطلب حوادث P1 استجابة أولية ",
+  "landing.groundExcerptMark": "خلال 15 دقيقة",
+  "landing.groundExcerptAfter": ".",
+  "landing.groundMetaPolicy": "سياسة",
+  "landing.groundMetaAuthorized": "مصدر مصرّح",
+
+  /* insufficient evidence */
+  "landing.groundQuestionInsufficient": "ما هي سياسة تعويض أثاث المكاتب المنزلية؟",
+  "landing.groundNoEvidenceTitle": "الأدلة غير متوفرة",
+  "landing.groundNoEvidenceBody":
+    "لم أجد معلومات كافية في مصادر الشركة المسموح بها لتقديم إجابة موثوقة عن هذا السؤال.",
+  "landing.groundNoSourceLabel": "لم يُعثر على مصدر",
+  "landing.groundNoSourceBody": "لم يتم إنشاء أي إجابة دون وجود دليل يدعمها.",
+
+  /* why it matters */
+  "landing.groundWhyTitle": "إمكانية تتبّع الإجابة تغيّر طريقة استخدام الذكاء الاصطناعي.",
+  "landing.groundWhyBody":
+    "عندما يرى المستخدم الأدلة التي تستند إليها الإجابة، يمكنه التحقق منها ومراجعتها واستخدامها بثقة أكبر.",
+
+  /* principles */
+  "landing.groundPrinciple1Title": "تظل الإجابات مرتبطة بمصادرها.",
+  "landing.groundPrinciple2Title": "يمكن مراجعة الأدلة والتحقق منها.",
+  "landing.groundPrinciple3Title": "عند غياب الدليل، لا تُختلق الإجابة.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
   "auth.noPackage": "لم يتم تحديد خطة",
