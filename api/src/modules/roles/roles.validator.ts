@@ -44,6 +44,11 @@ const migrationSchema = z.object({
   sourceVersion: z.number().int().positive(),
   destinationVersion: z.number().int().positive(),
 }).strict();
+const scopeOptionsSchema = z.object({
+  departments: z.array(z.string().refine((value) => mongoose.isObjectIdOrHexString(value), "department ID must be a valid ObjectId")).max(200).optional().default([]),
+  categories: z.array(z.string().trim().max(100)).max(200).optional().default([]),
+  classifications: z.array(z.string().trim().max(100)).max(200).optional().default([]),
+}).strict();
 
 function validate<T extends Record<string, unknown>>(schema: z.ZodSchema<T>, input: unknown): T {
   const result = schema.safeParse(input);
@@ -84,3 +89,7 @@ export function validateChangeRoleStatusInput(input: unknown): ChangeRoleStatusI
 export function validateAssignRoleInput(input: unknown): AssignRoleInput { return validate(assignmentSchema, input); }
 export function validateRemoveRoleAssignmentInput(input: unknown): RemoveRoleAssignmentInput { return validate(assignmentSchema, input); }
 export function validateMigrateRoleUsersInput(input: unknown): MigrateRoleUsersInput { return validate(migrationSchema, input); }
+
+export function validateScopeOptionsInput(input: unknown): { departments: string[]; categories: string[]; classifications: string[] } {
+  return validate(scopeOptionsSchema, input);
+}

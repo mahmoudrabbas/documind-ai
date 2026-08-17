@@ -40,8 +40,23 @@ describe("RefundEligibilityPolicy", () => {
     expect(decision().includedUsageMetrics.some((metric) => metric.dimension === "unlimited")).toBe(false);
     expect(decision({ usageMetrics: metrics(null) })).toMatchObject({ reviewRequired: true, maximumEligibleRefundMinor: 0, decisionReason: "USAGE_DATA_UNAVAILABLE" });
   });
-  it("subtracts confirmed refunds and pending reservations", () => {
-    expect(decision({ confirmedRefundAmountMinor: 30, pendingReservedRefundAmountMinor: 20 }).maximumEligibleRefundMinor).toBe(150);
+  it("subtracts confirmed refunds and pending reservations from the unconsumed remainder", () => {
+    expect(decision({ confirmedRefundAmountMinor: 30, pendingReservedRefundAmountMinor: 20 }).maximumEligibleRefundMinor).toBe(110);
+  });
+  it("does not re-expose a remainder already carved out by a reservation", () => {
+    const system = (pendingReservedRefundAmountMinor: number) => decision({
+      reason: "SYSTEM_REMAINING_BALANCE_REFUND",
+      amountPaidMinor: 500,
+      directProviderCostMinor: 12,
+      measuredAt: start,
+      pendingReservedRefundAmountMinor,
+      invoicePaidAt: new Date("2025-12-28T00:00:00.000Z"),
+    });
+    expect(system(488).maximumEligibleRefundMinor).toBe(0);
+    expect(system(400).maximumEligibleRefundMinor).toBe(88);
+  });
+  it("keeps consumed value protecting the full remaining balance at settlement", () => {
+    expect(decision({ amountPaidMinor: 500, directProviderCostMinor: 13, pendingReservedRefundAmountMinor: 488, retainedConsumedMinor: 13 })).toMatchObject({ maximumEligibleRefundMinor: 0 });
   });
   it("requires proof for duplicate charges and never cancels proven duplicates", () => {
     expect(decision({ reason: "DUPLICATE_CHARGE" })).toMatchObject({ reviewRequired: true, maximumEligibleRefundMinor: 0, subscriptionImpact: "NONE" });

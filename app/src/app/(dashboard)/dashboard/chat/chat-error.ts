@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api-client";
+import { ChatStreamError } from "@/services/chat.service";
 
 export type ChatErrorPresentation = {
   message: string;
@@ -9,6 +10,31 @@ export function getChatErrorPresentation(
   error: unknown,
   t: (key: string) => string,
 ): ChatErrorPresentation {
+  if (error instanceof ChatStreamError) {
+    switch (error.code) {
+      case "LLM_RATE_LIMITED":
+        return {
+          message: t("chat.error.rateLimited"),
+          retryAfterSeconds: null,
+        };
+      case "LLM_PROVIDER_UNAVAILABLE":
+        return {
+          message: t("chat.error.providerUnavailable"),
+          retryAfterSeconds: null,
+        };
+      case "LLM_TIMEOUT":
+        return {
+          message: t("chat.error.timedOut"),
+          retryAfterSeconds: null,
+        };
+      case "ENTITLEMENT_EXCEEDED":
+        return {
+          message: t("chat.error.quotaExhausted"),
+          retryAfterSeconds: null,
+        };
+    }
+  }
+
   if (error instanceof ApiError) {
     switch (error.code) {
       case "LLM_RATE_LIMITED":
@@ -25,6 +51,11 @@ export function getChatErrorPresentation(
         return {
           message: t("chat.error.timedOut"),
           retryAfterSeconds: null,
+        };
+      case "ENTITLEMENT_EXCEEDED":
+        return {
+          message: t("chat.error.quotaExhausted"),
+          retryAfterSeconds: error.retryAfterSeconds,
         };
       case "RETRIEVAL_UNAVAILABLE":
         return {

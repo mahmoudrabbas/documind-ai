@@ -17,11 +17,13 @@ export interface FileDropzoneProps {
   browseText?: string;
   fileRequirementsText?: string;
   selectedFileLabel?: string;
+  /** Optional `data-guide-id` anchor for the copilot guide overlay. */
+  guideId?: string;
 }
 
 export function FileDropzone({
   onFilesSelected,
-  accept = ".pdf,.docx,.doc,.txt,.md",
+  accept = ".pdf,.docx,.txt",
   disabled = false,
   error = null,
   dragDropText,
@@ -29,6 +31,7 @@ export function FileDropzone({
   browseText,
   fileRequirementsText,
   selectedFileLabel,
+  guideId,
 }: FileDropzoneProps) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +83,7 @@ export function FileDropzone({
       <div
         role="button"
         tabIndex={0}
+        data-guide-id={guideId}
         onClick={handleClick}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") handleClick();

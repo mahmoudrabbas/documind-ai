@@ -114,8 +114,12 @@ class FakeEntitlementProvider implements EntitlementProviderPort {
     this.snapshot = s;
   }
 
-  setPeriodStart(d: Date): void {
+   setPeriodStart(d: Date): void {
     this._periodStart = d;
+  }
+
+  setPeriodEnd(d: Date | null): void {
+    this._periodEnd = d;
   }
 
   setSubscriptionStatus(status: SubscriptionStatus): void {
@@ -306,6 +310,44 @@ describe("EntitlementService", () => {
       // Verify counter was persisted
       const check = await service.check(TENANT_A, DIM_DOCUMENTS);
       expect(check.current).toBe(5);
+    });
+
+    it("reconciles stale employee usage before consume so an already-full seat quota cannot be exceeded", async () => {
+      const EMPLOYEES: EntitlementDimension = "employees";
+      const now = new Date();
+      const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      provider.setSnapshot({
+        ...(await provider.getSnapshot(TENANT_A))!,
+        employees: 6,
+      });
+
+      // Simulate a stale quota counter that says only two seats are used.
+      await counter.set(TENANT_A, EMPLOYEES, periodKey, 2);
+
+      const reconciledService = new EntitlementService(
+        counter,
+        provider,
+        undefined,
+        async (tenantId) => {
+          // Authoritative source says all six employee seats are already occupied.
+          await counter.set(tenantId, EMPLOYEES, periodKey, 6);
+        },
+      );
+
+      const result = await reconciledService.consume(
+        TENANT_A,
+        EMPLOYEES,
+        1,
+      );
+
+      expect(result.committed).toBe(false);
+      expect(result.current).toBe(6);
+      expect(result.limit).toBe(6);
+      expect(result.remaining).toBe(0);
+      await expect(
+        counter.getUsage(TENANT_A, EMPLOYEES, periodKey),
+      ).resolves.toBe(6);
     });
 
     it("exceed limit: consume when at limit returns committed=false and does not increment", async () => {
@@ -772,6 +814,15 @@ describe("EntitlementService", () => {
       expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it("getPeriodReset throws ENTITLEMENT_UNAVAILABLE when periodEnd is null", async () => {
+      provider.setPeriodEnd(null);
+
+      await expect(service.getPeriodReset(TENANT_A)).rejects.toMatchObject({
+        statusCode: 503,
+        code: "ENTITLEMENT_UNAVAILABLE",
+      });
+    });
+
     it("getEntitlementSnapshot returns current snapshot", async () => {
       const snapshot = await service.getEntitlementSnapshot(TENANT_A);
 
@@ -1120,6 +1171,120 @@ describe("EntitlementService", () => {
         code: "ENTITLEMENT_UNAVAILABLE",
         statusCode: 503,
       });
+    });
+  });
+
+  // ── Quota-reset exploit: paid → Free downgrade must not reset usage ─────────
+
+  describe("quota-reset exploit (paid → Free usage continuity)", () => {
+    it("consume quota → downgrade limit → quota is NOT reset → excess consumption is denied", async () => {
+      // Start with a paid-like snapshot: documents limit 100, period Aug 15 → Sep 15
+      const periodStart = new Date("2026-08-15T00:00:00.000Z");
+      const periodEnd = new Date("2026-09-15T00:00:00.000Z");
+      provider.setPeriodStart(periodStart);
+      provider.setPeriodEnd(periodEnd);
+      provider.setSnapshot({
+        employees: 10, admins: 2, documents: 100, storageMb: 1024,
+        fileSizeMb: 50, queriesPerMonth: 1000, tokensPerMonth: 100000,
+        ocrPagesPerMonth: 500, supportedModels: ["basic"], analyticsLevel: "basic",
+        retentionDays: 90, supportLevel: "community",
+      });
+
+      // Consume 80 documents under the paid plan
+      const consumed = await service.consume(TENANT_A, DIM_DOCUMENTS, 80);
+      expect(consumed.committed).toBe(true);
+      expect(consumed.current).toBe(80);
+
+      // Downgrade: Free plan with limit 5 (same period retained)
+      provider.setSnapshot({
+        employees: 5, admins: 0, documents: 5, storageMb: 100,
+        fileSizeMb: 10, queriesPerMonth: 100, tokensPerMonth: 100000,
+        ocrPagesPerMonth: 10, supportedModels: ["basic"], analyticsLevel: "basic",
+        retentionDays: 90, supportLevel: "community",
+      });
+
+      // The counter must still read 80 (NOT reset to 0)
+      const periodKey = "2026-08";
+      const afterDowngrade = await counter.getUsage(TENANT_A, DIM_DOCUMENTS, periodKey);
+      expect(afterDowngrade).toBe(80);
+
+      // Consuming 1 more (80 + 1 > Free limit of 5) must be denied
+      const overResult = await service.consume(TENANT_A, DIM_DOCUMENTS, 1);
+      expect(overResult.committed).toBe(false);
+      expect(overResult.current).toBe(80);
+      expect(overResult.limit).toBe(5);
+
+      // periodReset must be the legitimate future boundary (Sep 15), not "now"
+      const reset = await service.getPeriodReset(TENANT_A);
+      expect(reset).toBe(periodEnd.toISOString());
+    });
+
+    it("tokensPerMonth usage is preserved across downgrade (not reconciled away)", async () => {
+      const periodStart = new Date("2026-08-15T00:00:00.000Z");
+      const periodEnd = new Date("2026-09-15T00:00:00.000Z");
+      provider.setPeriodStart(periodStart);
+      provider.setPeriodEnd(periodEnd);
+
+      // Paid plan with high token limit
+      provider.setSnapshot({
+        employees: 10, admins: 2, documents: 100, storageMb: 1024,
+        fileSizeMb: 50, queriesPerMonth: 1000, tokensPerMonth: 100000,
+        ocrPagesPerMonth: 500, supportedModels: ["basic"], analyticsLevel: "basic",
+        retentionDays: 90, supportLevel: "community",
+      });
+
+      // Consume 50000 tokens under the paid plan
+      await service.consume(TENANT_A, "tokensPerMonth", 50000);
+
+      // Downgrade: Free plan with same token limit (100000)
+      provider.setSnapshot({
+        employees: 5, admins: 0, documents: 5, storageMb: 100,
+        fileSizeMb: 10, queriesPerMonth: 100, tokensPerMonth: 100000,
+        ocrPagesPerMonth: 10, supportedModels: ["basic"], analyticsLevel: "basic",
+        retentionDays: 30, supportLevel: "community",
+      });
+
+      // Token counter must still read 50000 (NOT reset to 0)
+      const periodKey = "2026-08";
+      const tokens = await counter.getUsage(TENANT_A, "tokensPerMonth", periodKey);
+      expect(tokens).toBe(50000);
+
+      // periodReset must be Sep 15, not now
+      const reset = await service.getPeriodReset(TENANT_A);
+      expect(reset).toBe(periodEnd.toISOString());
+    });
+  });
+
+  // ── Month-boundary regression ──────────────────────────────────────────
+
+  describe("month-boundary key consistency", () => {
+    it("counter key does not change within the same billing month after downgrade", async () => {
+      const periodStart = new Date("2026-08-15T00:00:00.000Z");
+      const periodEnd = new Date("2026-09-15T00:00:00.000Z");
+      provider.setPeriodStart(periodStart);
+      provider.setPeriodEnd(periodEnd);
+
+      provider.setSnapshot({
+        employees: 10, admins: 2, documents: 50, storageMb: 1024,
+        fileSizeMb: 50, queriesPerMonth: 1000, tokensPerMonth: 100000,
+        ocrPagesPerMonth: 500, supportedModels: ["basic"], analyticsLevel: "basic",
+        retentionDays: 90, supportLevel: "community",
+      });
+
+      // Consume usage under the paid plan
+      await service.consume(TENANT_A, "queriesPerMonth", 26);
+
+      // Downgrade to Free (same period retained)
+      provider.setSnapshot({
+        employees: 5, admins: 0, documents: 10, storageMb: 1000,
+        fileSizeMb: 10, queriesPerMonth: 100, tokensPerMonth: 100000,
+        ocrPagesPerMonth: 10, supportedModels: ["basic"], analyticsLevel: "basic",
+        retentionDays: 30, supportLevel: "community",
+      });
+
+      // Counter key must be the same "2026-08" — usage preserved
+      const usage = await service.getUsage(TENANT_A);
+      expect(usage.queriesPerMonth).toBe(26);
     });
   });
 });

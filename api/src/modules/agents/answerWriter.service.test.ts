@@ -578,6 +578,180 @@ test("K4: direct threshold instructions forbid cross-chunk probation equivalence
   assert.match(data.content, /"satisfied":false/u);
 });
 
+test("K5: grounded answers retain material qualifiers and contrast facts", async () => {
+  const cases = [
+    {
+      question: "What is the hotel limit?",
+      answer: "The hotel limit is USD 180 per night, excluding taxes.",
+      evidence: "Hotel expenses are limited to USD 180 per night, excluding taxes.",
+    },
+    {
+      question: "How much remote work is allowed?",
+      answer: "Remote work is allowed up to 2 days per week with manager approval.",
+      evidence: "Remote work is allowed up to 2 days per week with manager approval.",
+    },
+    {
+      question: "P1 restoration target is 8 hours, correct?",
+      answer: "No. P1 restoration is 4 hours; 8 hours belongs to P2.",
+      evidence: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+    },
+  ] as const;
+
+  for (const item of cases) {
+    const chunkId = `qualifier-${cases.indexOf(item)}`;
+    const { service } = makeService(JSON.stringify({
+      decision: "grounded_answer",
+      answer: item.answer,
+      citedChunkIds: [chunkId],
+    }));
+    const result = await service.generate(generateArgs({
+      question: item.question,
+      evidence: [{
+        chunkId,
+        documentId: "507f1f77bcf86cd799439014",
+        text: item.evidence,
+      }],
+    }));
+    assert.equal(result.outcome, "usable");
+    if (result.outcome === "usable") assert.equal(result.answer, item.answer);
+  }
+});
+
+test("K6: direct-answer prompt requires material qualifiers and contrast facts", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    userMessage: "P1 restoration target is 8 hours, correct?",
+    sources: [{
+      chunkId: "p1-p2",
+      documentId: "sla",
+      documentTitle: "Customer_Support_SLA",
+      text: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+      score: 1,
+    }],
+  });
+  const system = messages.find((message) => message.role === "system")?.content ?? "";
+  assert.match(system, /material condition, exception, qualifier, threshold, and contrast/u);
+  assert.match(system, /different P2 target/u);
+});
+
+test("K7: cited tier evidence restores an omitted P1/P2 contrast", async () => {
+  const chunkId = "p1-p2-contrast";
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "No. The P1 restoration target is 4 hours, not 8 hours.",
+    citedChunkIds: [chunkId],
+  }));
+  const result = await service.generate(generateArgs({
+    question: "P1 restoration target is 8 hours, correct?",
+    evidence: [{
+      chunkId,
+      documentId: "sla",
+      text: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+    }],
+  }));
+
+  assert.equal(result.outcome, "usable");
+  if (result.outcome === "usable") {
+    assert.match(result.answer, /P1 restoration target is 4 hours/u);
+    assert.match(result.answer, /P2 restoration target is 8 hours/u);
+  }
+});
+
+test("BUDGET-1: total runtime budget subtracts the prompt before setting provider completion maxTokens", async () => {
+  const { service, adapter } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "CivicOps runs an annual flood-response drill every Q1.",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs({
+    maxTokens: 5_000,
+    maxTotalTokens: 2_000,
+  }));
+
+  assert.equal(result.outcome, "usable");
+  assert.equal(adapter.calls.length, 1);
+
+  const providerMaxTokens = adapter.calls[0]?.maxTokens;
+  assert.equal(typeof providerMaxTokens, "number");
+  assert.ok(
+    (providerMaxTokens as number) > 0 &&
+      (providerMaxTokens as number) < 2_000,
+    `expected prompt-aware completion allowance below total budget, got ${String(providerMaxTokens)}`,
+  );
+  assert.ok(
+    (providerMaxTokens as number) <= 5_000,
+    "configured completion cap must still be respected",
+  );
+});
+
+test("BUDGET-2: correction retry shares the remaining total budget and aggregates both calls", async () => {
+  const bad = JSON.stringify({
+    decision: "grounded_answer",
+    answer: "نعم، بعد إكمال فترة الاختبار يمكن التقديم.",
+    citedChunkIds: ["remote-eligibility"],
+  });
+  const goodAnswer =
+    "نعم، إكمال ١٢٠ يومًا يستوفي الحد الأدنى البالغ ٩٠ يومًا لطلب العمل عن بعد.";
+  const good = JSON.stringify({
+    decision: "grounded_answer",
+    answer: goodAnswer,
+    citedChunkIds: ["remote-eligibility"],
+  });
+
+  const adapter = new SequenceRecordingAdapter([bad, good]);
+
+  const result = await new AnswerWriterService(adapter).generate({
+    conversationId: "budget-shared-retry",
+    question: "أنا شغال بقالى ١٢٠ يوم، ينفع أطلب العمل عن بعد؟",
+    language: "ar",
+    citationsEnabled: true,
+    maxTokens: 5_000,
+    maxTotalTokens: 3_000,
+    evidence: [{
+      chunkId: "remote-eligibility",
+      documentId: "remote-policy",
+      documentTitle: "Remote_Work_Policy",
+      text: "Employees who have completed at least 90 days of employment may request a regular remote-work arrangement.",
+    }],
+  });
+
+  assert.equal(adapter.calls.length, 2);
+
+  const firstMaxTokens = adapter.calls[0]?.maxTokens as number;
+  const secondMaxTokens = adapter.calls[1]?.maxTokens as number;
+
+  assert.ok(firstMaxTokens > 0);
+  assert.ok(secondMaxTokens > 0);
+  assert.ok(
+    secondMaxTokens < firstMaxTokens,
+    `expected correction allowance ${secondMaxTokens} < initial allowance ${firstMaxTokens}`,
+  );
+
+  assert.equal(result.outcome, "usable");
+  assert.equal(result.totalTokens, 60);
+  assert.equal(result.promptTokens, 20);
+  assert.equal(result.completionTokens, 40);
+  assert.equal(result.latencyMs, 2);
+});
+
+test("BUDGET-3: total budget too small for the prompt makes zero provider calls", async () => {
+  const { service, adapter } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "This must never be generated.",
+    citedChunkIds: [CHUNK_A],
+  }));
+
+  const result = await service.generate(generateArgs({
+    maxTokens: 2_048,
+    maxTotalTokens: 1,
+  }));
+
+  assert.equal(adapter.calls.length, 0);
+  assert.equal(result.outcome, "unusable");
+  assert.equal(result.totalTokens, 0);
+});
+
 test("K5: retries and removes a named employment phase absent from the threshold evidence", async () => {
   const bad = JSON.stringify({
     decision: "grounded_answer",

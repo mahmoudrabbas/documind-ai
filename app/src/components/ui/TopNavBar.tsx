@@ -14,6 +14,8 @@ import {
   TENANT_TOPBAR_LINKS,
 } from "@/constants/routes";
 import { Permission } from "@/types/api/permissions.types";
+import { useCopilot } from "@/providers/copilot-provider";
+import { COPILOT_ENABLED } from "@/config/public-env";
 import { NotificationsBell } from "./NotificationsBell";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
@@ -27,6 +29,7 @@ export function TopNavBar({
   const permissions = usePermissions();
   const tenant = useTenantSettings();
   const { t } = useI18n();
+  const { setOpen: setCopilotOpen } = useCopilot();
   const { user } = auth;
   const pathname = usePathname();
   const router = useRouter();
@@ -65,6 +68,10 @@ export function TopNavBar({
 
   const role = user?.role && isKnownRole(user.role) ? user.role : null;
   const appContext = role ? getAppContext(role) : null;
+  // Platform (super-admin) keeps the sidebar as its only navigation; the
+  // top bar stays a quiet utility bar with no global search or duplicate
+  // section links.
+  const isPlatform = appContext === "platform";
   const candidateLinks =
     appContext === "platform"
       ? PLATFORM_TOPBAR_LINKS
@@ -97,7 +104,7 @@ export function TopNavBar({
     tenant.status === "ready" ? tenant.settings.profile.logoUrl : null;
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 w-full min-w-0 items-center justify-between gap-2 border-b border-outline-variant bg-surface-bright/80 px-4 shadow-sm backdrop-blur-md sm:px-5 lg:px-6">
+    <header className="sticky top-0 z-30 flex min-h-16 w-full min-w-0 items-center justify-between gap-2 border-b border-outline-variant bg-surface-bright px-4 sm:px-5 lg:px-6">
       <div className="flex min-w-0 items-center gap-3 lg:gap-lg">
         <button
           type="button"
@@ -107,18 +114,20 @@ export function TopNavBar({
         >
           <span className="material-symbols-outlined">menu</span>
         </button>
-        <div className="relative hidden w-64 xl:block 2xl:w-96">
-          <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
-            search
-          </span>
-          <input
-            className="w-full rounded-full border-none bg-surface-container-low py-2 ps-10 pe-4 text-label-md outline-none transition-shadow focus:ring-2 focus:ring-primary/20"
-            placeholder={t("shell.searchPlaceholder")}
-            type="text"
-          />
-        </div>
+        {!isPlatform ? (
+          <div className="relative hidden w-64 xl:block 2xl:w-96">
+            <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
+              search
+            </span>
+            <input
+              className="w-full rounded-full border-none bg-surface-container-low py-2 ps-10 pe-4 text-label-md outline-none transition-shadow focus:ring-2 focus:ring-primary/20"
+              placeholder={t("shell.searchPlaceholder")}
+              type="text"
+            />
+          </div>
+        ) : null}
 
-        {topLinks.length > 0 && (
+        {!isPlatform && topLinks.length > 0 ? (
           <nav className="hidden items-center gap-md lg:flex">
             {topLinks.map(({ label, labelKey, href }) => {
               const isActive = pathname === href;
@@ -138,11 +147,11 @@ export function TopNavBar({
               );
             })}
           </nav>
-        )}
+        ) : null}
       </div>
 
       <div className="flex min-w-0 items-center gap-1 sm:gap-md">
-        <div className="hidden items-center gap-xs sm:flex lg:me-md">
+        <div className="hidden items-center gap-sm sm:flex lg:me-lg">
           <LanguageSwitcher />
           <NotificationsBell />
 
@@ -159,7 +168,7 @@ export function TopNavBar({
 
         {/* User Profile */}
         <div
-          className="relative min-w-0 border-s border-outline-variant ps-2 sm:ps-md"
+          className="relative min-w-0 border-s border-outline-variant ps-3 sm:ps-lg"
           ref={menuRef}
         >
           <button
@@ -167,7 +176,7 @@ export function TopNavBar({
             onClick={() => setMenuOpen((value) => !value)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className="flex min-w-0 items-center gap-2 rounded-lg py-1 pe-1 transition-colors hover:bg-surface-container-high sm:gap-3 sm:pe-2"
+            className="flex min-w-0 items-center gap-2.5 rounded-lg py-1.5 pe-2 transition-colors hover:bg-surface-container-high sm:gap-3 sm:pe-3"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary-container font-bold text-on-secondary-container shadow-sm">
               {logoUrl ? (
@@ -181,16 +190,18 @@ export function TopNavBar({
                 <span>{user?.name?.charAt(0).toUpperCase() || "A"}</span>
               )}
             </div>
-            <div className="hidden min-w-0 text-start sm:block">
-              <p className="max-w-32 truncate text-label-md font-bold text-on-surface xl:max-w-48">
+              <div className="hidden min-w-0 text-start sm:block">
+              <p className="max-w-48 truncate text-label-lg font-semibold text-on-surface sm:max-w-56 xl:max-w-64">
                 {user?.name || t("shell.defaultUserName")}
               </p>
-              <p className="max-w-32 truncate text-label-sm text-on-surface-variant xl:max-w-48">
+              <p className="max-w-48 truncate text-label-sm text-on-surface-variant sm:max-w-56 xl:max-w-64">
                 {appContext === "tenant" && companyName
                   ? companyName
-                  : user?.role === "COMPANY_ADMIN"
-                    ? t("shell.roleCompanyAdmin")
-                    : t("shell.roleUser")}
+                  : user?.role === "SUPER_ADMIN"
+                    ? t("shell.roleSuperAdmin")
+                    : user?.role === "COMPANY_ADMIN"
+                      ? t("shell.roleCompanyAdmin")
+                      : t("shell.roleUser")}
               </p>
             </div>
             <span
@@ -230,17 +241,34 @@ export function TopNavBar({
                 </Link>
               ) : null}
 
-              <Link
-                href="#"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2 px-4 py-2.5 text-label-md text-on-surface hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  help
-                </span>
-                {t("shell.helpCenter")}
-              </Link>
+              {COPILOT_ENABLED ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setCopilotOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-label-md text-on-surface hover:bg-surface-container-high"
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    help
+                  </span>
+                  {t("shell.helpCenter")}
+                </button>
+              ) : (
+                <Link
+                  href="#"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-label-md text-on-surface hover:bg-surface-container-high"
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    help
+                  </span>
+                  {t("shell.helpCenter")}
+                </Link>
+              )}
 
               <button
                 type="button"

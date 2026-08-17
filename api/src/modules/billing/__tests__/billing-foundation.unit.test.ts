@@ -48,6 +48,40 @@ describe("Issue 29 billing foundation", () => {
     expect(historicalPaid.paymentState).toBe("paid");
   });
 
+  it("hides the billing portal for a local Free subscription without a provider-linked account", () => {
+    // Local Free: no providerCustomerId, no providerSubscriptionId
+    const localFree = toCompanyBillingSummary({
+      _id: "free-local", tenantId: "tenant",
+      packageId: { _id: "free-pkg", name: "Free", code: "free", version: 1 },
+      packageVersion: 1, status: "ACTIVE", paymentState: "paid",
+      providerCustomerId: "", providerSubscriptionId: "", cancelAtPeriodEnd: false,
+    });
+    expect(localFree.canOpenPortal).toBe(false);
+    expect(localFree.canUpdatePaymentMethod).toBe(false);
+
+    // Free subscription that incorrectly retained a providerCustomerId but
+    // has no providerSubscriptionId still must not expose the portal.
+    const leakedCustomerFree = toCompanyBillingSummary({
+      _id: "free-leaked", tenantId: "tenant",
+      packageId: { _id: "free-pkg", name: "Free", code: "free", version: 1 },
+      packageVersion: 1, status: "ACTIVE", paymentState: "paid",
+      providerCustomerId: "cus_retained", providerSubscriptionId: "", cancelAtPeriodEnd: false,
+    });
+    expect(leakedCustomerFree.canOpenPortal).toBe(false);
+    expect(leakedCustomerFree.canUpdatePaymentMethod).toBe(false);
+  });
+
+  it("exposes the billing portal for a provider-linked paid subscription", () => {
+    const paid = toCompanyBillingSummary({
+      _id: "paid-sub", tenantId: "tenant",
+      packageId: { _id: "paid-pkg", name: "Pro", code: "pro", version: 1 },
+      packageVersion: 1, status: "ACTIVE", paymentState: "paid",
+      providerCustomerId: "cus_linked", providerSubscriptionId: "sub_linked", cancelAtPeriodEnd: false,
+    });
+    expect(paid.canOpenPortal).toBe(true);
+    expect(paid.providerLinked).toBe(true);
+  });
+
   it("does not let an unrelated refund disable subscription lifecycle capabilities", () => {
     const subscription = { _id: "sub-local", tenantId: "tenant", packageId: { _id: "pkg" }, packageVersion: 1, status: "ACTIVE", paymentState: "paid", providerCustomerId: "customer", providerSubscriptionId: "subscription", cancelAtPeriodEnd: false };
     const refundPending = toCompanyBillingSummary(subscription, { operationType: "REFUND", status: "REQUESTED", requestedAt: new Date(), conflictGroup: null }, false);

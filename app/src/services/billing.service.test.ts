@@ -1,17 +1,22 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   createBillingPortalSession,
   getBillingSummary,
   getInvoiceLinks,
+  getInvoicePdfBlobUrl,
   listInvoices,
   syncSubscriptionFromStripe,
   triggerReconciliation,
 } from "./billing.service";
 
 const mockApiClient = vi.fn();
-vi.mock("@/lib/api-client", () => ({
-  apiClient: (...args: unknown[]) => mockApiClient(...args),
-}));
+vi.mock("@/lib/api-client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-client")>("@/lib/api-client");
+  return {
+    ...actual,
+    apiClient: (...args: unknown[]) => mockApiClient(...args),
+  };
+});
 
 beforeEach(() => {
   mockApiClient.mockReset();
@@ -42,6 +47,39 @@ describe("billing.service syncSubscriptionFromStripe", () => {
       "/super-admin/reconciliation/subscriptions/tenant%2Fid/sync-provider",
       { method: "POST" },
     );
+  });
+});
+
+describe("billing.service getInvoicePdfBlobUrl", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("fetches the authenticated invoice PDF and returns a blob object URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["%PDF"], { type: "application/pdf" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const url = await getInvoicePdfBlobUrl("local/id");
+    expect(url).toMatch(/^blob:/);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/billing/invoices/local%2Fid/pdf"),
+      expect.objectContaining({ headers: { Authorization: "Bearer null" } }),
+    );
+  });
+
+  it("throws an ApiError carrying the backend code when retrieval fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({ success: false, error: { code: "BILLING_PROVIDER_UNAVAILABLE", message: "provider down" } }),
+      }),
+    );
+    await expect(getInvoicePdfBlobUrl("local/id")).rejects.toMatchObject({
+      status: 503,
+      code: "BILLING_PROVIDER_UNAVAILABLE",
+    });
   });
 });
 

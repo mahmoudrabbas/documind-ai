@@ -2,6 +2,7 @@ import type { BaseRole, TenantRoleBase } from "../../common/auth/baseRoles.js";
 import { ALL_PERMISSIONS, BASE_ROLE_DEFAULTS, PERMISSION_CONTRACT_VERSION, type PermissionValue } from "./permissions.catalog.js";
 import { decidePermission, emptyResolved } from "./permissions.decision.js";
 import { normalizeRoleGrants } from "./permissions.grants.js";
+import { hasScopeConstraints } from "./permissions.scope.js";
 import type {
   PermissionActor,
   PermissionEvaluationInput,
@@ -75,7 +76,9 @@ export class InMemoryPermissionEvaluator implements PermissionEvaluator {
       try {
         if (role.baseRole !== user.baseRole || role.contractVersion !== PERMISSION_CONTRACT_VERSION || role.migrationState !== "complete" || !role.provenanceValid) throw new Error("invalid role contract");
         for (const grant of normalizeRoleGrants(role.grants, { requireCanonical: true })) {
-          if (!grants.has(grant.permission)) grants.set(grant.permission, { source: "custom-role", scope: grant.scopes ?? null });
+          const existing = grants.get(grant.permission);
+          if (!existing) grants.set(grant.permission, { source: "custom-role", scope: grant.scopes ?? null });
+          else if (grant.scopes && hasScopeConstraints(grant.scopes)) grants.set(grant.permission, { ...existing, scope: grant.scopes });
         }
       } catch {
         customRoleState = "invalid";

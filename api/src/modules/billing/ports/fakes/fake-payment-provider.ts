@@ -1,6 +1,7 @@
 import {
   type PaymentProvider,
   type CreateCustomerParams,
+  type ProviderCustomer,
   type CreateCheckoutSessionParams,
   type CheckoutSession,
   type CreateBillingPortalSessionParams,
@@ -14,6 +15,7 @@ import {
   type ProviderInvoice,
   type ProviderInvoicePage,
   type ProviderInvoiceLinks,
+  type ProviderInvoicePdf,
   type ProviderSubscriptionState,
   type ProviderSubscriptionChangePreview,
   type ProviderSubscriptionMutationResult,
@@ -133,6 +135,16 @@ export class FakePaymentProvider implements PaymentProvider {
     void _operationContext;
     this.customers.push({ id, ...customer });
     return id;
+  }
+
+  async retrieveCustomer(customerId: string): Promise<ProviderCustomer> {
+    const customer = this.customers.find((item) => item.id === customerId);
+    if (!customer) {
+      const error = new Error(`Fake provider: customer ${customerId} not found`);
+      Object.assign(error, { status: 404, code: "resource_missing" });
+      throw error;
+    }
+    return { id: customer.id };
   }
 
   async createCheckoutSession(
@@ -353,6 +365,13 @@ export class FakePaymentProvider implements PaymentProvider {
       invoicePdfUrl: invoice.invoicePdfUrl,
       receiptUrl: invoice.receiptUrl,
     };
+  }
+
+  async retrieveInvoicePdf(params: InvoiceRetrieveParams): Promise<ProviderInvoicePdf> {
+    this.failInvoiceReadIfConfigured();
+    const invoice = this.ownedInvoice(params);
+    if (!invoice.invoicePdfUrl) throw new Error("Fake provider: invoice PDF is unavailable");
+    return { contentType: "application/pdf", data: Buffer.from("%PDF-1.4\n%fake-documind-invoice-pdf\n%%EOF") };
   }
 
   async retrieveCurrentSubscriptionState(params: SubscriptionReadParams): Promise<ProviderSubscriptionState> {

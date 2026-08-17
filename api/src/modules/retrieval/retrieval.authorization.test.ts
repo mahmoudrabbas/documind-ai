@@ -116,3 +116,31 @@ describe("query-time RAG document authorization", () => {
     assert.deepEqual(authorizationContexts[0], { tenantId: tenantA, actorId: omar, baseRole: "EMPLOYEE", customRoleId: "64a000000000000000000008", departmentIds: ["64a000000000000000000009"], requiredAction: "use_in_ai" });
   });
 });
+
+test("final retrieval authorization removes a document revoked after initial authorization", async () => {
+  const calls = new Map<string, number>();
+  const chunks = [chunk("chunk-a", tenantA, documentA)];
+  const vectorAdapter = { providerKey: "test-vector", search: async () => [{ chunkId: "chunk-a", score: 0.9 }] } as unknown as VectorStoreAdapter;
+  const keywordAdapter = { providerKey: "test-keyword", search: async () => [] } as unknown as KeywordAdapter;
+  const repository = { findChunksByIds: async (requestedTenant: string, ids: string[]) => chunks.filter((item) => item.tenantId.toString() === requestedTenant && ids.includes(item._id.toString())) } as unknown as RetrievalRepository;
+  const service = createRetrievalService({
+    vectorAdapter,
+    keywordAdapter,
+    embeddingAdapter: { embed: async () => ({ vectors: [[1, 0]], usage: { totalTokens: 1 } }) } as never,
+    fusionEngine: new FusionEngine(),
+    filterCompiler: { compileAccessFilters, compileQueryFilters, mergeFilters },
+    repository,
+    resolveAccessContext: async (input) => ({ ...input, baseRole: "EMPLOYEE", requiredAction: "use_in_ai" }),
+    authorizeDocumentForAi: async (_input, documentId) => {
+      const count = (calls.get(documentId) ?? 0) + 1;
+      calls.set(documentId, count);
+      if (count === 2) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found");
+    },
+  });
+
+  const result = await service.vectorSearch({ queryText: "secret", topK: 5 }, context());
+  assert.deepEqual(result.candidates, []);
+  assert.equal(result.totalCandidates, 0);
+  assert.equal(result.evidenceBundle?.items.length ?? 0, 0);
+  assert.equal(calls.get(documentA), 2);
+});

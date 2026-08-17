@@ -104,6 +104,7 @@ export async function sendMessageStream(
         data?: ChatResponse;
         message?: string;
         error?: string;
+        code?: string;
         statusCode?: number;
       };
 
@@ -114,9 +115,10 @@ export async function sendMessageStream(
         receivedAnyEvent = true;
         result = payload.data;
       } else if (eventName === "error") {
+        const code = payload.error ?? payload.code ?? "CHAT_STREAM_FAILED";
         throw new ChatStreamError(
           payload.message ?? "Chat request failed",
-          payload.error ?? "CHAT_STREAM_FAILED",
+          code,
           payload.statusCode ?? 502,
           receivedAnyEvent,
         );

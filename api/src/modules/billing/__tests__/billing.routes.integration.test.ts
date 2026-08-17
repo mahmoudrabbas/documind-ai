@@ -225,6 +225,51 @@ describe("billing route integration", () => {
     expect(refundDetail.status).toBe(200);
   });
 
+  it("serves the invoice PDF inline with application/pdf and no provider URLs leaked", async () => {
+    const admin = identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN");
+
+    const pdf = await api("GET", `/billing/invoices/${ids.invoiceA}/pdf`, admin.token);
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get("content-type")).toBe("application/pdf");
+    const disposition = pdf.headers.get("content-disposition") ?? "";
+    expect(disposition.startsWith("inline")).toBe(true);
+    expect(disposition).not.toMatch(/^attachment/i);
+    expect(disposition).toContain('filename="Invoice-INV-A-1.pdf"');
+    const body = Buffer.from(await pdf.arrayBuffer());
+    expect(body.toString()).toContain("%PDF");
+    expect(JSON.stringify({ contentType: pdf.headers.get("content-type"), disposition })).not.toMatch(/pay\.stripe\.com|invoice\.stripe\.com|in_tenant_a/i);
+  });
+
+  it("enforces authentication, permission, and tenant isolation for invoice PDF retrieval", async () => {
+    const employee = identity(ids.employeeA, ids.tenantA, "EMPLOYEE");
+    const readOnly = identity(ids.employeeReadA, ids.tenantA, "EMPLOYEE");
+    const foreignAdmin = identity(ids.companyAdminB, ids.tenantB, "COMPANY_ADMIN");
+
+    const unauth = await api("GET", `/billing/invoices/${ids.invoiceA}/pdf`);
+    expect(unauth.status).toBe(401);
+
+    const denied = await api("GET", `/billing/invoices/${ids.invoiceA}/pdf`, employee.token);
+    expect(denied.status).toBe(403);
+
+    const readOnlyPdf = await api("GET", `/billing/invoices/${ids.invoiceA}/pdf`, readOnly.token);
+    expect(readOnlyPdf.status).toBe(200);
+    expect(readOnlyPdf.headers.get("content-type")).toBe("application/pdf");
+
+    const foreignPdf = await api("GET", `/billing/invoices/${ids.invoiceA}/pdf`, foreignAdmin.token);
+    expect(foreignPdf.status).toBe(404);
+
+    const missing = await api("GET", `/billing/invoices/${new Types.ObjectId()}/pdf`, identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN").token);
+    expect(missing.status).toBe(404);
+  });
+
+  it("keeps invoice PDF retrieval error handling intact when the provider cannot serve the document", async () => {
+    const admin = identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN");
+    fakeProvider.shouldFailNextInvoiceRead = true;
+    const failed = await api("GET", `/billing/invoices/${ids.invoiceA}/pdf`, admin.token);
+    expect(failed.status).toBe(503);
+    expect(((await failed.json()) as { error: { code: string } }).error.code).toBe("BILLING_PROVIDER_UNAVAILABLE");
+  });
+
   it("handles cancellation and reactivation tenant routes with proper local authorization", async () => {
     const admin = identity(ids.companyAdminA, ids.tenantA, "COMPANY_ADMIN");
 

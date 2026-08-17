@@ -21,6 +21,7 @@ const KNOWLEDGE_TERMS = new Set([
   "requirements", "approval", "approvals", "deadline", "deadlines",
   "reimbursement", "receipt", "receipts", "expense", "expenses", "travel",
   "purchase", "purchases", "quotation", "quotations", "quote", "quotes", "remote",
+  "account", "lock", "locked", "login", "logins", "failed", "attempts", "security",
   "سياسه", "سياسات", "وثيقه", "وثائق", "مستند", "مستندات", "ملف", "دليل",
   "اجازه", "الاجازه", "اجازات", "الاجازات", "راتب", "رواتب", "تامين", "موظف", "الموظف", "موظفين", "الموظفين", "عقد",
   "ماده", "بند", "لائحه", "لوائح", "دوام", "ساعات", "ترقيه", "تعويض",
@@ -32,7 +33,8 @@ const KNOWLEDGE_TERMS = new Set([
 const ENTERPRISE_SUBJECT_TERMS = new Set([
   "hotel", "meal", "purchase", "procurement", "quotation", "quote", "remote",
   "work", "leave", "sla", "response", "restoration", "support", "incident",
-  "p1", "p2", "p3", "mfa", "vpn", "password", "security", "access",
+  "p1", "p2", "p3", "mfa", "vpn", "password", "security", "access", "account",
+  "lock", "locked", "login", "logins", "failed", "internal", "systems",
   "فندق", "وجبات", "مشتريات", "شراء", "عروض", "عمل", "العمل", "اجازه", "استجابه",
   "استعاده", "دعم", "حادث", "امن", "امان", "وصول", "صلاحيات",
 ]);
@@ -66,6 +68,16 @@ const OVERLAP_STOP_WORDS = new Set([
   "شكرا", "شكر", "تسلم", "thanks", "thank", "hello", "مرحبا", "السلام", "عليكم",
 ]);
 
+const GENERIC_DOCUMENT_REFERENTS = new Set([
+  "document", "documents", "file", "files", "policy", "policies", "handbook",
+  "summary", "summaries", "documento", "ملف", "ملفات", "وثيقه", "وثائق",
+  "مستند", "مستندات", "سياسه", "سياسات", "دليل", "ملخص", "تلخيص",
+]);
+
+const UNRESOLVED_REFERENCE_WORDS = new Set([
+  "it", "that", "this", "those", "these", "هو", "هي", "هذا", "هذه", "ذلك", "تلك",
+]);
+
 export interface KnowledgeSignalAssessment {
   readonly positive: boolean;
   readonly retrievalText: string;
@@ -75,6 +87,36 @@ export interface KnowledgeSignalAssessment {
 
 export function isRetrievableIntent(intent: unknown): intent is IntentClassValue {
   return typeof intent === "string" && RETRIEVABLE_INTENTS.has(intent as IntentClassValue);
+}
+
+/**
+ * Returns true when the current turn contains a usable semantic subject for
+ * retrieval, rather than only a generic document noun or a pronoun. This is a
+ * routing signal, not document authorization or title resolution.
+ */
+export function hasSemanticRetrievalSubject(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  const tokens = prepared.normalizedTokens;
+  const substantiveTokens = tokens.filter(
+    (token) =>
+      !QUESTION_TERMS.has(token) &&
+      !REQUEST_TERMS.has(token) &&
+      !OVERLAP_STOP_WORDS.has(token) &&
+      !GENERIC_DOCUMENT_REFERENTS.has(token) &&
+      !UNRESOLVED_REFERENCE_WORDS.has(token),
+  );
+  if (substantiveTokens.length === 0) return false;
+
+  // A trailing standalone reference still depends on prior context. A
+  // determiner before a real subject (for example, "this remote policy") is
+  // not treated as unresolved.
+  const hasTrailingUnresolvedReference = tokens.some(
+    (token, index) =>
+      UNRESOLVED_REFERENCE_WORDS.has(token) &&
+      index === tokens.length - 1,
+  );
+  return !hasTrailingUnresolvedReference;
 }
 
 function isBareGeneralDefinitionText(normalized: string): boolean {
@@ -135,6 +177,12 @@ export function assessPositiveKnowledgeSeeking(raw: string): KnowledgeSignalAsse
     /(?:زمن|وقت)\s+الاستجابه/u.test(normalized) ||
     /(?:هل|امتي)\s+.*(?:لازم|اجباري|الزامي|مطلوب|مسموح)/u.test(normalized) ||
     /(?:كام|كم)\s+(?:هو\s+)?(?:حد|يوم|وقت)/u.test(normalized)
+    || /\b(?:account\s+)?lock(?:ed)?\b.*\b(?:login|attempt|failed)\b/iu.test(normalized)
+    || /\b(?:support|incident|p1|p2)\b.*\b(?:24\s*[/ ]?\s*7|monitored|monitoring)\b/iu.test(normalized)
+    || (
+      /\b(?:work(?:ing)?\s+remotely|remote\s+(?:work|days?)|work(?:ing)?\s+from\s+home|remote[-\s]+work)\b/iu.test(normalized) &&
+      /\b(?:days?|week|approval|approved|eligible|eligibility|allowed|required|requirement)\b/iu.test(normalized)
+    )
   );
   const isBareGeneralDefinition = isBareGeneralDefinitionText(normalized);
   const substantiveTokens = tokens.filter(
@@ -161,6 +209,27 @@ export function assessPositiveKnowledgeSeeking(raw: string): KnowledgeSignalAsse
     socialPrefixRemoved: stripped.removed,
     reasons,
   };
+}
+
+/**
+ * Deterministic marker for a contextual access/security follow-up. This is
+ * intentionally narrow: it only fires when the current turn contains an
+ * unresolved continuation plus security/system-access vocabulary. The caller
+ * must still prove that conversation history exists and supplies the prior
+ * subject.
+ */
+export function isLikelyAccessContextFollowUp(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  const hasContinuation = /\b(?:that|this|doing\s+that|while\s+doing\s+that)\b/u.test(normalized);
+  const hasAccessTopic = /\b(?:access|internal\s+systems?|vpn|security|mfa)\b/u.test(normalized);
+  return hasContinuation && hasAccessTopic;
+}
+
+export function buildContextualFollowUpQuestion(
+  previousUserQuestion: string,
+  currentQuestion: string,
+): string {
+  return `Regarding the previous question, "${previousUserQuestion.trim()}", ${currentQuestion.trim()}`;
 }
 
 /**

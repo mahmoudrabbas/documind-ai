@@ -21,12 +21,45 @@ const ENTITLEMENT_UNAVAILABLE = "ENTITLEMENT_UNAVAILABLE";
 /** Prefix for reservation IDs created by the direct-consume fallback path. */
 const DIRECT_RESERVATION_PREFIX = "direct_";
 
+type SnapshotReconciler = (tenantId: string) => Promise<void>;
+
 export class EntitlementService {
   constructor(
     private readonly counter: QuotaCounterPort,
     private readonly provider: EntitlementProviderPort,
     private readonly reservationStore?: ReservationStorePort,
+    private readonly snapshotReconciler?: SnapshotReconciler,
   ) {}
+
+  private async reconcileSnapshotUsage(
+    tenantId: string,
+    dimension: EntitlementDimension,
+  ): Promise<void> {
+    if (
+      dimension !== "employees" &&
+      dimension !== "admins" &&
+      dimension !== "documents" &&
+      dimension !== "storageMb" &&
+      dimension !== "queriesPerMonth"
+    ) {
+      return;
+    }
+
+    try {
+      if (this.snapshotReconciler) {
+        await this.snapshotReconciler(tenantId);
+        return;
+      }
+
+      const { getReconciliationService } = await import(
+        "./reconciliation.service.js"
+      );
+      await getReconciliationService().reconcileAtLeast(tenantId, dimension);
+    } catch {
+      // Reconciliation is best-effort here. The quota counter remains the
+      // atomic enforcement point for the request.
+    }
+  }
 
   /**
    * Check if a dimension is within limits without consuming.
@@ -39,19 +72,7 @@ export class EntitlementService {
     const limit = await this.getLimit(tenantId, snapshot, dimension);
     const periodKey = await this.getCounterPeriodKey(tenantId);
 
-    if (
-      dimension === "employees" ||
-      dimension === "admins" ||
-      dimension === "documents" ||
-      dimension === "storageMb"
-    ) {
-      try {
-        const { getReconciliationService } = await import("./reconciliation.service.js");
-        await getReconciliationService().reconcile(tenantId, "execute");
-      } catch {
-        // Fallback gracefully if reconciliation cannot run in current context
-      }
-    }
+    await this.reconcileSnapshotUsage(tenantId, dimension);
 
     const current = await this.counter.getUsage(tenantId, dimension, periodKey);
 
@@ -140,6 +161,8 @@ export class EntitlementService {
     const snapshot = await this.getSnapshotOrThrow(tenantId);
     const limit = await this.getLimit(tenantId, snapshot, dimension);
     const periodStart = await this.getCounterPeriodKey(tenantId);
+
+    await this.reconcileSnapshotUsage(tenantId, dimension);
 
     const result = await this.counter.checkAndConsume(
       tenantId,
@@ -402,11 +425,23 @@ export class EntitlementService {
   }
 
   /**
-   * Get the ISO date string of the period end.
+   * Get the ISO date string of the period end (the next quota reset boundary).
+   *
+   * Throws ENTITLEMENT_UNAVAILABLE when the subscription has no valid period
+   * end rather than silently returning "now" as a reset boundary. Callers that
+   * treat the reset as informational (e.g. the middleware's
+   * `resolvePeriodReset`) already catch this and degrade to null.
    */
   async getPeriodReset(tenantId: string): Promise<string> {
     const range = await this.provider.getPeriodRange(tenantId);
-    return range.periodEnd?.toISOString() ?? new Date().toISOString();
+    if (!range.periodEnd) {
+      throw new AppError(
+        503,
+        ENTITLEMENT_UNAVAILABLE,
+        "Entitlement period end is unavailable",
+      );
+    }
+    return range.periodEnd.toISOString();
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────
@@ -414,7 +449,7 @@ export class EntitlementService {
   /**
    * Get the counter period key (YYYY-MM) for a tenant's current billing period.
    */
-  private async getCounterPeriodKey(tenantId: string): Promise<string> {
+  async getCounterPeriodKey(tenantId: string): Promise<string> {
     const range = await this.provider.getPeriodRange(tenantId);
     const start = range.periodStart;
     return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;

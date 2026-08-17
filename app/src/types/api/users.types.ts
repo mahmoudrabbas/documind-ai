@@ -21,10 +21,13 @@ export interface UserView {
   role: Role;
   customRoleId?: string;
   customRoleName?: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
   status: "active" | "pending" | "pending_email_verification" | "disabled";
   emailVerified: boolean;
   employeeProfile?: {
     employeeId?: string;
+    departmentId?: string;
     department?: string;
     jobTitle?: string;
     phone?: string;
@@ -59,3 +62,32 @@ export interface RoleView {
 export interface ListRolesResponse { success: true; data: { roles: RoleView[] } }
 export interface CreateRoleResponse { success: true; message: string; data: { role: RoleView } }
 export interface UpdateRoleResponse { success: true; message: string; data: { role: RoleView } }
+
+export interface RoleScopeOption {
+  id: string;
+  name: string;
+  normalizedName: string;
+  status: "active" | "archived";
+}
+
+export interface RoleScopeOptions {
+  departments: RoleScopeOption[];
+  categories: RoleScopeOption[];
+  classifications: RoleScopeOption[];
+  archived: {
+    departments: RoleScopeOption[];
+    categories: RoleScopeOption[];
+    classifications: RoleScopeOption[];
+  };
+}
+
+export interface RoleScopeOptionsResponse {
+  success: true;
+  data: RoleScopeOptions;
+}
+
+export interface RoleScopeOptionsRequest {
+  departments?: string[];
+  categories?: string[];
+  classifications?: string[];
+}

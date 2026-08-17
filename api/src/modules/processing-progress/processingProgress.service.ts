@@ -5,6 +5,8 @@ import TenantModel from "../../db/models/tenant.model.js";
 import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import IndexGenerationModel from "../../db/models/indexGeneration.model.js";
 import type { ProcessingStageName } from "../../db/models/processingRun.model.js";
+import { authorizePermission } from "../permissions/permissions.authorization.js";
+import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
 
 const RETRY_JOB_MAP: Record<ProcessingStageName, string> = {
   security_scanning: "document.extract",
@@ -52,6 +54,7 @@ import type {
   CancelProcessingInput,
   ProcessingProgressQuery,
 } from "./processingProgress.types.js";
+import { buildDocumentPermissionResource } from "../documents/documents.permissionResource.js";
 
 function serializeStage(stage: {
   _id?: unknown;
@@ -173,6 +176,33 @@ async function resolveDocumentForProcessing(
   return { doc, effectiveTenantId: callerTenantId };
 }
 
+async function authorizeResolvedDocumentPermission(
+  tenantId: string,
+  actorId: string,
+  permission: PermissionValue,
+  document: NonNullable<Awaited<ReturnType<typeof DocumentModel.findOne>>>,
+  isSuperAdmin: boolean,
+): Promise<void> {
+  if (isSuperAdmin) return;
+  await authorizePermission(
+    { tenantId, actorId },
+    permission,
+    await buildDocumentPermissionResource(tenantId, document),
+  );
+}
+
+async function authorizeProcessingMutationPolicy(
+  effectiveTenantId: string,
+  actorId: string,
+  documentId: string,
+): Promise<void> {
+  await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+    { tenantId: effectiveTenantId, actorId },
+    documentId,
+    "reprocess",
+  );
+}
+
 export async function initiateProcessingRun(
   tenantId: string,
   documentId: string,
@@ -180,7 +210,9 @@ export async function initiateProcessingRun(
   actorId: string,
   isSuperAdmin = false,
 ): Promise<ProcessingRunView> {
-  const { effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  const { doc, effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  await authorizeResolvedDocumentPermission(tenantId, actorId, Permission.DOCUMENTS_OCR_PROCESS, doc, isSuperAdmin);
+  await authorizeProcessingMutationPolicy(effectiveTenantId, actorId, documentId);
 
   const existing = await findActiveRunForDocument(effectiveTenantId, documentId, documentVersion);
   if (existing) {
@@ -241,6 +273,7 @@ export async function getProcessingStatus(
   isSuperAdmin = false,
 ): Promise<ProcessingStatusResponse> {
   const { doc, effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  await authorizeResolvedDocumentPermission(tenantId, actorId, Permission.DOCUMENTS_READ, doc, isSuperAdmin);
 
   if (!isSuperAdmin) {
     await getDocumentAccessAuthorizationService().authorizeDocumentAction(
@@ -291,7 +324,8 @@ export async function getProcessingHistory(
   actorId: string,
   isSuperAdmin = false,
 ): Promise<ProcessingHistoryResponse> {
-  const { effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  const { doc, effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  await authorizeResolvedDocumentPermission(tenantId, actorId, Permission.DOCUMENTS_READ, doc, isSuperAdmin);
 
   if (!isSuperAdmin) {
     await getDocumentAccessAuthorizationService().authorizeDocumentAction(
@@ -335,6 +369,8 @@ export async function retryProcessingStage(
   isSuperAdmin = false,
 ): Promise<ProcessingRunView> {
   const { doc, effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  await authorizeResolvedDocumentPermission(tenantId, actorId, Permission.DOCUMENTS_OCR_PROCESS, doc, isSuperAdmin);
+  await authorizeProcessingMutationPolicy(effectiveTenantId, actorId, documentId);
 
   const run = await findLatestRunForDocument(effectiveTenantId, documentId, doc.version);
   if (!run) {
@@ -546,6 +582,8 @@ export async function reprocessDocument(
   isSuperAdmin = false,
 ): Promise<ProcessingRunView> {
   const { doc, effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  await authorizeResolvedDocumentPermission(tenantId, actorId, Permission.DOCUMENTS_OCR_PROCESS, doc, isSuperAdmin);
+  await authorizeProcessingMutationPolicy(effectiveTenantId, actorId, documentId);
 
   const activeRun = await findActiveRunForDocument(effectiveTenantId, documentId, doc.version);
   if (activeRun) {
@@ -662,6 +700,8 @@ export async function cancelProcessing(
   isSuperAdmin = false,
 ): Promise<ProcessingRunView> {
   const { doc, effectiveTenantId } = await resolveDocumentForProcessing(documentId, tenantId, isSuperAdmin);
+  await authorizeResolvedDocumentPermission(tenantId, actorId, Permission.DOCUMENTS_OCR_PROCESS, doc, isSuperAdmin);
+  await authorizeProcessingMutationPolicy(effectiveTenantId, actorId, documentId);
 
   const run = await findActiveRunForDocument(effectiveTenantId, documentId, doc.version);
   if (!run) {

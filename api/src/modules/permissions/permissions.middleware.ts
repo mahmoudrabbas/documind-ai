@@ -3,11 +3,11 @@ import { isBaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import { PERMISSION_REQUIRED, RESOURCE_CONTEXT_REQUIRED, SCOPE_MISMATCH } from "../../common/errors/errorCodes.js";
 import { requireAuthenticatedAuditActor } from "../../common/observability/auditActor.js";
-import { getAuditWriter, getMetricRecorder } from "../../common/observability/index.js";
 import type { PermissionValue } from "./permissions.catalog.js";
 import { getPermissionEvaluator } from "./permissions.evaluator.js";
 import type { AuditAction, AuditResourceType } from "../../common/observability/auditEvents.js";
 import type { PermissionAuthorizationContext, PermissionResourceContext } from "./permissions.types.js";
+import { writePermissionDenialAudit } from "./permissions.denialAudit.js";
 
 export interface PermissionMiddlewareOptions {
   allowScoped?: boolean;
@@ -50,45 +50,22 @@ export function requirePermission(permission: PermissionValue, options?: Permiss
         return;
       }
 
-      const auditWritten = await getAuditWriter().write({
+      await writePermissionDenialAudit({
         tenantId: auditActor.tenantId,
         resourceType: options?.resourceType ?? "Permission",
         resourceId: options?.resourceId?.(req) ?? permission,
         action: options?.denialAuditAction ?? "PERMISSION_DENIED",
-        outcome: "DENIED",
         actorId: auditActor.actorId,
         actorEmail: auditActor.actorEmail,
         actorRole: auditActor.actorRole,
-        actorKind: auditActor.actorKind,
-        changes: { required: permission, reason: decision.denialCode },
-        metadata: {
-          traceId: req.traceId,
-          requestId: req.requestId,
-          ...(decision.scope ? { authorizationScope: decision.scope } : {}),
-          ...(resourceContext ? {
-            resourceContext: {
-              tenantId: resourceContext.tenantId,
-              ownerId: resourceContext.ownerId,
-              departmentId: resourceContext.departmentId,
-              documentCategory: resourceContext.documentCategory,
-              documentClassification: resourceContext.documentClassification,
-            },
-          } : {}),
-        },
+        permission,
+        reason: decision.denialCode,
+        scope: decision.scope,
+        resource: resourceContext,
+        traceId: req.traceId,
+        requestId: req.requestId,
+        log: req.log,
       });
-      if (!auditWritten) {
-        getMetricRecorder().increment("permission_denial_audit_failure", {
-          permission,
-          reason: decision.denialCode ?? "unknown",
-        });
-        req.log?.error({
-          event: "permission_denial_audit_failure",
-          permission,
-          reason: decision.denialCode,
-          traceId: req.traceId,
-          requestId: req.requestId,
-        }, "Permission denial audit could not be persisted");
-      }
       const externalCode = decision.denialCode === "SCOPE_MISMATCH" || decision.denialCode === "TENANT_MISMATCH"
         ? SCOPE_MISMATCH
         : decision.denialCode === "RESOURCE_CONTEXT_REQUIRED"

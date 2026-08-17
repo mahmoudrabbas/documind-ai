@@ -13,9 +13,13 @@ import DocumentAccessPolicyModel from "../../../db/models/documentAccessPolicy.m
 import DocumentChunkModel from "../../../db/models/documentChunk.model.js";
 import DocumentClassificationModel from "../../../db/models/documentClassification.model.js";
 import IntentQueryTraceModel from "../../../db/models/intentQueryTrace.model.js";
+import KnowledgeGapModel from "../../../db/models/knowledgeGap.model.js";
 import MessageModel from "../../../db/models/message.model.js";
+import NotificationOutboxModel from "../../../db/models/notificationOutbox.model.js";
 import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
+import PackageModel from "../../../db/models/package.model.js";
+import SubscriptionModel from "../../../db/models/subscription.model.js";
 import {
   FakeEmbeddingAdapter,
   FakeModelAdapter,
@@ -140,6 +144,8 @@ beforeEach(async () => {
     MessageModel.deleteMany({}),
     ConversationModel.deleteMany({}),
     IntentQueryTraceModel.deleteMany({}),
+    KnowledgeGapModel.deleteMany({}),
+    NotificationOutboxModel.deleteMany({}),
     DocumentChunkModel.deleteMany({}),
     DocumentAccessPolicyModel.deleteMany({}),
     DocumentModel.deleteMany({}),
@@ -191,7 +197,7 @@ function isSemanticCitationRequest(
   return params.messages.some(
     (message) =>
       message.role === "system" &&
-      message.content.includes("Judge whether each supplied factual claim is entailed"),
+      message.content.includes("Judge each supplied atomic factual claim independently"),
   );
 }
 
@@ -309,6 +315,52 @@ class RecordingFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   }
 }
 
+class ExpandedIntentFakeModelAdapter extends FakeModelAdapter {
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isIntentClassificationRequest(params)) return response;
+    const content = response.choices[0]?.message.content;
+    if (!content) return response;
+    const plan = JSON.parse(content) as Record<string, unknown>;
+    const language = typeof plan.language === "string" ? plan.language : "ar";
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) => index === 0
+        ? {
+            ...choice,
+            message: {
+              ...choice.message,
+              content: JSON.stringify({
+                ...plan,
+                semanticQueries: [
+                  { text: String(plan.normalizedQuestion), language, weight: 1 },
+                  { text: "What are the remote work conditions?", language: "en", weight: 0.7 },
+                ],
+                keywordQueries: [
+                  { terms: ["remote", "work", "conditions"], language: "en", mustMatch: false },
+                ],
+                exactTerms: ["$25", "P1"],
+              }),
+            },
+          }
+        : choice),
+    };
+  }
+}
+
+class RecordingKeywordAdapter extends FakeKeywordAdapter {
+  readonly searches: Array<Parameters<FakeKeywordAdapter["search"]>[0]> = [];
+
+  override async search(
+    query: Parameters<FakeKeywordAdapter["search"]>[0],
+  ): ReturnType<FakeKeywordAdapter["search"]> {
+    this.searches.push(query);
+    return super.search(query);
+  }
+}
+
 class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
   constructor(
     answers: ReadonlyMap<string, string>,
@@ -345,6 +397,45 @@ class SourcePreciseRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
             }
           : choice,
       ),
+    };
+  }
+}
+
+class SelectiveSemanticRecordingFakeModelAdapter extends RecordingFakeModelAdapter {
+  constructor(
+    answers: ReadonlyMap<string, string>,
+    private readonly unsupportedPattern: RegExp,
+  ) {
+    super(answers);
+  }
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!isSemanticCitationRequest(params)) return response;
+    const payload = semanticRequestData(params);
+    const supportingEvidenceIds = payload.authorizedEvidence.map((item) => item.chunkId);
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) => index === 0
+        ? {
+            ...choice,
+            message: {
+              ...choice.message,
+              content: JSON.stringify({
+                judgments: payload.claims.map((claim, claimIndex) => {
+                  const unsupported = this.unsupportedPattern.test(String(claim));
+                  return {
+                    claimIndex,
+                    verdict: unsupported ? "unsupported" : "supported",
+                    supportingEvidenceIds: unsupported ? [] : supportingEvidenceIds,
+                  };
+                }),
+              }),
+            },
+          }
+        : choice),
     };
   }
 }
@@ -434,6 +525,7 @@ async function seedWorkflowState(): Promise<SeededWorkflow> {
     status: "active",
     plan: "free",
   });
+  await seedChatEntitlement(tenant._id);
   const user = await UserModel.create({
     tenantId: tenant._id,
     name: "Workflow Admin",
@@ -774,6 +866,52 @@ async function seedAdditionalChunkInDocument(
   };
 }
 
+async function seedChatEntitlement(tenantId: Types.ObjectId) {
+  const pkg = await PackageModel.create({
+    code: `chat-test-${new Types.ObjectId().toString()}`,
+    name: "Chat Test Package",
+    description: "Chat quota test package",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    currency: "USD",
+    entitlements: {
+      tokensPerMonth: 100000,
+      queriesPerMonth: 1000,
+      storageMb: 10240,
+      documents: 1000,
+      employees: 100,
+    },
+    versions: [
+      {
+        version: 1,
+        monthlyPrice: 0,
+        entitlements: {
+          tokensPerMonth: 100000,
+          queriesPerMonth: 1000,
+          storageMb: 10240,
+          documents: 1000,
+          employees: 100,
+        },
+        createdAt: new Date(),
+      },
+    ],
+  });
+
+  await SubscriptionModel.create({
+    tenantId,
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    paymentState: "paid",
+    currentPeriodStart: new Date(),
+    currentPeriodEnd: new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    ),
+    billingInterval: "monthly",
+  });
+}
+
 async function seedOtherTenantScope(): Promise<{
   tenantId: string;
   actorId: string;
@@ -961,6 +1099,7 @@ async function productionService(
   options: {
     broadenAtMaterialization?: boolean;
     evidence?: readonly EvidenceFixture[];
+    keywordAdapter?: FakeKeywordAdapter;
     model?: FakeModelAdapter;
     useMongoHistory?: boolean;
   } = {},
@@ -968,7 +1107,7 @@ async function productionService(
   const model = options.model ?? new SemanticAwareFakeModelAdapter();
   const embedding = new FakeEmbeddingAdapter();
   const vector = new FakeVectorStoreAdapter();
-  const keyword = new FakeKeywordAdapter();
+  const keyword = options.keywordAdapter ?? new FakeKeywordAdapter();
   const reranker = createRerankerService({ reranker: new FakeRerankerAdapter() });
   const authorization = getDocumentAccessAuthorizationService();
   const evidence = options.evidence ?? [
@@ -1105,7 +1244,7 @@ function assertPersistenceSafety(records: unknown): void {
 
 test(
   "production-composed grounded workflow persists one correlated runtime graph and the Compliance-authorized assistant message",
-  { timeout: 60_000 },
+  { timeout: 120_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const requestId = "request-production-grounded";
@@ -1223,6 +1362,184 @@ test(
 );
 
 test(
+  "production chat executes semantic, keyword, and exact-term intent expansions",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const keyword = new RecordingKeywordAdapter();
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-english.pdf",
+      title: "Remote Work English Policy",
+      question: "work job employment remote work work remotely remote-work arrangement",
+      text: "The remote work conditions allow employees to work from home three days each week.",
+      sectionTitle: "Remote work conditions",
+      pageNumber: 2,
+    });
+    const requestId = "request-query-plan-expansion";
+    const service = await productionService(fixture, {
+      model: new ExpandedIntentFakeModelAdapter(),
+      evidence: [evidence],
+      keywordAdapter: keyword,
+    });
+
+    await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: "ما هي شروط العمل عن بعد؟",
+      },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const searchCall = graph.toolCalls.find(
+      (toolCall) => toolCall.toolName === "authorized_hybrid_search",
+    );
+
+    assert.ok(searchCall);
+    assert.ok(Array.isArray(searchCall.input?.queryVariants));
+    assert.ok(searchCall.input.queryVariants.length > 0);
+    assert.deepEqual(searchCall.input?.exactTerms, ["$25", "P1"]);
+    assert.ok(Array.isArray(searchCall.input?.keywordTexts));
+    assert.ok(searchCall.input.keywordTexts.includes(evidence.question));
+    assert.deepEqual(
+      keyword.searches.map((search) => search.queryText),
+      [
+        searchCall.input.queryText,
+        "$25",
+        evidence.question,
+      ],
+    );
+    const searchOutput = searchCall.output as
+      | { candidates?: Array<{ documentId: string }> }
+      | undefined;
+    assert.ok(
+      searchOutput?.candidates?.some(
+        (candidate) => candidate.documentId === evidence.documentId,
+      ),
+    );
+  },
+);
+
+test(
+  "production-composed workflow releases a grounded answer with fully supported compound synthesis",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Summarize the remote work policy.";
+    const answer = [
+      "The Remote Work Policy outlines the following key points:",
+      "- Eligibility: Employees become eligible to request a regular remote-work arrangement after completing at least 90 days of employment.",
+      "- Standard Remote Schedule: Eligible staff may work remotely up to two days per week, pending manager approval.",
+      "- Core Hours: Remote workers must be reachable between 10:00 AM and 3:00 PM local time on workdays.",
+      "- Equipment: The company supplies one laptop and one headset; home internet costs are not reimbursed.",
+      "- Security: Confidential information may not be printed at home without written approval, and all company systems must be accessed via approved security controls.",
+      "- Location: Remote work must be performed from the employee's registered country unless an exception is approved by HR and Legal.",
+      "In summary, after a 90-day employment period, staff can work remotely up to two days weekly within defined core hours, using provided equipment, while adhering to security and location requirements.",
+    ].join("\n");
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-policy-synthesis.pdf",
+      title: "Remote Work Policy",
+      question,
+      text: [
+        "Employees who have completed at least 90 days of employment may request regular remote work.",
+        "Regular remote work is limited to two days per week.",
+        "Remote employees must be available from 10:00 AM to 3:00 PM local time on working days.",
+        "The company provides one laptop and one headset for approved remote workers.",
+        "The company does not reimburse home internet costs.",
+        "Confidential company information must not be printed at home unless written approval is provided.",
+        "Company systems must be accessed through approved security controls.",
+        "Regular remote work must be performed from the employee's registered country unless HR and Legal approve an exception.",
+      ].join(" "),
+      sectionTitle: "Remote work rules",
+      pageNumber: 4,
+    });
+    const requestId = "request-compound-synthesis-release";
+    const model = new RecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+    );
+    const service = await productionService(fixture, {
+      evidence: [evidence],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, answer);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [
+      evidence.chunkId,
+    ]);
+    const verifierStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "citation-verification-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.equal(verifierStep?.output?.reasonCode, "CITATIONS_VERIFIED");
+    assert.deepEqual(verifierStep?.output?.validatedCitationIds, [evidence.chunkId]);
+    assert.deepEqual(verifierStep?.output?.unsupportedClaims, []);
+    const complianceStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "compliance-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(complianceStep?.output?.action, "release");
+    assert.deepEqual(complianceStep?.output?.sourceIds, [evidence.chunkId]);
+  },
+);
+
+test(
+  "production-composed workflow salvages supported facts and excludes one hallucinated fact",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "Summarize the leave policy.";
+    const answer = [
+      "Employees receive 21 days of annual leave.",
+      "Leave requests require manager approval.",
+      "Employees also receive a private aircraft.",
+    ].join(" ");
+    const evidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "leave-policy.pdf",
+      title: "Leave Policy",
+      question,
+      text: "Employees receive 21 days of annual leave. Leave requests require manager approval.",
+      sectionTitle: "Annual leave",
+      pageNumber: 2,
+    });
+    const requestId = "request-partial-semantic-salvage";
+    const model = new SelectiveSemanticRecordingFakeModelAdapter(
+      new Map([[question, answer]]),
+      /private aircraft/iu,
+    );
+    const service = await productionService(fixture, { evidence: [evidence], model });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.equal(response.answer, [
+      "Employees receive 21 days of annual leave.",
+      "Leave requests require manager approval.",
+    ].join("\n"));
+    assert.equal(response.answer.includes("private aircraft"), false);
+    assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
+    const verifierStep = await AgentStepModel.findOne({
+      requestId,
+      agentName: "citation-verification-agent",
+      action: "execute",
+    }).lean().exec();
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.deepEqual(verifierStep?.output?.unsupportedClaims, [
+      "Employees also receive a private aircraft.",
+    ]);
+    assert.equal(verifierStep?.output?.verifiedAnswer, response.answer);
+  },
+);
+
+test(
   "production-composed workflow refuses a numerically contradicted claim despite a valid citation id",
   { timeout: 60_000 },
   async () => {
@@ -1246,7 +1563,7 @@ test(
     }).lean().exec();
     assert.equal(verifierStep?.output?.verified, false);
     assert.equal(verifierStep?.output?.reasonCode, "UNSUPPORTED_CLAIMS");
-    assert.deepEqual(verifierStep?.output?.validatedCitationIds, [fixture.chunkId]);
+    assert.deepEqual(verifierStep?.output?.validatedCitationIds, []);
   },
 );
 
@@ -1363,7 +1680,7 @@ test(
         message.content.includes("SEMANTIC_VERIFICATION_DATA_START"),
       ),
     );
-    assert.equal(boundaryCalls.length, 2);
+    assert.equal(boundaryCalls.length, 3);
     for (const call of boundaryCalls) {
       assert.equal(call.messages.some((message) =>
         message.role === "system" && message.content.includes(maliciousInstruction),
@@ -1929,7 +2246,8 @@ test(
     assert.equal(intentStep?.output?.normalizedQuestion, knowledgeQuestion);
     assert.ok(graph.toolCalls.some((call) => call.toolName === "authorized_hybrid_search"));
     assert.ok(graph.toolCalls.some((call) => call.toolName === "evaluate_evidence"));
-    assert.equal(response.answer, COMPLIANCE_APPROVED_ANSWER);
+    assert.match(response.answer, /I'm DocuMind AI/);
+    assert.match(response.answer, /Simulated grounded answer\./);
     assert.equal(response.sources?.length, 1);
   },
 );
@@ -2944,6 +3262,7 @@ test(
       (toolCall) => toolCall.toolName === "evaluate_evidence",
     );
     assert.ok(searchCall);
+    assert.equal(searchCall.output?.retrievalOutcome, "AUTHORIZATION_FILTERED");
     assert.deepEqual(searchCall.output?.candidates, []);
     assert.equal(evidenceCall, undefined);
     assert.deepEqual(response.sources, []);
@@ -2967,7 +3286,48 @@ test(
       deniedEvidence.documentId,
       USE_IN_AI_DENIED_MARKER,
     ]);
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
+    assert.equal(
+      await NotificationOutboxModel.countDocuments({
+        tenantId: fixture.tenantId,
+        notificationType: "knowledge_gap_created",
+      }),
+      0,
+    );
     assertPersistenceSafety(graph);
+  },
+);
+
+test(
+  "a genuine authorized-corpus no-match still creates a durable Knowledge Gap",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const requestId = "request-genuine-knowledge-gap";
+    const service = await productionService(fixture, { evidence: [] });
+
+    const response = await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: "What is the company maternity leave policy?",
+      },
+      executionContext(fixture, requestId),
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const searchCall = graph.toolCalls.find(
+      (toolCall) => toolCall.toolName === "authorized_hybrid_search",
+    );
+
+    assert.ok(searchCall);
+    assert.equal(searchCall.output?.retrievalOutcome, "NO_MATCHES");
+    assert.deepEqual(response.sources, []);
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      1,
+    );
   },
 );
 

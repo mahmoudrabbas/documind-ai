@@ -9,6 +9,16 @@ import type {
 
 const classificationValues = ["public", "internal", "confidential", "restricted", "highly_confidential"] as const;
 
+/** 24-char hex string accepted by `mongoose.isObjectIdOrHexString`. */
+const objectIdSchema = z
+  .preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z
+      .string()
+      .regex(/^[0-9a-fA-F]{24}$/, "must be a valid ObjectId"),
+  )
+  .optional();
+
 const uploadDocumentSchema = z
   .object({
     title: z
@@ -35,6 +45,9 @@ const uploadDocumentSchema = z
           .max(10, "at most 10 tags allowed"),
       )
       .default([]),
+    categoryId: objectIdSchema,
+    departmentId: objectIdSchema,
+    classificationId: objectIdSchema,
   })
   .strict();
 
@@ -117,7 +130,6 @@ const updateDocumentMetadataSchema = z
     category: z.string().trim().max(100).optional(),
     department: z.string().trim().max(100).optional(),
     classification: z.enum(classificationValues).optional(),
-    owner: z.string().optional(),
     effectiveDate: z
       .string()
       .nullable()

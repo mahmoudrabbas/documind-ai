@@ -53,6 +53,19 @@ export class PermissionEvaluatorDocumentCapabilityAdapter
       return { allowed: false, reason: "ACTION_UNMAPPED", permission: null };
     }
 
+    // Category scope comparison must always use a category NAME, never a
+    // category ObjectId: permission scope values are canonical normalized
+    // taxonomy names, so passing `categoryId` here would compare an ObjectId
+    // string against e.g. "finance" and deny every category-scoped document.
+    // `canonicalCategoryName` (resolved tenant-scoped from `categoryId`) is
+    // authoritative; `legacyCategory` is the persisted display name and the
+    // permission evaluator normalizes it. `categoryId` is never passed.
+    const categoryName =
+      input.resource.canonicalCategoryName ?? input.resource.legacyCategory;
+    const classificationName = input.resource.classificationId
+      ? input.resource.canonicalClassificationName
+      : input.resource.classification;
+
     const decision = await this.permissionEvaluator.evaluate({
       actorId: input.actor.actorId,
       tenantId: input.actor.tenantId,
@@ -65,16 +78,10 @@ export class PermissionEvaluatorDocumentCapabilityAdapter
         tenantId: input.resource.tenantId,
         ...(input.resource.ownerId ? { ownerId: input.resource.ownerId } : {}),
         ...(input.resource.departmentId ? { departmentId: input.resource.departmentId } : {}),
-        ...(input.resource.categoryId
-          ? { documentCategory: input.resource.categoryId }
-          : input.resource.legacyCategory
-            ? { documentCategory: input.resource.legacyCategory }
-            : {}),
-        ...(input.resource.classification
-          ? { documentClassification: input.resource.classification }
-          : input.resource.classificationId
-            ? { documentClassification: input.resource.classificationId }
-            : {}),
+        ...(categoryName ? { documentCategory: categoryName } : {}),
+        ...(classificationName
+          ? { documentClassification: classificationName }
+          : {}),
       },
     });
 

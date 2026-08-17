@@ -1,0 +1,49 @@
+{
+  "policyVersion": "1.1.0",
+  "name": "documind-rag-example",
+  "hardSecurity": {
+    "authorizationViolationsMustBeZero": true,
+    "authorizationInvariantMustPass": true,
+    "finalSourceAuthorizationMustPass": true
+  },
+  "hardCorrectness": {
+    "forbidCasePassRegression": true,
+    "forbidOutcomeCorrectnessRegression": true,
+    "forbidGroundednessRegression": true,
+    "forbidUnsupportedContentRelease": true
+  },
+  "qualityFloors": {
+    "casePassRate": 0.9,
+    "retrievalRecall": 0.85,
+    "groundedAnswerRate": 0.95,
+    "answerRelevance": 0.8,
+    "correctAnswerRate": 0.9
+  },
+  "allowedRegressions": {
+    "casePassRate": 0,
+    "precisionAtK": 0.02,
+    "recallAtK": 0,
+    "mrr": 0.01,
+    "groundedAnswerRate": 0,
+    "claimSupportRate": 0,
+    "answerRelevance": 0.02,
+    "releaseRefusalCorrectness": 0,
+    "correctAnswerRate": 0,
+    "correctnessEvaluatedCoverage": 0
+  },
+  "availability": {
+    "requireCandidateCaseExecution": true,
+    "requireGroundednessWhenBaselineAvailable": true,
+    "requireAnswerRelevanceWhenBaselineAvailable": true,
+    "requireRetrievalWhenBaselineAvailable": true,
+    "minimumEvaluationCoverage": 1,
+    "requireCorrectnessAvailabilityPreserved": true,
+    "minimumCorrectnessEvaluatedCoverage": 1
+  },
+  "operational": {
+    "maximumLatencyIncreasePercent": 25,
+    "maximumTokenIncreasePercent": 20,
+    "maximumCostIncreasePercent": 20,
+    "enforcement": "warn"
+  }
+}

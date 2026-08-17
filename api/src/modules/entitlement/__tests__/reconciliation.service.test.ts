@@ -173,6 +173,36 @@ describe("ReconciliationService", () => {
         }),
       );
     });
+
+    it("excludes auto-OCR usage records from the authoritative count", async () => {
+      seedCounters(counter, TENANT_A, {
+        employees: 5,
+        admins: 2,
+        documents: 1,
+        storageMb: 1,
+        queriesPerMonth: 40,
+        ocrPagesPerMonth: 10,
+      });
+
+      await service.reconcile(TENANT_A, "dry-run");
+
+      // Auto-OCR (source: "auto") is billed separately from the paid OCR
+      // entitlement, so the authoritative filter must exclude those records.
+      expect(mockOcrCount).toHaveBeenCalledTimes(1);
+      const [ocrFilter] = mockOcrCount.mock.calls[0] as unknown as [
+        Record<string, unknown>,
+      ];
+      expect(ocrFilter).toEqual(
+        expect.objectContaining({
+          tenantId: new Types.ObjectId(TENANT_A),
+          $or: [
+            { source: { $ne: "auto" } },
+            { source: { $exists: false } },
+          ],
+        }),
+      );
+      expect(ocrFilter.$or).not.toContain({ source: "auto" });
+    });
   });
 
   describe("reconcile — execute", () => {

@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   type PaymentProvider,
   type CreateCustomerParams,
+  type ProviderCustomer,
   type CreateCheckoutSessionParams,
   type CheckoutSession,
   type CreateBillingPortalSessionParams,
@@ -15,6 +16,7 @@ import {
   type ProviderInvoice,
   type ProviderInvoicePage,
   type ProviderInvoiceLinks,
+  type ProviderInvoicePdf,
   type ProviderSubscriptionState,
   type ProviderSubscriptionChangePreview,
   type ProviderSubscriptionMutationResult,
@@ -64,6 +66,17 @@ export class StripePaymentProvider implements PaymentProvider {
       metadata: { tenantId: params.tenantId },
     }, requestOptions(params.operationContext));
     return customer.id;
+  }
+
+  async retrieveCustomer(customerId: string): Promise<ProviderCustomer> {
+    const stripe = await this.client();
+    const customer = await stripe.customers.retrieve(customerId);
+    if (customer.deleted) {
+      const error = new Error(`Stripe customer ${customerId} is deleted`);
+      Object.assign(error, { status: 404, code: "resource_missing" });
+      throw error;
+    }
+    return { id: customer.id };
   }
 
   async createCheckoutSession(
@@ -173,15 +186,17 @@ export class StripePaymentProvider implements PaymentProvider {
   ): Promise<BillingPortalSession> {
     assertBillingPortalReturnUrl(params.returnUrl, config.BILLING_PORTAL_ALLOWED_ORIGIN);
     const stripe = await this.client();
-    if (params.flow === "general" && !config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID.trim()) {
+    const configurationId =
+      params.flow === "general"
+        ? config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID
+        : config.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID;
+    if (!configurationId.trim()) {
       throw new AppError(503, BILLING_PROVIDER_CONFIGURATION_INVALID, "Billing provider configuration is invalid");
     }
     const session = await stripe.billingPortal.sessions.create({
       customer: params.customerId,
       return_url: params.returnUrl,
-      ...(params.flow === "general"
-        ? { configuration: config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID }
-        : {}),
+      configuration: configurationId,
       ...(params.flow === "payment_method_update"
         ? { flow_data: { type: "payment_method_update" as const } }
         : {}),
@@ -298,6 +313,17 @@ export class StripePaymentProvider implements PaymentProvider {
       invoicePdfUrl: secureStripeUrl(invoice.invoice_pdf),
       receiptUrl: await this.invoiceReceiptUrl(stripe, invoice.id, params.expectedCustomerId),
     };
+  }
+
+  async retrieveInvoicePdf(params: InvoiceRetrieveParams): Promise<ProviderInvoicePdf> {
+    const stripe = await this.client();
+    const invoice = await stripe.invoices.retrieve(params.invoiceId);
+    assertProviderOwnership(customerId(invoice.customer), params.expectedCustomerId);
+    const pdfUrl = secureStripeUrl(invoice.invoice_pdf);
+    if (!pdfUrl) throw new Error("Invoice PDF is unavailable");
+    const response = await fetch(pdfUrl);
+    if (!response.ok) throw new Error("Invoice PDF retrieval failed");
+    return { contentType: "application/pdf", data: Buffer.from(await response.arrayBuffer()) };
   }
 
   async retrieveCurrentSubscriptionState(params: SubscriptionReadParams): Promise<ProviderSubscriptionState> {

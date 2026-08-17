@@ -60,3 +60,7 @@ export function archive(id: string): Promise<NotificationArchiveResponse> {
 export function softDelete(id: string): Promise<NotificationDeleteResponse> {
   return api.delete<NotificationDeleteResponse>(`/notifications/${id}`);
 }
+
+export function clearAllNotifications(): Promise<NotificationMatchedResponse> {
+  return api.delete<NotificationMatchedResponse>("/notifications");
+}

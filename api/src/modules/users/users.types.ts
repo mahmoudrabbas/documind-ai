@@ -5,6 +5,7 @@ export interface InviteUserInput {
   email: string;
   role: "COMPANY_ADMIN" | "EMPLOYEE";
   customRoleId?: string;
+  departmentId?: string | null;
 }
 
 export interface InviteUserResult {
@@ -15,6 +16,7 @@ export interface InviteUserResult {
 export interface UpdateUserInput {
   role?: "COMPANY_ADMIN" | "EMPLOYEE";
   status?: "active" | "pending" | "pending_email_verification" | "disabled";
+  departmentId?: string | null;
 }
 
 export interface UpdateUserResult {
@@ -26,6 +28,8 @@ export interface ListUsersInput {
   pageSize: number;
   search?: string;
   role?: "COMPANY_ADMIN" | "EMPLOYEE";
+  status?: "active" | "pending" | "pending_email_verification" | "disabled";
+  departmentId?: string;
 }
 
 export interface RevokeInvitationResult {

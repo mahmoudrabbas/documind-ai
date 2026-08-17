@@ -24,6 +24,7 @@ export interface DocumentDocument extends mongoose.Document {
     title: string | null;
     description: string | null;
     tags: string[];
+    aliases?: string[];
   };
   category: string | null;
   department: string | null;
@@ -118,6 +119,7 @@ const documentSchema = new Schema<DocumentDocument>(
       title: { type: String, default: null, maxlength: 200 },
       description: { type: String, default: null, maxlength: 1000 },
       tags: { type: [String], default: [], maxlength: 10 },
+      aliases: { type: [String], default: [], maxlength: 10 },
     },
     category: { type: String, default: null, maxlength: 100 },
     department: { type: String, default: null, maxlength: 100 },

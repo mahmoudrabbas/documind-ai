@@ -1,5 +1,38 @@
 export const INTENT_PROMPT_VERSION = "1.5.0";
 
+export interface DocumentManifestEntry {
+  fileName: string;
+  title: string | null;
+  aliases: string[];
+}
+
+const DOCUMENT_MANIFEST_INSTRUCTIONS = `AVAILABLE DOCUMENTS (the user may refer to any of these by file name, title, or alias):
+{manifest}
+
+RULES:
+- If the user's question refers to any document above (by file name, exact title, alias, or a recognizable translated/abbreviated form), classify it as "document_specific" or "knowledge_question" — NEVER as "unsupported" — and include the closest matching identifier from the list in "referencedDocumentTitles" (verbatim, do not modify or translate it).
+- If the user names a document that is NOT in the list, still treat the question as document-related ("document_specific"/"knowledge_question") so retrieval can look it up.
+- Only use "unsupported" for questions clearly unrelated to the user's documents or company knowledge (e.g. general trivia, weather, news).
+`;
+
+export function buildIntentSystemPrompt(
+  basePrompt: string,
+  manifest: DocumentManifestEntry[],
+): string {
+  if (manifest.length === 0) return basePrompt;
+  const lines = manifest
+    .map((doc, index) => {
+      const parts = [doc.fileName];
+      if (doc.title) parts.push(doc.title);
+      for (const alias of doc.aliases) {
+        if (!parts.includes(alias)) parts.push(alias);
+      }
+      return `${index + 1}. ${parts.join(" | ")}`;
+    })
+    .join("\n");
+  return `${basePrompt}\n\n${DOCUMENT_MANIFEST_INSTRUCTIONS.replace("{manifest}", lines)}`;
+}
+
 export const INTENT_SYSTEM_PROMPT = `You are a bilingual (Arabic-English) intent detection and search query planner agent for enterprise document retrieval.
 Analyze the user's question, and output a valid JSON document conforming to the instructions below.
 

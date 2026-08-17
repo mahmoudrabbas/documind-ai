@@ -12,7 +12,8 @@ import type { TranslationDictionary } from "../i18n.types";
 
 const enSuperAdmin: TranslationDictionary = {
   "superAdmin.title": "Platform Overview",
-  "superAdmin.description": "Monitor companies, usage, processing, and operational activity across DocuMind AI.",
+  "superAdmin.description":
+    "Monitor companies, usage, processing, and operational activity across DocuMind AI.",
   "superAdmin.companies": "Total Companies",
   "superAdmin.activeCompanies": "Active Companies",
   "superAdmin.users": "Platform Users",
@@ -21,18 +22,24 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.estimatedCost": "Estimated Cost",
   "superAdmin.failedJobs": "Failed Jobs",
   "superAdmin.storage": "Storage",
+  "superAdmin.recentActivity": "Recent administrative activity",
+  "superAdmin.noRecentActivity": "No administrative activity yet.",
   "superAdmin.statusDistribution": "Status Distribution",
   "superAdmin.auditLogTitle": "Platform Audit Log",
-  "superAdmin.auditLogDesc": "Inspect administrative actions across the platform.",
+  "superAdmin.auditLogDesc":
+    "Inspect administrative actions across the platform.",
   "superAdmin.processingOverviewTitle": "Processing Overview",
-  "superAdmin.processingOverviewDesc": "Platform-wide view of failed document processing runs across all tenants.",
-  "superAdmin.processingOverviewEmpty": "No failed processing jobs across any tenant.",
+  "superAdmin.processingOverviewDesc":
+    "Platform-wide view of failed document processing runs across all tenants.",
+  "superAdmin.processingOverviewEmpty":
+    "No failed processing jobs across any tenant.",
   "superAdmin.processingOverviewLoadError": "Failed to load processing jobs",
   "superAdmin.processingOverviewRetryError": "Failed to retry",
   "superAdmin.processingOverviewReprocessError": "Failed to reprocess",
   "superAdmin.processingOverviewTimelineTitle": "Processing Timeline",
   "superAdmin.refundReviewsTitle": "Refund Reviews",
-  "superAdmin.refundReviewsDesc": "Review and process customer refund requests.",
+  "superAdmin.refundReviewsDesc":
+    "Review and process customer refund requests.",
 
   /* ── Shared platform UI ────────────────────────────────── */
   "superAdmin.loadError": "Unable to load platform data. Please try again.",
@@ -59,7 +66,8 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* ── System Health ─────────────────────────────────────── */
   "superAdmin.systemHealthTitle": "System Health",
-  "superAdmin.systemHealthDesc": "Review live readiness signals for core DocuMind AI services.",
+  "superAdmin.systemHealthDesc":
+    "Review live readiness signals for core DocuMind AI services.",
   "superAdmin.serviceStatus.healthy": "Healthy",
   "superAdmin.serviceStatus.degraded": "Degraded",
   "superAdmin.serviceStatus.unavailable": "Unavailable",
@@ -67,7 +75,8 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* ── Platform Users ────────────────────────────────────── */
   "superAdmin.platformUsersTitle": "Platform Users",
-  "superAdmin.platformUsersDesc": "Review users across companies without crossing tenant-scoped mutation boundaries.",
+  "superAdmin.platformUsersDesc":
+    "Review users across companies without crossing tenant-scoped mutation boundaries.",
   "superAdmin.userRole.employee": "Employee",
   "superAdmin.userRole.company_admin": "Company Admin",
   "superAdmin.userRole.super_admin": "Super Admin",
@@ -78,11 +87,13 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* ── Processing Jobs ───────────────────────────────────── */
   "superAdmin.jobsTitle": "Processing Jobs",
-  "superAdmin.jobsDesc": "Monitor document ingestion and processing activity across companies.",
+  "superAdmin.jobsDesc":
+    "Monitor document ingestion and processing activity across companies.",
 
   /* ── Usage & Costs ─────────────────────────────────────── */
   "superAdmin.usageTitle": "Usage & Costs",
-  "superAdmin.usageDesc": "Track query volume, storage consumption, and estimated AI cost across tenants.",
+  "superAdmin.usageDesc":
+    "Track query volume, storage consumption, and estimated AI cost across tenants.",
   "superAdmin.usageQueries": "Queries",
   "superAdmin.usageEstimatedCost": "Estimated cost",
   "superAdmin.usageStorage": "Storage",
@@ -93,8 +104,10 @@ const enSuperAdmin: TranslationDictionary = {
   /* ── Subscriptions ─────────────────────────────────────── */
   "superAdmin.subsTitle": "Subscriptions",
   "superAdmin.subsShortDesc": "Platform subscription operations.",
-  "superAdmin.subsDesc": "Provision local subscriptions, assign immutable package versions, and apply legal administrative transitions.",
-  "superAdmin.subsNoPermission": "You do not have permission to view subscriptions.",
+  "superAdmin.subsDesc":
+    "Provision local subscriptions, assign immutable package versions, and apply legal administrative transitions.",
+  "superAdmin.subsNoPermission":
+    "You do not have permission to view subscriptions.",
   "superAdmin.subsOperation": "Subscription operation",
   "superAdmin.subsSelectCompany": "Select company",
   "superAdmin.subsTenantOption": "{{name}} — {{state}}",
@@ -104,9 +117,11 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.subsSelectPackage": "Select package",
   "superAdmin.subsLoadDetailError": "Unable to load subscription details.",
   "superAdmin.subsCurrentLabel": "Current:",
-  "superAdmin.subsCurrentSummary": "{{package}} v{{version}} · {{status}} · revision {{revision}}",
+  "superAdmin.subsCurrentSummary":
+    "{{package}} v{{version}} · {{status}} · revision {{revision}}",
   "superAdmin.subsProviderOwnershipLabel": "Provider ownership:",
-  "superAdmin.subsProviderManagedNote": "Provider-managed (local override blocked)",
+  "superAdmin.subsProviderManagedNote":
+    "Provider-managed (local override blocked)",
   "superAdmin.subsManualLocal": "Manual/local",
   "superAdmin.subsPeriodLabel": "Period:",
   "superAdmin.subsPeriodRange": "{{start}} to {{end}}",
@@ -120,7 +135,8 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.subsSyncFailed": "Stripe synchronization failed.",
   "superAdmin.subsChangePackage": "Change Package",
   "superAdmin.subsChangeStatus": "Change Status",
-  "superAdmin.subsNoSubscriptionForCompany": "This company has no subscription.",
+  "superAdmin.subsNoSubscriptionForCompany":
+    "This company has no subscription.",
   "superAdmin.subsProvision": "Provision Subscription",
   "superAdmin.subsSearchCompanies": "Search companies",
   "superAdmin.subsAllStatuses": "All statuses",
@@ -147,7 +163,8 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* Platform Analytics */
   "superAdmin.analytics.title": "Platform Analytics & Cross-Tenant Insights",
-  "superAdmin.analytics.description": "Global system telemetry, operational cost analysis, and cross-tenant quality monitoring.",
+  "superAdmin.analytics.description":
+    "Global system telemetry, operational cost analysis, and cross-tenant quality monitoring.",
   "superAdmin.analytics.loadError": "Failed to load platform analytics",
   "superAdmin.analytics.platformQueries": "Platform Queries",
   "superAdmin.analytics.allTenantsCombined": "All tenants combined",
@@ -163,21 +180,30 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* Payment Diagnostics */
   "superAdmin.payments.title": "Payment Diagnostics",
-  "superAdmin.payments.desc": "Monitor webhook events, reprocess failures, and reconcile subscription state.",
+  "superAdmin.payments.desc":
+    "Monitor webhook events, reprocess failures, and reconcile subscription state.",
   "superAdmin.payments.reprocessed": "Event {{eventId}} reprocessed.",
   "superAdmin.payments.reprocessFailed": "Failed to reprocess event.",
-  "superAdmin.payments.reconcileComplete": "Reconciliation complete. Subscription mismatches found: {{mismatches}}. Refund transitions completed: {{transitions}}.",
-  "superAdmin.payments.reconcileMigrationRequired": "Subscription index migration is required before refund transitions can be repaired.",
+  "superAdmin.payments.reconcileComplete":
+    "Reconciliation complete. Subscription mismatches found: {{mismatches}}. Refund transitions completed: {{transitions}}.",
+  "superAdmin.payments.reconcileMigrationRequired":
+    "Subscription index migration is required before refund transitions can be repaired.",
   "superAdmin.payments.reconcileFailed": "Reconciliation failed.",
   "superAdmin.payments.reconciling": "Reconciling…",
   "superAdmin.payments.runReconciliation": "Run reconciliation",
   "superAdmin.payments.reconcileResultsTitle": "Reconciliation results",
-  "superAdmin.payments.reconcileSubscriptionsLine": "Subscriptions checked: {{examined}}; mismatches: {{mismatches}}",
-  "superAdmin.payments.reconcileIndexLine": "Subscription index: {{status}}; effective duplicate tenants: {{duplicates}}",
-  "superAdmin.payments.reconcileRefundsLine": "Refund settlements examined: {{examined}}; eligible repairs: {{eligible}}; transitions completed: {{completed}}; provider cancellations retryable: {{retryable}}",
-  "superAdmin.payments.reconcileInvoicesLine": "Invoices examined: {{examined}}; created: {{created}}; updated: {{updated}}; failed: {{failed}}",
-  "superAdmin.payments.invoiceFailure": "{{classification}}: {{count}} ({{code}})",
-  "superAdmin.payments.invoiceFailureRetryable": "{{classification}}: {{count}} ({{code}}) — retry pending",
+  "superAdmin.payments.reconcileSubscriptionsLine":
+    "Subscriptions checked: {{examined}}; mismatches: {{mismatches}}",
+  "superAdmin.payments.reconcileIndexLine":
+    "Subscription index: {{status}}; effective duplicate tenants: {{duplicates}}",
+  "superAdmin.payments.reconcileRefundsLine":
+    "Refund settlements examined: {{examined}}; eligible repairs: {{eligible}}; transitions completed: {{completed}}; provider cancellations retryable: {{retryable}}",
+  "superAdmin.payments.reconcileInvoicesLine":
+    "Invoices examined: {{examined}}; created: {{created}}; updated: {{updated}}; failed: {{failed}}",
+  "superAdmin.payments.invoiceFailure":
+    "{{classification}}: {{count}} ({{code}})",
+  "superAdmin.payments.invoiceFailureRetryable":
+    "{{classification}}: {{count}} ({{code}}) — retry pending",
   "superAdmin.payments.mismatchTenantLabel": "Tenant:",
   "superAdmin.payments.mismatchStatusLabel": "Status:",
   "superAdmin.payments.mismatchIssuesLabel": "Issues:",
@@ -197,9 +223,11 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* ── Packages ──────────────────────────────────────────── */
   "superAdmin.packages.title": "Packages",
-  "superAdmin.packages.desc": "Create versioned SaaS packages and manage platform limits.",
+  "superAdmin.packages.desc":
+    "Create versioned SaaS packages and manage platform limits.",
   "superAdmin.packages.new": "New package",
-  "superAdmin.packages.noPermission": "You do not have permission to view packages.",
+  "superAdmin.packages.noPermission":
+    "You do not have permission to view packages.",
   "superAdmin.packages.none": "No packages have been created yet.",
   "superAdmin.packages.manage": "Manage",
   "superAdmin.packages.actions": "Actions",
@@ -213,7 +241,8 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* Package detail */
   "superAdmin.packages.detailTitle": "Package Details",
-  "superAdmin.packages.detailDesc": "Update this package to create a new immutable version snapshot.",
+  "superAdmin.packages.detailDesc":
+    "Update this package to create a new immutable version snapshot.",
   "superAdmin.packages.commercialDetails": "Commercial details",
   "superAdmin.packages.pricing": "Pricing",
   "superAdmin.packages.monthlyPrice": "Monthly price",
@@ -239,12 +268,18 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.packages.support": "Support",
   "superAdmin.packages.versionLabel": "v{{version}}",
   "superAdmin.packages.versionCurrent": "v{{version}} (current)",
-  "superAdmin.packages.versionSummary.zero": "{{count}} versions — each snapshot is immutable once created.",
-  "superAdmin.packages.versionSummary.one": "{{count}} version — each snapshot is immutable once created.",
-  "superAdmin.packages.versionSummary.two": "{{count}} versions — each snapshot is immutable once created.",
-  "superAdmin.packages.versionSummary.few": "{{count}} versions — each snapshot is immutable once created.",
-  "superAdmin.packages.versionSummary.many": "{{count}} versions — each snapshot is immutable once created.",
-  "superAdmin.packages.versionSummary.other": "{{count}} versions — each snapshot is immutable once created.",
+  "superAdmin.packages.versionSummary.zero":
+    "{{count}} versions — each snapshot is immutable once created.",
+  "superAdmin.packages.versionSummary.one":
+    "{{count}} version — each snapshot is immutable once created.",
+  "superAdmin.packages.versionSummary.two":
+    "{{count}} versions — each snapshot is immutable once created.",
+  "superAdmin.packages.versionSummary.few":
+    "{{count}} versions — each snapshot is immutable once created.",
+  "superAdmin.packages.versionSummary.many":
+    "{{count}} versions — each snapshot is immutable once created.",
+  "superAdmin.packages.versionSummary.other":
+    "{{count}} versions — each snapshot is immutable once created.",
   "superAdmin.packages.daysCount.zero": "{{count}} days",
   "superAdmin.packages.daysCount.one": "{{count}} day",
   "superAdmin.packages.daysCount.two": "{{count}} days",
@@ -270,8 +305,10 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.packages.affectedState": "{{state}}: {{count}}",
   "superAdmin.packages.blockedReason": "Blocked: {{reason}}",
   "superAdmin.packages.reason": "Reason",
-  "superAdmin.packages.reasonHelp": "At least 3 characters; recorded in the audit trail.",
-  "superAdmin.packages.versionConflict": "This package changed in another session. Current data is being reloaded.",
+  "superAdmin.packages.reasonHelp":
+    "At least 3 characters; recorded in the audit trail.",
+  "superAdmin.packages.versionConflict":
+    "This package changed in another session. Current data is being reloaded.",
   "superAdmin.packages.transitionFailed": "Package transition failed.",
   "superAdmin.packages.working": "Working…",
   "superAdmin.packages.landingImpact.removed": "Removed",
@@ -293,7 +330,12 @@ const enSuperAdmin: TranslationDictionary = {
 
   /* ── Company detail ────────────────────────────────────── */
   "superAdmin.companies.backLink": "Companies",
+  "superAdmin.companies.viewAction": "View",
   "superAdmin.companies.plan": "Plan",
+  "superAdmin.companies.overview": "Company Overview",
+  "superAdmin.companies.people": "People",
+  "superAdmin.companies.usage": "Usage",
+  "superAdmin.companies.record": "Record",
   "superAdmin.companies.users": "Users",
   "superAdmin.companies.companyAdmins": "Company Admins",
   "superAdmin.companies.usersValue": "{{active}} active / {{total}} total",
@@ -311,35 +353,74 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.companies.maxDocumentsLabel": "Max documents:",
   "superAdmin.companies.storageLabel": "Storage:",
   "superAdmin.companies.queriesPerMonthLabel": "Queries/month:",
+  "superAdmin.companies.fileSizeLabel": "File size:",
   "superAdmin.companies.recentActivity": "Recent Activity",
   "superAdmin.companies.byActor": "by {{email}}",
-  "superAdmin.companies.noSubscriptionOrPackage": "No subscription or package configured for this tenant.",
+  "superAdmin.companies.noSubscriptionOrPackage":
+    "No subscription or package configured for this tenant.",
+  "superAdmin.companies.allPlans": "All plans",
 
   /* Company lifecycle dialog */
-  "superAdmin.companies.suspend": "Suspend",
-  "superAdmin.companies.reinstate": "Reinstate",
-  "superAdmin.companies.suspendTitle": "Suspend Tenant",
-  "superAdmin.companies.reinstateTitle": "Reinstate Tenant",
+  "superAdmin.companies.suspend": "Suspend company",
+  "superAdmin.companies.reinstate": "Reinstate company",
+  "superAdmin.companies.suspendTitle": "Suspend company",
+  "superAdmin.companies.reinstateTitle": "Reinstate company",
+  "superAdmin.companies.suspendDescription":
+    "Suspending this company restricts access for all users. Company users may lose access to their DocuMind AI workspace.",
+  "superAdmin.companies.reinstateDescription":
+    "Reactivating this company restores access for active company users.",
   "superAdmin.companies.closeDialog": "Close {{title}}",
   "superAdmin.companies.currentStatusLabel": "Current status:",
-  "superAdmin.companies.previewError": "Unable to load preview. Please try again.",
+  "superAdmin.companies.previewError":
+    "Unable to load preview. Please try again.",
   "superAdmin.companies.operationFailed": "Operation failed.",
   "superAdmin.companies.usersAffectedLabel": "Users affected:",
   "superAdmin.companies.adminsAffectedLabel": "Admins affected:",
   "superAdmin.companies.documentsLabel": "Documents:",
   "superAdmin.companies.subscriptionLabel": "Subscription:",
   "superAdmin.companies.noSubscriptionValue": "none",
-  "superAdmin.companies.reasonPlaceholder": "Enter a reason (minimum 3 characters)...",
-  "superAdmin.companies.reasonTooLong": "Reason must be 500 characters or fewer",
+  "superAdmin.companies.reasonPlaceholder":
+    "Enter a reason (minimum 3 characters)...",
+  "superAdmin.companies.reasonTooLong":
+    "Reason must be 500 characters or fewer",
   "superAdmin.companies.reasonValid": "Reason is valid",
-  "superAdmin.companies.suspendSuccess": "Tenant suspended successfully.",
-  "superAdmin.companies.reinstateSuccess": "Tenant reinstated successfully.",
-  "superAdmin.companies.charactersNeeded.zero": "{{count}} more characters needed",
-  "superAdmin.companies.charactersNeeded.one": "{{count}} more character needed",
-  "superAdmin.companies.charactersNeeded.two": "{{count}} more characters needed",
-  "superAdmin.companies.charactersNeeded.few": "{{count}} more characters needed",
-  "superAdmin.companies.charactersNeeded.many": "{{count}} more characters needed",
-  "superAdmin.companies.charactersNeeded.other": "{{count}} more characters needed",
+  "superAdmin.companies.suspendSuccess": "Company suspended successfully.",
+  "superAdmin.companies.reinstateSuccess": "Company reinstated successfully.",
+  "superAdmin.companies.charactersNeeded.zero":
+    "{{count}} more characters needed",
+  "superAdmin.companies.charactersNeeded.one":
+    "{{count}} more character needed",
+  "superAdmin.companies.charactersNeeded.two":
+    "{{count}} more characters needed",
+  "superAdmin.companies.charactersNeeded.few":
+    "{{count}} more characters needed",
+  "superAdmin.companies.charactersNeeded.many":
+    "{{count}} more characters needed",
+  "superAdmin.companies.charactersNeeded.other":
+    "{{count}} more characters needed",
+
+  /* ── Companies list (companies view) ─────────────────────── */
+  "superAdmin.companies.loading": "Loading companies",
+  "superAdmin.companies.loadingCount": "Loading company count…",
+  "superAdmin.companies.count.zero": "{{count}} companies",
+  "superAdmin.companies.count.one": "{{count}} company",
+  "superAdmin.companies.count.two": "{{count}} companies",
+  "superAdmin.companies.count.few": "{{count}} companies",
+  "superAdmin.companies.count.many": "{{count}} companies",
+  "superAdmin.companies.count.other": "{{count}} companies",
+  "superAdmin.companies.searchLabel": "Search companies",
+  "superAdmin.companies.filtersLabel": "Company filters",
+  "superAdmin.companies.noMatch": "No companies match these filters",
+  "superAdmin.companies.noMatchHint": "Try clearing or changing the filters.",
+  "superAdmin.companies.noneYet": "No companies yet",
+  "superAdmin.companies.noneYetHint":
+    "Companies will appear here when available.",
+  "superAdmin.companies.loadError":
+    "Unable to load companies. Please try again.",
+  "superAdmin.companies.loadingError":
+    "Unable to load plan options. Please try again.",
+  "superAdmin.companies.noPermission":
+    "You do not have permission to manage companies.",
 
   /* Tenant + audit enum labels — codes stay English */
   "superAdmin.tenantStatus.active": "Active",
@@ -369,9 +450,11 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.platformTenants.loadError": "Unable to load this tenant.",
 
   /* ── Package form ──────────────────────────────────────── */
-  "superAdmin.packageForm.noPermission": "You do not have permission to create or version packages.",
+  "superAdmin.packageForm.noPermission":
+    "You do not have permission to create or version packages.",
   "superAdmin.packageForm.versionBumpTitle": "Version bump",
-  "superAdmin.packageForm.versionBumpBody": "Editing will create a new version. Existing subscriptions retain the current snapshot.",
+  "superAdmin.packageForm.versionBumpBody":
+    "Editing will create a new version. Existing subscriptions retain the current snapshot.",
   "superAdmin.packageForm.basicInfo": "Basic Information",
   "superAdmin.packageForm.name": "Name",
   "superAdmin.packageForm.code": "Code",
@@ -382,11 +465,16 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.packageForm.storageMb": "Storage (MB)",
   "superAdmin.packageForm.maxFileSizeMb": "Max file size (MB)",
   "superAdmin.packageForm.retentionDays": "Retention (days)",
-  "superAdmin.packageForm.modelsHint": "Comma-separated. Suggestions: {{models}}",
-  "superAdmin.packageForm.visibilityPublicHelp": "— visible to all companies during provisioning.",
-  "superAdmin.packageForm.visibilityInternalHelp": "— only the super admin can assign it.",
-  "superAdmin.packageForm.versionConflict": "This package changed in another session. Current data has been reloaded; review it before saving again.",
-  "superAdmin.packageForm.saveError": "Unable to save this package. Check the values and try again.",
+  "superAdmin.packageForm.modelsHint":
+    "Comma-separated. Suggestions: {{models}}",
+  "superAdmin.packageForm.visibilityPublicHelp":
+    "— visible to all companies during provisioning.",
+  "superAdmin.packageForm.visibilityInternalHelp":
+    "— only the super admin can assign it.",
+  "superAdmin.packageForm.versionConflict":
+    "This package changed in another session. Current data has been reloaded; review it before saving again.",
+  "superAdmin.packageForm.saveError":
+    "Unable to save this package. Check the values and try again.",
   "superAdmin.packageForm.saving": "Saving…",
   "superAdmin.packageForm.updatePackage": "Update package",
   "superAdmin.packageForm.savePackage": "Save package",
@@ -395,7 +483,8 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.subsOperation.confirmTitle": "Confirm Subscription Change",
   "superAdmin.subsOperation.closeDialog": "Close dialog",
   "superAdmin.subsOperation.loadingPreview": "Loading impact preview…",
-  "superAdmin.subsOperation.previewError": "Unable to load subscription impact.",
+  "superAdmin.subsOperation.previewError":
+    "Unable to load subscription impact.",
   "superAdmin.subsOperation.retryPreview": "Retry preview",
   "superAdmin.subsOperation.modeLabel": "Mode:",
   "superAdmin.subsOperation.noSubscription": "No subscription",
@@ -404,13 +493,15 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.subsOperation.unchanged": "Unchanged",
   "superAdmin.subsOperation.reasonLabel": "Administrative reason",
   "superAdmin.subsOperation.applying": "Applying…",
-  "superAdmin.subsOperation.operationFailed": "Unable to complete the subscription operation.",
+  "superAdmin.subsOperation.operationFailed":
+    "Unable to complete the subscription operation.",
   "superAdmin.operationMode.local-only": "Local only",
   "superAdmin.operationMode.provider-managed": "Provider-managed",
 
   /* ── Retrieval debug ───────────────────────────────────── */
   "superAdmin.retrievalDebug.title": "Retrieval Debug",
-  "superAdmin.retrievalDebug.desc": "Inspect and debug the hybrid retrieval pipeline",
+  "superAdmin.retrievalDebug.desc":
+    "Inspect and debug the hybrid retrieval pipeline",
   "superAdmin.retrievalDebug.searchError": "Failed to execute retrieval search",
   "superAdmin.retrievalDebug.queryPlaceholder": "Enter search query...",
   "superAdmin.retrievalDebug.method": "Method",
@@ -451,7 +542,8 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.retrievalDebug.tableExcerpt": "Text Excerpt",
   "superAdmin.retrievalDebug.rankValue": "#{{rank}}",
   "superAdmin.retrievalDebug.conflictGroups": "Conflict Groups",
-  "superAdmin.retrievalDebug.conflictDetail": "{{description}} (items: {{items}})",
+  "superAdmin.retrievalDebug.conflictDetail":
+    "{{description}} (items: {{items}})",
   "superAdmin.retrievalDebug.scoreExplanation": "Score Explanation:",
   "superAdmin.retrievalMethod.hybrid": "Hybrid",
   "superAdmin.retrievalMethod.vector": "Vector",

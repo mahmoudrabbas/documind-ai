@@ -1,9 +1,9 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import multer from "multer";
 import { authenticate } from "../../common/middlewares/authenticate.middleware.js";
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
-import { Permission } from "../permissions/permissions.catalog.js";
+import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
 import { createChatController } from "./chat.controller.js";
 import type { ChatService } from "./chat.service.js";
 import { createEntitlementGuard } from "../entitlement/middlewares/entitlement.middleware.js";
@@ -16,6 +16,12 @@ import {
   getVisionMaxFileSizeBytes,
   isAllowedVisionMimeType,
 } from "./chat.vision.js";
+
+const requireSelfPermission = (permission: PermissionValue) => requirePermission(permission, {
+  resourceContext: (request) => request.auth && request.tenantId
+    ? { tenantId: request.tenantId, ownerId: request.auth.userId }
+    : undefined,
+});
 
 // ── Entitlement guards ─────────────────────────────────────────────────────
 
@@ -78,12 +84,16 @@ const sttUpload = multer({
   },
 });
 
+function buildSttIpKey(req: Request): string {
+  return buildHashedIpRateLimitKey(req.ip);
+}
+
 const sttRateLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
   message: "Too many audio transcription requests. Please wait a minute before trying again.",
   keyGenerator: (req) =>
-    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${buildHashedIpRateLimitKey(req.ip)}`,
+    req.auth?.userId ? `stt:${req.auth.userId}` : `stt:ip:${buildSttIpKey(req)}`,
 });
 
 export function createChatRoutes(service: ChatService): Router {
@@ -157,23 +167,145 @@ export function createChatRoutes(service: ChatService): Router {
     "/conversations",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_READ),
+    requireSelfPermission(Permission.CHAT_READ),
     controller.listConversations,
   );
 
+  /**
+   * @openapi
+   * /chat/conversations/{conversationId}/messages:
+   *   get:
+   *     summary: Get conversation messages
+   *     description: Returns the message history for a conversation owned by
+   *       the authenticated user, ordered chronologically (up to 200 messages).
+   *       Assistant responses are sanitized at the read boundary.
+   *     tags: [Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: conversationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Message history
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     conversationId:
+   *                       type: string
+   *                     messages:
+   *                       type: array
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           id:
+   *                             type: string
+   *                           role:
+   *                             type: string
+   *                             enum: [user, assistant]
+   *                           content:
+   *                             type: string
+   *                           sources:
+   *                             type: array
+   *                             items:
+   *                               type: object
+   *                               properties:
+   *                                 chunkId:
+   *                                   type: string
+   *                                 documentId:
+   *                                   type: string
+   *                                 documentTitle:
+   *                                   type: string
+   *                                 score:
+   *                                   type: number
+   *                           attachments:
+   *                             type: array
+   *                             items:
+   *                               type: object
+   *                               properties:
+   *                                 id:
+   *                                   type: string
+   *                                 fileName:
+   *                                   type: string
+   *                                 mimeType:
+   *                                   type: string
+   *                                 sizeBytes:
+   *                                   type: integer
+   *                           createdAt:
+   *                             type: string
+   *                             format: date-time
+   *       401:
+   *         description: Authentication required
+   *       403:
+   *         description: Insufficient permissions
+   *       404:
+   *         description: Conversation not found
+   */
   router.get(
     "/conversations/:conversationId/messages",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_READ),
+    requireSelfPermission(Permission.CHAT_READ),
     controller.getConversationMessages,
   );
 
+  /**
+   * @openapi
+   * /chat/conversations/{conversationId}:
+   *   delete:
+   *     summary: Delete a conversation
+   *     description: Permanently deletes a conversation and all of its messages
+   *       owned by the authenticated user. Returns a confirmation flag when the
+   *       conversation is removed, or 404 when it does not exist.
+   *     tags: [Chat]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: conversationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Conversation deleted
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     deleted:
+   *                       type: boolean
+   *                       example: true
+   *       401:
+   *         description: Authentication required
+   *       403:
+   *         description: Insufficient permissions
+   *       404:
+   *         description: Conversation not found
+   */
   router.delete(
     "/conversations/:conversationId",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_DELETE),
+    requireSelfPermission(Permission.CHAT_DELETE),
     controller.deleteConversation,
   );
 
@@ -305,7 +437,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/send/stream",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    requireSelfPermission(Permission.CHAT_CREATE),
     queryGuard,
     controller.sendMessageStream,
   );
@@ -389,7 +521,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/vision",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    requireSelfPermission(Permission.CHAT_CREATE),
     queryGuard,
     visionUpload.single("image"),
     controller.sendVisionMessage,
@@ -431,7 +563,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/attachments/:attachmentId",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_READ),
+    requireSelfPermission(Permission.CHAT_READ),
     controller.getAttachment,
   );
 
@@ -469,7 +601,7 @@ export function createChatRoutes(service: ChatService): Router {
     "/stt",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    requireSelfPermission(Permission.CHAT_CREATE),
     sttRateLimiter,
     sttUpload.single("audio"),
     controller.transcribeAudio,

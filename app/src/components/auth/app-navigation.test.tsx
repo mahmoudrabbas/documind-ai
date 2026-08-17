@@ -51,6 +51,9 @@ vi.mock("@/providers/permission-provider", () => ({
 vi.mock("@/providers/tenant-provider", () => ({
   useTenantSettings: () => state.tenantSettings,
 }));
+vi.mock("@/providers/copilot-provider", () => ({
+  useCopilot: () => ({ setOpen: vi.fn() }),
+}));
 
 import { AppNavigation } from "./app-navigation";
 
@@ -116,6 +119,28 @@ describe("responsive navigation", () => {
         name: "Users",
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows analytics destinations to an Employee with effective analytics permission", () => {
+    state.auth.user.role = "EMPLOYEE";
+    state.permissions.baseRole = "EMPLOYEE";
+    grantOnly(Permission.ANALYTICS_READ, Permission.CHAT_READ);
+    renderNav();
+
+    expect(navHrefs()).toEqual([
+      "/dashboard",
+      "/dashboard/chat",
+      "/dashboard/analytics",
+    ]);
+  });
+
+  it("hides analytics destinations from an Employee without effective analytics permission", () => {
+    state.auth.user.role = "EMPLOYEE";
+    state.permissions.baseRole = "EMPLOYEE";
+    grantOnly(Permission.CHAT_READ);
+    renderNav();
+
+    expect(navHrefs()).toEqual(["/dashboard/chat"]);
   });
 
   it("switches to platform navigation for super-admin", () => {

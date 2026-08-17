@@ -78,13 +78,23 @@ interface RuntimeObservations {
 
 interface HarnessOptions {
   scenario?: Scenario;
+  retrievalOutcome?: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED";
   citationsEnabled?: boolean;
   permissionState?: ResolvedPermissions["customRoleState"];
   permissions?: readonly string[];
   runtimeFailure?: boolean;
+  runtimeThrow?: boolean;
+  runtimeTokensUsed?: number;
+  runtimeErrorCode?: string;
+  runtimeErrorMessage?: string;
+  quotaEnabled?: boolean;
+  quotaDenied?: boolean;
+  quotaReservedAmount?: number;
+  verifierError?: string;
   approvedIds?: string[];
   writerCitations?: string[];
   verifierIds?: string[];
+  verifierAnswer?: string;
   complianceSourceIds?: string[];
   complianceAnswer?: string;
   searchCandidates?: Array<{
@@ -102,14 +112,20 @@ interface HarnessOptions {
   intentReferencedDocumentTitles?: string[];
   resolvedTitleDocumentIds?: string[];
   secondSearchCandidates?: HarnessOptions["searchCandidates"];
+  searchAuthorizationRestricted?: boolean;
+  evidenceAuthorizationRestricted?: boolean;
   skipComplianceOutput?: boolean;
   authorizationReject?: boolean;
   missingPersistedActor?: boolean;
   intentLanguage?: "ar" | "en";
   intentNormalizedQuestion?: string;
   intentSemanticQuery?: string;
+  intentSemanticQueries?: Array<{ text: string; language: "ar" | "en" | "mixed"; weight: number }>;
+  intentKeywordQueries?: Array<{ terms: string[]; language: "ar" | "en" | "mixed"; mustMatch: boolean }>;
+  intentExactTerms?: string[];
   intentIsFollowUp?: boolean;
   conversationContextUsed?: boolean;
+  mixedAssistantKind?: "identity" | "capabilities";
   analyticsResult?: unknown;
   persistedActor?: Partial<{
     tenantId: string;
@@ -129,6 +145,7 @@ function intentOutput(
   semanticQuery = "trusted semantic query",
   isFollowUp = false,
   conversationContextUsed = false,
+  mixedAssistantKind: "identity" | "capabilities" | null = null,
 ): Record<string, unknown> {
   const intentRoute = ["analytics", "grounded", "insufficient", "weak"].includes(route)
     ? "rag"
@@ -143,7 +160,7 @@ function intentOutput(
     intent: assistantKind
       ? route
       : intentRoute === "social" ? "social" : "knowledge_question",
-    assistantKind,
+    assistantKind: mixedAssistantKind ?? assistantKind,
     intentConfidence: 0.99,
     referencedDocumentIds,
     clarificationNeeded: intentRoute === "clarification",
@@ -224,16 +241,24 @@ function makeHarness(options: HarnessOptions = {}) {
     execute: vi.fn(async (runInput, hooks?: SupervisorRuntimeHooks) => {
       observations.executeCalls += 1;
       observations.startCalls += 1;
+
+      if (options.runtimeThrow) {
+        throw new Error("runtime threw before returning a result");
+      }
+
       if (options.runtimeFailure) {
         return {
           runId: runInput.runId,
           workflowId: "chat-rag-v1" as const,
           status: "failed" as const,
           output: null,
-          error: { code: "INFRASTRUCTURE_FAILURE" },
+          error: {
+            code: options.runtimeErrorCode ?? "INFRASTRUCTURE_FAILURE",
+            message: options.runtimeErrorMessage,
+          },
           totalSteps: 1,
           totalToolCalls: 0,
-          totalTokensUsed: 0,
+          totalTokensUsed: options.runtimeTokensUsed ?? 0,
           estimatedCost: 0,
           latencyMs: 1,
           handoffsCount: 0,
@@ -268,9 +293,7 @@ function makeHarness(options: HarnessOptions = {}) {
         proposedPayload: { tenantId: "spoof", permissions: ["*"] },
       }) ?? {};
       observations.handoffs.push({ agent: "intent-query-agent", payload });
-      state = {
-        ...state,
-        ...intentOutput(
+      const generatedIntent = intentOutput(
           scenario,
           options.intentReferencedDocumentIds,
           options.intentReferencedDocumentTitles,
@@ -279,7 +302,14 @@ function makeHarness(options: HarnessOptions = {}) {
           options.intentSemanticQuery,
           options.intentIsFollowUp,
           options.conversationContextUsed,
-        ),
+          options.mixedAssistantKind,
+        );
+      state = {
+        ...state,
+        ...generatedIntent,
+        ...(options.intentSemanticQueries ? { semanticQueries: options.intentSemanticQueries } : {}),
+        ...(options.intentKeywordQueries ? { keywordQueries: options.intentKeywordQueries } : {}),
+        ...(options.intentExactTerms ? { exactTerms: options.intentExactTerms } : {}),
       };
 
       const afterIntentDecision = hooks.resolveDecision?.({
@@ -348,7 +378,11 @@ function makeHarness(options: HarnessOptions = {}) {
         const searchOutput = {
           candidates,
           totalCandidates: candidates.length,
-          reasonCode: "SEARCH_COMPLETED",
+          reasonCode: candidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
+          retrievalOutcome: options.retrievalOutcome ?? "NO_MATCHES",
+          ...(options.searchAuthorizationRestricted !== undefined
+            ? { authorizationRestricted: options.searchAuthorizationRestricted }
+            : {}),
         };
         observations.sourceCatalogOutput = searchOutput;
         hooks.onToolResult?.({
@@ -387,6 +421,7 @@ function makeHarness(options: HarnessOptions = {}) {
             candidates: options.secondSearchCandidates,
             totalCandidates: options.secondSearchCandidates.length,
             reasonCode: "SEARCH_COMPLETED",
+            retrievalOutcome: options.retrievalOutcome ?? "NO_MATCHES",
           };
           hooks.onToolResult?.({
             workflowId: "chat-rag-v1",
@@ -412,6 +447,9 @@ function makeHarness(options: HarnessOptions = {}) {
             approvedEvidenceIds: scenario === "grounded" ? approvedIds : [],
             rejectedEvidenceIds: scenario === "grounded" ? [] : candidates.map((candidate) => candidate.chunkId),
             reasonCode: scenario === "grounded" ? "EVIDENCE_SUFFICIENT" : scenario === "weak" ? "EVIDENCE_WEAK" : "NO_EVIDENCE",
+            ...(options.evidenceAuthorizationRestricted !== undefined
+              ? { authorizationRestricted: options.evidenceAuthorizationRestricted }
+              : {}),
           };
           hooks.onToolResult?.({
             workflowId: "chat-rag-v1",
@@ -456,12 +494,34 @@ function makeHarness(options: HarnessOptions = {}) {
             proposedPayload: { citedChunkIds: [chunkC], answerText: "forged" },
           }) ?? {};
           observations.handoffs.push({ agent: "citation-verification-agent", payload: verifierInput });
+          if (options.verifierError) {
+            const code = options.verifierError;
+            return {
+              runId: runInput.runId,
+              workflowId: "chat-rag-v1" as const,
+              status: "failed" as const,
+              output: null,
+              error: { code, message: "citation verification provider error" },
+              totalSteps: observations.handoffs.length,
+              totalToolCalls: observations.tools.length,
+              totalTokensUsed: 0,
+              estimatedCost: 0,
+              latencyMs: 0,
+              handoffsCount: observations.handoffs.length,
+              approvalsCount: 0,
+              guardrailResult: null,
+            };
+          }
           state = {
             ...state,
             verified: verifierIds.length > 0,
             validatedCitationIds: verifierIds,
             rejectedCitationIds: [chunkC],
             unsupportedClaims: [],
+            unknownClaims: [],
+            ...(verifierIds.length > 0
+              ? { verifiedAnswer: options.verifierAnswer ?? "WRITER_DRAFT" }
+              : {}),
             reasonCode: verifierIds.length > 0 ? "CITATIONS_VERIFIED" : "MISSING_CITATIONS",
           };
         }
@@ -509,7 +569,7 @@ function makeHarness(options: HarnessOptions = {}) {
         error: null,
         totalSteps: 1,
         totalToolCalls: observations.tools.length,
-        totalTokensUsed: 1,
+        totalTokensUsed: options.runtimeTokensUsed ?? 1,
         estimatedCost: 0,
         latencyMs: 1,
         handoffsCount: observations.handoffs.length,
@@ -580,6 +640,37 @@ function makeHarness(options: HarnessOptions = {}) {
   }));
   const reportKnowledgeGap = vi.fn(async () => undefined);
   const auditWriter = { write: vi.fn(async () => true) };
+
+  const reserveTokenQuota = vi.fn(async () => {
+    if (options.quotaDenied) {
+      return {
+        allowed: false as const,
+        current: 10_000,
+        limit: 10_000,
+        remaining: 0,
+        periodReset: "2026-09-01T00:00:00.000Z",
+      };
+    }
+
+    const reservedAmount =
+      options.quotaReservedAmount ?? 2_000;
+
+    return {
+      allowed: true as const,
+      reservation: {
+        reservationId: "tqr-chat-test",
+        reservedAmount,
+      },
+      current: 10_000 - reservedAmount,
+      limit: 10_000,
+      remaining: reservedAmount,
+      periodReset: "2026-09-01T00:00:00.000Z",
+    };
+  });
+
+  const commitTokenQuota = vi.fn(async () => undefined);
+  const releaseTokenQuota = vi.fn(async () => undefined);
+
   const dependencies: ChatWorkflowServiceDependencies = {
     composition: { runtime, workflow: { id: "chat-rag-v1" } },
     repository,
@@ -599,6 +690,15 @@ function makeHarness(options: HarnessOptions = {}) {
       maxTokens: 1024,
     })),
     createRun,
+    ...(options.quotaEnabled
+      ? {
+          tokenQuota: {
+            reserve: reserveTokenQuota,
+            commit: commitTokenQuota,
+            release: releaseTokenQuota,
+          },
+        }
+      : {}),
     authorizedRetrieval: {
       authorization: { authorizeDocumentAction } as never,
       loadChunksByIds: vi.fn(async () => options.loadedChunks ?? defaultLoaded),
@@ -624,6 +724,9 @@ function makeHarness(options: HarnessOptions = {}) {
     loadPersistedActor,
     authorizeDocumentAction,
     reportKnowledgeGap,
+    reserveTokenQuota,
+    commitTokenQuota,
+    releaseTokenQuota,
   };
 }
 
@@ -642,6 +745,148 @@ async function executeHarness(harness: ReturnType<typeof makeHarness>, message =
 }
 
 describe("ChatWorkflowService lifecycle and trusted context", () => {
+  it("fails with ENTITLEMENT_EXCEEDED before persistence and runtime when token quota is exhausted", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaDenied: true,
+    });
+
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      statusCode: 429,
+      code: "ENTITLEMENT_EXCEEDED",
+      details: {
+        current: 10_000,
+        limit: 10_000,
+        dimension: "tokensPerMonth",
+        remaining: 0,
+        periodReset: "2026-09-01T00:00:00.000Z",
+        canUpgrade: false,
+      },
+    });
+
+    expect(harness.reserveTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      requestId: "request-1",
+      maxAmount: 50_000,
+    });
+
+    expect(harness.messages).toHaveLength(0);
+    expect(harness.createRun).not.toHaveBeenCalled();
+    expect(
+      harness.dependencies.composition.runtime.execute,
+    ).not.toHaveBeenCalled();
+    expect(harness.commitTokenQuota).not.toHaveBeenCalled();
+    expect(harness.releaseTokenQuota).not.toHaveBeenCalled();
+  });
+
+  it("releases a too-small reservation and fails before creating an AgentRun", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 90,
+    });
+
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      statusCode: 429,
+      code: "ENTITLEMENT_EXCEEDED",
+      details: {
+        current: 9_910,
+        limit: 10_000,
+        dimension: "tokensPerMonth",
+        remaining: 90,
+        periodReset: "2026-09-01T00:00:00.000Z",
+        canUpgrade: false,
+      },
+    });
+
+    expect(harness.releaseTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.releaseTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+    });
+
+    expect(harness.createRun).not.toHaveBeenCalled();
+    expect(
+      harness.dependencies.composition.runtime.execute,
+    ).not.toHaveBeenCalled();
+    expect(harness.commitTokenQuota).not.toHaveBeenCalled();
+    expect(harness.messages).toHaveLength(0);
+  });
+
+  it("passes the durable reservation amount as the Supervisor total-token budget", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 1_750,
+    });
+
+    await executeHarness(harness);
+
+    const runtimeInput = vi.mocked(
+      harness.dependencies.composition.runtime.execute,
+    ).mock.calls[0][0];
+
+    expect(runtimeInput.budgetLimits).toEqual({
+      maxTotalTokens: 1_750,
+    });
+  });
+
+  it("commits actual runtime token usage after a returned runtime result", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 2_000,
+      runtimeTokensUsed: 621,
+    });
+
+    await executeHarness(harness);
+
+    expect(harness.commitTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.commitTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+      actualAmount: 621,
+    });
+    expect(harness.releaseTokenQuota).not.toHaveBeenCalled();
+  });
+
+  it("commits reported usage instead of releasing when the runtime returns a failed result", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 2_000,
+      runtimeFailure: true,
+      runtimeTokensUsed: 317,
+    });
+
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "CHAT_WORKFLOW_FAILED",
+    });
+
+    expect(harness.commitTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.commitTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+      actualAmount: 317,
+    });
+    expect(harness.releaseTokenQuota).not.toHaveBeenCalled();
+  });
+
+  it("releases the reservation when runtime execution throws before returning usage", async () => {
+    const harness = makeHarness({
+      quotaEnabled: true,
+      quotaReservedAmount: 2_000,
+      runtimeThrow: true,
+    });
+
+    await expect(executeHarness(harness)).rejects.toThrow(
+      "runtime threw before returning a result",
+    );
+
+    expect(harness.releaseTokenQuota).toHaveBeenCalledTimes(1);
+    expect(harness.releaseTokenQuota).toHaveBeenCalledWith({
+      tenantId,
+      reservationId: "tqr-chat-test",
+    });
+    expect(harness.commitTokenQuota).not.toHaveBeenCalled();
+  });
+
   it("creates one AgentRun and executes the Supervisor runtime once", async () => {
     const harness = makeHarness();
     await executeHarness(harness);
@@ -823,6 +1068,66 @@ describe("ChatWorkflowService lifecycle and trusted context", () => {
     await expect(executeHarness(harness)).rejects.toMatchObject({ code: "CHAT_WORKFLOW_FAILED" });
     expect(harness.messages.filter((message) => message.role === "assistant")).toHaveLength(0);
   });
+
+  it.each([
+    [
+      "LLM_RATE_LIMITED",
+      429,
+      "The AI service is temporarily rate-limited. Please try again shortly.",
+    ],
+    [
+      "LLM_PROVIDER_UNAVAILABLE",
+      503,
+      "The AI service is temporarily unavailable. Please try again shortly.",
+    ],
+    [
+      "LLM_TIMEOUT",
+      503,
+      "The AI service took too long to respond. Please try again.",
+    ],
+  ])("preserves safe public runtime provider error %s", async (code, statusCode, message) => {
+    const harness = makeHarness({
+      runtimeFailure: true,
+      runtimeErrorCode: code,
+      runtimeErrorMessage: "raw provider body org_123 api-key sk-test",
+    });
+    let caught: unknown;
+    try {
+      await executeHarness(harness);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code, statusCode, message });
+    expect((caught as Error).message).not.toContain("org_123");
+  });
+
+  it("collapses arbitrary runtime provider codes to the generic workflow failure", async () => {
+    const harness = makeHarness({
+      runtimeFailure: true,
+      runtimeErrorCode: "RAW_PROVIDER_AUTH_FAILURE",
+      runtimeErrorMessage: "raw provider body org_123 api-key sk-test",
+    });
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "CHAT_WORKFLOW_FAILED",
+      statusCode: 502,
+      message: "Controlled chat workflow failed",
+    });
+  });
+
+  it("fails the workflow on a citation-verification provider error instead of emitting an insufficient-evidence answer", async () => {
+    const harness = makeHarness({ verifierError: "LLM_RATE_LIMITED" });
+    await expect(executeHarness(harness)).rejects.toMatchObject({
+      code: "LLM_RATE_LIMITED",
+      statusCode: 429,
+      message: "The AI service is temporarily rate-limited. Please try again shortly.",
+    });
+    expect(harness.observations.handoffs).toContainEqual(
+      expect.objectContaining({ agent: "citation-verification-agent" }),
+    );
+    // The verifier failure must not degrade into an insufficient-evidence
+    // refusal: no assistant answer (refuse or release) is persisted.
+    expect(harness.messages.filter((message) => message.role === "assistant")).toHaveLength(0);
+  });
 });
 
 describe("ChatWorkflowService trusted projections and provenance", () => {
@@ -895,12 +1200,25 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     expect(harness.observations.complianceInput).not.toHaveProperty("candidates");
   });
 
+  it("hands Compliance the exact final-verified salvage instead of the writer draft", async () => {
+    const harness = makeHarness({ verifierAnswer: "SUPPORTED FACTS ONLY" });
+    await executeHarness(harness);
+    expect(harness.observations.complianceInput).toMatchObject({
+      answer: "SUPPORTED FACTS ONLY",
+      citationVerification: { verified: true },
+    });
+  });
+
   it("uses the standalone normalized question and server topK for search", async () => {
     const harness = makeHarness();
     await executeHarness(harness);
     expect(harness.observations.tools[0]).toEqual({
       name: "authorized_hybrid_search",
-      input: { queryText: "trusted normalized question", topK: 5 },
+      input: {
+        queryText: "trusted normalized question",
+        queryVariants: ["trusted semantic query"],
+        topK: 5,
+      },
     });
   });
 
@@ -918,8 +1236,32 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     await executeHarness(harness);
     expect(harness.observations.tools[0].input).toEqual({
       queryText: "trusted normalized question",
+      queryVariants: ["trusted semantic query"],
       topK: 5,
       documentIds: [documentA],
+    });
+  });
+
+  it("passes bounded semantic, keyword, and exact-term query plans to retrieval", async () => {
+    const harness = makeHarness({
+      intentSemanticQueries: [
+        { text: "English remote work policy", language: "en", weight: 0.7 },
+        { text: "English remote work policy", language: "en", weight: 0.6 },
+      ],
+      intentKeywordQueries: [
+        { terms: ["remote", "work", "policy"], language: "en", mustMatch: true },
+      ],
+      intentExactTerms: ["P1", "$25", "P1"],
+    });
+    await executeHarness(harness);
+    expect(harness.observations.tools[0]).toMatchObject({
+      name: "authorized_hybrid_search",
+      input: {
+        queryText: "trusted normalized question",
+        queryVariants: ["English remote work policy"],
+        exactTerms: ["P1", "$25"],
+        keywordTexts: ["remote work policy"],
+      },
     });
   });
 
@@ -1267,7 +1609,9 @@ describe("ChatWorkflowService controlled short paths", () => {
       nextAgent: "compliance-agent",
       reasonCode: "NO_SEARCH_RESULTS",
     });
-    expect(response.answer).toContain("sufficient authorized evidence");
+    expect(response.answer).toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
+    );
     expect(response.sources).toEqual([]);
   });
 
@@ -1278,7 +1622,9 @@ describe("ChatWorkflowService controlled short paths", () => {
       intentLanguage: "ar",
     });
     const response = await executeHarness(harness, "هل توفر الشركة تأميناً صحياً للعائلة؟");
-    expect(response.answer).toContain("لم أتمكن من العثور على معلومات كافية");
+    expect(response.answer).toContain(
+      "لم أتمكن من العثور على أي معلومات تخص استفسارك في مستندات الشركة المتاحة.",
+    );
     expect(response.sources).toEqual([]);
   });
 
@@ -1326,6 +1672,22 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(capabilitiesResponse.sources).toEqual([]);
     expect(capabilities.observations.tools).toEqual([]);
     expect(capabilities.observations.complianceInput).toBeUndefined();
+  });
+
+  it.each([
+    ["Who are you and what is the P1 response time?", "en", "I'm DocuMind AI", "P1 response is 15 minutes."],
+    ["انت مين وقولي كمان امتى لازم Purchase Order؟", "ar", "أنا DocuMind AI", "Purchase Orders above USD 1,000 are required."],
+  ] as const)("composes mixed identity and knowledge output for %s", async (question, language, identityText, knowledgeText) => {
+    const harness = makeHarness({
+      scenario: "grounded",
+      intentLanguage: language,
+      mixedAssistantKind: "identity",
+      complianceAnswer: knowledgeText,
+    });
+    const response = await executeHarness(harness, question);
+    expect(response.answer).toContain(identityText);
+    expect(response.answer).toContain(knowledgeText);
+    expect(response.sources?.length).toBeGreaterThan(0);
   });
 
   it("routes analytics through one controlled tool and deterministic formatter", async () => {
@@ -1397,7 +1759,9 @@ describe("ChatWorkflowService controlled short paths", () => {
       route: "rag",
       answerDecision: "insufficient_evidence",
     });
-    expect(response.answer).toContain("sufficient authorized evidence");
+    expect(response.answer).toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
+    );
     expect(response.sources).toEqual([]);
   });
 
@@ -1452,6 +1816,7 @@ describe("ChatWorkflowService controlled short paths", () => {
       name: "authorized_hybrid_search",
       input: {
         queryText: "trusted normalized question",
+        queryVariants: ["trusted semantic query"],
         topK: 5,
         documentIds: [documentA],
       },
@@ -1483,6 +1848,62 @@ describe("ChatWorkflowService controlled short paths", () => {
     const response = await executeHarness(harness);
     expect(response.sources).toEqual([]);
     expect(harness.reportKnowledgeGap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create a Knowledge Gap when retrieval was authorization-filtered", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      retrievalOutcome: "AUTHORIZATION_FILTERED",
+    });
+    const response = await executeHarness(harness);
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("does not record a Knowledge Gap when search was restricted by document authorization", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      searchCandidates: [],
+      searchAuthorizationRestricted: true,
+    });
+    const response = await executeHarness(harness);
+    expect(response.answer).toContain(
+      "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("keeps a Knowledge Gap eligible when authorized results remain but evidence is insufficient", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      retrievalOutcome: "AUTHORIZED_RESULTS",
+    });
+    await executeHarness(harness);
+    expect(harness.reportKnowledgeGap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not create an unverified-grounded Knowledge Gap after authorization filtering", async () => {
+    const harness = makeHarness({
+      verifierIds: [],
+      complianceSourceIds: [],
+      retrievalOutcome: "AUTHORIZATION_FILTERED",
+    });
+    await executeHarness(harness);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("does not record a Knowledge Gap when evidence evaluation was denied by document authorization", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      evidenceAuthorizationRestricted: true,
+    });
+    const response = await executeHarness(harness);
+    expect(response.answer).toContain(
+      "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
   });
 
   it("records an unverified-grounded Knowledge Gap and never releases the draft", async () => {
@@ -1523,7 +1944,9 @@ describe("ChatWorkflowService controlled short paths", () => {
     const harness = makeHarness({ scenario: "insufficient" });
     harness.reportKnowledgeGap.mockRejectedValueOnce(new Error("gap unavailable"));
     const response = await executeHarness(harness);
-    expect(response.answer).toContain("sufficient authorized evidence");
+    expect(response.answer).toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
+    );
     expect(harness.messages.at(-1)?.role).toBe("assistant");
   });
 });

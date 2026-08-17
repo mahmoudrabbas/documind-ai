@@ -18,6 +18,7 @@ import {
   deleteRole,
   getPermissionCatalog,
   getRole,
+  getRoleScopeOptions,
   getRoleUsage,
   listRoles,
   migrateRoleUsers,
@@ -34,8 +35,13 @@ import type {
   PermissionScopeType,
 } from "@/types/api/permissions.types";
 import { Permission } from "@/types/api/permissions.types";
-import type { RoleView, UserView } from "@/types/api/users.types";
+import type {
+  RoleScopeOptions,
+  RoleView,
+  UserView,
+} from "@/types/api/users.types";
 import {
+  collectRoleScopeResolution,
   deriveDeleteFlowState,
   deriveInheritedPermissionIds,
   deriveRoleActionVisibility,
@@ -45,9 +51,11 @@ import {
   filterCatalogGroupsForActor,
   flattenCatalogEntries,
   normalizeScopesForPermission,
+  normalizeTaxonomyName,
   permissionScopesAreEmpty,
   prepareCreateRoleSubmission,
   prepareUpdateRoleSubmission,
+  replacePermissionGrant,
   type ActorGrantMap,
 } from "@/lib/permission-utils";
 import {
@@ -55,6 +63,7 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
+import { ScopeOptionPicker } from "@/components/domain/ScopeOptionPicker";
 import { useI18n } from "@/providers/i18n-provider";
 
 const BASE_ROLE_OPTIONS = [
@@ -78,6 +87,17 @@ interface CatalogData {
   groups: PermissionCatalogGroup[];
   baseRoleDefaults: Record<string, string[]>;
 }
+
+const EMPTY_SCOPE_OPTIONS: RoleScopeOptions = {
+  departments: [],
+  categories: [],
+  classifications: [],
+  archived: {
+    departments: [],
+    categories: [],
+    classifications: [],
+  },
+};
 
 interface LifecycleState {
   type: LifecycleKind;
@@ -114,29 +134,49 @@ function grantsEqual(a: PermissionGrant[], b: PermissionGrant[]): boolean {
 function formatScope(
   scopes: PermissionScopes | null | undefined,
   t: (key: string, params?: Record<string, string>) => string,
+  options: RoleScopeOptions,
 ): string {
   if (!scopes || permissionScopesAreEmpty(scopes))
     return t("dashboard.roles.scopeUnrestricted");
   const parts: string[] = [];
+  const displayValues = (
+    values: string[],
+    dimension: "departments" | "categories" | "classifications",
+    valueKey: "id" | "name",
+  ) => {
+    const available = [...options[dimension], ...options.archived[dimension]];
+    const byKey = new Map(
+      available.map((option) => [
+        valueKey === "id" ? option.id : normalizeTaxonomyName(option.normalizedName),
+        option.name,
+      ]),
+    );
+    return values
+      .map((value) => {
+        const key = valueKey === "id" ? value : normalizeTaxonomyName(value);
+        return byKey.get(key) ?? `${value} (unknown)`;
+      })
+      .join(", ");
+  };
   if (scopes.selfOnly) parts.push(t("dashboard.roles.scopeSelfOnly"));
   if (scopes.departmentIds.length > 0) {
     parts.push(
       t("dashboard.roles.scopeDepartments", {
-        departments: scopes.departmentIds.join(", "),
+        departments: displayValues(scopes.departmentIds, "departments", "id"),
       }),
     );
   }
   if (scopes.documentCategories.length > 0) {
     parts.push(
       t("dashboard.roles.scopeCategories", {
-        categories: scopes.documentCategories.join(", "),
+        categories: displayValues(scopes.documentCategories, "categories", "name"),
       }),
     );
   }
   if (scopes.documentClassifications.length > 0) {
     parts.push(
       t("dashboard.roles.scopeClassifications", {
-        classifications: scopes.documentClassifications.join(", "),
+        classifications: displayValues(scopes.documentClassifications, "classifications", "name"),
       }),
     );
   }
@@ -179,6 +219,23 @@ export default function RolesPage() {
   const [catalog, setCatalog] = useState<CatalogData | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const [scopeOptions, setScopeOptions] = useState<RoleScopeOptions>(
+    EMPTY_SCOPE_OPTIONS,
+  );
+  const [scopeOptionsLoading, setScopeOptionsLoading] = useState(false);
+  const [scopeOptionsError, setScopeOptionsError] = useState<string | null>(
+    null,
+  );
+  const scopeResolveRef = useRef<{
+    departments: Set<string>;
+    categories: Set<string>;
+    classifications: Set<string>;
+  }>({
+    departments: new Set(),
+    categories: new Set(),
+    classifications: new Set(),
+  });
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -280,14 +337,55 @@ export default function RolesPage() {
     }
   }, [t]);
 
+  const loadScopeOptions = useCallback(
+    async (
+      resolution?: ReturnType<typeof collectRoleScopeResolution>,
+    ): Promise<boolean> => {
+      if (resolution) {
+        for (const id of resolution.departments) {
+          scopeResolveRef.current.departments.add(id);
+        }
+        for (const name of resolution.categories) {
+          scopeResolveRef.current.categories.add(normalizeTaxonomyName(name));
+        }
+        for (const name of resolution.classifications) {
+          scopeResolveRef.current.classifications.add(
+            normalizeTaxonomyName(name),
+          );
+        }
+      }
+      setScopeOptionsLoading(true);
+      setScopeOptionsError(null);
+      try {
+        const response = await getRoleScopeOptions({
+          departments: [...scopeResolveRef.current.departments],
+          categories: [...scopeResolveRef.current.categories],
+          classifications: [...scopeResolveRef.current.classifications],
+        });
+        setScopeOptions(response.data);
+        return true;
+      } catch (loadError) {
+        setScopeOptionsError(
+          loadError instanceof ApiError
+            ? loadError.message
+            : t("dashboard.roles.scopeOptionsError"),
+        );
+        return false;
+      } finally {
+        setScopeOptionsLoading(false);
+      }
+    },
+    [t],
+  );
+
   useEffect(() => {
     if (!permissionsReady) return;
     if (!canReadRoles) {
       setLoading(false);
       return;
     }
-    void Promise.all([loadRoles(), loadCatalog()]);
-  }, [canReadRoles, loadCatalog, loadRoles, permissionsReady]);
+    void Promise.all([loadRoles(), loadCatalog(), loadScopeOptions()]);
+  }, [canReadRoles, loadCatalog, loadRoles, loadScopeOptions, permissionsReady]);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -406,6 +504,7 @@ export default function RolesPage() {
         const response = await getRole(roleId);
         const latest = response.data.role;
         setSelectedRole(latest);
+        void loadScopeOptions(collectRoleScopeResolution(latest.grants));
         if (startInEdit) {
           setEditing(true);
           setEditName(latest.name);
@@ -426,7 +525,7 @@ export default function RolesPage() {
         setDetailsLoading(false);
       }
     },
-    [t],
+    [loadScopeOptions, t],
   );
 
   const closeDetails = () => {
@@ -883,6 +982,7 @@ export default function RolesPage() {
   return (
     <DashboardPage dir={dir}>
       <DashboardPageHeader
+        guideId="page-heading-roles"
         title={t("dashboard.roles.title")}
         description={t("dashboard.roles.description")}
         actions={
@@ -894,6 +994,7 @@ export default function RolesPage() {
                 setShowCreateForm((current) => !current);
                 setCreateError(null);
               }}
+              data-guide-id="roles-create-button"
             >
               <span className="material-symbols-outlined text-[18px]">
                 {showCreateForm ? "close" : "add"}
@@ -932,6 +1033,9 @@ export default function RolesPage() {
           actorGrants={actorGrants}
           catalogLoading={catalogLoading}
           catalogError={catalogError}
+          scopeOptions={scopeOptions}
+          scopeOptionsLoading={scopeOptionsLoading}
+          scopeOptionsError={scopeOptionsError}
           error={createError}
           submitting={createSubmitting}
           onSubmit={handleCreate}
@@ -975,6 +1079,9 @@ export default function RolesPage() {
           catalogEntries={catalogEntries}
           selectableGroups={selectableGroups}
           actorGrants={actorGrants}
+          scopeOptions={scopeOptions}
+          scopeOptionsLoading={scopeOptionsLoading}
+          scopeOptionsError={scopeOptionsError}
           editing={editing}
           editName={editName}
           editBaseRole={editBaseRole}
@@ -1072,6 +1179,9 @@ function CreateRolePanel({
   catalogEntries,
   selectableGroups,
   actorGrants,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
   catalogLoading,
   catalogError,
   error,
@@ -1084,11 +1194,14 @@ function CreateRolePanel({
   baseRole: TenantBaseRole;
   onBaseRoleChange: (value: TenantBaseRole) => void;
   grants: PermissionGrant[];
-  onGrantsChange: (value: PermissionGrant[]) => void;
+  onGrantsChange: (value: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   inheritedIds: string[];
   catalogEntries: PermissionCatalogEntry[];
   selectableGroups: PermissionCatalogGroup[];
   actorGrants: ActorGrantMap;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
   catalogLoading: boolean;
   catalogError: string | null;
   error: string | null;
@@ -1123,6 +1236,7 @@ function CreateRolePanel({
               maxLength={50}
               className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
               aria-describedby="create-role-name-help"
+              data-guide-id="roles-create-name"
             />
             <p
               id="create-role-name-help"
@@ -1179,6 +1293,9 @@ function CreateRolePanel({
           selectedGrants={grants}
           onChange={onGrantsChange}
           loading={catalogLoading}
+          scopeOptions={scopeOptions}
+          scopeOptionsLoading={scopeOptionsLoading}
+          scopeOptionsError={scopeOptionsError}
         />
 
         {error ? (
@@ -1195,6 +1312,7 @@ function CreateRolePanel({
             type="submit"
             disabled={submitting}
             className="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:cursor-not-allowed disabled:opacity-50"
+            data-guide-id="roles-create-submit"
           >
             {submitting
               ? t("dashboard.roles.creating")
@@ -1223,7 +1341,7 @@ function RoleFilters({
 }) {
   const { t } = useI18n();
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" data-guide-id="roles-filter-bar">
       <label className="relative block max-w-sm flex-1">
         <span className="sr-only">{t("dashboard.roles.searchRolesSr")}</span>
         <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
@@ -1376,7 +1494,7 @@ function RoleListContent({
 
   return (
     <>
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden overflow-x-auto md:block" data-guide-id="roles-table">
         <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-surface-container-low text-start">
             <tr>
@@ -1616,14 +1734,20 @@ function PermissionEditor({
   selectedGrants,
   onChange,
   loading,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
 }: {
   groups: PermissionCatalogGroup[];
   allEntries: PermissionCatalogEntry[];
   actorGrants: ActorGrantMap;
   inheritedIds: string[];
   selectedGrants: PermissionGrant[];
-  onChange: (grants: PermissionGrant[]) => void;
+  onChange: (grants: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   loading: boolean;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
 }) {
   const { t } = useI18n();
   const [search, setSearch] = useState("");
@@ -1658,17 +1782,14 @@ function PermissionEditor({
     .filter((group) => group.permissions.length > 0);
 
   const updateGrant = (permission: string, next: PermissionGrant | null) => {
-    const without = selectedGrants.filter(
-      (grant) => grant.permission !== permission,
-    );
-    onChange(next ? [...without, next] : without);
+    onChange((current) => replacePermissionGrant(current, permission, next));
   };
 
   if (loading)
     return <CenteredStatus text={t("dashboard.roles.catalogLoadError")} />;
 
   return (
-    <section aria-labelledby="permission-editor-title" className="space-y-4">
+    <section aria-labelledby="permission-editor-title" className="space-y-4" data-guide-id="roles-permissions-editor">
       <div>
         <h3 id="permission-editor-title" className="font-bold text-on-surface">
           {t("dashboard.roles.permissions")}
@@ -1821,7 +1942,7 @@ function PermissionEditor({
                                   source:
                                     actorGrant?.source ??
                                     t("dashboard.roles.actorSourceUnavailable"),
-                                  scope: formatScope(actorGrant?.scope, t),
+                                  scope: formatScope(actorGrant?.scope, t, scopeOptions),
                                 })}
                               </span>
                             </span>
@@ -1840,6 +1961,9 @@ function PermissionEditor({
                                   scopes,
                                 })
                               }
+                              scopeOptions={scopeOptions}
+                              scopeOptionsLoading={scopeOptionsLoading}
+                              scopeOptionsError={scopeOptionsError}
                             />
                           ) : null}
                         </div>
@@ -1861,28 +1985,19 @@ function ScopeControls({
   actorScope,
   value,
   onChange,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
 }: {
   entry: PermissionCatalogEntry;
   actorScope: PermissionScopes | null;
   value: PermissionScopes;
   onChange: (value: PermissionScopes) => void;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
 }) {
   const { t } = useI18n();
-  const setArray = (
-    dimension:
-      "departmentIds" | "documentCategories" | "documentClassifications",
-    raw: string,
-  ) => {
-    const values = [
-      ...new Set(
-        raw
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-      ),
-    ];
-    onChange({ ...value, [dimension]: values });
-  };
   const control = (dimension: PermissionScopeType) =>
     entry.compatibleScopes.includes(dimension);
 
@@ -1893,7 +2008,7 @@ function ScopeControls({
       </legend>
       <p className="text-[11px] text-on-surface-variant">
         {t("dashboard.roles.submittedScopeHelp", {
-          scope: formatScope(actorScope, t),
+          scope: formatScope(actorScope, t, scopeOptions),
         })}
       </p>
       {control("selfOnly") ? (
@@ -1909,50 +2024,50 @@ function ScopeControls({
         </label>
       ) : null}
       {control("departmentIds") ? (
-        <ScopeArrayInput
+        <ScopeOptionPicker
           label={t("dashboard.roles.deptIdsLabel")}
-          value={value.departmentIds}
-          onChange={(raw) => setArray("departmentIds", raw)}
+          options={scopeOptions.departments}
+          archived={scopeOptions.archived.departments}
+          selected={value.departmentIds}
+          valueKey="id"
+          dimension="departmentIds"
+          actorScope={actorScope}
+          loading={scopeOptionsLoading}
+          error={scopeOptionsError}
+          onChange={(next) => onChange({ ...value, departmentIds: next })}
         />
       ) : null}
       {control("documentCategories") ? (
-        <ScopeArrayInput
+        <ScopeOptionPicker
           label={t("dashboard.roles.docCategoriesLabel")}
-          value={value.documentCategories}
-          onChange={(raw) => setArray("documentCategories", raw)}
+          options={scopeOptions.categories}
+          archived={scopeOptions.archived.categories}
+          selected={value.documentCategories}
+          valueKey="name"
+          dimension="documentCategories"
+          actorScope={actorScope}
+          loading={scopeOptionsLoading}
+          error={scopeOptionsError}
+          onChange={(next) => onChange({ ...value, documentCategories: next })}
         />
       ) : null}
       {control("documentClassifications") ? (
-        <ScopeArrayInput
+        <ScopeOptionPicker
           label={t("dashboard.roles.docClassificationsLabel")}
-          value={value.documentClassifications}
-          onChange={(raw) => setArray("documentClassifications", raw)}
+          options={scopeOptions.classifications}
+          archived={scopeOptions.archived.classifications}
+          selected={value.documentClassifications}
+          valueKey="name"
+          dimension="documentClassifications"
+          actorScope={actorScope}
+          loading={scopeOptionsLoading}
+          error={scopeOptionsError}
+          onChange={(next) =>
+            onChange({ ...value, documentClassifications: next })
+          }
         />
       ) : null}
     </fieldset>
-  );
-}
-
-function ScopeArrayInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string[];
-  onChange: (value: string) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <label className="block text-xs font-bold text-on-surface-variant">
-      {label}
-      <input
-        value={value.join(", ")}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={t("dashboard.roles.commaSeparated")}
-        className="mt-1 w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm font-normal text-on-surface outline-none focus:ring-2 focus:ring-primary"
-      />
-    </label>
   );
 }
 
@@ -1964,6 +2079,9 @@ function RoleDetailsDialog({
   catalogEntries,
   selectableGroups,
   actorGrants,
+  scopeOptions,
+  scopeOptionsLoading,
+  scopeOptionsError,
   editing,
   editName,
   editBaseRole,
@@ -1990,6 +2108,9 @@ function RoleDetailsDialog({
   catalogEntries: PermissionCatalogEntry[];
   selectableGroups: PermissionCatalogGroup[];
   actorGrants: ActorGrantMap;
+  scopeOptions: RoleScopeOptions;
+  scopeOptionsLoading: boolean;
+  scopeOptionsError: string | null;
   editing: boolean;
   editName: string;
   editBaseRole: TenantBaseRole;
@@ -2005,7 +2126,7 @@ function RoleDetailsDialog({
   onCancelEdit: () => void;
   onEditNameChange: (value: string) => void;
   onEditBaseRoleChange: (value: TenantBaseRole) => void;
-  onEditGrantsChange: (value: PermissionGrant[]) => void;
+  onEditGrantsChange: (value: PermissionGrant[] | ((current: PermissionGrant[]) => PermissionGrant[])) => void;
   onSave: () => void;
   onReloadLatest: () => void;
 }) {
@@ -2115,6 +2236,9 @@ function RoleDetailsDialog({
                     selectedGrants={editGrants}
                     onChange={onEditGrantsChange}
                     loading={false}
+                    scopeOptions={scopeOptions}
+                    scopeOptionsLoading={scopeOptionsLoading}
+                    scopeOptionsError={scopeOptionsError}
                   />
                   {editError ? (
                     <div
@@ -2225,7 +2349,7 @@ function RoleDetailsDialog({
                                 grant.permission}
                             </p>
                             <p className="mt-1 text-xs text-on-surface-variant">
-                              {formatScope(grant.scopes, t)}
+                              {formatScope(grant.scopes, t, scopeOptions)}
                             </p>
                           </li>
                         ))}

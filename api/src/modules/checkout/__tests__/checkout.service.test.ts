@@ -230,6 +230,58 @@ describe("CheckoutService", () => {
       expect(CheckoutSessionModel.create).not.toHaveBeenCalled();
     });
 
+    it("uses a new provider attempt identity after a provider failure before local persistence", async () => {
+      const mockPkg = {
+        _id: PACKAGE_ID, active: true, version: 1, code: "basic", name: "Basic",
+        monthlyPrice: 29, annualPrice: 290, stripePriceId: "price_monthly_basic",
+        stripeAnnualPriceId: "price_annual_basic",
+      };
+      (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(mockPkg));
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(null));
+      (CheckoutSessionModel.create as ReturnType<typeof vi.fn>).mockResolvedValue({ _id: "checkout-retry" });
+      const contexts: Array<{ idempotencyKey: string; requestFingerprint: string } | undefined> = [];
+      const create = fakeProvider.createCheckoutSession.bind(fakeProvider);
+      vi.spyOn(fakeProvider, "createCheckoutSession").mockImplementation(async (params) => {
+        contexts.push(params.operationContext);
+        return create(params);
+      });
+      fakeProvider.shouldFailNextCreateSession = true;
+
+      await expect(createCheckoutSession(TENANT_ID, PACKAGE_ID, "monthly", fakeProvider, "https://ok", "https://cancel", TEST_ACTOR)).rejects.toThrow("session creation failed");
+      await expect(createCheckoutSession(TENANT_ID, PACKAGE_ID, "monthly", fakeProvider, "https://ok", "https://cancel", TEST_ACTOR)).resolves.toMatchObject({ checkoutId: "checkout-retry" });
+
+      expect(contexts).toHaveLength(2);
+      expect(contexts[0]?.idempotencyKey).not.toBe(contexts[1]?.idempotencyKey);
+      expect(CheckoutSessionModel.countDocuments).not.toHaveBeenCalled();
+    });
+
+    it("includes the resolved provider price identity in the checkout fingerprint", async () => {
+      const firstPackage = {
+        _id: PACKAGE_ID, active: true, version: 1, code: "basic", name: "Basic",
+        monthlyPrice: 29, annualPrice: 290, stripePriceId: "price_monthly_v1",
+        stripeAnnualPriceId: "price_annual_v1",
+      };
+      const secondPackage = { ...firstPackage, stripePriceId: "price_monthly_v2" };
+      (PackageModel.findById as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(mockQueryChain(firstPackage))
+        .mockReturnValueOnce(mockQueryChain(secondPackage));
+      (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(null));
+      (CheckoutSessionModel.create as ReturnType<typeof vi.fn>).mockResolvedValue({ _id: "checkout-price-resync" });
+      const contexts: Array<{ idempotencyKey: string; requestFingerprint: string } | undefined> = [];
+      const create = fakeProvider.createCheckoutSession.bind(fakeProvider);
+      vi.spyOn(fakeProvider, "createCheckoutSession").mockImplementation(async (params) => {
+        contexts.push(params.operationContext);
+        return create(params);
+      });
+      fakeProvider.shouldFailNextCreateSession = true;
+
+      await expect(createCheckoutSession(TENANT_ID, PACKAGE_ID, "monthly", fakeProvider, "https://ok", "https://cancel", { ...TEST_ACTOR, requestId: "same-logical-request" })).rejects.toThrow("session creation failed");
+      await expect(createCheckoutSession(TENANT_ID, PACKAGE_ID, "monthly", fakeProvider, "https://ok", "https://cancel", { ...TEST_ACTOR, requestId: "same-logical-request" })).resolves.toBeTruthy();
+
+      expect(contexts[0]?.requestFingerprint).not.toBe(contexts[1]?.requestFingerprint);
+      expect(contexts[0]?.idempotencyKey).not.toBe(contexts[1]?.idempotencyKey);
+    });
+
     it("expires stale pending checkout sessions and does not let them block a new checkout", async () => {
       const staleSession = {
         _id: "checkout_stale",
@@ -334,6 +386,7 @@ describe("CheckoutService", () => {
           reusableCheckoutUrl: expect.stringContaining("cs_open_1"),
         }),
       });
+      expect(fakeProvider.sessions).toHaveLength(1);
     });
 
     it("throws 404 when package not found", async () => {
@@ -593,6 +646,7 @@ describe("CheckoutService", () => {
       function makeMockProvider() {
         return {
           createCustomer: vi.fn().mockResolvedValue("cus_real_new_123"),
+          retrieveCustomer: vi.fn().mockResolvedValue({ id: "cus_real_existing" }),
           createCheckoutSession: vi.fn().mockResolvedValue({
             id: "cs_new_session",
             url: "https://checkout.stripe.com/new",
@@ -610,6 +664,7 @@ describe("CheckoutService", () => {
           listInvoices: vi.fn(),
           retrieveInvoice: vi.fn(),
           getSecureInvoiceLinks: vi.fn(),
+          retrieveInvoicePdf: vi.fn(),
           previewSubscriptionChange: vi.fn(),
           updateSubscription: vi.fn(),
           scheduleCancellation: vi.fn(),
@@ -695,8 +750,81 @@ describe("CheckoutService", () => {
         );
 
         expect(provider.createCustomer).not.toHaveBeenCalled();
+        expect(provider.retrieveCustomer).toHaveBeenCalledWith("cus_real_existing");
         const checkoutCall = provider.createCheckoutSession.mock.calls[0][0];
         expect(checkoutCall.customerId).toBe("cus_real_existing");
+      });
+
+      it("reuses providerCustomerId from a local Free fallback subscription (paid → cancellation → Free → Paid)", async () => {
+        // Simulate the scenario:
+        //  1. Paid subscription with Stripe customer cus_paid_A
+        //  2. Provider subscription deleted → Free fallback with providerCustomerId
+        //     preserved from the paid subscription (provider = "local")
+        //  3. Customer upgrades to Paid → checkout must reuse cus_paid_A, NOT create
+        //     a duplicate customer
+        const provider = makeMockProvider();
+        (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(
+          mockQueryChain(mockPkg),
+        );
+        (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+          mockQueryChain({
+            providerCustomerId: "cus_paid_A",
+            providerSubscriptionId: "",
+            provider: "local",
+            status: "ACTIVE",
+          }),
+        );
+        (CheckoutSessionModel.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+          _id: "cs_free_to_paid",
+        });
+
+        await createCheckoutSession(
+          TENANT_ID, PACKAGE_ID, "monthly", provider,
+          "https://ok", "https://cancel", TEST_ACTOR,
+        );
+
+        // Must NOT create a new customer — the preserved providerCustomerId
+        // should be retrieved and reused.
+        expect(provider.createCustomer).not.toHaveBeenCalled();
+        expect(provider.retrieveCustomer).toHaveBeenCalledWith("cus_paid_A");
+        const checkoutCall = provider.createCheckoutSession.mock.calls[0][0];
+        expect(checkoutCall.customerId).toBe("cus_paid_A");
+      });
+
+      it("recreates and persists a customer missing from the current provider account", async () => {
+        const provider = makeMockProvider();
+        provider.retrieveCustomer.mockRejectedValue({ status: 404, code: "resource_missing" });
+        (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(mockPkg));
+        (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+          mockQueryChain({ _id: "subscription-stale", providerCustomerId: "cus_old_account", status: "ACTIVE" }),
+        );
+        (CheckoutSessionModel.create as ReturnType<typeof vi.fn>).mockResolvedValue({ _id: "checkout_recovered" });
+
+        await createCheckoutSession(TENANT_ID, PACKAGE_ID, "monthly", provider, "https://ok", "https://cancel", TEST_ACTOR);
+
+        expect(provider.createCustomer).toHaveBeenCalledOnce();
+        expect(provider.createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({ customerId: "cus_real_new_123" }));
+        expect(SubscriptionModel.updateOne).toHaveBeenCalledWith(
+          { _id: "subscription-stale", tenantId: TENANT_ID },
+          { $set: { providerCustomerId: "cus_real_new_123" } },
+        );
+      });
+
+      it("does not replace a customer for unrelated provider failures", async () => {
+        const provider = makeMockProvider();
+        const providerError = { status: 503, code: "service_unavailable" };
+        provider.retrieveCustomer.mockRejectedValue(providerError);
+        (PackageModel.findById as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryChain(mockPkg));
+        (SubscriptionModel.findOne as ReturnType<typeof vi.fn>).mockReturnValue(
+          mockQueryChain({ _id: "subscription-live", providerCustomerId: "cus_live", status: "ACTIVE" }),
+        );
+
+        await expect(
+          createCheckoutSession(TENANT_ID, PACKAGE_ID, "monthly", provider, "https://ok", "https://cancel", TEST_ACTOR),
+        ).rejects.toMatchObject(providerError);
+        expect(provider.createCustomer).not.toHaveBeenCalled();
+        expect(provider.createCheckoutSession).not.toHaveBeenCalled();
+        expect(SubscriptionModel.updateOne).not.toHaveBeenCalled();
       });
 
       it("never passes a cus_fake_ ID to createCheckoutSession", async () => {

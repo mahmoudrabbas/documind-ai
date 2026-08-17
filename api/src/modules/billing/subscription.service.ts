@@ -113,6 +113,10 @@ function writeAudit(
  * Create a new subscription for a tenant. Defaults to TRIALING if no status
  * is provided. When `trialDays` is provided and the subscription is in
  * TRIALING status, `trialEnd` is computed from `trialStart + trialDays`.
+ *
+ * When `periodStart`/`periodEnd` are provided they are written directly
+ * (used by Free / local subscriptions that need a concrete entitlement
+ * period without a provider billing cycle).
  */
 export async function createSubscription(
   tenantId: string,
@@ -121,6 +125,8 @@ export async function createSubscription(
   status?: SubscriptionStatus,
   actor?: BillingActor,
   trialDays?: number,
+  periodStart?: Date,
+  periodEnd?: Date,
 ): Promise<SubscriptionDocument> {
   const targetStatus: SubscriptionStatus = status ?? "TRIALING";
   const now = new Date();
@@ -138,6 +144,10 @@ export async function createSubscription(
     startedAt: now,
     trialStart: targetStatus === "TRIALING" ? now : null,
     trialEnd,
+    periodStart: periodStart ?? null,
+    periodEnd: periodEnd ?? null,
+    currentPeriodStart: periodStart ?? null,
+    currentPeriodEnd: periodEnd ?? null,
   });
 
   writeAudit(

@@ -274,4 +274,29 @@ export class MongoQuotaCounter implements QuotaCounterPort {
       { upsert: true },
     );
   }
+
+  async ensureAtLeast(
+    tenantId: string,
+    dimension: EntitlementDimension,
+    periodStart: string,
+    value: number,
+  ): Promise<number> {
+    const result = await QuotaCounterModel.findOneAndUpdate(
+      {
+        tenantId: new mongoose.Types.ObjectId(tenantId),
+        dimension,
+        periodStart,
+      },
+      {
+        $max: { value },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    return result?.value ?? value;
+  }
 }

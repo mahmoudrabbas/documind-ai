@@ -22,7 +22,7 @@ import {
 } from "./tools/authorizedRetrievalTools.js";
 
 export const CITATION_VERIFICATION_AGENT_ID = "citation-verification-agent";
-export const CITATION_VERIFICATION_AGENT_VERSION = "1.4.0";
+export const CITATION_VERIFICATION_AGENT_VERSION = "2.0.0";
 
 /**
  * Trusted dependencies injected from the composition root. The executor never
@@ -168,6 +168,7 @@ export class CitationVerificationAgentExecutor implements AgentContract {
       const semantic = await this.deps.semanticVerifier.verify({
         answerText: agentInput.answerText ?? "",
         questionText: agentInput.questionText,
+        maxTokens: context.maxTokens,
         evidence: authorizedChunks
           .filter((chunk) => validated.has(chunk.chunkId))
           .map((chunk) => ({ chunkId: chunk.chunkId, text: chunk.text })),
@@ -185,33 +186,42 @@ export class CitationVerificationAgentExecutor implements AgentContract {
               ...membership.validatedCitationIds,
             ])],
             unsupportedClaims: [],
+            unknownClaims: [],
             reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
           },
           latencyMs: Date.now() - startedAt,
         };
       }
       const unsupportedClaims = [...semantic.unsupportedClaims];
+      const unknownClaims = [...(semantic.unknownClaims ?? [])];
       const supportingIds = new Set(semantic.supportingEvidenceIds);
-      const validatedCitationIds = unsupportedClaims.length > 0
-        ? [...membership.validatedCitationIds]
-        : membership.validatedCitationIds.filter((id) => supportingIds.has(id));
-      const rejectedCitationIds = unsupportedClaims.length > 0
-        ? [...membership.rejectedCitationIds]
-        : [...new Set([
-            ...membership.rejectedCitationIds,
-            ...membership.validatedCitationIds.filter((id) => !supportingIds.has(id)),
-          ])];
+      const verifiedAnswer = semantic.releasedAnswerText;
+      const semanticallyVerified = semantic.reasonCode === "SEMANTIC_VERIFIED" &&
+        typeof verifiedAnswer === "string" &&
+        verifiedAnswer.length > 0;
+      const validatedCitationIds = semanticallyVerified
+        ? membership.validatedCitationIds.filter((id) => supportingIds.has(id))
+        : [];
+      const rejectedCitationIds = [...new Set([
+        ...membership.rejectedCitationIds,
+        ...membership.validatedCitationIds.filter((id) => !validatedCitationIds.includes(id)),
+      ])];
       const output: CitationVerifierOutput = {
         ...membership,
-        verified:
-          unsupportedClaims.length === 0 && validatedCitationIds.length > 0,
+        verified: semanticallyVerified && validatedCitationIds.length > 0,
         validatedCitationIds,
         rejectedCitationIds,
         unsupportedClaims,
+        unknownClaims,
+        ...(semanticallyVerified && validatedCitationIds.length > 0
+          ? { verifiedAnswer }
+          : {}),
         reasonCode:
-          unsupportedClaims.length === 0 && validatedCitationIds.length > 0
+          semanticallyVerified && validatedCitationIds.length > 0
             ? "CITATIONS_VERIFIED"
-            : "UNSUPPORTED_CLAIMS",
+            : unknownClaims.length > 0
+              ? "UNRESOLVED_CLAIMS"
+              : "UNSUPPORTED_CLAIMS",
       };
       return {
         ok: true,

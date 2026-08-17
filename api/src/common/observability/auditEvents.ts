@@ -143,6 +143,7 @@ export type AuditAction =
   | "BILLING_INVOICE_SYNCHRONIZED"
   | "BILLING_INVOICE_SYNCHRONIZATION_FAILED"
   | "BILLING_INVOICE_LINK_ACCESSED"
+  | "BILLING_INVOICE_PDF_ACCESSED"
   | "BILLING_PAYMENT_METHOD_PORTAL_SESSION_CREATED"
   | "BILLING_SUMMARY_ACCESSED"
   | "BILLING_REFUND_REQUESTED"
@@ -203,7 +204,11 @@ export type AuditAction =
   | "KNOWLEDGE_GAP_DOCUMENTS_LINKED"
   | "KNOWLEDGE_GAP_REEVALUATED"
   | "FEEDBACK_SUBMITTED"
-  | "FEEDBACK_ACCESS_DENIED";
+  | "FEEDBACK_ACCESS_DENIED"
+  // Copilot
+  | "COPILOT_ACTION_EXECUTED"
+  | "COPILOT_ACTION_FAILED"
+  | "COPILOT_ACTION_REJECTED";
 
 export type AuditResourceType =
   | "User"
@@ -242,7 +247,8 @@ export type AuditResourceType =
   | "GapReevaluation"
   | "Feedback"
   | "EntitlementOverride"
-  | "EntitlementReconciliation";
+  | "EntitlementReconciliation"
+  | "CopilotAction";
 
 export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED";
 export type AuditActorKind = "USER" | "SYSTEM" | "UNAUTHENTICATED";

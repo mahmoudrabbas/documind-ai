@@ -64,10 +64,13 @@ export interface UserPublicView {
   role?: BaseRole;
   customRoleId?: string;
   customRoleName?: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
   status: string;
   emailVerified: boolean;
   employeeProfile?: {
     employeeId?: string;
+    departmentId?: string;
     department?: string;
     jobTitle?: string;
     phone?: string;
@@ -142,7 +145,7 @@ export interface RefreshRotationResult extends RefreshResult {
 }
 
 export interface MeResult {
-  user: Omit<UserPublicView, "createdAt">;
+  user: UserPublicView;
   tenant: Omit<TenantPublicView, "createdAt">;
 }
 

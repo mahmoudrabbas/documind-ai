@@ -528,6 +528,84 @@ describe("authorizedRetrievalTools — resolve_document_titles handler", () => {
 // ── Handler: authorized_hybrid_search ──────────────────────────────────────
 
 describe("authorizedRetrievalTools — authorized_hybrid_search handler", () => {
+  test("reports authorized results when filtering leaves an eligible candidate", async () => {
+    const { deps } = makeDeps({
+      retrieval: {
+        hybridSearch: async () => ({
+          candidates: [makeCandidate()],
+          totalCandidates: 1,
+          filterSummary: {} as never,
+          diagnostics: {
+            rawVectorCandidateCount: 5,
+            rawKeywordCandidateCount: 0,
+            postAuthorizationVectorCandidateCount: 1,
+            postAuthorizationKeywordCandidateCount: 0,
+          } as never,
+        }),
+        vectorSearch: async () => ({}) as never,
+        keywordSearch: async () => ({}) as never,
+      } as unknown as HybridRetrievalService,
+    });
+    const tool = toolOf("authorized_hybrid_search", deps);
+
+    const result = await tool.handler(agentRunContext(), { queryText: "policies" }) as {
+      retrievalOutcome: string;
+      candidates: unknown[];
+    };
+
+    assert.equal(result.retrievalOutcome, "AUTHORIZED_RESULTS");
+    assert.equal(result.candidates.length, 1);
+  });
+
+  test("reports authorization filtering when provenance says authorization left no candidates", async () => {
+    const { deps } = makeDeps({
+      retrieval: {
+        hybridSearch: async () => ({
+          candidates: [],
+          totalCandidates: 0,
+          filterSummary: {} as never,
+          diagnostics: { authorizationFiltered: true } as never,
+        }),
+        vectorSearch: async () => ({}) as never,
+        keywordSearch: async () => ({}) as never,
+      } as unknown as HybridRetrievalService,
+    });
+    const tool = toolOf("authorized_hybrid_search", deps);
+
+    const result = await tool.handler(agentRunContext(), { queryText: "policies" }) as {
+      retrievalOutcome: string;
+    };
+
+    assert.equal(result.retrievalOutcome, "AUTHORIZATION_FILTERED");
+  });
+
+  test("does not call an empty cross-tenant/no-match retrieval authorization-filtered", async () => {
+    const { deps } = makeDeps({
+      retrieval: {
+        hybridSearch: async () => ({
+          candidates: [],
+          totalCandidates: 0,
+          filterSummary: {} as never,
+          diagnostics: {
+            rawVectorCandidateCount: 0,
+            rawKeywordCandidateCount: 0,
+            postAuthorizationVectorCandidateCount: 0,
+            postAuthorizationKeywordCandidateCount: 0,
+          } as never,
+        }),
+        vectorSearch: async () => ({}) as never,
+        keywordSearch: async () => ({}) as never,
+      } as unknown as HybridRetrievalService,
+    });
+    const tool = toolOf("authorized_hybrid_search", deps);
+
+    const result = await tool.handler(agentRunContext(), { queryText: "foreign secret" }) as {
+      retrievalOutcome: string;
+    };
+
+    assert.equal(result.retrievalOutcome, "NO_MATCHES");
+  });
+
   test("delegates to retrieval service with server-derived accessContext", async () => {
     const { deps, retrievalCalls } = makeDeps();
     const tool = toolOf("authorized_hybrid_search", deps);
@@ -536,6 +614,8 @@ describe("authorizedRetrievalTools — authorized_hybrid_search handler", () => 
       queryText: "policies",
       topK: 5,
       documentIds: [docId],
+      exactTerms: ["$25"],
+      keywordTexts: ["remote work policy"],
     })) as {
       candidates: Array<{ chunkId: string; documentId: string }>;
       totalCandidates: number;
@@ -546,6 +626,8 @@ describe("authorizedRetrievalTools — authorized_hybrid_search handler", () => 
     assert.deepEqual(retrievalCalls[0]!.query, {
       queryText: "policies",
       topK: 5,
+      exactTerms: ["$25"],
+      keywordTexts: ["remote work policy"],
       filter: { documentIds: [docId] },
     });
 

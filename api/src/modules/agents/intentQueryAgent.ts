@@ -155,6 +155,7 @@ export class IntentQueryAgentExecutor
           language: intentInput.language,
           referencedDocumentIds: intentInput.referencedDocumentIds,
           currentMessageAlreadyPersisted: true,
+          maxTokens: Math.min(1000, context.maxTokens ?? 1000),
           maxContext: 5,
         },
         {
@@ -164,6 +165,9 @@ export class IntentQueryAgentExecutor
           actorRole: context.actorRole,
           traceId: context.traceId,
           requestId: context.requestId,
+        },
+        {
+          tokenAccounting: "external",
         },
       );
       return {

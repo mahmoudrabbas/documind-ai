@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { PublicEnvironmentValidationError, resolvePublicApiUrl } from "./public-env";
+import {
+  PublicEnvironmentValidationError,
+  resolveCopilotEnabled,
+  resolvePublicApiUrl,
+} from "./public-env";
 
 describe("public environment validation", () => {
   it("permits a localhost default only outside production", () => {
@@ -13,5 +17,14 @@ describe("public environment validation", () => {
 
   it("accepts an HTTPS production API URL", () => {
     expect(resolvePublicApiUrl("production", "https://api.example.invalid/")).toBe("https://api.example.invalid");
+  });
+
+  it("enables copilot only on an explicit true value", () => {
+    expect(resolveCopilotEnabled(undefined)).toBe(false);
+    expect(resolveCopilotEnabled("")).toBe(false);
+    expect(resolveCopilotEnabled("false")).toBe(false);
+    expect(resolveCopilotEnabled("FALSE")).toBe(false);
+    expect(resolveCopilotEnabled("true")).toBe(true);
+    expect(resolveCopilotEnabled(" true ")).toBe(true);
   });
 });

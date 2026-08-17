@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { API_BASE_URL } from "@/constants/api";
 import { getAccessToken } from "@/lib/auth-tokens";
+import type { NotificationSocketEvent } from "@/types/api/notifications.types";
 
 export interface UseNotificationSocketOptions {
-  /** Called when the server pushes `notification:created` (e.g. refresh unread count + feed). */
-  onNotificationCreated?: () => void;
+  /** Called when the server pushes `notification:created` (e.g. refresh unread count + feed or show a toast). */
+  onNotificationCreated?: (notification?: NotificationSocketEvent) => void;
   /** Called when the server pushes `notification:updated` (e.g. refresh unread count + feed). */
-  onNotificationUpdated?: () => void;
+  onNotificationUpdated?: (notification?: NotificationSocketEvent) => void;
 }
 
 export interface UseNotificationSocketResult {
@@ -52,11 +53,11 @@ export function useNotificationSocket(
     socket.on("disconnect", () => setConnected(false));
     socket.on("connect_error", () => setConnected(false));
 
-    socket.on("notification:created", () => {
-      callbacksRef.current.onNotificationCreated?.();
+    socket.on("notification:created", (notification?: NotificationSocketEvent) => {
+      callbacksRef.current.onNotificationCreated?.(notification);
     });
-    socket.on("notification:updated", () => {
-      callbacksRef.current.onNotificationUpdated?.();
+    socket.on("notification:updated", (notification?: NotificationSocketEvent) => {
+      callbacksRef.current.onNotificationUpdated?.(notification);
     });
 
     return () => {

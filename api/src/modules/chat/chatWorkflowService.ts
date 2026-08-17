@@ -3,7 +3,12 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
-import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
+import {
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_RATE_LIMITED,
+  LLM_TIMEOUT,
+  VALIDATION_ERROR,
+} from "../../common/errors/errorCodes.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import DocumentModel from "../../db/models/document.model.js";
@@ -21,8 +26,11 @@ import {
   type AnswerWriterOutput,
   type CitationVerifierOutput,
   type ComplianceAgentOutput,
+  type ComplianceReasonCodeValue,
   type IntentAgentOutput,
 } from "../agents/chatAgentIO.js";
+import { isArabicContext } from "../agents/answerWriter.service.js";
+import type { QueryLanguageValue } from "../intent-query/intentQuery.types.js";
 import { createRun } from "../agents/agents.repository.js";
 import type { RunRecord } from "../agents/agents.types.js";
 import type {
@@ -53,6 +61,12 @@ import type {
 import { getTenantSettings } from "../settings/settings.service.js";
 import { findUserDocumentByTenantAndId } from "../auth/auth.repository.js";
 import {
+  buildQuotaExceededError,
+} from "../entitlement/middlewares/entitlement.middleware.js";
+import {
+  createProductionChatTokenQuotaPort,
+} from "./chatTokenQuota.adapter.js";
+import {
   detectAnalyticsRequest,
   detectReplyLanguage,
   formatAnalyticsAnswer,
@@ -67,10 +81,85 @@ import * as chatRepo from "./chat.repository.js";
 
 const WORKFLOW_ID = "chat-rag-v1" as const;
 const DEFAULT_MAX_TOKENS = 1024;
-const DIRECT_TOP_K = 5;
-const SUMMARY_TOP_K = 12;
+const CHAT_WORKFLOW_MAX_TOTAL_TOKENS = 50_000;
+const CHAT_MIN_RUNNABLE_TOTAL_TOKENS = 1_000;
+export const CHAT_DIRECT_RETRIEVAL_TOP_K = 5;
+export const CHAT_SUMMARIZATION_RETRIEVAL_TOP_K = 12;
 const SUMMARY_MAX_TOKENS = 2048;
 const MAX_SEARCH_QUERY_CHARS = 2_000;
+
+// ── Fallback reply templates ──────────────────────────────────────────────
+// The Compliance agent's deterministic refusal answers are replaced at the
+// chat boundary with the exact message that matches the run's retrieval and
+// authorization outcome. A permission restriction is never described as a
+// plain "no information" reply (and vice versa), and out-of-domain prompts get
+// their own scoped message. The Knowledge Gap logging guard is untouched: it
+// keys off the terminal reasonCode and the authorizationRestricted artifact.
+
+const FALLBACK_AUTHORIZATION_RESTRICTED =
+  "I don't have sufficient authorized access to the documents needed to answer this question.";
+const FALLBACK_AUTHORIZATION_RESTRICTED_AR =
+  "عذراً، لا تملك صلاحية الوصول إلى المستندات اللازمة للإجابة على هذا السؤال.";
+
+const FALLBACK_KNOWLEDGE_GAP =
+  "I couldn't find any information regarding your query in the available company documents.";
+const FALLBACK_KNOWLEDGE_GAP_AR =
+  "لم أتمكن من العثور على أي معلومات تخص استفسارك في مستندات الشركة المتاحة.";
+
+const FALLBACK_OUT_OF_DOMAIN =
+  "This question appears to be outside the scope of company documents and policies.";
+const FALLBACK_OUT_OF_DOMAIN_AR =
+  "يبدو أن هذا السؤال خارج نطاق مستندات وسياسات الشركة.";
+
+/**
+ * Selects the exact user-facing fallback reply for a refusal terminal based on
+ * the run's retrieval/authorization outcome. Returns `null` when the reason
+ * code is not a fallback so the trusted Compliance answer is kept as-is.
+ */
+function fallbackReplyFor(
+  reasonCode: ComplianceReasonCodeValue,
+  authorizationRestricted: boolean,
+  language: QueryLanguageValue,
+): string | null {
+  const ar = isArabicContext(language);
+  if (reasonCode === "UNSUPPORTED_REQUEST") {
+    return ar ? FALLBACK_OUT_OF_DOMAIN_AR : FALLBACK_OUT_OF_DOMAIN;
+  }
+  if (
+    reasonCode === "INSUFFICIENT_EVIDENCE" ||
+    reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
+  ) {
+    if (authorizationRestricted) {
+      return ar
+        ? FALLBACK_AUTHORIZATION_RESTRICTED_AR
+        : FALLBACK_AUTHORIZATION_RESTRICTED;
+    }
+    return ar ? FALLBACK_KNOWLEDGE_GAP_AR : FALLBACK_KNOWLEDGE_GAP;
+  }
+  return null;
+}
+
+const SAFE_RUNTIME_PROVIDER_ERRORS = {
+  [LLM_RATE_LIMITED]: {
+    statusCode: 429,
+    message: "The AI service is temporarily rate-limited. Please try again shortly.",
+  },
+  [LLM_PROVIDER_UNAVAILABLE]: {
+    statusCode: 503,
+    message: "The AI service is temporarily unavailable. Please try again shortly.",
+  },
+  [LLM_TIMEOUT]: {
+    statusCode: 503,
+    message: "The AI service took too long to respond. Please try again.",
+  },
+} as const;
+
+function safeRuntimeProviderError(code: unknown): AppError | null {
+  if (typeof code !== "string") return null;
+  const safe = SAFE_RUNTIME_PROVIDER_ERRORS[code as keyof typeof SAFE_RUNTIME_PROVIDER_ERRORS];
+  if (!safe) return null;
+  return new AppError(safe.statusCode, code, safe.message);
+}
 
 /**
  * For Arabic questions, prioritize one validated English semantic expansion
@@ -93,6 +182,50 @@ export function buildAuthorizedSearchQueryText(
   return combined.length <= MAX_SEARCH_QUERY_CHARS
     ? combined
     : englishExpansion.slice(0, MAX_SEARCH_QUERY_CHARS);
+}
+
+function buildAuthorizedSearchVariants(intent: IntentAgentOutput): {
+  queryVariants?: string[];
+  exactTerms?: string[];
+  keywordTexts?: string[];
+} {
+  const base = intent.normalizedQuestion.trim();
+  const dedupe = (
+    values: readonly string[],
+    limit: number,
+    caseInsensitive = false,
+  ): string[] => {
+    const keyOf = (value: string): string =>
+      caseInsensitive ? value.toLowerCase() : value;
+    const seen = new Set<string>([keyOf(base)]);
+    const result: string[] = [];
+    for (const value of values) {
+      const trimmed = value.trim();
+      const key = keyOf(trimmed);
+      if (!trimmed || seen.has(key)) continue;
+      seen.add(key);
+      result.push(trimmed);
+      if (result.length >= limit) break;
+    }
+    return result;
+  };
+
+  const queryVariants = dedupe(
+    intent.semanticQueries.map((query) => query.text),
+    10,
+  );
+  const exactTerms = dedupe(intent.exactTerms, 30, true);
+  const keywordTexts = dedupe(
+    intent.keywordQueries.map((query) => query.terms.join(" ")),
+    10,
+    true,
+  );
+
+  return {
+    ...(queryVariants.length > 0 ? { queryVariants } : {}),
+    ...(exactTerms.length > 0 ? { exactTerms } : {}),
+    ...(keywordTexts.length > 0 ? { keywordTexts } : {}),
+  };
 }
 
 const SearchCandidateSchema = z
@@ -120,6 +253,10 @@ const SearchOutputSchema = z
     candidates: z.array(SearchCandidateSchema),
     totalCandidates: z.number().int().nonnegative(),
     reasonCode: z.string(),
+    retrievalOutcome: z
+      .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
+      .default("NO_MATCHES"),
+    authorizationRestricted: z.boolean().optional(),
   })
   .strict();
 
@@ -129,6 +266,7 @@ const EvidenceOutputSchema = z
     approvedEvidenceIds: z.array(z.string()),
     rejectedEvidenceIds: z.array(z.string()),
     reasonCode: z.string(),
+    authorizationRestricted: z.boolean().optional(),
   })
   .strict();
 
@@ -178,6 +316,47 @@ interface RuntimeComposition {
   readonly workflow: { readonly id: typeof WORKFLOW_ID };
 }
 
+export interface ChatTokenQuotaReservation {
+  readonly reservationId: string;
+  readonly reservedAmount: number;
+}
+
+export type ChatTokenQuotaReserveResult =
+  | {
+      readonly allowed: true;
+      readonly reservation: ChatTokenQuotaReservation;
+      readonly current: number;
+      readonly limit: number;
+      readonly remaining: number;
+      readonly periodReset: string | null;
+    }
+  | {
+      readonly allowed: false;
+      readonly current: number;
+      readonly limit: number;
+      readonly remaining: number;
+      readonly periodReset: string | null;
+    };
+
+export interface ChatTokenQuotaPort {
+  reserve(input: {
+    tenantId: string;
+    requestId: string;
+    maxAmount: number;
+  }): Promise<ChatTokenQuotaReserveResult>;
+
+  commit(input: {
+    tenantId: string;
+    reservationId: string;
+    actualAmount: number;
+  }): Promise<void>;
+
+  release(input: {
+    tenantId: string;
+    reservationId: string;
+  }): Promise<void>;
+}
+
 export interface ChatWorkflowServiceDependencies {
   readonly composition: RuntimeComposition;
   readonly repository: ChatWorkflowRepository;
@@ -200,6 +379,13 @@ export interface ChatWorkflowServiceDependencies {
     maxTokens: number;
   }>;
   readonly createRun: (input: Parameters<typeof createRun>[0]) => Promise<Pick<RunRecord, "id">>;
+
+  /**
+   * Optional by design so isolated evaluation workflows remain detached from
+   * tenant billing/quota persistence. Production Chat supplies this port.
+   */
+  readonly tokenQuota?: ChatTokenQuotaPort;
+
   readonly authorizedRetrieval: Pick<
     AuthorizedRetrievalDependencies,
     "authorization" | "loadChunksByIds" | "loadEligibleDocumentIds"
@@ -222,6 +408,8 @@ export interface ChatWorkflowServiceDependencies {
     modelProvider: string;
     modelName: string;
   };
+  /** Optional in-process observation seam used by isolated evaluation runs. */
+  readonly onExecutionArtifacts?: (artifacts: ChatWorkflowExecutionArtifacts) => void;
 }
 
 export type ChatStageId =
@@ -246,6 +434,7 @@ interface CatalogCandidate {
   readonly score: number;
   readonly pageNumber?: number;
   readonly sectionTitle?: string;
+  readonly retrievalMethod?: string;
 }
 
 interface SearchBatch {
@@ -267,10 +456,47 @@ interface ChatRunArtifacts {
   activeSearchBatch: SearchBatch | null;
   evidenceSearchBatch: SearchBatch | null;
   evidenceEvaluated: boolean;
+  evidenceSufficiency: "SUFFICIENT" | "WEAK" | "NO_EVIDENCE" | "CONFLICTING" | null;
   approvedEvidenceIds: string[];
+  rejectedEvidenceIds: string[];
+  evidenceReasonCode: string | null;
+  retrievalOutcome: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED" | null;
   analyticsRequest: ChatAnalyticsRequest | null;
   analyticsOutput: unknown;
   complianceRequested: boolean;
+  /**
+   * True when this run's retrieval was restricted by document-level access
+   * authorization (permissions, access control, or insufficient authorized
+   * evidence). Such denials must never be reported as knowledge gaps.
+   */
+  authorizationRestricted: boolean;
+}
+
+export interface ChatWorkflowRankedCandidateArtifact {
+  readonly rank: number;
+  readonly chunkId: string;
+  readonly documentId: string;
+  readonly score: number;
+  readonly retrievalMethod?: string;
+}
+
+/** Sanitized evaluation observer DTO: no prompts, answer bodies, claims, or evidence text. */
+export interface ChatWorkflowExecutionArtifacts {
+  readonly intent: Pick<IntentAgentOutput, "route" | "intent" | "reasonCode"> | null;
+  readonly compliance: Pick<ComplianceAgentOutput, "action" | "reasonCode"> | null;
+  readonly retrievalCandidates: readonly ChatWorkflowRankedCandidateArtifact[];
+  readonly evidenceSelectedCandidates: readonly ChatWorkflowRankedCandidateArtifact[];
+  readonly evidenceSufficiency: ChatRunArtifacts["evidenceSufficiency"];
+  readonly approvedEvidenceIds: readonly string[];
+  readonly rejectedEvidenceIds: readonly string[];
+  readonly evidenceReasonCode: string | null;
+  readonly finalSourceChunkIds: readonly string[];
+  readonly finalSourceDocumentIds: readonly string[];
+  readonly finalSourceAuthorizationPassed: boolean;
+  readonly runtime: Pick<
+    SupervisorRunResult,
+    "totalTokensUsed" | "estimatedCost" | "latencyMs"
+  >;
 }
 
 function idOf(record: StoredRecord): string {
@@ -349,6 +575,8 @@ function capturePendingAgent(
         "validatedCitationIds",
         "rejectedCitationIds",
         "unsupportedClaims",
+        "unknownClaims",
+        "verifiedAnswer",
         "reasonCode",
       ]),
     );
@@ -397,10 +625,15 @@ function createChatRuntimePolicy(input: {
     activeSearchBatch: null,
     evidenceSearchBatch: null,
     evidenceEvaluated: false,
+    evidenceSufficiency: null,
     approvedEvidenceIds: [],
+    rejectedEvidenceIds: [],
+    evidenceReasonCode: null,
+    retrievalOutcome: null,
     analyticsRequest: null,
     analyticsOutput: undefined,
     complianceRequested: false,
+    authorizationRestricted: false,
   };
 
   const syncIntentDerivedState = (): void => {
@@ -715,6 +948,9 @@ function createChatRuntimePolicy(input: {
               validatedCitationIds: [...verifier.validatedCitationIds],
               reasonCode: verifier.reasonCode,
             };
+            if (verifier.verified) {
+              answer = verifier.verifiedAnswer ?? failClosed("Verified citations require the final verified answer");
+            }
           }
         }
 
@@ -778,6 +1014,7 @@ function createChatRuntimePolicy(input: {
           ...artifacts.resolvedDocumentIds,
         ]);
         const queryText = buildAuthorizedSearchQueryText(intent);
+        const queryVariants = buildAuthorizedSearchVariants(intent);
         const task = detectAnswerTask(
           { detectedIntent: intent.intent },
           intent.normalizedQuestion,
@@ -785,8 +1022,11 @@ function createChatRuntimePolicy(input: {
         emitStage("search");
         return {
           queryText,
-          topK: task === "document_summary" ? SUMMARY_TOP_K : DIRECT_TOP_K,
+          topK: task === "document_summary"
+            ? CHAT_SUMMARIZATION_RETRIEVAL_TOP_K
+            : CHAT_DIRECT_RETRIEVAL_TOP_K,
           ...(documentIds.length > 0 ? { documentIds } : {}),
+          ...queryVariants,
         };
       }
       if (args.toolName === "evaluate_evidence") {
@@ -818,6 +1058,7 @@ function createChatRuntimePolicy(input: {
       }
       if (args.toolName === "authorized_hybrid_search") {
         const output = SearchOutputSchema.parse(args.validatedOutput);
+        artifacts.retrievalOutcome = output.retrievalOutcome;
         const restrictedDocumentIds = unique([
           ...(artifacts.intent?.referencedDocumentIds ?? []),
           ...artifacts.resolvedDocumentIds,
@@ -838,6 +1079,9 @@ function createChatRuntimePolicy(input: {
         const batch = { id: batchId, candidates };
         artifacts.searchBatches.push(batch);
         artifacts.activeSearchBatch = batch;
+        if (output.authorizationRestricted === true) {
+          artifacts.authorizationRestricted = true;
+        }
         return;
       }
       if (args.toolName === "evaluate_evidence") {
@@ -847,7 +1091,13 @@ function createChatRuntimePolicy(input: {
           failClosed("Approved evidence exceeds this run's evaluated candidate set");
         }
         artifacts.approvedEvidenceIds = [...output.approvedEvidenceIds];
+        artifacts.rejectedEvidenceIds = [...output.rejectedEvidenceIds];
+        artifacts.evidenceSufficiency = output.sufficiency;
+        artifacts.evidenceReasonCode = output.reasonCode;
         artifacts.evidenceEvaluated = true;
+        if (output.authorizationRestricted === true) {
+          artifacts.authorizationRestricted = true;
+        }
         return;
       }
       if (args.toolName === "analytics_query") {
@@ -959,77 +1209,188 @@ export class ChatWorkflowService {
       throw new AppError(403, "PERMISSION_REQUIRED", "Permission denied");
     }
 
-    const conversationId = await this.resolveConversation(input, tenantId, actorId);
-    const sequenceNumber = await this.deps.repository.countMessages(tenantId, conversationId);
-    await this.deps.repository.addMessage(
-      tenantId,
-      conversationId,
-      "user",
-      input.message,
-      sequenceNumber,
-    );
+    let tokenReservation: ChatTokenQuotaReservation | null = null;
 
-    let settings = { citationsEnabled: true, maxTokens: DEFAULT_MAX_TOKENS };
-    try {
-      settings = await this.deps.loadSettings(tenantId);
-    } catch {
-      // Preserve the legacy availability policy: settings failure uses safe defaults.
+    if (this.deps.tokenQuota) {
+      const reservationResult = await this.deps.tokenQuota.reserve({
+        tenantId,
+        requestId,
+        maxAmount: CHAT_WORKFLOW_MAX_TOTAL_TOKENS,
+      });
+
+      if (!reservationResult.allowed) {
+        throw buildQuotaExceededError({
+          dimension: "tokensPerMonth",
+          current: reservationResult.current,
+          limit: reservationResult.limit,
+          remaining: reservationResult.remaining,
+          periodReset: reservationResult.periodReset,
+          canUpgrade:
+            persistedActor.baseRole === "SUPER_ADMIN" ||
+            persistedActor.baseRole === "COMPANY_ADMIN",
+        });
+      }
+
+      tokenReservation = reservationResult.reservation;
+
+      if (
+        tokenReservation.reservedAmount <
+        CHAT_MIN_RUNNABLE_TOTAL_TOKENS
+      ) {
+        await this.deps.tokenQuota.release({
+          tenantId,
+          reservationId: tokenReservation.reservationId,
+        });
+
+        throw buildQuotaExceededError({
+          dimension: "tokensPerMonth",
+          current: reservationResult.current,
+          limit: reservationResult.limit,
+          remaining: reservationResult.remaining,
+          periodReset: reservationResult.periodReset,
+          canUpgrade:
+            persistedActor.baseRole === "SUPER_ADMIN" ||
+            persistedActor.baseRole === "COMPANY_ADMIN",
+        });
+      }
     }
 
-    const { hooks, artifacts } = createChatRuntimePolicy({
-      question: input.message,
-      conversationId,
-      citationsEnabled: settings.citationsEnabled,
-      maxTokens: settings.maxTokens,
-      onStage: context.onStage,
-    });
+    let conversationId: string;
+    let sequenceNumber: number;
+    let artifacts: ChatRunArtifacts;
+    let runtimeResult: SupervisorRunResult;
+    let settings = {
+      citationsEnabled: true,
+      maxTokens: DEFAULT_MAX_TOKENS,
+    };
+    let runId: string | null = null;
 
-    const run = await this.deps.createRun({
-      tenantId,
-      actorId,
-      workflowName: this.deps.composition.workflow.id,
-      agentName: "chat-supervisor",
-      input: { conversationId, question: input.message },
-      modelProvider: this.deps.runMetadata.modelProvider,
-      modelName: this.deps.runMetadata.modelName,
-      promptVersion: null,
-      promptVersionId: null,
-      toolVersionSnapshot: null,
-      traceId,
-      requestId,
-    });
+    try {
+      conversationId = await this.resolveConversation(input, tenantId, actorId);
+      sequenceNumber = await this.deps.repository.countMessages(
+        tenantId,
+        conversationId,
+      );
 
-    const runtimeResult = await this.deps.composition.runtime.execute(
-      {
-        runId: run.id,
-        workflowId: this.deps.composition.workflow.id,
-        context: {
-          tenantId,
-          actorId,
-          actorRole: permissions.baseRole,
-          actorEmail: actor.actorEmail,
-          permissions: [...permissions.permissions],
-          traceId,
-          requestId,
+      await this.deps.repository.addMessage(
+        tenantId,
+        conversationId,
+        "user",
+        input.message,
+        sequenceNumber,
+      );
+
+      try {
+        settings = await this.deps.loadSettings(tenantId);
+      } catch {
+        // Preserve the legacy availability policy:
+        // settings failure uses safe defaults.
+      }
+
+      const runtimePolicy = createChatRuntimePolicy({
+        question: input.message,
+        conversationId,
+        citationsEnabled: settings.citationsEnabled,
+        maxTokens: settings.maxTokens,
+        onStage: context.onStage,
+      });
+
+      artifacts = runtimePolicy.artifacts;
+
+      const run = await this.deps.createRun({
+        tenantId,
+        actorId,
+        workflowName: this.deps.composition.workflow.id,
+        agentName: "chat-supervisor",
+        input: {
           conversationId,
-          workflowId: this.deps.composition.workflow.id,
-          ...(context.locale ? { locale: context.locale } : {}),
+          question: input.message,
         },
-        input: { conversationId, question: input.message },
-      },
-      hooks,
-    );
+        modelProvider: this.deps.runMetadata.modelProvider,
+        modelName: this.deps.runMetadata.modelName,
+        promptVersion: null,
+        promptVersionId: null,
+        toolVersionSnapshot: null,
+        traceId,
+        requestId,
+      });
+
+      runId = run.id;
+
+      runtimeResult = await this.deps.composition.runtime.execute(
+        {
+          runId: run.id,
+          workflowId: this.deps.composition.workflow.id,
+          ...(tokenReservation
+            ? {
+                budgetLimits: {
+                  maxTotalTokens: tokenReservation.reservedAmount,
+                },
+              }
+            : {}),
+          context: {
+            tenantId,
+            actorId,
+            actorRole: permissions.baseRole,
+            actorEmail: actor.actorEmail,
+            permissions: [...permissions.permissions],
+            traceId,
+            requestId,
+            conversationId,
+            workflowId: this.deps.composition.workflow.id,
+            ...(context.locale ? { locale: context.locale } : {}),
+          },
+          input: {
+            conversationId,
+            question: input.message,
+          },
+        },
+        runtimePolicy.hooks,
+      );
+    } catch (error) {
+      if (tokenReservation && this.deps.tokenQuota) {
+        await this.deps.tokenQuota.release({
+          tenantId,
+          reservationId: tokenReservation.reservationId,
+        });
+      }
+
+      throw error;
+    }
+
+    if (tokenReservation && this.deps.tokenQuota) {
+      const actualTokens = Math.max(
+        0,
+        Math.trunc(runtimeResult.totalTokensUsed ?? 0),
+      );
+
+      await this.deps.tokenQuota.commit({
+        tenantId,
+        reservationId: tokenReservation.reservationId,
+        actualAmount: actualTokens,
+      });
+    }
 
     if (runtimeResult.status !== "completed" || !runtimeResult.output) {
+      const providerError = safeRuntimeProviderError(runtimeResult.error?.code);
+      if (providerError) throw providerError;
       throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Controlled chat workflow failed");
     }
     const terminal = this.validateTerminal(runtimeResult.output, artifacts);
-    const { persisted, response } = await this.materializeSources(
-      terminal,
-      artifacts,
-      tenantId,
-      actorId,
-    );
+    let materialized: { persisted: MessageSource[]; response: ChatSource[] };
+    try {
+      materialized = await this.materializeSources(
+        terminal,
+        artifacts,
+        tenantId,
+        actorId,
+      );
+    } catch (error) {
+      this.observeExecution(artifacts, terminal, runtimeResult, [], false);
+      throw error;
+    }
+    const { persisted, response } = materialized;
+    this.observeExecution(artifacts, terminal, runtimeResult, response, true);
     const assistant = await this.deps.repository.addMessage(
       tenantId,
       conversationId,
@@ -1039,9 +1400,13 @@ export class ChatWorkflowService {
       persisted,
     );
 
-    if (
+    const reportableGap =
       terminal.reasonCode === "INSUFFICIENT_EVIDENCE" ||
-      terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
+      terminal.reasonCode === "UNVERIFIED_GROUNDED_RESPONSE";
+    if (
+      reportableGap &&
+      artifacts.retrievalOutcome !== "AUTHORIZATION_FILTERED" &&
+      !artifacts.authorizationRestricted
     ) {
       await this.deps.reportKnowledgeGap?.({
         tenantId,
@@ -1073,7 +1438,7 @@ export class ChatWorkflowService {
             artifacts.intent?.conversationContextUsed ?? false,
           historyMessagesSuppliedToWriter: 0,
           retrievalUsedNormalizedQuestion: true,
-          runId: run.id,
+          runId: runId ?? failClosed("Chat run identifier unavailable"),
           traceId,
           requestId,
         },
@@ -1089,6 +1454,67 @@ export class ChatWorkflowService {
           : settings.citationsEnabled ? response : undefined,
       conversationId,
     };
+  }
+
+  private observeExecution(
+    artifacts: ChatRunArtifacts,
+    terminal: TrustedTerminal,
+    runtime: SupervisorRunResult,
+    sources: readonly ChatSource[],
+    finalSourceAuthorizationPassed: boolean,
+  ): void {
+    const batch = artifacts.evidenceSearchBatch ?? artifacts.activeSearchBatch;
+    const retrievalCandidates = batch
+      ? [...batch.candidates.values()].map((candidate, index) => ({
+          rank: index + 1,
+          chunkId: candidate.chunkId,
+          documentId: candidate.documentId,
+          score: candidate.score,
+          ...(candidate.retrievalMethod
+            ? { retrievalMethod: candidate.retrievalMethod }
+            : {}),
+        }))
+      : [];
+    const candidateById = new Map(
+      retrievalCandidates.map((candidate) => [candidate.chunkId, candidate]),
+    );
+    const evidenceSelectedCandidates = artifacts.approvedEvidenceIds.flatMap(
+      (chunkId, index) => {
+        const candidate = candidateById.get(chunkId);
+        return candidate ? [{ ...candidate, rank: index + 1 }] : [];
+      },
+    );
+    try {
+      this.deps.onExecutionArtifacts?.({
+        intent: artifacts.intent
+          ? { route: artifacts.intent.route, intent: artifacts.intent.intent, reasonCode: artifacts.intent.reasonCode }
+          : null,
+        compliance:
+          terminal.reasonCode === "ASSISTANT_INTENT" ||
+          terminal.reasonCode === "SOCIAL_INTENT" ||
+          terminal.reasonCode === "ANALYTICS_TOOL"
+            ? null
+            : artifacts.compliance
+              ? { action: artifacts.compliance.action, reasonCode: artifacts.compliance.reasonCode }
+              : null,
+        retrievalCandidates,
+        evidenceSelectedCandidates,
+        evidenceSufficiency: artifacts.evidenceSufficiency,
+        approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
+        rejectedEvidenceIds: [...artifacts.rejectedEvidenceIds],
+        evidenceReasonCode: artifacts.evidenceReasonCode,
+        finalSourceChunkIds: [...terminal.sourceIds],
+        finalSourceDocumentIds: unique(sources.map((source) => source.documentId)),
+        finalSourceAuthorizationPassed,
+        runtime: {
+          totalTokensUsed: runtime.totalTokensUsed,
+          estimatedCost: runtime.estimatedCost,
+          latencyMs: runtime.latencyMs,
+        },
+      });
+    } catch {
+      // Observation is non-authoritative and cannot change workflow behavior.
+    }
   }
 
   private validateInput(rawInput: unknown): ChatSendBody {
@@ -1147,7 +1573,28 @@ export class ChatWorkflowService {
     if (!artifacts.compliance || JSON.stringify(terminal) !== JSON.stringify(artifacts.compliance)) {
       return failClosed("Runtime output does not equal this run's Compliance authority");
     }
-    return terminal;
+    // Select the exact user-facing fallback for refusal terminals. The
+    // authorizationRestricted artifact distinguishes a permission restriction
+    // from a genuine knowledge gap; only the displayed answer is replaced, so
+    // the Knowledge Gap logging decision (reasonCode + artifact) is unchanged.
+    const fallback = fallbackReplyFor(
+      terminal.reasonCode,
+      artifacts.authorizationRestricted,
+      artifacts.intent?.language ?? "en",
+    );
+    const resolvedTerminal = fallback
+      ? ComplianceAgentOutputSchema.parse({ ...terminal, answer: fallback })
+      : terminal;
+    if (artifacts.intent?.route === "rag" && artifacts.intent.assistantKind) {
+      // Compose only after the original Compliance output has passed the
+      // run-authority equality check. The added identity text is deterministic
+      // and source-less; the RAG answer and its sources remain unchanged.
+      return ComplianceAgentOutputSchema.parse({
+        ...resolvedTerminal,
+        answer: `${assistantReplyFor(artifacts.intent.language, artifacts.intent.assistantKind)}\n\n${resolvedTerminal.answer}`,
+      });
+    }
+    return resolvedTerminal;
   }
 
   private async materializeSources(
@@ -1270,6 +1717,7 @@ export function createProductionChatWorkflowService(
       };
     },
     createRun,
+    tokenQuota: createProductionChatTokenQuotaPort(),
     authorizedRetrieval: deps.authorizedRetrieval,
     loadDocumentTitles: async (tenantId, documentIds) => {
       if (documentIds.length === 0) return new Map();

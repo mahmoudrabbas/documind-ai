@@ -5,6 +5,8 @@ export const TemplateId = z.enum([
   "password_reset",
   "user_invitation",
   "invitation_reminder",
+  "company_suspended",
+  "company_reactivated",
 ]);
 export type TemplateIdType = z.infer<typeof TemplateId>;
 
@@ -33,10 +35,20 @@ export const UserInvitationVars = z.object({
 
 export const InvitationReminderVars = UserInvitationVars;
 
+/** Shared lifecycle notice variables (company suspension / reactivation). */
+export const CompanyLifecycleVars = z.object({
+  companyName: z.string(),
+  /** Human-readable effective date/time of the lifecycle transition. */
+  effectiveDate: z.string().optional(),
+  /** Administrative reason, disclosed only when provided and appropriate. */
+  reason: z.string().optional(),
+});
+
 export const TemplateVariablesSchema = z.union([
   EmailVerificationVars,
   PasswordResetVars,
   UserInvitationVars,
+  CompanyLifecycleVars,
 ]);
 
 export interface Branding {
@@ -51,6 +63,22 @@ export interface RenderedTemplate {
   html: string;
 }
 
+const BRAND_NAVY = "#0b1f3a";
+const BRAND_BLUE = "#1688f5";
+const DEFAULT_ACCENT = "#1688f5";
+const TEXT_BODY = "#334155";
+const TEXT_MUTED = "#64748b";
+const TEXT_FAINT = "#94a3b8";
+const BORDER = "#e6eaf2";
+const BG_BODY = "#f2f4f8";
+const BG_CARD = "#ffffff";
+
+function fontFamily(lang: "en" | "ar"): string {
+  return lang === "ar"
+    ? "Tahoma, 'Segoe UI', Arial, sans-serif"
+    : "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+}
+
 export function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -61,47 +89,144 @@ export function escapeHtml(value: string) {
 }
 
 function getBrandingColor(branding?: Branding) {
-  return branding?.accentColor || "#4f46e5";
+  const value = branding?.accentColor;
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_ACCENT;
 }
 
-function renderHeader(companyName: string, branding?: Branding) {
-  if (branding?.logoUrl) {
-    return `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(companyName)}" height="40" style="margin:0 0 20px;" />`;
+function isSafeHttpUrl(value?: string): boolean {
+  return Boolean(value && /^https?:\/\//i.test(value.trim()));
+}
+
+function renderBrandHeader(
+  branding: Branding | undefined,
+  opts: { lang: "en" | "ar"; companyName?: string; useTenantBrand?: boolean },
+): string {
+  const logo = opts.useTenantBrand ? branding?.logoUrl : undefined;
+  if (logo && isSafeHttpUrl(logo)) {
+    return `<img src="${escapeHtml(logo)}" alt="${escapeHtml(opts.companyName ?? "DocuMind AI")}" width="160" style="display:block;width:auto;max-width:180px;height:auto;max-height:56px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />`;
   }
-  return `<h1 style="margin:0 0 20px;font-size:24px;line-height:32px;font-weight:700;color:#111827;">${escapeHtml(companyName)}</h1>`;
+  return `<span dir="ltr" style="display:inline-block;font-family:${fontFamily(opts.lang)};font-size:22px;line-height:28px;font-weight:700;letter-spacing:-0.3px;color:${BRAND_NAVY};">DocuMind&nbsp;<span style="color:${BRAND_BLUE};">AI</span></span>`;
 }
 
-function renderFooter(branding?: Branding): string {
-  if (!branding?.supportEmail) return "";
-  const email = escapeHtml(branding.supportEmail);
-  return `<p style="margin:24px 0 0;font-size:12px;line-height:18px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:16px;">Need help? Contact us at <a href="mailto:${email}" style="color:#6366f1;text-decoration:underline;">${email}</a></p>`;
+function renderTitle(title: string): string {
+  return `<h1 style="margin:0 0 14px;font-size:24px;line-height:32px;font-weight:700;color:${BRAND_NAVY};">${title}</h1>`;
 }
 
-function renderBodyWrapper(content: string, lang: "en" | "ar") {
-  const dir = lang === "ar" ? "rtl" : "ltr";
-  const fontFamily =
+function renderParagraph(text: string): string {
+  return `<p style="margin:0 0 20px;font-size:16px;line-height:26px;color:${TEXT_BODY};">${text}</p>`;
+}
+
+function renderNote(text: string): string {
+  return `<p style="margin:0;font-size:14px;line-height:22px;color:${TEXT_MUTED};">${text}</p>`;
+}
+
+function renderButton(href: string, label: string, color: string): string {
+  return `
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 0 auto;">
+        <tr>
+          <td align="center" bgcolor="${color}" style="border-radius:10px;background-color:${color};">
+            <a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="email-cta" style="display:inline-block;padding:14px 30px;font-size:16px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;background-color:${color};border:1px solid ${color};">${escapeHtml(label)}</a>
+          </td>
+        </tr>
+      </table>`;
+}
+
+function renderFallbackUrl(href: string, lang: "en" | "ar"): string {
+  const label =
     lang === "ar"
-      ? "Tahoma, Arial, sans-serif"
-      : "Arial, sans-serif";
-  return `<!doctype html>
-<html lang="${lang}" dir="${dir}">
-  <body style="margin:0;padding:0;background:#f4f7fb;font-family:${fontFamily};color:#111827;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 0;">
+      ? "إذا لم يعمل الزر، انسخ والصق هذا الرابط في متصفحك:"
+      : "If the button doesn't work, copy and paste this link into your browser:";
+  return `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f6f8fb;border:1px solid ${BORDER};border-radius:10px;">
       <tr>
-        <td align="center" style="padding:0 16px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;padding:32px;border:1px solid #e5e7eb;text-align:${lang === "ar" ? "right" : "left"};">
+        <td style="padding:14px 16px;">
+          <p style="margin:0 0 6px;font-size:13px;line-height:19px;color:${TEXT_MUTED};">${label}</p>
+          <a href="${escapeHtml(href)}" style="font-size:13px;line-height:19px;color:${TEXT_MUTED};text-decoration:underline;word-break:break-all;overflow-wrap:break-word;word-wrap:break-word;">${escapeHtml(href)}</a>
+        </td>
+      </tr>
+    </table>`;
+}
+
+function renderDivider(): string {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td style="padding:0;"><div style="border-top:1px solid ${BORDER};font-size:0;line-height:0;">&nbsp;</div></td></tr></table>`;
+}
+
+function renderFooter(branding: Branding | undefined, lang: "en" | "ar"): string {
+  const parts: string[] = [];
+  if (branding?.supportEmail) {
+    const email = escapeHtml(branding.supportEmail);
+    const help =
+      lang === "ar"
+        ? `تحتاج إلى مساعدة؟ تواصل معنا عبر البريد: <a href="mailto:${email}" style="color:${BRAND_BLUE};text-decoration:underline;">${email}</a>`
+        : `Need help? Contact us at <a href="mailto:${email}" style="color:${BRAND_BLUE};text-decoration:underline;">${email}</a>`;
+    parts.push(`<p style="margin:0 0 8px;font-size:13px;line-height:20px;color:${TEXT_MUTED};">${help}</p>`);
+  }
+  const powered = lang === "ar" ? "مدعوم من DocuMind AI" : "Powered by DocuMind AI";
+  parts.push(`<p style="margin:0;font-size:12px;line-height:18px;color:${TEXT_FAINT};">${powered}</p>`);
+  return parts.join("\n");
+}
+
+function spacer(px: number): string {
+  return `<div style="height:${px}px;font-size:0;line-height:0;">&nbsp;</div>`;
+}
+
+function renderBodyWrapper(
+  content: string,
+  opts: { lang: "en" | "ar"; subject: string; preheader: string },
+) {
+  const { lang, subject, preheader } = opts;
+  const dir = lang === "ar" ? "rtl" : "ltr";
+  const family = fontFamily(lang);
+  const textAlign = lang === "ar" ? "right" : "left";
+  return `<!doctype html>
+<html lang="${lang}" dir="${dir}" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>${escapeHtml(subject)}</title>
+    <!--[if mso]>
+    <noscript>
+      <xml>
+        <o:OfficeDocumentSettings>
+          <o:PixelsPerInch>96</o:PixelsPerInch>
+        </o:OfficeDocumentSettings>
+      </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+      @media only screen and (max-width: 620px) {
+        .email-card { width: 100% !important; }
+        .email-card-inner { padding-left: 20px !important; padding-right: 20px !important; }
+        .email-cta { width: 100% !important; display: block !important; box-sizing: border-box !important; text-align: center !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background-color:${BG_BODY};font-family:${family};color:${TEXT_BODY};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:${BG_BODY};">
+      <tr>
+        <td align="center" style="padding:28px 16px;">
+          <table role="presentation" class="email-card" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:${BG_CARD};border-radius:14px;border:1px solid ${BORDER};">
             <tr>
-              <td style="padding:0;">
+              <td class="email-card-inner" style="padding:36px 40px 32px;text-align:${textAlign};">
+                <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${BG_BODY};">${escapeHtml(preheader)}</div>
                 ${content}
               </td>
             </tr>
           </table>
-          <p style="margin:16px 0 0;font-size:12px;line-height:18px;color:#6b7280;text-align:center;">DocuMind AI Powered</p>
         </td>
       </tr>
     </table>
   </body>
 </html>`;
+}
+
+function renderInvitationMeta(expiryDate: string, isAr: boolean): string {
+  const prefix = isAr ? "تنتهي هذه الدعوة " : "This invitation expires ";
+  return `${prefix}<span dir="ltr">${escapeHtml(expiryDate)}</span>.`;
 }
 
 export function getTemplate(
@@ -111,161 +236,284 @@ export function getTemplate(
   branding?: Branding,
 ): RenderedTemplate {
   const color = getBrandingColor(branding);
+  const isAr = lang === "ar";
 
   if (templateId === "email_verification") {
     const vars = EmailVerificationVars.parse(variables);
-    const header = renderHeader(vars.companyName, branding);
-    
-    if (lang === "ar") {
-      const subject = `قم بتأكيد حسابك في DocuMind AI`;
-      const text = `مرحباً ${vars.adminName},\n\nيرجى تأكيد حسابك في ${vars.companyName}.\n\nقم بتأكيد بريدك الإلكتروني:\n${vars.verificationUrl}\n\nسوف تنتهي صلاحية هذا الرابط خلال ${vars.expiryLabel}.\n\nإذا لم تقم بإنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة.`;
-      const htmlContent = `${header}
-        <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">مرحباً ${escapeHtml(vars.adminName)}،</p>
-        <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">يرجى تأكيد حسابك لشركة ${escapeHtml(vars.companyName)}.</p>
-        <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
-          <tr>
-            <td bgcolor="${color}" style="border-radius:8px;">
-              <a href="${escapeHtml(vars.verificationUrl)}" style="display:inline-block;padding:12px 22px;font-size:16px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;background:${color};">تأكيد البريد الإلكتروني</a>
-            </td>
-          </tr>
-        </table>
-        <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4b5563;">إذا كان الزر لا يعمل، انسخ والصق هذا الرابط في متصفحك:</p>
-        <p style="margin:0 0 24px;font-size:14px;line-height:22px;word-break:break-all;">
-          <a href="${escapeHtml(vars.verificationUrl)}" style="color:${color};text-decoration:underline;">${escapeHtml(vars.verificationUrl)}</a>
-        </p>
-        <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">سوف تنتهي صلاحية هذا الرابط خلال ${escapeHtml(vars.expiryLabel)}.</p>
-        <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">إذا لم تقم بإنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة بأمان.</p>`;
-      return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
+
+    if (isAr) {
+      const subject = "قم بتأكيد حسابك في DocuMind AI";
+      const preheader = "قم بتأكيد بريدك الإلكتروني لإكمال إعداد حسابك في DocuMind AI.";
+      const text = `مرحباً ${vars.adminName}،\n\nيرجى تأكيد بريدك الإلكتروني لإكمال إعداد حسابك في ${vars.companyName} على DocuMind AI.\n\nتأكيد البريد الإلكتروني:\n${vars.verificationUrl}\n\nسوف تنتهي صلاحية هذا الرابط خلال ${vars.expiryLabel}.\n\nإذا لم تقم بإنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة بأمان.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+        ${spacer(24)}
+        ${renderTitle("قم بتأكيد بريدك الإلكتروني")}
+        ${renderParagraph(`مرحباً ${escapeHtml(vars.adminName)}، تأكد من بريدك الإلكتروني لإكمال إعداد حسابك في ${escapeHtml(vars.companyName)} على DocuMind AI.`)}
+        ${renderButton(vars.verificationUrl, "تأكيد البريد الإلكتروني", color)}
+        ${spacer(20)}
+        ${renderNote(`سوف تنتهي صلاحية هذا الرابط خلال ${escapeHtml(vars.expiryLabel)}.`)}
+        ${spacer(8)}
+        ${renderNote("إذا لم تقم بإنشاء هذا الحساب، يمكنك تجاهل هذه الرسالة بأمان.")}
+        ${spacer(28)}
+        ${renderFallbackUrl(vars.verificationUrl, lang)}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
     }
 
     const subject = "Verify your DocuMind AI account";
-    const text = `Hi ${vars.adminName},\n\nPlease verify your DocuMind AI account for ${vars.companyName}.\n\nVerify your email:\n${vars.verificationUrl}\n\nThis link will expire in ${vars.expiryLabel}.\n\nIf you did not create this account, you can safely ignore this email.`;
-    const footer = renderFooter(branding);
-    const htmlContent = `${header}
-      <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">Hi ${escapeHtml(vars.adminName)},</p>
-      <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">Please verify your DocuMind AI account for ${escapeHtml(vars.companyName)}.</p>
-      <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
-        <tr>
-          <td bgcolor="${color}" style="border-radius:8px;">
-            <a href="${escapeHtml(vars.verificationUrl)}" style="display:inline-block;padding:12px 22px;font-size:16px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;background:${color};">Verify Email</a>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4b5563;">If the button does not work, copy and paste this link into your browser:</p>
-      <p style="margin:0 0 24px;font-size:14px;line-height:22px;word-break:break-all;">
-        <a href="${escapeHtml(vars.verificationUrl)}" style="color:${color};text-decoration:underline;">${escapeHtml(vars.verificationUrl)}</a>
-      </p>
-      <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">This link will expire in ${escapeHtml(vars.expiryLabel)}.</p>
-      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">If you did not create this account, you can safely ignore this email.</p>${footer}`;
-    return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
+    const preheader = "Confirm your email address to finish setting up your DocuMind AI account.";
+    const text = `Hi ${vars.adminName},\n\nConfirm your email address to finish setting up your ${vars.companyName} account on DocuMind AI.\n\nVerify your email:\n${vars.verificationUrl}\n\nThis link will expire in ${vars.expiryLabel}.\n\nIf you did not create this account, you can safely ignore this email.`;
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+      ${spacer(24)}
+      ${renderTitle("Verify your email")}
+      ${renderParagraph(`Hi ${escapeHtml(vars.adminName)}, confirm your email address to finish setting up your ${escapeHtml(vars.companyName)} account on DocuMind AI.`)}
+      ${renderButton(vars.verificationUrl, "Verify Email", color)}
+      ${spacer(20)}
+      ${renderNote(`This link will expire in ${escapeHtml(vars.expiryLabel)}.`)}
+      ${spacer(8)}
+      ${renderNote("If you did not create this account, you can safely ignore this email.")}
+      ${spacer(28)}
+      ${renderFallbackUrl(vars.verificationUrl, lang)}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
   }
 
   if (templateId === "password_reset") {
     const vars = PasswordResetVars.parse(variables);
-    const header = renderHeader(vars.companyName, branding);
 
-    if (lang === "ar") {
+    if (isAr) {
       const subject = `إعادة تعيين كلمة مرورك في DocuMind AI لشركة ${vars.companyName}`;
-      const text = `مرحباً ${vars.userName},\n\nتلقينا طلباً لإعادة تعيين كلمة مرور حسابك في DocuMind AI لشركة ${vars.companyName}.\n\nأعد تعيين كلمة المرور:\n${vars.resetUrl}\n\nسينتهي هذا الرابط خلال ${vars.expiryLabel}.\n\nإذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة.\n\nلأسباب أمنية، ستبقى كلمة مرورك كما هي حتى تنقر على الرابط أعلاه وتقوم بتعيين كلمة مرور جديدة.`;
-      const htmlContent = `${header}
-        <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">مرحباً ${escapeHtml(vars.userName)}،</p>
-        <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">لقد تلقينا طلباً لإعادة تعيين كلمة المرور لحسابك في ${escapeHtml(vars.companyName)}.</p>
-        <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
-          <tr>
-            <td bgcolor="${color}" style="border-radius:8px;">
-              <a href="${escapeHtml(vars.resetUrl)}" style="display:inline-block;padding:12px 22px;font-size:16px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;background:${color};">إعادة تعيين كلمة المرور</a>
-            </td>
-          </tr>
-        </table>
-        <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4b5563;">إذا كان الزر لا يعمل، انسخ والصق هذا الرابط في متصفحك:</p>
-        <p style="margin:0 0 24px;font-size:14px;line-height:22px;word-break:break-all;">
-          <a href="${escapeHtml(vars.resetUrl)}" style="color:${color};text-decoration:underline;">${escapeHtml(vars.resetUrl)}</a>
-        </p>
-        <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">سينتهي هذا الرابط خلال ${escapeHtml(vars.expiryLabel)}.</p>
-        <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#6b7280;">إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة.</p>
-        <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">لأسباب أمنية، ستبقى كلمة مرورك كما هي حتى تنقر على الرابط وتقوم بتعيين كلمة جديدة.</p>`;
-      return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
+      const preheader = "تلقينا طلباً لإعادة تعيين كلمة مرور حسابك في DocuMind AI.";
+      const text = `مرحباً ${vars.userName}،\n\nتلقينا طلباً لإعادة تعيين كلمة مرور حسابك في ${vars.companyName} على DocuMind AI.\n\nإعادة تعيين كلمة المرور:\n${vars.resetUrl}\n\nسينتهي هذا الرابط خلال ${vars.expiryLabel}.\n\nإذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة بأمان.\n\nلأسباب أمنية، ستبقى كلمة مرورك كما هي حتى تنقر على الرابط أعلاه وتقوم بتعيين كلمة مرور جديدة.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+        ${spacer(24)}
+        ${renderTitle("إعادة تعيين كلمة المرور")}
+        ${renderParagraph(`تلقينا طلباً لإعادة تعيين كلمة مرور حسابك في ${escapeHtml(vars.companyName)} على DocuMind AI.`)}
+        ${renderButton(vars.resetUrl, "إعادة تعيين كلمة المرور", color)}
+        ${spacer(20)}
+        ${renderNote(`سينتهي هذا الرابط خلال ${escapeHtml(vars.expiryLabel)}.`)}
+        ${spacer(8)}
+        ${renderNote("إذا لم تطلب إعادة تعيين كلمة المرور، يمكنك تجاهل هذه الرسالة بأمان.")}
+        ${spacer(8)}
+        ${renderNote("لأسباب أمنية، ستبقى كلمة مرورك كما هي حتى تنقر على الرابط أعلاه وتقوم بتعيين كلمة مرور جديدة.")}
+        ${spacer(28)}
+        ${renderFallbackUrl(vars.resetUrl, lang)}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
     }
 
     const subject = `Reset your ${vars.companyName} DocuMind AI password`;
+    const preheader = "We received a request to reset the password for your DocuMind AI account.";
     const text = `Hi ${vars.userName},\n\nWe received a request to reset the password for your ${vars.companyName} DocuMind AI account.\n\nReset your password:\n${vars.resetUrl}\n\nThis link will expire in ${vars.expiryLabel}.\n\nIf you did not request a password reset, you can safely ignore this email.\n\nFor security reasons, your password will remain the same until you click the link above and set a new one.`;
-    const footer = renderFooter(branding);
-    const htmlContent = `${header}
-      <p style="margin:0 0 16px;font-size:16px;line-height:24px;color:#374151;">Hi ${escapeHtml(vars.userName)},</p>
-      <p style="margin:0 0 24px;font-size:16px;line-height:24px;color:#374151;">We received a request to reset the password for your ${escapeHtml(vars.companyName)} DocuMind AI account.</p>
-      <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
-        <tr>
-          <td bgcolor="${color}" style="border-radius:8px;">
-            <a href="${escapeHtml(vars.resetUrl)}" style="display:inline-block;padding:12px 22px;font-size:16px;line-height:20px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;background:${color};">Reset Password</a>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#4b5563;">If the button does not work, copy and paste this link into your browser:</p>
-      <p style="margin:0 0 24px;font-size:14px;line-height:22px;word-break:break-all;">
-        <a href="${escapeHtml(vars.resetUrl)}" style="color:${color};text-decoration:underline;">${escapeHtml(vars.resetUrl)}</a>
-      </p>
-      <p style="margin:0 0 16px;font-size:14px;line-height:22px;color:#4b5563;">This link will expire in ${escapeHtml(vars.expiryLabel)}.</p>
-      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">If you did not request a password reset, you can safely ignore this email.</p>
-      <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">For security reasons, your password will remain the same until you click the link above and set a new one.</p>${footer}`;
-    return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+      ${spacer(24)}
+      ${renderTitle("Reset your password")}
+      ${renderParagraph(`We received a request to reset the password for your ${escapeHtml(vars.companyName)} DocuMind AI account.`)}
+      ${renderButton(vars.resetUrl, "Reset Password", color)}
+      ${spacer(20)}
+      ${renderNote(`This link will expire in ${escapeHtml(vars.expiryLabel)}.`)}
+      ${spacer(8)}
+      ${renderNote("If you did not request a password reset, you can safely ignore this email.")}
+      ${spacer(8)}
+      ${renderNote("For security reasons, your password will remain the same until you click the link above and set a new one.")}
+      ${spacer(28)}
+      ${renderFallbackUrl(vars.resetUrl, lang)}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
   }
 
   if (templateId === "user_invitation" || templateId === "invitation_reminder") {
     const vars = UserInvitationVars.parse(variables);
-    const header = renderHeader(vars.companyName, branding);
-    
+
     const inviterName = vars.inviterName || "A company administrator";
     const inviterEmailText = vars.inviterEmail ? ` (${vars.inviterEmail})` : "";
     const roleFormatted = vars.role.replaceAll("_", " ").toLowerCase();
 
-    if (lang === "ar") {
-      const subject = templateId === "invitation_reminder" 
-        ? `تذكير: دعوة للانضمام إلى ${vars.companyName}` 
-        : `لقد تمت دعوتك للانضمام إلى ${vars.companyName}`;
-        
+    if (isAr) {
+      const subject =
+        templateId === "invitation_reminder"
+          ? `تذكير: دعوة للانضمام إلى ${vars.companyName}`
+          : `لقد تمت دعوتك للانضمام إلى ${vars.companyName}`;
+      const preheader = `أنت مدعو للانضمام إلى ${vars.companyName} على DocuMind AI.`;
       const inviterNameAr = vars.inviterName || "أحد مسؤولي الشركة";
 
-      const text = `لقد تمت دعوتك للانضمام إلى ${vars.companyName}\n\nقام ${inviterNameAr}${inviterEmailText} بدعوتك للانضمام إلى ${vars.companyName} بصفتك ${roleFormatted} على منصة DocuMind AI.\n\nاقبل الدعوة:\n${vars.invitationUrl}\n\nتنتهي هذه الدعوة في ${vars.expiryDate}. إذا لم تكن تتوقعها، يمكنك تجاهل هذه الرسالة.`;
-      const htmlContent = `${header}
-        <h1 style="margin:0 0 18px;font-size:24px;line-height:32px;">لقد تمت دعوتك للانضمام إلى ${escapeHtml(vars.companyName)}</h1>
-        <p style="margin:0 0 22px;font-size:16px;line-height:24px;color:#374151;">قام ${escapeHtml(inviterNameAr)}${escapeHtml(inviterEmailText)} بدعوتك للانضمام إلى ${escapeHtml(vars.companyName)} بصفتك <strong>${escapeHtml(roleFormatted)}</strong>.</p>
-        <table role="presentation" cellspacing="0" cellpadding="0">
-          <tr>
-            <td bgcolor="${color}" style="border-radius:8px;">
-              <a href="${escapeHtml(vars.invitationUrl)}" style="display:inline-block;padding:12px 22px;color:#fff;text-decoration:none;font-weight:700;background:${color};border-radius:8px;">قبول الدعوة</a>
-            </td>
-          </tr>
-        </table>
-        <p style="margin:24px 0 8px;font-size:14px;line-height:20px;color:#64748b;">إذا كان الزر لا يعمل، استخدم هذا الرابط:</p>
-        <p style="margin:0 0 22px;font-size:14px;line-height:20px;word-break:break-all;">
-          <a href="${escapeHtml(vars.invitationUrl)}" style="color:${color};">${escapeHtml(vars.invitationUrl)}</a>
-        </p>
-        <p style="margin:0;font-size:14px;line-height:20px;color:#64748b;">تنتهي هذه الدعوة في ${escapeHtml(vars.expiryDate)}. إذا لم تكن تتوقعها، يمكنك تجاهل هذه الرسالة.</p>`;
-      return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
+      const text = `أنت مدعو للانضمام إلى ${vars.companyName}\n\nدعاك ${inviterNameAr}${inviterEmailText} للانضمام إلى ${vars.companyName} على DocuMind AI بصفتك ${roleFormatted}.\n\nقبول الدعوة:\n${vars.invitationUrl}\n\nتنتهي هذه الدعوة ${vars.expiryDate}. إذا لم تكن تتوقع هذه الدعوة، يمكنك تجاهل هذه الرسالة بأمان.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: true, companyName: vars.companyName })}
+        ${spacer(24)}
+        ${renderTitle(`أنت مدعو للانضمام إلى ${escapeHtml(vars.companyName)}`)}
+        ${renderParagraph(`دعاك ${escapeHtml(inviterNameAr)}${escapeHtml(inviterEmailText)} للانضمام إلى ${escapeHtml(vars.companyName)} على DocuMind AI بصفتك <span dir="ltr"><strong>${escapeHtml(roleFormatted)}</strong></span>.`)}
+        ${renderButton(vars.invitationUrl, "قبول الدعوة", color)}
+        ${spacer(20)}
+        ${renderNote(renderInvitationMeta(vars.expiryDate, true))}
+        ${spacer(8)}
+        ${renderNote("إذا لم تكن تتوقع هذه الدعوة، يمكنك تجاهل هذه الرسالة بأمان.")}
+        ${spacer(28)}
+        ${renderFallbackUrl(vars.invitationUrl, lang)}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
     }
 
-    const subject = templateId === "invitation_reminder" 
-      ? `Reminder: Invitation to join ${vars.companyName} on DocuMind AI`
-      : `You have been invited to join ${vars.companyName} on DocuMind AI`;
+    const subject =
+      templateId === "invitation_reminder"
+        ? `Reminder: You have been invited to join ${vars.companyName} on DocuMind AI`
+        : `You have been invited to join ${vars.companyName} on DocuMind AI`;
+    const preheader = `You're invited to join ${vars.companyName} on DocuMind AI.`;
 
-    const text = `You have been invited to join ${vars.companyName}\n\n${inviterName}${inviterEmailText} invited you to join ${vars.companyName} as ${roleFormatted} on DocuMind AI.\n\nAccept invitation:\n${vars.invitationUrl}\n\nThis invitation expires on ${vars.expiryDate}. If you were not expecting it, you can ignore this email.`;
-    const footer = renderFooter(branding);
-    const htmlContent = `${header}
-      <h1 style="margin:0 0 18px;font-size:24px;line-height:32px;">You have been invited to join ${escapeHtml(vars.companyName)}</h1>
-      <p style="margin:0 0 22px;font-size:16px;line-height:24px;color:#374151;">${escapeHtml(inviterName)}${escapeHtml(inviterEmailText)} invited you to join ${escapeHtml(vars.companyName)} as <strong>${escapeHtml(roleFormatted)}</strong>.</p>
-      <table role="presentation" cellspacing="0" cellpadding="0">
-        <tr>
-          <td bgcolor="${color}" style="border-radius:8px;">
-            <a href="${escapeHtml(vars.invitationUrl)}" style="display:inline-block;padding:12px 22px;color:#fff;text-decoration:none;font-weight:700;background:${color};border-radius:8px;">Accept invitation</a>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:24px 0 8px;font-size:14px;line-height:20px;color:#64748b;">If the button does not work, use this link:</p>
-      <p style="margin:0 0 22px;font-size:14px;line-height:20px;word-break:break-all;">
-        <a href="${escapeHtml(vars.invitationUrl)}" style="color:${color};">${escapeHtml(vars.invitationUrl)}</a>
-      </p>
-      <p style="margin:0;font-size:14px;line-height:20px;color:#64748b;">This invitation expires on ${escapeHtml(vars.expiryDate)}. If you were not expecting it, you can ignore this email.</p>${footer}`;
-    return { subject, text, html: renderBodyWrapper(htmlContent, lang) };
+    const text = `You're invited to join ${vars.companyName}\n\n${inviterName}${inviterEmailText} invited you to join ${vars.companyName} on DocuMind AI as ${roleFormatted}.\n\nAccept invitation:\n${vars.invitationUrl}\n\nThis invitation expires ${vars.expiryDate}. If you were not expecting this invitation, you can safely ignore this email.`;
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: true, companyName: vars.companyName })}
+      ${spacer(24)}
+      ${renderTitle(`You're invited to join ${escapeHtml(vars.companyName)}`)}
+      ${renderParagraph(`${escapeHtml(inviterName)}${escapeHtml(inviterEmailText)} invited you to join ${escapeHtml(vars.companyName)} on DocuMind AI as <strong>${escapeHtml(roleFormatted)}</strong>.`)}
+      ${renderButton(vars.invitationUrl, "Accept Invitation", color)}
+      ${spacer(20)}
+      ${renderNote(renderInvitationMeta(vars.expiryDate, false))}
+      ${spacer(8)}
+      ${renderNote("If you were not expecting this invitation, you can safely ignore this email.")}
+      ${spacer(28)}
+      ${renderFallbackUrl(vars.invitationUrl, lang)}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
+  }
+
+  if (templateId === "company_suspended") {
+    const vars = CompanyLifecycleVars.parse(variables);
+    const dateNote = vars.effectiveDate
+      ? isAr
+        ? `يسري هذا التغيير اعتبارًا من <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+        : `This change is effective as of <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+      : "";
+    const reasonNote = vars.reason
+      ? isAr
+        ? `<p style="margin:0 0 20px;font-size:16px;line-height:26px;color:${TEXT_BODY};">السبب: <span dir="auto">${escapeHtml(vars.reason)}</span></p>`
+        : `<p style="margin:0 0 20px;font-size:16px;line-height:26px;color:${TEXT_BODY};">Reason: <span dir="auto">${escapeHtml(vars.reason)}</span></p>`
+      : "";
+
+    if (isAr) {
+      const subject = `DocuMind AI — تم إيقاف مؤسستك`;
+      const preheader = `تم إيقاف الوصول إلى مساحة عمل DocuMind AI الخاصة بمؤسستك ${vars.companyName}.`;
+      const text = `عزيزي مسؤول المؤسسة،\n\nتم إيقاف مؤسستك ${vars.companyName}. الوصول إلى مساحة عمل DocuMind AI الخاصة بمؤسستك غير متاح حاليًا.${vars.reason ? `\n\nالسبب: ${vars.reason}` : ""}${vars.effectiveDate ? `\n\nيسري هذا التغيير اعتبارًا من ${vars.effectiveDate}.` : ""}\n\nإذا كنت تعتقد أن هذا خطأ، فتواصل مع مسؤول مؤسستك أو دعم المنصة.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+        ${spacer(24)}
+        ${renderTitle(`تم إيقاف مؤسستك`)}
+        ${renderParagraph(`عزيزي مسؤول المؤسسة، تم إيقاف مؤسستك <strong>${escapeHtml(vars.companyName)}</strong>. الوصول إلى مساحة عمل DocuMind AI الخاصة بمؤسستك غير متاح حاليًا.`)}
+        ${reasonNote}
+        ${dateNote ? renderNote(dateNote) : ""}
+        ${spacer(8)}
+        ${renderNote("إذا كنت تعتقد أن هذا خطأ، فتواصل مع مسؤول مؤسستك أو دعم المنصة.")}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
+    }
+
+    const subject = "DocuMind AI — Your organization has been suspended";
+    const preheader = `Access to your ${vars.companyName} DocuMind AI workspace is currently unavailable.`;
+    const text = `Dear company administrator,\n\nYour organization ${vars.companyName} has been suspended. Access to your organization's DocuMind AI workspace is currently unavailable.${vars.reason ? `\n\nReason: ${vars.reason}` : ""}${vars.effectiveDate ? `\n\nThis change is effective as of ${vars.effectiveDate}.` : ""}\n\nIf you believe this is in error, please contact your organization's administrator or platform support.`;
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+      ${spacer(24)}
+      ${renderTitle("Your organization has been suspended")}
+      ${renderParagraph(`Dear company administrator, your organization <strong>${escapeHtml(vars.companyName)}</strong> has been suspended. Access to your organization's DocuMind AI workspace is currently unavailable.`)}
+      ${reasonNote}
+      ${dateNote ? renderNote(dateNote) : ""}
+      ${spacer(8)}
+      ${renderNote("If you believe this is in error, please contact your organization's administrator or platform support.")}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
+  }
+
+  if (templateId === "company_reactivated") {
+    const vars = CompanyLifecycleVars.parse(variables);
+    const dateNote = vars.effectiveDate
+      ? isAr
+        ? `يسري هذا التغيير اعتبارًا من <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+        : `This change is effective as of <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+      : "";
+
+    if (isAr) {
+      const subject = `DocuMind AI — تمت إعادة تنشيط مؤسستك`;
+      const preheader = `تمت إعادة تنشيط مؤسستك ${vars.companyName} على DocuMind AI.`;
+      const text = `عزيزي مسؤول المؤسسة،\n\nتمت إعادة تنشيط مؤسستك ${vars.companyName}. يمكن للمستخدمين الوصول إلى DocuMind AI مرة أخرى وفقًا لحالة حساباتهم وصلاحياتهم.${vars.effectiveDate ? `\n\nيسري هذا التغيير اعتبارًا من ${vars.effectiveDate}.` : ""}\n\nإذا كنت بحاجة إلى مساعدة، فتواصل مع مسؤول مؤسستك أو دعم المنصة.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+        ${spacer(24)}
+        ${renderTitle("تمت إعادة تنشيط مؤسستك")}
+        ${renderParagraph(`عزيزي مسؤول المؤسسة، تمت إعادة تنشيط مؤسستك <strong>${escapeHtml(vars.companyName)}</strong>. يمكن للمستخدمين الوصول إلى DocuMind AI مرة أخرى وفقًا لحالة حساباتهم وصلاحياتهم.`)}
+        ${dateNote ? renderNote(dateNote) : ""}
+        ${spacer(8)}
+        ${renderNote("إذا كنت بحاجة إلى مساعدة، فتواصل مع مسؤول مؤسستك أو دعم المنصة.")}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
+    }
+
+    const subject = "DocuMind AI — Your organization has been reactivated";
+    const preheader = `Your ${vars.companyName} DocuMind AI organization has been reactivated.`;
+    const text = `Dear company administrator,\n\nYour organization ${vars.companyName} has been reactivated. Users may access DocuMind AI again, subject to their own account status and permissions.${vars.effectiveDate ? `\n\nThis change is effective as of ${vars.effectiveDate}.` : ""}\n\nIf you need assistance, please contact your organization's administrator or platform support.`;
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+      ${spacer(24)}
+      ${renderTitle("Your organization has been reactivated")}
+      ${renderParagraph(`Dear company administrator, your organization <strong>${escapeHtml(vars.companyName)}</strong> has been reactivated. Users may access DocuMind AI again, subject to their own account status and permissions.`)}
+      ${dateNote ? renderNote(dateNote) : ""}
+      ${spacer(8)}
+      ${renderNote("If you need assistance, please contact your organization's administrator or platform support.")}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
   }
 
   throw new Error(`Unsupported template ID: ${templateId}`);

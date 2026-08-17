@@ -3,11 +3,14 @@ import mongoose from "mongoose";
 import RoleModel from "../../db/models/role.model.js";
 import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
+import { normalizeTaxonomyName } from "../document-taxonomy/documentTaxonomy.normalization.js";
 import { PLATFORM_TENANT_SLUG } from "../../common/auth/platformTenant.js";
 import { createStructuredLogger } from "../../common/utils/structuredLogger.js";
 import { ALL_PERMISSIONS, BASE_ROLE_DEFAULTS, PERMISSION_CONTRACT_VERSION, type PermissionValue } from "./permissions.catalog.js";
 import { decidePermission, emptyResolved } from "./permissions.decision.js";
 import { normalizeRoleGrants } from "./permissions.grants.js";
+import { hasScopeConstraints } from "./permissions.scope.js";
 import type {
   PermissionActor,
   PermissionEvaluationInput,
@@ -49,6 +52,7 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
     // Platform administrators never consume tenant custom-role assignments, even if
     // a corrupt legacy row still contains one.
     const customRoleId = baseRole === "SUPER_ADMIN" ? null : user.customRoleId?.toString() ?? null;
+    const assignedDepartmentId = await resolveAssignedDepartmentId(actor.tenantId, user.employeeProfile);
     let roleVersion: number | null = null;
     let customRoleState: ResolvedPermissions["customRoleState"] = customRoleId ? "missing" : "none";
 
@@ -74,8 +78,26 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
             }
             const persistedGrants = normalizeRoleGrants(role.grants, { requireCanonical: true });
             for (const grant of persistedGrants) {
-              if (!grants.has(grant.permission)) {
+              // Once a user has an authoritative department assignment, a
+              // department-scoped custom grant is effective only while that
+              // assignment remains inside the grant. Legacy users without an
+              // assignment retain the pre-existing role-only behavior.
+              if (
+                assignedDepartmentId &&
+                grant.scopes?.departmentIds.length &&
+                !grant.scopes.departmentIds.includes(assignedDepartmentId)
+              ) {
+                // A scoped custom grant may narrow a permission inherited from
+                // the base role. Remove that inherited capability as well;
+                // otherwise a department change would accidentally broaden it.
+                grants.delete(grant.permission);
+                continue;
+              }
+              const existing = grants.get(grant.permission);
+              if (!existing) {
                 grants.set(grant.permission, { source: "custom-role", scope: grant.scopes ?? null });
+              } else if (grant.scopes && hasScopeConstraints(grant.scopes)) {
+                grants.set(grant.permission, { ...existing, scope: grant.scopes });
               }
             }
           } catch (error) {
@@ -120,6 +142,29 @@ export class PermissionEvaluatorImpl implements PermissionEvaluator {
   // Resolution is intentionally uncached so authorization changes are visible across API instances.
   evict(actorId: string, tenantId: string): void { void actorId; void tenantId; }
   evictAllForTenant(tenantId: string): void { void tenantId; }
+}
+
+async function resolveAssignedDepartmentId(
+  tenantId: string,
+  profile: { departmentId?: mongoose.Types.ObjectId | null; department?: string } | undefined,
+): Promise<string | null> {
+  const canonicalId = profile?.departmentId?.toString();
+  if (canonicalId && mongoose.isObjectIdOrHexString(canonicalId)) {
+    const exists = await DepartmentModel.exists({
+      _id: canonicalId,
+      tenantId,
+      status: "active",
+    });
+    return exists ? canonicalId : null;
+  }
+  const legacyName = profile?.department?.trim();
+  if (!legacyName) return null;
+  const department = await DepartmentModel.findOne({
+    tenantId,
+    normalizedName: normalizeTaxonomyName(legacyName),
+    status: "active",
+  }).select("_id").lean().exec();
+  return department?._id.toString() ?? null;
 }
 
 const permissionSecurityLogger = createStructuredLogger("permission-security");

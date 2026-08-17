@@ -19,6 +19,10 @@ import {
 } from "@/constants/platform-navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
+import { useCopilot } from "@/providers/copilot-provider";
+import { getNavGuideTargetId } from "@/lib/copilot/guide-targets";
+import { COPILOT_ENABLED } from "@/config/public-env";
+import { cn } from "@/lib/utils";
 
 type AppNavigationProps = {
   open: boolean;
@@ -64,16 +68,23 @@ function NavItem({
     <Link
       href={href}
       onClick={onClose}
+      data-guide-id={getNavGuideTargetId(href)}
       title={label}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
-      className={`flex min-w-0 items-center gap-3 px-4 py-3 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
+      className={cn(
+        "flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-3",
         isActive
-          ? "border-s-4 border-tertiary-container bg-secondary-container/10 font-bold text-primary hover:bg-surface-container-high"
-          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-      }`}
+          ? "bg-secondary-container/20 font-semibold text-primary hover:bg-secondary-container/30"
+          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
+      )}
     >
-      <span className="material-symbols-outlined shrink-0">{icon}</span>
+      <span
+        className="material-symbols-outlined shrink-0 text-[20px]"
+        style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+      >
+        {icon}
+      </span>
       <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
         {labelKey ? t(labelKey) : label}
       </span>
@@ -86,6 +97,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const permissions = usePermissions();
   const tenant = useTenantSettings();
   const { t } = useI18n();
+  const { setOpen: setCopilotOpen } = useCopilot();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -270,7 +282,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                     onClick={() => toggleGroup(group.id)}
                     aria-expanded={!collapsed}
                     aria-controls={`nav-group-${group.id}`}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-4"
+                    className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-3"
                   >
                     {group.icon ? (
                       <span className="material-symbols-outlined text-[18px]">
@@ -347,7 +359,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
       />
       <aside
         aria-label={t("shell.primaryNavigation")}
-        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[72px] xl:w-[280px] ${
+        className={`fixed inset-y-0 start-0 z-50 flex w-[min(280px,calc(100vw-2rem))] flex-col overflow-hidden border-e border-outline-variant bg-surface transition-transform duration-200 md:w-[72px] xl:w-[280px] ${
           open
             ? "translate-x-0"
             : "max-md:ltr:-translate-x-full max-md:rtl:translate-x-full"
@@ -378,7 +390,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
-        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-md md:px-0 xl:px-md">
+        <nav className="mt-md min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-md md:px-0 xl:px-md scrollbar-hide">
           {navContent}
         </nav>
         <div className="mt-auto border-t border-outline-variant p-md md:px-0 xl:px-md">
@@ -388,6 +400,19 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <div className="px-4 pb-2 sm:hidden">
               <LanguageSwitcher className="w-full justify-center" />
             </div>
+            {COPILOT_ENABLED ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setCopilotOpen(true);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
+              >
+                <span className="material-symbols-outlined">help</span>
+                <span className="text-body-sm">{t("shell.helpCenter")}</span>
+              </button>
+            ) : null}
             <button
               onClick={() => void handleLogout()}
               disabled={loggingOut}

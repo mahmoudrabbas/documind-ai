@@ -20,6 +20,7 @@ const inviteUserSchema = z
       .toLowerCase()
       .email("email must be a valid address"),
     role: z.enum(["COMPANY_ADMIN", "EMPLOYEE"]),
+    departmentId: z.string().regex(/^[a-f\d]{24}$/i, "departmentId must be a valid identifier").nullable().optional(),
   })
   .strict();
 
@@ -29,10 +30,11 @@ const updateUserSchema = z
     status: z
       .enum(["active", "pending", "pending_email_verification", "disabled"])
       .optional(),
+    departmentId: z.string().regex(/^[a-f\d]{24}$/i, "departmentId must be a valid identifier").nullable().optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one of role or status must be provided",
+    message: "At least one of role, status, or departmentId must be provided",
   });
 
 const listUsersSchema = z
@@ -59,6 +61,18 @@ const listUsersSchema = z
       .preprocess(
         (value) => (Array.isArray(value) ? value[0] : value),
         z.enum(["COMPANY_ADMIN", "EMPLOYEE"]),
+      )
+      .optional(),
+    status: z
+      .preprocess(
+        (value) => (Array.isArray(value) ? value[0] : value),
+        z.enum(["active", "pending", "pending_email_verification", "disabled"]),
+      )
+      .optional(),
+    departmentId: z
+      .preprocess(
+        (value) => (Array.isArray(value) ? value[0] : value),
+        z.string().regex(/^[a-f\d]{24}$/i, "departmentId must be a valid identifier"),
       )
       .optional(),
   })

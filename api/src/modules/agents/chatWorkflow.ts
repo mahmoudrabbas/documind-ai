@@ -7,7 +7,7 @@ import {
 } from "../../common/errors/errorCodes.js";
 import { chatAgentIdSchema, CHAT_AGENT_IDS, isChatAgentId, type ChatAgentId } from "./chatAgents.js";
 
-export const CHAT_WORKFLOW_IDS = ["chat-rag-v1"] as const;
+export const CHAT_WORKFLOW_IDS = ["chat-rag-v1", "guider-v1"] as const;
 
 export type ChatWorkflowId = (typeof CHAT_WORKFLOW_IDS)[number];
 
@@ -149,6 +149,13 @@ export class WorkflowRegistry {
     return this.workflows.get(id as ChatWorkflowId);
   }
 
+  require(id: "chat-rag-v1"): ChatWorkflowDefinition & {
+    readonly id: "chat-rag-v1";
+  };
+  require(id: "guider-v1"): ChatWorkflowDefinition & {
+    readonly id: "guider-v1";
+  };
+  require(id: string): ChatWorkflowDefinition;
   require(id: string): ChatWorkflowDefinition {
     const definition = this.workflows.get(id as ChatWorkflowId);
     if (!definition) {
@@ -191,7 +198,12 @@ export function chatRagV1Definition(): ChatWorkflowDefinition {
       "citation-verification-agent": ["answer-writer-agent", "chat-supervisor", "compliance-agent"],
       "compliance-agent": ["chat-supervisor"],
     },
-    metadata: { schemaVersion: "1.1.0" },
+    metadata: {
+      schemaVersion: "1.1.0",
+      budget: {
+        maxTotalTokens: 50_000,
+      },
+    },
   });
 }
 
@@ -199,4 +211,26 @@ export function createChatWorkflowRegistry(): WorkflowRegistry {
   const registry = new WorkflowRegistry();
   registry.register(chatRagV1Definition());
   return registry;
+}
+
+export function createCopilotWorkflowRegistry(): WorkflowRegistry {
+  const registry = new WorkflowRegistry();
+  registry.register(copilotWorkflowDefinition());
+  return registry;
+}
+
+function copilotWorkflowDefinition(): ChatWorkflowDefinition {
+  return normalizeChatWorkflowDefinition({
+    id: "guider-v1",
+    version: "1.0.0",
+    description: "Copilot workflow: classify → guide or action agent",
+    entryAgent: "copilot-supervisor",
+    agents: [...CHAT_AGENT_IDS],
+    allowedHandoffs: {
+      "copilot-supervisor": ["platform-guide-agent", "platform-action-agent"],
+      "platform-guide-agent": ["copilot-supervisor"],
+      "platform-action-agent": ["copilot-supervisor"],
+    },
+    metadata: { schemaVersion: "1.0.0" },
+  });
 }

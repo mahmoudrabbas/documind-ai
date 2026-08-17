@@ -85,12 +85,24 @@ import {
   createDefaultLoadChunksByIds,
   createDefaultLoadEligibleDocumentIds,
 } from "./modules/agents/tools/authorizedRetrievalTools.js";
+import { getPermissionEvaluator } from "./modules/permissions/permissions.evaluator.js";
+import { Permission } from "./modules/permissions/permissions.catalog.js";
+import {
+  resolveCategoryScopeValues,
+  resolveClassificationScopeValues,
+  resolveDepartmentNames,
+} from "./modules/roles/roles.taxonomy.js";
 import entitlementRoutes from "./modules/entitlement/entitlement.routes.js";
 import entitlementAdminRoutes from "./modules/entitlement/entitlement.admin.routes.js";
 import analyticsRoutes from "./modules/analytics/analytics.routes.js";
 import { EntitlementService } from "./modules/entitlement/entitlement.service.js";
 import { MongoQuotaCounter } from "./modules/entitlement/adapters/mongo-quota-counter.js";
 import { MongoEntitlementProvider } from "./modules/entitlement/adapters/mongo-entitlement-provider.js";
+import copilotRoutes from "./modules/copilot/copilot.routes.js";
+import { initializeCopilotService } from "./modules/copilot/copilot.service.js";
+import { storageProvider } from "./providers/storage/index.js";
+import { LocalFileSignatureScanner } from "./providers/security-scanner/index.js";
+import { StubProcessingDispatcher, RealProcessingDispatcher } from "./providers/processing/index.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -259,7 +271,67 @@ const retrievalService = createRetrievalService({
   rerankerService,
   resolveAccessContext: async (context) => {
     const actor = await getDocumentAccessAuthorizationService().resolveActor({ tenantId: context.tenantId, actorId: context.actorId });
-    return { ...context, baseRole: actor.baseRole, customRoleId: actor.customRoleId, departmentIds: [...(actor.departmentIds ?? [])], requiredAction: "use_in_ai" };
+    const resolved = await getPermissionEvaluator().resolve({
+      tenantId: context.tenantId,
+      actorId: context.actorId,
+      baseRole: actor.baseRole,
+      customRoleId: actor.customRoleId,
+    });
+    const useInAiGrant = resolved.grants.get(Permission.DOCUMENTS_USE_IN_AI);
+    const scope = useInAiGrant?.scope ?? undefined;
+
+    // Department translation is driven ONLY by the use-in-ai grant scope.
+    // - scope == undefined -> no department restriction
+    // - scope.departmentIds == [] -> no department restriction
+    // - scope.departmentIds == [HR_ID] -> restrict to HR
+    // actor.departmentIds is NOT used as a substitute for an absent grant scope.
+    const departmentIds: string[] | undefined =
+      scope?.departmentIds && scope.departmentIds.length > 0
+        ? [...scope.departmentIds]
+        : undefined;
+
+    const resolvedDepartmentFilter = await resolveDepartmentNames(departmentIds, context.tenantId);
+
+    // Category translation mirrors department translation. It is driven ONLY
+    // by the use-in-ai grant scope's canonical category names:
+    // - scope == undefined -> no category restriction
+    // - scope.documentCategories == [] -> no category restriction
+    // - scope.documentCategories == ["finance"] -> restrict to that category.
+    //
+    // The scope names are resolved to the tenant-scoped active DocumentCategory
+    // records so the retrieval filter carries display names AND normalized
+    // names (matching persisted "Finance" or legacy "finance" metadata).
+    const categoryNames: string[] | undefined =
+      scope?.documentCategories && scope.documentCategories.length > 0
+        ? [...scope.documentCategories]
+        : undefined;
+
+    const resolvedCategory = await resolveCategoryScopeValues(categoryNames, context.tenantId);
+    const resolvedCategoryFilter =
+      resolvedCategory === undefined
+        ? undefined
+        : [...new Set([...resolvedCategory.names, ...resolvedCategory.normalizedNames])].sort();
+    const classificationNames: string[] | undefined =
+      scope?.documentClassifications && scope.documentClassifications.length > 0
+        ? [...scope.documentClassifications]
+        : undefined;
+    const resolvedClassification = await resolveClassificationScopeValues(
+      classificationNames,
+      context.tenantId,
+    );
+    const resolvedClassificationFilter = resolvedClassification?.levels;
+
+    return {
+      ...context,
+      baseRole: actor.baseRole,
+      customRoleId: actor.customRoleId,
+      departmentIds: departmentIds ?? [],
+      permissionScopes: scope,
+      resolvedDepartmentFilter,
+      resolvedCategoryFilter,
+      resolvedClassificationFilter,
+      requiredAction: "use_in_ai",
+    };
   },
   authorizeDocumentForAi: async (context, documentId) => {
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId: context.tenantId, actorId: context.actorId }, documentId, "use_in_ai");
@@ -285,6 +357,19 @@ registerAuthorizedRetrievalTools(authorizedRetrievalDependencies);
 
 await initializeIntentQueryService();
 app.use("/retrieval", createRetrievalRoutes(retrievalService));
+
+if (config.COPILOT_ENABLED) {
+  app.use("/copilot", copilotRoutes);
+  await initializeCopilotService({
+    storageProvider,
+    securityScanner: new LocalFileSignatureScanner(),
+    processingDispatcher:
+      config.NODE_ENV === "test"
+        ? new StubProcessingDispatcher()
+        : new RealProcessingDispatcher(),
+  });
+  logger.info("Copilot runtime initialized (COPILOT_ENABLED=true).");
+}
 
 const modelAdapter = getModelAdapter();
 const chatWorkflowService = createProductionChatWorkflowService({

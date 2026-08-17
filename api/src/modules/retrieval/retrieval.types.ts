@@ -16,6 +16,22 @@ export interface RetrievalFilter {
 export interface RetrievalQuery {
   queryText: string;
   queryVector?: number[];
+  /**
+   * Additional semantic query texts to embed and vector-search (e.g.
+   * cross-lingual translations of the primary query). Each variant runs a
+   * vector search; per-chunk the best score wins. Capped internally at 3.
+   */
+  queryVariants?: string[];
+  /**
+   * Exact lexical anchors from the query plan. Retrieval deliberately gives
+   * this class a bounded keyword-search slot when keyword plans also exist.
+   */
+  exactTerms?: string[];
+  /**
+   * Generated keyword-search texts besides `queryText`. Retrieval balances
+   * this class with exact terms; per-chunk the best score wins.
+   */
+  keywordTexts?: string[];
   topK: number;
   filter?: RetrievalFilter;
 }
@@ -28,6 +44,37 @@ export interface AccessContext {
   permissionScopes?: PermissionScopes;
   customRoleId?: string | null;
   departmentIds?: string[];
+  /**
+   * Department names resolved server-side from the DOCUMENTS_USE_IN_AI grant
+   * scope's `departmentIds` (ObjectIds) to `DepartmentModel.name` text values,
+   * so they can be compared against the `department` field stored on
+   * document/chunk records.
+   *
+   * Populated by `resolveAccessContext` in `app.ts`.
+   * `undefined` = no department restriction.
+   * `[]` = fail-closed (restrictive scope failed resolution; match nothing).
+   * `['HR', 'IT']` = restrict to those departments.
+   */
+  resolvedDepartmentFilter?: string[] | null;
+  /**
+   * Category names resolved server-side from the DOCUMENTS_USE_IN_AI grant
+   * scope's `documentCategories` (canonical taxonomy names) to the display
+   * names AND normalized names of the tenant-scoped active DocumentCategory
+   * records they resolve to, so they can be compared against the `category`
+   * field stored on document/chunk records.
+   *
+   * Populated by `resolveAccessContext` in `app.ts`.
+   * `undefined` = no category restriction.
+   * `[]` = fail-closed (restrictive scope failed resolution; match nothing).
+   * `['Finance', 'finance']` = restrict to that canonical category.
+   */
+  resolvedCategoryFilter?: string[] | null;
+  /**
+   * Sensitivity levels resolved from canonical classification scope names for
+   * datastore prefiltering. Exact identity is reauthorized against the parent
+   * document before content is returned.
+   */
+  resolvedClassificationFilter?: string[] | null;
   /** Retrieval always resolves and enforces this server-side; callers cannot downgrade it. */
   requiredAction?: "use_in_ai";
 }
@@ -76,6 +123,8 @@ export interface RetrievalDiagnostics {
   rawKeywordCandidateCount?: number;
   postAuthorizationVectorCandidateCount?: number;
   postAuthorizationKeywordCandidateCount?: number;
+  /** True only when actor authorization removed otherwise tenant-matching candidates. */
+  authorizationFiltered?: boolean;
   fusedCandidateCount?: number;
   hydratedCandidateCount?: number;
   evidenceItemCount?: number;

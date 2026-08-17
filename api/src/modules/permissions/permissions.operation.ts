@@ -13,6 +13,7 @@ import TenantModel from "../../db/models/tenant.model.js";
 import UserModel from "../../db/models/user.model.js";
 import { authorizePermission } from "./permissions.authorization.js";
 import type { PermissionValue } from "./permissions.catalog.js";
+import type { PermissionResourceContext } from "./permissions.types.js";
 
 export interface OperationAuthorizationContext {
   tenantId: string;
@@ -30,6 +31,7 @@ export type ResolvedOperationAuthorizationContext =
 export async function authorizeTenantOperation(
   input: OperationAuthorizationContext,
   permission: PermissionValue,
+  resource?: PermissionResourceContext,
 ): Promise<ResolvedOperationAuthorizationContext> {
   const context = await resolvePersistedActor(input);
   const tenant = await TenantModel.findById(context.tenantId)
@@ -41,7 +43,7 @@ export async function authorizeTenantOperation(
     throw permissionDenied();
   }
 
-  await authorizePermission(context, permission);
+  await authorizePermission(context, permission, resource);
   return context;
 }
 

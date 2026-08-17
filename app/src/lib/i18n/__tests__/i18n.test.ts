@@ -3,11 +3,19 @@ import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   LOCALE_COOKIE_NAME,
+  LOCALE_EXPLICIT_COOKIE_NAME,
   LOCALE_CONFIGS,
   getDirection,
   isValidLocale,
 } from "../i18n.config";
-import { t, getLocaleFromCookie, setLocaleCookie } from "../i18n.utils";
+import {
+  t,
+  getLocaleFromCookie,
+  hasExplicitLocalePreference,
+  setLocaleCookie,
+  setExplicitLocalePreference,
+  clearExplicitLocalePreference,
+} from "../i18n.utils";
 import dictionaries from "../translations";
 import type { Locale, TranslationDictionary } from "../i18n.types";
 
@@ -142,6 +150,135 @@ describe("getLocaleFromCookie", () => {
       configurable: true,
     });
     expect(getLocaleFromCookie()).toBe(DEFAULT_LOCALE);
+  });
+});
+
+describe("hasExplicitLocalePreference", () => {
+  it("returns false when document is undefined (SSR)", () => {
+    const originalDocument = globalThis.document;
+    Object.defineProperty(globalThis, "document", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    expect(hasExplicitLocalePreference()).toBe(false);
+    Object.defineProperty(globalThis, "document", {
+      value: originalDocument,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it("returns false when no cookie is present", () => {
+    Object.defineProperty(globalThis, "document", {
+      value: { cookie: "" },
+      writable: true,
+      configurable: true,
+    });
+    expect(hasExplicitLocalePreference()).toBe(false);
+  });
+
+  it("returns true when the marker cookie is set", () => {
+    Object.defineProperty(globalThis, "document", {
+      value: { cookie: `${LOCALE_EXPLICIT_COOKIE_NAME}=1` },
+      writable: true,
+      configurable: true,
+    });
+    expect(hasExplicitLocalePreference()).toBe(true);
+  });
+
+  it("finds the marker alongside other cookies", () => {
+    Object.defineProperty(globalThis, "document", {
+      value: {
+        cookie: `other=x; ${LOCALE_COOKIE_NAME}=ar; ${LOCALE_EXPLICIT_COOKIE_NAME}=1`,
+      },
+      writable: true,
+      configurable: true,
+    });
+    expect(hasExplicitLocalePreference()).toBe(true);
+  });
+
+  /* The whole point of the marker: a locale cookie on its own is also what a
+     tenant default writes, so it must not read as the user's own choice. */
+  it("returns false when only the locale cookie is set", () => {
+    Object.defineProperty(globalThis, "document", {
+      value: { cookie: `${LOCALE_COOKIE_NAME}=ar` },
+      writable: true,
+      configurable: true,
+    });
+    expect(hasExplicitLocalePreference()).toBe(false);
+  });
+
+  it("returns false once the marker has been cleared", () => {
+    Object.defineProperty(globalThis, "document", {
+      value: { cookie: `${LOCALE_EXPLICIT_COOKIE_NAME}=` },
+      writable: true,
+      configurable: true,
+    });
+    expect(hasExplicitLocalePreference()).toBe(false);
+  });
+});
+
+describe("setExplicitLocalePreference / clearExplicitLocalePreference", () => {
+  function withFakeDocument(run: (read: () => string) => void): void {
+    let cookieValue = "";
+    const fakeDoc = {
+      get cookie() {
+        return cookieValue;
+      },
+      set cookie(v: string) {
+        cookieValue = v;
+      },
+    };
+    const originalDocument = globalThis.document;
+    Object.defineProperty(globalThis, "document", {
+      value: fakeDoc,
+      writable: true,
+      configurable: true,
+    });
+    try {
+      run(() => cookieValue);
+    } finally {
+      Object.defineProperty(globalThis, "document", {
+        value: originalDocument,
+        writable: true,
+        configurable: true,
+      });
+    }
+  }
+
+  it("does not throw when document is undefined (SSR)", () => {
+    const originalDocument = globalThis.document;
+    Object.defineProperty(globalThis, "document", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    expect(() => setExplicitLocalePreference()).not.toThrow();
+    expect(() => clearExplicitLocalePreference()).not.toThrow();
+    Object.defineProperty(globalThis, "document", {
+      value: originalDocument,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it("writes the marker with a long expiry", () => {
+    withFakeDocument((read) => {
+      setExplicitLocalePreference();
+      expect(read()).toContain(`${LOCALE_EXPLICIT_COOKIE_NAME}=1`);
+      expect(read()).toContain("path=/");
+      expect(read()).toContain("SameSite=Lax");
+      expect(read()).toContain(`max-age=${365 * 24 * 60 * 60}`);
+    });
+  });
+
+  it("expires the marker when cleared", () => {
+    withFakeDocument((read) => {
+      clearExplicitLocalePreference();
+      expect(read()).toContain(`${LOCALE_EXPLICIT_COOKIE_NAME}=`);
+      expect(read()).toContain("max-age=0");
+    });
   });
 });
 

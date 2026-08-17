@@ -72,3 +72,38 @@ test("manage_access and use_in_ai map only to their canonical permissions", asyn
   }
   assert.deepEqual(calls, ["documents:manage-access", "documents:use-in-ai"]);
 });
+
+test("category scope comparison always uses a category NAME, never a category ObjectId", async () => {
+  const resources: Array<Record<string, unknown>> = [];
+  const evaluator = {
+    async evaluate(input: { resource: Record<string, unknown> }) {
+      resources.push(input.resource);
+      return { allowed: true, permission: "documents:use-in-ai", source: null, scope: null,
+        denialCode: null, reason: "granted", roleId: null, roleVersion: null };
+    },
+  } as unknown as PermissionEvaluator;
+  const adapter = new PermissionEvaluatorDocumentCapabilityAdapter(evaluator);
+
+  await adapter.evaluateCapability({
+    actor: tenantAActor,
+    resource: { ...tenantADocument, categoryId: "64a1000000000000000000ab", legacyCategory: null, canonicalCategoryName: null },
+    action: "use_in_ai",
+  });
+  assert.deepEqual(resources[0]?.documentCategory, undefined);
+
+  resources.length = 0;
+  await adapter.evaluateCapability({
+    actor: tenantAActor,
+    resource: { ...tenantADocument, categoryId: "64a1000000000000000000ab", legacyCategory: "Finance", canonicalCategoryName: null },
+    action: "use_in_ai",
+  });
+  assert.equal(resources[0]?.documentCategory, "Finance");
+
+  resources.length = 0;
+  await adapter.evaluateCapability({
+    actor: tenantAActor,
+    resource: { ...tenantADocument, categoryId: "64a1000000000000000000ab", legacyCategory: "Finance", canonicalCategoryName: "finance" },
+    action: "use_in_ai",
+  });
+  assert.equal(resources[0]?.documentCategory, "finance");
+});

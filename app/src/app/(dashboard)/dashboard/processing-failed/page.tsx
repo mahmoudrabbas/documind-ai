@@ -107,6 +107,7 @@ export default function CompanyFailedProcessingPage() {
   return (
     <DashboardPage>
       <DashboardPageHeader
+        guideId="page-heading-processing-failed"
         title={t("dashboard.processingFailed.title")}
         description={t("dashboard.processingFailed.description")}
       />
@@ -148,7 +149,7 @@ export default function CompanyFailedProcessingPage() {
       {!loading && !error && runs.length > 0 && (
         <>
           <DashboardPanel padding="none">
-            <div className="max-w-full overflow-x-auto">
+            <div className="max-w-full overflow-x-auto" data-guide-id="processing-failed-table">
               <table className="w-full border-collapse text-start text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
@@ -230,6 +231,7 @@ export default function CompanyFailedProcessingPage() {
                             <Button
                               size="sm"
                               variant="secondary"
+                              data-guide-id="processing-failed-retry"
                               onClick={() => setRetryDialogRun(run)}
                             >
                               <span className="material-symbols-outlined me-1 text-[14px]">refresh</span>
@@ -238,6 +240,7 @@ export default function CompanyFailedProcessingPage() {
                             <Button
                               size="sm"
                               variant="secondary"
+                              data-guide-id="processing-failed-reprocess"
                               onClick={() => setReprocessDialogRun(run)}
                             >
                               <span className="material-symbols-outlined me-1 text-[14px]">replay</span>

@@ -4,8 +4,12 @@ import { config } from "../../config/index.js";
 import type { CreateBillingPortalSessionParams } from "./ports/payment-provider.port.js";
 
 export function isBillingPortalFlowAvailable(providerName: string | null | undefined, flow: CreateBillingPortalSessionParams["flow"]): boolean {
-  if (flow === "payment_method_update") return true;
-  return providerName !== "stripe" || config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID.trim().length > 0;
+  if (providerName !== "stripe") return true;
+  const configurationId =
+    flow === "general"
+      ? config.STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID
+      : config.STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID;
+  return configurationId.trim().length > 0;
 }
 
 export function assertBillingPortalFlowAvailable(providerName: string | null | undefined, flow: CreateBillingPortalSessionParams["flow"]): void {

@@ -19,7 +19,7 @@ export function immutableOwnerRuleId(policy: ActivePolicy): string | null {
 }
 
 export function createEditablePolicyRule(id: string): PolicyRule {
-  return { ruleId: id, effect: "allow", subject: { type: "user" }, actions: ["read"] };
+  return { ruleId: id, effect: "allow", subject: { type: "user" }, actions: ["discover", "read", "download", "use_in_ai"] };
 }
 
 export function policyRulesInvalid(draft: PolicyDraft, ownerRuleId: string | null): boolean {

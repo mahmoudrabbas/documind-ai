@@ -5,10 +5,11 @@ import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware
 import { requirePermission } from "../permissions/permissions.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { config } from "../../config/index.js";
-import { createEntitlementGuard, createEntitlementCheckGuard } from "../entitlement/middlewares/entitlement.middleware.js";
+import { createEntitlementCheckGuard, createEntitlementReserveGuard } from "../entitlement/middlewares/entitlement.middleware.js";
 import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   uploadDocumentController,
+  uploadOptionsController,
   listDocumentsController,
   getDocumentController,
   updateDocumentMetadataController,
@@ -22,22 +23,9 @@ import {
   listDocumentVersionsController,
 } from "./documents.controller.js";
 
-const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: config.MAX_FILE_SIZE_BYTES },
-  fileFilter: (_req, file, callback) => {
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      callback(null, true);
-    } else {
-      callback(
-        Object.assign(new Error(`File type ${file.mimetype} is not supported`), {
-          code: "UNSUPPORTED_FILE_TYPE",
-        }) as Error & { code: string },
-      );
-    }
-  },
 });
 
 import {
@@ -56,13 +44,13 @@ const requirePolicyManagement = requirePermission(Permission.DOCUMENTS_MANAGE_AC
 
 const svc = getEntitlementService();
 
-const documentCountGuard = createEntitlementGuard(svc, {
+const documentCountGuard = createEntitlementReserveGuard(svc, {
   dimension: "documents",
   amount: 1,
   failMode: "fail-closed",
 });
 
-const storageMbGuard = createEntitlementGuard(svc, {
+const storageMbGuard = createEntitlementReserveGuard(svc, {
   dimension: "storageMb",
   amount: (req) => Math.ceil((req.file?.size || 0) / (1024 * 1024)),
   failMode: "fail-closed",
@@ -255,9 +243,77 @@ const ocrRetriggerCheckGuard = createEntitlementCheckGuard(svc, {
  *       403:
  *         description: Insufficient permissions
  */
-router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
+router.post("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE, { allowScoped: true }), upload.single("file"), documentCountGuard, storageMbGuard, uploadDocumentController);
 
-router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentsController);
+router.get("/", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentsController);
+
+/**
+ * @openapi
+ * /documents/upload-options:
+ *   get:
+ *     summary: Get upload form options
+ *     description: Returns the active taxonomy options (classifications,
+ *       categories, departments) and the upload limits for the upload form.
+ *       Requires only DOCUMENTS_CREATE; it intentionally does not require
+ *       COMPANY_SETTINGS_READ.
+ *     tags: [Documents]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Upload form options
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     taxonomy:
+ *                       type: object
+ *                       properties:
+ *                         classifications:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                               level: { type: string }
+ *                         categories:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                         departments:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id: { type: string }
+ *                               name: { type: string }
+ *                     upload:
+ *                       type: object
+ *                       properties:
+ *                         maxFileSizeBytes:
+ *                           type: integer
+ *                         allowedMimeTypes:
+ *                           type: array
+ *                           items: { type: string }
+ *                         fileExtensions:
+ *                           type: array
+ *                           items: { type: string }
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ */
+router.get("/upload-options", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_CREATE, { allowScoped: true }), uploadOptionsController);
 
 router.post("/access-policy/batch/preview", authenticate, tenantScoping, requirePolicyManagement, batchPreviewPolicyController);
 router.post("/access-policy/batch/apply", authenticate, tenantScoping, requirePolicyManagement, batchApplyPolicyController);
@@ -270,11 +326,11 @@ router.post("/:id/access-policy/effective-access", authenticate, tenantScoping, 
 router.post("/:id/access-policy/preview", authenticate, tenantScoping, requirePolicyManagement, previewPolicyController);
 router.post("/:id/access-policy/apply", authenticate, tenantScoping, requirePolicyManagement, applyPolicyController);
 
-router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentExtractionStatusController);
+router.get("/:id/extraction", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentExtractionStatusController);
 
-router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
+router.post("/:id/extraction/retrigger", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_OCR_PROCESS, { allowScoped: true }), ocrRetriggerCheckGuard, retriggerDocumentExtractionController);
 
-router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), getDocumentController);
+router.get("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), getDocumentController);
 
 router.get(
   "/:id/download",
@@ -293,22 +349,22 @@ router.get(
   "/:id/preview",
   authenticate,
   tenantScoping,
-  requirePermission(Permission.DOCUMENTS_READ),
+  requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }),
   previewDocumentController,
 );
 
-router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ), listDocumentVersionsController);
+router.get("/:id/versions", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_READ, { allowScoped: true }), listDocumentVersionsController);
 
-router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
+router.put("/:id/replace", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE, { allowScoped: true }), upload.single("file"), documentCountGuard, storageMbGuard, replaceDocumentController);
 
-router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE), updateDocumentMetadataController);
+router.patch("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_UPDATE, { allowScoped: true }), updateDocumentMetadataController);
 
-router.post("/:id/archive", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE), archiveDocumentController);
+router.post("/:id/archive", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE, { allowScoped: true }), archiveDocumentController);
 
-router.post("/:id/restore", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE), restoreDocumentController);
+router.post("/:id/restore", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_ARCHIVE, { allowScoped: true }), restoreDocumentController);
 
-router.delete("/:id/permanent", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), permanentDeleteDocumentController);
+router.delete("/:id/permanent", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE, { allowScoped: true }), permanentDeleteDocumentController);
 
-router.delete("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE), softDeleteDocumentController);
+router.delete("/:id", authenticate, tenantScoping, requirePermission(Permission.DOCUMENTS_DELETE, { allowScoped: true }), softDeleteDocumentController);
 
 export default router;

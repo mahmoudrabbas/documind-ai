@@ -57,12 +57,12 @@ export class EmailService {
 
     // Load tenant for branding and global settings for support email
     const [tenant, globalSettings] = await Promise.all([
-      TenantModel.findById(tenantId).lean() as Promise<{ settings?: { accentColor?: string; logoUrl?: string } } | null>,
+      TenantModel.findById(tenantId).lean() as Promise<{ settings?: { profile?: { accentColor?: string | null; logoUrl?: string | null } } } | null>,
       getGlobalSettings(),
     ]);
     const branding = {
-      accentColor: tenant?.settings?.accentColor,
-      logoUrl: tenant?.settings?.logoUrl,
+      accentColor: tenant?.settings?.profile?.accentColor ?? undefined,
+      logoUrl: tenant?.settings?.profile?.logoUrl ?? undefined,
       supportEmail: globalSettings.supportEmail || undefined,
     };
 
@@ -75,7 +75,7 @@ export class EmailService {
       recipientEmail: normalizedEmail,
       recipientHash,
       templateId: input.templateId,
-      templateVersion: "1.0",
+      templateVersion: "2.0",
       language: input.language,
       variables: input.variables as Record<string, unknown>,
       subject: preview.subject,

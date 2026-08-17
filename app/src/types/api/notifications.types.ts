@@ -147,3 +147,26 @@ export interface ListNotificationsParams {
   limit?: number;
   category?: NotificationCategory;
 }
+
+/**
+ * Payload pushed by the API's socket server on `notification:created` /
+ * `notification:updated`. The socket transport serializes title/body and
+ * action labels as plain strings (not LocalizedText), so this is a relaxed
+ * superset of the REST `Notification` used defensively by real-time consumers.
+ */
+export interface NotificationSocketEvent {
+  id: string;
+  type?: NotificationType;
+  category?: NotificationCategory;
+  priority?: NotificationPriority;
+  title?: LocalizedText | string;
+  body?: LocalizedText | string;
+  source?: NotificationSource;
+  actions?: Array<{
+    label: LocalizedText | string;
+    url: string;
+    variant?: string;
+  }>;
+  isRead?: boolean;
+  createdAt?: string;
+}

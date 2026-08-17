@@ -29,12 +29,12 @@ export function createRetrievalRoutes(
     controller.debugSearch,
   );
 
-  // Hybrid search — any authenticated user with DOCUMENTS_READ
+  // Hybrid search — any authenticated user with DOCUMENTS_USE_IN_AI
   router.post(
     "/search",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.DOCUMENTS_READ),
+    requirePermission(Permission.DOCUMENTS_USE_IN_AI, { allowScoped: true }),
     controller.hybridSearch,
   );
 

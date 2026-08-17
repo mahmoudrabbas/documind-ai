@@ -226,8 +226,8 @@ export class DocumentPolicyManagementService {
     if (!mongoose.isObjectIdOrHexString(documentId)) hidden();
     const document = await DocumentModel.findOne({ _id: documentId, tenantId: context.tenantId, deletedAt: null }).lean().exec(); if (!document) hidden();
     const user = await UserModel.findOne({ _id: context.actorId, tenantId: context.tenantId, status: "active" }).select("role customRoleId").lean().exec(); if (!user) hidden();
-    const resource = resourceFrom(document); const coarse = await getPermissionEvaluator().evaluate({ tenantId: context.tenantId, actorId: context.actorId, baseRole: user.role,
-      customRoleId: user.customRoleId?.toString(), permission: Permission.DOCUMENTS_MANAGE_ACCESS, resource: permissionResource(resource) });
+    const resource = await withCanonicalPermissionTaxonomy(resourceFrom(document)); const coarse = await getPermissionEvaluator().evaluate({ tenantId: context.tenantId, actorId: context.actorId, baseRole: user.role,
+      customRoleId: user.customRoleId?.toString(), permission: Permission.DOCUMENTS_MANAGE_ACCESS, resource: await permissionResource(resource) });
     if (!coarse.allowed) hidden();
     if (delegatedPolicyApprovalRequired(user.role)) await getDocumentAccessAuthorizationService().authorizeDocumentAction(context, documentId, "manage_access");
     const [users, roles, classifications, categories, departments] = await Promise.all([
@@ -254,8 +254,8 @@ export class DocumentPolicyManagementService {
     if (!mongoose.isObjectIdOrHexString(documentId)) hidden();
     const document = await DocumentModel.findOne({ _id: documentId, tenantId: context.tenantId, deletedAt: null }).lean().exec(); if (!document) hidden();
     const user = await UserModel.findOne({ _id: context.actorId, tenantId: context.tenantId, status: "active" }).select("role customRoleId").lean().exec(); if (!user) hidden();
-    const resource = resourceFrom(document); const coarse = await getPermissionEvaluator().evaluate({ tenantId: context.tenantId, actorId: context.actorId, baseRole: user.role,
-      customRoleId: user.customRoleId?.toString(), permission: Permission.DOCUMENTS_MANAGE_ACCESS, resource: permissionResource(resource) });
+    const resource = await withCanonicalPermissionTaxonomy(resourceFrom(document)); const coarse = await getPermissionEvaluator().evaluate({ tenantId: context.tenantId, actorId: context.actorId, baseRole: user.role,
+      customRoleId: user.customRoleId?.toString(), permission: Permission.DOCUMENTS_MANAGE_ACCESS, resource: await permissionResource(resource) });
     if (!coarse.allowed) hidden();
     if (delegatedPolicyApprovalRequired(user.role)) await getDocumentAccessAuthorizationService().authorizeDocumentAction(context, documentId, "manage_access");
     if (!document.activePolicyId || !document.activePolicyVersion) hidden();
@@ -299,18 +299,19 @@ export class DocumentPolicyManagementService {
       if (!administrators.length) break;
       for (const admin of administrators) {
         const decision = await getPermissionEvaluator().evaluate({ tenantId: context.tenantId, actorId: admin._id.toString(), baseRole: admin.role,
-          customRoleId: admin.customRoleId?.toString(), permission: Permission.DOCUMENTS_MANAGE_ACCESS, resource: permissionResource(state.resource) });
+          customRoleId: admin.customRoleId?.toString(), permission: Permission.DOCUMENTS_MANAGE_ACCESS, resource: await permissionResource(state.resource) });
         if (decision.allowed) { administratorRecovery = true; break; }
       }
       adminAfter = administrators.at(-1)!._id; if (administrators.length < 100) break;
     }
     if (!administratorRecovery) {
       const proposed = proposedPolicy(state, draft, context.actorId); const inherited = await this.inheritedPolicy(proposed, context.tenantId, state.document._id.toString());
+      const proposedResource = await policyEvaluationResource(state.resource, proposed);
       let viable = false; let after: mongoose.Types.ObjectId | null = null;
       while (!viable) {
         const users = await UserModel.find({ tenantId: context.tenantId, status: "active", ...(after ? { _id: { $gt: after } } : {}) }).sort({ _id: 1 }).limit(100).select("role customRoleId employeeProfile.department").lean().exec();
         if (!users.length) break;
-        for (const user of users) if ((await evaluateUser(user, state.resource, proposed, inherited)).manage_access) { viable = true; break; }
+        for (const user of users) if ((await evaluateUser(user, proposedResource, proposed, inherited)).manage_access) { viable = true; break; }
         after = users.at(-1)!._id; if (users.length < 100) break;
       }
       if (!viable) throw new AppError(400, DOCUMENT_POLICY_DRAFT_INVALID, "Policy would remove every management path");
@@ -322,8 +323,10 @@ export class DocumentPolicyManagementService {
     const byAction = emptyActionImpact();
     const currentInherited = await this.inheritedPolicy(state.policy, state.document.tenantId.toString(), state.document._id.toString());
     const proposedInherited = await this.inheritedPolicy(proposed, state.document.tenantId.toString(), state.document._id.toString());
-    const currentResource = policyEvaluationResource(state.resource, state.policy);
-    const proposedResource = policyEvaluationResource(state.resource, proposed);
+    const [currentResource, proposedResource] = await Promise.all([
+      policyEvaluationResource(state.resource, state.policy),
+      policyEvaluationResource(state.resource, proposed),
+    ]);
     let usersGainingAny = 0; let usersLosingAny = 0; let after: mongoose.Types.ObjectId | null = null;
     while (true) {
       const users = await UserModel.find({ tenantId: state.document.tenantId, status: "active", ...(after ? { _id: { $gt: after } } : {}) }).sort({ _id: 1 }).limit(100).select("role customRoleId employeeProfile.department").lean().exec();
@@ -412,10 +415,27 @@ async function evaluateUser(user: { _id: mongoose.Types.ObjectId; role: Document
   return result;
 }
 function resourceFrom(document: { _id: mongoose.Types.ObjectId; tenantId: mongoose.Types.ObjectId; owner?: mongoose.Types.ObjectId | null; categoryId?: mongoose.Types.ObjectId | null; departmentId?: mongoose.Types.ObjectId | null; classificationId?: mongoose.Types.ObjectId | null; classification: string; category?: string | null; department?: string | null; activePolicyId?: mongoose.Types.ObjectId | null; activePolicyVersion?: number | null }) : DocumentAccessResourceContext { return { tenantId: document.tenantId.toString(), documentId: document._id.toString(), ownerId: document.owner?.toString() ?? null, categoryId: document.categoryId?.toString() ?? null, departmentId: document.departmentId?.toString() ?? null, classificationId: document.classificationId?.toString() ?? null, classification: document.classification, legacyCategory: document.category ?? null, legacyDepartment: document.department ?? null, activePolicyId: document.activePolicyId?.toString() ?? null, activePolicyVersion: document.activePolicyVersion ?? null }; }
-function policyEvaluationResource(resource: DocumentAccessResourceContext, policy: DocumentAccessPolicy): DocumentAccessResourceContext { return { ...resource,
+async function policyEvaluationResource(resource: DocumentAccessResourceContext, policy: DocumentAccessPolicy): Promise<DocumentAccessResourceContext> { return withCanonicalPermissionTaxonomy({ ...resource,
   classificationId: policy.indexMetadata.classificationId ?? null, categoryId: policy.indexMetadata.categoryId ?? null,
-  departmentId: policy.indexMetadata.departmentId ?? null, activePolicyId: policy.policyId, activePolicyVersion: policy.policyVersion }; }
-function permissionResource(resource: DocumentAccessResourceContext) { return { tenantId: resource.tenantId, ...(resource.ownerId ? { ownerId: resource.ownerId } : {}), ...(resource.departmentId ? { departmentId: resource.departmentId } : {}), ...(resource.categoryId ? { documentCategory: resource.categoryId } : {}), ...(resource.classificationId ? { documentClassification: resource.classificationId } : {}) }; }
+  canonicalClassificationName: null, canonicalCategoryName: null,
+  departmentId: policy.indexMetadata.departmentId ?? null, activePolicyId: policy.policyId, activePolicyVersion: policy.policyVersion }); }
+async function withCanonicalPermissionTaxonomy(resource: DocumentAccessResourceContext): Promise<DocumentAccessResourceContext> {
+  const [category, classification] = await Promise.all([
+    resource.categoryId && !resource.canonicalCategoryName ? DocumentCategoryModel.findOne({ _id: resource.categoryId, tenantId: resource.tenantId, status: "active" }).select("normalizedName").lean().exec() : null,
+    resource.classificationId && !resource.canonicalClassificationName ? DocumentClassificationModel.findOne({ _id: resource.classificationId, tenantId: resource.tenantId, status: "active" }).select("normalizedName").lean().exec() : null,
+  ]);
+  return {
+    ...resource,
+    ...(resource.categoryId && !resource.canonicalCategoryName ? { canonicalCategoryName: category?.normalizedName ?? null } : {}),
+    ...(resource.classificationId && !resource.canonicalClassificationName ? { canonicalClassificationName: classification?.normalizedName ?? null } : {}),
+  };
+}
+async function permissionResource(resource: DocumentAccessResourceContext) {
+  const canonical = await withCanonicalPermissionTaxonomy(resource);
+  const categoryName = canonical.categoryId ? canonical.canonicalCategoryName : canonical.legacyCategory;
+  const classificationName = canonical.classificationId ? canonical.canonicalClassificationName : canonical.classification;
+  return { tenantId: canonical.tenantId, ...(canonical.ownerId ? { ownerId: canonical.ownerId } : {}), ...(canonical.departmentId ? { departmentId: canonical.departmentId } : {}), ...(categoryName ? { documentCategory: categoryName } : {}), ...(classificationName ? { documentClassification: classificationName } : {}) };
+}
 function summary(policy: DocumentAccessPolicy) { return { policyId: policy.policyId, policyVersion: policy.policyVersion, status: policy.status, effectiveFrom: policy.effectiveFrom, effectiveUntil: policy.effectiveUntil ?? null, reason: policy.provenance.reason ?? null, createdBy: policy.provenance.createdBy, createdAt: policy.provenance.createdAt }; }
 function draftSummary(draft: NormalizedPolicyDraft) { return { ruleCount: draft.rules.length, allowRuleCount: draft.rules.filter((r) => r.effect === "allow").length, denyRuleCount: draft.rules.filter((r) => r.effect === "deny").length, inherits: draft.inherits, effectiveFrom: draft.effectiveFrom, effectiveUntil: draft.effectiveUntil, reason: draft.reason }; }
 function policyChangeFingerprint(policy: DocumentAccessPolicy) { return changeSemanticFingerprint({ rules: policy.rules, inherits: policy.inherits ?? null, effectiveUntil: policy.effectiveUntil ?? null }, taxonomyFromPolicy(policy)); }

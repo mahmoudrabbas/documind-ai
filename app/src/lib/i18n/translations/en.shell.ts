@@ -61,6 +61,7 @@ const enShell: TranslationDictionary = {
   "shell.companyLogo": "Company logo",
   "shell.defaultUserName": "Admin User",
   "shell.roleCompanyAdmin": "Company Admin",
+  "shell.roleSuperAdmin": "Super Admin",
   "shell.roleUser": "User",
 
   /* ── Shared component defaults ─────────────────────────────────── */
@@ -68,7 +69,7 @@ const enShell: TranslationDictionary = {
   "shell.dragAndDropFile": "Drag and drop your file here, or",
   "shell.dropFileHere": "Drop your file here",
   "shell.browseFiles": "browse files",
-  "shell.fileRequirements": "PDF, DOCX, TXT or MD — max 50 MB",
+  "shell.fileRequirements": "PDF, DOCX or TXT — max 50 MB",
   "shell.selectedFile": "Selected file",
 };
 

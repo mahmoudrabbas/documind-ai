@@ -15,6 +15,10 @@ export interface CreateCustomerParams {
   operationContext?: ProviderOperationContext;
 }
 
+export interface ProviderCustomer {
+  id: string;
+}
+
 export interface CreateCheckoutSessionParams {
   customerId: string;
   priceId: string;
@@ -91,6 +95,10 @@ export interface ProviderInvoiceLinks {
   hostedInvoiceUrl: string | null;
   invoicePdfUrl: string | null;
   receiptUrl: string | null;
+}
+export interface ProviderInvoicePdf {
+  contentType: string;
+  data: Buffer;
 }
 
 export interface ProviderSubscriptionChangePreview {
@@ -199,6 +207,7 @@ export interface RefundRetrieveParams { refundId: string; expectedCustomerId: st
 
 export interface PaymentProvider {
   createCustomer(params: CreateCustomerParams): Promise<string>;
+  retrieveCustomer(customerId: string): Promise<ProviderCustomer>;
   createCheckoutSession(params: CreateCheckoutSessionParams): Promise<CheckoutSession>;
   retrieveCheckoutSession(sessionId: string): Promise<CheckoutSession>;
   retrieveSubscription?(subscriptionId: string): Promise<ProviderSubscription>;
@@ -207,6 +216,7 @@ export interface PaymentProvider {
   listInvoices(params: InvoiceListParams): Promise<ProviderInvoicePage>;
   retrieveInvoice(params: InvoiceRetrieveParams): Promise<ProviderInvoice>;
   getSecureInvoiceLinks(params: InvoiceRetrieveParams): Promise<ProviderInvoiceLinks>;
+  retrieveInvoicePdf(params: InvoiceRetrieveParams): Promise<ProviderInvoicePdf>;
   previewSubscriptionChange(params: SubscriptionChangeParams): Promise<ProviderSubscriptionChangePreview>;
   updateSubscription(params: SubscriptionChangeParams): Promise<ProviderSubscriptionMutationResult>;
   scheduleCancellation(params: CancellationParams): Promise<ProviderCancellationResult>;

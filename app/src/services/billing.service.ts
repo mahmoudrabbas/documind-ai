@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
 import type {
   CheckoutSessionResponse,
   CheckoutSession,
@@ -156,6 +156,35 @@ export function listInvoices(params: { page?: number; pageSize?: number; status?
 
 export function getInvoiceLinks(invoiceId: string) {
   return apiClient<Success<InvoiceLinks>>(`/billing/invoices/${encodeURIComponent(invoiceId)}/links`, { cache: "no-store" });
+}
+
+/**
+ * Fetches the authenticated invoice PDF as a Blob URL so the browser can open
+ * it in a new tab (inline) instead of following the provider's attachment
+ * download URL. The request goes through the tenant-authenticated API which
+ * streams the PDF with an inline Content-Disposition.
+ */
+export async function getInvoicePdfBlobUrl(invoiceId: string): Promise<string> {
+  const { getAccessToken } = await import("@/lib/auth-tokens");
+  const { API_BASE_URL } = await import("@/constants/api");
+  const response = await fetch(
+    `${API_BASE_URL}/billing/invoices/${encodeURIComponent(invoiceId)}/pdf`,
+    { headers: { Authorization: `Bearer ${getAccessToken()}` } },
+  );
+  if (!response.ok) {
+    let code: string | null = null;
+    let message = `Invoice document retrieval failed with status ${response.status}`;
+    try {
+      const payload = (await response.json()) as { error?: { code?: string; message?: string } };
+      code = typeof payload.error?.code === "string" ? payload.error.code : null;
+      message = typeof payload.error?.message === "string" ? payload.error.message : message;
+    } catch {
+      // Non-JSON error bodies fall back to the default message.
+    }
+    throw new ApiError({ status: response.status, code, message });
+  }
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 }
 
 export function createRefundRequest(body: { previewId: string; idempotencyKey: string }) {

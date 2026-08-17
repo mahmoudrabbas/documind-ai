@@ -68,6 +68,9 @@ export interface UploadDocumentInput {
   title: string;
   description?: string;
   tags?: string[];
+  categoryId?: string;
+  departmentId?: string;
+  classificationId?: string;
 }
 
 export interface UploadDocumentResult {
@@ -104,7 +107,6 @@ export interface UpdateDocumentMetadataInput {
   category?: string;
   department?: string;
   classification?: DocumentClassification;
-  owner?: string;
   effectiveDate?: string | Date | null;
   expiryDate?: string | Date | null;
   versionLabel?: string;

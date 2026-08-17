@@ -8,7 +8,7 @@ import { getPaymentProvider } from "../checkout/payment-provider-loader.js";
 import { createSubscriptionChangePreview, getCompanyBillingOperation, requestCancellation, requestReactivation, requestSubscriptionChange } from "./tenant-billing-mutations.service.js";
 import { createRefundRequest, getTenantRefundRequest, listTenantRefundRequests } from "./refund.service.js";
 import { createRefundEligibilityPreview } from "./refund-eligibility.service.js";
-import { getCompanyBillingSummary, createCompanyPortalSession, getCompanyInvoice, getCompanyInvoiceLinks, listCompanyInvoices } from "./tenant-billing.service.js";
+import { getCompanyBillingSummary, createCompanyPortalSession, getCompanyInvoice, getCompanyInvoiceLinks, getCompanyInvoicePdf, listCompanyInvoices } from "./tenant-billing.service.js";
 import { cancellationSchema, invoiceIdSchema, invoiceListSchema, operationIdSchema, parseBilling, portalSessionSchema, reactivationSchema, refundEligibilityPreviewSchema, refundIdSchema, refundListSchema, refundRequestSchema, subscriptionChangePreviewSchema, subscriptionChangeSchema } from "./tenant-billing.validator.js";
 
 type Handler = (request: Request, response: Response) => Promise<unknown>;
@@ -41,6 +41,16 @@ export const invoiceDetailController = endpoint(async (req) => {
 export const invoiceLinksController = endpoint(async (req) => {
   const params = parseBilling(invoiceIdSchema, req.params);
   return getCompanyInvoiceLinks({ invoiceId: params.invoiceId, tenantId: tenant(req), provider: await getPaymentProvider(), context: context(req) });
+});
+export const invoicePdfController = endpoint(async (req, res) => {
+  const params = parseBilling(invoiceIdSchema, req.params);
+  const document = await getCompanyInvoicePdf({ invoiceId: params.invoiceId, tenantId: tenant(req), provider: await getPaymentProvider(), context: context(req) });
+  res.setHeader("Content-Type", document.contentType);
+  res.setHeader("Content-Disposition", document.contentDisposition);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.status(200).send(document.data);
+  return undefined;
 });
 export const subscriptionChangePreviewController = endpoint(async (req) => {
   const body = parseBilling(subscriptionChangePreviewSchema, req.body);

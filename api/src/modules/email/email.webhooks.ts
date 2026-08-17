@@ -1,6 +1,11 @@
 import { Router } from "express";
 import EmailMessageModel from "../../db/models/emailMessage.model.js";
 import EmailSuppressionModel from "../../db/models/emailSuppression.model.js";
+import { config } from "../../config/index.js";
+import {
+  rejectForbiddenOrigin,
+  requireWebhookSecret,
+} from "../../common/security/webhookAuth.js";
 
 const router = Router();
 
@@ -47,15 +52,17 @@ export async function handleNormalizedWebhook(event: NormalizedWebhookEvent) {
   }
 }
 
+// Webhook endpoints are server-to-server: authorize with a shared secret and
+// reject requests that carry a disallowed Origin header. These run BEFORE the
+// handler so forged events can never reach the message/suppression writes.
+router.use(rejectForbiddenOrigin());
+router.use(requireWebhookSecret(() => config.EMAIL_WEBHOOK_SECRET));
+
 // Generic webhook handler for providers (e.g. SendGrid, SES)
 router.post("/provider-webhook", async (req, res) => {
-  // TODO: Implement signature checking for the specific provider
-  // const signature = req.headers['x-provider-signature'];
-  // verifySignature(signature, req.body);
-  
   const event = req.body as NormalizedWebhookEvent;
   await handleNormalizedWebhook(event);
-  
+
   res.status(200).send("OK");
 });
 

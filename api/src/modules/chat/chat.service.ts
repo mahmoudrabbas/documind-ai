@@ -61,6 +61,10 @@ import type { ChatWorkflowExecutionContext } from "./chatWorkflowService.js";
 const SUMMARY_MAX_SOURCES = 8;
 const SUMMARY_CONTEXT_CHARS = 24_000;
 
+function selfResource(context: OperationAuthorizationContext) {
+  return { tenantId: context.tenantId, ownerId: context.actorId };
+}
+
 export { detectAnswerTask } from "./chat.answerTask.js";
 
 /**
@@ -243,7 +247,7 @@ export class ChatService {
     const body = this.validateVisionBody(rawBody);
 
     // 1. Authorize tenant
-    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE);
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE, selfResource(context));
     const tenantIdStr = actor.tenantId.toString();
     const userIdStr = actor.actorId.toString();
 
@@ -489,7 +493,7 @@ export class ChatService {
     fileName: string;
     sizeBytes: number;
   }> {
-    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ);
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ, selfResource(context));
     const tenantIdStr = actor.tenantId.toString();
     const userIdStr = actor.actorId.toString();
 
@@ -553,7 +557,7 @@ export class ChatService {
     rawQuery: unknown,
     context: OperationAuthorizationContext,
   ): Promise<ConversationListResponse> {
-    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ);
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ, selfResource(context));
     const tenantIdStr = actor.tenantId.toString();
     const userIdStr = actor.actorId.toString();
 
@@ -598,7 +602,7 @@ export class ChatService {
     conversationId: string,
     context: OperationAuthorizationContext,
   ): Promise<ConversationMessagesResponse> {
-    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ);
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_READ, selfResource(context));
     const tenantIdStr = actor.tenantId.toString();
     const userIdStr = actor.actorId.toString();
 
@@ -629,7 +633,7 @@ export class ChatService {
     conversationId: string,
     context: OperationAuthorizationContext,
   ): Promise<void> {
-    const actor = await authorizeTenantOperation(context, Permission.CHAT_DELETE);
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_DELETE, selfResource(context));
     const tenantIdStr = actor.tenantId.toString();
     const userIdStr = actor.actorId.toString();
 
@@ -681,7 +685,7 @@ export class ChatService {
       );
     }
 
-    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE);
+    const actor = await authorizeTenantOperation(context, Permission.CHAT_CREATE, selfResource(context));
 
     logger.info(
       { tenantId: actor.tenantId.toString(), mimeType: file.mimetype, sizeBytes: file.size },

@@ -119,6 +119,10 @@ const envSchema = z
       .transform((value) => value.toLowerCase() === "true"),
     NOTIFICATION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
     NOTIFICATION_SWEEP_TTL_BATCH: z.coerce.number().int().positive().default(500),
+    COPILOT_ENABLED: z
+      .string()
+      .default("false")
+      .transform((value) => value.toLowerCase() === "true"),
     SMTP_HOST: z.string().default(""),
     SMTP_PORT: z
       .string()
@@ -135,6 +139,13 @@ const envSchema = z
 
     UPLOAD_DIR: z.string().default("./uploads"),
     STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
+    /**
+     * Public base URL of the API service. Used to build absolute URLs for
+     * tenant-branding assets (e.g. the uploaded company logo) that are embedded
+     * in the app UI and in outgoing email HTML, so they must be reachable by
+     * browsers and email clients outside the service network.
+     */
+    PUBLIC_API_URL: z.string().url().default("http://localhost:5000"),
     AWS_REGION: z.string().default(""),
     AWS_S3_BUCKET: z.string().default(""),
     AWS_ACCESS_KEY_ID: z.string().default(""),
@@ -147,7 +158,7 @@ const envSchema = z
     ALLOWED_MIME_TYPES: z
       .string()
       .default(
-        "application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword",
+        "application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       ),
 
     IMPORT_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
@@ -161,6 +172,11 @@ const envSchema = z
     VISION_ALLOWED_MIME_TYPES: z
       .string()
       .default("image/jpeg,image/png,image/webp"),
+
+    LOGO_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+    LOGO_ALLOWED_MIME_TYPES: z
+      .string()
+      .default("image/jpeg,image/png,image/webp,image/gif,image/svg+xml"),
 
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     LOG_PRETTY: z
@@ -176,6 +192,7 @@ const envSchema = z
     STRIPE_CANCEL_URL: z.string().url().default("http://localhost:3000/checkout/cancel"),
     STRIPE_BILLING_PORTAL_RETURN_URL: z.string().url().default("http://localhost:3000/dashboard/settings/billing"),
     STRIPE_BILLING_PORTAL_GENERAL_CONFIGURATION_ID: z.string().default(""),
+    STRIPE_BILLING_PORTAL_PAYMENT_METHOD_CONFIGURATION_ID: z.string().default(""),
     BILLING_PORTAL_ALLOWED_ORIGIN: z.string().url().default("http://localhost:3000"),
     BILLING_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(90).default(7),
     BILLING_GOODWILL_REFUND_CAP_MINOR: z.coerce.number().int().min(0).default(0),

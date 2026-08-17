@@ -10,6 +10,7 @@ export function buildAtlasVectorFilter(filter: AdapterFilter): Document {
   const atlasFilter: Document = { tenantId: new ObjectId(filter.tenantId) };
   if (filter.classification) atlasFilter.classification = { $in: filter.classification.$in };
   if (filter.department) atlasFilter.department = { $in: filter.department.$in };
+  if (filter.category) atlasFilter.category = { $in: filter.category.$in };
   if (filter.documentIds?.length) atlasFilter.documentId = { $in: filter.documentIds.map((id) => new ObjectId(id)) };
   return atlasFilter;
 }

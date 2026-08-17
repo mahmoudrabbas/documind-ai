@@ -58,6 +58,7 @@ const DEFAULT_CIRCUIT_BREAKER_RESET_MS = 60_000;
  */
 export class FallbackModelAdapter implements ModelAdapter {
   readonly providerKey: string;
+  readonly runtimeIdentity;
 
   private readonly adapters: ModelAdapter[];
   private readonly maxRetries: number;
@@ -78,6 +79,20 @@ export class FallbackModelAdapter implements ModelAdapter {
     this.circuitBreakerThreshold = config.circuitBreakerThreshold ?? DEFAULT_CIRCUIT_BREAKER_THRESHOLD;
     this.circuitBreakerResetMs = config.circuitBreakerResetMs ?? DEFAULT_CIRCUIT_BREAKER_RESET_MS;
     this.providerKey = `fallback(${adapters.map((adapter) => adapter.providerKey).join(",")})`;
+    this.runtimeIdentity = Object.freeze({
+      provider: "fallback",
+      componentVersion: "fallback-model-adapter-v1",
+      chain: Object.freeze(adapters.flatMap((adapter) => {
+        const identities = adapter.runtimeIdentity?.chain ?? [adapter.runtimeIdentity ?? { provider: adapter.providerKey }];
+        return identities.map((identity) => Object.freeze({
+          provider: identity.provider ?? adapter.providerKey,
+          ...(identity.model ? { model: identity.model } : {}),
+          ...(identity.modelRevision !== undefined ? { modelRevision: identity.modelRevision } : {}),
+          ...(identity.modelRevisionStatus ? { modelRevisionStatus: identity.modelRevisionStatus } : {}),
+          ...(identity.componentVersion ? { componentVersion: identity.componentVersion } : {}),
+        }));
+      })),
+    });
   }
 
   async complete(params: ModelCompletionParams): Promise<ModelCompletionResponse> {

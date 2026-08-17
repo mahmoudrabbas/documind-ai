@@ -55,7 +55,7 @@ test("happy path: queues email, sends it, transitions to SENT", async () => {
           findOneCalls.push({ name, query });
           if (name === "emailmessages") return mockMessage;
           if (name === "emailsuppressions") return null;
-          if (name === "tenants") return { settings: { accentColor: "#ff0000", logoUrl: "logo" } };
+          if (name === "tenants") return { settings: { profile: { accentColor: "#ff0000", logoUrl: "logo" } } };
           return null;
         },
         updateOne: async (query: Record<string, unknown>, update: Record<string, unknown>) => {

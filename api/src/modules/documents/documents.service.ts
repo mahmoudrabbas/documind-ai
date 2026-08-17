@@ -6,7 +6,6 @@ import {
   DOCUMENT_ALREADY_ARCHIVED,
   DOCUMENT_NOT_ARCHIVED,
   DOCUMENT_NOT_SOFT_DELETED,
-  FILE_ZERO_BYTES,
 } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { getDocumentAccessAuthorizationService } from "../document-access/documentAccess.authorization.service.js";
@@ -31,6 +30,16 @@ import {
   createVersion,
   findVersionsByDocument,
 } from "./documentVersion.repository.js";
+import { resolveUploadTaxonomy } from "./documents.uploadTaxonomy.js";
+import {
+  getFileExtensionsForMimeTypes,
+  validateDocumentFile,
+} from "./documentFileValidator.js";
+import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
+import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
+import { config } from "../../config/index.js";
+import { getEntitlementService } from "../entitlement/entitlement.service.js";
 import {
   validateUploadDocumentInput,
   validateListDocumentsInput,
@@ -49,7 +58,19 @@ import type {
 } from "./documents.types.js";
 import type { DocumentDocument, DocumentClassification, DocumentQuarantineStatus } from "../../db/models/document.model.js";
 import type { DocumentVersionDocument } from "../../db/models/documentVersion.model.js";
+import DocumentChunkModel from "../../db/models/documentChunk.model.js";
+import ChunkEmbeddingModel from "../../db/models/chunkEmbedding.model.js";
+import IndexGenerationModel from "../../db/models/indexGeneration.model.js";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
+import { authorizePermission, authorizePermissionCapability } from "../permissions/permissions.authorization.js";
+import { Permission, type PermissionValue } from "../permissions/permissions.catalog.js";
+import type { PermissionScopes } from "../permissions/permissions.types.js";
+import mongoose from "mongoose";
+import {
+  buildDocumentPermissionResource,
+  resolveCanonicalDocumentClassification,
+  resolveClassificationScopeIds,
+} from "./documents.permissionResource.js";
 
 type MulterFile = {
   fieldname: string;
@@ -67,9 +88,89 @@ type DocumentActor = {
   role: BaseRole;
 };
 
+function permissionActor(tenantId: string, actor: DocumentActor) {
+  return { tenantId, actorId: actor.userId, baseRole: actor.role };
+}
+
+async function loadAndAuthorizeDocument(
+  tenantId: string,
+  documentId: string,
+  actor: DocumentActor,
+  permission: PermissionValue,
+): Promise<DocumentDocument> {
+  const document = await findDocumentByTenantAndId(tenantId, documentId);
+  if (!document) throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
+  try {
+    await authorizePermission(
+      permissionActor(tenantId, actor),
+      permission,
+      await buildDocumentPermissionResource(tenantId, document),
+    );
+  } catch (error) {
+    if (error instanceof AppError && error.code === "SCOPE_MISMATCH") {
+      throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
+    }
+    throw error;
+  }
+  return document;
+}
+
+async function authorizeProposedDocumentUpdate(
+  tenantId: string,
+  actor: DocumentActor,
+  existing: DocumentDocument,
+  payload: ReturnType<typeof validateUpdateDocumentMetadataInput>,
+): Promise<void> {
+  let departmentId = existing.departmentId?.toString();
+  if (payload.department !== undefined && payload.department !== existing.department) {
+    const escaped = payload.department.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const department = await DepartmentModel.findOne({
+      tenantId,
+      name: { $regex: `^${escaped}$`, $options: "i" },
+      status: "active",
+    }).select("_id").lean().exec();
+    departmentId = department?._id.toString();
+  }
+  const classificationName = await resolveCanonicalDocumentClassification(tenantId, existing);
+  await authorizePermission(permissionActor(tenantId, actor), Permission.DOCUMENTS_UPDATE, {
+    tenantId,
+    ...(existing.owner ? { ownerId: existing.owner.toString() } : {}),
+    ...(departmentId ? { departmentId } : {}),
+    ...((payload.category ?? existing.category) ? { documentCategory: payload.category ?? existing.category ?? undefined } : {}),
+    ...(classificationName ? { documentClassification: classificationName } : {}),
+  });
+}
+
+async function documentScopeFilter(tenantId: string, actorId: string, scopes: PermissionScopes | null): Promise<Record<string, unknown>> {
+  if (!scopes) return {};
+  const constraints: Record<string, unknown>[] = [];
+  if (scopes.selfOnly) constraints.push({ owner: new mongoose.Types.ObjectId(actorId) });
+  if (scopes.departmentIds.length > 0) {
+    constraints.push({ departmentId: { $in: scopes.departmentIds.map((id) => new mongoose.Types.ObjectId(id)) } });
+  }
+  if (scopes.documentCategories.length > 0) {
+    constraints.push({ $expr: { $in: [{ $toLower: { $ifNull: ["$category", ""] } }, scopes.documentCategories] } });
+  }
+  if (scopes.documentClassifications.length > 0) {
+    const classificationIds = await resolveClassificationScopeIds(tenantId, scopes.documentClassifications);
+    constraints.push({ $or: [
+      { classificationId: { $in: classificationIds } },
+      {
+        $and: [
+          { $or: [{ classificationId: null }, { classificationId: { $exists: false } }] },
+          { $expr: { $in: [{ $toLower: { $ifNull: ["$classification", ""] } }, scopes.documentClassifications] } },
+        ],
+      },
+    ] });
+  }
+  return constraints.length > 0 ? { $and: constraints } : {};
+}
+
 function computeChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
+
+/** File extensions surfaced to the upload form for each allowed MIME type. */
 
 function sanitizeFilename(name: string): string {
   return name
@@ -166,13 +267,21 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, "BAD_REQUEST", "File is required");
     }
 
-    if (file.size === 0) {
-      throw new AppError(400, FILE_ZERO_BYTES, "File is empty (zero bytes)");
-    }
+    const validatedFile = validateDocumentFile(file, {
+      maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
+    });
 
     await checkUploadAllowed(tenantId, file.size);
 
     const metadata = validateUploadDocumentInput(metadataInput);
+    const taxonomy = await resolveUploadTaxonomy(tenantId, metadata);
+    await authorizePermission(permissionActor(tenantId, actor), Permission.DOCUMENTS_CREATE, {
+      tenantId,
+      ownerId: actor.userId,
+      ...(taxonomy.departmentId ? { departmentId: taxonomy.departmentId.toString() } : {}),
+      ...(taxonomy.category ? { documentCategory: taxonomy.category } : {}),
+      documentClassification: taxonomy.classificationName ?? "internal",
+    });
     const safeName = sanitizeFilename(file.originalname);
 
     const checksum = computeChecksum(file.buffer);
@@ -200,7 +309,7 @@ export function createDocumentServiceProviders(deps: {
         fileName: safeName,
         originalFileName: file.originalname,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         storageKey,
         checksum,
         status: "uploaded",
@@ -209,9 +318,12 @@ export function createDocumentServiceProviders(deps: {
           description: metadata.description ?? "",
           tags: metadata.tags ?? [],
         },
-        category: null,
-        department: null,
-        classification: "internal",
+        category: taxonomy.category,
+        department: taxonomy.department,
+        classification: taxonomy.classification ?? "internal",
+        categoryId: taxonomy.categoryId ?? undefined,
+        departmentId: taxonomy.departmentId ?? undefined,
+        classificationId: taxonomy.classificationId ?? undefined,
         owner: actor.userId as unknown as DocumentDocument["owner"],
         effectiveDate: null,
         expiryDate: null,
@@ -232,7 +344,7 @@ export function createDocumentServiceProviders(deps: {
         uploadedBy: actor.userId as unknown as DocumentDocument["uploadedBy"],
       } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">, {
         tenantId: tenantId as unknown as DocumentVersionDocument["tenantId"],
-        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: file.mimetype,
+        version: 1, versionLabel: "v1", fileName: safeName, fileSize: file.size, mimeType: validatedFile.mimeType,
         checksum, storageKey, uploadedBy: actor.userId as unknown as DocumentVersionDocument["uploadedBy"],
         uploadReason: "initial", changeDescription: null,
       } as unknown as Omit<DocumentVersionDocument, "_id" | "documentId" | "createdAt">);
@@ -253,7 +365,7 @@ export function createDocumentServiceProviders(deps: {
       changes: {
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         title: metadata.title,
         checksum,
       },
@@ -303,7 +415,14 @@ export function createDocumentServiceProviders(deps: {
   ): Promise<ListDocumentsResult> {
     const payload = validateListDocumentsInput(input);
 
-    const filter: Record<string, unknown> = { deletedAt: null };
+    const capability = await authorizePermissionCapability(
+      permissionActor(tenantId, actor),
+      Permission.DOCUMENTS_READ,
+    );
+    const filter: Record<string, unknown> = {
+      deletedAt: null,
+      ...(await documentScopeFilter(tenantId, actor.userId, capability.scope)),
+    };
 
     if (payload.status) {
       filter.status = payload.status;
@@ -360,6 +479,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<{ document: DocumentPublicView }> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_READ);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "read");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -378,12 +498,9 @@ export function createDocumentServiceProviders(deps: {
   ): Promise<UpdateDocumentMetadataResult> {
     const payload = validateUpdateDocumentMetadataInput(input);
 
+    const existing = await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_UPDATE);
+    await authorizeProposedDocumentUpdate(tenantId, actor, existing, payload);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "update");
-    const existing = await findDocumentByTenantAndId(tenantId, documentId);
-
-    if (!existing) {
-      throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
-    }
 
     const update: Record<string, unknown> = {};
     if (payload.title !== undefined) update["metadata.title"] = payload.title;
@@ -392,7 +509,6 @@ export function createDocumentServiceProviders(deps: {
     if (payload.category !== undefined) update.category = payload.category;
     if (payload.department !== undefined) update.department = payload.department;
     if (payload.classification !== undefined) update.classification = payload.classification;
-    if (payload.owner !== undefined) update.owner = payload.owner;
     if (payload.effectiveDate !== undefined) update.effectiveDate = payload.effectiveDate;
     if (payload.expiryDate !== undefined) update.expiryDate = payload.expiryDate;
     if (payload.versionLabel !== undefined) update.versionLabel = payload.versionLabel;
@@ -435,12 +551,20 @@ export function createDocumentServiceProviders(deps: {
     return { document: serializeDocument(updated) };
   }
 
-  async function downloadDocument(
+  async function openDocumentContent(
     documentId: string,
     tenantId: string,
     actor: DocumentActor,
+    permission: PermissionValue,
+    policyAction: "read" | "download",
+    auditDownload: boolean,
   ): Promise<{ stream: import("node:stream").Readable; contentType: string; fileName: string; fileSize: number }> {
-    await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "download");
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, permission);
+    await getDocumentAccessAuthorizationService().authorizeDocumentAction(
+      { tenantId, actorId: actor.userId },
+      documentId,
+      policyAction,
+    );
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
     if (!document) {
@@ -454,17 +578,19 @@ export function createDocumentServiceProviders(deps: {
     const stream = await storageProvider.getFileStream(document.storageKey);
     const contentType = storageProvider.getContentType(document.fileName);
 
-    await getAuditWriter().write({
-      tenantId,
-      resourceType: "Document",
-      resourceId: documentId,
-      action: "DOCUMENT_DOWNLOADED",
-      actorId: actor.userId,
-      actorEmail: actor.email ?? "",
-      actorRole: actor.role,
-      actorKind: "USER",
-      changes: { fileName: document.fileName },
-    });
+    if (auditDownload) {
+      await getAuditWriter().write({
+        tenantId,
+        resourceType: "Document",
+        resourceId: documentId,
+        action: "DOCUMENT_DOWNLOADED",
+        actorId: actor.userId,
+        actorEmail: actor.email ?? "",
+        actorRole: actor.role,
+        actorKind: "USER",
+        changes: { fileName: document.fileName },
+      });
+    }
 
     return {
       stream,
@@ -472,6 +598,36 @@ export function createDocumentServiceProviders(deps: {
       fileName: document.fileName,
       fileSize: document.fileSize,
     };
+  }
+
+  async function downloadDocument(
+    documentId: string,
+    tenantId: string,
+    actor: DocumentActor,
+  ) {
+    return openDocumentContent(
+      documentId,
+      tenantId,
+      actor,
+      Permission.DOCUMENTS_DOWNLOAD,
+      "download",
+      true,
+    );
+  }
+
+  async function previewDocument(
+    documentId: string,
+    tenantId: string,
+    actor: DocumentActor,
+  ) {
+    return openDocumentContent(
+      documentId,
+      tenantId,
+      actor,
+      Permission.DOCUMENTS_READ,
+      "read",
+      false,
+    );
   }
 
   async function replaceDocument(
@@ -485,16 +641,12 @@ export function createDocumentServiceProviders(deps: {
       throw new AppError(400, "BAD_REQUEST", "File is required for replacement");
     }
 
-    if (file.size === 0) {
-      throw new AppError(400, FILE_ZERO_BYTES, "Replacement file is empty (zero bytes)");
-    }
+    const validatedFile = validateDocumentFile(file, {
+      maxSizeBytes: config.MAX_FILE_SIZE_BYTES,
+    });
 
+    const existing = await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_UPDATE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "replace");
-    const existing = await findDocumentByTenantAndId(tenantId, documentId);
-
-    if (!existing) {
-      throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
-    }
 
     if (existing.deletedAt) {
       throw new AppError(404, DOCUMENT_NOT_FOUND, "Document not found");
@@ -526,7 +678,7 @@ export function createDocumentServiceProviders(deps: {
       await updateDocumentByTenantAndId(tenantId, documentId, {
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         storageKey: newStorageKey,
         checksum,
         version: newVersion,
@@ -547,7 +699,7 @@ export function createDocumentServiceProviders(deps: {
         versionLabel: newVersionLabel,
         fileName: safeName,
         fileSize: file.size,
-        mimeType: file.mimetype,
+        mimeType: validatedFile.mimeType,
         checksum,
         storageKey: newStorageKey,
         uploadedBy: existing.uploadedBy.toString(),
@@ -598,6 +750,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_ARCHIVE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "archive");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -638,6 +791,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ArchiveDocumentResult> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_ARCHIVE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "restore");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -673,11 +827,47 @@ export function createDocumentServiceProviders(deps: {
     return { document: serializeDocument(updated) };
   }
 
+  async function removeDocumentFromRetrieval(
+    tenantId: string,
+    documentId: string,
+  ): Promise<void> {
+    const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
+    const documentObjectId = new mongoose.Types.ObjectId(documentId);
+    const retiredAt = new Date();
+
+    await Promise.all([
+      ChunkEmbeddingModel.deleteMany({
+        tenantId: tenantObjectId,
+        documentId: documentObjectId,
+      }).exec(),
+
+      DocumentChunkModel.deleteMany({
+        tenantId: tenantObjectId,
+        documentId: documentObjectId,
+      }).exec(),
+
+      IndexGenerationModel.updateMany(
+        {
+          tenantId: tenantObjectId,
+          documentId: documentObjectId,
+          status: { $ne: "RETIRED" },
+        },
+        {
+          $set: {
+            status: "RETIRED",
+            retiredAt,
+          },
+        },
+      ).exec(),
+    ]);
+  }
+
   async function softDeleteDocument(
     documentId: string,
     tenantId: string,
     actor: DocumentActor,
   ): Promise<void> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_DELETE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "delete");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -692,7 +882,13 @@ export function createDocumentServiceProviders(deps: {
     await updateDocumentByTenantAndId(tenantId, documentId, {
       deletedAt: new Date(),
       deletedBy: actor.userId as unknown as DocumentDocument["deletedBy"],
+      searchStatus: "STALE",
+      activeChunkGeneration: null,
+      currentGeneration: null,
+      pendingGeneration: null,
     } as unknown as Partial<DocumentDocument>);
+
+    await removeDocumentFromRetrieval(tenantId, documentId);
 
     await getAuditWriter().write({
       tenantId,
@@ -712,6 +908,7 @@ export function createDocumentServiceProviders(deps: {
     tenantId: string,
     actor: DocumentActor,
   ): Promise<void> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_DELETE);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "delete");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -735,6 +932,14 @@ export function createDocumentServiceProviders(deps: {
     const DocumentVersionModel = (await import("../../db/models/documentVersion.model.js")).default;
     await DocumentVersionModel.deleteMany({ documentId: document._id, tenantId: tenantId }).exec();
 
+    // Defensive/idempotent cleanup for documents soft-deleted before retrieval
+    // lifecycle cleanup was introduced.
+    await removeDocumentFromRetrieval(tenantId, documentId);
+    await IndexGenerationModel.deleteMany({
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+      documentId: new mongoose.Types.ObjectId(documentId),
+    }).exec();
+
     await deleteDocumentByTenantAndId(tenantId, documentId);
 
     await getAuditWriter().write({
@@ -750,11 +955,54 @@ export function createDocumentServiceProviders(deps: {
     });
   }
 
+  async function uploadOptions(tenantId: string, actor: DocumentActor) {
+    const capability = await authorizePermissionCapability(
+      permissionActor(tenantId, actor),
+      Permission.DOCUMENTS_CREATE,
+    );
+    const scopes = capability.scope;
+    const classificationFilter: Record<string, unknown> = { tenantId, status: "active" };
+    if (scopes?.documentClassifications.length) classificationFilter.normalizedName = { $in: scopes.documentClassifications };
+    const [classifications, categories, departments] = await Promise.all([
+      DocumentClassificationModel.find(classificationFilter).select("name level").sort({ name: 1 }).lean().exec(),
+      DocumentCategoryModel.find({ tenantId, status: "active", ...(scopes?.documentCategories.length ? { name: { $in: scopes.documentCategories.map((value) => new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")) } } : {}) }).select("name").sort({ name: 1 }).lean().exec(),
+      DepartmentModel.find({ tenantId, status: "active", ...(scopes?.departmentIds.length ? { _id: { $in: scopes.departmentIds } } : {}) }).select("name").sort({ name: 1 }).lean().exec(),
+    ]);
+
+    const allowedMimeTypes = config.ALLOWED_MIME_TYPES.split(",").map((t) => t.trim());
+    const fileExtensions = getFileExtensionsForMimeTypes(allowedMimeTypes)
+      .map((ext) => `.${ext}`);
+
+    // The entitlement fileSizeMb limit is authoritative when it is stricter
+    // than the global upload ceiling (multer enforces the global ceiling).
+    let maxFileSizeBytes = config.MAX_FILE_SIZE_BYTES;
+    try {
+      const fileSizeMb = await getEntitlementService().getEffectiveLimit(tenantId, "fileSizeMb");
+      maxFileSizeBytes = Math.min(config.MAX_FILE_SIZE_BYTES, fileSizeMb * 1024 * 1024);
+    } catch {
+      // Fall back to the global upload limit when no entitlement snapshot exists.
+    }
+
+    return {
+      taxonomy: {
+        classifications: classifications.map((c) => ({ id: c._id.toString(), name: c.name, level: c.level })),
+        categories: categories.map((c) => ({ id: c._id.toString(), name: c.name })),
+        departments: departments.map((d) => ({ id: d._id.toString(), name: d.name })),
+      },
+      upload: {
+        maxFileSizeBytes,
+        allowedMimeTypes,
+        fileExtensions,
+      },
+    };
+  }
+
   async function listVersions(
     documentId: string,
     tenantId: string,
     actor: DocumentActor,
   ): Promise<ListVersionsResult> {
+    await loadAndAuthorizeDocument(tenantId, documentId, actor, Permission.DOCUMENTS_READ);
     await getDocumentAccessAuthorizationService().authorizeDocumentAction({ tenantId, actorId: actor.userId }, documentId, "read");
     const document = await findDocumentByTenantAndId(tenantId, documentId);
 
@@ -775,11 +1023,13 @@ export function createDocumentServiceProviders(deps: {
     getDocument,
     updateDocumentMetadata,
     downloadDocument,
+    previewDocument,
     replaceDocument,
     archiveDocument,
     restoreDocument,
     softDeleteDocument,
     permanentDeleteDocument,
     listVersions,
+    uploadOptions,
   };
 }

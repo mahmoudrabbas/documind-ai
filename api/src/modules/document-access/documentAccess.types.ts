@@ -37,6 +37,19 @@ export interface DocumentAccessResourceContext {
   legacyCategory?: string | null;
   /** Transitional display-only value without tenant-owned referential integrity. */
   legacyDepartment?: string | null;
+  /**
+   * Canonical normalized category name resolved tenant-scoped from `categoryId`
+   * (via DocumentCategoryModel.normalizedName). Authoritative when the document
+   * references a real DocumentCategory record; used instead of `legacyCategory`
+   * so capability scope checks compare canonical names.
+   */
+  canonicalCategoryName?: string | null;
+  /**
+   * Canonical normalized classification name resolved tenant-scoped from
+   * `classificationId`. The `classification` field is a sensitivity level,
+   * not a taxonomy identity.
+   */
+  canonicalClassificationName?: string | null;
 }
 
 export type DocumentAccessPolicyStatus = "draft" | "active" | "inactive" | "retired";

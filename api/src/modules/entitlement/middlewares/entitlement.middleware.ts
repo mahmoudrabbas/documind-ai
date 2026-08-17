@@ -281,6 +281,71 @@ export interface EntitlementGuardOptions {
   idempotencyKey?: string | ((req: Request) => string);
 }
 
+export interface EntitlementReserveGuardOptions {
+  /** The counter dimension to check and reserve quota against. */
+  dimension: EntitlementDimension;
+
+  /**
+   * Amount of quota to reserve.
+   * - Static: a fixed number
+   * - Dynamic: a function that receives the Express request and returns number
+   */
+  amount: number | ((req: Request) => number);
+
+  /**
+   * Behaviour when quota is denied:
+   * - "fail-closed" → throw AppError (HTTP 429)
+   * - "fail-open"   → set `req.quotaWarning = true` and continue
+   */
+  failMode: FailMode;
+
+  /**
+   * TTL in seconds for the reservation claim. A claim that is never settled
+   * (process dies mid-request) expires from the reservation store after this
+   * time. Defaults to 120 seconds.
+   */
+  ttlSeconds?: number;
+}
+
+/** A quota reservation created by `createEntitlementReserveGuard`. */
+export interface EntitlementReservationInfo {
+  /** The counter dimension being reserved. */
+  dimension: EntitlementDimension;
+  /** Reservation ID returned by `entitlementService.reserve()`. */
+  reservationId: string;
+  /** Reserved amount (used by commit/release settlement). */
+  amount: number;
+}
+
+const ENTITLEMENT_RESERVATIONS_LOCAL_KEY = "entitlementReservations";
+
+/**
+ * Read the quota reservations created on this request by
+ * `createEntitlementReserveGuard`. The route must settle each one —
+ * `commit()` on success or `release()` on failure.
+ */
+export function getEntitlementReservations(
+  res: Response,
+): EntitlementReservationInfo[] {
+  const value = (res.locals as Record<string, unknown>)[
+    ENTITLEMENT_RESERVATIONS_LOCAL_KEY
+  ];
+  return Array.isArray(value)
+    ? (value as EntitlementReservationInfo[])
+    : [];
+}
+
+function pushEntitlementReservation(
+  res: Response,
+  info: EntitlementReservationInfo,
+): void {
+  const reservations = getEntitlementReservations(res);
+  reservations.push(info);
+  (res.locals as Record<string, unknown>)[
+    ENTITLEMENT_RESERVATIONS_LOCAL_KEY
+  ] = reservations;
+}
+
 export interface EntitlementCheckGuardOptions {
   /** The counter dimension to check quota against. */
   dimension: EntitlementDimension;
@@ -464,6 +529,168 @@ export function createEntitlementGuard(
         req.log?.warn?.(
           { err: error, dimension, failMode },
           "[EntitlementGuard] Service error — allowing request in fail-open mode",
+        );
+        next();
+      }
+    }
+  };
+}
+
+// ── Reservation-based guard factory ───────────────────────────────────────────
+//
+// 2-phase quota settlement for operations that may FAIL AFTER the guard runs
+// (e.g. document upload). Unlike `createEntitlementGuard` — which consumes
+// quota up-front and never refunds on failure — this guard RESERVES the amount
+// and records it on `res.locals.entitlementReservations`. The route must
+// settle every reservation afterwards via `entitlementService.commit()` on
+// success or `entitlementService.release()` on failure, reading the list with
+// the exported `getEntitlementReservations()` helper. Reservations carry a TTL
+// so a claim abandoned by a dead process expires from the reservation store.
+
+const DEFAULT_RESERVATION_TTL_SECONDS = 120;
+
+/**
+ * Creates an Express middleware that enforces entitlement quota limits using a
+ * 2-phase reservation (reserve → commit | release).
+ *
+ * The middleware calls `entitlementService.reserve()` which atomically checks
+ * the counter and claims the amount. When the quota is exhausted the configured
+ * fail-mode determines whether the request is blocked or allowed with a
+ * warning. Successful reservations are stashed on
+ * `res.locals.entitlementReservations` for the route to settle.
+ *
+ * @param entitlementService - Injected EntitlementService instance.
+ * @param options            - Guard configuration (dimension, amount, failMode, ttlSeconds).
+ *
+ * @example
+ * ```typescript
+ * const documentCountGuard = createEntitlementReserveGuard(svc, {
+ *   dimension: "documents",
+ *   amount: 1,
+ *   failMode: "fail-closed",
+ * });
+ * router.post("/documents", authenticate, tenantScoping, documentCountGuard, controller);
+ * ```
+ */
+export function createEntitlementReserveGuard(
+  entitlementService: EntitlementService,
+  options: EntitlementReserveGuardOptions,
+) {
+  const { dimension, amount, failMode } = options;
+  const ttlSeconds = options.ttlSeconds ?? DEFAULT_RESERVATION_TTL_SECONDS;
+
+  return async function entitlementReserveGuard(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      // 1. Extract tenantId (set by tenant-scoping middleware)
+      if (!req.tenantId) {
+        throw new AppError(
+          500,
+          TENANT_ID_MISSING,
+          "Tenant ID not found on request — is tenant-scoping middleware in place?",
+        );
+      }
+
+      // 2. Resolve amount (static or dynamic from request)
+      const resolvedAmount =
+        typeof amount === "function" ? amount(req) : amount;
+
+      // 3. Atomically check and reserve quota
+      const reservation = await entitlementService.reserve(
+        req.tenantId,
+        dimension,
+        resolvedAmount,
+        ttlSeconds,
+      );
+
+      // 4. Resolve current usage/limit for the denial payload and warning header
+      const [limit, current] = await Promise.all([
+        entitlementService.getEffectiveLimit(req.tenantId, dimension),
+        entitlementService
+          .getUsage(req.tenantId)
+          .then((usage) => usage[dimension] ?? 0),
+      ]);
+
+      // 5. Handle denial
+      if (!reservation) {
+        if (failMode === "fail-closed") {
+          const periodReset = await resolvePeriodReset(
+            entitlementService,
+            req.tenantId,
+          );
+          throw buildQuotaExceededError({
+            dimension,
+            current,
+            limit,
+            remaining: Math.max(0, limit - current),
+            periodReset,
+            canUpgrade: resolveCanUpgrade(req),
+          });
+        }
+
+        // fail-open: allow with warning flag
+        req.quotaWarning = true;
+        next();
+        return;
+      }
+
+      // 6. Record the reservation for later settlement by the route
+      pushEntitlementReservation(res, {
+        dimension,
+        reservationId: reservation.reservationId,
+        amount: resolvedAmount,
+      });
+
+      // 7. Soft warning at >80% threshold
+      if (limit > 0 && current / limit > 0.8) {
+        res.setHeader("X-Quota-Warning", "true");
+      }
+
+      next();
+    } catch (error) {
+      // Already an AppError — forward to Express error handler
+      if (error instanceof AppError) {
+        // 429 (quota exceeded) / 503 (unavailable) are denials: audit them
+        // fire-and-forget. Other AppErrors (e.g. TENANT_ID_MISSING) are not.
+        if (error.statusCode === 429 && error.code === ENTITLEMENT_EXCEEDED) {
+          auditDenial(req, dimension, 429, extractDenialDetails(error.details));
+        } else if (
+          error.statusCode === 503 &&
+          error.code === ENTITLEMENT_UNAVAILABLE
+        ) {
+          auditDenial(req, dimension, 503);
+        }
+        next(error);
+        return;
+      }
+
+      // Unexpected service error
+      if (failMode === "fail-closed") {
+        req.log?.error?.(
+          {
+            ...safeEntitlementErrorContext(error),
+            dimension,
+            requestId: req.requestId,
+          },
+          "[EntitlementReserveGuard] Service error — denying request fail-closed",
+        );
+        auditDenial(req, dimension, 503);
+        next(
+          new AppError(
+            503,
+            ENTITLEMENT_UNAVAILABLE,
+            "Entitlement service is temporarily unavailable",
+            { failureClass: classifyEntitlementFailure(error) },
+          ),
+        );
+      } else {
+        // fail-open on service error: log and continue
+        req.log?.warn?.(
+          { err: error, dimension, failMode },
+          "[EntitlementReserveGuard] Service error — allowing request in fail-open mode",
         );
         next();
       }

@@ -15,6 +15,7 @@ export interface CreateEmbeddingInput {
   vector: number[];
   embeddingChecksum: string;
   department: string | null;
+  category: string | null;
   classification: string | null;
   accessPolicyVersion: string | null;
   language: string;

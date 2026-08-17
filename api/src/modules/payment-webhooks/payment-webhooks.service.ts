@@ -318,11 +318,16 @@ export async function handlePaymentEvent(
         authoritativeSubscription: synchronized.subscription,
       });
       if (!EFFECTIVE_SUBSCRIPTION_STATUSES.includes(synchronized.subscription.status as (typeof EFFECTIVE_SUBSCRIPTION_STATUSES)[number])) {
+        const syncedSub = synchronized.subscription as { periodStart?: Date | null; periodEnd?: Date | null };
         try {
           await ensureFreeFallbackSubscription({
             tenantId: tenantHint,
             providerCustomerId: providerSubscription.customerId || undefined,
             reason: "PROVIDER_SUBSCRIPTION_DELETED",
+            retainedPeriod: {
+              periodStart: syncedSub.periodStart ?? null,
+              periodEnd: syncedSub.periodEnd ?? null,
+            },
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -524,14 +529,18 @@ async function handleStaticMappingEvent(
     { $set: subscriptionUpdate },
   );
 
-  if (event.type === "customer.subscription.deleted") {
-    try {
-      await ensureFreeFallbackSubscription({
-        tenantId: String(tenantId),
-        providerCustomerId:
-          String(subscriptionUpdate.providerCustomerId ?? sub.providerCustomerId ?? "") || undefined,
-        reason: "PROVIDER_SUBSCRIPTION_DELETED",
-      });
+   if (event.type === "customer.subscription.deleted") {
+     try {
+       await ensureFreeFallbackSubscription({
+         tenantId: String(tenantId),
+         providerCustomerId:
+           String(subscriptionUpdate.providerCustomerId ?? sub.providerCustomerId ?? "") || undefined,
+         reason: "PROVIDER_SUBSCRIPTION_DELETED",
+         retainedPeriod: {
+           periodStart: subscriptionUpdate.periodStart as Date | null | undefined ?? sub.periodStart ?? null,
+           periodEnd: subscriptionUpdate.periodEnd as Date | null | undefined ?? sub.periodEnd ?? null,
+         },
+       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error(
@@ -897,6 +906,8 @@ interface ResolvedSubscription {
     providerSubscriptionId: string;
     providerCustomerId: string;
     paymentState: "pending" | "paid" | "failed" | "refunded";
+    periodStart: Date | null;
+    periodEnd: Date | null;
   };
   tenantId: Types.ObjectId;
 }

@@ -11,6 +11,7 @@ import {
   LEGACY_PLATFORM_TENANT_SLUGS,
   PLATFORM_TENANT_SLUG,
 } from "../../common/auth/platformTenant.js";
+import { EFFECTIVE_SUBSCRIPTION_STATUSES } from "../../db/subscription-index-invariant.js";
 
 const nonPlatformTenantFilter = {
   isSystemTenant: { $ne: true },
@@ -32,6 +33,59 @@ export async function findTenantsByFilter(
     .limit(pageSize)
     .lean<TenantDocument[]>()
     .exec();
+}
+
+export async function findTenantIdsByEffectivePackage(
+  packageId: Types.ObjectId,
+): Promise<Types.ObjectId[]> {
+  return SubscriptionModel.distinct("tenantId", {
+    packageId,
+    status: { $in: [...EFFECTIVE_SUBSCRIPTION_STATUSES] },
+  }).exec();
+}
+
+/**
+ * For each tenant id, resolve its current effective subscription (the latest
+ * effective-status subscription by `createdAt`) and the package attached to it.
+ * Used to authoritatively source the "Plan" shown for the Companies view, so
+ * the displayed plan and the Companies Plan filter share one definition.
+ *
+ * Tenants without an effective subscription resolve to `null`. The returned
+ * `status` is lowercased to match the frontend `SubscriptionStatus` enum.
+ */
+export async function findEffectiveSubscriptionsForTenants(
+  tenantIds: Types.ObjectId[],
+): Promise<
+  Map<string, { packageId: string; packageName: string; status: string } | null>
+> {
+  const map = new Map<
+    string,
+    { packageId: string; packageName: string; status: string } | null
+  >();
+  if (tenantIds.length === 0) return map;
+  const rows = await SubscriptionModel.find({
+    tenantId: { $in: tenantIds },
+    status: { $in: [...EFFECTIVE_SUBSCRIPTION_STATUSES] },
+  })
+    .sort({ createdAt: -1 })
+    .populate("packageId", "name")
+    .lean()
+    .exec();
+  for (const sub of rows) {
+    const tid = (sub.tenantId as Types.ObjectId).toString();
+    if (map.has(tid)) continue; // first row per tenant in sorted order wins
+    const pkg = sub.packageId as unknown as { _id: Types.ObjectId; name: string } | null;
+    map.set(tid, {
+      packageId: pkg ? pkg._id.toString() : "",
+      packageName: pkg ? pkg.name : "",
+      status: String(sub.status ?? "").toLowerCase(),
+    });
+  }
+  for (const tid of tenantIds) {
+    const key = tid.toString();
+    if (!map.has(key)) map.set(key, null);
+  }
+  return map;
 }
 
 export async function updateTenantById(

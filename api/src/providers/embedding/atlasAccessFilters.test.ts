@@ -6,8 +6,9 @@ import { buildAtlasVectorFilter } from "./atlasVectorStoreAdapter.js";
 const tenantId = "64a000000000000000000001";
 
 test("Atlas vector prefilter uses stable fields and never allowAiUse metadata", () => {
-  const filter = buildAtlasVectorFilter({ tenantId, allowAiUse: true });
+  const filter = buildAtlasVectorFilter({ tenantId, allowAiUse: true, category: { $in: ["policies"] } });
   assert.equal(filter.tenantId.toString(), tenantId);
+  assert.deepEqual(filter.category, { $in: ["policies"] });
   assert.equal(filter.allowAiUse, undefined);
 });
 

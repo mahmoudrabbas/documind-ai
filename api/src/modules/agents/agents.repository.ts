@@ -3,7 +3,7 @@ import AgentRunModel from "../../db/models/agentRun.model.js";
 import AgentStepModel from "../../db/models/agentStep.model.js";
 import AgentToolCallModel from "../../db/models/agentToolCall.model.js";
 import AgentApprovalModel from "../../db/models/agentApproval.model.js";
-import type { RunRecord, StepRecord, ToolCallRecord, ApprovalRecord, ListRunsQuery, ListStepsQuery, ListToolCallsQuery, ListApprovalsQuery, RunStatus } from "./agents.types.js";
+import type { RunRecord, RunSeed, StepRecord, ToolCallRecord, ApprovalRecord, ListRunsQuery, ListStepsQuery, ListToolCallsQuery, ListApprovalsQuery, RunStatus } from "./agents.types.js";
 
 function serializeRun(doc: InstanceType<typeof AgentRunModel>): RunRecord {
   return {
@@ -142,13 +142,40 @@ export async function createRun(input: {
   return serializeRun(run);
 }
 
-export async function startRun(tenantId: string, runId: string): Promise<RunRecord | null> {
-  const run = await AgentRunModel.findOneAndUpdate(
+export async function startRun(
+  tenantId: string,
+  runId: string,
+  seed?: RunSeed,
+): Promise<RunRecord | null> {
+  if (!mongoose.isValidObjectId(runId)) return null;
+
+  const started = await AgentRunModel.findOneAndUpdate(
     { _id: runId, tenantId: new mongoose.Types.ObjectId(tenantId), status: "pending" },
     { $set: { status: "running", startedAt: new Date() } },
     { returnDocument: "after" }
   ).exec();
-  return run ? serializeRun(run) : null;
+  if (started) return serializeRun(started);
+
+  if (!seed) return null;
+
+  const created = await AgentRunModel.create({
+    _id: new mongoose.Types.ObjectId(runId),
+    tenantId: new mongoose.Types.ObjectId(tenantId),
+    actorId: new mongoose.Types.ObjectId(seed.actorId),
+    workflowName: seed.workflowName,
+    agentName: seed.agentName,
+    status: "running",
+    input: seed.input,
+    modelProvider: seed.modelProvider,
+    modelName: seed.modelName,
+    promptVersion: seed.promptVersion ?? null,
+    promptVersionId: seed.promptVersionId ? new mongoose.Types.ObjectId(seed.promptVersionId) : null,
+    toolVersionSnapshot: seed.toolVersionSnapshot ?? null,
+    traceId: seed.traceId,
+    requestId: seed.requestId,
+    startedAt: new Date(),
+  });
+  return serializeRun(created);
 }
 
 export async function completeRun(tenantId: string, runId: string, patch: Partial<{ status: RunStatus; output: Record<string, unknown> | null; totalSteps: number; totalToolCalls: number; totalTokensUsed: number; estimatedCost: number; latencyMs: number; error: Record<string, unknown> | null; guardrailResult: Record<string, unknown> | null; approvalsCount: number; handoffsCount: number }>): Promise<RunRecord | null> {
@@ -329,6 +356,17 @@ export async function listApprovals(tenantId: string, filter: ListApprovalsQuery
     AgentApprovalModel.countDocuments(query),
   ]);
   return { approvals: approvals.map((a) => serializeApproval(a as InstanceType<typeof AgentApprovalModel>)), totalRecords };
+}
+
+export async function listApprovalsForRun(tenantId: string, runId: string): Promise<ApprovalRecord[]> {
+  const approvals = await AgentApprovalModel.find({
+    tenantId: new mongoose.Types.ObjectId(tenantId),
+    runId,
+  })
+    .sort({ createdAt: -1 })
+    .lean()
+    .exec();
+  return approvals.map((a) => serializeApproval(a as InstanceType<typeof AgentApprovalModel>));
 }
 
 export async function expirePendingApprovals(tenantId?: string): Promise<number> {

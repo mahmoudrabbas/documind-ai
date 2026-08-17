@@ -5,6 +5,7 @@ import { detectSocialMessage } from "../../modules/intent-query/intentQuery.soci
 
 export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
   readonly providerKey = "fake";
+  readonly runtimeIdentity = Object.freeze({ provider: "fake", model: "fake-model-v1", modelRevisionStatus: "unavailable" as const, componentVersion: "fake-model-adapter-v1" });
 
   async checkAvailability(): Promise<{ available: boolean; reason?: string }> {
     return { available: true };

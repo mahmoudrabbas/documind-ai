@@ -12,6 +12,11 @@ import type {
   UpdateTenantInput,
 } from "./admin.types.js";
 
+const objectId = z
+  .string()
+  .trim()
+  .regex(/^[0-9a-fA-F]{24}$/, "Field must be a valid identifier");
+
 const listTenantsSchema = z
   .object({
     page: z
@@ -46,6 +51,7 @@ const listTenantsSchema = z
         z.enum(["free", "trial", "pro"]).optional(),
       )
       .optional(),
+    packageId: objectId.optional(),
     search: z
       .preprocess(
         (value) => (Array.isArray(value) ? value[0] : value),

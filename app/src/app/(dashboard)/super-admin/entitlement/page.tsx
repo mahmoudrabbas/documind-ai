@@ -11,6 +11,11 @@ import { cell, PlatformTable } from "@/components/super-admin/platform-ui";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { ApiError } from "@/lib/api-client";
 import {
+  getTenantById,
+  listTenants,
+} from "@/services/platform.service";
+import type { PlatformTenant } from "@/types/api/platform.types";
+import {
   listOverrides,
   removeOverride,
   runReconciliation,
@@ -33,6 +38,252 @@ const DIMENSIONS = [
 ] as const;
 
 const PAGE_SIZE = 20;
+
+function CompanySearchSelect({
+  label,
+  value,
+  onChange,
+  allowAll = false,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (tenantId: string) => void;
+  allowAll?: boolean;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+
+  const [query, setQuery] = useState("");
+  const [companies, setCompanies] = useState<PlatformTenant[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+
+  /*
+   * Resolve an existing tenant id back to its display name.
+   * This matters when editing an already-created override.
+   */
+  useEffect(() => {
+    if (!value) {
+      if (!open) setQuery("");
+      return;
+    }
+
+    const known = companies.find((company) => company.id === value);
+    if (known) {
+      if (!open) setQuery(known.name);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    getTenantById(value, controller.signal)
+      .then((response) => {
+        if (controller.signal.aborted) return;
+
+        setCompanies((current) => {
+          if (current.some((company) => company.id === response.data.id)) {
+            return current;
+          }
+          return [response.data, ...current];
+        });
+
+        if (!open) setQuery(response.data.name);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && !open) {
+          setQuery(value);
+        }
+      });
+
+    return () => controller.abort();
+  }, [value, open, companies]);
+
+  /*
+   * Server-side company search with a short debounce.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const controller = new AbortController();
+
+    const timer = window.setTimeout(() => {
+      setLoadingCompanies(true);
+      setLookupError("");
+
+      void listTenants(
+        {
+          page: 1,
+          pageSize: 20,
+          search: query.trim().slice(0, 120),
+          status: "",
+          plan: "",
+        },
+        controller.signal,
+      )
+        .then((response) => {
+          if (!controller.signal.aborted) {
+            setCompanies(response.data.tenants);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setLookupError("Unable to load companies.");
+            setCompanies([]);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setLoadingCompanies(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, query]);
+
+  const handleSelect = (company: PlatformTenant) => {
+    onChange(company.id);
+    setQuery(company.name);
+    setOpen(false);
+    setLookupError("");
+  };
+
+  return (
+    <div className="relative">
+      <label className="mb-1.5 block text-label-md font-medium text-on-surface">
+        {label}
+      </label>
+
+      <div className="relative">
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[19px] text-on-surface-variant"
+        >
+          search
+        </span>
+
+        <input
+          type="text"
+          value={query}
+          disabled={disabled}
+          autoComplete="off"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          placeholder={t("superAdmin.tenants.searchPlaceholder")}
+          onFocus={() => setOpen(true)}
+          onBlur={() => {
+            window.setTimeout(() => setOpen(false), 150);
+          }}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            onChange("");
+            setOpen(true);
+          }}
+          className="min-h-11 w-full rounded-xl border border-outline-variant bg-surface px-10 py-2.5 text-body-md text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+        />
+
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[19px] text-on-surface-variant"
+        >
+          expand_more
+        </span>
+      </div>
+
+      {open ? (
+        <div
+          role="listbox"
+          className="absolute z-50 mt-1.5 max-h-72 w-full overflow-y-auto rounded-xl border border-outline-variant/50 bg-surface-container-lowest p-1.5 shadow-xl"
+        >
+          {allowAll ? (
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange("");
+                setQuery("");
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-start transition hover:bg-surface-container"
+            >
+              <span className="material-symbols-outlined text-[19px] text-on-surface-variant">
+                domain
+              </span>
+              <div className="min-w-0">
+                <p className="text-body-sm font-semibold text-on-surface">
+                  All companies
+                </p>
+                <p className="text-label-sm text-on-surface-variant">
+                  Run across every tenant
+                </p>
+              </div>
+            </button>
+          ) : null}
+
+          {loadingCompanies ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-body-sm text-on-surface-variant">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              Loading companies...
+            </div>
+          ) : null}
+
+          {!loadingCompanies &&
+          !lookupError &&
+          companies.length === 0 ? (
+            <p className="px-3 py-3 text-body-sm text-on-surface-variant">
+              No companies found.
+            </p>
+          ) : null}
+
+          {lookupError ? (
+            <p className="px-3 py-3 text-body-sm text-error">
+              {lookupError}
+            </p>
+          ) : null}
+
+          {!loadingCompanies
+            ? companies.map((company) => (
+                <button
+                  key={company.id}
+                  type="button"
+                  role="option"
+                  aria-selected={company.id === value}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => handleSelect(company)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-start transition hover:bg-surface-container"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-body-sm font-semibold text-on-surface">
+                      {company.name}
+                    </p>
+                    <p className="truncate text-label-sm text-on-surface-variant">
+                      {company.slug}
+                    </p>
+                  </div>
+
+                  {company.id === value ? (
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined shrink-0 text-[19px] text-primary"
+                    >
+                      check
+                    </span>
+                  ) : null}
+                </button>
+              ))
+            : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function humanizeDimension(key: string): string {
   return key
@@ -315,6 +566,7 @@ export default function SuperAdminEntitlementPage() {
                         <Button
                           size="sm"
                           variant="danger"
+                          className="min-w-20 rounded-xl px-3 font-bold text-white shadow-sm"
                           onClick={() =>
                             setDeleteTarget({
                               tenantId: override.tenantId,
@@ -354,13 +606,13 @@ export default function SuperAdminEntitlementPage() {
         </p>
 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Input
-            label={t("entitlement.tenantId")}
+          <CompanySearchSelect
+            label={t("superAdmin.tableTenant")}
             value={form.tenantId}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, tenantId: e.target.value }))
+            disabled={editing !== null}
+            onChange={(tenantId) =>
+              setForm((current) => ({ ...current, tenantId }))
             }
-            placeholder="tenant_..."
           />
           <Select
             label={t("entitlement.dimension")}
@@ -441,16 +693,17 @@ export default function SuperAdminEntitlementPage() {
               ]}
             />
           </div>
-          <div className="w-64">
-            <Input
-              label={t("entitlement.tenantId")}
+          <div className="w-72">
+            <CompanySearchSelect
+              label={t("superAdmin.tableTenant")}
               value={reconcileTenant}
-              onChange={(e) => setReconcileTenant(e.target.value)}
-              placeholder="Optional — all tenants"
+              onChange={setReconcileTenant}
+              allowAll
             />
           </div>
           <Button
-            variant="warning"
+            variant="primary"
+            className="min-w-40 rounded-xl px-5 font-bold shadow-sm"
             isLoading={reconciling}
             onClick={() => void handleReconcile()}
           >

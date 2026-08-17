@@ -13,7 +13,7 @@ import { migrateSubscriptionHistoryIndex } from "../../../scripts/migrate-subscr
 import { MongoEntitlementProvider } from "../../entitlement/adapters/mongo-entitlement-provider.js";
 import { FakePaymentProvider } from "../ports/fakes/fake-payment-provider.js";
 import { reconcileSucceededSystemRefundSettlements, refundCapabilitiesForTenant } from "../refund.service.js";
-import { completeVoluntaryCancellationLocally } from "../voluntary-cancellation-transition.service.js";
+import { assertSystemRefundTransitionReady, completeVoluntaryCancellationLocally } from "../voluntary-cancellation-transition.service.js";
 
 let mongo: MongoMemoryReplSet | null = null;
 const tenantId = new Types.ObjectId();
@@ -80,6 +80,19 @@ function provider() {
   });
   return fake;
 }
+
+async function seedAlreadyFree(): Promise<void> {
+  await seedSettlement();
+  await SubscriptionModel.updateOne({ _id: paidSubscriptionId }, { $set: { status: "CANCELED", cancelAtPeriodEnd: false } });
+  await SubscriptionModel.create({
+    _id: new Types.ObjectId(), tenantId, packageId: freePackageId, packageVersion: 1, status: "ACTIVE",
+    paymentState: "paid", provider: "local", providerCustomerId: "synthetic-customer", providerSubscriptionId: "",
+    providerPriceId: "", billingInterval: "monthly", periodStart, periodEnd,
+    currentPeriodStart: periodStart, currentPeriodEnd: periodEnd,
+  });
+}
+
+const alreadyFreeInput = { tenantId: String(tenantId), subscriptionId: String(paidSubscriptionId) };
 
 const persistence = process.env.DOCUMIND_DISPOSABLE_MONGO === "true" || process.env.RUN_REFUND_TO_FREE_PERSISTENCE === "true"
   ? describe
@@ -166,7 +179,14 @@ persistence("refund-to-Free persistence", () => {
     expect({ first, paidStatus: paid?.status, freeStatus: free?.status, impactStatus: synchronizedRefund?.subscriptionImpactStatus })
       .toMatchObject({ first: { examined: 1, eligibleForTransitionRepair: 1, transitionsCompleted: 1, transitionOperationsCreated: 1, failed: 0 }, paidStatus: "CANCELED", freeStatus: "ACTIVE" });
     expect(paid).toMatchObject({ status: "CANCELED", paymentState: "paid", providerSubscriptionId: "synthetic-subscription" });
-    expect(free).toMatchObject({ status: "ACTIVE", paymentState: "paid", provider: "local", providerCustomerId: "", providerSubscriptionId: "", providerPriceId: "" });
+    // Free fallback is a local entitlement (provider=local, no providerSubscriptionId)
+    // but preserves the paid subscription's providerCustomerId so a later Free → Paid
+    // checkout reuses the same Stripe customer instead of creating a duplicate.
+    expect(free).toMatchObject({ status: "ACTIVE", paymentState: "paid", provider: "local", providerCustomerId: "synthetic-customer", providerSubscriptionId: "", providerPriceId: "" });
+    expect(free).toMatchObject({ periodStart: periodStart, periodEnd: periodEnd, currentPeriodStart: periodStart, currentPeriodEnd: periodEnd, billingInterval: "monthly" });
+    const range = await new MongoEntitlementProvider().getPeriodRange(String(tenantId));
+    expect(range.periodStart).toEqual(periodStart);
+    expect(range.periodEnd).toEqual(periodEnd);
     expect(await SubscriptionModel.countDocuments({ tenantId, status: { $in: ["TRIALING", "INCOMPLETE", "ACTIVE", "PAST_DUE", "PAUSED", "CANCEL_AT_PERIOD_END"] } })).toBe(1);
     expect(await new MongoEntitlementProvider().getSnapshot(String(tenantId))).toMatchObject({ documents: 10, storageMb: 100, queriesPerMonth: 100 });
     expect(await InvoiceModel.countDocuments({ _id: invoiceId, refundedAmountMinor: 999, retainedConsumedMinor: 1 })).toBe(1);
@@ -225,5 +245,76 @@ persistence("refund-to-Free persistence", () => {
     expect(await SubscriptionModel.countDocuments({ tenantId })).toBe(2);
     expect(await BillingOperationModel.countDocuments({ tenantId, operationType: "CANCEL_IMMEDIATELY" })).toBe(1);
     expect(fake.refunds).toHaveLength(1);
+  });
+
+  it("CASE A: readiness still requires an effective paid subscription and the valid index", async () => {
+    await seedSettlement();
+
+    await expect(assertSystemRefundTransitionReady(alreadyFreeInput)).resolves.toBeUndefined();
+  });
+
+  it("CASE B: readiness passes for an already-Free tenant with a CANCELED paid subscription", async () => {
+    await seedAlreadyFree();
+
+    await expect(assertSystemRefundTransitionReady({
+      ...alreadyFreeInput,
+      refund: { subscriptionImpactStatus: "PENDING", localTransitionStatus: "PENDING" },
+    })).resolves.toBeUndefined();
+  });
+
+  it("CASE B: readiness passes without refund transition-state input", async () => {
+    await seedAlreadyFree();
+
+    await expect(assertSystemRefundTransitionReady(alreadyFreeInput)).resolves.toBeUndefined();
+  });
+
+  it("CASE B: fails closed when the paid subscription is CANCELED but the tenant has no Free", async () => {
+    await seedSettlement();
+    await SubscriptionModel.updateOne({ _id: paidSubscriptionId }, { $set: { status: "CANCELED" } });
+
+    await expect(assertSystemRefundTransitionReady(alreadyFreeInput)).rejects.toMatchObject({ code: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED" });
+  });
+
+  it("CASE B: fails closed when multiple effective subscriptions are ambiguous", async () => {
+    await seedAlreadyFree();
+    await mongoose.connection.collection("subscriptions").dropIndex("uq_tenant_effective_subscription");
+    await SubscriptionModel.create({
+      _id: new Types.ObjectId(), tenantId, packageId: paidPackageId, packageVersion: 1, status: "ACTIVE",
+      paymentState: "paid", provider: "fake", providerCustomerId: "synthetic-customer", providerSubscriptionId: "second-sub",
+      billingInterval: "monthly", periodStart, periodEnd, currentPeriodStart: periodStart, currentPeriodEnd: periodEnd,
+    });
+
+    await expect(assertSystemRefundTransitionReady(alreadyFreeInput)).rejects.toMatchObject({ code: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED" });
+  });
+
+  it("CASE B: fails closed when the current subscription is not the canonical Free package", async () => {
+    await seedSettlement();
+    await SubscriptionModel.updateOne({ _id: paidSubscriptionId }, { $set: { status: "CANCELED" } });
+    await SubscriptionModel.create({
+      _id: new Types.ObjectId(), tenantId, packageId: paidPackageId, packageVersion: 1, status: "ACTIVE",
+      paymentState: "paid", provider: "fake", providerCustomerId: "synthetic-customer", providerSubscriptionId: "",
+      billingInterval: "monthly", periodStart, periodEnd, currentPeriodStart: periodStart, currentPeriodEnd: periodEnd,
+    });
+
+    await expect(assertSystemRefundTransitionReady(alreadyFreeInput)).rejects.toMatchObject({ code: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED" });
+  });
+
+  it("CASE B: fails closed when the current Free is not serviceable", async () => {
+    await seedAlreadyFree();
+    await SubscriptionModel.updateOne(
+      { tenantId, packageId: freePackageId, status: "ACTIVE" },
+      { $set: { status: "PAST_DUE" } },
+    );
+
+    await expect(assertSystemRefundTransitionReady(alreadyFreeInput)).rejects.toMatchObject({ code: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED" });
+  });
+
+  it("CASE B: fails closed when the subscription impact transition is unresolved", async () => {
+    await seedAlreadyFree();
+
+    await expect(assertSystemRefundTransitionReady({
+      ...alreadyFreeInput,
+      refund: { subscriptionImpactStatus: "RETRY_PENDING", localTransitionStatus: "PENDING" },
+    })).rejects.toMatchObject({ code: "SUBSCRIPTION_INDEX_MIGRATION_REQUIRED" });
   });
 });

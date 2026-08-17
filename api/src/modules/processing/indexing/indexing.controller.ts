@@ -19,6 +19,7 @@ import { getDb } from "../../../db/connection.js";
 import type { OperationAuthorizationContext } from "../../permissions/permissions.operation.js";
 import { authorizeTenantOperation } from "../../permissions/permissions.operation.js";
 import { Permission } from "../../permissions/permissions.catalog.js";
+import { buildDocumentPermissionResource } from "../../documents/documents.permissionResource.js";
 
 function operationContext(req: Request): OperationAuthorizationContext {
   const actor = requireAuthenticatedAuditActor({
@@ -105,6 +106,7 @@ export async function startIndexController(
         documentVersion: doc.version,
         generationId: generation._id.toString(),
         department: input.department ?? null,
+        category: doc.category ?? null,
         classification: input.classification ?? null,
         chunkingConfig: input.chunkingConfig,
       },
@@ -190,7 +192,13 @@ export async function getIndexStatusController(
       throw new AppError(400, "BAD_REQUEST", "Invalid document ID parameter");
     }
 
-    await findDocument(tenantId, documentId);
+    const document = await findDocument(tenantId, documentId);
+
+    await authorizeTenantOperation(
+      operationContext(req),
+      Permission.DOCUMENTS_READ,
+      await buildDocumentPermissionResource(tenantId, document),
+    );
 
     const generation = await IndexGenerationModel.findOne({
       tenantId: new Types.ObjectId(tenantId),
@@ -294,6 +302,7 @@ export async function retryIndexController(
         documentVersion: doc.version,
         generationId: generation._id.toString(),
         department: doc.department ?? null,
+        category: doc.category ?? null,
         classification: doc.classification ?? null,
         chunkingConfig: latestGeneration.chunkingConfig as ChunkingConfigDocument,
       },
@@ -396,6 +405,7 @@ export async function reindexController(
         documentVersion: doc.version,
         generationId: generation._id.toString(),
         department: input.department ?? null,
+        category: doc.category ?? null,
         classification: input.classification ?? null,
         chunkingConfig: input.chunkingConfig,
       },

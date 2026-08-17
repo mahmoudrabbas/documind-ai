@@ -56,6 +56,7 @@ const arShell: TranslationDictionary = {
   "shell.companyLogo": "شعار الشركة",
   "shell.defaultUserName": "مستخدم مسؤول",
   "shell.roleCompanyAdmin": "مسؤول الشركة",
+  "shell.roleSuperAdmin": "مسؤول عام",
   "shell.roleUser": "مستخدم",
 
   /* ── Shared component defaults ─────────────────────────────────── */
@@ -63,7 +64,7 @@ const arShell: TranslationDictionary = {
   "shell.dragAndDropFile": "اسحب ملفك وأفلته هنا، أو",
   "shell.dropFileHere": "أفلت ملفك هنا",
   "shell.browseFiles": "تصفح الملفات",
-  "shell.fileRequirements": "PDF أو DOCX أو TXT أو MD — بحد أقصى 50 ميجابايت",
+  "shell.fileRequirements": "PDF أو DOCX أو TXT — بحد أقصى 50 ميجابايت",
   "shell.selectedFile": "الملف المحدد",
 };
 
