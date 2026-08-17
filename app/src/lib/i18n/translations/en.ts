@@ -438,6 +438,56 @@ const en: TranslationDictionary = {
   "landing.howAnswerMetaAuth": "Authorized source",
   "landing.howAnswerMetaGrounded": "Grounded answer",
 
+  /* ── landing / permission-aware intelligence ───────────── */
+  "landing.permEyebrow": "Permission-aware intelligence",
+  "landing.permTitle1": "Company knowledge should respect",
+  "landing.permTitle2": "company boundaries.",
+  "landing.permSupport":
+    "DocuMind applies tenant, role, department, and document access rules before retrieval begins, so users search only the knowledge they are authorized to reach.",
+
+  /* access context */
+  "landing.permAccessLabel": "User access context",
+  "landing.permRoleSupport": "Support Manager",
+  "landing.permOrg": "ACME Corp",
+  "landing.permScopeSupport": "Support scope",
+  "landing.permCheck1": "Role access",
+  "landing.permCheck2": "Department scope",
+  "landing.permCheck3": "Document policy",
+
+  /* company knowledge landscape */
+  "landing.permKnowledgeLabel": "Company knowledge",
+  "landing.permKnowledgeCount": "4 knowledge areas",
+  "landing.permKnowledgeNote": "The company holds more knowledge than any single role can reach.",
+  "landing.permDomainSupport": "Support",
+  "landing.permDomainHr": "HR",
+  "landing.permDomainSecurity": "Security",
+  "landing.permDomainProcurement": "Procurement",
+  "landing.permBoundaryLabel": "Authorization boundary",
+  "landing.permBoundaryNote": "Identity + access rules applied here, before any search runs.",
+  "landing.permScopeTitle": "Authorized knowledge",
+  "landing.permOutsideLabel": "Outside current access",
+
+  /* question → retrieval */
+  "landing.permQuestionSupport": "What is our P1 initial response target?",
+  "landing.permEligible": "Authorized for retrieval",
+  "landing.permQuestionCaption": "The access boundary resolves first, so only the authorized knowledge is searched.",
+
+  /* why it matters */
+  "landing.permWhyTitle": "Access is not an afterthought.",
+  "landing.permWhyBody":
+    "A grounded answer is only trustworthy when the system also knows which sources the user is allowed to use.",
+
+  /* principles */
+  "landing.permPrinciple1Title": "Tenant boundaries stay isolated.",
+  "landing.permPrinciple1Body": "Knowledge in one organization never leaks into another.",
+  "landing.permPrinciple2Title": "Roles and departments shape accessible knowledge.",
+  "landing.permPrinciple2Body": "The same document can be reachable for one team and invisible to another.",
+  "landing.permPrinciple3Title": "Document access is enforced before retrieval.",
+  "landing.permPrinciple3Body": "Permissions narrow the search space, not just the visible results.",
+
+  /* closing */
+  "landing.permClosing": "The right answer starts with the right access.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",
   "auth.noPackage": "No package selected",

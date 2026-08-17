@@ -438,6 +438,56 @@ const ar: TranslationDictionary = {
   "landing.howAnswerMetaAuth": "مصدر مصرّح",
   "landing.howAnswerMetaGrounded": "إجابة موثقة",
 
+  /* ── landing / ذكاء يراعي صلاحيات الوصول ───────────────── */
+  "landing.permEyebrow": "ذكاء يراعي صلاحيات الوصول",
+  "landing.permTitle1": "معرفة شركتك يجب أن تحترم",
+  "landing.permTitle2": "حدود الصلاحيات داخلها.",
+  "landing.permSupport":
+    "يطبّق DocuMind نطاق المؤسسة والدور والقسم وصلاحيات المستندات قبل بدء الاسترجاع، بحيث يبحث كل مستخدم فقط داخل المعرفة المسموح له بالوصول إليها.",
+
+  /* access context */
+  "landing.permAccessLabel": "سياق وصول المستخدم",
+  "landing.permRoleSupport": "مدير الدعم",
+  "landing.permOrg": "ACME Corp",
+  "landing.permScopeSupport": "نطاق الدعم",
+  "landing.permCheck1": "الوصول حسب الدور",
+  "landing.permCheck2": "نطاق القسم",
+  "landing.permCheck3": "سياسة المستند",
+
+  /* company knowledge landscape */
+  "landing.permKnowledgeLabel": "معرفة الشركة",
+  "landing.permKnowledgeCount": "4 مجالات معرفية",
+  "landing.permKnowledgeNote": "تملك الشركة معرفة أوسع مما يستطيع أي دور واحد الوصول إليه.",
+  "landing.permDomainSupport": "الدعم",
+  "landing.permDomainHr": "الموارد البشرية",
+  "landing.permDomainSecurity": "الأمن",
+  "landing.permDomainProcurement": "المشتريات",
+  "landing.permBoundaryLabel": "حدود الصلاحيات",
+  "landing.permBoundaryNote": "تُطبّق هنا هوية المستخدم وقواعد الوصول قبل أي بحث.",
+  "landing.permScopeTitle": "المعرفة المصرّح بها",
+  "landing.permOutsideLabel": "خارج نطاق الوصول الحالي",
+
+  /* question → retrieval */
+  "landing.permQuestionSupport": "ما هو هدفنا لزمن الاستجابة الأولية لحوادث P1؟",
+  "landing.permEligible": "مصرّح للاسترجاع",
+  "landing.permQuestionCaption": "تُحدَّد حدود الوصول أولًا، فلا يُبحث إلا داخل المعرفة المصرّح بها.",
+
+  /* why it matters */
+  "landing.permWhyTitle": "الصلاحيات ليست خطوة لاحقة.",
+  "landing.permWhyBody":
+    "لا تكون الإجابة الموثوقة جديرة بالثقة إلا عندما يعرف النظام أيضًا المصادر التي يُسمح للمستخدم بالوصول إليها.",
+
+  /* principles */
+  "landing.permPrinciple1Title": "تظل معرفة كل مؤسسة معزولة عن غيرها.",
+  "landing.permPrinciple1Body": "لا تتسرب المعرفة من مؤسسة إلى أخرى.",
+  "landing.permPrinciple2Title": "يحدد الدور والقسم نطاق المعرفة المتاحة.",
+  "landing.permPrinciple2Body": "قد يكون المستند نفسه متاحًا لفريق وغير مرئي لفريق آخر.",
+  "landing.permPrinciple3Title": "تُطبّق صلاحيات المستندات قبل بدء الاسترجاع.",
+  "landing.permPrinciple3Body": "تضيّق الصلاحيات نطاق البحث نفسه، لا النتائج الظاهرة فقط.",
+
+  /* closing */
+  "landing.permClosing": "الإجابة الموثوقة تبدأ من نطاق وصول صحيح.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
   "auth.noPackage": "لم يتم تحديد خطة",

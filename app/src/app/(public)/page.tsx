@@ -10,6 +10,7 @@ import { mbToGb } from "@/lib/storage";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { BuriedKnowledgeSection } from "@/components/marketing/BuriedKnowledgeSection";
 import { HowDocuMindWorksSection } from "@/components/marketing/HowDocuMindWorksSection";
+import { PermissionAwareIntelligenceSection } from "@/components/marketing/PermissionAwareIntelligenceSection";
 
 type PackageData = {
   id: string;
@@ -712,6 +713,7 @@ export default function LandingPage() {
       <HeroSection />
       <BuriedKnowledgeSection />
       <HowDocuMindWorksSection />
+      <PermissionAwareIntelligenceSection />
       <FeaturesSection />
       <SecuritySection />
       <UseCasesSection />
