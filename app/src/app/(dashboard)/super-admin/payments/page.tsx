@@ -99,7 +99,7 @@ export default function PaymentDiagnosticsPage() {
             disabled={reconciling}
             aria-busy={reconciling}
             onClick={() => void handleReconcile()}
-            className="min-h-10 rounded-lg bg-[#0369A1] px-4 py-2 font-semibold text-white hover:bg-[#0284C7] disabled:opacity-60"
+            className="min-h-10 rounded-lg bg-primary px-4 py-2 font-semibold text-on-primary hover:opacity-90 disabled:opacity-60 cursor-pointer active:scale-95 transition-all duration-150"
           >
             {reconciling ? t("superAdmin.payments.reconciling") : t("superAdmin.payments.runReconciliation")}
           </button>

@@ -273,10 +273,10 @@ export default function RetrievalDebugPage() {
                     {t("superAdmin.retrievalDebug.sufficiency")}
                   </span>
                   <span className={`text-title-md font-bold ${
-                    result.evidenceBundle.sufficiency.level === "SUFFICIENT" ? "text-green-700" :
-                    result.evidenceBundle.sufficiency.level === "CONFLICTING" ? "text-red-700" :
-                    result.evidenceBundle.sufficiency.level === "WEAK" ? "text-yellow-700" :
-                    "text-gray-700"
+                    result.evidenceBundle.sufficiency.level === "SUFFICIENT" ? "text-success" :
+                    result.evidenceBundle.sufficiency.level === "CONFLICTING" ? "text-error" :
+                    result.evidenceBundle.sufficiency.level === "WEAK" ? "text-warning" :
+                    "text-on-surface-variant"
                   }`}>
                     {codeLabel(
                       t,
@@ -313,11 +313,11 @@ export default function RetrievalDebugPage() {
                   </span>
                 </div>
                 {result.evidenceBundle.conflictGroups.length > 0 && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs">
-                    <span className="block text-red-600">
+                  <div className="rounded-lg bg-error-container/10 border border-error/20 p-3 text-xs">
+                    <span className="block text-error">
                       {t("superAdmin.retrievalDebug.conflictsDetected")}
                     </span>
-                    <span className="text-title-md font-bold text-red-700">
+                    <span className="text-title-md font-bold text-error">
                       {result.evidenceBundle.conflictGroups.length}
                     </span>
                   </div>
@@ -397,12 +397,12 @@ export default function RetrievalDebugPage() {
               </PlatformTable>
 
               {result.evidenceBundle.conflictGroups.length > 0 && (
-                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-                  <h4 className="text-sm font-semibold text-red-800 mb-2">
+                <div className="mt-4 rounded-lg border border-error/20 bg-error-container/10 p-4">
+                  <h4 className="text-sm font-semibold text-on-error-container mb-2">
                     {t("superAdmin.retrievalDebug.conflictGroups")}
                   </h4>
                   {result.evidenceBundle.conflictGroups.map((group) => (
-                    <div key={group.conflictId} className="mb-2 text-xs text-red-700">
+                    <div key={group.conflictId} className="mb-2 text-xs text-error">
                       <span className="font-mono">{group.conflictId}:</span>{" "}
                       {t("superAdmin.retrievalDebug.conflictDetail", {
                         description: group.description,

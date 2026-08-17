@@ -21,9 +21,9 @@ export const AdminPagination: React.FC<AdminPaginationProps> = ({
 
   const getBtnStyle = (isDisabled: boolean) => {
     if (isDisabled) {
-      return "bg-[#E2E8F0] text-[#94A3B8] border-[#E2E8F0] cursor-not-allowed";
+      return "bg-surface-container-high text-outline border-outline-variant/30 cursor-not-allowed";
     }
-    return "bg-[#E0F2FE] text-[#0369A1] border-[#BAE6FD] hover:bg-[#BAE6FD] hover:text-[#0284C7] cursor-pointer";
+    return "bg-primary-container/40 text-on-primary-container border-primary-container hover:bg-primary-container hover:text-on-primary-container cursor-pointer";
   };
 
   return (

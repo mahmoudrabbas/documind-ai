@@ -290,7 +290,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
           {t("superAdmin.tenants.description")}
         </p>
       </header>
-      <p className="mt-6 font-semibold text-slate-800" aria-live="polite">
+      <p className="mt-6 font-semibold text-on-surface" aria-live="polite">
         {loading
           ? isCompaniesView
             ? t("superAdmin.companies.loadingCount")
@@ -307,7 +307,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
         }
         className="mt-4 grid gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 sm:gap-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end"
       >
-        <label className="text-sm font-medium text-slate-700">
+        <label className="text-sm font-medium text-on-surface-variant">
           {isCompaniesView
             ? t("superAdmin.companies.searchLabel")
             : t("superAdmin.tenants.searchLabel")}
@@ -321,10 +321,10 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
             maxLength={120}
             onChange={(e) => setSearchDraft(e.target.value)}
             placeholder={t("superAdmin.tenants.searchPlaceholder")}
-            className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:ring-2 focus:ring-blue-500"
+            className="mt-1 block h-11 w-full rounded-xl border border-outline-variant bg-surface px-3 outline-none focus:ring-2 focus:ring-primary"
           />
         </label>
-        <label className="text-sm font-medium text-slate-700">
+        <label className="text-sm font-medium text-on-surface-variant">
           {t("superAdmin.tableStatus")}
           <select
             value={query.status}
@@ -334,7 +334,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
                 true,
               )
             }
-            className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
+            className="mt-1 block h-11 w-full rounded-xl border border-outline-variant bg-surface px-3 focus:ring-2 focus:ring-primary"
           >
             <option value="">{t("superAdmin.tenants.allStatuses")}</option>
             {TENANT_STATUSES.map((v) => (
@@ -345,7 +345,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
           </select>
         </label>
         {isCompaniesView ? (
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-sm font-medium text-on-surface-variant">
             {t("superAdmin.companies.plan")}
             <select
               value={query.packageId ?? ""}
@@ -360,7 +360,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
                   true,
                 )
               }
-              className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
+              className="mt-1 block h-11 w-full rounded-xl border border-outline-variant bg-surface px-3 focus:ring-2 focus:ring-primary"
             >
               <option value="">{t("superAdmin.companies.allPlans")}</option>
               {packages?.map((pkg) => (
@@ -376,7 +376,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
             </select>
           </label>
         ) : (
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-sm font-medium text-on-surface-variant">
             {t("superAdmin.tenants.planLegacy")}
             <select
               value={query.plan}
@@ -386,7 +386,7 @@ export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
                   true,
                 )
               }
-              className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
+              className="mt-1 block h-11 w-full rounded-xl border border-outline-variant bg-surface px-3 focus:ring-2 focus:ring-primary"
             >
               <option value="">{t("superAdmin.tenants.allPlans")}</option>
               {(["free", "trial", "pro"] as const).map((v) => (
@@ -404,12 +404,12 @@ onClick={() => {
               navigate({ search: "", status: "", plan: "", packageId: "" }, true);
             }}
           disabled={!filtered}
-          className="h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-50"
+          className="h-11 rounded-xl border border-outline-variant bg-surface px-4 font-semibold disabled:opacity-50"
         >
           {t("superAdmin.tenants.clearFilters")}
         </button>
       </section>
-      <div aria-live="polite" className="mt-4 min-h-6 text-sm text-slate-700">
+      <div aria-live="polite" className="mt-4 min-h-6 text-sm text-on-surface-variant">
         {notice ? t(notice) : null}
       </div>
       {loading ? (
@@ -417,7 +417,7 @@ onClick={() => {
           {[1, 2, 3].map((n) => (
             <div
               key={n}
-              className="h-20 animate-pulse rounded-xl bg-slate-100"
+              className="h-20 animate-pulse rounded-xl bg-surface-container"
             />
           ))}
           <span className="sr-only">
@@ -429,19 +429,19 @@ onClick={() => {
       ) : error ? (
         <div
           role="alert"
-          className="mt-4 rounded-xl border border-red-200 bg-red-50 p-6"
+          className="mt-4 rounded-xl border border-error/20 bg-error-container/10 p-6"
         >
-          <p className="text-red-800">{t(error)}</p>
+          <p className="text-on-error-container">{t(error)}</p>
           <button
             onClick={() => void load()}
-            className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-semibold text-white"
+            className="mt-3 rounded-lg bg-error px-4 py-2 font-semibold text-white"
           >
             {t("common.retry")}
           </button>
         </div>
       ) : tenants.length === 0 ? (
-        <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-10 text-center">
-          <h2 className="font-semibold text-slate-900">
+        <div className="mt-4 rounded-xl border border-dashed border-outline-variant/40 p-10 text-center">
+          <h2 className="font-semibold text-on-surface">
             {filtered
               ? isCompaniesView
                 ? t("superAdmin.companies.noMatch")
@@ -450,7 +450,7 @@ onClick={() => {
                 ? t("superAdmin.companies.noneYet")
                 : t("superAdmin.tenants.noneYet")}
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-on-surface-variant">
             {filtered
               ? isCompaniesView
                 ? t("superAdmin.companies.noMatchHint")
@@ -461,13 +461,13 @@ onClick={() => {
           </p>
         </div>
       ) : isCompaniesView ? (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+        <div className="mt-4 overflow-x-auto rounded-xl border border-outline-variant/40">
           <table className="w-full min-w-[960px] border-collapse text-start text-sm">
-            <thead className="bg-slate-50 text-slate-700">
+            <thead className="bg-surface-container-low text-on-surface">
               <tr>
                 <th
                   scope="col"
-                  className="sticky start-0 z-20 bg-slate-50 px-4 py-3 font-semibold whitespace-nowrap border-e border-slate-200"
+                  className="sticky start-0 z-20 bg-surface-container-low px-4 py-3 font-semibold whitespace-nowrap border-e border-outline-variant/40"
                 >
                   {t("superAdmin.tableCompany")}
                 </th>
@@ -515,7 +515,7 @@ onClick={() => {
                 </th>
                 <th
                   scope="col"
-                  className="sticky end-0 z-20 bg-slate-50 px-4 py-3 font-semibold whitespace-nowrap text-center border-s border-slate-200"
+                  className="sticky end-0 z-20 bg-surface-container-low px-4 py-3 font-semibold whitespace-nowrap text-center border-s border-outline-variant/40"
                 >
                   {t("superAdmin.tableActions")}
                 </th>
@@ -525,15 +525,15 @@ onClick={() => {
               {tenants.map((tenant) => {
                 const sub = subscriptionByTenant.get(tenant.id);
                 return (
-                  <tr key={tenant.id} className="border-t border-slate-200">
-                    <td className="max-w-56 sticky start-0 z-10 bg-white px-4 py-4 border-e border-slate-200">
-                      <p className="truncate font-semibold text-slate-950">
+                  <tr key={tenant.id} className="border-t border-outline-variant/40">
+                    <td className="max-w-56 sticky start-0 z-10 bg-surface-container-lowest px-4 py-4 border-e border-outline-variant/40">
+                      <p className="truncate font-semibold text-on-surface">
                         {tenant.name}
                       </p>
-                      <p className="truncate text-slate-500">{tenant.slug}</p>
+                      <p className="truncate text-on-surface-variant">{tenant.slug}</p>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
+                      <span className="rounded-full bg-tertiary-container/20 px-2.5 py-1 font-medium text-on-tertiary-container">
                         {codeLabel(t, "superAdmin.tenantStatus", tenant.status)}
                       </span>
                     </td>
@@ -544,7 +544,7 @@ onClick={() => {
                       {sub ? (
                         <SubscriptionBadge subscriptionStatus={sub.status} />
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-outline">—</span>
                       )}
                     </td>
                     <td className="px-4 py-4 text-end">{tenant.stats.users}</td>
@@ -557,11 +557,11 @@ onClick={() => {
                     <td className="px-4 py-4 whitespace-nowrap">
                       {formatDate(tenant.createdAt, intlLocale)}
                     </td>
-                    <td className="sticky end-0 z-10 bg-white px-4 py-4 border-s border-slate-200">
+                    <td className="sticky end-0 z-10 bg-surface-container-lowest px-4 py-4 border-s border-outline-variant/40">
                       <div className="flex items-center justify-end gap-2">
                         <Link
                           href={`/super-admin/companies/${tenant.id}`}
-                          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                          className="inline-flex items-center justify-center rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-sm font-medium text-on-surface hover:bg-surface-container-low"
                         >
                           {t("superAdmin.companies.viewAction")}
                         </Link>
@@ -574,9 +574,9 @@ onClick={() => {
           </table>
         </div>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+        <div className="mt-4 overflow-x-auto rounded-xl border border-outline-variant/40">
           <table className="w-full min-w-[1200px] border-collapse text-start text-sm">
-            <thead className="bg-slate-50 text-slate-700">
+            <thead className="bg-surface-container-low text-on-surface">
               <tr>
                 {TABLE_HEADER_KEYS.map((headerKey) => (
                   <th
@@ -593,15 +593,15 @@ onClick={() => {
               {tenants.map((tenant) => {
                 const sub = subscriptionByTenant.get(tenant.id);
                 return (
-                  <tr key={tenant.id} className="border-t border-slate-200">
+                  <tr key={tenant.id} className="border-t border-outline-variant/40">
                     <td className="max-w-56 px-4 py-4">
-                      <p className="truncate font-semibold text-slate-950">
+                      <p className="truncate font-semibold text-on-surface">
                         {tenant.name}
                       </p>
-                      <p className="truncate text-slate-500">{tenant.slug}</p>
+                      <p className="truncate text-on-surface-variant">{tenant.slug}</p>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
+                      <span className="rounded-full bg-tertiary-container/20 px-2.5 py-1 font-medium text-on-tertiary-container">
                         {codeLabel(t, "superAdmin.tenantStatus", tenant.status)}
                       </span>
                     </td>
@@ -616,36 +616,36 @@ onClick={() => {
                           );
                         })()
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-outline">—</span>
                       )}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {sub ? (
-                        <span className="font-medium text-slate-900">
+                        <span className="font-medium text-on-surface">
                           {sub.packageId?.name ?? "—"}
                         </span>
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-outline">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-slate-600">
+                    <td className="px-4 py-4 whitespace-nowrap text-on-surface-variant">
                       {sub?.currentPeriodStart
                         ? formatDate(sub.currentPeriodStart, intlLocale)
                         : sub?.periodStart
                           ? formatDate(sub.periodStart, intlLocale)
                           : "—"}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-slate-600">
+                    <td className="px-4 py-4 whitespace-nowrap text-on-surface-variant">
                       {sub?.currentPeriodEnd
                         ? formatDate(sub.currentPeriodEnd, intlLocale)
                         : sub?.periodEnd
                           ? formatDate(sub.periodEnd, intlLocale)
                           : "—"}
                     </td>
-                    <td className="px-4 py-4 text-slate-500">
+                    <td className="px-4 py-4 text-on-surface-variant">
                       {codeLabel(t, "superAdmin.tenantPlan", tenant.plan)}
                       <span
-                        className="ms-1 text-[10px] text-slate-400"
+                        className="ms-1 text-[10px] text-outline"
                         title={t("superAdmin.tenants.deprecated")}
                       >
                         {t("superAdmin.tenants.legacySuffix")}
@@ -661,7 +661,7 @@ onClick={() => {
                       <div className="flex gap-2">
                         <Link
                           href={`/super-admin/companies/${tenant.id}`}
-                          className="cursor-pointer rounded-lg bg-[#0369A1] px-3 py-2 font-semibold text-white hover:bg-[#0284C7] active:scale-95 transition-all duration-150"
+                          className="cursor-pointer rounded-lg bg-primary px-3 py-2 font-semibold text-on-primary hover:opacity-90 active:scale-95 transition-all duration-150"
                         >
                           Open
                         </Link>
@@ -698,7 +698,7 @@ onClick={() => {
       ) : null}
       {editing && canManageTenant ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/30 p-4"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !pending) setEditing(null);
           }}
@@ -709,17 +709,17 @@ onClick={() => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="tenant-dialog-title"
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl outline-none sm:p-6"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-surface p-4 shadow-xl outline-none sm:p-6"
           >
             <h2 id="tenant-dialog-title" className="text-xl font-bold">
               {t("superAdmin.tenants.manageTenant", { name: editing.name })}
             </h2>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-on-surface-variant">
               {t("superAdmin.tenants.statusChangeNote")}
             </p>
             <div className="mt-5 grid gap-3">
               {subscriptionByTenant.has(editing.id) ? (
-                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
+                <div className="rounded-lg bg-tertiary-container/20 p-3 text-sm text-on-tertiary-container">
                   <strong className="font-semibold">
                     {t("superAdmin.companies.subscriptionLabel")}
                   </strong>{" "}
@@ -735,7 +735,7 @@ onClick={() => {
                       />
                     );
                   })()}
-                  <p className="mt-1 text-blue-700">
+                  <p className="mt-1 text-on-tertiary-container">
                     Subscription managed via{" "}
                     <Link
                       href="/super-admin/subscriptions"
@@ -747,7 +747,7 @@ onClick={() => {
                   </p>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-on-surface-variant">
                   No active subscription. Assign one via the{" "}
                   <Link
                     href="/super-admin/subscriptions"
@@ -762,14 +762,14 @@ onClick={() => {
                 <button
                   disabled={pending || editing.status === "suspended"}
                   onClick={() => void save({ status: "suspended" })}
-                  className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-40"
+                  className="rounded-lg bg-error px-4 py-2 font-semibold text-white disabled:opacity-40"
                 >
                   {t("superAdmin.tenants.confirmSuspend")}
                 </button>
                 <button
                   disabled={pending || editing.status === "active"}
                   onClick={() => void save({ status: "active" })}
-                  className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-40"
+                  className="rounded-lg bg-success px-4 py-2 font-semibold text-white disabled:opacity-40"
                 >
                   {t("superAdmin.tenants.confirmActivate")}
                 </button>
