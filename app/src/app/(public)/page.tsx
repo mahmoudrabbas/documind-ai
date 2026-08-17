@@ -9,6 +9,7 @@ import { formatMoneyMinor } from "@/lib/money";
 import { mbToGb } from "@/lib/storage";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { BuriedKnowledgeSection } from "@/components/marketing/BuriedKnowledgeSection";
+import { HowDocuMindWorksSection } from "@/components/marketing/HowDocuMindWorksSection";
 
 type PackageData = {
   id: string;
@@ -68,46 +69,6 @@ const CARD_CLASS =
  * system visual, and the dark→light hand-off. It was moved out of this
  * page module when it gained the product visual and transition.
  */
-
-function HowItWorksSection() {
-  const { t, dir } = useI18n();
-  const steps = [
-    { step: "1", icon: "badge", title: t("landing.howItWorksStep1Title"), desc: t("landing.howItWorksStep1Desc") },
-    { step: "2", icon: "description", title: t("landing.howItWorksStep2Title"), desc: t("landing.howItWorksStep2Desc") },
-    { step: "3", icon: "chat", title: t("landing.howItWorksStep3Title"), desc: t("landing.howItWorksStep3Desc") },
-  ];
-  return (
-    <section id="how-it-works" className={cn("bg-surface", SECTION_Y, ANCHOR_OFFSET)} dir={dir}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading title={t("landing.howItWorksTitle")} subtitle={t("landing.howItWorksSubtitle")} />
-        <div className="relative grid gap-8 md:grid-cols-3">
-          {steps.map((item, i) => (
-            <div key={item.step} className="relative flex flex-col items-center text-center">
-              <div className="relative">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-on-primary">
-                  <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-                    {item.icon}
-                  </span>
-                </div>
-                {/* Number rides the circle, so the reading order stays
-                    icon → title → description. */}
-                <span className="absolute -bottom-1 -end-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-surface bg-tertiary-fixed text-label-xs text-on-tertiary-fixed">
-                  {item.step}
-                </span>
-              </div>
-              {i < steps.length - 1 && (
-                /* Logical inset: `left-` would point the wrong way in Arabic. */
-                <div className="absolute top-8 start-[calc(50%+3rem)] hidden h-0.5 w-[calc(100%-6rem)] bg-primary/20 md:block" />
-              )}
-              <h3 className="mt-5 text-title-lg text-primary">{item.title}</h3>
-              <p className="mt-2 max-w-xs text-body-md text-on-surface-variant">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function FeaturesSection() {
   const { t, dir } = useI18n();
@@ -750,7 +711,7 @@ export default function LandingPage() {
     <div dir={dir}>
       <HeroSection />
       <BuriedKnowledgeSection />
-      <HowItWorksSection />
+      <HowDocuMindWorksSection />
       <FeaturesSection />
       <SecuritySection />
       <UseCasesSection />

@@ -206,14 +206,6 @@ const en: TranslationDictionary = {
   "landing.heroSubtitle": "Upload PDFs, policies, and contracts. Ask in plain language. Every answer cites the page it came from.",
   "landing.heroCta": "Start Free Trial",
   "landing.heroCtaSecondary": "See DocuMind in action",
-  "landing.howItWorksTitle": "How It Works",
-  "landing.howItWorksSubtitle": "Get started in minutes. No training or setup required.",
-  "landing.howItWorksStep1Title": "Create Your Workspace",
-  "landing.howItWorksStep1Desc": "Register your company and set up your tenant-isolated environment.",
-  "landing.howItWorksStep2Title": "Upload Documents",
-  "landing.howItWorksStep2Desc": "Drag and drop your files. We process and index them automatically.",
-  "landing.howItWorksStep3Title": "Ask Questions",
-  "landing.howItWorksStep3Desc": "Type any question and get cited answers from your documents instantly.",
   "landing.featuresTitle": "Enterprise-Grade Features",
   "landing.featuresSubtitle": "Everything you need to manage and query your company knowledge securely.",
   "landing.feature1Title": "Tenant Isolation",
@@ -388,6 +380,63 @@ const en: TranslationDictionary = {
   "landing.buriedClosing":
     "DocuMind reads every document, respects every permission, and returns one grounded answer — with the evidence to stand on.",
   "landing.buriedClosingLink": "See how DocuMind works",
+
+  /* ── landing / how DocuMind works ────────────────────── */
+  "landing.howEyebrow": "How DocuMind works",
+  "landing.howTitle1": "From scattered knowledge",
+  "landing.howTitle2": "to a grounded answer.",
+  "landing.howSupport":
+    "DocuMind connects your company knowledge, applies access controls, retrieves only the evidence a user is allowed to see, and turns it into answers that can be verified.",
+  "landing.howStage1Title": "Connect company knowledge",
+  "landing.howStage1Desc":
+    "Bring policies, procedures, support documents, contracts, guides, and other company knowledge into one governed knowledge layer.",
+  "landing.howStage2Title": "Understand and organize",
+  "landing.howStage2Desc":
+    "DocuMind processes and indexes document content so knowledge becomes searchable, structured, and ready for retrieval.",
+  "landing.howStage3Title": "Apply access before retrieval",
+  "landing.howStage3Desc":
+    "Tenant, role, department, and document permissions determine which knowledge a user can reach before retrieval begins.",
+  "landing.howStage4Title": "Retrieve the right evidence",
+  "landing.howStage4Desc":
+    "DocuMind searches only the authorized knowledge space and selects the sources that actually support the question.",
+  "landing.howStage5Title": "Answer with evidence",
+  "landing.howStage5Desc":
+    "The answer stays connected to its source, so users can verify where it came from — and DocuMind can refuse when the available evidence is not enough.",
+  "landing.howClosing": "The result is not just an answer.",
+  "landing.howClosing2": "It is an answer your organization can trust.",
+
+  /* ── landing / how it works · system canvas ──────────── */
+  "landing.howCanvasLabel": "Knowledge path",
+  "landing.howCanvasStage1": "Connect",
+  "landing.howCanvasStage2": "Understand",
+  "landing.howCanvasStage3": "Govern",
+  "landing.howCanvasStage4": "Retrieve",
+  "landing.howCanvasStage5": "Answer",
+  "landing.howConnectLabel": "Company knowledge",
+  "landing.howUnderstandLabel": "Structured knowledge",
+  "landing.howUnderstandTagPolicy": "Policy",
+  "landing.howUnderstandTagSupport": "Support",
+  "landing.howUnderstandTagIndexed": "Indexed",
+  "landing.howUnderstandTagPages": "12 pages",
+  "landing.howGovernWho": "Support Manager",
+  "landing.howGovernInitials": "SM",
+  "landing.howGovernCheck1": "Role access",
+  "landing.howGovernCheck2": "Department scope",
+  "landing.howGovernCheck3": "Document policy",
+  "landing.howGovernGate": "Access check",
+  "landing.howGovernAuthorized": "Authorized",
+  "landing.howGovernRestricted": "Restricted",
+  "landing.howGovernStopped": "Stops here",
+  "landing.howRetrieveQuestion": "What is our P1 initial response target?",
+  "landing.howRetrieveSelected": "Selected source",
+  "landing.howRetrieveExcluded": "Not permitted",
+  "landing.howAnswer": "15 minutes",
+  "landing.howAnswerBody": "P1 incidents require an initial response within 15 minutes.",
+  "landing.howAnswerVerified": "Verified source",
+  "landing.howAnswerSourceName": "Customer Support SLA",
+  "landing.howAnswerSourceSub": "P1 Incident Response",
+  "landing.howAnswerMetaAuth": "Authorized source",
+  "landing.howAnswerMetaGrounded": "Grounded answer",
 
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",

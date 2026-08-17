@@ -206,14 +206,6 @@ const ar: TranslationDictionary = {
   "landing.heroSubtitle": "ارفع ملفات PDF والسياسات والعقود. اسأل بلغتك الطبيعية. كل إجابة تشير إلى الصفحة التي جاءت منها.",
   "landing.heroCta": "ابدأ النسخة التجريبية المجانية",
   "landing.heroCtaSecondary": "شاهد DocuMind أثناء العمل",
-  "landing.howItWorksTitle": "كيف يعمل",
-  "landing.howItWorksSubtitle": "ابدأ في دقائق. لا حاجة للتدريب أو الإعداد.",
-  "landing.howItWorksStep1Title": "أنشئ مساحة عملك",
-  "landing.howItWorksStep1Desc": "سجّل شركتك وجهّز بيئتك المعزولة.",
-  "landing.howItWorksStep2Title": "ارفع المستندات",
-  "landing.howItWorksStep2Desc": "اسحب وأفلت ملفاتك. نقوم بمعالجتها وفهرستها تلقائياً.",
-  "landing.howItWorksStep3Title": "اطرح الأسئلة",
-  "landing.howItWorksStep3Desc": "اكتب أي سؤال واحصل على إجابات موثّقة من مستنداتك فوراً.",
   "landing.featuresTitle": "ميزات على مستوى المؤسسات",
   "landing.featuresSubtitle": "كل ما تحتاجه لإدارة والاستعلام عن معرفة شركتك بأمان.",
   "landing.feature1Title": "عزل المستأجرين",
@@ -388,6 +380,63 @@ const ar: TranslationDictionary = {
   "landing.buriedClosing":
     "يفهم DocuMind مستندات شركتك، ويراعي صلاحيات الوصول، ويمنحك إجابة موحّدة ومدعومة بأدلتها.",
   "landing.buriedClosingLink": "اكتشف كيف يعمل DocuMind",
+
+  /* ── landing / how DocuMind works ────────────────────── */
+  "landing.howEyebrow": "كيف يعمل DocuMind",
+  "landing.howTitle1": "من معرفة متناثرة",
+  "landing.howTitle2": "إلى إجابة موثوقة ومدعومة بالدليل.",
+  "landing.howSupport":
+    "يربط DocuMind معرفة شركتك، ويطبّق صلاحيات الوصول، ويسترجع فقط الأدلة المسموح للمستخدم بالوصول إليها، ثم يحوّلها إلى إجابات يمكن التحقق منها.",
+  "landing.howStage1Title": "اربط معرفة شركتك",
+  "landing.howStage1Desc":
+    "اجمع السياسات والإجراءات ومستندات الدعم والعقود والأدلة ومصادر المعرفة الأخرى داخل طبقة معرفة موحّدة ومحكومة.",
+  "landing.howStage2Title": "افهم المعرفة ونظّمها",
+  "landing.howStage2Desc":
+    "يعالج DocuMind محتوى المستندات ويفهرسه لتصبح المعرفة قابلة للبحث والتنظيم والاسترجاع عند الحاجة.",
+  "landing.howStage3Title": "طبّق الصلاحيات قبل الاسترجاع",
+  "landing.howStage3Desc":
+    "تحدّد صلاحيات المؤسسة والدور والقسم والمستند المعرفة التي يمكن للمستخدم الوصول إليها قبل بدء عملية الاسترجاع.",
+  "landing.howStage4Title": "استرجع الأدلة المناسبة",
+  "landing.howStage4Desc":
+    "يبحث DocuMind داخل نطاق المعرفة المصرّح به فقط، ويختار المصادر التي تدعم السؤال فعليًا.",
+  "landing.howStage5Title": "أجب مع إرفاق الدليل",
+  "landing.howStage5Desc":
+    "تظل الإجابة مرتبطة بمصدرها حتى يتمكن المستخدم من التحقق منها، وعندما لا تتوفر أدلة كافية، يمتنع DocuMind عن اختلاق إجابة.",
+  "landing.howClosing": "النتيجة ليست مجرد إجابة،",
+  "landing.howClosing2": "بل إجابة يمكن لمؤسستك الوثوق بها.",
+
+  /* ── landing / how it works · system canvas ──────────── */
+  "landing.howCanvasLabel": "مسار المعرفة",
+  "landing.howCanvasStage1": "اربط",
+  "landing.howCanvasStage2": "افهم",
+  "landing.howCanvasStage3": "الصلاحيات",
+  "landing.howCanvasStage4": "استرجع",
+  "landing.howCanvasStage5": "أجب",
+  "landing.howConnectLabel": "معرفة الشركة",
+  "landing.howUnderstandLabel": "معرفة منظّمة",
+  "landing.howUnderstandTagPolicy": "سياسة",
+  "landing.howUnderstandTagSupport": "دعم",
+  "landing.howUnderstandTagIndexed": "مفهرس",
+  "landing.howUnderstandTagPages": "12 صفحة",
+  "landing.howGovernWho": "مدير الدعم",
+  "landing.howGovernInitials": "مد",
+  "landing.howGovernCheck1": "الوصول حسب الدور",
+  "landing.howGovernCheck2": "نطاق القسم",
+  "landing.howGovernCheck3": "سياسة المستند",
+  "landing.howGovernGate": "فحص الوصول",
+  "landing.howGovernAuthorized": "مصرّح",
+  "landing.howGovernRestricted": "مقيّد",
+  "landing.howGovernStopped": "يتوقف هنا",
+  "landing.howRetrieveQuestion": "ما هو هدفنا لزمن الاستجابة الأولية لحوادث P1؟",
+  "landing.howRetrieveSelected": "المصدر المحدد",
+  "landing.howRetrieveExcluded": "غير مسموح",
+  "landing.howAnswer": "15 دقيقة",
+  "landing.howAnswerBody": "تتطلب حوادث P1 استجابة أولية خلال 15 دقيقة.",
+  "landing.howAnswerVerified": "مصدر موثّق",
+  "landing.howAnswerSourceName": "Customer Support SLA",
+  "landing.howAnswerSourceSub": "P1 Incident Response",
+  "landing.howAnswerMetaAuth": "مصدر مصرّح",
+  "landing.howAnswerMetaGrounded": "إجابة موثقة",
 
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
