@@ -23,7 +23,7 @@ export const AdminPagination: React.FC<AdminPaginationProps> = ({
     if (isDisabled) {
       return "bg-surface-container-high text-outline border-outline-variant/30 cursor-not-allowed";
     }
-    return "bg-primary-container/40 text-on-primary-container border-primary-container hover:bg-primary-container hover:text-on-primary-container cursor-pointer";
+    return "bg-primary-container text-on-primary-container border-primary-container hover:bg-primary hover:text-on-primary hover:border-primary cursor-pointer";
   };
 
   return (
