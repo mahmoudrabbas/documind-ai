@@ -878,7 +878,13 @@ test("evaluate_evidence reauthorizes candidates and approves SUFFICIENT evidence
     pageNumber: 4,
   });
 
-  const output = (await evaluateEvidenceTool.handler(runContext(), {
+  const ctx = runContext();
+  await hybridSearchTool.handler(ctx, {
+    queryText: "how many leave days?",
+    topK: 5,
+  });
+
+  const output = (await evaluateEvidenceTool.handler(ctx, {
     question: "how many leave days?",
     candidateIds: [chunk.id],
   })) as {
@@ -1004,7 +1010,13 @@ test("newly indexed chunks without allowAiUse use the active document policy", a
   const loaded = await createDefaultLoadChunksByIds()(tenantId, [chunk.id]);
   assert.equal(loaded[0]?.allowAiUse, undefined);
 
-  const output = (await evaluateEvidenceTool.handler(runContext(), {
+  const ctx = runContext();
+  await hybridSearchTool.handler(ctx, {
+    queryText: "Which release strategy is used?",
+    topK: 5,
+  });
+
+  const output = (await evaluateEvidenceTool.handler(ctx, {
     question: "Which release strategy is used?",
     candidateIds: [chunk.id],
   })) as {
