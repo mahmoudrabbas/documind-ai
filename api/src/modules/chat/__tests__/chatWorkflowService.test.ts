@@ -289,7 +289,7 @@ function makeHarness(options: HarnessOptions = {}) {
       });
       if (initialDecision) observations.decisions.push(initialDecision);
 
-      const payload = hooks.resolveHandoffPayload?.({
+      const payload = await hooks.resolveHandoffPayload?.({
         workflowId: "chat-rag-v1",
         fromAgent: "chat-supervisor",
         toAgent: "intent-query-agent",
@@ -554,7 +554,7 @@ function makeHarness(options: HarnessOptions = {}) {
         }
 
         if (scenario === "grounded" && !options.evidenceProvenanceMissing) {
-          const writerInput = hooks.resolveHandoffPayload?.({
+          const writerInput = await hooks.resolveHandoffPayload?.({
             workflowId: "chat-rag-v1",
             fromAgent: "chat-supervisor",
             toAgent: "answer-writer-agent",
@@ -564,7 +564,7 @@ function makeHarness(options: HarnessOptions = {}) {
           observations.handoffs.push({ agent: "answer-writer-agent", payload: writerInput });
           state = { ...state, decision: "grounded_answer", answer: "WRITER_DRAFT", citedChunkIds: writerCitations };
 
-          const verifierInput = hooks.resolveHandoffPayload?.({
+          const verifierInput = await hooks.resolveHandoffPayload?.({
             workflowId: "chat-rag-v1",
             fromAgent: "answer-writer-agent",
             toAgent: "citation-verification-agent",
@@ -606,7 +606,7 @@ function makeHarness(options: HarnessOptions = {}) {
       }
 
       if (!["assistant_identity", "assistant_capabilities", "social", "analytics"].includes(scenario)) {
-        const complianceInput = hooks.resolveHandoffPayload?.({
+        const complianceInput = await hooks.resolveHandoffPayload?.({
           workflowId: "chat-rag-v1",
           fromAgent: "chat-supervisor",
           toAgent: "compliance-agent",

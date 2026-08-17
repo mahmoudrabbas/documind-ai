@@ -47,6 +47,10 @@ import {
   type LoadedChunkCandidate,
 } from "../agents/tools/authorizedRetrievalTools.js";
 import { createKnowledgeGapTool } from "../agents/tools/knowledgeGapTool.js";
+import {
+  renderUnresolvedConflictAnswer,
+  type ConflictAnswerSource,
+} from "../agents/conflictAnswer.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import {
@@ -527,6 +531,12 @@ interface ChatRunArtifacts {
    */
   conflictEvidenceIds: string[];
   conflictExplanationMode: boolean;
+  /**
+   * Code-rendered unresolved-conflict answer built only from reauthorized
+   * conflict evidence. When set it is the ONLY answer text that may be
+   * verified and released on the conflict path.
+   */
+  deterministicConflictAnswer: string | null;
   /** Bounded retry counter for CANDIDATE_PROVENANCE_MISSING (max 1 retry). */
   provenanceRetryCount: number;
   retrievalOutcome: "AUTHORIZED_RESULTS" | "NO_MATCHES" | "AUTHORIZATION_FILTERED" | null;
@@ -650,8 +660,14 @@ function capturePendingAgent(
       ]),
     );
     const writerIds = artifacts.writer?.citedChunkIds ?? [];
+    // On the conflict path the verified answer is the deterministic render,
+    // whose citation set is the full conflict evidence set — not the
+    // writer's own (possibly partial) citations.
+    const citationProvenance = artifacts.conflictExplanationMode
+      ? artifacts.conflictEvidenceIds
+      : writerIds;
     if (
-      !isSubset(artifacts.verifier.validatedCitationIds, writerIds) ||
+      !isSubset(artifacts.verifier.validatedCitationIds, citationProvenance) ||
       !isSubset(artifacts.verifier.validatedCitationIds, artifacts.approvedEvidenceIds)
     ) {
       failClosed("Verified citations exceed this run's writer/evidence provenance");
@@ -670,6 +686,15 @@ function createChatRuntimePolicy(input: {
   readonly citationsEnabled: boolean;
   readonly maxTokens: number;
   readonly onStage?: (stage: ChatStageId) => void;
+  /**
+   * Trusted loader for conflict-path evidence: server-side chunk text for
+   * the run's conflict ids, eligibility- and policy-reauthorized per
+   * document. Used to render the deterministic unresolved-conflict answer;
+   * the writer's free text is never released on the conflict path.
+   */
+  readonly loadConflictEvidence?: (
+    chunkIds: readonly string[],
+  ) => Promise<ConflictAnswerSource[]>;
 }): { hooks: SupervisorRuntimeHooks; artifacts: ChatRunArtifacts } {
   // Hook exceptions abort the run, so progress emission must never throw.
   const emitStage = (stage: ChatStageId): void => {
@@ -700,6 +725,7 @@ function createChatRuntimePolicy(input: {
     evidenceReasonCode: null,
     conflictEvidenceIds: [],
     conflictExplanationMode: false,
+    deterministicConflictAnswer: null,
     provenanceRetryCount: 0,
     retrievalOutcome: null,
     analyticsRequest: null,
@@ -957,7 +983,7 @@ function createChatRuntimePolicy(input: {
         : trusted;
     },
 
-    resolveHandoffPayload(args) {
+    async resolveHandoffPayload(args) {
       capturePendingAgent(artifacts, args.currentInput);
       syncIntentDerivedState();
       let resolved: Record<string, unknown>;
@@ -983,6 +1009,25 @@ function createChatRuntimePolicy(input: {
               { detectedIntent: intent.intent },
               intent.normalizedQuestion,
             );
+        if (artifacts.conflictExplanationMode) {
+          // Trusted postcondition: the conflict-path answer is rendered from
+          // reauthorized evidence by deterministic code. The writer still
+          // runs, but its free text can never be the released answer, so an
+          // adversarial winner claim cannot leak through prompt compliance.
+          if (!input.loadConflictEvidence) {
+            failClosed("Conflict answers require a trusted evidence loader");
+          }
+          const conflictSources = await input.loadConflictEvidence(
+            artifacts.conflictEvidenceIds,
+          );
+          if (conflictSources.length === 0) {
+            failClosed("Conflict answers require at least one authorized source");
+          }
+          artifacts.deterministicConflictAnswer = renderUnresolvedConflictAnswer({
+            language: intent.language,
+            sources: conflictSources,
+          });
+        }
         emitStage("answer");
         resolved = {
           conversationId: input.conversationId,
@@ -1004,13 +1049,27 @@ function createChatRuntimePolicy(input: {
           failClosed("Writer citations exceed approved evidence");
         }
         emitStage("verify");
-        resolved = {
-          decision: writer.decision,
-          citedChunkIds: [...writer.citedChunkIds],
-          approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
-          answerText: writer.answer,
-          questionText: artifacts.intent?.normalizedQuestion ?? input.question,
-        };
+        if (artifacts.conflictExplanationMode) {
+          // Only the deterministic unresolved-conflict answer is verified and
+          // releasable; every conflict evidence id must be cited.
+          const deterministicAnswer = artifacts.deterministicConflictAnswer
+            ?? failClosed("Conflict answers require the deterministic render");
+          resolved = {
+            decision: writer.decision,
+            citedChunkIds: [...artifacts.conflictEvidenceIds],
+            approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
+            answerText: deterministicAnswer,
+            questionText: artifacts.intent?.normalizedQuestion ?? input.question,
+          };
+        } else {
+          resolved = {
+            decision: writer.decision,
+            citedChunkIds: [...writer.citedChunkIds],
+            approvedEvidenceIds: [...artifacts.approvedEvidenceIds],
+            answerText: writer.answer,
+            questionText: artifacts.intent?.normalizedQuestion ?? input.question,
+          };
+        }
       } else if (args.toAgent === "compliance-agent") {
         const intent = artifacts.intent ?? failClosed("Trusted intent output is required");
         if (artifacts.analyticsRequest || intent.route === "assistant" || intent.route === "social") {
@@ -1031,13 +1090,28 @@ function createChatRuntimePolicy(input: {
               : intent.clarification?.messageEn) ?? "";
         } else if (!artifacts.writer || artifacts.approvedEvidenceIds.length === 0) {
           answerDecision = "insufficient_evidence";
+        } else if (
+          artifacts.conflictExplanationMode &&
+          (!artifacts.verifier?.verified ||
+            !artifacts.deterministicConflictAnswer ||
+            !isSubset(artifacts.conflictEvidenceIds, artifacts.verifier.validatedCitationIds))
+        ) {
+          // A conflict answer only releases when every conflicting source
+          // survived citation verification of the deterministic render.
+          answerDecision = "insufficient_evidence";
         } else {
           answerDecision = artifacts.writer.decision;
           answer = artifacts.writer.answer;
           if (answerDecision === "grounded_answer") {
             const verifier = artifacts.verifier ?? failClosed("Grounded answers require citation verification");
+            // Conflict-path provenance is the full conflict evidence set — the
+            // verified answer is the deterministic render, not the writer's
+            // own (possibly partial) citation list.
+            const releaseCitationProvenance = artifacts.conflictExplanationMode
+              ? artifacts.conflictEvidenceIds
+              : artifacts.writer.citedChunkIds;
             if (
-              !isSubset(verifier.validatedCitationIds, artifacts.writer.citedChunkIds) ||
+              !isSubset(verifier.validatedCitationIds, releaseCitationProvenance) ||
               !isSubset(verifier.validatedCitationIds, artifacts.approvedEvidenceIds)
             ) {
               failClosed("Citation verification provenance is invalid");
@@ -1410,6 +1484,8 @@ export class ChatWorkflowService {
         citationsEnabled: settings.citationsEnabled,
         maxTokens: settings.maxTokens,
         onStage: context.onStage,
+        loadConflictEvidence: (chunkIds) =>
+          this.loadConflictEvidenceSources(tenantId, actorId, chunkIds),
       });
 
       artifacts = runtimePolicy.artifacts;
@@ -1709,6 +1785,51 @@ export class ChatWorkflowService {
       });
     }
     return resolvedTerminal;
+  }
+
+  /**
+   * Loads conflict-path evidence server-side: tenant-scoped chunk text,
+   * parent-document eligibility, per-document use_in_ai reauthorization, and
+   * document titles. Any failure throws and fails the run closed — a missing
+   * or unauthorized source must never narrow a conflict into a one-sided
+   * released answer.
+   */
+  private async loadConflictEvidenceSources(
+    tenantId: string,
+    actorId: string,
+    chunkIds: readonly string[],
+  ): Promise<ConflictAnswerSource[]> {
+    const uniqueChunkIds = [...new Set(chunkIds)];
+    const chunks = await this.deps.authorizedRetrieval.loadChunksByIds(
+      tenantId,
+      uniqueChunkIds,
+    );
+    if (chunks.length !== uniqueChunkIds.length) {
+      throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Conflict evidence could not be loaded");
+    }
+    const documentIds = [...new Set(chunks.map((chunk) => chunk.documentId))];
+    const eligible = new Set(
+      await this.deps.authorizedRetrieval.loadEligibleDocumentIds(tenantId, documentIds),
+    );
+    for (const documentId of documentIds) {
+      if (!eligible.has(documentId)) {
+        throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Conflict evidence is not retrievable");
+      }
+      await this.deps.authorizedRetrieval.authorization.authorizeDocumentAction(
+        { tenantId, actorId },
+        documentId,
+        "use_in_ai",
+      );
+    }
+    const titles = await this.deps.loadDocumentTitles(tenantId, documentIds);
+    return chunks.map((chunk) => ({
+      chunkId: chunk.chunkId,
+      documentId: chunk.documentId,
+      documentTitle: titles.get(chunk.documentId) ?? "Unknown Document",
+      ...(chunk.sectionTitle ? { sectionTitle: chunk.sectionTitle } : {}),
+      ...(typeof chunk.pageNumber === "number" ? { pageNumber: chunk.pageNumber } : {}),
+      text: chunk.text,
+    }));
   }
 
   private async materializeSources(
