@@ -22,6 +22,7 @@ import {
   buildContextualFollowUpQuestion,
   hasSubstantivePriorTurn,
   isLikelyContextualFollowUp,
+  isLikelyPriorDocumentTurn,
   isLikelyGibberish,
   isRetrievableIntent,
   selectSafeRetrievalQuestion,
@@ -578,7 +579,9 @@ export class IntentQueryService {
       conversationHistoryAvailable &&
       latestUserMessage.length > 0 &&
       isLikelyContextualFollowUp(routingQuestion) &&
-      hasSubstantivePriorTurn(latestUserMessage);
+      hasSubstantivePriorTurn(latestUserMessage) &&
+      !detectAssistantIntent(latestUserMessage).isAssistantOnly &&
+      isLikelyPriorDocumentTurn(latestUserMessage);
     const deterministicFollowUpQuestion = deterministicContextualFollowUp
       ? buildContextualFollowUpQuestion(latestUserMessage, routingQuestion)
       : "";
@@ -854,13 +857,32 @@ export class IntentQueryService {
           typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0,
           0.85,
         );
-        rawOutput.normalizedQuestion = deterministicFollowUpQuestion;
+        // When the provider already resolved the follow-up into a standalone
+        // question, keep that resolution; the deterministic bridge question is
+        // the fallback for unsupported, low-confidence, and malformed output.
+        const providerResolvedFollowUp =
+          rawDetectedIntent === "follow_up" &&
+          typeof rawOutput.normalizedQuestion === "string" &&
+          rawOutput.normalizedQuestion.trim().length > 0 &&
+          rawOutput.normalizedQuestion.trim().toLowerCase() !==
+            routingQuestion.trim().toLowerCase();
+        if (!providerResolvedFollowUp) {
+          rawOutput.normalizedQuestion = deterministicFollowUpQuestion;
+        }
         rawOutput.clarificationNeeded = false;
         rawOutput.clarification = null;
       }
 
-      // If semanticQueries/keywordQueries are empty, use local bilingual expansion
-      if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
+      const sourceLessUnsupportedContinuation =
+        rawOutput.detectedIntent === "unsupported" &&
+        isLikelyContextualFollowUp(routingQuestion) &&
+        !deterministicContextualFollowUp;
+      if (sourceLessUnsupportedContinuation) {
+        rawOutput.semanticQueries = [];
+        rawOutput.keywordQueries = [];
+      } else if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
+        // Retrievable plans receive bounded local expansion when the provider
+        // omitted search queries.
         const expansion = expandBilingual(routingQuestion, language, localEntities);
         rawOutput.semanticQueries = expansion.semanticQueries;
         rawOutput.keywordQueries = expansion.keywordQueries;
@@ -978,14 +1000,21 @@ export class IntentQueryService {
               ],
             )
           : routingQuestion.trim();
-        const currentExpansion = expandBilingual(
-          safeRetrievalQuestion,
-          language,
-          localEntities,
-        );
         rawOutput.normalizedQuestion = safeRetrievalQuestion;
-        rawOutput.semanticQueries = currentExpansion.semanticQueries;
-        rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        if (isRetrievableIntent(detectedIntent)) {
+          const currentExpansion = expandBilingual(
+            safeRetrievalQuestion,
+            language,
+            localEntities,
+          );
+          rawOutput.semanticQueries = currentExpansion.semanticQueries;
+          rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        } else {
+          // Unsupported and other non-retrievable turns stay source-less:
+          // no retrieval payload may survive for them.
+          rawOutput.semanticQueries = [];
+          rawOutput.keywordQueries = [];
+        }
         rawOutput.referencedDocumentIds =
           retainCurrentTurnDocumentHints
             ? hints.referencedDocumentIds
@@ -1028,7 +1057,8 @@ export class IntentQueryService {
         validatedPlan.route === "unsupported" &&
         !validatedPlan.processingMetadata.fallbackUsed &&
         !isLikelyGibberish(routingQuestion) &&
-        hasDomainAgnosticQuestionShape(routingQuestion);
+        hasDomainAgnosticQuestionShape(routingQuestion) &&
+        (!isLikelyContextualFollowUp(routingQuestion) || deterministicContextualFollowUp);
       const semanticSummarizationOverride =
         validatedPlan.detectedIntent === "summarization" &&
         validatedPlan.clarificationNeeded &&

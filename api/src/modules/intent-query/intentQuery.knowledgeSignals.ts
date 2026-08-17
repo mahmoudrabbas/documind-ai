@@ -257,6 +257,23 @@ export function isLikelyContextualFollowUp(raw: string): boolean {
 }
 
 /**
+ * Conservative prior-turn document/RAG predicate. A contextual follow-up may
+ * only be deterministically promoted when the previous user turn itself
+ * expressed document or enterprise knowledge intent. Assistant/product-name
+ * phrasing is neutralized first so "What can DocuMind AI do?" cannot satisfy
+ * the document-reference signal through the "doc" substring.
+ */
+export function isLikelyPriorDocumentTurn(raw: string): boolean {
+  if (!raw.trim()) return false;
+  const neutralized = raw
+    .replace(/\bdocu[-_]?mind\b/giu, "product")
+    .replace(/\b(?:chat\s*bot|assistant)\b/giu, "product");
+  if (/\b(?:who|what)\s+(?:are|r)\s+(?:you|u)\b/iu.test(neutralized)) return false;
+  if (/\b(?:what|which|how)\s+(?:can|could|do|does|did)\s+(?:you|u|it|product)\b/iu.test(neutralized)) return false;
+  return assessPositiveKnowledgeSeeking(neutralized).positive;
+}
+
+/**
  * A prior user turn can anchor a contextual follow-up only when it is itself
  * substantive: not social small talk, not gibberish, and carries real tokens.
  */

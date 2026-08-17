@@ -441,6 +441,11 @@ test("IntentQueryService - query routing contract", async (t) => {
         priorUser: "What does the onboarding policy say about the first week?",
         current: "And the mentor assignment?",
       },
+      {
+        topic: "travel-arabic",
+        priorUser: "ما سياسة السفر الخاص بالعمل؟",
+        current: "وماذا عن حد الفندق؟",
+      },
     ] as const;
 
     for (const entry of cases) {
@@ -484,6 +489,82 @@ test("IntentQueryService - query routing contract", async (t) => {
           plan.normalizedQuestion.includes(entry.current),
           `${entry.topic}/${entry.current} must keep the current question: ${plan.normalizedQuestion}`,
         )
+      }
+    }
+  });
+
+  await t.test("contextual continuations require a prior document or enterprise retrieval signal", async () => {
+    const priorTurns = [
+      {
+        kind: "external-current",
+        user: "What is the weather in Cairo today?",
+        assistant: "The weather is warm and clear.",
+      },
+      {
+        kind: "assistant-capability",
+        user: "What can DocuMind AI do?",
+        assistant: "I can help search and summarize authorized documents.",
+      },
+      {
+        kind: "unsupported-general",
+        user: "Who won the football World Cup?",
+        assistant: "That is outside the company document corpus.",
+      },
+      {
+        kind: "social",
+        user: "Hello, how are you?",
+        assistant: "I am ready to help.",
+      },
+      {
+        kind: "gibberish",
+        user: "asdasdasd qwerty",
+        assistant: "I could not understand that.",
+      },
+    ] as const;
+    const providerVariants: ReadonlyArray<readonly [string, ModelAdapter]> = [
+      [
+        "unsupported",
+        planAdapter({
+          detectedIntent: "unsupported",
+          intentConfidence: 0.99,
+          semanticQueries: [],
+          keywordQueries: [],
+        }),
+      ],
+      [
+        "malformed",
+        {
+          providerKey: "malformed-non-rag-follow-up-adapter",
+          async complete() {
+            return {
+              choices: [{ message: { content: "not json" } }],
+            } as Awaited<ReturnType<ModelAdapter["complete"]>>;
+          },
+        },
+      ],
+    ];
+
+    for (const prior of priorTurns) {
+      for (const [providerKind, adapter] of providerVariants) {
+        const conversationId = new Types.ObjectId().toString();
+        fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+          { role: "user", content: prior.user, timestamp: new Date(1).toISOString() },
+          { role: "assistant", content: prior.assistant, timestamp: new Date(2).toISOString() },
+        ]);
+
+        const plan = await new IntentQueryService(adapter, fakeConvoAdapter).analyzeQuery(
+          {
+            question: "What about contractors?",
+            conversationId,
+          },
+          companyAdminContext,
+        );
+        const caseName = `${prior.kind}/${providerKind}`;
+
+        assert.equal(plan.route, "unsupported", caseName);
+        assert.equal(plan.detectedIntent, "unsupported", caseName);
+        assert.equal(plan.isFollowUp, false, caseName);
+        assert.deepEqual(plan.semanticQueries, [], caseName);
       }
     }
   });
