@@ -7,6 +7,8 @@ import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { formatMoneyMinor } from "@/lib/money";
 import { mbToGb } from "@/lib/storage";
+import { HeroSection } from "@/components/marketing/HeroSection";
+import { BuriedKnowledgeSection } from "@/components/marketing/BuriedKnowledgeSection";
 
 type PackageData = {
   id: string;
@@ -61,130 +63,11 @@ const CARD_CLASS =
 /**
  * Hero product preview.
  *
- * A real question, the answer it returns, and the citation that backs it —
- * the whole product promise in one card. The answer slot holds an *answer*,
- * not a description of the feature: a card shaped like a screenshot with
- * marketing copy in the payload reads as a mockup rather than a product.
- * Built from tokens and Material Symbols because the app ships no image
- * assets.
+ * The marketing hero now lives in `@/components/marketing/HeroSection` —
+ * a dark field with a two-line promise, a permission-aware knowledge
+ * system visual, and the dark→light hand-off. It was moved out of this
+ * page module when it gained the product visual and transition.
  */
-function HeroPreviewCard() {
-  const { t } = useI18n();
-  return (
-    <div className="mx-auto w-full max-w-lg lg:max-w-none">
-      <div className="overflow-hidden rounded-2xl border border-on-primary/15 bg-primary-container/80 shadow-modal">
-        <div className="space-y-5 p-5 sm:p-6">
-          {/* The question */}
-          <div>
-            <p className="text-label-xs uppercase text-on-primary/50">
-              {t("landing.queryLabel")}
-            </p>
-            <p className="mt-1.5 text-body-lg text-on-primary">{t("landing.queryExample")}</p>
-          </div>
-
-          <div aria-hidden="true" className="h-px bg-on-primary/10" />
-
-          {/* The answer, and the source that backs it */}
-          <div>
-            <p className="text-label-xs uppercase text-tertiary-fixed/80">
-              {t("landing.answerLabel")}
-            </p>
-            <p className="mt-1.5 text-body-md leading-relaxed text-on-primary/90">
-              {t("landing.answerExample")}
-            </p>
-            <div className="mt-4 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-tertiary-fixed/25 bg-tertiary-fixed/10 px-2.5 py-1.5">
-              <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-[14px] text-tertiary-fixed">
-                description
-              </span>
-              {/* The filename is Latin in both locales — keep it LTR. */}
-              <span dir="ltr" className="truncate text-label-xs text-on-primary/90">
-                {t("landing.sourceFile")}
-              </span>
-              <span aria-hidden="true" className="shrink-0 text-label-xs text-on-primary/40">·</span>
-              <span className="shrink-0 text-label-xs text-on-primary/70">{t("landing.sourcePage")}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeroSection() {
-  const { t, dir } = useI18n();
-  return (
-    <section className="relative overflow-hidden bg-primary pb-20 pt-28 sm:pb-24 sm:pt-32">
-      {/* One wash. Two stacked radials read as decoration rather than depth. */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.08),transparent_60%)]" />
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" dir={dir}>
-        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
-          <div className="text-center lg:text-start">
-            {/* Category label, not a trust claim — hence no verified check. */}
-            <span className="mb-6 inline-flex items-center rounded-full border border-on-primary/20 bg-on-primary/10 px-4 py-1.5 text-label-sm text-on-primary/80">
-              {t("landing.badge")}
-            </span>
-            {/* 48px overflows small phones — step down to headline-lg there. */}
-            <h1 className="text-headline-lg text-on-primary sm:text-display-lg">{t("landing.heroTitle")}</h1>
-            <p className="mx-auto mt-6 max-w-xl text-body-lg text-on-primary/70 lg:mx-0">{t("landing.heroSubtitle")}</p>
-            <div className="mt-10 flex flex-col items-stretch justify-center gap-4 sm:flex-row sm:items-center sm:gap-6 lg:justify-start">
-              <Link
-                href="/register"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg text-primary shadow-lg shadow-primary/30 transition-all hover:opacity-90 active:scale-[0.98]"
-              >
-                {t("landing.heroCta")}
-                <span aria-hidden="true" className="material-symbols-outlined text-xl rtl:rotate-180" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  arrow_forward
-                </span>
-              </Link>
-              {/* Lower emphasis than a second button: the page has one action. */}
-              <a
-                href="#how-it-works"
-                className="inline-flex items-center justify-center gap-1.5 text-title-md text-on-primary/80 underline-offset-4 transition-colors hover:text-on-primary hover:underline"
-              >
-                {t("landing.heroCtaSecondary")}
-                {/* Points down the page, so it is not mirrored in RTL. */}
-                <span aria-hidden="true" className="material-symbols-outlined text-lg">
-                  arrow_downward
-                </span>
-              </a>
-            </div>
-          </div>
-
-          <HeroPreviewCard />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ValueSection() {
-  const { t, dir } = useI18n();
-  const items = [
-    { icon: "cloud_upload", title: t("landing.valueItem1Title"), desc: t("landing.valueItem1Desc") },
-    { icon: "question_answer", title: t("landing.valueItem2Title"), desc: t("landing.valueItem2Desc") },
-    { icon: "fact_check", title: t("landing.valueItem3Title"), desc: t("landing.valueItem3Desc") },
-  ];
-  return (
-    <section className={cn("bg-surface-container-lowest", SECTION_Y)} dir={dir}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading title={t("landing.valueTitle")} subtitle={t("landing.valueSubtitle")} />
-        <div className="grid gap-8 md:grid-cols-3">
-          {items.map((item) => (
-            <div key={item.title} className={cn(CARD_CLASS, "p-8")}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-                <span className="material-symbols-outlined text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  {item.icon}
-                </span>
-              </div>
-              <h3 className="mt-6 text-title-lg text-primary">{item.title}</h3>
-              <p className="mt-3 text-body-md text-on-surface-variant">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function HowItWorksSection() {
   const { t, dir } = useI18n();
@@ -866,7 +749,7 @@ export default function LandingPage() {
   return (
     <div dir={dir}>
       <HeroSection />
-      <ValueSection />
+      <BuriedKnowledgeSection />
       <HowItWorksSection />
       <FeaturesSection />
       <SecuritySection />

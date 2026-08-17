@@ -195,6 +195,8 @@ const en: TranslationDictionary = {
   "nav.analytics": "Analytics",
   "nav.settings": "Settings",
   "nav.language": "Language",
+  "nav.openMenu": "Open menu",
+  "nav.closeMenu": "Close menu",
 
   /* ── landing ───────────────────────────────────────────── */
   "landing.appName": "DocuMind AI",
@@ -203,15 +205,7 @@ const en: TranslationDictionary = {
   "landing.heroTitle": "Ask your documents. Get answers you can check.",
   "landing.heroSubtitle": "Upload PDFs, policies, and contracts. Ask in plain language. Every answer cites the page it came from.",
   "landing.heroCta": "Start Free Trial",
-  "landing.heroCtaSecondary": "See how it works",
-  "landing.valueTitle": "Turn Documents Into Answers",
-  "landing.valueSubtitle": "Stop digging through files. DocuMind AI reads your documents and delivers precise, cited answers in seconds.",
-  "landing.valueItem1Title": "Upload & Ingest",
-  "landing.valueItem1Desc": "Drop PDFs, DOCX, TXT, or MD files. We process and index them automatically.",
-  "landing.valueItem2Title": "Ask in Natural Language",
-  "landing.valueItem2Desc": "Type any question about your documents. Get instant, contextual answers.",
-  "landing.valueItem3Title": "Always Cited",
-  "landing.valueItem3Desc": "Every answer includes source references so you can verify and trust the response.",
+  "landing.heroCtaSecondary": "See DocuMind in action",
   "landing.howItWorksTitle": "How It Works",
   "landing.howItWorksSubtitle": "Get started in minutes. No training or setup required.",
   "landing.howItWorksStep1Title": "Create Your Workspace",
@@ -330,6 +324,70 @@ const en: TranslationDictionary = {
   "landing.navFaq": "FAQ",
   "landing.navSignIn": "Sign In",
   "landing.navGetStarted": "Get Started",
+  "landing.navProduct": "Product",
+  "landing.navSolutions": "Solutions",
+  "landing.navResources": "Resources",
+  "landing.navStartFree": "Start Free",
+
+  /* ── landing / hero ─────────────────────────────────────── */
+  "landing.heroEyebrow": "Enterprise Knowledge Intelligence",
+  "landing.heroTitleLine1": "Turn company knowledge",
+  "landing.heroTitleLine2": "into trusted intelligence.",
+  "landing.heroSupport":
+    "Connect your documents, respect access permissions, and get grounded answers and controlled AI workflows backed by the right evidence.",
+  "landing.heroCtaPrimary": "Start Free",
+  "landing.heroTrust1": "Permission-aware",
+  "landing.heroTrust2": "Source-grounded",
+  "landing.heroTrust3": "Bilingual",
+  "landing.heroTrust4": "Auditable",
+
+  /* ── landing / knowledge system visual ─────────────────── */
+  "landing.ksLabel": "Company knowledge",
+  "landing.ksDoc1Name": "Procurement_Policy.pdf",
+  "landing.ksDoc1Meta": "Policy · 18 pages · Indexed",
+  "landing.ksDoc2Name": "Customer_Support_SLA.pdf",
+  "landing.ksDoc2Meta": "Policy · 12 pages · Indexed",
+  "landing.ksDoc3Name": "Security_Policy.pdf",
+  "landing.ksDoc3Meta": "Policy · 18 pages",
+  "landing.ksDocSelected": "Selected",
+  "landing.ksDocRestricted": "Restricted",
+  "landing.ksPermInitials": "SM",
+  "landing.ksPermWho": "Support Manager",
+  "landing.ksPermCheck1": "Role access",
+  "landing.ksPermCheck2": "Department scope",
+  "landing.ksPermCheck3": "Document policy",
+  "landing.ksQuestion": "What is our P1 initial response target?",
+  "landing.ksAnswer": "15 minutes",
+  "landing.ksAnswerBody": "P1 incidents require an initial response within 15 minutes.",
+  "landing.ksVerified": "Verified source",
+  "landing.ksSourceName": "Customer Support SLA",
+  "landing.ksSourceSub": "P1 Incident Response",
+  "landing.ksMetaEvidence": "Evidence found",
+  "landing.ksMetaSources": "Authorized sources",
+  "landing.ksMetaGrounded": "Answer grounded",
+
+  /* ── landing / first light section (buried knowledge) ──── */
+  "landing.buriedEyebrow": "The buried-knowledge problem",
+  "landing.buriedTitle1": "Your company already has the answers.",
+  "landing.buriedTitle2": "They're just ",
+  "landing.buriedTitle3": "buried.",
+  "landing.buriedLead":
+    "The knowledge is already there — in contracts, policies, wikis, and email. It's scattered across documents, drifting out of date, locked behind permissions, and hard to trust without evidence.",
+  "landing.buriedProb1Title": "Scattered across documents",
+  "landing.buriedProb1Desc":
+    "The answer you need lives in PDFs, slides, wikis, and inboxes — nowhere you can query the whole picture at once.",
+  "landing.buriedProb2Title": "No single source of truth",
+  "landing.buriedProb2Desc":
+    "Versions pile up and copies diverge. Nobody can tell which file is current, and teams argue over the answer.",
+  "landing.buriedProb3Title": "Locked behind permissions",
+  "landing.buriedProb3Desc":
+    "The people who need an answer can't always reach the document that holds it — so retrieval means asking around.",
+  "landing.buriedProb4Title": "Trust without evidence",
+  "landing.buriedProb4Desc":
+    "A confident answer is just an opinion until it names its source. Acting on it without evidence is a risk.",
+  "landing.buriedClosing":
+    "DocuMind reads every document, respects every permission, and returns one grounded answer — with the evidence to stand on.",
+  "landing.buriedClosingLink": "See how DocuMind works",
 
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",

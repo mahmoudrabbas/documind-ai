@@ -195,6 +195,8 @@ const ar: TranslationDictionary = {
   "nav.analytics": "التحليلات",
   "nav.settings": "الإعدادات",
   "nav.language": "اللغة",
+  "nav.openMenu": "فتح القائمة",
+  "nav.closeMenu": "إغلاق القائمة",
 
   /* ── landing ───────────────────────────────────────────── */
   "landing.appName": "DocuMind AI",
@@ -203,15 +205,7 @@ const ar: TranslationDictionary = {
   "landing.heroTitle": "اسأل مستنداتك، واحصل على إجابات يمكنك التحقق منها",
   "landing.heroSubtitle": "ارفع ملفات PDF والسياسات والعقود. اسأل بلغتك الطبيعية. كل إجابة تشير إلى الصفحة التي جاءت منها.",
   "landing.heroCta": "ابدأ النسخة التجريبية المجانية",
-  "landing.heroCtaSecondary": "شاهد كيف يعمل",
-  "landing.valueTitle": "حوّل المستندات إلى إجابات",
-  "landing.valueSubtitle": "توقف عن البحث في الملفات. يقرأ DocuMind AI مستنداتك ويقدم إجابات دقيقة وموثّقة في ثوانٍ.",
-  "landing.valueItem1Title": "ارفع وحمّل",
-  "landing.valueItem1Desc": "أفلت ملفات PDF وDOCX وTXT وMD. نقوم بمعالجتها وفهرستها تلقائياً.",
-  "landing.valueItem2Title": "اسأل بلغتك الطبيعية",
-  "landing.valueItem2Desc": "اكتب أي سؤال عن مستنداتك. احصل على إجابات فورية وسياقية.",
-  "landing.valueItem3Title": "دائماً موثّق",
-  "landing.valueItem3Desc": "كل إجابة تتضمن مراجع المصادر لتتمكن من التحقق والثقة في الاستجابة.",
+  "landing.heroCtaSecondary": "شاهد DocuMind أثناء العمل",
   "landing.howItWorksTitle": "كيف يعمل",
   "landing.howItWorksSubtitle": "ابدأ في دقائق. لا حاجة للتدريب أو الإعداد.",
   "landing.howItWorksStep1Title": "أنشئ مساحة عملك",
@@ -330,6 +324,70 @@ const ar: TranslationDictionary = {
   "landing.navFaq": "الأسئلة الشائعة",
   "landing.navSignIn": "تسجيل الدخول",
   "landing.navGetStarted": "ابدأ الآن",
+  "landing.navProduct": "المنتج",
+  "landing.navSolutions": "الحلول",
+  "landing.navResources": "الموارد",
+  "landing.navStartFree": "ابدأ مجانًا",
+
+  /* ── landing / hero ─────────────────────────────────────── */
+  "landing.heroEyebrow": "ذكاء المعرفة للمؤسسات",
+  "landing.heroTitleLine1": "حوّل معرفة شركتك",
+  "landing.heroTitleLine2": "إلى ذكاء موثوق.",
+  "landing.heroSupport":
+    "اربط مستنداتك، وطبّق صلاحيات الوصول، واحصل على إجابات موثقة وتدفقات عمل ذكية ومحكومة ومدعومة بالأدلة المناسبة.",
+  "landing.heroCtaPrimary": "ابدأ مجانًا",
+  "landing.heroTrust1": "مراعي للصلاحيات",
+  "landing.heroTrust2": "قائم على المصادر",
+  "landing.heroTrust3": "ثنائي اللغة",
+  "landing.heroTrust4": "قابل للتدقيق",
+
+  /* ── landing / knowledge system visual ─────────────────── */
+  "landing.ksLabel": "معرفة الشركة",
+  "landing.ksDoc1Name": "Procurement_Policy.pdf",
+  "landing.ksDoc1Meta": "سياسة · 18 صفحة · مفهرس",
+  "landing.ksDoc2Name": "Customer_Support_SLA.pdf",
+  "landing.ksDoc2Meta": "سياسة · 12 صفحة · مفهرس",
+  "landing.ksDoc3Name": "Security_Policy.pdf",
+  "landing.ksDoc3Meta": "سياسة · 18 صفحة",
+  "landing.ksDocSelected": "محدد",
+  "landing.ksDocRestricted": "مقيد",
+  "landing.ksPermInitials": "مد",
+  "landing.ksPermWho": "مدير الدعم",
+  "landing.ksPermCheck1": "الوصول حسب الدور",
+  "landing.ksPermCheck2": "نطاق القسم",
+  "landing.ksPermCheck3": "سياسة المستند",
+  "landing.ksQuestion": "ما هو هدفنا لزمن الاستجابة الأولية لحوادث P1؟",
+  "landing.ksAnswer": "15 دقيقة",
+  "landing.ksAnswerBody": "تتطلب حوادث P1 استجابة أولية خلال 15 دقيقة.",
+  "landing.ksVerified": "مصدر موثق",
+  "landing.ksSourceName": "Customer Support SLA",
+  "landing.ksSourceSub": "P1 Incident Response",
+  "landing.ksMetaEvidence": "الأدلة المسترجعة",
+  "landing.ksMetaSources": "المصادر المصرح بها",
+  "landing.ksMetaGrounded": "الإجابة موثقة",
+
+  /* ── landing / first light section (buried knowledge) ──── */
+  "landing.buriedEyebrow": "مشكلة المعرفة المدفونة",
+  "landing.buriedTitle1": "الإجابات موجودة بالفعل داخل شركتك.",
+  "landing.buriedTitle2": "لكنها ",
+  "landing.buriedTitle3": "مدفونة بين المستندات.",
+  "landing.buriedLead":
+    "المعرفة موجودة بالفعل — في العقود والسياسات والمواقع الداخلية والبريد. لكنها متناثرة بين المستندات، وتقادمت نسخها، ومقيّدة بالأذونات، ويصعب الوثوق بها دون أدلة.",
+  "landing.buriedProb1Title": "متناثرة بين المستندات",
+  "landing.buriedProb1Desc":
+    "المعرفة موزعة بين ملفات PDF والمواقع الداخلية والبريد والسياسات والعقود والإجراءات — ولا مكان واحد يجمعها لك.",
+  "landing.buriedProb2Title": "لا يوجد مصدر موحّد وموثوق",
+  "landing.buriedProb2Desc":
+    "تتراكم النسخ وتقادم بعضها، فيصعب تحديد المصدر الذي يحوي الإجابة الصحيحة الحالية.",
+  "landing.buriedProb3Title": "مقيّدة بصلاحيات الوصول",
+  "landing.buriedProb3Desc":
+    "لا يستطيع الموظفون الوصول إلى كل المصادر؛ فحدود الصلاحيات ونطاق الوصول يجعلان البحث اليدوي أصعب.",
+  "landing.buriedProb4Title": "الثقة تحتاج إلى دليل",
+  "landing.buriedProb4Desc":
+    "الإجابة دون دليل يمكن تتبعه يصعب الوثوق بها أو الدفاع عنها.",
+  "landing.buriedClosing":
+    "يفهم DocuMind مستندات شركتك، ويراعي صلاحيات الوصول، ويمنحك إجابة موحّدة ومدعومة بأدلتها.",
+  "landing.buriedClosingLink": "اكتشف كيف يعمل DocuMind",
 
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
