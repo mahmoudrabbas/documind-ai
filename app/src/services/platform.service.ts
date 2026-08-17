@@ -18,6 +18,7 @@ const DEFAULT_QUERY: TenantListQuery = {
   search: "",
   status: "",
   plan: "",
+  packageId: "",
 };
 
 export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
@@ -25,6 +26,7 @@ export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
   const sizeValue = Number(params.get("pageSize"));
   const status = params.get("status") ?? "";
   const plan = params.get("plan") ?? "";
+  const packageId = params.get("packageId") ?? "";
   const search = (params.get("search") ?? "").trim().slice(0, 120);
   return {
     page:
@@ -39,6 +41,7 @@ export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
       ? (status as TenantListQuery["status"])
       : "",
     plan: TENANT_PLANS.includes(plan as TenantPlan) ? (plan as TenantPlan) : "",
+    packageId: /^[0-9a-fA-F]{24}$/.test(packageId) ? packageId : "",
   };
 }
 
@@ -50,6 +53,7 @@ export function buildTenantListSearch(query: TenantListQuery): string {
   if (query.search) params.set("search", query.search);
   if (query.status) params.set("status", query.status);
   if (query.plan) params.set("plan", query.plan);
+  if (query.packageId) params.set("packageId", query.packageId);
   return params.toString();
 }
 

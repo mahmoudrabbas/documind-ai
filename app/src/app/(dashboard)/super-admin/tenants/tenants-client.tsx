@@ -17,11 +17,12 @@ import {
   type TenantListQuery,
 } from "@/types/api/platform.types";
 import {
+  type PlatformPackage,
   type PlatformSubscription,
   type SubscriptionStatus,
   SUBSCRIPTION_STATUS_COLORS,
 } from "@/types/api/super-admin.types";
-import { listSubscriptions } from "@/services/super-admin.service";
+import { listPackages, listSubscriptions } from "@/services/super-admin.service";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
@@ -51,7 +52,8 @@ const formatDate = (value: string, locale?: string) =>
 /** Map subscription statuses to their Tailwind badge classes. */
 function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
   const { t } = useI18n();
-  const colorClass = SUBSCRIPTION_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-800";
+  const colorClass =
+    SUBSCRIPTION_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-800";
   return (
     <span
       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${colorClass}`}
@@ -61,7 +63,16 @@ function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
   );
 }
 
-export function TenantsClient() {
+export type TenantsView = "companies" | "tenants";
+export interface TenantsClientProps {
+  /** Page-scoped column/terminology variant. Defaults to the legacy
+   * tenant view so the shared component stays byte-for-byte equivalent for
+   * the platform tenants page; the Super Admin Companies page opts in. */
+  view?: TenantsView;
+}
+
+export function TenantsClient({ view = "tenants" }: TenantsClientProps) {
+  const isCompaniesView = view === "companies";
   const { t, tPlural } = useI18n();
   const intlLocale = useIntlLocale();
   const permissions = usePermissions();
@@ -133,14 +144,18 @@ export function TenantsClient() {
         if (signal?.aborted) return;
         setError(
           caught instanceof ApiError && caught.status === 403
-            ? "superAdmin.tenants.noPermission"
-            : "superAdmin.tenants.loadError",
+            ? isCompaniesView
+              ? "superAdmin.companies.noPermission"
+              : "superAdmin.tenants.noPermission"
+            : isCompaniesView
+              ? "superAdmin.companies.loadError"
+              : "superAdmin.tenants.loadError",
         );
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [query],
+    [query, isCompaniesView],
   );
 
   useEffect(() => {
@@ -187,6 +202,28 @@ export function TenantsClient() {
     }
   }, [editing, pending]);
 
+  const [packages, setPackages] = useState<PlatformPackage[] | undefined>(
+    undefined,
+  );
+  const [packagesError, setPackagesError] = useState("");
+
+  useEffect(() => {
+    if (!canReadBilling) {
+      setPackages(undefined);
+      setPackagesError("");
+      return;
+    }
+    listPackages()
+      .then((res) => {
+        setPackages(res.data);
+        setPackagesError("");
+      })
+      .catch(() => {
+        setPackages([]);
+        setPackagesError("superAdmin.companies.loadingError");
+      });
+  }, [canReadBilling]);
+
   /** Derive current subscription for a tenant (latest by updatedAt). */
   const subscriptionByTenant = useMemo(() => {
     const map = new Map<string, PlatformSubscription>();
@@ -204,9 +241,7 @@ export function TenantsClient() {
     return map;
   }, [subscriptions]);
 
-  async function save(update: {
-    status?: "active" | "trial" | "suspended";
-  }) {
+  async function save(update: { status?: "active" | "trial" | "suspended" }) {
     if (!canManageTenant || !editing || pending) return;
     setPending(true);
     setNotice("");
@@ -222,7 +257,7 @@ export function TenantsClient() {
     }
   }
 
-  const filtered = Boolean(query.search || query.status || query.plan);
+  const filtered = Boolean(query.search || query.status || query.plan || query.packageId);
   return (
     <main className="mx-auto w-full max-w-[1600px] min-w-0 flex-1 px-4 py-6 sm:px-5 lg:px-8 lg:py-8 2xl:px-10">
       <header>
@@ -238,17 +273,31 @@ export function TenantsClient() {
       </header>
       <p className="mt-6 font-semibold text-slate-800" aria-live="polite">
         {loading
-          ? t("superAdmin.tenants.loadingCount")
-          : tPlural("superAdmin.tenants.count", pagination.totalRecords)}
+          ? isCompaniesView
+            ? t("superAdmin.companies.loadingCount")
+            : t("superAdmin.tenants.loadingCount")
+          : isCompaniesView
+            ? tPlural("superAdmin.companies.count", pagination.totalRecords)
+            : tPlural("superAdmin.tenants.count", pagination.totalRecords)}
       </p>
       <section
-        aria-label={t("superAdmin.tenants.filtersLabel")}
+        aria-label={
+          isCompaniesView
+            ? t("superAdmin.companies.filtersLabel")
+            : t("superAdmin.tenants.filtersLabel")
+        }
         className="mt-4 grid gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 sm:gap-4 md:grid-cols-[2fr_1fr_1fr_auto] md:items-end"
       >
         <label className="text-sm font-medium text-slate-700">
-          {t("superAdmin.tenants.searchLabel")}
+          {isCompaniesView
+            ? t("superAdmin.companies.searchLabel")
+            : t("superAdmin.tenants.searchLabel")}
           <input
-            aria-label={t("superAdmin.tenants.searchLabel")}
+            aria-label={
+              isCompaniesView
+                ? t("superAdmin.companies.searchLabel")
+                : t("superAdmin.tenants.searchLabel")
+            }
             value={searchDraft}
             maxLength={120}
             onChange={(e) => setSearchDraft(e.target.value)}
@@ -276,33 +325,65 @@ export function TenantsClient() {
             ))}
           </select>
         </label>
-        <label className="text-sm font-medium text-slate-700">
-          {/* @deprecated tenant.plan — kept for backward compatibility */}
-          {t("superAdmin.tenants.planLegacy")}
-          <select
-            value={query.plan}
-            onChange={(e) =>
-              navigate(
-                { plan: e.target.value as TenantListQuery["plan"] },
-                true,
-              )
-            }
-            className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">{t("superAdmin.tenants.allPlans")}</option>
-            {(["free", "trial", "pro"] as const).map((v) => (
-              <option key={v} value={v}>
-                {codeLabel(t, "superAdmin.tenantPlan", v)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {isCompaniesView ? (
+          <label className="text-sm font-medium text-slate-700">
+            {t("superAdmin.companies.plan")}
+            <select
+              value={query.packageId ?? ""}
+              onChange={(e) =>
+                navigate(
+                  {
+                    packageId:
+                      e.target.value === ""
+                        ? ""
+                        : (e.target.value as string),
+                  },
+                  true,
+                )
+              }
+              className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">{t("superAdmin.companies.allPlans")}</option>
+              {packages?.map((pkg) => (
+                <option key={pkg._id} value={pkg._id}>
+                  {pkg.name}
+                </option>
+              ))}
+              {packagesError ? (
+                <option value="" disabled>
+                  {t(packagesError)}
+                </option>
+              ) : null}
+            </select>
+          </label>
+        ) : (
+          <label className="text-sm font-medium text-slate-700">
+            {t("superAdmin.tenants.planLegacy")}
+            <select
+              value={query.plan}
+              onChange={(e) =>
+                navigate(
+                  { plan: e.target.value as TenantListQuery["plan"] },
+                  true,
+                )
+              }
+              className="mt-1 block h-11 w-full rounded-xl border border-slate-300 bg-white px-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">{t("superAdmin.tenants.allPlans")}</option>
+              {(["free", "trial", "pro"] as const).map((v) => (
+                <option key={v} value={v}>
+                  {codeLabel(t, "superAdmin.tenantPlan", v)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           type="button"
-          onClick={() => {
-            setSearchDraft("");
-            navigate({ search: "", status: "", plan: "" }, true);
-          }}
+onClick={() => {
+              setSearchDraft("");
+              navigate({ search: "", status: "", plan: "", packageId: "" }, true);
+            }}
           disabled={!filtered}
           className="h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-50"
         >
@@ -320,7 +401,11 @@ export function TenantsClient() {
               className="h-20 animate-pulse rounded-xl bg-slate-100"
             />
           ))}
-          <span className="sr-only">{t("superAdmin.tenants.loading")}</span>
+          <span className="sr-only">
+            {isCompaniesView
+              ? t("superAdmin.companies.loading")
+              : t("superAdmin.tenants.loading")}
+          </span>
         </div>
       ) : error ? (
         <div
@@ -339,14 +424,135 @@ export function TenantsClient() {
         <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-10 text-center">
           <h2 className="font-semibold text-slate-900">
             {filtered
-              ? t("superAdmin.tenants.noMatch")
-              : t("superAdmin.tenants.noneYet")}
+              ? isCompaniesView
+                ? t("superAdmin.companies.noMatch")
+                : t("superAdmin.tenants.noMatch")
+              : isCompaniesView
+                ? t("superAdmin.companies.noneYet")
+                : t("superAdmin.tenants.noneYet")}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             {filtered
-              ? t("superAdmin.tenants.noMatchHint")
-              : t("superAdmin.tenants.noneYetHint")}
+              ? isCompaniesView
+                ? t("superAdmin.companies.noMatchHint")
+                : t("superAdmin.tenants.noMatchHint")
+              : isCompaniesView
+                ? t("superAdmin.companies.noneYetHint")
+                : t("superAdmin.tenants.noneYetHint")}
           </p>
+        </div>
+      ) : isCompaniesView ? (
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full min-w-[960px] border-collapse text-start text-sm">
+            <thead className="bg-slate-50 text-slate-700">
+              <tr>
+                <th
+                  scope="col"
+                  className="sticky start-0 z-20 bg-slate-50 px-4 py-3 font-semibold whitespace-nowrap border-e border-slate-200"
+                >
+                  {t("superAdmin.tableCompany")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold whitespace-nowrap"
+                >
+                  {t("superAdmin.tableStatus")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold whitespace-nowrap"
+                >
+                  {t("superAdmin.companies.plan")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold whitespace-nowrap"
+                >
+                  {t("superAdmin.companies.subscription")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-end whitespace-nowrap"
+                >
+                  {t("superAdmin.companies.users")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-end whitespace-nowrap"
+                >
+                  {t("superAdmin.documents")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold text-end whitespace-nowrap"
+                >
+                  {t("superAdmin.platformTenants.questions")}
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 font-semibold whitespace-nowrap"
+                >
+                  {t("superAdmin.tableCreated")}
+                </th>
+                <th
+                  scope="col"
+                  className="sticky end-0 z-20 bg-slate-50 px-4 py-3 font-semibold whitespace-nowrap text-center border-s border-slate-200"
+                >
+                  {t("superAdmin.tableActions")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {tenants.map((tenant) => {
+                const sub = subscriptionByTenant.get(tenant.id);
+                return (
+                  <tr key={tenant.id} className="border-t border-slate-200">
+                    <td className="max-w-56 sticky start-0 z-10 bg-white px-4 py-4 border-e border-slate-200">
+                      <p className="truncate font-semibold text-slate-950">
+                        {tenant.name}
+                      </p>
+                      <p className="truncate text-slate-500">{tenant.slug}</p>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
+                        {codeLabel(t, "superAdmin.tenantStatus", tenant.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {tenant.effectivePackageName ?? "—"}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {sub ? (
+                        <SubscriptionBadge status={sub.status} />
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-end">{tenant.stats.users}</td>
+                    <td className="px-4 py-4 text-end">
+                      {tenant.stats.documents}
+                    </td>
+                    <td className="px-4 py-4 text-end">
+                      {tenant.stats.questions}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      {formatDate(tenant.createdAt, intlLocale)}
+                    </td>
+                    <td className="sticky end-0 z-10 bg-white px-4 py-4 border-s border-slate-200">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/super-admin/companies/${tenant.id}`}
+                          className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          {t("superAdmin.companies.viewAction")}
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
@@ -354,7 +560,11 @@ export function TenantsClient() {
             <thead className="bg-slate-50 text-slate-700">
               <tr>
                 {TABLE_HEADER_KEYS.map((headerKey) => (
-                  <th key={headerKey} scope="col" className="px-4 py-3 font-semibold whitespace-nowrap">
+                  <th
+                    key={headerKey}
+                    scope="col"
+                    className="px-4 py-3 font-semibold whitespace-nowrap"
+                  >
                     {t(headerKey)}
                   </th>
                 ))}
@@ -433,16 +643,18 @@ export function TenantsClient() {
                           Open
                         </Link>
                         {canManageTenant ? (
-                        <button
-                          onClick={() => {
-                            setNotice("");
-                            setEditing(tenant);
-                          }}
-                          aria-label={t("superAdmin.tenants.manageTenant", { name: tenant.name })}
-                          className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
-                        >
-                          {t("superAdmin.packages.manage")}
-                        </button>
+                          <button
+                            onClick={() => {
+                              setNotice("");
+                              setEditing(tenant);
+                            }}
+                            aria-label={t("superAdmin.tenants.manageTenant", {
+                              name: tenant.name,
+                            })}
+                            className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
+                          >
+                            {t("superAdmin.packages.manage")}
+                          </button>
                         ) : null}
                       </div>
                     </td>
@@ -530,11 +742,12 @@ export function TenantsClient() {
                   <strong className="font-semibold">
                     {t("superAdmin.companies.subscriptionLabel")}
                   </strong>{" "}
-                  {subscriptionByTenant.get(editing.id)!.packageId?.name ??
-                    "—"}{" "}
+                  {subscriptionByTenant.get(editing.id)!.packageId?.name ?? "—"}{" "}
                   &middot;{" "}
                   {(() => {
-                    const editingSubStatus = subscriptionByTenant.get(editing.id)!.status;
+                    const editingSubStatus = subscriptionByTenant.get(
+                      editing.id,
+                    )!.status;
                     return <SubscriptionBadge status={editingSubStatus} />;
                   })()}
                   <p className="mt-1 text-blue-700">

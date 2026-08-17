@@ -4,7 +4,7 @@ export interface EmailMessageDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   recipientEmail: string;
   recipientHash: string;
-  templateId: "email_verification" | "password_reset" | "user_invitation" | "invitation_reminder";
+  templateId: "email_verification" | "password_reset" | "user_invitation" | "invitation_reminder" | "company_suspended" | "company_reactivated";
   templateVersion: string;
   language: "en" | "ar";
   variables: Record<string, unknown>;
@@ -62,6 +62,8 @@ const emailMessageSchema = new Schema<EmailMessageDocument>(
         "password_reset",
         "user_invitation",
         "invitation_reminder",
+        "company_suspended",
+        "company_reactivated",
       ],
       required: true,
     },

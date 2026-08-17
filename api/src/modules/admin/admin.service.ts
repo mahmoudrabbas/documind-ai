@@ -11,6 +11,8 @@ import {
   sumStorageForTenant,
   findRecentAuditForTenant,
   atomicStatusTransition,
+  findTenantIdsByEffectivePackage,
+  findEffectiveSubscriptionsForTenants,
 } from "./admin.repository.js";
 import type {
   ListTenantsResult,
@@ -27,7 +29,7 @@ import type {
   TenantLifecycleTargetStatus,
 } from "./admin.types.js";
 import type { TenantDocument } from "../../db/models/tenant.model.js";
-import type { Types } from "mongoose";
+import { Types } from "mongoose";
 import { AppError } from "../../common/errors/AppError.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import { Permission } from "../permissions/permissions.catalog.js";
@@ -45,10 +47,21 @@ import {
   TENANT_INVALID_TRANSITION,
   TENANT_PROTECTED,
 } from "../../common/errors/errorCodes.js";
+import { randomUUID } from "node:crypto";
+import { notifyCompanyLifecycleTransition } from "./admin.lifecycleNotifications.js";
 
 function serializeTenant(
   tenant: TenantDocument,
   stats: TenantPublicView["stats"] = { users: 0, documents: 0, questions: 0 },
+  effectivePackage: {
+    packageId: string | null;
+    packageName: string | null;
+    status: string | null;
+  } = {
+    packageId: null,
+    packageName: null,
+    status: null,
+  },
 ): TenantPublicView {
   const id = (tenant._id as unknown as Types.ObjectId)?.toString() ?? "";
   return {
@@ -57,6 +70,9 @@ function serializeTenant(
     slug: tenant.slug,
     status: tenant.status as TenantLifecycleStatus,
     plan: tenant.plan as "free" | "trial" | "pro",
+    effectivePackageId: effectivePackage.packageId,
+    effectivePackageName: effectivePackage.packageName,
+    effectiveSubscriptionStatus: effectivePackage.status,
     createdAt: tenant.createdAt?.toISOString() ?? new Date().toISOString(),
     updatedAt: tenant.updatedAt?.toISOString() ?? new Date().toISOString(),
     stats,
@@ -87,7 +103,7 @@ export async function listTenants(
   context: OperationAuthorizationContext,
 ): Promise<ListTenantsResult> {
   await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
-  const { page, pageSize, status, plan, search } = input;
+  const { page, pageSize, status, plan, packageId, search } = input;
 
   const filter: Record<string, unknown> = {
     isSystemTenant: { $ne: true },
@@ -102,6 +118,23 @@ export async function listTenants(
     filter.plan = plan;
   }
 
+  // Authoritative Companies Plan filter: restrict to tenants whose current
+  // effective subscription references `packageId`. This is independent of the
+  // legacy `tenant.plan` field and is applied before pagination so totals are
+  // computed against the filtered result set.
+  if (packageId) {
+    const tenantIds = await findTenantIdsByEffectivePackage(
+      new Types.ObjectId(packageId),
+    );
+    if (tenantIds.length === 0) {
+      return {
+        tenants: [],
+        pagination: { page, pageSize, totalPages: 0, totalRecords: 0 },
+      };
+    }
+    filter._id = { $in: tenantIds };
+  }
+
   if (search) {
     filter.$or = [
       { name: { $regex: search, $options: "i" } },
@@ -110,20 +143,38 @@ export async function listTenants(
   }
 
   const totalRecords = await countTenantsByFilter(filter);
+  if (totalRecords === 0) {
+    return {
+      tenants: [],
+      pagination: { page, pageSize, totalPages: 0, totalRecords: 0 },
+    };
+  }
   const tenants = await findTenantsByFilter(filter, page, pageSize);
   const counts = await aggregateTenantStats(
     tenants.map((tenant) => tenant._id),
   );
   const totalPages = Math.ceil(totalRecords / pageSize);
 
+  const effectiveSubscriptions = await findEffectiveSubscriptionsForTenants(
+    tenants.map((tenant) => tenant._id),
+  );
+
   return {
     tenants: tenants.map((tenant) => {
       const id = tenant._id.toString();
-      return serializeTenant(tenant, {
-        users: counts.users.get(id) ?? 0,
-        documents: counts.documents.get(id) ?? 0,
-        questions: counts.questions.get(id) ?? 0,
-      });
+      return serializeTenant(
+        tenant,
+        {
+          users: counts.users.get(id) ?? 0,
+          documents: counts.documents.get(id) ?? 0,
+          questions: counts.questions.get(id) ?? 0,
+        },
+        effectiveSubscriptions.get(id) ?? {
+          packageId: null,
+          packageName: null,
+          status: null,
+        },
+      );
     }),
     pagination: {
       page,
@@ -354,6 +405,8 @@ export async function suspendTenant(
     );
   }
 
+  const transitionId = randomUUID();
+
   await getAuditWriter().write({
     tenantId: input.id,
     resourceType: "Tenant",
@@ -364,7 +417,22 @@ export async function suspendTenant(
     actorRole: actor.actorRole,
     actorKind: actor.actorKind,
     changes: { previousStatus: currentStatus, newStatus: "suspended", reason: input.reason },
-    metadata: { traceId: actor.traceId, requestId: actor.requestId },
+    metadata: { traceId: actor.traceId, requestId: actor.requestId, transitionId },
+  });
+
+  // Trigger notification AFTER the transition is applied and audited. Email
+  // enqueue failures are logged and swallowed by the helper, so a provider or
+  // queue problem can never fail an already-completed suspension.
+  await notifyCompanyLifecycleTransition({
+    tenantId: input.id,
+    companyName: updated.name,
+    transition: "suspended",
+    eventId: transitionId,
+    reason: input.reason,
+    effectiveDate: updated.updatedAt?.toISOString(),
+    language: tenant.settings?.defaultLanguage,
+    actorId: actor.actorId,
+    correlationId: actor.requestId,
   });
 
   return {
@@ -425,6 +493,8 @@ export async function reinstateTenant(
     );
   }
 
+  const transitionId = randomUUID();
+
   await getAuditWriter().write({
     tenantId: input.id,
     resourceType: "Tenant",
@@ -435,7 +505,22 @@ export async function reinstateTenant(
     actorRole: actor.actorRole,
     actorKind: actor.actorKind,
     changes: { previousStatus: currentStatus, newStatus: "active", reason: input.reason },
-    metadata: { traceId: actor.traceId, requestId: actor.requestId },
+    metadata: { traceId: actor.traceId, requestId: actor.requestId, transitionId },
+  });
+
+  // Trigger notification AFTER the transition is applied and audited. Email
+  // enqueue failures are logged and swallowed by the helper, so a provider or
+  // queue problem can never fail an already-completed reactivation.
+  await notifyCompanyLifecycleTransition({
+    tenantId: input.id,
+    companyName: updated.name,
+    transition: "reactivated",
+    eventId: transitionId,
+    reason: input.reason,
+    effectiveDate: updated.updatedAt?.toISOString(),
+    language: tenant.settings?.defaultLanguage,
+    actorId: actor.actorId,
+    correlationId: actor.requestId,
   });
 
   return {
