@@ -50,6 +50,8 @@ export interface ProcessingRunView {
   durationMs: number | null;
   canceledAt: string | null;
   traceId: string;
+  tenantName?: string | null;
+  documentName?: string | null;
   createdAt: string;
   updatedAt: string;
 }

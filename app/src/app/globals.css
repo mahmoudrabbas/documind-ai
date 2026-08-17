@@ -381,6 +381,42 @@
   }
 }
 
+/* Pagination button states */
+.pagination-btn {
+  @apply cursor-pointer transition-all duration-200 ease-in-out;
+}
+.pagination-btn:hover:not(:disabled) {
+  @apply bg-[#BAE6FD] text-[#0284C7];
+}
+.pagination-btn:active:not(:disabled) {
+  @apply scale-[0.97] bg-[#38BDF8];
+}
+.pagination-btn:disabled {
+  @apply bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed;
+}
+
+/* Interactive feedback for all clickable elements */
+button,
+a,
+[role="button"],
+select {
+  @apply transition-all duration-200 ease-in-out;
+}
+button:active:not(:disabled),
+a:active,
+[role="button"]:active {
+  @apply scale-[0.96];
+}
+
+/* Page-size select dropdown styling */
+.pagination-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6l4 4 4-4' stroke='%230369A1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 1.5rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

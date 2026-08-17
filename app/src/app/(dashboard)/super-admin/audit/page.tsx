@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPage";
+import { IdCell, AdminPagination } from "@/components/ui";
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { usePlatformQuery } from "@/components/super-admin/use-platform-query";
 import { listPlatformAudit } from "@/services/super-admin.service";
@@ -63,7 +64,7 @@ export default function AuditPage() {
                   </td>
                   <td className={cell}>
                     <span className="text-on-surface">{resourceLabel(log.resourceType, t)}</span>
-                    <p className="max-w-44 truncate text-xs text-on-surface-variant">{log.resourceId}</p>
+                    <div className=" truncate text-xs text-on-surface-variant"><IdCell value={log.resourceId} /></div>
                   </td>
                   <td className={cell}>
                     {changeDesc ? (
@@ -79,24 +80,12 @@ export default function AuditPage() {
               );
             })}
           </PlatformTable>
-          <div className="mt-4 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((value) => value - 1)}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              {t("audit.previous")}
-            </button>
-            <span>{t("audit.pageOf", { page: String(page), total: String(state.data.pagination.totalPages) })}</span>
-            <button
-              type="button"
-              disabled={page >= state.data.pagination.totalPages}
-              onClick={() => setPage((value) => value + 1)}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              {t("audit.next")}
-            </button>
+          <div className="sticky bottom-0 z-10">
+            <AdminPagination
+              currentPage={page}
+              totalPages={state.data.pagination.totalPages}
+              onPageChange={setPage}
+            />
           </div>
         </>
       ) : null}

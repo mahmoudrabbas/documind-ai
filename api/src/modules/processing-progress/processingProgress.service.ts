@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Types } from "mongoose";
 import DocumentModel from "../../db/models/document.model.js";
+import TenantModel from "../../db/models/tenant.model.js";
 import DocumentVersionModel from "../../db/models/documentVersion.model.js";
 import IndexGenerationModel from "../../db/models/indexGeneration.model.js";
 import type { ProcessingStageName } from "../../db/models/processingRun.model.js";
@@ -127,6 +128,7 @@ function serializeRun(
     updatedAt: Date;
   },
   stages: ProcessingStageView[] = [],
+  resolved?: { tenantName?: string | null; documentName?: string | null },
 ): ProcessingRunView {
   return {
     id: (run._id?.toString?.() ?? "") as string,
@@ -145,6 +147,8 @@ function serializeRun(
     errorCode: run.errorCode,
     errorMessage: run.errorMessage,
     traceId: run.traceId,
+    tenantName: resolved?.tenantName ?? null,
+    documentName: resolved?.documentName ?? null,
     stages,
     createdAt: run.createdAt?.toISOString?.() ?? new Date().toISOString(),
     updatedAt: run.updatedAt?.toISOString?.() ?? new Date().toISOString(),
@@ -790,10 +794,25 @@ export async function getAllFailedProcessingDashboard(
     safePageSize,
   );
 
+  // Batch-lookup tenant names and document filenames
+  const tenantIds = [...new Set(runs.map((r) => r.tenantId.toString()))];
+  const documentIds = [...new Set(runs.map((r) => r.documentId.toString()))];
+
+  const [tenants, documents] = await Promise.all([
+    TenantModel.find({ _id: { $in: tenantIds } }).select("name").lean(),
+    DocumentModel.find({ _id: { $in: documentIds } }).select("fileName").lean(),
+  ]);
+
+  const tenantNameById = new Map(tenants.map((t) => [t._id.toString(), t.name as string]));
+  const docNameById = new Map(documents.map((d) => [d._id.toString(), d.fileName as string]));
+
   const serializedRuns: ProcessingRunView[] = [];
   for (const run of runs) {
     const stages = await findProcessingStages(run.tenantId.toString(), run._id.toString());
-    serializedRuns.push(serializeRun(run, stages.map(serializeStage)));
+    serializedRuns.push(serializeRun(run, stages.map(serializeStage), {
+      tenantName: tenantNameById.get(run.tenantId.toString()) ?? null,
+      documentName: docNameById.get(run.documentId.toString()) ?? null,
+    }));
   }
 
   const totalPages = Math.max(1, Math.ceil(totalRecords / safePageSize));

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui";
+import { Button, DashboardPage, DashboardPageHeader, DashboardPanel, AdminPagination } from "@/components/ui";
 import { getAllFailedProcessingJobs } from "@/services/processingProgress.service";
 import * as processingProgressService from "@/services/processingProgress.service";
 import type { ProcessingRunView } from "@/types/api/processingProgress.types";
@@ -86,7 +86,7 @@ export default function SuperAdminProcessingOverviewPage() {
         <DashboardPanel>
           <div className="space-y-3" role="status">
             {[1, 2, 3].map((n) => (
-              <div key={n} className="h-14 animate-pulse rounded-xl bg-slate-100" />
+              <div key={n} className="h-14 animate-pulse rounded-xl bg-surface-container" />
             ))}
             <span className="sr-only">{t("common.loading")}</span>
           </div>
@@ -95,12 +95,12 @@ export default function SuperAdminProcessingOverviewPage() {
 
       {error && (
         <DashboardPanel>
-          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+          <div role="alert" className="rounded-xl border border-error/20 bg-error-container/10 p-4 text-on-error-container">
             <p>{error}</p>
             <button
               type="button"
               onClick={() => void load()}
-              className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white"
+              className="mt-3 rounded-lg bg-error px-4 py-2 text-sm font-semibold text-white"
             >
               {t("common.retry")}
             </button>
@@ -110,7 +110,7 @@ export default function SuperAdminProcessingOverviewPage() {
 
       {!loading && !error && runs.length === 0 && (
         <DashboardPanel>
-          <p className="text-center text-sm text-slate-500 py-8">
+          <p className="text-center text-sm text-on-surface-variant py-8">
             {t("superAdmin.processingOverviewEmpty")}
           </p>
         </DashboardPanel>
@@ -121,39 +121,39 @@ export default function SuperAdminProcessingOverviewPage() {
           <DashboardPanel padding="none">
             <div className="max-w-full overflow-x-auto">
               <table className="w-full border-collapse text-start text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50">
+                <thead className="border-b border-outline-variant/30 bg-surface-container-low">
                   <tr>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableTenant")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableDocument")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableStatus")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableFailedStage")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableError")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableRetries")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableFailedAt")}
                     </th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                       {t("superAdmin.tableActions")}
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-outline-variant/30">
                   {runs.map((run) => (
-                    <tr key={run.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-4 text-xs text-slate-500 font-mono max-w-[100px] truncate" title={run.tenantId}>
-                        {run.tenantId.slice(0, 8)}...
+                    <tr key={run.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-4 py-4 text-xs text-on-surface-variant max-w-[150px] truncate" title={run.tenantName ?? run.tenantId}>
+                        {run.tenantName ?? run.tenantId.slice(0, 8) + "..."}
                       </td>
                       <td className="px-4 py-4">
                         <button
@@ -161,9 +161,9 @@ export default function SuperAdminProcessingOverviewPage() {
                           onClick={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
                           className="text-sm font-medium text-blue-600 hover:underline text-start"
                         >
-                          {run.documentId.slice(0, 12)}...
+                          {run.documentName ?? run.documentId.slice(0, 12) + "..."}
                         </button>
-                        <p className="text-xs text-slate-400 mt-0.5">
+                        <p className="text-xs text-on-surface-variant mt-0.5">
                           {t("superAdmin.documentVersion", {
                             version: String(run.documentVersion),
                           })}
@@ -175,27 +175,27 @@ export default function SuperAdminProcessingOverviewPage() {
                           return <ProcessingStatusBadge status={runStatus} />;
                         })()}
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-600">
+                      <td className="px-4 py-4 text-sm text-on-surface-variant">
                         {run.currentStage
                           ? codeLabel(t, "documents.stage", run.currentStage)
                           : "—"}
                       </td>
                       <td className="px-4 py-4 max-w-[200px]">
-                        <p className="text-sm font-medium text-red-600">
+                        <p className="text-sm font-medium text-error">
                           {run.errorCode
                             ? codeLabel(t, "documents.errorCode", run.errorCode)
                             : "—"}
                         </p>
                         {run.errorMessage && (
-                          <p className="text-xs text-slate-500 mt-0.5 truncate" title={run.errorMessage}>
+                          <p className="text-xs text-on-surface-variant mt-0.5 truncate" title={run.errorMessage}>
                             {run.errorMessage}
                           </p>
                         )}
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-500">
+                      <td className="px-4 py-4 text-sm text-on-surface-variant">
                         {run.retryCount} / {run.maxRetries}
                       </td>
-                      <td className="px-4 py-4 text-sm text-slate-500">
+                      <td className="px-4 py-4 text-sm text-on-surface-variant">
                         {run.failedAt
                           ? new Date(run.failedAt).toLocaleString(intlLocale)
                           : "—"}
@@ -230,11 +230,11 @@ export default function SuperAdminProcessingOverviewPage() {
           {expandedRunId && (
             <DashboardPanel>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-slate-700">{t("superAdmin.processingOverviewTimelineTitle")}</h3>
+                <h3 className="text-sm font-semibold text-on-surface">{t("superAdmin.processingOverviewTimelineTitle")}</h3>
                 <button
                   type="button"
                   onClick={() => setExpandedRunId(null)}
-                  className="text-xs text-slate-400 hover:text-slate-600"
+                  className="text-xs text-outline hover:text-on-surface-variant"
                 >
                   {t("common.close")}
                 </button>
@@ -248,27 +248,12 @@ export default function SuperAdminProcessingOverviewPage() {
           )}
 
           {total > limit && (
-            <div className="flex items-center justify-between">
-              <Button
-                variant="secondary"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                {t("common.previous")}
-              </Button>
-              <span className="text-sm text-slate-500">
-                {t("common.pageOf", {
-                  page: String(page),
-                  totalPages: String(Math.ceil(total / limit)),
-                })}
-              </span>
-              <Button
-                variant="secondary"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={page >= Math.ceil(total / limit)}
-              >
-                {t("common.next")}
-              </Button>
+            <div className="sticky bottom-0 z-10">
+              <AdminPagination
+                currentPage={page}
+                totalPages={Math.ceil(total / limit)}
+                onPageChange={setPage}
+              />
             </div>
           )}
         </>

@@ -18,6 +18,8 @@ export interface ProcessingRunView {
   errorCode: string | null;
   errorMessage: string | null;
   traceId: string;
+  tenantName?: string | null;
+  documentName?: string | null;
   stages: ProcessingStageView[];
   createdAt: string;
   updatedAt: string;
