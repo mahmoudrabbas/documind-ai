@@ -37,6 +37,7 @@ export const AdminPagination: React.FC<AdminPaginationProps> = ({
           disabled={isFirst}
           onClick={() => onPageChange(currentPage - 1)}
           className={`${buttonBase} ${getBtnStyle(isFirst)}`}
+          aria-label="refundAdmin.previous"
         >
           Previous
         </button>
@@ -45,6 +46,7 @@ export const AdminPagination: React.FC<AdminPaginationProps> = ({
           disabled={isLast}
           onClick={() => onPageChange(currentPage + 1)}
           className={`${buttonBase} ${getBtnStyle(isLast)}`}
+          aria-label="refundAdmin.next"
         >
           Next
         </button>
