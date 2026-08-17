@@ -416,6 +416,10 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
   it("evaluate_evidence persists approved/rejected ids without chunk text", async () => {
     const { model } = scriptedModel([
+      toolCallDecision("authorized_hybrid_search", {
+        queryText: "what is the leave policy?",
+        topK: 5,
+      }),
       toolCallDecision("evaluate_evidence", {
         question: "what is the leave policy?",
         candidateIds: [chunkId, chunkIdB],
@@ -425,6 +429,35 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
     const registry = singleToolRegistry(
       makeDeps({
+        retrieval: {
+          hybridSearch: async () => ({
+            candidates: [
+              {
+                chunkId,
+                documentId: docId,
+                documentVersionId: versionId,
+                tenantId,
+                text: "SAMPLE CHUNK TEXT",
+                score: 0.9,
+                retrievalMethod: "hybrid",
+              },
+              {
+                chunkId: chunkIdB,
+                documentId: docIdB,
+                documentVersionId: versionId,
+                tenantId,
+                text: "SAMPLE CHUNK TEXT B",
+                score: 0.85,
+                retrievalMethod: "hybrid",
+              },
+            ],
+            totalCandidates: 2,
+            filterSummary: {} as never,
+            diagnostics: {} as never,
+          }),
+          vectorSearch: async () => ({}) as never,
+          keywordSearch: async () => ({}) as never,
+        } as unknown as HybridRetrievalService,
         loadChunksByIds: async (_tenantId, chunkIds) =>
           chunkIds.map((id) =>
             makeLoadedChunk({
@@ -481,7 +514,8 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
     assert.equal(result.status, "completed");
 
-    const toolCall = Array.from(persistence.toolCalls.values())[0];
+    const toolCalls = Array.from(persistence.toolCalls.values());
+    const toolCall = toolCalls.find((tc) => tc.toolName === "evaluate_evidence")!;
     assert.equal(toolCall.toolName, "evaluate_evidence");
     assert.equal(toolCall.status, "completed");
     const output = toolCall.output as Record<string, unknown>;
@@ -494,6 +528,10 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
   it("cross-tenant candidates are excluded before evaluate_evidence reranks", async () => {
     const { model } = scriptedModel([
+      toolCallDecision("authorized_hybrid_search", {
+        queryText: "test",
+        topK: 5,
+      }),
       toolCallDecision("evaluate_evidence", {
         question: "test",
         candidateIds: [chunkId, chunkIdB],
@@ -503,6 +541,35 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
     const registry = singleToolRegistry(
       makeDeps({
+        retrieval: {
+          hybridSearch: async () => ({
+            candidates: [
+              {
+                chunkId,
+                documentId: docId,
+                documentVersionId: versionId,
+                tenantId,
+                text: "SAMPLE CHUNK TEXT",
+                score: 0.9,
+                retrievalMethod: "hybrid",
+              },
+              {
+                chunkId: chunkIdB,
+                documentId: docIdB,
+                documentVersionId: versionId,
+                tenantId,
+                text: "SAMPLE CHUNK TEXT B",
+                score: 0.85,
+                retrievalMethod: "hybrid",
+              },
+            ],
+            totalCandidates: 2,
+            filterSummary: {} as never,
+            diagnostics: {} as never,
+          }),
+          vectorSearch: async () => ({}) as never,
+          keywordSearch: async () => ({}) as never,
+        } as unknown as HybridRetrievalService,
         loadChunksByIds: async (_tenantId, chunkIds) =>
           chunkIds
             .filter((id) => id === chunkId)
@@ -556,7 +623,8 @@ describe("SupervisorRuntime + authorizedRetrievalTools integration", () => {
 
     assert.equal(result.status, "completed");
 
-    const toolCall = Array.from(persistence.toolCalls.values())[0];
+    const toolCalls = Array.from(persistence.toolCalls.values());
+    const toolCall = toolCalls.find((tc) => tc.toolName === "evaluate_evidence")!;
     const output = toolCall.output as Record<string, unknown>;
     assert.equal(output.sufficiency, "SUFFICIENT");
     assert.deepEqual(output.approvedEvidenceIds, [chunkId]);
