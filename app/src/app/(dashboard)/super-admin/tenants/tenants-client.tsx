@@ -20,13 +20,13 @@ import {
   type PlatformPackage,
   type PlatformSubscription,
   type SubscriptionStatus,
-  SUBSCRIPTION_STATUS_COLORS,
 } from "@/types/api/super-admin.types";
 import { listPackages, listSubscriptions } from "@/services/super-admin.service";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
+import { Badge, type BadgeStatus } from "@/components/ui";
 
 /** Translation keys for the tenant table headers, in column order. */
 const TABLE_HEADER_KEYS = [
@@ -49,18 +49,37 @@ const formatDate = (value: string, locale?: string) =>
     new Date(value),
   );
 
-/** Map subscription statuses to their Tailwind badge classes. */
-function SubscriptionBadge({ status }: { status: SubscriptionStatus }) {
+/** Map API/domain subscription statuses to semantic design-system statuses. */
+const SUBSCRIPTION_STATUS_BADGE_MAP: Record<
+  SubscriptionStatus,
+  BadgeStatus
+> = {
+  trialing: "info",
+  incomplete: "warning",
+  active: "success",
+  past_due: "warning",
+  paused: "neutral",
+  cancel_at_period_end: "warning",
+  canceled: "error",
+  expired: "neutral",
+  unpaid: "error",
+};
+
+function SubscriptionBadge({
+  subscriptionStatus,
+}: {
+  subscriptionStatus: SubscriptionStatus;
+}) {
   const { t } = useI18n();
-  const colorClass =
-    SUBSCRIPTION_STATUS_COLORS[status] ?? "bg-gray-100 text-gray-800";
-  return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${colorClass}`}
-    >
-      {codeLabel(t, "superAdmin.subsStatus", status)}
-    </span>
+
+  const badgeStatus = SUBSCRIPTION_STATUS_BADGE_MAP[subscriptionStatus];
+  const label = codeLabel(
+    t,
+    "superAdmin.subsStatus",
+    subscriptionStatus,
   );
+
+  return <Badge status={badgeStatus} label={label} />;
 }
 
 export type TenantsView = "companies" | "tenants";
@@ -523,7 +542,7 @@ onClick={() => {
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {sub ? (
-                        <SubscriptionBadge status={sub.status} />
+                        <SubscriptionBadge subscriptionStatus={sub.status} />
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
@@ -590,7 +609,11 @@ onClick={() => {
                       {sub ? (
                         (() => {
                           const subStatus = sub.status;
-                          return <SubscriptionBadge status={subStatus} />;
+                          return (
+                            <SubscriptionBadge
+                              subscriptionStatus={subStatus}
+                            />
+                          );
                         })()
                       ) : (
                         <span className="text-slate-400">—</span>
@@ -748,7 +771,11 @@ onClick={() => {
                     const editingSubStatus = subscriptionByTenant.get(
                       editing.id,
                     )!.status;
-                    return <SubscriptionBadge status={editingSubStatus} />;
+                    return (
+                      <SubscriptionBadge
+                        subscriptionStatus={editingSubStatus}
+                      />
+                    );
                   })()}
                   <p className="mt-1 text-blue-700">
                     Subscription managed via{" "}
