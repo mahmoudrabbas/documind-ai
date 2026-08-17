@@ -2,6 +2,7 @@
 import { useState, useCallback } from "react";
 import { DashboardPage, DashboardPageHeader } from "@/components/ui/DashboardPage";
 import { PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
+import { IdCell } from "@/components/ui";
 import { searchRetrievalDebug } from "@/services/super-admin.service";
 import { useI18n } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
@@ -156,7 +157,7 @@ export default function RetrievalDebugPage() {
                 {t("superAdmin.retrievalDebug.traceId")}
               </span>
               <span className="font-mono text-title-sm text-on-surface">
-                {result.diagnostics.traceId}
+                <IdCell value={result.diagnostics.traceId} />
               </span>
             </div>
           </div>

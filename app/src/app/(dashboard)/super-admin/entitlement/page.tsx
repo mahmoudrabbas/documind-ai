@@ -6,7 +6,7 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
-import { Button, ConfirmDialog, Input, Select } from "@/components/ui";
+import { Button, ConfirmDialog, Input, Select, AdminPagination } from "@/components/ui";
 import { cell, PlatformTable } from "@/components/super-admin/platform-ui";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { ApiError } from "@/lib/api-client";
@@ -279,8 +279,11 @@ export default function SuperAdminEntitlementPage() {
                   <tr key={`${override.tenantId}:${override.dimension}`}>
                     <td className={cell}>
                       <strong className="break-all text-on-surface">
-                        {override.tenantId}
+                        {override.tenantName ?? override.tenantSlug ?? override.tenantId}
                       </strong>
+                      {override.tenantMissing && (
+                        <span className="ml-2 text-xs text-error">(deleted)</span>
+                      )}
                     </td>
                     <td className={cell}>
                       {humanizeDimension(override.dimension)}
@@ -329,31 +332,12 @@ export default function SuperAdminEntitlementPage() {
             </div>
 
             {pagination.totalRecords > PAGE_SIZE ? (
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-                <span className="text-body-sm text-on-surface-variant">
-                  {t("entitlement.page", {
-                    page: String(pagination.page),
-                    total: String(Math.max(1, pagination.totalPages)),
-                  })}
-                </span>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={pagination.page <= 1}
-                    onClick={() => setPagination((p) => ({ ...p, page: p.page - 1 }))}
-                  >
-                    {t("entitlement.previous")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={pagination.page >= pagination.totalPages}
-                    onClick={() => setPagination((p) => ({ ...p, page: p.page + 1 }))}
-                  >
-                    {t("entitlement.next")}
-                  </Button>
-                </div>
+              <div className="sticky bottom-0 z-10">
+                <AdminPagination
+                  currentPage={pagination.page}
+                  totalPages={Math.max(1, pagination.totalPages)}
+                  onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
+                />
               </div>
             ) : null}
           </>

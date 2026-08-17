@@ -6,6 +6,7 @@ import {
   DashboardPageHeader,
   DashboardPanel,
 } from "@/components/ui/DashboardPage";
+import { IdCell, AdminPagination } from "@/components/ui";
 import {
   PlatformState,
   PlatformTable,
@@ -98,7 +99,7 @@ export default function PaymentDiagnosticsPage() {
             disabled={reconciling}
             aria-busy={reconciling}
             onClick={() => void handleReconcile()}
-            className="min-h-10 rounded-lg bg-primary px-4 font-bold text-on-primary disabled:opacity-60"
+            className="min-h-10 rounded-lg bg-[#0369A1] px-4 py-2 font-semibold text-white hover:bg-[#0284C7] disabled:opacity-60"
           >
             {reconciling ? t("superAdmin.payments.reconciling") : t("superAdmin.payments.runReconciliation")}
           </button>
@@ -209,8 +210,8 @@ export default function PaymentDiagnosticsPage() {
           >
             {state.data.events.map((event) => (
               <tr key={event._id}>
-                <td className="cell max-w-[200px] truncate font-mono text-xs">
-                  {event.eventId}
+                <td className="cell px-4 py-3 align-middle">
+                  <IdCell value={event.eventId} />
                 </td>
                 <td className="cell">{event.eventType}</td>
                 <td className="cell">
@@ -234,7 +235,7 @@ export default function PaymentDiagnosticsPage() {
                     <button
                       type="button"
                       onClick={() => void handleReprocess(event.eventId)}
-                      className="rounded bg-primary px-2 py-1 text-xs font-bold text-on-primary"
+                      className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-low hover:border-outline active:scale-95 transition-all duration-150"
                     >
                       {t("superAdmin.payments.reprocessButton")}
                     </button>
@@ -245,29 +246,12 @@ export default function PaymentDiagnosticsPage() {
               </tr>
             ))}
           </PlatformTable>
-          <div className="mt-4 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((value) => value - 1)}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              {t("common.previous")}
-            </button>
-            <span>
-              {t("common.pageOf", {
-                page: String(page),
-                totalPages: String(state.data.pagination.totalPages),
-              })}
-            </span>
-            <button
-              type="button"
-              disabled={page >= state.data.pagination.totalPages}
-              onClick={() => setPage((value) => value + 1)}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              {t("common.next")}
-            </button>
+          <div className="sticky bottom-0 z-10">
+            <AdminPagination
+              currentPage={page}
+              totalPages={state.data.pagination.totalPages}
+              onPageChange={setPage}
+            />
           </div>
         </>
       ) : null}

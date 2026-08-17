@@ -26,8 +26,14 @@ export interface QuotaOverrideInput {
 
 export interface QuotaOverride extends QuotaOverrideInput {
   tenantId: string;
+  tenantName?: string | null;
+  tenantSlug?: string | null;
+  tenantStatus?: string | null;
+  tenantMissing?: boolean;
   enabled: boolean;
   createdBy: string;
+  createdByName?: string | null;
+  createdByEmail?: string | null;
   createdAt: string;
 }
 

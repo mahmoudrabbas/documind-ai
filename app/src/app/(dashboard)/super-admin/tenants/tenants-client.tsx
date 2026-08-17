@@ -11,7 +11,6 @@ import {
   updateTenant,
 } from "@/services/platform.service";
 import {
-  PAGE_SIZES,
   TENANT_STATUSES,
   type PlatformTenant,
   type TenantListQuery,
@@ -23,6 +22,7 @@ import {
 } from "@/types/api/super-admin.types";
 import { listSubscriptions } from "@/services/super-admin.service";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { AdminPagination } from "@/components/ui";
 import { codeLabel } from "@/lib/i18n/code-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission } from "@/types/api/permissions.types";
@@ -428,18 +428,19 @@ export function TenantsClient() {
                       <div className="flex gap-2">
                         <Link
                           href={`/super-admin/companies/${tenant.id}`}
-                          className="rounded-lg bg-blue-700 px-3 py-2 font-semibold text-white"
+                          className="cursor-pointer rounded-lg bg-[#0369A1] px-3 py-2 font-semibold text-white hover:bg-[#0284C7] active:scale-95 transition-all duration-150"
                         >
                           Open
                         </Link>
                         {canManageTenant ? (
                         <button
+                          type="button"
                           onClick={() => {
                             setNotice("");
                             setEditing(tenant);
                           }}
                           aria-label={t("superAdmin.tenants.manageTenant", { name: tenant.name })}
-                          className="rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-50"
+                          className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 font-semibold text-on-surface hover:bg-surface-container-low hover:border-outline active:scale-95 transition-all duration-150"
                         >
                           {t("superAdmin.packages.manage")}
                         </button>
@@ -454,54 +455,13 @@ export function TenantsClient() {
         </div>
       )}
       {!loading && !error && pagination.totalRecords > 0 ? (
-        <nav
-          aria-label={t("superAdmin.tenants.paginationLabel")}
-          className="mt-5 flex flex-wrap items-center justify-between gap-4"
-        >
-          <label className="text-sm">
-            {t("superAdmin.tenants.rowsPerPage")}{" "}
-            <select
-              value={query.pageSize}
-              onChange={(e) =>
-                navigate(
-                  {
-                    pageSize: Number(
-                      e.target.value,
-                    ) as TenantListQuery["pageSize"],
-                  },
-                  true,
-                )
-              }
-              className="ms-2 rounded-lg border p-2"
-            >
-              {PAGE_SIZES.map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-center gap-3">
-            <button
-              disabled={query.page <= 1}
-              onClick={() => navigate({ page: query.page - 1 })}
-              className="rounded-lg border px-3 py-2 disabled:opacity-40"
-            >
-              {t("common.previous")}
-            </button>
-            <span className="text-sm">
-              {t("common.pageOf", {
-                page: String(pagination.page),
-                totalPages: String(Math.max(1, pagination.totalPages)),
-              })}
-            </span>
-            <button
-              disabled={query.page >= pagination.totalPages}
-              onClick={() => navigate({ page: query.page + 1 })}
-              className="rounded-lg border px-3 py-2 disabled:opacity-40"
-            >
-              {t("common.next")}
-            </button>
-          </div>
-        </nav>
+        <div className="sticky bottom-0 z-10">
+          <AdminPagination
+            currentPage={query.page}
+            totalPages={Math.max(1, pagination.totalPages)}
+            onPageChange={(p) => navigate({ page: p })}
+          />
+        </div>
       ) : null}
       {editing && canManageTenant ? (
         <div
