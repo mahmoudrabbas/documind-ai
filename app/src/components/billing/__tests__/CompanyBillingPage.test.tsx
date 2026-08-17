@@ -18,6 +18,7 @@ vi.mock("@/services/billing.service", () => ({
   createRefundEligibilityPreview: vi.fn(),
   createBillingPortalSession: vi.fn(),
   getInvoiceLinks: vi.fn(),
+  getInvoicePdfBlobUrl: vi.fn(),
   listPublicBillingPackages: vi.fn(),
   createSubscriptionChangePreview: vi.fn(),
   requestSubscriptionChange: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock("@/services/billing.service", () => ({
 }));
 
 import { usePermissions } from "@/providers/permission-provider";
-import { createBillingPortalSession, createRefundEligibilityPreview, createRefundRequest, createSubscriptionChangePreview, getBillingOperation, getBillingSummary, getInvoiceLinks, listInvoices, listPublicBillingPackages, listRefundRequests, requestBillingCancellation, requestBillingReactivation, requestSubscriptionChange } from "@/services/billing.service";
+import { createBillingPortalSession, createRefundEligibilityPreview, createRefundRequest, createSubscriptionChangePreview, getBillingOperation, getBillingSummary, getInvoiceLinks, getInvoicePdfBlobUrl, listInvoices, listPublicBillingPackages, listRefundRequests, requestBillingCancellation, requestBillingReactivation, requestSubscriptionChange } from "@/services/billing.service";
 
 const summary = {
   id: "local-sub", tenantId: "local-tenant", packageId: { _id: "pkg", name: "Pro", code: "pro", version: 2, monthlyPrice: 10, annualPrice: 100, monthlyPriceCents: 1000, annualPriceCents: 10000, currency: "USD", entitlements: { employees: 1, admins: 1, documents: 1, storageMb: 1, fileSizeMb: 1, queriesPerMonth: 1, tokensPerMonth: 1, ocrPagesPerMonth: 1 } },
@@ -66,6 +67,11 @@ const operation = {
 };
 
 async function settle() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); }
+function detailValue(container: HTMLElement, label: string): string | null {
+  const dt = Array.from(container.querySelectorAll("dt")).find((candidate) => candidate.textContent === label);
+  const dd = dt?.nextElementSibling;
+  return dd instanceof HTMLElement ? dd.textContent : null;
+}
 const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 async function render(): Promise<{ container: HTMLElement; root: Root }> {
   const container = document.createElement("div"); document.body.appendChild(container); const root = createRoot(container);
@@ -120,6 +126,85 @@ describe("CompanyBillingPage", () => {
     await settle();
     expect(createRefundRequest).toHaveBeenCalledWith({ previewId: "eligibility-1", idempotencyKey: expect.any(String) });
     expect(container.textContent).not.toMatch(/cus_|sub_|re_/i);
+  });
+
+  it("keeps the move-to-Free transition wording for a currently paid subscription", async () => {
+    const { container } = await render();
+    const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.requestRefund")!;
+    await act(async () => { button.click(); }); await settle();
+    expect(container.textContent).toContain("billingAdmin.systemRefundWarning");
+    expect(container.textContent).not.toContain("billingAdmin.refundFreeNote");
+    const submit = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent?.includes("billingAdmin.refundRemainingAction"))!;
+    expect(submit?.textContent).toContain("$7.50");
+    expect(container.textContent).toContain("$5.00");
+    expect(container.textContent).toContain("20%");
+  });
+
+  it("shows plain refund wording without a move-to-Free claim when already on Free", async () => {
+    (getBillingSummary as Mock).mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...summary,
+        packageId: { ...summary.packageId, name: "Free", code: "free", monthlyPrice: 0, annualPrice: 0, monthlyPriceCents: 0, annualPriceCents: 0 },
+        status: "ACTIVE",
+        paymentState: "not_applicable",
+        providerManaged: false,
+        providerLinked: false,
+        pendingOperation: null,
+        canRequestRefund: true,
+      },
+    });
+    const { container } = await render();
+    const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.requestRefund")!;
+    await act(async () => { button.click(); }); await settle();
+    expect(container.textContent).toContain("billingAdmin.refundFreeNote");
+    expect(container.textContent).not.toContain("billingAdmin.systemRefundWarning");
+    expect(container.textContent).not.toContain("billingAdmin.refundRemainingAction");
+    const submit = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent?.includes("billingAdmin.refundAction"))!;
+    expect(submit?.textContent).toBe("billingAdmin.refundAction $7.50");
+    expect(container.textContent).toContain("$5.00");
+    expect(container.textContent).toContain("20%");
+  });
+
+  it("shows a non-actionable refund-pending label while a reservation consumes the invoice balance", async () => {
+    (listInvoices as Mock).mockResolvedValueOnce({ success: true, data: { invoices: [{ ...invoice, reservedRefundAmountMinor: 500, remainingRefundableMinor: 750, canRequestRefund: true }], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    const { container } = await render();
+    expect(container.textContent).toContain("billingAdmin.refundPendingAction");
+    expect(container.textContent).toContain("billingAdmin.invoicePaidRefundPending");
+    expect(container.textContent).not.toContain("billingAdmin.requestRefund");
+    expect(Array.from(container.querySelectorAll("button")).some((candidate) => candidate.textContent === "billingAdmin.requestRefund")).toBe(false);
+    const pending = Array.from(container.querySelectorAll('[role="status"]')).find((candidate) => candidate.textContent === "billingAdmin.refundPendingAction");
+    expect(pending).toBeTruthy();
+    expect(pending instanceof HTMLButtonElement).toBe(false);
+  });
+
+  it("shows no refundable balance when a paid invoice has no active reservation", async () => {
+    (listInvoices as Mock).mockResolvedValueOnce({ success: true, data: { invoices: [{ ...invoice, retainedConsumedMinor: 1, refundedAmountMinor: 1249, remainingRefundableMinor: 0, settlementCompleted: true, canRequestRefund: false }], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    const { container } = await render();
+    expect(container.textContent).toContain("billingAdmin.noRefundableBalance");
+    expect(container.textContent).toContain("billingAdmin.settledUnderPolicy");
+    expect(container.textContent).not.toContain("billingAdmin.requestRefund");
+    expect(container.textContent).not.toContain("billingAdmin.refundPendingAction");
+  });
+
+  it("shows a zero remaining refundable balance on the refund card for a fully-reserved request", async () => {
+    (listRefundRequests as Mock).mockResolvedValueOnce({ success: true, data: { refunds: [{ ...refund, amountMinor: 488, refundableRemainingMinor: 0, retainedConsumedMinor: 12, reservedRefundAmountMinor: 488, reasonCode: "SYSTEM_REMAINING_BALANCE_REFUND" }], pagination: { page: 1, pageSize: 10, totalRecords: 1, totalPages: 1 } } });
+    const { container } = await render();
+    const refundsPanel = container.querySelector('[data-guide-id="billing-refunds"]');
+    expect(refundsPanel).toBeTruthy();
+    const refundableRemainingValue = detailValue(refundsPanel as HTMLElement, "billingAdmin.refundableRemaining");
+    expect(refundableRemainingValue).toBe("$0.00");
+    expect(refundableRemainingValue).not.toBe("$0.12");
+    const retainedConsumedValue = detailValue(refundsPanel as HTMLElement, "billingAdmin.retainedConsumed");
+    expect(retainedConsumedValue).toBe("$0.12");
+  });
+
+  it("keeps the request-refund action for a paid invoice with remaining balance", async () => {
+    const { container } = await render();
+    const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "billingAdmin.requestRefund");
+    expect(button).toBeTruthy();
+    expect(container.textContent).not.toContain("billingAdmin.noRefundableBalance");
+    expect(container.textContent).not.toContain("billingAdmin.refundPendingAction");
   });
 
   it("shows denied state for direct access without billing:read", async () => {
@@ -391,10 +476,133 @@ describe("CompanyBillingPage", () => {
     expect(requestBillingCancellation).toHaveBeenCalledWith(expect.objectContaining({ cancellationType: "PERIOD_END" }));
   });
 
-  it("retrieves secure links by local invoice ID only when the action is used", async () => {
-    const open = vi.spyOn(window, "open").mockReturnValue(null); (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: "https://invoice.stripe.com/i/safe", receiptUrl: null } });
+  it("opens a blank popup synchronously before resolving invoice links", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    let resolveLinks!: (value: { success: boolean; data: { hostedInvoiceUrl: string | null; invoicePdfUrl: string | null; receiptUrl: string | null } }) => void;
+    (getInvoiceLinks as Mock).mockReturnValue(new Promise((resolve) => { resolveLinks = resolve; }));
+    (getInvoicePdfBlobUrl as Mock).mockResolvedValue("blob:invoice-pdf");
     const { container } = await render(); expect(getInvoiceLinks).not.toHaveBeenCalled();
     const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
-    await act(async () => { action.click(); }); await settle(); expect(getInvoiceLinks).toHaveBeenCalledWith("local-invoice"); expect(open).toHaveBeenCalledWith("https://invoice.stripe.com/i/safe", "_blank", "noopener,noreferrer");
+    act(() => { action.click(); });
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("", "_blank");
+    expect(fakePopup.opener).toBeNull();
+    expect(fakePopup.document.write).toHaveBeenCalledWith(expect.stringContaining("billingAdmin.popupLoadingTitle"));
+    expect(fakePopup.document.close).toHaveBeenCalled();
+    expect(getInvoiceLinks).toHaveBeenCalledWith("local-invoice");
+    resolveLinks({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: "https://invoice.stripe.com/i/safe", receiptUrl: null } });
+    await settle();
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the popup first, then navigates it to the fetched PDF blob URL", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: "https://invoice.stripe.com/i/safe", receiptUrl: null } });
+    (getInvoicePdfBlobUrl as Mock).mockResolvedValue("blob:invoice-pdf");
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("", "_blank");
+    expect(fakePopup.opener).toBeNull();
+    expect(fakePopup.document.write).toHaveBeenCalledWith(expect.stringContaining("billingAdmin.popupLoadingTitle"));
+    expect(getInvoicePdfBlobUrl).toHaveBeenCalledWith("local-invoice");
+    expect(fakePopup.location.replace).toHaveBeenCalledWith("blob:invoice-pdf");
+    expect(open).not.toHaveBeenCalledWith("blob:invoice-pdf", "_blank", expect.anything());
+    expect(revoke).not.toHaveBeenCalled();
+    expect(document.querySelector("a[download]")).toBeNull();
+  });
+
+  it("revokes the blob URL only after the popup finishes loading the PDF", async () => {
+    const listeners = new Map<string, () => void>();
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn((type: string, cb: () => void) => { listeners.set(type, cb); }), close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: "https://invoice.stripe.com/i/safe", receiptUrl: null } });
+    (getInvoicePdfBlobUrl as Mock).mockResolvedValue("blob:invoice-pdf");
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(fakePopup.location.replace).toHaveBeenCalledWith("blob:invoice-pdf");
+    expect(fakePopup.addEventListener).toHaveBeenCalledWith("load", expect.any(Function), { once: true });
+    expect(revoke).not.toHaveBeenCalled();
+    act(() => listeners.get("load")?.());
+    expect(revoke).toHaveBeenCalledWith("blob:invoice-pdf");
+  });
+
+  it("revokes the blob URL without navigating when the popup is closed during retrieval", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn(), closed: true };
+    vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: "https://invoice.stripe.com/i/safe", receiptUrl: null } });
+    (getInvoicePdfBlobUrl as Mock).mockResolvedValue("blob:invoice-pdf");
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(fakePopup.location.replace).not.toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalledWith("blob:invoice-pdf");
+  });
+
+  it("navigates the opened popup to the hosted invoice page when no PDF is available", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: "https://invoice.stripe.com/i/hosted", invoicePdfUrl: null, receiptUrl: null } });
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(fakePopup.document.write).toHaveBeenCalledWith(expect.stringContaining("billingAdmin.popupLoadingTitle"));
+    expect(getInvoicePdfBlobUrl).not.toHaveBeenCalled();
+    expect(fakePopup.location.replace).toHaveBeenCalledWith("https://invoice.stripe.com/i/hosted");
+  });
+
+  it("navigates the opened popup to the receipt when only a receipt is available", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: null, receiptUrl: "https://receipt.stripe.com/r/1" } });
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(fakePopup.document.write).toHaveBeenCalledWith(expect.stringContaining("billingAdmin.popupLoadingTitle"));
+    expect(getInvoicePdfBlobUrl).not.toHaveBeenCalled();
+    expect(fakePopup.location.replace).toHaveBeenCalledWith("https://receipt.stripe.com/r/1");
+  });
+
+  it("shows an error state in the popup and announces failure when no link is available", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: null, receiptUrl: null } });
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(fakePopup.close).not.toHaveBeenCalled();
+    expect(fakePopup.document.write).toHaveBeenCalledWith(expect.stringContaining("billingAdmin.popupErrorTitle"));
+    expect(container.textContent).toContain("billingAdmin.loadError");
+  });
+
+  it("shows an error state in the same popup and announces failure when retrieval fails", async () => {
+    const fakePopup = { opener: {}, location: { href: "", replace: vi.fn() }, document: { write: vi.fn(), close: vi.fn() }, addEventListener: vi.fn(), close: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(fakePopup as unknown as Window);
+    (getInvoiceLinks as Mock).mockResolvedValue({ success: true, data: { hostedInvoiceUrl: null, invoicePdfUrl: "https://invoice.stripe.com/i/safe", receiptUrl: null } });
+    (getInvoicePdfBlobUrl as Mock).mockRejectedValue(new Error("down"));
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(fakePopup.close).not.toHaveBeenCalled();
+    expect(fakePopup.document.write).toHaveBeenCalledWith(expect.stringContaining("billingAdmin.popupErrorTitle"));
+    expect(container.textContent).toContain("billingAdmin.loadError");
+  });
+
+  it("surfaces a popup-blocked error and skips retrieval when window.open returns null", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const { container } = await render();
+    const action = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("billingAdmin.openInvoice"))!;
+    await act(async () => { action.click(); }); await settle();
+    expect(getInvoiceLinks).not.toHaveBeenCalled();
+    expect(getInvoicePdfBlobUrl).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("billingAdmin.popupBlocked");
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

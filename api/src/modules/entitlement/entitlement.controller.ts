@@ -26,6 +26,19 @@ function requireTenantId(req: Request): string {
   return tenantId;
 }
 
+/**
+ * Call an informational async helper, degrading to `null` on failure.
+ * Used for period boundary fields that the UI treats as advisory — the
+ * request must not fail solely because a period reset could not be resolved.
+ */
+async function safeCall<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch {
+    return null;
+  }
+}
+
 // ── Wrapper (matches platform.controller.ts pattern) ──────────────────────
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
@@ -115,12 +128,16 @@ export const getUsageController = endpoint(async (req) => {
   const tenantId = requireTenantId(req);
   const svc = getEntitlementService();
 
-  const [usage, snapshot, periodStart, periodEnd] = await Promise.all([
+  const [usage, snapshot] = await Promise.all([
     svc.getUsage(tenantId),
     svc.getEntitlementSnapshot(tenantId),
-    svc.getPeriodStart(tenantId),
-    svc.getPeriodReset(tenantId),
   ]);
+
+  // periodStart/periodEnd are informational for the UI. If the entitlement
+  // provider cannot resolve a concrete period (e.g. a corrupted subscription
+  // state), degrade gracefully — the usage and limits below remain accurate.
+  const periodStart = await safeCall(() => svc.getPeriodStart(tenantId));
+  const periodEnd = await safeCall(() => svc.getPeriodReset(tenantId));
 
   const resolvedSnapshot = await resolveSnapshot(tenantId, snapshot);
 

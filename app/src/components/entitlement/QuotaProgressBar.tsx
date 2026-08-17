@@ -47,12 +47,31 @@ function formatNumber(n: number, locale: string): string {
   return Math.round(n).toLocaleString(locale);
 }
 
+/**
+ * Fractional storage formatting for the `storageMb` dimension.
+ *
+ * The backend reports storage usage in fractional megabytes (e.g. 0.21).
+ * Formatting must keep that precision instead of rounding to a whole number,
+ * trim unnecessary trailing zeros (1.00 -> "1"), and group thousands so the
+ * quota limit reads naturally ("1,000"). Display-only — the raw value is
+ * never mutated.
+ */
+export function formatStorageMb(n: number, locale: string): string {
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString(locale, { maximumFractionDigits: 2 });
+}
+
+function formatUsageValue(n: number, isStorage: boolean, locale: string): string {
+  return isStorage ? formatStorageMb(n, locale) : formatNumber(n, locale);
+}
+
 /* ---- component --------------------------------------------------------- */
 
 export function QuotaProgressBar({
   label,
   current,
   limit,
+  dimension,
   periodReset,
   className,
   dir: dirProp,
@@ -69,16 +88,25 @@ export function QuotaProgressBar({
     }
   }, [dirProp]);
 
-  /* sanitise numeric inputs */
-  const safeCurrent = Math.max(0, Math.round(current));
-  const safeLimit = Math.max(0, Math.round(limit));
+  const isStorage = dimension === "storageMb";
 
-  const isUnlimited = safeLimit === 0;
+  /* sanitise numeric inputs — keep the RAW value for progress math so a
+     display rounding step can never flatten used / limit * 100 (0.21 MB
+     of 1,000 MB must read 0.021%, not 0%). */
+  const rawCurrent = Math.max(0, current);
+  const rawLimit = Math.max(0, limit);
+
+  const isUnlimited = rawLimit === 0;
   const percent = isUnlimited
     ? 100
-    : Math.min((safeCurrent / safeLimit) * 100, 100);
-  const isFull = !isUnlimited && safeCurrent >= safeLimit;
-  const almostFull = !isUnlimited && !isFull && safeLimit - safeCurrent <= 5;
+    : Math.min((rawCurrent / rawLimit) * 100, 100);
+  const isFull = !isUnlimited && rawCurrent >= rawLimit;
+  const almostFull = !isUnlimited && !isFull && rawLimit - rawCurrent <= 5;
+
+  /* display-only rounding: whole-number dimensions keep the historical
+     rounded rendering; fractional storage keeps its actual value. */
+  const displayCurrent = isStorage ? rawCurrent : Math.round(rawCurrent);
+  const displayLimit = isStorage ? rawLimit : Math.round(rawLimit);
 
   /* badge logic */
   let badge: string | null = null;
@@ -115,9 +143,9 @@ export function QuotaProgressBar({
       {/* ---- progress bar track ---------------------------------------- */}
       <div
         role="progressbar"
-        aria-valuenow={safeCurrent}
+        aria-valuenow={rawCurrent}
         aria-valuemin={0}
-        aria-valuemax={isUnlimited ? safeCurrent : safeLimit}
+        aria-valuemax={isUnlimited ? rawCurrent : rawLimit}
         aria-label={label}
         dir={isRtl ? "rtl" : undefined}
         className="relative h-2.5 overflow-hidden rounded-full bg-surface-container-high"
@@ -152,7 +180,7 @@ export function QuotaProgressBar({
           {isUnlimited ? (
             <>
               <span className="font-medium text-on-surface">
-                {formatNumber(safeCurrent, intlLocale)}
+                {formatUsageValue(displayCurrent, isStorage, intlLocale)}
               </span>
               {" / "}
               {t("quota.noLimit")}
@@ -160,10 +188,11 @@ export function QuotaProgressBar({
           ) : (
             <>
               <span className="font-medium text-on-surface">
-                {formatNumber(safeCurrent, intlLocale)}
+                {formatUsageValue(displayCurrent, isStorage, intlLocale)}
               </span>
               {" / "}
-              {formatNumber(safeLimit, intlLocale)}
+              {formatUsageValue(displayLimit, isStorage, intlLocale)}
+              {isStorage ? ` ${t("common.unitMB")}` : ""}
             </>
           )}
         </span>

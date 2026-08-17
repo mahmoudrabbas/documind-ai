@@ -10,7 +10,7 @@ export default function CompaniesPage() {
         </div>
       }
     >
-      <TenantsClient />
+      <TenantsClient view="companies" />
     </Suspense>
   );
 }

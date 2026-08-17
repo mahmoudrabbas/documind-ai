@@ -3,7 +3,7 @@ import { authenticate } from "../../common/middlewares/authenticate.middleware.j
 import { tenantScoping } from "../../common/middlewares/tenantScoping.middleware.js";
 import { Permission } from "../permissions/permissions.catalog.js";
 import { requirePermission } from "../permissions/permissions.middleware.js";
-import { billingOperationController, billingSummaryController, cancellationController, invoiceDetailController, invoiceLinksController, invoiceListController, portalSessionController, reactivationController, refundDetailController, refundEligibilityPreviewController, refundListController, refundRequestController, subscriptionChangeController, subscriptionChangePreviewController } from "./tenant-billing.controller.js";
+import { billingOperationController, billingSummaryController, cancellationController, invoiceDetailController, invoiceLinksController, invoiceListController, invoicePdfController, portalSessionController, reactivationController, refundDetailController, refundEligibilityPreviewController, refundListController, refundRequestController, subscriptionChangeController, subscriptionChangePreviewController } from "./tenant-billing.controller.js";
 
 const router = Router();
 router.use(authenticate, tenantScoping);
@@ -1273,4 +1273,42 @@ router.get("/invoices/:invoiceId", requirePermission(Permission.BILLING_READ, bi
  *         description: Billing provider is temporarily unavailable
  */
 router.get("/invoices/:invoiceId/links", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoiceLinksController);
+/**
+ * @openapi
+ * /billing/invoices/{invoiceId}/pdf:
+ *   get:
+ *     summary: Get invoice PDF document
+ *     description: Returns the payment provider invoice PDF for the tenant's
+ *       invoice, streamed inline with Content-Type application/pdf so the
+ *       browser can render it. The provider document is fetched server-side
+ *       after the same tenant and provider ownership checks used for invoice
+ *       links, so the raw provider URL is never exposed to the client.
+ *     tags: [Billing]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: invoiceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Invoice id (24 hex characters)
+ *     responses:
+ *       200:
+ *         description: Invoice PDF document
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       401:
+ *         description: Authentication required
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Invoice not found or PDF unavailable
+ *       503:
+ *         description: Billing provider is temporarily unavailable
+ */
+router.get("/invoices/:invoiceId/pdf", requirePermission(Permission.BILLING_READ, billingDenialAudit), invoicePdfController);
 export default router;

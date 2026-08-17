@@ -49,7 +49,16 @@ const router = Router();
  *         schema:
  *           type: string
  *           enum: [free, trial, pro]
- *         description: Filter by tenant plan
+ *         description: Filter by legacy tenant plan (backward compatible)
+ *       - in: query
+ *         name: packageId
+ *         schema:
+ *           type: string
+ *           format: objectId
+ *         description: >
+ *           Filter by the package of the tenant's current effective
+ *           subscription. This is the authoritative Companies Plan filter and
+ *           is independent of the legacy `plan` field.
  *       - in: query
  *         name: search
  *         schema:
@@ -86,6 +95,13 @@ const router = Router();
  *                           plan:
  *                             type: string
  *                             enum: [free, trial, pro]
+ *                             deprecated: true
+ *                           effectivePackageId:
+ *                             type: string
+ *                             nullable: true
+ *                           effectivePackageName:
+ *                             type: string
+ *                             nullable: true
  *                           createdAt:
  *                             type: string
  *                             format: date-time

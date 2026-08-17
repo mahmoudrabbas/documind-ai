@@ -5,6 +5,8 @@ export const TemplateId = z.enum([
   "password_reset",
   "user_invitation",
   "invitation_reminder",
+  "company_suspended",
+  "company_reactivated",
 ]);
 export type TemplateIdType = z.infer<typeof TemplateId>;
 
@@ -33,10 +35,20 @@ export const UserInvitationVars = z.object({
 
 export const InvitationReminderVars = UserInvitationVars;
 
+/** Shared lifecycle notice variables (company suspension / reactivation). */
+export const CompanyLifecycleVars = z.object({
+  companyName: z.string(),
+  /** Human-readable effective date/time of the lifecycle transition. */
+  effectiveDate: z.string().optional(),
+  /** Administrative reason, disclosed only when provided and appropriate. */
+  reason: z.string().optional(),
+});
+
 export const TemplateVariablesSchema = z.union([
   EmailVerificationVars,
   PasswordResetVars,
   UserInvitationVars,
+  CompanyLifecycleVars,
 ]);
 
 export interface Branding {
@@ -390,6 +402,111 @@ export function getTemplate(
       ${renderNote("If you were not expecting this invitation, you can safely ignore this email.")}
       ${spacer(28)}
       ${renderFallbackUrl(vars.invitationUrl, lang)}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
+  }
+
+  if (templateId === "company_suspended") {
+    const vars = CompanyLifecycleVars.parse(variables);
+    const dateNote = vars.effectiveDate
+      ? isAr
+        ? `يسري هذا التغيير اعتبارًا من <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+        : `This change is effective as of <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+      : "";
+    const reasonNote = vars.reason
+      ? isAr
+        ? `<p style="margin:0 0 20px;font-size:16px;line-height:26px;color:${TEXT_BODY};">السبب: <span dir="auto">${escapeHtml(vars.reason)}</span></p>`
+        : `<p style="margin:0 0 20px;font-size:16px;line-height:26px;color:${TEXT_BODY};">Reason: <span dir="auto">${escapeHtml(vars.reason)}</span></p>`
+      : "";
+
+    if (isAr) {
+      const subject = `DocuMind AI — تم إيقاف مؤسستك`;
+      const preheader = `تم إيقاف الوصول إلى مساحة عمل DocuMind AI الخاصة بمؤسستك ${vars.companyName}.`;
+      const text = `عزيزي مسؤول المؤسسة،\n\nتم إيقاف مؤسستك ${vars.companyName}. الوصول إلى مساحة عمل DocuMind AI الخاصة بمؤسستك غير متاح حاليًا.${vars.reason ? `\n\nالسبب: ${vars.reason}` : ""}${vars.effectiveDate ? `\n\nيسري هذا التغيير اعتبارًا من ${vars.effectiveDate}.` : ""}\n\nإذا كنت تعتقد أن هذا خطأ، فتواصل مع مسؤول مؤسستك أو دعم المنصة.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+        ${spacer(24)}
+        ${renderTitle(`تم إيقاف مؤسستك`)}
+        ${renderParagraph(`عزيزي مسؤول المؤسسة، تم إيقاف مؤسستك <strong>${escapeHtml(vars.companyName)}</strong>. الوصول إلى مساحة عمل DocuMind AI الخاصة بمؤسستك غير متاح حاليًا.`)}
+        ${reasonNote}
+        ${dateNote ? renderNote(dateNote) : ""}
+        ${spacer(8)}
+        ${renderNote("إذا كنت تعتقد أن هذا خطأ، فتواصل مع مسؤول مؤسستك أو دعم المنصة.")}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
+    }
+
+    const subject = "DocuMind AI — Your organization has been suspended";
+    const preheader = `Access to your ${vars.companyName} DocuMind AI workspace is currently unavailable.`;
+    const text = `Dear company administrator,\n\nYour organization ${vars.companyName} has been suspended. Access to your organization's DocuMind AI workspace is currently unavailable.${vars.reason ? `\n\nReason: ${vars.reason}` : ""}${vars.effectiveDate ? `\n\nThis change is effective as of ${vars.effectiveDate}.` : ""}\n\nIf you believe this is in error, please contact your organization's administrator or platform support.`;
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+      ${spacer(24)}
+      ${renderTitle("Your organization has been suspended")}
+      ${renderParagraph(`Dear company administrator, your organization <strong>${escapeHtml(vars.companyName)}</strong> has been suspended. Access to your organization's DocuMind AI workspace is currently unavailable.`)}
+      ${reasonNote}
+      ${dateNote ? renderNote(dateNote) : ""}
+      ${spacer(8)}
+      ${renderNote("If you believe this is in error, please contact your organization's administrator or platform support.")}
+      ${spacer(28)}
+      ${renderDivider()}
+      ${spacer(20)}
+      ${renderFooter(branding, lang)}`,
+      { lang, subject, preheader },
+    );
+    return { subject, text, html };
+  }
+
+  if (templateId === "company_reactivated") {
+    const vars = CompanyLifecycleVars.parse(variables);
+    const dateNote = vars.effectiveDate
+      ? isAr
+        ? `يسري هذا التغيير اعتبارًا من <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+        : `This change is effective as of <span dir="ltr">${escapeHtml(vars.effectiveDate)}</span>.`
+      : "";
+
+    if (isAr) {
+      const subject = `DocuMind AI — تمت إعادة تنشيط مؤسستك`;
+      const preheader = `تمت إعادة تنشيط مؤسستك ${vars.companyName} على DocuMind AI.`;
+      const text = `عزيزي مسؤول المؤسسة،\n\nتمت إعادة تنشيط مؤسستك ${vars.companyName}. يمكن للمستخدمين الوصول إلى DocuMind AI مرة أخرى وفقًا لحالة حساباتهم وصلاحياتهم.${vars.effectiveDate ? `\n\nيسري هذا التغيير اعتبارًا من ${vars.effectiveDate}.` : ""}\n\nإذا كنت بحاجة إلى مساعدة، فتواصل مع مسؤول مؤسستك أو دعم المنصة.`;
+      const html = renderBodyWrapper(
+        `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+        ${spacer(24)}
+        ${renderTitle("تمت إعادة تنشيط مؤسستك")}
+        ${renderParagraph(`عزيزي مسؤول المؤسسة، تمت إعادة تنشيط مؤسستك <strong>${escapeHtml(vars.companyName)}</strong>. يمكن للمستخدمين الوصول إلى DocuMind AI مرة أخرى وفقًا لحالة حساباتهم وصلاحياتهم.`)}
+        ${dateNote ? renderNote(dateNote) : ""}
+        ${spacer(8)}
+        ${renderNote("إذا كنت بحاجة إلى مساعدة، فتواصل مع مسؤول مؤسستك أو دعم المنصة.")}
+        ${spacer(28)}
+        ${renderDivider()}
+        ${spacer(20)}
+        ${renderFooter(branding, lang)}`,
+        { lang, subject, preheader },
+      );
+      return { subject, text, html };
+    }
+
+    const subject = "DocuMind AI — Your organization has been reactivated";
+    const preheader = `Your ${vars.companyName} DocuMind AI organization has been reactivated.`;
+    const text = `Dear company administrator,\n\nYour organization ${vars.companyName} has been reactivated. Users may access DocuMind AI again, subject to their own account status and permissions.${vars.effectiveDate ? `\n\nThis change is effective as of ${vars.effectiveDate}.` : ""}\n\nIf you need assistance, please contact your organization's administrator or platform support.`;
+    const html = renderBodyWrapper(
+      `${renderBrandHeader(branding, { lang, useTenantBrand: false })}
+      ${spacer(24)}
+      ${renderTitle("Your organization has been reactivated")}
+      ${renderParagraph(`Dear company administrator, your organization <strong>${escapeHtml(vars.companyName)}</strong> has been reactivated. Users may access DocuMind AI again, subject to their own account status and permissions.`)}
+      ${dateNote ? renderNote(dateNote) : ""}
+      ${spacer(8)}
+      ${renderNote("If you need assistance, please contact your organization's administrator or platform support.")}
       ${spacer(28)}
       ${renderDivider()}
       ${spacer(20)}

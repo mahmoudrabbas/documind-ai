@@ -6,6 +6,24 @@ export interface TenantPublicView {
   slug: string;
   status: TenantLifecycleStatus;
   plan: "free" | "trial" | "pro";
+  /**
+   * Identifier of the package attached to the tenant's current effective
+   * subscription, or `null` when the tenant has no effective subscription.
+   * This is the authoritative "Plan" source of truth for the Companies view.
+   */
+  effectivePackageId: string | null;
+  /**
+   * Human-readable name of the package attached to the tenant's current
+   * effective subscription, or `null` when the tenant has no effective
+   * subscription.
+   */
+  effectivePackageName: string | null;
+  /**
+   * Lowercased status of the tenant's current effective subscription, or `null`
+   * when the tenant has no effective subscription. Mirrors the subscription
+   * list endpoint's lowercase status convention.
+   */
+  effectiveSubscriptionStatus: string | null;
   createdAt: string;
   updatedAt: string;
   stats: {
@@ -20,6 +38,13 @@ export interface ListTenantsInput {
   pageSize: number;
   status?: TenantLifecycleStatus;
   plan?: string;
+  /**
+   * Filter by the package of the tenant's current effective subscription.
+   * This is the authoritative Companies Plan filter and is independent of the
+   * legacy `plan` field. When provided, tenants are restricted to those whose
+   * effective subscription references the given package id.
+   */
+  packageId?: string;
   search?: string;
 }
 

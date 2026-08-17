@@ -192,3 +192,75 @@ test("raw HTML URLs never contain unescaped ampersands", () => {
   assert.ok(!result.html.includes('href="https://example.com/verify?a=1&b=2"'));
   assert.ok(result.html.includes('href="https://example.com/verify?a=1&amp;b=2"'));
 });
+
+// ─── Company lifecycle notices ─────────────────────────────────────────────────
+
+const lifecycleVars = {
+  companyName: "Acme Corp",
+  effectiveDate: "Mon, 17 Aug 2026 12:00:00 GMT",
+  reason: "Policy violation investigation",
+};
+
+test("suspended template names the company and states access is restricted", () => {
+  const result = getTemplate("company_suspended", "en", lifecycleVars);
+  assert.equal(
+    result.subject,
+    "DocuMind AI — Your organization has been suspended",
+  );
+  assert.ok(result.html.includes("Acme Corp"));
+  assert.ok(result.html.includes("has been suspended"));
+  assert.ok(result.html.includes("currently unavailable"));
+});
+
+test("suspended template discloses the reason when provided", () => {
+  const result = getTemplate("company_suspended", "en", lifecycleVars);
+  assert.ok(result.html.includes("Reason:"));
+  assert.ok(result.html.includes("Policy violation investigation"));
+  assert.ok(result.text.includes("Reason: Policy violation investigation"));
+});
+
+test("suspended template omits reason when absent", () => {
+  const result = getTemplate("company_suspended", "en", {
+    companyName: "Acme Corp",
+  });
+  assert.ok(!result.html.includes("Reason:"));
+  assert.ok(result.html.includes("If you believe this is in error"));
+});
+
+test("reactivated template names the company and restores access", () => {
+  const result = getTemplate("company_reactivated", "en", lifecycleVars);
+  assert.equal(
+    result.subject,
+    "DocuMind AI — Your organization has been reactivated",
+  );
+  assert.ok(result.html.includes("Acme Corp"));
+  assert.ok(result.html.includes("has been reactivated"));
+  assert.ok(result.html.includes("Users may access DocuMind AI again"));
+});
+
+test("reactivated template does not promise access for disabled accounts", () => {
+  const result = getTemplate("company_reactivated", "en", lifecycleVars);
+  assert.ok(result.html.includes("subject to their own account status"));
+});
+
+test("lifecycle notices render localized Arabic copy", () => {
+  const suspended = getTemplate("company_suspended", "ar", lifecycleVars);
+  assert.ok(suspended.html.includes('lang="ar" dir="rtl"'));
+  assert.ok(suspended.html.includes("تم إيقاف مؤسستك"));
+  assert.ok(suspended.html.includes("Acme Corp"));
+  assert.ok(suspended.html.includes("السبب:"));
+
+  const reactivated = getTemplate("company_reactivated", "ar", lifecycleVars);
+  assert.ok(reactivated.html.includes("تمت إعادة تنشيط مؤسستك"));
+  assert.ok(reactivated.html.includes("Acme Corp"));
+});
+
+test("lifecycle notices escape dynamic values", () => {
+  const result = getTemplate("company_suspended", "en", {
+    companyName: "Acme & Sons",
+    reason: '<script>alert("x")</script>',
+  });
+  assert.ok(result.html.includes("Acme &amp; Sons"));
+  assert.ok(!result.html.includes("<script>"));
+  assert.ok(!result.html.includes("&lt;script&gt;&lt;/script&gt;"));
+});
