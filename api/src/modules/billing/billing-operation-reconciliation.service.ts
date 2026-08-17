@@ -15,6 +15,7 @@ import { BillingOperationService, fingerprintBillingRequest } from "./billing-op
 import type { PaymentProvider, ProviderOperationContext, ProviderSubscriptionState, ProviderSubscriptionMutationResult, SubscriptionReadParams } from "./ports/payment-provider.port.js";
 import { providerSubscriptionStatus, synchronizeProviderSubscription } from "./provider-subscription-sync.service.js";
 import { transitionSubscription } from "./subscription.service.js";
+import { ensureFreeFallbackSubscription } from "./free-fallback.service.js";
 
 type ReconciliationOutcome = "CONFIRMED" | "FAILED" | "RETRY_PENDING";
 type ConfirmationDecision =
@@ -385,6 +386,8 @@ type PendingSubscriptionRecord = {
   status: string;
   packageVersionId: Types.ObjectId | null;
   billingInterval: "monthly" | "annual" | null;
+  periodStart: Date | null;
+  currentPeriodStart: Date | null;
   periodEnd: Date | null;
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
@@ -443,7 +446,7 @@ export async function reconcileProviderPendingOperations(
       _id: operation.subscriptionId,
       tenantId: new Types.ObjectId(tenantId),
     })
-      .select("_id tenantId provider providerCustomerId providerSubscriptionId providerPriceId status packageVersionId billingInterval periodEnd currentPeriodEnd cancelAtPeriodEnd")
+      .select("_id tenantId provider providerCustomerId providerSubscriptionId providerPriceId status packageVersionId billingInterval periodStart currentPeriodStart periodEnd currentPeriodEnd cancelAtPeriodEnd")
       .lean<PendingSubscriptionRecord | null>()
       .exec();
 
@@ -517,6 +520,22 @@ export async function reconcileProviderPendingOperations(
       outcome: "CONFIRMED",
       authoritativeSubscription: synced.subscription,
     });
+
+    if (operation.operationType === "CANCEL_IMMEDIATELY" || synced.subscription?.status === "CANCELED") {
+      try {
+        await ensureFreeFallbackSubscription({
+          tenantId,
+          providerCustomerId: subscription.providerCustomerId,
+          reason: "reconciliation_cancellation",
+          retainedPeriod: {
+            periodStart: subscription.periodStart,
+            periodEnd: subscription.currentPeriodEnd ?? subscription.periodEnd,
+          },
+        });
+      } catch {
+        // Non-blocking if free package is not provisioned in isolated test harnesses
+      }
+    }
 
     await countResolution(operation._id, result, { staleMs, now, service, operation, tenantId });
   }

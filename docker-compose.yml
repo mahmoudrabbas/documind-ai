@@ -198,6 +198,22 @@ services:
       timeout: 5s
       retries: 5
 
+  stripe-cli:
+    image: stripe/stripe-cli:latest
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - path: ./.env
+        required: false
+      - path: ./api/.env
+        required: false
+    environment:
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+    command: listen --api-key ${STRIPE_SECRET_KEY} --forward-to http://api:5000/webhooks/payment/stripe --skip-update
+
+
 volumes:
   redis_data:
   uploads_data:
