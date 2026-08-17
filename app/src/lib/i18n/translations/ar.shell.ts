@@ -56,6 +56,7 @@ const arShell: TranslationDictionary = {
   "shell.companyLogo": "شعار الشركة",
   "shell.defaultUserName": "مستخدم مسؤول",
   "shell.roleCompanyAdmin": "مسؤول الشركة",
+  "shell.roleSuperAdmin": "مسؤول عام",
   "shell.roleUser": "مستخدم",
 
   /* ── Shared component defaults ─────────────────────────────────── */

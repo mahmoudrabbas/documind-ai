@@ -8,7 +8,8 @@ import type { TranslationDictionary } from "../i18n.types";
 
 const arSuperAdmin: TranslationDictionary = {
   "superAdmin.title": "نظرة عامة على المنصة",
-  "superAdmin.description": "مراقبة الشركات والاستخدام والمعالجة والنشاط التشغيلي عبر DocuMind AI.",
+  "superAdmin.description":
+    "مراقبة الشركات والاستخدام والمعالجة والنشاط التشغيلي عبر DocuMind AI.",
   "superAdmin.companies": "إجمالي الشركات",
   "superAdmin.activeCompanies": "الشركات النشطة",
   "superAdmin.users": "مستخدمو المنصة",
@@ -17,18 +18,23 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.estimatedCost": "التكلفة المقدرة",
   "superAdmin.failedJobs": "المهام الفاشلة",
   "superAdmin.storage": "التخزين",
+  "superAdmin.recentActivity": "آخر النشاطات الإدارية",
+  "superAdmin.noRecentActivity": "لا يوجد نشاط إداري بعد.",
   "superAdmin.statusDistribution": "توزيع الحالات",
   "superAdmin.auditLogTitle": "سجل تدقيق المنصة",
   "superAdmin.auditLogDesc": "فحص الإجراءات الإدارية عبر المنصة.",
   "superAdmin.processingOverviewTitle": "نظرة عامة على المعالجة",
-  "superAdmin.processingOverviewDesc": "عرض على مستوى المنصة لعمليات معالجة المستندات الفاشلة لدى جميع المستأجرين.",
-  "superAdmin.processingOverviewEmpty": "لا توجد مهام معالجة فاشلة لدى أي مستأجر.",
+  "superAdmin.processingOverviewDesc":
+    "عرض على مستوى المنصة لعمليات معالجة المستندات الفاشلة لدى جميع المستأجرين.",
+  "superAdmin.processingOverviewEmpty":
+    "لا توجد مهام معالجة فاشلة لدى أي مستأجر.",
   "superAdmin.processingOverviewLoadError": "تعذّر تحميل مهام المعالجة",
   "superAdmin.processingOverviewRetryError": "تعذّرت إعادة المحاولة",
   "superAdmin.processingOverviewReprocessError": "تعذّرت إعادة المعالجة",
   "superAdmin.processingOverviewTimelineTitle": "المسار الزمني للمعالجة",
   "superAdmin.refundReviewsTitle": "مراجعة الاسترداد",
-  "superAdmin.refundReviewsDesc": "مراجعة ومعالجة طلبات استرداد الأموال للعملاء.",
+  "superAdmin.refundReviewsDesc":
+    "مراجعة ومعالجة طلبات استرداد الأموال للعملاء.",
 
   /* ── Shared platform UI ────────────────────────────────── */
   "superAdmin.loadError": "تعذر تحميل بيانات المنصة. يرجى المحاولة مرة أخرى.",
@@ -55,7 +61,8 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* ── System Health ─────────────────────────────────────── */
   "superAdmin.systemHealthTitle": "حالة النظام",
-  "superAdmin.systemHealthDesc": "مراجعة مؤشرات الجاهزية الحية للخدمات الأساسية في DocuMind AI.",
+  "superAdmin.systemHealthDesc":
+    "مراجعة مؤشرات الجاهزية الحية للخدمات الأساسية في DocuMind AI.",
   "superAdmin.serviceStatus.healthy": "سليم",
   "superAdmin.serviceStatus.degraded": "متدهور",
   "superAdmin.serviceStatus.unavailable": "غير متاح",
@@ -63,7 +70,8 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* ── Platform Users ────────────────────────────────────── */
   "superAdmin.platformUsersTitle": "مستخدمو المنصة",
-  "superAdmin.platformUsersDesc": "مراجعة المستخدمين عبر الشركات دون تجاوز حدود التعديل الخاصة بكل مستأجر.",
+  "superAdmin.platformUsersDesc":
+    "مراجعة المستخدمين عبر الشركات دون تجاوز حدود التعديل الخاصة بكل مستأجر.",
   "superAdmin.userRole.employee": "موظف",
   "superAdmin.userRole.company_admin": "مسؤول الشركة",
   "superAdmin.userRole.super_admin": "المسؤول العام",
@@ -78,7 +86,8 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* ── Usage & Costs ─────────────────────────────────────── */
   "superAdmin.usageTitle": "الاستخدام والتكاليف",
-  "superAdmin.usageDesc": "تتبع حجم الاستعلامات واستهلاك التخزين والتكلفة التقديرية للذكاء الاصطناعي عبر المستأجرين.",
+  "superAdmin.usageDesc":
+    "تتبع حجم الاستعلامات واستهلاك التخزين والتكلفة التقديرية للذكاء الاصطناعي عبر المستأجرين.",
   "superAdmin.usageQueries": "الاستعلامات",
   "superAdmin.usageEstimatedCost": "التكلفة المقدرة",
   "superAdmin.usageStorage": "التخزين",
@@ -89,7 +98,8 @@ const arSuperAdmin: TranslationDictionary = {
   /* ── Subscriptions ─────────────────────────────────────── */
   "superAdmin.subsTitle": "الاشتراكات",
   "superAdmin.subsShortDesc": "عمليات اشتراكات المنصة.",
-  "superAdmin.subsDesc": "توفير الاشتراكات المحلية وتعيين إصدارات الباقات الثابتة وتطبيق التحولات الإدارية المسموح بها.",
+  "superAdmin.subsDesc":
+    "توفير الاشتراكات المحلية وتعيين إصدارات الباقات الثابتة وتطبيق التحولات الإدارية المسموح بها.",
   "superAdmin.subsNoPermission": "ليس لديك إذن لعرض الاشتراكات.",
   "superAdmin.subsOperation": "عملية الاشتراك",
   "superAdmin.subsSelectCompany": "اختر شركة",
@@ -100,9 +110,11 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.subsSelectPackage": "اختر باقة",
   "superAdmin.subsLoadDetailError": "تعذر تحميل تفاصيل الاشتراك.",
   "superAdmin.subsCurrentLabel": "الحالي:",
-  "superAdmin.subsCurrentSummary": "{{package}} الإصدار {{version}} · {{status}} · المراجعة {{revision}}",
+  "superAdmin.subsCurrentSummary":
+    "{{package}} الإصدار {{version}} · {{status}} · المراجعة {{revision}}",
   "superAdmin.subsProviderOwnershipLabel": "ملكية المزوّد:",
-  "superAdmin.subsProviderManagedNote": "مُدار من المزوّد (التجاوز المحلي محظور)",
+  "superAdmin.subsProviderManagedNote":
+    "مُدار من المزوّد (التجاوز المحلي محظور)",
   "superAdmin.subsManualLocal": "يدوي/محلي",
   "superAdmin.subsPeriodLabel": "الفترة:",
   "superAdmin.subsPeriodRange": "{{start}} إلى {{end}}",
@@ -143,12 +155,14 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* Platform Analytics */
   "superAdmin.analytics.title": "تحليلات المنصة والرؤى عبر المستأجرين",
-  "superAdmin.analytics.description": "قياس عن بُعد للنظام على مستوى المنصة، وتحليل التكلفة التشغيلية، ومراقبة الجودة عبر المستأجرين.",
+  "superAdmin.analytics.description":
+    "قياس عن بُعد للنظام على مستوى المنصة، وتحليل التكلفة التشغيلية، ومراقبة الجودة عبر المستأجرين.",
   "superAdmin.analytics.loadError": "تعذر تحميل تحليلات المنصة",
   "superAdmin.analytics.platformQueries": "استعلامات المنصة",
   "superAdmin.analytics.allTenantsCombined": "جميع المستأجرين مجتمعين",
   "superAdmin.analytics.platformTokens": "رموز المنصة",
-  "superAdmin.analytics.globalTokenConsumption": "استهلاك الرموز على مستوى المنصة",
+  "superAdmin.analytics.globalTokenConsumption":
+    "استهلاك الرموز على مستوى المنصة",
   "superAdmin.analytics.providerCost": "تكلفة المزوّد",
   "superAdmin.analytics.reconciled": "مُطابَق",
   "superAdmin.analytics.avgLatency": "متوسط زمن الاستجابة",
@@ -159,21 +173,30 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* Payment Diagnostics */
   "superAdmin.payments.title": "تشخيص المدفوعات",
-  "superAdmin.payments.desc": "مراقبة أحداث Webhook وإعادة معالجة الإخفاقات ومطابقة حالة الاشتراك.",
+  "superAdmin.payments.desc":
+    "مراقبة أحداث Webhook وإعادة معالجة الإخفاقات ومطابقة حالة الاشتراك.",
   "superAdmin.payments.reprocessed": "تمت إعادة معالجة الحدث {{eventId}}.",
   "superAdmin.payments.reprocessFailed": "تعذرت إعادة معالجة الحدث.",
-  "superAdmin.payments.reconcileComplete": "اكتملت المطابقة. حالات عدم تطابق الاشتراكات: {{mismatches}}. تحولات الاسترداد المكتملة: {{transitions}}.",
-  "superAdmin.payments.reconcileMigrationRequired": "يلزم ترحيل فهرس الاشتراكات قبل إصلاح تحولات الاسترداد.",
+  "superAdmin.payments.reconcileComplete":
+    "اكتملت المطابقة. حالات عدم تطابق الاشتراكات: {{mismatches}}. تحولات الاسترداد المكتملة: {{transitions}}.",
+  "superAdmin.payments.reconcileMigrationRequired":
+    "يلزم ترحيل فهرس الاشتراكات قبل إصلاح تحولات الاسترداد.",
   "superAdmin.payments.reconcileFailed": "فشلت المطابقة.",
   "superAdmin.payments.reconciling": "جارٍ المطابقة…",
   "superAdmin.payments.runReconciliation": "تشغيل المطابقة",
   "superAdmin.payments.reconcileResultsTitle": "نتائج المطابقة",
-  "superAdmin.payments.reconcileSubscriptionsLine": "الاشتراكات المفحوصة: {{examined}}؛ حالات عدم التطابق: {{mismatches}}",
-  "superAdmin.payments.reconcileIndexLine": "فهرس الاشتراكات: {{status}}؛ المستأجرون المكررون فعليًا: {{duplicates}}",
-  "superAdmin.payments.reconcileRefundsLine": "تسويات الاسترداد المفحوصة: {{examined}}؛ الإصلاحات المؤهلة: {{eligible}}؛ التحولات المكتملة: {{completed}}؛ إلغاءات المزوّد القابلة لإعادة المحاولة: {{retryable}}",
-  "superAdmin.payments.reconcileInvoicesLine": "الفواتير المفحوصة: {{examined}}؛ المُنشأة: {{created}}؛ المُحدَّثة: {{updated}}؛ الفاشلة: {{failed}}",
-  "superAdmin.payments.invoiceFailure": "{{classification}}: {{count}} ({{code}})",
-  "superAdmin.payments.invoiceFailureRetryable": "{{classification}}: {{count}} ({{code}}) — إعادة المحاولة معلقة",
+  "superAdmin.payments.reconcileSubscriptionsLine":
+    "الاشتراكات المفحوصة: {{examined}}؛ حالات عدم التطابق: {{mismatches}}",
+  "superAdmin.payments.reconcileIndexLine":
+    "فهرس الاشتراكات: {{status}}؛ المستأجرون المكررون فعليًا: {{duplicates}}",
+  "superAdmin.payments.reconcileRefundsLine":
+    "تسويات الاسترداد المفحوصة: {{examined}}؛ الإصلاحات المؤهلة: {{eligible}}؛ التحولات المكتملة: {{completed}}؛ إلغاءات المزوّد القابلة لإعادة المحاولة: {{retryable}}",
+  "superAdmin.payments.reconcileInvoicesLine":
+    "الفواتير المفحوصة: {{examined}}؛ المُنشأة: {{created}}؛ المُحدَّثة: {{updated}}؛ الفاشلة: {{failed}}",
+  "superAdmin.payments.invoiceFailure":
+    "{{classification}}: {{count}} ({{code}})",
+  "superAdmin.payments.invoiceFailureRetryable":
+    "{{classification}}: {{count}} ({{code}}) — إعادة المحاولة معلقة",
   "superAdmin.payments.mismatchTenantLabel": "المستأجر:",
   "superAdmin.payments.mismatchStatusLabel": "الحالة:",
   "superAdmin.payments.mismatchIssuesLabel": "المشكلات:",
@@ -209,7 +232,8 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* Package detail */
   "superAdmin.packages.detailTitle": "تفاصيل الباقة",
-  "superAdmin.packages.detailDesc": "حدّث هذه الباقة لإنشاء لقطة إصدار ثابتة جديدة.",
+  "superAdmin.packages.detailDesc":
+    "حدّث هذه الباقة لإنشاء لقطة إصدار ثابتة جديدة.",
   "superAdmin.packages.commercialDetails": "التفاصيل التجارية",
   "superAdmin.packages.pricing": "التسعير",
   "superAdmin.packages.monthlyPrice": "السعر الشهري",
@@ -235,12 +259,18 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.packages.support": "الدعم",
   "superAdmin.packages.versionLabel": "الإصدار {{version}}",
   "superAdmin.packages.versionCurrent": "الإصدار {{version}} (الحالي)",
-  "superAdmin.packages.versionSummary.zero": "لا توجد إصدارات — كل لقطة ثابتة بعد إنشائها.",
-  "superAdmin.packages.versionSummary.one": "إصدار واحد — كل لقطة ثابتة بعد إنشائها.",
-  "superAdmin.packages.versionSummary.two": "إصداران — كل لقطة ثابتة بعد إنشائها.",
-  "superAdmin.packages.versionSummary.few": "{{count}} إصدارات — كل لقطة ثابتة بعد إنشائها.",
-  "superAdmin.packages.versionSummary.many": "{{count}} إصدارًا — كل لقطة ثابتة بعد إنشائها.",
-  "superAdmin.packages.versionSummary.other": "{{count}} إصدار — كل لقطة ثابتة بعد إنشائها.",
+  "superAdmin.packages.versionSummary.zero":
+    "لا توجد إصدارات — كل لقطة ثابتة بعد إنشائها.",
+  "superAdmin.packages.versionSummary.one":
+    "إصدار واحد — كل لقطة ثابتة بعد إنشائها.",
+  "superAdmin.packages.versionSummary.two":
+    "إصداران — كل لقطة ثابتة بعد إنشائها.",
+  "superAdmin.packages.versionSummary.few":
+    "{{count}} إصدارات — كل لقطة ثابتة بعد إنشائها.",
+  "superAdmin.packages.versionSummary.many":
+    "{{count}} إصدارًا — كل لقطة ثابتة بعد إنشائها.",
+  "superAdmin.packages.versionSummary.other":
+    "{{count}} إصدار — كل لقطة ثابتة بعد إنشائها.",
   "superAdmin.packages.daysCount.zero": "بلا أيام",
   "superAdmin.packages.daysCount.one": "يوم واحد",
   "superAdmin.packages.daysCount.two": "يومان",
@@ -258,7 +288,8 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.packages.archive": "أرشفة الباقة",
   "superAdmin.packages.activate": "تنشيط الباقة",
   "superAdmin.packages.closeDialog": "إغلاق {{title}}",
-  "superAdmin.packages.dialogSubtitle": "{{name}} · {{code}} · الإصدار {{version}}",
+  "superAdmin.packages.dialogSubtitle":
+    "{{name}} · {{code}} · الإصدار {{version}}",
   "superAdmin.packages.loadingImpact": "جارٍ تحميل الأثر…",
   "superAdmin.packages.impactError": "تعذر تحميل أثر الباقة.",
   "superAdmin.packages.subscriptionsUsing": "الاشتراكات التي تستخدم الباقة:",
@@ -267,7 +298,8 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.packages.blockedReason": "محظور: {{reason}}",
   "superAdmin.packages.reason": "السبب",
   "superAdmin.packages.reasonHelp": "٣ أحرف على الأقل؛ يُسجَّل في سجل التدقيق.",
-  "superAdmin.packages.versionConflict": "تغيرت هذه الباقة في جلسة أخرى. جارٍ إعادة تحميل البيانات الحالية.",
+  "superAdmin.packages.versionConflict":
+    "تغيرت هذه الباقة في جلسة أخرى. جارٍ إعادة تحميل البيانات الحالية.",
   "superAdmin.packages.transitionFailed": "فشل تغيير حالة الباقة.",
   "superAdmin.packages.working": "جارٍ التنفيذ…",
   "superAdmin.packages.landingImpact.removed": "تمت الإزالة",
@@ -289,7 +321,13 @@ const arSuperAdmin: TranslationDictionary = {
 
   /* ── Company detail ────────────────────────────────────── */
   "superAdmin.companies.backLink": "الشركات",
+  "superAdmin.companies.allPlans": "كل الخطط",
+  "superAdmin.companies.viewAction": "عرض",
   "superAdmin.companies.plan": "الخطة",
+  "superAdmin.companies.overview": "نظرة عامة على الشركة",
+  "superAdmin.companies.people": "الأفراد",
+  "superAdmin.companies.usage": "الاستخدام",
+  "superAdmin.companies.record": "السجل",
   "superAdmin.companies.users": "المستخدمون",
   "superAdmin.companies.companyAdmins": "مسؤولو الشركة",
   "superAdmin.companies.usersValue": "{{active}} نشط من {{total}}",
@@ -307,18 +345,25 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.companies.maxDocumentsLabel": "الحد الأقصى للمستندات:",
   "superAdmin.companies.storageLabel": "التخزين:",
   "superAdmin.companies.queriesPerMonthLabel": "الاستعلامات/شهريًا:",
+  "superAdmin.companies.fileSizeLabel": "حجم الملف:",
   "superAdmin.companies.recentActivity": "النشاط الأخير",
   "superAdmin.companies.byActor": "بواسطة {{email}}",
-  "superAdmin.companies.noSubscriptionOrPackage": "لا يوجد اشتراك أو باقة مُهيأة لهذا المستأجر.",
+  "superAdmin.companies.noSubscriptionOrPackage":
+    "لا يوجد اشتراك أو باقة مُهيأة لهذا المستأجر.",
 
   /* Company lifecycle dialog */
-  "superAdmin.companies.suspend": "إيقاف",
-  "superAdmin.companies.reinstate": "إعادة التنشيط",
-  "superAdmin.companies.suspendTitle": "إيقاف المستأجر",
-  "superAdmin.companies.reinstateTitle": "إعادة تنشيط المستأجر",
+  "superAdmin.companies.suspend": "إيقاف الشركة",
+  "superAdmin.companies.reinstate": "إعادة تنشيط الشركة",
+  "superAdmin.companies.suspendTitle": "إيقاف الشركة",
+  "superAdmin.companies.reinstateTitle": "إعادة تنشيط الشركة",
+  "superAdmin.companies.suspendDescription":
+    "إيقاف هذه الشركة يقيد الوصول لجميع المستخدمين. قد يفقد مستخدمو الشركة الوصول إلى مساحة عمل DocuMind AI الخاصة بهم.",
+  "superAdmin.companies.reinstateDescription":
+    "إعادة تنشيط هذه الشركة يستعيد الوصول للمستخدمين النشطين في الشركة.",
   "superAdmin.companies.closeDialog": "إغلاق {{title}}",
   "superAdmin.companies.currentStatusLabel": "الحالة الحالية:",
-  "superAdmin.companies.previewError": "تعذر تحميل المعاينة. يرجى المحاولة مرة أخرى.",
+  "superAdmin.companies.previewError":
+    "تعذر تحميل المعاينة. يرجى المحاولة مرة أخرى.",
   "superAdmin.companies.operationFailed": "فشلت العملية.",
   "superAdmin.companies.usersAffectedLabel": "المستخدمون المتأثرون:",
   "superAdmin.companies.adminsAffectedLabel": "المسؤولون المتأثرون:",
@@ -328,14 +373,35 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.companies.reasonPlaceholder": "أدخل سببًا (٣ أحرف على الأقل)...",
   "superAdmin.companies.reasonTooLong": "يجب ألا يتجاوز السبب ٥٠٠ حرف",
   "superAdmin.companies.reasonValid": "السبب صالح",
-  "superAdmin.companies.suspendSuccess": "تم إيقاف المستأجر بنجاح.",
-  "superAdmin.companies.reinstateSuccess": "تمت إعادة تنشيط المستأجر بنجاح.",
+  "superAdmin.companies.suspendSuccess": "تم إيقاف الشركة بنجاح.",
+  "superAdmin.companies.reinstateSuccess": "تمت إعادة تنشيط الشركة بنجاح.",
   "superAdmin.companies.charactersNeeded.zero": "لا حاجة لأحرف إضافية",
   "superAdmin.companies.charactersNeeded.one": "يلزم حرف واحد إضافي",
   "superAdmin.companies.charactersNeeded.two": "يلزم حرفان إضافيان",
   "superAdmin.companies.charactersNeeded.few": "يلزم {{count}} أحرف إضافية",
   "superAdmin.companies.charactersNeeded.many": "يلزم {{count}} حرفًا إضافيًا",
   "superAdmin.companies.charactersNeeded.other": "يلزم {{count}} حرف إضافي",
+
+  /* ── قائمة الشركات (عرض الشركات) ──────────────────────────── */
+  "superAdmin.companies.loading": "جارٍ تحميل الشركات",
+  "superAdmin.companies.loadingCount": "جارٍ تحميل عدد الشركات…",
+  "superAdmin.companies.count.zero": "لا توجد شركات",
+  "superAdmin.companies.count.one": "شركة واحدة",
+  "superAdmin.companies.count.two": "شركتان",
+  "superAdmin.companies.count.few": "{{count}} شركات",
+  "superAdmin.companies.count.many": "{{count}} شركة",
+  "superAdmin.companies.count.other": "{{count}} شركة",
+  "superAdmin.companies.searchLabel": "البحث عن الشركات",
+  "superAdmin.companies.filtersLabel": "فلاتر الشركات",
+  "superAdmin.companies.noMatch": "لا توجد شركات مطابقة لعوامل التصفية",
+  "superAdmin.companies.noMatchHint": "جرّب مسح عوامل التصفية أو تغييرها.",
+  "superAdmin.companies.noneYet": "لا توجد شركات بعد",
+  "superAdmin.companies.noneYetHint": "سيظهر الشركات هنا عند توفّرها.",
+  "superAdmin.companies.loadError":
+    "تعذّر تحميل الشركات. يرجى المحاولة مرة أخرى.",
+  "superAdmin.companies.loadingError":
+    "تعذّر تحميل خيارات الخطط. يرجى المحاولة مرة أخرى.",
+  "superAdmin.companies.noPermission": "ليس لديك إذن لإدارة الشركات.",
 
   /* Tenant + audit enum labels — codes stay English */
   "superAdmin.tenantStatus.active": "نشط",
@@ -365,9 +431,11 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.platformTenants.loadError": "تعذّر تحميل بيانات هذا المستأجر.",
 
   /* ── Package form ──────────────────────────────────────── */
-  "superAdmin.packageForm.noPermission": "لا تملك صلاحية إنشاء الباقات أو إصدار نسخ جديدة منها.",
+  "superAdmin.packageForm.noPermission":
+    "لا تملك صلاحية إنشاء الباقات أو إصدار نسخ جديدة منها.",
   "superAdmin.packageForm.versionBumpTitle": "ترقية الإصدار",
-  "superAdmin.packageForm.versionBumpBody": "سيؤدي التعديل إلى إنشاء إصدار جديد. تحتفظ الاشتراكات القائمة باللقطة الحالية.",
+  "superAdmin.packageForm.versionBumpBody":
+    "سيؤدي التعديل إلى إنشاء إصدار جديد. تحتفظ الاشتراكات القائمة باللقطة الحالية.",
   "superAdmin.packageForm.basicInfo": "المعلومات الأساسية",
   "superAdmin.packageForm.name": "الاسم",
   "superAdmin.packageForm.code": "الرمز",
@@ -379,10 +447,14 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.packageForm.maxFileSizeMb": "الحد الأقصى لحجم الملف (ميجابايت)",
   "superAdmin.packageForm.retentionDays": "مدة الاحتفاظ (أيام)",
   "superAdmin.packageForm.modelsHint": "مفصولة بفواصل. مقترحات: {{models}}",
-  "superAdmin.packageForm.visibilityPublicHelp": "— ظاهرة لجميع الشركات أثناء التوفير.",
-  "superAdmin.packageForm.visibilityInternalHelp": "— يمكن للمسؤول العام وحده تعيينها.",
-  "superAdmin.packageForm.versionConflict": "تغيّرت هذه الباقة في جلسة أخرى. تم تحديث البيانات الحالية؛ راجعها قبل الحفظ مرة أخرى.",
-  "superAdmin.packageForm.saveError": "تعذّر حفظ هذه الباقة. تحقق من القيم وحاول مرة أخرى.",
+  "superAdmin.packageForm.visibilityPublicHelp":
+    "— ظاهرة لجميع الشركات أثناء التوفير.",
+  "superAdmin.packageForm.visibilityInternalHelp":
+    "— يمكن للمسؤول العام وحده تعيينها.",
+  "superAdmin.packageForm.versionConflict":
+    "تغيّرت هذه الباقة في جلسة أخرى. تم تحديث البيانات الحالية؛ راجعها قبل الحفظ مرة أخرى.",
+  "superAdmin.packageForm.saveError":
+    "تعذّر حفظ هذه الباقة. تحقق من القيم وحاول مرة أخرى.",
   "superAdmin.packageForm.saving": "جارٍ الحفظ…",
   "superAdmin.packageForm.updatePackage": "تحديث الباقة",
   "superAdmin.packageForm.savePackage": "حفظ الباقة",
@@ -447,7 +519,8 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.retrievalDebug.tableExcerpt": "مقتطف النص",
   "superAdmin.retrievalDebug.rankValue": "#{{rank}}",
   "superAdmin.retrievalDebug.conflictGroups": "مجموعات التعارض",
-  "superAdmin.retrievalDebug.conflictDetail": "{{description}} (العناصر: {{items}})",
+  "superAdmin.retrievalDebug.conflictDetail":
+    "{{description}} (العناصر: {{items}})",
   "superAdmin.retrievalDebug.scoreExplanation": "تفسير الدرجة:",
   "superAdmin.retrievalMethod.hybrid": "هجين",
   "superAdmin.retrievalMethod.vector": "متجهي",

@@ -11,6 +11,7 @@ import { CopilotPanel } from "@/components/copilot/CopilotPanel";
 import { CopilotLauncher } from "@/components/copilot/CopilotLauncher";
 import { GuideOverlay } from "@/components/copilot/guide/GuideOverlay";
 import { NotificationToasts } from "@/components/ui/NotificationToasts";
+import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -35,7 +36,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <TopNavBar onNavigationOpen={() => setNavigationOpen(true)} />
               <main
                 data-guide-id="section-content"
-                className="flex min-w-0 min-h-0 flex-1 flex-col"
+                className={cn(
+                  "flex min-w-0 min-h-0 flex-1 flex-col",
+                  COPILOT_ENABLED && "pb-20",
+                )}
               >
                 {children}
               </main>

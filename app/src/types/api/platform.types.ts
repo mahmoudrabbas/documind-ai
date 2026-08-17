@@ -18,6 +18,17 @@ export interface PlatformTenant {
   status: TenantStatus;
   /** @deprecated Use subscription data from super-admin subscriptions endpoint instead. */
   plan: TenantPlan;
+  /**
+   * Identifier of the package attached to the tenant's current effective
+   * subscription, or null when the tenant has no effective subscription.
+   * This is the authoritative "Plan" source of truth for the Companies view.
+   */
+  effectivePackageId: string | null;
+  /**
+   * Display name of the package attached to the tenant's current effective
+   * subscription, or null when the tenant has no effective subscription.
+   */
+  effectivePackageName: string | null;
   createdAt: string;
   updatedAt: string;
   stats: { users: number; documents: number; questions: number };
@@ -28,9 +39,15 @@ export interface TenantListQuery {
   pageSize: (typeof PAGE_SIZES)[number];
   search: string;
   status: "" | TenantStatus;
+  /** @deprecated Use subscription data from super-admin subscriptions endpoint instead. */
   plan: "" | TenantPlan;
+  /**
+   * Authoritative Companies Plan filter: the id of the package whose current
+   * effective subscription must match. Applied server-side, before pagination.
+   * Independent of the legacy `plan` field.
+*/
+  packageId?: string;
 }
-
 export interface TenantListResponse {
   success: true;
   data: {

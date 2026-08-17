@@ -194,7 +194,12 @@ function LifecycleDialog({
         <p className="mt-1 text-sm text-on-surface-variant">
           {tenant.name} ({tenant.slug})
         </p>
-        <p className="mt-1 text-sm text-on-surface-variant">
+        <p className="mt-3 text-sm text-on-surface-variant">
+          {isSuspend
+            ? t("superAdmin.companies.suspendDescription")
+            : t("superAdmin.companies.reinstateDescription")}
+        </p>
+        <p className="mt-2 text-sm text-on-surface-variant">
           {t("superAdmin.companies.currentStatusLabel")}{" "}
           <StatusPill
             value={tenant.status}
@@ -429,11 +434,8 @@ export default function CompanyDetailPage() {
                   <button
                     type="button"
                     onClick={() => setLifecycleAction("suspend")}
-                    className="inline-flex items-center gap-1 rounded-lg bg-error/10 px-3 py-1.5 text-sm font-medium text-error transition-colors hover:bg-error/20"
+                    className="inline-flex items-center rounded-lg bg-error/10 px-3 py-1.5 text-sm font-medium text-error transition-colors hover:bg-error/20"
                   >
-                    <span className="material-symbols-outlined text-[16px]">
-                      block
-                    </span>
                     {t("superAdmin.companies.suspend")}
                   </button>
                 )}
@@ -441,11 +443,8 @@ export default function CompanyDetailPage() {
                   <button
                     type="button"
                     onClick={() => setLifecycleAction("reinstate")}
-                    className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
+                    className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
                   >
-                    <span className="material-symbols-outlined text-[16px]">
-                      restart_alt
-                    </span>
                     {t("superAdmin.companies.reinstate")}
                   </button>
                 )}
@@ -453,239 +452,325 @@ export default function CompanyDetailPage() {
             }
           />
 
-          <div className="grid auto-rows-auto items-start gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3 xl:gap-5">
-            {[
-              ["plan", t("superAdmin.companies.plan"), codeLabel(t, "superAdmin.tenantPlan", state.data.plan)],
-              [
-                "users",
-                t("superAdmin.companies.users"),
-                t("superAdmin.companies.usersValue", {
-                  active: String(state.data.users.active),
-                  total: String(state.data.users.total),
-                }),
-              ],
-              ["companyAdmins", t("superAdmin.companies.companyAdmins"), state.data.users.companyAdmins],
-              ["employees", t("superAdmin.packages.employees"), state.data.users.employees],
-              ["documents", t("superAdmin.documents"), state.data.usage.documents],
-              ["storage", t("superAdmin.storage"), formatBytes(state.data.usage.storageBytes)],
-              ["queries", t("superAdmin.queries"), state.data.usage.questions],
-              [
-                "created",
-                t("superAdmin.tableCreated"),
-                new Date(state.data.createdAt).toLocaleDateString(intlLocale),
-              ],
-              [
-                "updated",
-                t("superAdmin.tableUpdated"),
-                new Date(state.data.updatedAt).toLocaleDateString(intlLocale),
-              ],
-            ].map(([id, label, value]) => (
-              <DashboardPanel key={id} padding="compact">
-                <p className="text-sm text-on-surface-variant">{label}</p>
-                <p className="mt-1 break-words text-title-lg font-bold text-primary">
-                  {value}
-                </p>
-              </DashboardPanel>
-            ))}
-          </div>
+          <DashboardPanel className="mt-4">
+            <h2 className="text-title-sm font-bold text-on-surface">
+              {t("superAdmin.companies.overview")}
+            </h2>
+            <dl className="mt-4 grid gap-x-6 gap-y-6 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="min-w-0 border-s-2 border-primary/40 ps-3">
+                <dt className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {t("superAdmin.companies.plan")}
+                </dt>
+                <dd className="mt-2 break-words text-title-lg font-bold text-primary">
+                  {state.data.package?.packageName ??
+                    codeLabel(t, "superAdmin.tenantPlan", state.data.plan)}
+                </dd>
+              </div>
+              <div className="min-w-0 border-s-2 border-primary/40 ps-3">
+                <dt className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {t("superAdmin.companies.people")}
+                </dt>
+                <dd className="mt-2">
+                  <dl className="grid grid-cols-3 gap-3">
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.companies.users")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {t("superAdmin.companies.usersValue", {
+                          active: String(state.data.users.active),
+                          total: String(state.data.users.total),
+                        })}
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.companies.companyAdmins")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {state.data.users.companyAdmins}
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.packages.employees")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {state.data.users.employees}
+                      </dd>
+                    </div>
+                  </dl>
+                </dd>
+              </div>
+              <div className="min-w-0 border-s-2 border-primary/40 ps-3">
+                <dt className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {t("superAdmin.companies.usage")}
+                </dt>
+                <dd className="mt-2">
+                  <dl className="grid grid-cols-3 gap-3">
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.documents")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {state.data.usage.documents}
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.storage")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {formatBytes(state.data.usage.storageBytes)}
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.queries")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {state.data.usage.questions}
+                      </dd>
+                    </div>
+                  </dl>
+                </dd>
+              </div>
+              <div className="min-w-0 border-s-2 border-primary/40 ps-3">
+                <dt className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {t("superAdmin.companies.record")}
+                </dt>
+                <dd className="mt-2">
+                  <dl className="grid grid-cols-2 gap-3">
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.tableCreated")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {new Date(state.data.createdAt).toLocaleDateString(intlLocale)}
+                      </dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t("superAdmin.tableUpdated")}
+                      </dt>
+                      <dd className="mt-0.5 text-title-md font-bold text-on-surface">
+                        {new Date(state.data.updatedAt).toLocaleDateString(intlLocale)}
+                      </dd>
+                    </div>
+                  </dl>
+                </dd>
+              </div>
+            </dl>
+          </DashboardPanel>
 
           {state.data.subscription && (
             <DashboardPanel className="mt-4">
-              <h3 className="text-title-sm font-bold text-on-surface">
+              <h2 className="text-title-sm font-bold text-on-surface">
                 {t("superAdmin.companies.subscription")}
-              </h3>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+              </h2>
+              <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div>
-                  <span className="text-on-surface-variant">
+                  <dt className="text-on-surface-variant">
                     {t("superAdmin.companies.statusLabel")}
-                  </span>
-                  <span className="ms-1 font-bold text-on-surface">
+                  </dt>
+                  <dd className="mt-0.5 font-bold text-on-surface">
                     {codeLabel(
                       t,
                       "superAdmin.subsStatus",
                       state.data.subscription.status,
                     )}
-                  </span>
+                  </dd>
                 </div>
                 <div>
-                  <span className="text-on-surface-variant">
+                  <dt className="text-on-surface-variant">
                     {t("superAdmin.companies.providerLabel")}
-                  </span>
-                  <span className="ms-1 font-bold text-on-surface">
+                  </dt>
+                  <dd className="mt-0.5 font-bold text-on-surface">
                     {codeLabel(
                       t,
                       "superAdmin.subsProvider",
                       state.data.subscription.provider,
                     )}
-                  </span>
+                  </dd>
                 </div>
                 {state.data.subscription.periodStart && (
                   <div>
-                    <span className="text-on-surface-variant">
+                    <dt className="text-on-surface-variant">
                       {t("superAdmin.companies.periodStartLabel")}
-                    </span>
-                    <span className="ms-1 font-bold text-on-surface">
+                    </dt>
+                    <dd className="mt-0.5 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.periodStart,
                       ).toLocaleDateString(intlLocale)}
-                    </span>
+                    </dd>
                   </div>
                 )}
                 {state.data.subscription.periodEnd && (
                   <div>
-                    <span className="text-on-surface-variant">
+                    <dt className="text-on-surface-variant">
                       {t("superAdmin.companies.periodEndLabel")}
-                    </span>
-                    <span className="ms-1 font-bold text-on-surface">
+                    </dt>
+                    <dd className="mt-0.5 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.periodEnd,
                       ).toLocaleDateString(intlLocale)}
-                    </span>
+                    </dd>
                   </div>
                 )}
                 {state.data.subscription.trialEnd && (
                   <div>
-                    <span className="text-on-surface-variant">
+                    <dt className="text-on-surface-variant">
                       {t("superAdmin.subsTrialEndLabel")}
-                    </span>
-                    <span className="ms-1 font-bold text-on-surface">
+                    </dt>
+                    <dd className="mt-0.5 font-bold text-on-surface">
                       {new Date(
                         state.data.subscription.trialEnd,
                       ).toLocaleDateString(intlLocale)}
-                    </span>
+                    </dd>
                   </div>
                 )}
                 {state.data.subscription.cancelAtPeriodEnd && (
                   <div>
-                    <span className="text-on-surface-variant">
+                    <dt className="text-on-surface-variant">
                       {t("superAdmin.companies.cancelAtPeriodEndLabel")}
-                    </span>
-                    <span className="ms-1 font-bold text-error">
+                    </dt>
+                    <dd className="mt-0.5 font-bold text-error">
                       {t("superAdmin.verifiedYes")}
-                    </span>
+                    </dd>
                   </div>
                 )}
-              </div>
+              </dl>
             </DashboardPanel>
           )}
 
           {state.data.package && (
             <DashboardPanel className="mt-4">
-              <h3 className="text-title-sm font-bold text-on-surface">
+              <h2 className="text-title-sm font-bold text-on-surface">
                 {t("superAdmin.subsTablePackage")}
-              </h3>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-                <div>
-                  <span className="text-on-surface-variant">
-                    {t("superAdmin.companies.nameLabel")}
-                  </span>
-                  <span className="ms-1 font-bold text-on-surface">
-                    {state.data.package.packageName}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-on-surface-variant">
-                    {t("superAdmin.companies.codeLabel")}
-                  </span>
-                  <span className="ms-1 font-bold text-on-surface">
-                    {state.data.package.packageCode}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-on-surface-variant">
-                    {t("superAdmin.companies.versionLabel")}
-                  </span>
-                  <span className="ms-1 font-bold text-on-surface">
-                    {state.data.package.packageVersion}
-                  </span>
-                </div>
-                {state.data.package.entitlements && (
-                  <>
+              </h2>
+              <p className="mt-2 break-words text-title-lg font-bold text-on-surface">
+                {state.data.package.packageName}
+              </p>
+              <p className="mt-0.5 text-sm text-on-surface-variant">
+                {state.data.package.packageCode} ·{" "}
+                {t("superAdmin.packages.versionLabel", {
+                  version: String(state.data.package.packageVersion),
+                })}
+              </p>
+              {state.data.package.entitlements && (
+                <>
+                  <div
+                    className="my-4 h-px bg-outline-variant/40"
+                    aria-hidden="true"
+                  />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                    {t("superAdmin.packages.entitlements")}
+                  </h3>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
                     <div>
-                      <span className="text-on-surface-variant">
-                        {t("superAdmin.companies.maxEmployeesLabel")}
-                      </span>
-                      <span className="ms-1 font-bold text-on-surface">
+                      <dt className="text-on-surface-variant">
+                        {t("superAdmin.packages.employees")}
+                      </dt>
+                      <dd className="mt-0.5 font-bold text-on-surface">
                         {state.data.package.entitlements.employees}
-                      </span>
+                      </dd>
                     </div>
                     <div>
-                      <span className="text-on-surface-variant">
-                        {t("superAdmin.companies.maxAdminsLabel")}
-                      </span>
-                      <span className="ms-1 font-bold text-on-surface">
+                      <dt className="text-on-surface-variant">
+                        {t("superAdmin.packages.admins")}
+                      </dt>
+                      <dd className="mt-0.5 font-bold text-on-surface">
                         {state.data.package.entitlements.admins}
-                      </span>
+                      </dd>
                     </div>
                     <div>
-                      <span className="text-on-surface-variant">
+                      <dt className="text-on-surface-variant">
                         {t("superAdmin.companies.maxDocumentsLabel")}
-                      </span>
-                      <span className="ms-1 font-bold text-on-surface">
+                      </dt>
+                      <dd className="mt-0.5 font-bold text-on-surface">
                         {state.data.package.entitlements.documents}
-                      </span>
+                      </dd>
                     </div>
                     <div>
-                      <span className="text-on-surface-variant">
+                      <dt className="text-on-surface-variant">
                         {t("superAdmin.companies.storageLabel")}
-                      </span>
-                      <span className="ms-1 font-bold text-on-surface">
+                      </dt>
+                      <dd className="mt-0.5 font-bold text-on-surface">
                         {t("superAdmin.packages.megabytes", {
                           value: String(
                             state.data.package.entitlements.storageMb,
                           ),
                         })}
-                      </span>
+                      </dd>
                     </div>
                     <div>
-                      <span className="text-on-surface-variant">
-                        {t("superAdmin.companies.queriesPerMonthLabel")}
-                      </span>
-                      <span className="ms-1 font-bold text-on-surface">
-                        {state.data.package.entitlements.queriesPerMonth}
-                      </span>
+                      <dt className="text-on-surface-variant">
+                        {t("superAdmin.companies.fileSizeLabel")}
+                      </dt>
+                      <dd className="mt-0.5 font-bold text-on-surface">
+                        {t("superAdmin.packages.megabytes", {
+                          value: String(
+                            state.data.package.entitlements.fileSizeMb,
+                          ),
+                        })}
+                      </dd>
                     </div>
-                  </>
-                )}
-              </div>
+                    <div>
+                      <dt className="text-on-surface-variant">
+                        {t("superAdmin.packages.queriesPerMonth")}
+                      </dt>
+                      <dd className="mt-0.5 font-bold text-on-surface">
+                        {state.data.package.entitlements.queriesPerMonth}
+                      </dd>
+                    </div>
+                  </dl>
+                </>
+              )}
             </DashboardPanel>
           )}
 
           {state.data.recentAudit.length > 0 && (
             <DashboardPanel className="mt-4">
-              <h3 className="text-title-sm font-bold text-on-surface">
+              <h2 className="text-title-sm font-bold text-on-surface">
                 {t("superAdmin.companies.recentActivity")}
-              </h3>
-              <div className="mt-3 space-y-2">
-                {state.data.recentAudit.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between rounded-lg bg-surface-container px-3 py-2 text-sm"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-on-surface">
-                        {entry.action}
+              </h2>
+              <ul className="mt-3 divide-y divide-outline-variant/30">
+                {state.data.recentAudit.map((entry) => {
+                  const outcomeCode = entry.outcome.toLowerCase();
+                  const isFailure = ["failure", "denied"].includes(
+                    outcomeCode,
+                  );
+                  return (
+                    <li
+                      key={entry.id}
+                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-3 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-on-surface">
+                          {entry.action}
+                        </p>
+                        {entry.actorEmail && (
+                          <p className="mt-0.5 truncate text-on-surface-variant">
+                            {t("superAdmin.companies.byActor", {
+                              email: entry.actorEmail,
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`text-xs font-bold ${
+                          isFailure ? "text-error" : "text-on-surface-variant"
+                        }`}
+                      >
+                        {codeLabel(t, "superAdmin.auditOutcome", entry.outcome)}
                       </span>
-                      {entry.actorEmail && (
-                        <span className="text-on-surface-variant">
-                          {t("superAdmin.companies.byActor", {
-                            email: entry.actorEmail,
-                          })}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <StatusPill
-                        value={entry.outcome.toLowerCase()}
-                        label={codeLabel(t, "superAdmin.auditOutcome", entry.outcome)}
-                      />
-                      <span className="text-on-surface-variant">
+                      <span className="whitespace-nowrap text-on-surface-variant">
                         {new Date(entry.createdAt).toLocaleString(intlLocale)}
                       </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </DashboardPanel>
           )}
 

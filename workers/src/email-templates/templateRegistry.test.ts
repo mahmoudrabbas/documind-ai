@@ -83,3 +83,50 @@ test("worker escapes dynamic values and preserves token URLs", () => {
   assert.ok(result.html.includes("&lt;script&gt;"));
   assert.ok(result.html.includes(`href="${VERIFICATION_URL}"`));
 });
+
+// ─── Company lifecycle notices ─────────────────────────────────────────────────
+
+const lifecycleVars = {
+  companyName: "Acme Corp",
+  effectiveDate: "Mon, 17 Aug 2026 12:00:00 GMT",
+  reason: "Policy violation investigation",
+};
+
+test("worker suspended template names the company and states access is restricted", () => {
+  const result = getTemplate("company_suspended", "en", lifecycleVars);
+  assert.equal(
+    result.subject,
+    "DocuMind AI — Your organization has been suspended",
+  );
+  assert.ok(result.html.includes("Acme Corp"));
+  assert.ok(result.html.includes("has been suspended"));
+  assert.ok(result.html.includes("currently unavailable"));
+});
+
+test("worker suspended template discloses the reason when provided", () => {
+  const result = getTemplate("company_suspended", "en", lifecycleVars);
+  assert.ok(result.html.includes("Reason:"));
+  assert.ok(result.html.includes("Policy violation investigation"));
+});
+
+test("worker reactivated template names the company and restores access", () => {
+  const result = getTemplate("company_reactivated", "en", lifecycleVars);
+  assert.equal(
+    result.subject,
+    "DocuMind AI — Your organization has been reactivated",
+  );
+  assert.ok(result.html.includes("Acme Corp"));
+  assert.ok(result.html.includes("has been reactivated"));
+  assert.ok(result.html.includes("Users may access DocuMind AI again"));
+});
+
+test("worker lifecycle notices render localized Arabic copy", () => {
+  const suspended = getTemplate("company_suspended", "ar", lifecycleVars);
+  assert.ok(suspended.html.includes('lang="ar" dir="rtl"'));
+  assert.ok(suspended.html.includes("تم إيقاف مؤسستك"));
+  assert.ok(suspended.html.includes("السبب:"));
+
+  const reactivated = getTemplate("company_reactivated", "ar", lifecycleVars);
+  assert.ok(reactivated.html.includes("تمت إعادة تنشيط مؤسستك"));
+  assert.ok(reactivated.html.includes("Acme Corp"));
+});
