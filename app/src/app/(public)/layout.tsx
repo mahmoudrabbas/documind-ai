@@ -25,7 +25,6 @@ function PublicFooter() {
             </h4>
             <ul className="mt-4 space-y-3">
               {[
-                { label: t("landing.footerProductFeatures"), href: "#features" },
                 { label: t("landing.footerProductPricing"), href: "#pricing" },
                 { label: t("landing.footerProductSecurity"), href: "#security" },
                 { label: t("landing.footerProductFaq"), href: "#faq" },

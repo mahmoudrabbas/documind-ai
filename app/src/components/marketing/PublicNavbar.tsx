@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
  * homepage sections are redesigned, update the target ids (not the copy).
  */
 const NAV_LINKS = [
-  { id: "features", key: "landing.navProduct" },
   { id: "how-it-works", key: "landing.navSolutions" },
   { id: "security", key: "landing.navSecurity" },
   { id: "pricing", key: "landing.navPricing" },
