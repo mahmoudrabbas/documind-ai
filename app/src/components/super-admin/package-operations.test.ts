@@ -52,7 +52,7 @@ describe("package management state contracts", () => {
   });
 
   it("landing pricing contains no hardcoded package fallback", async () => {
-    const source = await readFile(new URL("../../app/(public)/page.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../marketing/PricingSection.tsx", import.meta.url), "utf8");
     expect(source).toContain('"/public/packages"');
     expect(source).not.toContain("free-fallback");
     expect(source).not.toContain("fallbackFree");
