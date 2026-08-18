@@ -569,6 +569,46 @@ const ar: TranslationDictionary = {
   "landing.solClosing1": "تختلف الأسئلة،",
   "landing.solClosing2": "لكن المعرفة الموثوقة تبقى موحّدة ومحكومة بالصلاحيات.",
 
+  /* ── landing / security & trust ─────────────────────────── */
+  "landing.secEyebrow": "الأمان والثقة",
+  "landing.secTitle1": "معرفة شركتك",
+  "landing.secTitle2a": "يجب أن تبقى",
+  "landing.secTitle2b": "داخل نطاق شركتك.",
+  "landing.secSupport":
+    "بُني DocuMind حول عزل بيانات المؤسسات، والتحكم في صلاحيات الوصول، وإمكانية تتبّع استخدام المعرفة، بحيث تبقى معلومات الشركة ضمن النطاق والأشخاص المصرّح لهم بها.",
+  "landing.secPlatformLabel": "منصة واحدة. مساحات معرفية منفصلة.",
+  "landing.secOrgBoundary": "حدود المؤسسة",
+  "landing.secIsolatedScope": "نطاق معزول",
+  "landing.secKnowledgeLabel": "المعرفة",
+  "landing.secUsersLabel": "المستخدمون",
+  "landing.secRoleCompanyAdmin": "مدير الشركة",
+  "landing.secRoleEmployee": "موظف",
+  "landing.secRoleOperationsManager": "مدير العمليات",
+  "landing.secAccessLabel": "وصول مُتحكَّم به",
+  "landing.secAccessStatement":
+    "يتبع الوصول نطاق المؤسسة والصلاحيات الممنوحة للمستخدم.",
+  "landing.secAuditLabel": "سجل النشاط",
+  "landing.secAuditCaption": "يُسجَّل ذلك في سجل تدقيق المنصة.",
+  "landing.secAuditEvent1": "استعلام عن المعرفة",
+  "landing.secAuditEvent2": "استرجاع مصدر مصرّح به",
+  "landing.secAuditEvent3": "فهرسة مستند",
+  "landing.secTraceableLabel": "معرفة قابلة للتتبّع",
+  "landing.secTraceableLead":
+    "يكون الوصول الآمن أقوى عندما تبقى الإجابات قابلة للتتبّع إلى مصدرها.",
+  "landing.secAnswerLabel": "الإجابة",
+  "landing.secAnswer": "15 دقيقة",
+  "landing.secPrinciple1Title": "تظل حدود كل مؤسسة معزولة عن غيرها.",
+  "landing.secPrinciple1Body":
+    "تبقى معرفة الشركة داخل نطاق مؤسستها ولا تنتقل إلى مساحة مؤسسة أخرى.",
+  "landing.secPrinciple2Title": "يرتبط الوصول بهوية المستخدم ونطاق صلاحياته.",
+  "landing.secPrinciple2Body":
+    "لا يصل المستخدم إلا إلى المعرفة المتاحة ضمن دوره وسياق عمله.",
+  "landing.secPrinciple3Title": "تبقى الأنشطة المهمة قابلة للتتبّع.",
+  "landing.secPrinciple3Body":
+    "يمكن الرجوع إلى السجلات ذات الصلة عند الحاجة إلى المراجعة.",
+  "landing.secClosing": "الثقة ليست ميزة منفردة،",
+  "landing.secClosing2": "بل جزء من طريقة بناء النظام.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
   "auth.noPackage": "لم يتم تحديد خطة",

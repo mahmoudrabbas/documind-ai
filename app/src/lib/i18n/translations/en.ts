@@ -569,6 +569,46 @@ const en: TranslationDictionary = {
   "landing.solClosing1": "Different questions.",
   "landing.solClosing2": "One governed source of truth.",
 
+  /* ── landing / security & trust ─────────────────────────── */
+  "landing.secEyebrow": "Security & Trust",
+  "landing.secTitle1": "Your company knowledge",
+  "landing.secTitle2a": "should stay",
+  "landing.secTitle2b": "your company knowledge.",
+  "landing.secSupport":
+    "DocuMind is built around organizational isolation, controlled access, and traceable knowledge use, so company information remains scoped to the people and contexts where it belongs.",
+  "landing.secPlatformLabel": "One platform. Separate knowledge spaces.",
+  "landing.secOrgBoundary": "Organization boundary",
+  "landing.secIsolatedScope": "Isolated scope",
+  "landing.secKnowledgeLabel": "Knowledge",
+  "landing.secUsersLabel": "Users",
+  "landing.secRoleCompanyAdmin": "Company Admin",
+  "landing.secRoleEmployee": "Employee",
+  "landing.secRoleOperationsManager": "Operations Manager",
+  "landing.secAccessLabel": "Controlled access",
+  "landing.secAccessStatement":
+    "Access follows the organization and the user's assigned scope.",
+  "landing.secAuditLabel": "Activity trace",
+  "landing.secAuditCaption": "Recorded in the platform audit log.",
+  "landing.secAuditEvent1": "Knowledge queried",
+  "landing.secAuditEvent2": "Authorized source retrieved",
+  "landing.secAuditEvent3": "Document indexed",
+  "landing.secTraceableLabel": "Traceable knowledge",
+  "landing.secTraceableLead":
+    "Secure access is stronger when answers stay traceable to their source.",
+  "landing.secAnswerLabel": "Answer",
+  "landing.secAnswer": "15 minutes",
+  "landing.secPrinciple1Title": "Organization boundaries stay isolated.",
+  "landing.secPrinciple1Body":
+    "Company knowledge is scoped to its own tenant and should not cross into another organization's workspace.",
+  "landing.secPrinciple2Title": "Access follows identity and scope.",
+  "landing.secPrinciple2Body":
+    "Users reach only the company knowledge available to their role and context.",
+  "landing.secPrinciple3Title": "Important activity stays traceable.",
+  "landing.secPrinciple3Body":
+    "Administrative and knowledge-system activity should leave a record that can be reviewed when needed.",
+  "landing.secClosing": "Trust is not one feature.",
+  "landing.secClosing2": "It is how the system is built.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",
   "auth.noPackage": "No package selected",

@@ -13,6 +13,7 @@ import { HowDocuMindWorksSection } from "@/components/marketing/HowDocuMindWorks
 import { PermissionAwareIntelligenceSection } from "@/components/marketing/PermissionAwareIntelligenceSection";
 import { GroundedAnswersEvidenceSection } from "@/components/marketing/GroundedAnswersEvidenceSection";
 import { SolutionsUseCasesSection } from "@/components/marketing/SolutionsUseCasesSection";
+import { SecurityTrustSection } from "@/components/marketing/SecurityTrustSection";
 
 type PackageData = {
   id: string;
@@ -108,46 +109,12 @@ function FeaturesSection() {
 /**
  * Security — the page's one dark band between the hero and the closing CTA.
  *
- * Seven consecutive light sections alternating only between #ffffff and
- * #f7f9fc read as one flat scroll. Putting the navy here breaks that run and
- * lands it where DESIGN.md wants it: on the institutional-trust message.
+ * Now owned by `@/components/marketing/SecurityTrustSection` — one
+ * trust-architecture visual (two isolated organizations inside a single
+ * DocuMind platform frame), a restrained activity trace, and three editorial
+ * trust principles. It was moved out of this page module when the section
+ * stopped being a grid of security cards.
  */
-function SecuritySection() {
-  const { t, dir } = useI18n();
-  const items = [
-    { icon: "lock", title: t("landing.securityEncryption"), desc: t("landing.securityEncryptionDesc") },
-    { icon: "business", title: t("landing.securityIsolation"), desc: t("landing.securityIsolationDesc") },
-    { icon: "verified", title: t("landing.securityCompliance"), desc: t("landing.securityComplianceDesc") },
-    { icon: "summarize", title: t("landing.securityAudit"), desc: t("landing.securityAuditDesc") },
-  ];
-  return (
-    <section id="security" className={cn("relative overflow-hidden bg-primary", SECTION_Y, ANCHOR_OFFSET)} dir={dir}>
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.06),transparent_60%)]" />
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto mb-12 max-w-2xl text-center">
-          <h2 className="text-headline-md text-on-primary sm:text-headline-lg">{t("landing.securityTitle")}</h2>
-          <p className="mt-4 text-body-lg text-on-primary/70">{t("landing.securitySubtitle")}</p>
-        </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {items.map((item) => (
-            <div
-              key={item.title}
-              className="rounded-xl border border-on-primary/10 bg-primary-container/60 p-6 text-center transition-colors hover:border-on-primary/20 hover:bg-primary-container"
-            >
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-tertiary-fixed/15">
-                <span className="material-symbols-outlined text-tertiary-fixed" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  {item.icon}
-                </span>
-              </div>
-              <h3 className="mt-4 text-title-lg text-on-primary">{item.title}</h3>
-              <p className="mt-2 text-body-sm text-on-primary/70">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function formatCurrency(amount: number, currency: string): string {
   return formatMoneyMinor(amount, currency);
@@ -686,8 +653,8 @@ export default function LandingPage() {
       <PermissionAwareIntelligenceSection />
       <GroundedAnswersEvidenceSection />
       <SolutionsUseCasesSection />
+      <SecurityTrustSection />
       <FeaturesSection />
-      <SecuritySection />
       <PricingSection />
       <FaqSection />
       <CtaSection />
