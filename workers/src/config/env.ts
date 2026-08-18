@@ -104,7 +104,7 @@ const envSchema = z
     AI_PROVIDER: z.enum(["openai", "groq", "student-bedrock", "fake"]).default("fake"),
 
     GROQ_API_KEY: z.string().default(""),
-    GROQ_CHAT_MODEL: z.string().default("llama-3.3-70b-versatile"),
+    GROQ_CHAT_MODEL: z.string().default("openai/gpt-oss-120b"),
 
     JINA_API_KEY: z.string().default(""),
     JINA_EMBEDDING_MODEL: z.string().default("jina-embeddings-v3"),

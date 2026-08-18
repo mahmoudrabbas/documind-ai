@@ -170,7 +170,7 @@ services:
       - BEDROCK_MAX_RETRIES=${BEDROCK_MAX_RETRIES:-1}
       - BEDROCK_RETRY_DELAY_MS=${BEDROCK_RETRY_DELAY_MS:-500}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_CHAT_MODEL=llama-3.3-70b-versatile
+      - GROQ_CHAT_MODEL=openai/gpt-oss-120b
       - JINA_API_KEY=${JINA_API_KEY}
       - JINA_EMBEDDING_MODEL=jina-embeddings-v3
       - JINA_EMBEDDING_DIMENSIONS=1024
