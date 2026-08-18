@@ -114,6 +114,10 @@ interface HarnessOptions {
   secondSearchCandidates?: HarnessOptions["searchCandidates"];
   searchAuthorizationRestricted?: boolean;
   evidenceAuthorizationRestricted?: boolean;
+  /** First evaluate_evidence returns CANDIDATE_PROVENANCE_MISSING. */
+  evidenceProvenanceMissingOnce?: boolean;
+  /** Every evaluate_evidence returns CANDIDATE_PROVENANCE_MISSING. */
+  evidenceProvenanceMissing?: boolean;
   skipComplianceOutput?: boolean;
   authorizationReject?: boolean;
   missingPersistedActor?: boolean;
@@ -285,7 +289,7 @@ function makeHarness(options: HarnessOptions = {}) {
       });
       if (initialDecision) observations.decisions.push(initialDecision);
 
-      const payload = hooks.resolveHandoffPayload?.({
+      const payload = await hooks.resolveHandoffPayload?.({
         workflowId: "chat-rag-v1",
         fromAgent: "chat-supervisor",
         toAgent: "intent-query-agent",
@@ -442,15 +446,24 @@ function makeHarness(options: HarnessOptions = {}) {
             proposedInput: { question: "forged", candidateIds: [chunkC] },
           }) ?? {};
           observations.tools.push({ name: "evaluate_evidence", input: evidenceInput });
-          const evidenceOutput = {
-            sufficiency: scenario === "grounded" ? "SUFFICIENT" : scenario === "weak" ? "WEAK" : "NO_EVIDENCE",
-            approvedEvidenceIds: scenario === "grounded" ? approvedIds : [],
-            rejectedEvidenceIds: scenario === "grounded" ? [] : candidates.map((candidate) => candidate.chunkId),
-            reasonCode: scenario === "grounded" ? "EVIDENCE_SUFFICIENT" : scenario === "weak" ? "EVIDENCE_WEAK" : "NO_EVIDENCE",
-            ...(options.evidenceAuthorizationRestricted !== undefined
-              ? { authorizationRestricted: options.evidenceAuthorizationRestricted }
-              : {}),
-          };
+          const provenanceMissingFirst =
+            options.evidenceProvenanceMissing || options.evidenceProvenanceMissingOnce;
+          const evidenceOutput = provenanceMissingFirst
+            ? {
+                sufficiency: "NO_EVIDENCE",
+                approvedEvidenceIds: [],
+                rejectedEvidenceIds: candidates.map((candidate) => candidate.chunkId),
+                reasonCode: "CANDIDATE_PROVENANCE_MISSING",
+              }
+            : {
+                sufficiency: scenario === "grounded" ? "SUFFICIENT" : scenario === "weak" ? "WEAK" : "NO_EVIDENCE",
+                approvedEvidenceIds: scenario === "grounded" ? approvedIds : [],
+                rejectedEvidenceIds: scenario === "grounded" ? [] : candidates.map((candidate) => candidate.chunkId),
+                reasonCode: scenario === "grounded" ? "EVIDENCE_SUFFICIENT" : scenario === "weak" ? "EVIDENCE_WEAK" : "NO_EVIDENCE",
+                ...(options.evidenceAuthorizationRestricted !== undefined
+                  ? { authorizationRestricted: options.evidenceAuthorizationRestricted }
+                  : {}),
+              };
           hooks.onToolResult?.({
             workflowId: "chat-rag-v1",
             currentAgent: "chat-supervisor",
@@ -473,10 +486,75 @@ function makeHarness(options: HarnessOptions = {}) {
             },
           });
           if (afterEvidenceDecision) observations.decisions.push(afterEvidenceDecision);
+
+          if (provenanceMissingFirst) {
+            // The trusted policy retries the authorized search once with the
+            // identical query and document restrictions, then re-evaluates.
+            const retrySearchInput = hooks.resolveToolInput?.({
+              workflowId: "chat-rag-v1",
+              currentAgent: "chat-supervisor",
+              toolName: "authorized_hybrid_search",
+              currentInput: state,
+              proposedInput: { queryText: "forged-retry" },
+            }) ?? {};
+            observations.tools.push({ name: "authorized_hybrid_search", input: retrySearchInput });
+            hooks.onToolResult?.({
+              workflowId: "chat-rag-v1",
+              currentAgent: "chat-supervisor",
+              toolName: "authorized_hybrid_search",
+              validatedOutput: searchOutput,
+              currentInput: state,
+            });
+            state = { ...state, ...searchOutput };
+
+            const retryEvidenceInput = hooks.resolveToolInput?.({
+              workflowId: "chat-rag-v1",
+              currentAgent: "chat-supervisor",
+              toolName: "evaluate_evidence",
+              currentInput: state,
+              proposedInput: { question: "forged", candidateIds: [chunkC] },
+            }) ?? {};
+            observations.tools.push({ name: "evaluate_evidence", input: retryEvidenceInput });
+            const retryEvidenceOutput = options.evidenceProvenanceMissing
+              ? {
+                  sufficiency: "NO_EVIDENCE",
+                  approvedEvidenceIds: [],
+                  rejectedEvidenceIds: candidates.map((candidate) => candidate.chunkId),
+                  reasonCode: "CANDIDATE_PROVENANCE_MISSING",
+                }
+              : {
+                  sufficiency: "SUFFICIENT",
+                  approvedEvidenceIds: approvedIds,
+                  rejectedEvidenceIds: [],
+                  reasonCode: "EVIDENCE_SUFFICIENT",
+                };
+            hooks.onToolResult?.({
+              workflowId: "chat-rag-v1",
+              currentAgent: "chat-supervisor",
+              toolName: "evaluate_evidence",
+              validatedOutput: retryEvidenceOutput,
+              currentInput: state,
+            });
+            state = { ...state, ...retryEvidenceOutput };
+
+            const afterRetryDecision = hooks.resolveDecision?.({
+              workflowId: "chat-rag-v1",
+              currentAgent: "chat-supervisor",
+              currentInput: state,
+              proposedDecision: {
+                action: "complete",
+                currentAgent: "chat-supervisor",
+                nextAgent: null,
+                result: { answer: "premature" },
+                reasonCode: "MODEL_PREMATURE_COMPLETE",
+              },
+            });
+            if (afterRetryDecision) observations.decisions.push(afterRetryDecision);
+          }
         }
 
-        if (scenario === "grounded") {
-          const writerInput = hooks.resolveHandoffPayload?.({
+        if (scenario === "grounded" && !options.evidenceProvenanceMissing) {
+          const writerInput = await hooks.resolveHandoffPayload?.({
             workflowId: "chat-rag-v1",
             fromAgent: "chat-supervisor",
             toAgent: "answer-writer-agent",
@@ -486,7 +564,7 @@ function makeHarness(options: HarnessOptions = {}) {
           observations.handoffs.push({ agent: "answer-writer-agent", payload: writerInput });
           state = { ...state, decision: "grounded_answer", answer: "WRITER_DRAFT", citedChunkIds: writerCitations };
 
-          const verifierInput = hooks.resolveHandoffPayload?.({
+          const verifierInput = await hooks.resolveHandoffPayload?.({
             workflowId: "chat-rag-v1",
             fromAgent: "answer-writer-agent",
             toAgent: "citation-verification-agent",
@@ -528,7 +606,7 @@ function makeHarness(options: HarnessOptions = {}) {
       }
 
       if (!["assistant_identity", "assistant_capabilities", "social", "analytics"].includes(scenario)) {
-        const complianceInput = hooks.resolveHandoffPayload?.({
+        const complianceInput = await hooks.resolveHandoffPayload?.({
           workflowId: "chat-rag-v1",
           fromAgent: "chat-supervisor",
           toAgent: "compliance-agent",
@@ -743,6 +821,57 @@ async function executeHarness(harness: ReturnType<typeof makeHarness>, message =
     },
   );
 }
+
+describe("ChatWorkflowService provenance retry", () => {
+  it("retries the authorized search once with identical inputs after CANDIDATE_PROVENANCE_MISSING and recovers", async () => {
+    const harness = makeHarness({
+      scenario: "grounded",
+      evidenceProvenanceMissingOnce: true,
+    });
+    const response = await executeHarness(harness);
+
+    const searches = harness.observations.tools.filter(
+      (tool) => tool.name === "authorized_hybrid_search",
+    );
+    expect(searches).toHaveLength(2);
+    // The retry repeats the identical trusted query and document restrictions.
+    expect(searches[1]!.input).toEqual(searches[0]!.input);
+
+    const retryDecision = harness.observations.decisions.find(
+      (decision) => decision.reasonCode === "PROVENANCE_RETRY_SEARCH_REQUIRED",
+    );
+    expect(retryDecision).toMatchObject({
+      action: "tool_call",
+      toolName: "authorized_hybrid_search",
+    });
+    expect(harness.observations.tools.filter((tool) => tool.name === "evaluate_evidence")).toHaveLength(2);
+    expect(response.outcome).toBe("answered");
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("returns verification_failed after a second provenance failure instead of a knowledge-gap response", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      evidenceProvenanceMissing: true,
+    });
+    const response = await executeHarness(harness);
+
+    const searches = harness.observations.tools.filter(
+      (tool) => tool.name === "authorized_hybrid_search",
+    );
+    expect(searches).toHaveLength(2);
+    expect(searches[1]!.input).toEqual(searches[0]!.input);
+
+    // No third search: the retry budget is exactly one.
+    const retryDecisions = harness.observations.decisions.filter(
+      (decision) => decision.reasonCode === "PROVENANCE_RETRY_SEARCH_REQUIRED",
+    );
+    expect(retryDecisions).toHaveLength(1);
+
+    expect(response.outcome).toBe("verification_failed");
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+});
 
 describe("ChatWorkflowService lifecycle and trusted context", () => {
   it("fails with ENTITLEMENT_EXCEEDED before persistence and runtime when token quota is exhausted", async () => {
@@ -1906,12 +2035,13 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
   });
 
-  it("records an unverified-grounded Knowledge Gap and never releases the draft", async () => {
+  it("never releases an unverified draft and never records it as a Knowledge Gap", async () => {
     const harness = makeHarness({ verifierIds: [], complianceSourceIds: [] });
     const response = await executeHarness(harness);
     expect(response.answer).not.toBe("WRITER_DRAFT");
     expect(response.sources).toEqual([]);
-    expect(harness.reportKnowledgeGap).toHaveBeenCalledTimes(1);
+    expect(response.outcome).toBe("verification_failed");
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
   });
 
   it("does not record a Knowledge Gap for a grounded compliant answer", async () => {

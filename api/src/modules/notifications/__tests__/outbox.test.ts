@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import mongoose from "mongoose";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import NotificationOutboxModel from "../../../db/models/notificationOutbox.model.js";
 import AuditLogModel from "../../../db/models/auditLog.model.js";
 import {
@@ -108,6 +112,7 @@ async function insertTriggerEntry(
 }
 
 describe.skipIf(!hasMongo)("NotificationOutboxDispatcher", () => {
+  const testDatabaseName = "notification-outbox-test";
   let connectedByThisFile = false;
   let createPort: FakeCreatePort;
   let queuePort: FakeQueuePort;
@@ -115,9 +120,14 @@ describe.skipIf(!hasMongo)("NotificationOutboxDispatcher", () => {
 
   beforeAll(async () => {
     if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(process.env.MONGODB_URI as string);
+      await connectToDisposableMongoDatabase(
+        mongoose,
+        process.env.MONGODB_URI as string,
+        testDatabaseName,
+      );
       connectedByThisFile = true;
     }
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await NotificationOutboxModel.init();
     await AuditLogModel.init();
   });
@@ -127,6 +137,7 @@ describe.skipIf(!hasMongo)("NotificationOutboxDispatcher", () => {
   });
 
   beforeEach(async () => {
+    assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
     await NotificationOutboxModel.deleteMany({});
     await AuditLogModel.deleteMany({});
     createPort = new FakeCreatePort();

@@ -224,12 +224,29 @@ const envSchema = z
     BEDROCK_IMAGE_MODEL: z.string().default("amazon.nova-canvas-v1:0"),
     BEDROCK_AUDIO_MODEL: z.string().default("amazon.nova-sonic-v1:0"),
 
+    /**
+     * Rollout mode for the canonical RAG authorization allowlist.
+     * - enforce: the live allowlist is the mandatory retrieval prefilter (default).
+     * - shadow: the allowlist is resolved and its metrics compared against the
+     *   legacy scope filters WITHOUT restricting retrieval. Staging only.
+     * - deny_all: emergency rollback. Returning to stale-metadata authorization
+     *   is unsafe, so the corpus fails closed instead.
+     */
+    RAG_CANONICAL_ALLOWLIST_MODE: z.enum(["shadow", "enforce", "deny_all"]).default("enforce"),
+
     LANGFUSE_SECRET_KEY: z.string().default(""),
     LANGFUSE_PUBLIC_KEY: z.string().default(""),
     LANGFUSE_BASE_URL: z.string().default("https://cloud.langfuse.com"),
   })
   .superRefine((env, context) => {
     const controlledEnvironment = env.NODE_ENV === "production" || env.NODE_ENV === "test";
+    if (env.NODE_ENV === "production" && env.RAG_CANONICAL_ALLOWLIST_MODE === "shadow") {
+      context.addIssue({
+        code: "custom",
+        path: ["RAG_CANONICAL_ALLOWLIST_MODE"],
+        message: "shadow mode is only permitted in staging; production must use enforce (or deny_all for emergency rollback)",
+      });
+    }
     if (controlledEnvironment) {
       const requiredSecrets = [
         ["JWT_SECRET", env.JWT_SECRET],

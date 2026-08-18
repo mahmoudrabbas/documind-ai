@@ -19,9 +19,11 @@ import type {
   RetrievalCandidate,
   RetrievalDiagnostics,
   RetrievalMethod,
+  RetrievalOutcome,
   RetrievalQuery,
   RetrievalResult,
 } from "./retrieval.types.js";
+import { EVIDENCE_ITEM_MIN_TOTAL_SCORE } from "../reranker/reranker.types.js";
 import { buildRetrievableDocumentFilter } from "./retrievalEligibility.js";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +49,17 @@ export interface RetrievalServiceDeps {
   ) => Promise<string[]>;
   resolveAccessContext: (context: AccessContext) => Promise<AccessContext>;
   authorizeDocumentForAi: (context: AccessContext, documentId: string) => Promise<void>;
+  /**
+   * Canonical live allowlist resolver. When present, retrieval authorization
+   * prefilters by the resolved authorized document IDs (never truncated,
+   * searched in batches) instead of stale chunk metadata scopes. A resolver
+   * failure is fail-closed and never falls back to tenant-wide search.
+   */
+  resolveRetrievalAuthorization?: (
+    context: AccessContext,
+  ) => Promise<
+    import("../document-access/documentAccess.retrievalAuthorization.js").DocumentRetrievalAuthorizationResult
+  >;
   /** Optional request-local diagnostics seam; never changes retrieval output. */
   onHybridRetrievalArtifacts?: (artifacts: HybridRetrievalArtifacts) => void;
   /** Suppresses durable audit writes for isolated evaluation composition only. */
@@ -149,6 +162,47 @@ function buildFilterSummary(
 // Diagnostics builder
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolves the trusted trace ID for a retrieval run. The caller-supplied
+ * request trace ID is authoritative; a fresh UUID is only generated for
+ * callers (tests, demo paths) that have no request to join.
+ */
+function resolveTraceId(context: AccessContext): string {
+  return context.traceId ?? crypto.randomUUID();
+}
+
+function resolveRetrievalOutcome(params: {
+  hydratedCount: number;
+  rawCandidateCount: number;
+  postAuthorizationCandidateCount: number;
+}): RetrievalOutcome {
+  if (params.hydratedCount > 0) return "AUTHORIZED_RESULTS";
+  if (params.rawCandidateCount === 0) return "NO_SEARCH_MATCHES";
+  if (params.postAuthorizationCandidateCount === 0) {
+    return "NO_AUTHORIZED_DOCUMENTS";
+  }
+  return "NO_RETRIEVABLE_CONTENT";
+}
+
+function countEvidenceApprovals(
+  evidenceBundle: import("../reranker/reranker.types.js").EvidenceBundle | undefined,
+): { approved: number; rejected: number; reason: string | undefined } {
+  if (!evidenceBundle) {
+    return { approved: 0, rejected: 0, reason: undefined };
+  }
+  let approved = 0;
+  for (const item of evidenceBundle.items) {
+    if (item.scoreBreakdown.totalScore >= EVIDENCE_ITEM_MIN_TOTAL_SCORE) {
+      approved += 1;
+    }
+  }
+  return {
+    approved,
+    rejected: evidenceBundle.items.length - approved,
+    reason: evidenceBundle.sufficiency.reasons[0],
+  };
+}
+
 function buildDiagnostics(params: {
   traceId: string;
   vectorLatencyMs?: number;
@@ -166,7 +220,12 @@ function buildDiagnostics(params: {
   hydratedCandidateCount?: number;
   evidenceItemCount?: number;
   evidenceSufficiency?: string;
+  evidenceSufficiencyReason?: string;
+  approvedEvidenceCount?: number;
+  rejectedEvidenceCount?: number;
   zeroCandidateReason?: string;
+  retrievalOutcome?: RetrievalOutcome;
+  authorizationRestricted?: boolean;
 }): RetrievalDiagnostics {
   return params;
 }
@@ -372,7 +431,116 @@ async function reauthorizeFinalCandidates(
 
 async function resolveAuthorizationContext(deps: RetrievalServiceDeps, context: AccessContext): Promise<AccessContext> {
   const resolved = await deps.resolveAccessContext(context);
-  return { ...resolved, requiredAction: "use_in_ai" };
+  const withAction: AccessContext = { ...resolved, requiredAction: "use_in_ai" };
+  if (!deps.resolveRetrievalAuthorization) return withAction;
+  try {
+    const authorization = await deps.resolveRetrievalAuthorization(withAction);
+    if (authorization.filter.mode === "deny_all") {
+      return {
+        ...withAction,
+        authorizedDocumentIds: [],
+        corpusDenialReason: authorization.denialReason ?? "DENY_ALL",
+      };
+    }
+    if (authorization.enforce === false) {
+      // Shadow rollout: observe allowlist metrics without restricting search.
+      logger.info(
+        {
+          tenantId: withAction.tenantId,
+          allowlistMode: "shadow",
+          allowlistSize: authorization.filter.allowedDocumentIds.length,
+          resolvedDocumentCount: authorization.resolvedDocumentCount,
+        },
+        "Canonical retrieval allowlist shadow observation",
+      );
+      return withAction;
+    }
+    return {
+      ...withAction,
+      authorizedDocumentIds: [...authorization.filter.allowedDocumentIds],
+    };
+  } catch (error) {
+    logger.warn({ error }, "Canonical retrieval authorization resolver failed; denying corpus");
+    return {
+      ...withAction,
+      authorizedDocumentIds: [],
+      corpusDenialReason: "RESOLVER_FAILED",
+    };
+  }
+}
+
+/** Authorized-ID search fan-out bounds: never truncate, batch deterministically. */
+const AUTHORIZED_ID_SEARCH_BATCH_SIZE = 500;
+const AUTHORIZED_ID_SEARCH_CONCURRENCY = 4;
+
+function partitionSearchFilter(filter: AdapterFilter): AdapterFilter[] {
+  const ids = filter.documentIds;
+  if (!ids || ids.length <= AUTHORIZED_ID_SEARCH_BATCH_SIZE) return [filter];
+  const batches: AdapterFilter[] = [];
+  for (let index = 0; index < ids.length; index += AUTHORIZED_ID_SEARCH_BATCH_SIZE) {
+    batches.push({
+      ...filter,
+      documentIds: ids.slice(index, index + AUTHORIZED_ID_SEARCH_BATCH_SIZE),
+    });
+  }
+  return batches;
+}
+
+async function runLimited<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number,
+): Promise<PromiseSettledResult<T>[]> {
+  const results = new Array<PromiseSettledResult<T>>(tasks.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+      while (next < tasks.length) {
+        const index = next;
+        next += 1;
+        results[index] = await tasks[index]!().then(
+          (value) => ({ status: "fulfilled", value }) as PromiseSettledResult<T>,
+          (reason) => ({ status: "rejected", reason }) as PromiseSettledResult<T>,
+        );
+      }
+    }),
+  );
+  return results;
+}
+
+function mergedFulfilledResults(
+  settled: PromiseSettledResult<{ chunkId: string; score: number }[]>[],
+): { results: { chunkId: string; score: number }[]; allFailed: boolean } {
+  const fulfilled = settled.filter(
+    (outcome): outcome is PromiseFulfilledResult<{ chunkId: string; score: number }[]> =>
+      outcome.status === "fulfilled",
+  );
+  return {
+    results: mergeVariantResults(fulfilled.map((outcome) => outcome.value)),
+    allFailed: settled.length > 0 && fulfilled.length === 0,
+  };
+}
+
+/** Typed fail-closed result when the authorized corpus itself resolves to deny-all. */
+function deniedCorpusResult(
+  query: RetrievalQuery,
+  context: AccessContext,
+  traceId: string,
+  reason: string,
+): RetrievalResult {
+  return {
+    candidates: [],
+    totalCandidates: 0,
+    filterSummary: buildFilterSummary(context, query.filter),
+    diagnostics: buildDiagnostics({
+      traceId,
+      totalLatencyMs: 0,
+      vectorCandidateCount: 0,
+      keywordCandidateCount: 0,
+      zeroCandidateReason: reason,
+      retrievalOutcome: "NO_AUTHORIZED_DOCUMENTS",
+      authorizationRestricted: true,
+    }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -673,11 +841,19 @@ export function createRetrievalService(
   return {
     // ── hybridSearch ──────────────────────────────────────────────────
     async hybridSearch(query, context) {
-      const traceId = crypto.randomUUID();
+      const traceId = resolveTraceId(context);
       const totalStartTime = Date.now();
 
       validateQuery(query);
       const authorizationContext = await resolveAuthorizationContext(deps, context);
+      if (authorizationContext.corpusDenialReason) {
+        return deniedCorpusResult(
+          query,
+          authorizationContext,
+          traceId,
+          authorizationContext.corpusDenialReason,
+        );
+      }
       const semanticTexts = uniqueTexts([
         query.queryText,
         ...(query.queryVariants ?? []),
@@ -686,81 +862,55 @@ export function createRetrievalService(
       const vectors = await resolveQueryEmbeddings(deps, query, semanticTexts);
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
-      // Run vector + keyword searches (one per query variant) in parallel
-      // with individual timing; per-chunk best score wins across variants.
+      // Run vector + keyword searches (one per query variant, fanned out over
+      // authorized-ID batches of at most 500 with bounded concurrency) with
+      // individual timing; per-chunk best score wins across all variants and
+      // batches, merged globally.
       const vectorStartTime = Date.now();
-      const vectorPromise = Promise.all(
-        vectors.map((vector) =>
-          deps.vectorAdapter.search({
-            vector,
-            topK: query.topK,
-            filter: merged,
-          }),
+      const vectorTasks = partitionSearchFilter(merged).flatMap((filter) =>
+        vectors.map((vector) => () =>
+          deps.vectorAdapter.search({ vector, topK: query.topK, filter }),
         ),
-      )
-        .then((results) => ({
-          results: mergeVariantResults(results),
-          latencyMs: Date.now() - vectorStartTime,
-        }));
+      );
 
       const keywordStartTime = Date.now();
-      const keywordPromise = Promise.all(
-        keywordTexts.map((text) =>
-          deps.keywordAdapter.search({
-            queryText: text,
-            topK: query.topK,
-            filter: merged,
-          }),
+      const keywordTasks = partitionSearchFilter(merged).flatMap((filter) =>
+        keywordTexts.map((text) => () =>
+          deps.keywordAdapter.search({ queryText: text, topK: query.topK, filter }),
         ),
-      )
-        .then((results) => ({
-          results: mergeVariantResults(results),
-          latencyMs: Date.now() - keywordStartTime,
-        }));
+      );
 
-      const [vectorSettled, keywordSettled] = await Promise.allSettled([
-        vectorPromise,
-        keywordPromise,
+      const [vectorOutcomes, keywordOutcomes] = await Promise.all([
+        runLimited(vectorTasks, AUTHORIZED_ID_SEARCH_CONCURRENCY),
+        runLimited(keywordTasks, AUTHORIZED_ID_SEARCH_CONCURRENCY),
       ]);
 
-      let vectorResults: { chunkId: string; score: number }[] = [];
-      let vectorLatencyMs: number | undefined;
-      let keywordResults: { chunkId: string; score: number }[] = [];
-      let keywordLatencyMs: number | undefined;
+      const vectorLatencyMs = Date.now() - vectorStartTime;
+      const keywordLatencyMs = Date.now() - keywordStartTime;
 
-      if (vectorSettled.status === "fulfilled") {
-        vectorResults = vectorSettled.value.results;
-        vectorLatencyMs = vectorSettled.value.latencyMs;
-      } else {
-        logger.warn(
-          { traceId, error: vectorSettled.reason },
-          "Vector search failed in hybrid mode",
-        );
-        vectorLatencyMs = -1;
+      const vectorMerged = mergedFulfilledResults(vectorOutcomes);
+      const keywordMerged = mergedFulfilledResults(keywordOutcomes);
+      let vectorResults = vectorMerged.results;
+      let keywordResults = keywordMerged.results;
+
+      if (vectorMerged.allFailed) {
+        logger.warn({ traceId }, "Vector search failed in hybrid mode");
       }
-
-      if (keywordSettled.status === "fulfilled") {
-        keywordResults = keywordSettled.value.results;
-        keywordLatencyMs = keywordSettled.value.latencyMs;
-      } else {
-        logger.warn(
-          { traceId, error: keywordSettled.reason },
-          "Keyword search failed in hybrid mode",
-        );
-        keywordLatencyMs = -1;
+      if (keywordMerged.allFailed) {
+        logger.warn({ traceId }, "Keyword search failed in hybrid mode");
       }
 
       // If both backends failed, raise a terminal error
-      if (
-        vectorSettled.status === "rejected" &&
-        keywordSettled.status === "rejected"
-      ) {
+      if (vectorMerged.allFailed && keywordMerged.allFailed) {
         throw new AppError(
           503,
           "RETRIEVAL_UNAVAILABLE",
           "All search backends unavailable",
         );
       }
+
+      const reportedVectorLatencyMs = vectorMerged.allFailed ? -1 : vectorLatencyMs;
+      const reportedKeywordLatencyMs = keywordMerged.allFailed ? -1 : keywordLatencyMs;
 
       const rawVectorCandidateCount = vectorResults.length;
       const rawKeywordCandidateCount = keywordResults.length;
@@ -840,6 +990,7 @@ export function createRetrievalService(
       const totalLatencyMs = Date.now() - totalStartTime;
       const filterSummary = buildFilterSummary(authorizationContext, query.filter);
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      const evidenceCounts = countEvidenceApprovals(evidenceBundle);
       const zeroCandidateReason =
         rawVectorCandidateCount + rawKeywordCandidateCount === 0
           ? "NO_RAW_SEARCH_RESULTS"
@@ -850,10 +1001,15 @@ export function createRetrievalService(
               : hydrated.length === 0
                 ? "NO_HYDRATED_CANDIDATES"
                 : undefined;
+      const retrievalOutcome = resolveRetrievalOutcome({
+        hydratedCount: hydrated.length,
+        rawCandidateCount: rawVectorCandidateCount + rawKeywordCandidateCount,
+        postAuthorizationCandidateCount: vectorResults.length + keywordResults.length,
+      });
       const diagnostics = buildDiagnostics({
         traceId,
-        vectorLatencyMs,
-        keywordLatencyMs,
+        vectorLatencyMs: reportedVectorLatencyMs,
+        keywordLatencyMs: reportedKeywordLatencyMs,
         fusionLatencyMs,
         totalLatencyMs,
         vectorCandidateCount: vectorResults.length,
@@ -863,11 +1019,16 @@ export function createRetrievalService(
         postAuthorizationVectorCandidateCount: vectorResults.length,
         postAuthorizationKeywordCandidateCount: keywordResults.length,
         authorizationFiltered,
+        authorizationRestricted: authorizationFiltered,
         fusedCandidateCount: fused.length,
         hydratedCandidateCount: hydrated.length,
         evidenceItemCount: evidenceBundle?.items.length ?? 0,
         evidenceSufficiency: evidenceBundle?.sufficiency.level,
+        evidenceSufficiencyReason: evidenceCounts.reason,
+        approvedEvidenceCount: evidenceCounts.approved,
+        rejectedEvidenceCount: evidenceCounts.rejected,
         zeroCandidateReason,
+        retrievalOutcome,
       });
 
       try {
@@ -907,7 +1068,8 @@ export function createRetrievalService(
           evidenceItemCount: evidenceBundle?.items.length ?? 0,
           evidenceSufficiency: evidenceBundle?.sufficiency.level,
           zeroCandidateReason,
-          authorizationFiltered,
+          retrievalOutcome,
+          authorizationRestricted: authorizationFiltered,
         },
         "Hybrid retrieval stage counts",
       );
@@ -920,8 +1082,8 @@ export function createRetrievalService(
         candidateCount: hydrated.length,
         vectorCandidateCount: vectorResults.length,
         keywordCandidateCount: keywordResults.length,
-        vectorLatencyMs,
-        keywordLatencyMs,
+        vectorLatencyMs: reportedVectorLatencyMs,
+        keywordLatencyMs: reportedKeywordLatencyMs,
         totalLatencyMs,
       });
 
@@ -936,11 +1098,19 @@ export function createRetrievalService(
 
     // ── vectorSearch ─────────────────────────────────────────────────
     async vectorSearch(query, context) {
-      const traceId = crypto.randomUUID();
+      const traceId = resolveTraceId(context);
       const totalStartTime = Date.now();
 
       validateQuery(query);
       const authorizationContext = await resolveAuthorizationContext(deps, context);
+      if (authorizationContext.corpusDenialReason) {
+        return deniedCorpusResult(
+          query,
+          authorizationContext,
+          traceId,
+          authorizationContext.corpusDenialReason,
+        );
+      }
       const vector = await resolveQueryEmbedding(deps, query);
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
@@ -1026,11 +1196,19 @@ export function createRetrievalService(
 
     // ── keywordSearch ────────────────────────────────────────────────
     async keywordSearch(query, context) {
-      const traceId = crypto.randomUUID();
+      const traceId = resolveTraceId(context);
       const totalStartTime = Date.now();
 
       validateQuery(query);
       const authorizationContext = await resolveAuthorizationContext(deps, context);
+      if (authorizationContext.corpusDenialReason) {
+        return deniedCorpusResult(
+          query,
+          authorizationContext,
+          traceId,
+          authorizationContext.corpusDenialReason,
+        );
+      }
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
 
       // Run keyword search only

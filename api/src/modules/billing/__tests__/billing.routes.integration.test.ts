@@ -1,6 +1,10 @@
 import type { Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import mongoose, { Types } from "mongoose";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 
 process.env.NODE_ENV = "test";
 
@@ -55,11 +59,17 @@ const secretPasswordHash = "not-used";
 // Refund eligibility enforces a 7-day window from invoice payment, so seeded
 // payments must stay recent relative to the test run.
 const recentPaidAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+const TEST_DATABASE_NAME = "billing-routes-integration-test";
 
 beforeAll(async () => {
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(process.env.MONGODB_URI!);
+    await connectToDisposableMongoDatabase(
+      mongoose,
+      process.env.MONGODB_URI!,
+      TEST_DATABASE_NAME,
+    );
   }
+  assertDisposableMongoConnection(mongoose.connection, TEST_DATABASE_NAME);
   await Promise.all([
     TenantModel.syncIndexes(),
     UserModel.syncIndexes(),
@@ -80,6 +90,7 @@ beforeAll(async () => {
 }, 120_000);
 
 beforeEach(async () => {
+  assertDisposableMongoConnection(mongoose.connection, TEST_DATABASE_NAME);
   resetPermissionEvaluator();
   fakeProvider = new FakePaymentProvider();
   setPaymentProvider(fakeProvider);
@@ -113,6 +124,7 @@ afterAll(async () => {
     });
   }
   await disconnectRedis();
+  assertDisposableMongoConnection(mongoose.connection, TEST_DATABASE_NAME);
   await Promise.all([
     BillingOperationModel.deleteMany({}),
     BillingPreviewModel.deleteMany({}),

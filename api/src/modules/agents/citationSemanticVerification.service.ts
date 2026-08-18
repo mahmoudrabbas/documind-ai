@@ -268,6 +268,55 @@ export function extractBoundedFactualClaims(answerText: string): string[] {
   return prepareSemanticClaims(answerText).factualClaims.map((claim) => claim.text);
 }
 
+/** Concurrent claim-batch cap for oversized summaries. */
+const SEMANTIC_BATCH_CONCURRENCY = 2;
+
+/**
+ * Splits claims longer than MAX_SEMANTIC_CLAIM_LENGTH on word boundaries and
+ * renumbers claim indexes globally so batch results never collide.
+ */
+function splitOversizedClaims(
+  claims: readonly PreparedSemanticClaim[],
+): PreparedSemanticClaim[] {
+  const split: PreparedSemanticClaim[] = [];
+  for (const claim of claims) {
+    if (claim.text.length <= MAX_SEMANTIC_CLAIM_LENGTH) {
+      split.push(claim);
+      continue;
+    }
+    let piece = "";
+    for (const word of claim.text.split(" ")) {
+      if (piece.length > 0 && piece.length + word.length + 1 > MAX_SEMANTIC_CLAIM_LENGTH) {
+        split.push({ ...claim, text: piece });
+        piece = word;
+      } else {
+        piece = piece ? `${piece} ${word}` : word;
+      }
+    }
+    if (piece) split.push({ ...claim, text: piece });
+  }
+  return split.map((claim, index) => ({ ...claim, claimIndex: index }));
+}
+
+async function runClaimBatches<T>(
+  batches: readonly T[],
+  limit: number,
+  worker: (batch: T) => Promise<VerificationPass>,
+): Promise<VerificationPass[]> {
+  const results = new Array<VerificationPass>(batches.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, batches.length) }, async () => {
+      while (next < batches.length) {
+        const index = next;
+        next += 1;
+        results[index] = await worker(batches[index]!);
+      }
+    }),
+  );
+  return results;
+}
+
 function boundedEvidence(evidence: readonly CitationSemanticEvidence[]): CitationSemanticEvidence[] {
   const result: CitationSemanticEvidence[] = [];
   let remaining = MAX_EVIDENCE_CHARS;
@@ -585,6 +634,40 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     };
   }
 
+  /**
+   * Bounded verification: splits oversized claims and verifies in batches of
+   * at most MAX_SEMANTIC_CLAIMS with concurrency 2, merging results globally.
+   * Summaries no longer fail wholesale on claim-count or claim-length bounds.
+   */
+  private async verificationPassBounded(
+    input: Parameters<CitationSemanticVerificationService["verificationPass"]>[0],
+    budget: SemanticTokenBudget,
+  ): Promise<VerificationPass> {
+    const split = splitOversizedClaims(input.prepared.factualClaims);
+    if (split.length <= MAX_SEMANTIC_CLAIMS) {
+      return this.verificationPass(
+        { ...input, prepared: { ...input.prepared, factualClaims: split } },
+        budget,
+      );
+    }
+    const batches: PreparedSemanticClaim[][] = [];
+    for (let index = 0; index < split.length; index += MAX_SEMANTIC_CLAIMS) {
+      batches.push(split.slice(index, index + MAX_SEMANTIC_CLAIMS));
+    }
+    const passes = await runClaimBatches(batches, SEMANTIC_BATCH_CONCURRENCY, async (batch) =>
+      this.verificationPass(
+        { ...input, prepared: { ...input.prepared, factualClaims: batch } },
+        budget,
+      ),
+    );
+    return {
+      results: passes.flatMap((pass) => pass.results),
+      retryCount: passes.reduce((total, pass) => total + pass.retryCount, 0),
+      complete: passes.every((pass) => pass.complete),
+      responses: passes.flatMap((pass) => pass.responses),
+    };
+  }
+
   async verify(input: CitationSemanticVerificationInput): Promise<CitationSemanticVerificationResult> {
     const budget: SemanticTokenBudget = {
       remainingTotalTokens:
@@ -603,18 +686,7 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       providerKey: this.model.providerKey,
     };
     if (prepared.diagnostics.overflowType) {
-      logger.warn({ stage: "semantic_verification", ...prepared.diagnostics }, "semantic verification bounds exceeded");
-      return {
-        ...base,
-        claimResults: [],
-        unsupportedClaims: [],
-        unknownClaims: prepared.factualClaims.map((claim) => claim.text),
-        supportingEvidenceIds: [],
-        releasedClaimCount: 0,
-        retryCount: 0,
-        complete: false,
-        reasonCode: "VERIFICATION_BOUNDS_EXCEEDED",
-      };
+      logger.info({ stage: "semantic_verification", ...prepared.diagnostics }, "semantic verification split into bounded batches");
     }
     if (prepared.factualClaims.length === 0) {
       return {
@@ -632,7 +704,7 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
 
     const thresholdComparisons = formatThresholdComparisons(input.questionText ?? "", evidence);
     const thresholdComparisonItems = thresholdComparisons ? z.array(z.unknown()).parse(JSON.parse(thresholdComparisons)) : [];
-    const initial = await this.verificationPass(
+    const initial = await this.verificationPassBounded(
       {
         prepared,
         evidence,
@@ -650,8 +722,8 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     let finalPrepared: PreparedSemanticAnswer | null = null;
     if (candidate) {
       finalPrepared = prepareSemanticClaims(candidate);
-      if (!finalPrepared.diagnostics.overflowType && finalPrepared.factualClaims.length > 0) {
-        finalPass = await this.verificationPass(
+      if (finalPrepared.factualClaims.length > 0) {
+        finalPass = await this.verificationPassBounded(
           {
             prepared: finalPrepared,
             evidence,

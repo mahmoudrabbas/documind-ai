@@ -590,7 +590,7 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
     );
   });
 
-  await t.test("should fail closed when LLM completion fails without positive knowledge signals", async () => {
+  await t.test("should fail closed when LLM completion fails for gibberish", async () => {
     const failingModel: ModelAdapter = {
       providerKey: "failing-provider",
       async complete() {
@@ -600,7 +600,7 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
 
     const failingService = new IntentQueryService(failingModel, fakeConvoAdapter);
     const plan = await failingService.analyzeQuery(
-      { question: "Simple knowledge query?" },
+      { question: "asdasdasd" },
       companyAdminContext
     );
 
@@ -648,6 +648,13 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
       assert.deepEqual(plan.semanticQueries, [], question);
     }
 
+    const gibberishPlan = await new IntentQueryService(
+      malformedIntentModel(new Error("provider unavailable")),
+      fakeConvoAdapter,
+    ).analyzeQuery({ question: "asdasdasd" }, companyAdminContext);
+    assert.equal(gibberishPlan.route, "unsupported");
+    assert.deepEqual(gibberishPlan.semanticQueries, []);
+
     for (const question of ["Thanks", "شجرا", "?! 🎉"]) {
       const plan = await new IntentQueryService(
         malformedIntentModel(new Error("must not be called")),
@@ -662,6 +669,24 @@ test("IntentQueryService - Core Integration Tests", async (t) => {
         fakeConvoAdapter,
       ).analyzeQuery({ question }, companyAdminContext);
       assert.equal(plan.route, "assistant", question);
+    }
+  });
+
+  await t.test("routes arbitrary technical questions to RAG for provider failures", async () => {
+    for (const failure of [new Error("provider unavailable"), "{not-json"] as const) {
+      const fallbackService = new IntentQueryService(
+        malformedIntentModel(failure),
+        fakeConvoAdapter,
+      );
+      const plan = await fallbackService.analyzeQuery(
+        { question: "How do I install MySQL?" },
+        companyAdminContext,
+      );
+
+      assert.equal(plan.processingMetadata.fallbackUsed, true);
+      assert.equal(plan.route, "rag");
+      assert.equal(plan.detectedIntent, "knowledge_question");
+      assert.ok(plan.semanticQueries.length > 0);
     }
   });
 

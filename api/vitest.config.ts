@@ -7,7 +7,6 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.db-guard.ts"],
     env: {
       NODE_ENV: "test",
-      MONGODB_URI: "mongodb://localhost:27017/documind-test",
       REDIS_URL: "redis://localhost:6379",
       APP_FRONTEND_URL: "http://example.com",
       JWT_SECRET: "test-jwt-secret-0123456789abcdefghijklmnopqrstuv",

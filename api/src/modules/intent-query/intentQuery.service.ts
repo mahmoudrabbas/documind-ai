@@ -17,11 +17,17 @@ import {
   assessPositiveKnowledgeSeeking,
   assistantRequestsUserResponse,
   hasDomainAgnosticQuestionShape,
+  hasEnterpriseSubjectTerm,
+  hasInterrogativeQuestionShape,
   hasSemanticRetrievalSubject,
   isContextualAcknowledgement,
-  isLikelyAccessContextFollowUp,
   buildContextualFollowUpQuestion,
+  hasSubstantivePriorTurn,
+  isBareGeneralDefinitionText,
+  isLikelyContextualFollowUp,
+  isLikelyPriorDocumentTurn,
   isLikelyGibberish,
+  isLikelySensitivePersonalDataRequest,
   isRetrievableIntent,
   selectSafeRetrievalQuestion,
 } from "./intentQuery.knowledgeSignals.js";
@@ -224,8 +230,10 @@ export class IntentQueryService {
     const localTemporalConstraints = extractTemporalConstraints(routingQuestion);
     const deterministicTitleHints = extractNaturalDocumentTitleHints(routingQuestion);
 
-    // Check for prompt injections/unsafe inputs upfront deterministically
-    const hasUnsafeKeywords = /unsafe|hack|ignore\s+previous|system\s+prompt/i.test(input.question);
+    // Check for prompt injections/unsafe inputs upfront deterministically.
+    // Word-anchored so legitimate compound words ("hackathon policy") never
+    // trigger the unsafe short-circuit while genuine injection attempts do.
+    const hasUnsafeKeywords = containsUnsafeRoutingKeyword(input.question);
     if (hasUnsafeKeywords) {
       if (persistRuntimeArtifacts) await auditWriter.write({
         action: "INTENT_QUERY_UNSAFE_BLOCKED",
@@ -415,34 +423,23 @@ export class IntentQueryService {
       return buildAndPersistSocialPlan();
     }
 
-    // 5. Deterministic unsupported external/current-data detector
+    // 5. Deterministic unsupported request detector
     //
     // Conservative rule: questions that explicitly ask about current external
     // facts (prices now, weather today, latest news, yesterday's match score)
     // are outside the tenant document scope and should route to 'unsupported'.
     // Exemptions: when the user explicitly references documents or reports.
     function isLikelyExternalCurrent(question: string): boolean {
-      const q = question.toLowerCase();
-      // Temporal markers that imply 'current' or 'latest'. English terms are
-      // word-anchored so substrings ("now" in "knowledge") cannot trigger the
-      // short-circuit; Arabic tokens are not reliably matched by \b.
-      const temporal = /\b(?:today|now|yesterday|latest)\b|this (?:morning|evening)|الآن|اليوم|أمس|آخر/i;
-      // Topics typically requiring live external data
-      const topics = /\b(?:gold|dollar|weather|news|score)\b|الذهب|دollar|طقس|أخبار|نتيجة|مباراة|أسعار/i;
-      // Phrases that indicate the user is asking about a document/report
-      const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
-
-      if (docIndicators.test(q)) return false;
-      const clearlyExternalGeneral = /(?:capital of|weather|طقس|latest news|اخر الاخبار|نتيجه مباراه|match score|recipe|وصفه|who is (?:the )?president)/i;
-      return (temporal.test(q) && topics.test(q)) || clearlyExternalGeneral.test(q);
+      return isLikelyExternalCurrentQuestion(question);
     }
 
     // Deterministic short-circuit: clear live external-data questions with NO
     // explicit document context must route to 'unsupported' and skip retrieval.
-    if (isLikelyExternalCurrent(input.question)) {
+    const sensitivePersonalDataRequest = isLikelySensitivePersonalDataRequest(input.question);
+    if (isLikelyExternalCurrent(input.question) || sensitivePersonalDataRequest) {
       // If the user explicitly references a document or report, do not short-circuit.
-      const docIndicators = /(report|document|ملف|مستند|تقرير|في المستند|في التقرير|ما ورد في)/i;
-      if (!docIndicators.test(input.question)) {
+      const docIndicators = /(report|document|contract|agreement|policy|policies|ملف|مستند|تقرير|عقد|اتفاقية|في المستند|في التقرير|ما ورد في)/i;
+      if (sensitivePersonalDataRequest || !docIndicators.test(input.question)) {
         const unsupportedPlan = validateAndNormalizeQueryPlan(
           {
             detectedIntent: "unsupported",
@@ -577,17 +574,20 @@ export class IntentQueryService {
       return buildAndPersistSocialPlan();
     }
 
-    // This narrow bridge is evaluated before provider routing. The current
-    // turn is not independently meaningful, but the immediately preceding
-    // user turn supplies a remote-work subject for the security-access
-    // question. Provider labels must not be able to turn this valid
-    // cross-document follow-up into an unsupported request.
-    const deterministicAccessFollowUp =
+    // Generic contextual bridge, evaluated before provider routing. The
+    // current turn is a short continuation-led question whose subject lives
+    // in the immediately preceding substantive user turn — for ANY document
+    // topic (travel, procurement, onboarding, remote work, ...). Provider
+    // labels must not be able to turn this valid cross-document follow-up
+    // into an unsupported request or a 502.
+    const deterministicContextualFollowUp =
       conversationHistoryAvailable &&
       latestUserMessage.length > 0 &&
-      isLikelyAccessContextFollowUp(routingQuestion) &&
-      /\b(?:remote|work\s+remotely|home)\b/iu.test(latestUserMessage);
-    const deterministicFollowUpQuestion = deterministicAccessFollowUp
+      isLikelyContextualFollowUp(routingQuestion) &&
+      hasSubstantivePriorTurn(latestUserMessage) &&
+      !detectAssistantIntent(latestUserMessage).isAssistantOnly &&
+      isLikelyPriorDocumentTurn(latestUserMessage);
+    const deterministicFollowUpQuestion = deterministicContextualFollowUp
       ? buildContextualFollowUpQuestion(latestUserMessage, routingQuestion)
       : "";
 
@@ -836,7 +836,7 @@ export class IntentQueryService {
       if (
         isRetrievableIntent(rawDetectedIntent) &&
         isLikelyGibberish(routingQuestion) &&
-        !deterministicAccessFollowUp
+        !deterministicContextualFollowUp
       ) {
         rawOutput = {
           detectedIntent: "unsupported",
@@ -856,19 +856,38 @@ export class IntentQueryService {
 
       // Apply the bridge after parsing provider output so it also overrides
       // unsupported, low-confidence, and otherwise valid-but-wrong labels.
-      if (deterministicAccessFollowUp) {
+      if (deterministicContextualFollowUp) {
         rawOutput.detectedIntent = "follow_up";
         rawOutput.intentConfidence = Math.max(
           typeof rawOutput.intentConfidence === "number" ? rawOutput.intentConfidence : 0,
           0.85,
         );
-        rawOutput.normalizedQuestion = deterministicFollowUpQuestion;
+        // When the provider already resolved the follow-up into a standalone
+        // question, keep that resolution; the deterministic bridge question is
+        // the fallback for unsupported, low-confidence, and malformed output.
+        const providerResolvedFollowUp =
+          rawDetectedIntent === "follow_up" &&
+          typeof rawOutput.normalizedQuestion === "string" &&
+          rawOutput.normalizedQuestion.trim().length > 0 &&
+          rawOutput.normalizedQuestion.trim().toLowerCase() !==
+            routingQuestion.trim().toLowerCase();
+        if (!providerResolvedFollowUp) {
+          rawOutput.normalizedQuestion = deterministicFollowUpQuestion;
+        }
         rawOutput.clarificationNeeded = false;
         rawOutput.clarification = null;
       }
 
-      // If semanticQueries/keywordQueries are empty, use local bilingual expansion
-      if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
+      const sourceLessUnsupportedContinuation =
+        rawOutput.detectedIntent === "unsupported" &&
+        isLikelyContextualFollowUp(routingQuestion) &&
+        !deterministicContextualFollowUp;
+      if (sourceLessUnsupportedContinuation) {
+        rawOutput.semanticQueries = [];
+        rawOutput.keywordQueries = [];
+      } else if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
+        // Retrievable plans receive bounded local expansion when the provider
+        // omitted search queries.
         const expansion = expandBilingual(routingQuestion, language, localEntities);
         rawOutput.semanticQueries = expansion.semanticQueries;
         rawOutput.keywordQueries = expansion.keywordQueries;
@@ -986,14 +1005,21 @@ export class IntentQueryService {
               ],
             )
           : routingQuestion.trim();
-        const currentExpansion = expandBilingual(
-          safeRetrievalQuestion,
-          language,
-          localEntities,
-        );
         rawOutput.normalizedQuestion = safeRetrievalQuestion;
-        rawOutput.semanticQueries = currentExpansion.semanticQueries;
-        rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        if (isRetrievableIntent(detectedIntent)) {
+          const currentExpansion = expandBilingual(
+            safeRetrievalQuestion,
+            language,
+            localEntities,
+          );
+          rawOutput.semanticQueries = currentExpansion.semanticQueries;
+          rawOutput.keywordQueries = currentExpansion.keywordQueries;
+        } else {
+          // Unsupported and other non-retrievable turns stay source-less:
+          // no retrieval payload may survive for them.
+          rawOutput.semanticQueries = [];
+          rawOutput.keywordQueries = [];
+        }
         rawOutput.referencedDocumentIds =
           retainCurrentTurnDocumentHints
             ? hints.referencedDocumentIds
@@ -1029,14 +1055,14 @@ export class IntentQueryService {
       // Additionally, a valid provider "unsupported" verdict never blocks a
       // well-formed question about an arbitrary topic: the corpus (not the
       // provider's topic judgement) is the authority, so the question is sent
-      // to retrieval and the evidence gate decides. Schema-invalid output
-      // (fallbackUsed) and gibberish stay fail-closed.
+      // to retrieval and the evidence gate decides. This also covers
+      // schema-invalid provider output; gibberish stays fail-closed.
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       const unsupportedQuestionOverride =
         validatedPlan.route === "unsupported" &&
-        !validatedPlan.processingMetadata.fallbackUsed &&
         !isLikelyGibberish(routingQuestion) &&
-        hasDomainAgnosticQuestionShape(routingQuestion);
+        (deterministicTitleHints.length > 0 || (hasDomainAgnosticQuestionShape(routingQuestion) && (hasInterrogativeQuestionShape(routingQuestion) || hasEnterpriseSubjectTerm(routingQuestion)))) &&
+        (!isLikelyContextualFollowUp(routingQuestion) || deterministicContextualFollowUp);
       const semanticSummarizationOverride =
         validatedPlan.detectedIntent === "summarization" &&
         validatedPlan.clarificationNeeded &&
@@ -1106,8 +1132,18 @@ export class IntentQueryService {
     } else {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
-      const isKnowledgeQuestion = knowledgeSignals.positive;
-      const isDeterministicFollowUp = deterministicAccessFollowUp;
+      // When the intent provider is unavailable or returns malformed output,
+      // a well-formed question may still target any uploaded-document topic.
+      // Retrieval plus the evidence gate decides whether the corpus can answer;
+      // the fallback must not require an enterprise keyword list.
+      const isDeterministicFollowUp = deterministicContextualFollowUp;
+      const normalizedRoutingText = preprocessIntentText(routingQuestion).elongationReducedText;
+      const isBareDefinition = isBareGeneralDefinitionText(normalizedRoutingText);
+      const corpusFirstQuestion =
+        hasDomainAgnosticQuestionShape(routingQuestion) &&
+        !isBareDefinition &&
+        (!isLikelyContextualFollowUp(routingQuestion) || isDeterministicFollowUp);
+      const isKnowledgeQuestion = knowledgeSignals.positive || corpusFirstQuestion;
       const fallbackQuestion = isDeterministicFollowUp
         ? deterministicFollowUpQuestion
         : knowledgeSignals.retrievalText || routingQuestion.trim();
@@ -1323,4 +1359,32 @@ export class IntentQueryService {
 
     return validatedPlan;
   }
+}
+
+// ── Exported deterministic routing predicates ──────────────────────────────
+
+/**
+ * Word-anchored unsafe/injection detector. Legitimate compound words such as
+ * "hackathon policy" must reach RAG; genuine injection attempts ("hack the
+ * assistant", "ignore previous instructions") still short-circuit to unsafe.
+ */
+export function containsUnsafeRoutingKeyword(question: string): boolean {
+  return /\bunsafe\b|\bhack(?:s|ing|ed|er)?\b|ignore\s+previous|system\s+prompt/i.test(question);
+}
+
+/**
+ * Deterministic external/current-data detector. Questions about live external
+ * facts (prices now, weather today, latest news) route to unsupported UNLESS
+ * the user explicitly references tenant documents — including contracts,
+ * agreements, and policies, so "latest prices in the vendor contract" reaches
+ * RAG retrieval.
+ */
+export function isLikelyExternalCurrentQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  const temporal = /\b(?:today|now|yesterday|latest)\b|this (?:morning|evening)|الآن|اليوم|أمس|آخر/i;
+  const topics = /\b(?:gold|dollar|weather|news|score)\b|الذهب|دollar|طقس|أخبار|نتيجة|مباراة|أسعار/i;
+  const docIndicators = /(report|document|contract|agreement|policy|policies|ملف|مستند|تقرير|عقد|اتفاقية|في المستند|في التقرير|ما ورد في)/i;
+  if (docIndicators.test(q)) return false;
+  const clearlyExternalGeneral = /(?:capital of|weather|طقس|latest news|اخر الاخبار|نتيجه مباراه|match score|recipe|وصفه|who is (?:the )?president)/i;
+  return (temporal.test(q) && topics.test(q)) || clearlyExternalGeneral.test(q);
 }

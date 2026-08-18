@@ -385,7 +385,9 @@ export function createChatRoutes(service: ChatService): Router {
     "/send",
     authenticate,
     tenantScoping,
-    requirePermission(Permission.CHAT_CREATE),
+    // Identical self-resource guard as /chat/send/stream so both endpoints
+    // make identical authorization decisions (scope-aware, resource-bound).
+    requireSelfPermission(Permission.CHAT_CREATE),
     queryGuard,
     controller.sendMessage,
   );

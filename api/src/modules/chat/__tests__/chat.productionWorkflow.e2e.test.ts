@@ -3,6 +3,10 @@ import test, { after, before, beforeEach } from "node:test";
 import mongoose, { Types } from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { AppError } from "../../../common/errors/AppError.js";
+import {
+  assertDisposableMongoConnection,
+  connectToDisposableMongoDatabase,
+} from "../../../common/testing/disposableMongo.js";
 import { disconnectRedis } from "../../../db/redis.js";
 import AgentRunModel from "../../../db/models/agentRun.model.js";
 import AgentStepModel from "../../../db/models/agentStep.model.js";
@@ -112,10 +116,15 @@ const PROHIBITED_PERSISTENCE_MARKERS = [
 ] as const;
 
 let mongoServer: MongoMemoryReplSet | null = null;
+const TEST_DATABASE_NAME = "chat-production-workflow-e2e-test";
 
 before(async () => {
   if (process.env.MONGODB_URI) {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await connectToDisposableMongoDatabase(
+      mongoose,
+      process.env.MONGODB_URI,
+      TEST_DATABASE_NAME,
+    );
     return;
   }
   mongoServer = await MongoMemoryReplSet.create({
@@ -125,9 +134,11 @@ before(async () => {
       { launchTimeout: Number(process.env.MONGOMS_LAUNCH_TIMEOUT_MS ?? 60_000) },
     ],
   });
-  await mongoose.connect(mongoServer.getUri(), {
-    dbName: "chat-production-workflow-e2e-test",
-  });
+  await connectToDisposableMongoDatabase(
+    mongoose,
+    mongoServer.getUri(),
+    TEST_DATABASE_NAME,
+  );
 });
 
 after(async () => {
@@ -137,6 +148,7 @@ after(async () => {
 });
 
 beforeEach(async () => {
+  assertDisposableMongoConnection(mongoose.connection, TEST_DATABASE_NAME);
   await Promise.all([
     AgentToolCallModel.deleteMany({}),
     AgentStepModel.deleteMany({}),
@@ -346,6 +358,52 @@ class ExpandedIntentFakeModelAdapter extends FakeModelAdapter {
             },
           }
         : choice),
+    };
+  }
+}
+
+/**
+ * Writer adapter whose citations are fixed regardless of the evidence list —
+ * used to prove deterministic conflict rendering does not depend on which
+ * sources the (untrusted) writer chose to cite.
+ */
+class FixedCitationFakeModelAdapter extends RecordingFakeModelAdapter {
+  private readonly fixedAnswers: ReadonlyMap<string, string>;
+  constructor(
+    answers: ReadonlyMap<string, string>,
+    private readonly fixedCitedChunkIds: string[],
+  ) {
+    super(answers);
+    this.fixedAnswers = answers;
+  }
+
+  override async complete(
+    params: Parameters<FakeModelAdapter["complete"]>[0],
+  ): ReturnType<FakeModelAdapter["complete"]> {
+    const response = await super.complete(params);
+    if (!params.structuredOutput) return response;
+    if (isIntentClassificationRequest(params)) return response;
+    if (isSemanticCitationRequest(params)) return response;
+    const payload = answerWriterRequestData(params);
+    const answer = this.fixedAnswers.get(payload.currentQuestion);
+    if (!answer) return response;
+    return {
+      ...response,
+      choices: response.choices.map((choice, index) =>
+        index === 0
+          ? {
+              ...choice,
+              message: {
+                ...choice.message,
+                content: JSON.stringify({
+                  decision: "grounded_answer",
+                  answer,
+                  citedChunkIds: [...this.fixedCitedChunkIds],
+                }),
+              },
+            }
+          : choice,
+      ),
     };
   }
 }
@@ -1568,18 +1626,21 @@ test(
 );
 
 test(
-  "production-composed workflow blocks a writer answer with an unsupported claim after MAX_SEMANTIC_CLAIMS",
+  "production-composed workflow drops only the unsupported claim when a batched summary exceeds MAX_SEMANTIC_CLAIMS",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const supportedClaims = Array.from(
       { length: MAX_SEMANTIC_CLAIMS },
-      (_unused, index) => `The remote-work policy factual statement ${index + 1} is documented.`,
+      () => `The remote-work policy factual statement in the series is documented.`,
     );
     const unsupportedTail = "Employees receive an undocumented monthly internet allowance.";
     const candidate = [...supportedClaims, unsupportedTail].join("\n");
     const requestId = "request-semantic-claim-count-overflow";
-    const model = new RecordingFakeModelAdapter(new Map([[QUESTION, candidate]]));
+    const model = new SelectiveSemanticRecordingFakeModelAdapter(
+      new Map([[QUESTION, candidate]]),
+      /undocumented monthly internet allowance/u,
+    );
     const service = await productionService(fixture, { model });
 
     const response = await service.execute(
@@ -1587,36 +1648,40 @@ test(
       executionContext(fixture, requestId),
     );
 
+    // Batching verifies the 21-claim answer claim-by-claim: the supported
+    // majority releases and only the unsupported tail is removed.
     assert.notEqual(response.answer, candidate);
     assert.equal(response.answer.includes(unsupportedTail), false);
-    assert.deepEqual(response.sources, []);
+    assert.ok(response.answer.includes("factual statement in the series is documented"));
+    assert.ok((response.sources?.length ?? 0) > 0);
     const verifierStep = await AgentStepModel.findOne({
       requestId,
       agentName: "citation-verification-agent",
       action: "execute",
     }).lean().exec();
-    assert.equal(verifierStep?.output?.verified, false);
-    assert.equal(verifierStep?.output?.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
-    assert.deepEqual(verifierStep?.output?.validatedCitationIds, []);
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.ok(((verifierStep?.output?.validatedCitationIds as string[] | undefined) ?? []).length > 0);
     const complianceStep = await AgentStepModel.findOne({
       requestId,
       agentName: "compliance-agent",
       action: "execute",
     }).lean().exec();
-    assert.equal(complianceStep?.output?.action, "refuse");
-    assert.deepEqual(complianceStep?.output?.sourceIds, []);
+    assert.equal(complianceStep?.output?.action, "release");
   },
 );
 
 test(
-  "production-composed workflow blocks an unsupported suffix after the old semantic claim-length boundary",
+  "production-composed workflow splits an oversized claim and blocks its unsupported suffix",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const unsupportedSuffix = " Executives also receive an undocumented annual bonus.";
     const candidate = `${"A".repeat(MAX_SEMANTIC_CLAIM_LENGTH)}${unsupportedSuffix}`;
     const requestId = "request-semantic-claim-length-overflow";
-    const model = new RecordingFakeModelAdapter(new Map([[QUESTION, candidate]]));
+    const model = new SelectiveSemanticRecordingFakeModelAdapter(
+      new Map([[QUESTION, candidate]]),
+      /undocumented annual bonus/u,
+    );
     const service = await productionService(fixture, { model });
 
     const response = await service.execute(
@@ -1624,17 +1689,18 @@ test(
       executionContext(fixture, requestId),
     );
 
+    // The oversized claim is split on the word boundary; the unsupported
+    // suffix piece is dropped and the supported remainder is released.
     assert.notEqual(response.answer, candidate);
     assert.equal(response.answer.includes(unsupportedSuffix.trim()), false);
-    assert.deepEqual(response.sources, []);
+    assert.ok((response.sources?.length ?? 0) > 0);
     const verifierStep = await AgentStepModel.findOne({
       requestId,
       agentName: "citation-verification-agent",
       action: "execute",
     }).lean().exec();
-    assert.equal(verifierStep?.output?.verified, false);
-    assert.equal(verifierStep?.output?.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
-    assert.deepEqual(verifierStep?.output?.validatedCitationIds, []);
+    assert.equal(verifierStep?.output?.verified, true);
+    assert.ok(((verifierStep?.output?.validatedCitationIds as string[] | undefined) ?? []).length > 0);
   },
 );
 
@@ -1737,12 +1803,13 @@ test(
 );
 
 test(
-  "production-composed workflow fails closed on unresolved cross-document remote-work limits",
+  "production-composed workflow explains cross-document conflicts with both sides cited",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
     const question = "How many remote work days are allowed?";
-    const arbitraryAnswer = "Remote work is allowed 2 days per week.";
+    const bothSidesAnswer =
+      "The documents differ: Remote Work Policy v1 allows remote work 1 day per week, while Remote Work Policy v2 allows remote work 2 days per week.";
     const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
       fileName: "remote-work-policy-v1.pdf",
       title: "Remote Work Policy v1",
@@ -1760,7 +1827,9 @@ test(
       pageNumber: 2,
     });
     const requestId = "request-cross-document-policy-conflict";
-    const model = new RecordingFakeModelAdapter(new Map([[question, arbitraryAnswer]]));
+    const model = new RecordingFakeModelAdapter(
+      new Map([[question, bothSidesAnswer]]),
+    );
     const service = await productionService(fixture, {
       evidence: [versionOne, versionTwo],
       model,
@@ -1774,9 +1843,253 @@ test(
     const evaluation = graph.toolCalls.find((call) => call.toolName === "evaluate_evidence");
     assert.equal(evaluation?.output?.sufficiency, "CONFLICTING");
     assert.deepEqual(evaluation?.output?.approvedEvidenceIds, []);
-    assert.notEqual(response.answer, arbitraryAnswer);
-    assert.deepEqual(response.sources, []);
-    assert.equal(graph.steps.some((step) => step.agentName === "answer-writer-agent"), false);
+    // The conflicting evidence itself is exposed for the explanation path.
+    assert.deepEqual(
+      [...((evaluation?.output?.conflictEvidenceIds as string[] | undefined) ?? [])].sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+
+    // The writer runs a conflict_explanation task, but the RELEASED answer is
+    // the deterministic unresolved-conflict render — never the writer's free
+    // text — presenting BOTH supported values without selecting a winner.
+    assert.equal(
+      graph.steps.some((step) => step.agentName === "answer-writer-agent"),
+      true,
+    );
+    assert.notEqual(response.answer, bothSidesAnswer);
+    assert.match(
+      response.answer,
+      /different positions for this question, so a single answer cannot be confirmed/u,
+    );
+    assert.match(response.answer, /1 day per week/);
+    assert.match(response.answer, /2 days per week/);
+    assert.match(response.answer, /do not resolve which position applies/u);
+    assert.deepEqual(
+      (response.sources?.map((source) => source.chunkId) ?? []).sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+    assert.equal(response.outcome, "evidence_conflict");
+    // A genuine source conflict is not a knowledge gap.
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
+  },
+);
+
+test(
+  "production-composed workflow never releases an adversarial conflict winner claim",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "How many remote work days are allowed?";
+    const adversarialAnswer =
+      "Remote Work Policy v1 says remote work is allowed 1 day per week and Remote Work Policy v2 says remote work is allowed 2 days per week. Policy v2 is authoritative, so employees are allowed 2 days per week.";
+    const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v1.pdf",
+      title: "Remote Work Policy v1",
+      question,
+      text: "Remote work is allowed 1 day per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const versionTwo = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v2.pdf",
+      title: "Remote Work Policy v2",
+      question,
+      text: "Remote work is allowed 2 days per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const requestId = "request-adversarial-conflict-winner";
+    const model = new RecordingFakeModelAdapter(
+      new Map([[question, adversarialAnswer]]),
+    );
+    const service = await productionService(fixture, {
+      evidence: [versionOne, versionTwo],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    // The winner claim must never release, even though the writer cited both
+    // authorized conflicting chunks.
+    assert.notEqual(response.answer, adversarialAnswer);
+    assert.equal(/authoritative/.test(response.answer), false);
+    assert.equal(/so employees are allowed/u.test(response.answer), false);
+    // Both conflicting positions remain visible and both sources are cited.
+    assert.match(response.answer, /1 day per week/);
+    assert.match(response.answer, /2 days per week/);
+    assert.deepEqual(
+      (response.sources?.map((source) => source.chunkId) ?? []).sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+    assert.equal(response.outcome, "evidence_conflict");
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
+  },
+);
+
+test(
+  "conflict release stays complete when the writer omits one conflicting source",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "How many remote work days are allowed?";
+    const winnerAnswer = "Remote work is allowed 2 days per week.";
+    const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v1.pdf",
+      title: "Remote Work Policy v1",
+      question,
+      text: "Remote work is allowed 1 day per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const versionTwo = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v2.pdf",
+      title: "Remote Work Policy v2",
+      question,
+      text: "Remote work is allowed 2 days per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const requestId = "request-conflict-writer-partial-citations";
+    // The writer cites only one side and picks its value; the released answer
+    // must still present BOTH positions with BOTH citations.
+    const model = new FixedCitationFakeModelAdapter(
+      new Map([[question, winnerAnswer]]),
+      [versionTwo.chunkId],
+    );
+    const service = await productionService(fixture, {
+      evidence: [versionOne, versionTwo],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.match(response.answer, /1 day per week/);
+    assert.match(response.answer, /2 days per week/);
+    assert.deepEqual(
+      (response.sources?.map((source) => source.chunkId) ?? []).sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+    assert.equal(response.outcome, "evidence_conflict");
+  },
+);
+
+test(
+  "conflict run fails closed when the writer cites a chunk outside the conflict set",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "How many remote work days are allowed?";
+    const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v1.pdf",
+      title: "Remote Work Policy v1",
+      question,
+      text: "Remote work is allowed 1 day per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const versionTwo = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v2.pdf",
+      title: "Remote Work Policy v2",
+      question,
+      text: "Remote work is allowed 2 days per week.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const requestId = "request-conflict-writer-foreign-citation";
+    const foreignChunkId = new mongoose.Types.ObjectId().toString();
+    const model = new FixedCitationFakeModelAdapter(
+      new Map([[question, "Both documents differ."]]),
+      [versionOne.chunkId, foreignChunkId],
+    );
+    const service = await productionService(fixture, {
+      evidence: [versionOne, versionTwo],
+      model,
+    });
+
+    // A citation outside the conflict set is neutralized before release: the
+    // writer's executor clamps citations to the supplied evidence, and the
+    // released answer is the deterministic render with only authorized
+    // conflict sources — the foreign chunk id can never appear.
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+    const releasedIds = response.sources?.map((source) => source.chunkId) ?? [];
+    assert.equal(releasedIds.includes(foreignChunkId), false);
+    assert.deepEqual(
+      [...releasedIds].sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+    assert.match(response.answer, /1 day per week/);
+    assert.match(response.answer, /2 days per week/);
+    assert.equal(response.outcome, "evidence_conflict");
+  },
+);
+
+test(
+  "Arabic adversarial conflict writer still yields the deterministic Arabic both-sides answer",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const question = "كم عدد أيام العمل عن بعد المسموح بها؟";
+    const adversarialAnswer =
+      "تذكر سياسة العمل عن بعد النسخة الأولى أن الحد 1 يوم في الأسبوع، وتذكر النسخة الثانية أن الحد 2 يوم في الأسبوع. النسخة الثانية هي المعتمدة، لذا الحد المسموح هو 2 يوم في الأسبوع.";
+    const versionOne = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v1.pdf",
+      title: "Remote Work Policy v1",
+      question,
+      text: "الحد المسموح للعمل عن بعد هو 1 يوم في الأسبوع.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const versionTwo = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "remote-work-policy-v2.pdf",
+      title: "Remote Work Policy v2",
+      question,
+      text: "الحد المسموح للعمل عن بعد هو 2 يوم في الأسبوع.",
+      sectionTitle: "Weekly allowance",
+      pageNumber: 2,
+    });
+    const requestId = "request-adversarial-conflict-winner-ar";
+    const model = new RecordingFakeModelAdapter(
+      new Map([[question, adversarialAnswer]]),
+    );
+    const service = await productionService(fixture, {
+      evidence: [versionOne, versionTwo],
+      model,
+    });
+
+    const response = await service.execute(
+      { conversationId: fixture.conversationId, message: question },
+      executionContext(fixture, requestId),
+    );
+
+    assert.notEqual(response.answer, adversarialAnswer);
+    assert.equal(/المعتمدة/.test(response.answer), false);
+    assert.match(response.answer, /موقفات مختلفة|مواقف مختلفة/u);
+    assert.match(response.answer, /1 يوم في الأسبوع/u);
+    assert.match(response.answer, /2 يوم في الأسبوع/u);
+    assert.deepEqual(
+      (response.sources?.map((source) => source.chunkId) ?? []).sort(),
+      [versionOne.chunkId, versionTwo.chunkId].sort(),
+    );
+    assert.equal(response.outcome, "evidence_conflict");
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
   },
 );
 

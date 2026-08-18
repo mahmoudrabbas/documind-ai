@@ -117,13 +117,16 @@ test("short random input is gibberish but social and policy questions are not", 
   assert.equal(isLikelyGibberish("ما سياسة الإجازات؟"), false);
 });
 
-test("question shape is domain-agnostic but never promotes greetings, gibberish or bare definitions", () => {
+test("question shape is domain-agnostic but never promotes greetings, gibberish or unclear input", () => {
   for (const input of [
     "What is the primary key in a relational database?",
     "How do I create an index in a database?",
     "ما هي انواع الفهارس في قواعد البيانات؟",
     "Explain the replication setup in the lecture",
     "What is our leave policy?",
+    "What is VPN?",
+    "Explain MFA.",
+    "What is hotel management?",
   ]) {
     assert.equal(hasDomainAgnosticQuestionShape(input), true, input);
   }
@@ -136,9 +139,6 @@ test("question shape is domain-agnostic but never promotes greetings, gibberish 
     "?! 🎉",
     "unclear input here",
     "hello",
-    "What is VPN?",
-    "Explain MFA.",
-    "What is hotel management?",
   ]) {
     assert.equal(hasDomainAgnosticQuestionShape(input), false, input);
   }

@@ -450,3 +450,53 @@ test("provider unavailability remains a canonical infrastructure error", async (
 test("provider timeout remains a canonical infrastructure error", async () => {
   await assertProviderError(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }), "LLM_TIMEOUT");
 });
+
+test("a 25-sentence summary verifies in batches of at most 20 claims", async () => {
+  const sentences = Array.from({ length: 25 }, () =>
+    "Employees receive twenty-one days of annual leave under company policy rules.",
+  );
+  const answerText = sentences.join(" ");
+  const model = scriptedModel((payload) => ({
+    judgments: payload.claims.map((_, index) => ({
+      claimIndex: index,
+      verdict: "supported",
+      supportingEvidenceIds: ["policy-a"],
+    })),
+  }));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText,
+    evidence,
+  });
+
+  assert.notEqual(result.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
+  assert.ok(model.calls.length >= 2, "batched verification must issue multiple passes");
+  for (const call of model.calls) {
+    assert.ok(call.claims.length <= 20, `batch size ${call.claims.length} exceeds 20`);
+  }
+  assert.equal(result.claimResults.length, 25);
+  assert.ok(result.claimResults.every((claim) => claim.state === "SUPPORTED"));
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+});
+
+test("oversized claims are split before verification instead of failing the whole answer", async () => {
+  const longClaim = `Employees receive 21 days of annual leave ${"and extended policy conditions ".repeat(18)}without exceptions.`;
+  const model = scriptedModel((payload) => ({
+    judgments: payload.claims.map((_, index) => ({
+      claimIndex: index,
+      verdict: "supported",
+      supportingEvidenceIds: ["policy-a"],
+    })),
+  }));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: longClaim,
+    evidence,
+  });
+
+  assert.notEqual(result.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
+  for (const call of model.calls) {
+    for (const claim of call.claims) {
+      assert.ok(claim.length <= 500, `claim length ${claim.length} exceeds 500`);
+    }
+  }
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+});

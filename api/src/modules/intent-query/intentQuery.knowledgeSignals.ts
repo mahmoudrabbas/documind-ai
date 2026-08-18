@@ -54,7 +54,9 @@ const QUESTION_TERMS = new Set([
 
 const REQUEST_TERMS = new Set([
   "show", "find", "explain", "summarize", "compare", "list", "locate", "upload", "delete",
+  "tell", "give", "describe", "detail", "details", "provide", "inform", "clarify", "get", "fetch", "check", "lookup", "search",
   "اعرض", "اجد", "اشرح", "لخص", "قارن", "اذكر", "قولي", "اريد", "عايز", "احذف", "ارفع",
+  "اخبرني", "عرفني", "اعطني", "وضح", "هات", "ابحث", "شوف", "اقرا",
 ]);
 
 const CONTEXTUAL_ACKNOWLEDGEMENTS = new Set([
@@ -119,7 +121,7 @@ export function hasSemanticRetrievalSubject(raw: string): boolean {
   return !hasTrailingUnresolvedReference;
 }
 
-function isBareGeneralDefinitionText(normalized: string): boolean {
+export function isBareGeneralDefinitionText(normalized: string): boolean {
   return (
     /^(?:what\s+is|explain|define)\s+(?:a\s+|an\s+|the\s+)?(?:vpn|mfa|procurement|sla|hotel\s+management)(?:\s+in\s+general)?$/u.test(normalized) ||
     /^(?:ما|ماذا)\s+(?:هو|هي)\s+(?:vpn|mfa|sla|المشتريات)$/u.test(normalized)
@@ -225,6 +227,65 @@ export function isLikelyAccessContextFollowUp(raw: string): boolean {
   return hasContinuation && hasAccessTopic;
 }
 
+/**
+ * Domain-agnostic marker for a contextual follow-up: a short, continuation-led
+ * turn whose subject lives in the previous user message ("Does that apply to
+ * contractors?", "What about the hotel limit?", "And the per-diem rate?").
+ * The topic vocabulary is deliberately NOT constrained — the previous turn
+ * supplies the subject, and retrieval over the authorized corpus stays the
+ * authority on answerability.
+ */
+export function isLikelyContextualFollowUp(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  const words = normalized.trim().split(/\s+/u).filter(Boolean);
+  if (words.length === 0 || words.length > 15) return false;
+  const hasContinuation =
+    /\b(?:that|this|it|they|those|these|the\s+same|such|also|too|there|then)\b/u.test(normalized) ||
+    /\b(?:what|how)\s+about\b/iu.test(normalized) ||
+    /^\s*(?:and|و)\b/iu.test(normalized) ||
+    /(?:أيضاً|ايضاً|هل هذا|وماذا عن|وكيف|كذلك)/u.test(normalized);
+  if (!hasContinuation) return false;
+  // The continuation must lead the turn: a deictic subject (that/this/it/…)
+  // within the first few words, or an explicit continuation opener. A long
+  // independent question that merely contains a pronoun is not a follow-up.
+  const leadFour = words.slice(0, 4).join(" ").toLowerCase();
+  const deicticLead =
+    /\b(?:that|this|it|they|those|these|the same|such|also|too)\b/u.test(leadFour);
+  const phraseLead =
+    /^(?:what about|how about|what if|and the|and what|and how|and does|and is|and are|and can|and do|and)\b/u.test(leadFour);
+  const arabicLead =
+    /^(?:وماذا عن|وكيف|هل هذا|أيضاً|ايضاً|كذلك)/u.test(normalized.trim());
+  return deicticLead || phraseLead || arabicLead;
+}
+
+/**
+ * Conservative prior-turn document/RAG predicate. A contextual follow-up may
+ * only be deterministically promoted when the previous user turn itself
+ * expressed document or enterprise knowledge intent. Assistant/product-name
+ * phrasing is neutralized first so "What can DocuMind AI do?" cannot satisfy
+ * the document-reference signal through the "doc" substring.
+ */
+export function isLikelyPriorDocumentTurn(raw: string): boolean {
+  if (!raw.trim()) return false;
+  const neutralized = raw
+    .replace(/\bdocu[-_]?mind\b/giu, "product")
+    .replace(/\b(?:chat\s*bot|assistant)\b/giu, "product");
+  if (/\b(?:who|what)\s+(?:are|r)\s+(?:you|u)\b/iu.test(neutralized)) return false;
+  if (/\b(?:what|which|how)\s+(?:can|could|do|does|did)\s+(?:you|u|it|product)\b/iu.test(neutralized)) return false;
+  return assessPositiveKnowledgeSeeking(neutralized).positive;
+}
+
+/**
+ * A prior user turn can anchor a contextual follow-up only when it is itself
+ * substantive: not social small talk, not gibberish, and carries real tokens.
+ */
+export function hasSubstantivePriorTurn(message: string): boolean {
+  if (!message.trim()) return false;
+  if (detectSocialMessage(message).isSocial) return false;
+  if (isLikelyGibberish(message)) return false;
+  return preprocessIntentText(message).normalizedTokens.length >= 2;
+}
+
 export function buildContextualFollowUpQuestion(
   previousUserQuestion: string,
   currentQuestion: string,
@@ -245,7 +306,13 @@ export function hasDomainAgnosticQuestionShape(raw: string): boolean {
   const prepared = preprocessIntentText(stripped.text);
   const tokens = prepared.normalizedTokens;
   if (tokens.length === 0) return false;
-  if (isBareGeneralDefinitionText(prepared.elongationReducedText)) return false;
+  if (
+    /^(?:(?:simple|generic|test|example|sample)\s+)?(?:knowledge\s+)?(?:query|question)(?:\s+here)?[?\s]*$/u.test(
+      prepared.elongationReducedText,
+    )
+  ) {
+    return false;
+  }
   const substantiveTokens = tokens.filter(
     (token) => !QUESTION_TERMS.has(token) && !OVERLAP_STOP_WORDS.has(token),
   );
@@ -254,6 +321,28 @@ export function hasDomainAgnosticQuestionShape(raw: string): boolean {
   const hasRequestShape = tokens.some((token) => REQUEST_TERMS.has(token));
   const hasQuestionMark = /[?؟]/u.test(stripped.text);
   return hasQuestionShape || hasQuestionMark || hasRequestShape;
+}
+
+export function hasInterrogativeQuestionShape(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  const tokens = prepared.normalizedTokens;
+  const hasQuestionShape = tokens.some((token) => QUESTION_TERMS.has(token));
+  const hasQuestionMark = /[?؟]/u.test(stripped.text);
+  return hasQuestionShape || hasQuestionMark;
+}
+
+export function hasEnterpriseSubjectTerm(raw: string): boolean {
+  const stripped = stripLeadingSocialExpression(raw);
+  const prepared = preprocessIntentText(stripped.text);
+  return prepared.normalizedTokens.some((token) => ENTERPRISE_SUBJECT_TERMS.has(token));
+}
+
+export function isLikelySensitivePersonalDataRequest(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  return /\b(?:personal|private)\s+(?:mobile|phone|telephone|email|address|contact|number)\b/u.test(
+    normalized,
+  );
 }
 
 export function isLikelyGibberish(raw: string): boolean {

@@ -424,6 +424,151 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
+  await t.test("generic contextual follow-ups keep any prior document topic and become RAG deterministically", async () => {
+    const cases = [
+      {
+        topic: "travel",
+        priorUser: "What is the flights allowance in the travel policy?",
+        current: "What about the hotel limit?",
+      },
+      {
+        topic: "procurement",
+        priorUser: "How do I raise a purchase request for new laptops?",
+        current: "Does that apply to contractors too?",
+      },
+      {
+        topic: "onboarding",
+        priorUser: "What does the onboarding policy say about the first week?",
+        current: "And the mentor assignment?",
+      },
+      {
+        topic: "travel-arabic",
+        priorUser: "ما سياسة السفر الخاص بالعمل؟",
+        current: "وماذا عن حد الفندق؟",
+      },
+    ] as const;
+
+    for (const entry of cases) {
+      const providerVariants = [
+        planAdapter({ detectedIntent: "knowledge_question" }),
+        planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
+        {
+          providerKey: "malformed-follow-up-adapter",
+          async complete() {
+            return { choices: [{ message: { content: "not json" } }] } as Awaited<ReturnType<ModelAdapter["complete"]>>;
+          },
+        },
+      ];
+
+      for (const adapter of providerVariants) {
+        const conversationId = new Types.ObjectId().toString();
+        fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+          { role: "user", content: entry.priorUser, timestamp: new Date(1).toISOString() },
+          { role: "assistant", content: "Answered from company documents.", timestamp: new Date(2).toISOString() },
+        ]);
+        const plan = await new IntentQueryService(adapter, fakeConvoAdapter).analyzeQuery(
+          {
+            question: entry.current,
+            conversationId,
+          },
+          companyAdminContext,
+        );
+        assert.equal(plan.route, "rag", `${entry.topic}/${entry.current}`);
+        assert.equal(plan.detectedIntent, "follow_up", `${entry.topic}/${entry.current}`);
+        assert.equal(plan.isFollowUp, true, `${entry.topic}/${entry.current}`);
+        assert.match(
+          plan.normalizedQuestion,
+          /Regarding the previous question/u,
+          `${entry.topic}/${entry.current}`,
+        );
+        assert.ok(
+          plan.normalizedQuestion.includes(entry.priorUser),
+          `${entry.topic}/${entry.current} must keep the prior subject: ${plan.normalizedQuestion}`,
+        );
+        assert.ok(
+          plan.normalizedQuestion.includes(entry.current),
+          `${entry.topic}/${entry.current} must keep the current question: ${plan.normalizedQuestion}`,
+        )
+      }
+    }
+  });
+
+  await t.test("contextual continuations require a prior document or enterprise retrieval signal", async () => {
+    const priorTurns = [
+      {
+        kind: "external-current",
+        user: "What is the weather in Cairo today?",
+        assistant: "The weather is warm and clear.",
+      },
+      {
+        kind: "assistant-capability",
+        user: "What can DocuMind AI do?",
+        assistant: "I can help search and summarize authorized documents.",
+      },
+      {
+        kind: "unsupported-general",
+        user: "Who won the football World Cup?",
+        assistant: "That is outside the company document corpus.",
+      },
+      {
+        kind: "social",
+        user: "Hello, how are you?",
+        assistant: "I am ready to help.",
+      },
+      {
+        kind: "gibberish",
+        user: "asdasdasd qwerty",
+        assistant: "I could not understand that.",
+      },
+    ] as const;
+    const providerVariants: ReadonlyArray<readonly [string, ModelAdapter]> = [
+      [
+        "unsupported",
+        planAdapter({
+          detectedIntent: "unsupported",
+          intentConfidence: 0.99,
+          semanticQueries: [],
+          keywordQueries: [],
+        }),
+      ],
+      [
+        "malformed",
+        {
+          providerKey: "malformed-non-rag-follow-up-adapter",
+          async complete() {
+            return {
+              choices: [{ message: { content: "not json" } }],
+            } as Awaited<ReturnType<ModelAdapter["complete"]>>;
+          },
+        },
+      ],
+    ];
+
+    for (const prior of priorTurns) {
+      for (const [providerKind, adapter] of providerVariants) {
+        const conversationId = new Types.ObjectId().toString();
+        fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [
+          { role: "user", content: prior.user, timestamp: new Date(1).toISOString() },
+          { role: "assistant", content: prior.assistant, timestamp: new Date(2).toISOString() },
+        ]);
+
+        const plan = await new IntentQueryService(adapter, fakeConvoAdapter).analyzeQuery(
+          {
+            question: "What about contractors?",
+            conversationId,
+          },
+          companyAdminContext,
+        );
+        const caseName = `${prior.kind}/${providerKind}`;
+
+        assert.equal(plan.route, "unsupported", caseName);
+        assert.equal(plan.detectedIntent, "unsupported", caseName);
+        assert.equal(plan.isFollowUp, false, caseName);
+        assert.deepEqual(plan.semanticQueries, [], caseName);
+      }
+    }
+  });
+
   await t.test("assistant capability follow-up stays coherent and a later knowledge turn returns to RAG", async () => {
     const conversationId = new Types.ObjectId().toString();
     const assistantReply = "أنا DocuMind AI، مساعد خاص لمعرفة الشركة.";
@@ -579,7 +724,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     assert.deepEqual(externalPlan.semanticQueries, []);
   });
 
-  await t.test("invalid JSON and unknown intents fail closed unless positive knowledge signals exist", async () => {
+  await t.test("invalid JSON and unknown intents use corpus-first routing for self-contained questions", async () => {
     const invalidJson = new IntentQueryService({
       providerKey: "invalid-json",
       async complete() {
@@ -690,7 +835,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
-  await t.test("deterministic precedence does not promote general, social or assistant input", async () => {
+  await t.test("deterministic precedence promotes corpus questions but not gibberish, social or assistant input", async () => {
     const suppressingProvider = new IntentQueryService(
       planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
       fakeConvoAdapter,
@@ -708,7 +853,11 @@ test("IntentQueryService - query routing contract", async (t) => {
         { question },
         companyAdminContext,
       );
-      assert.notEqual(plan.route, "rag", question);
+      if (question === "asdasdasd" || question.startsWith("?!")) {
+        assert.notEqual(plan.route, "rag", question);
+      } else {
+        assert.equal(plan.route, "rag", question);
+      }
     }
     for (const question of ["شكرا", "شجرا"]) {
       assert.equal(
@@ -1010,7 +1159,7 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
-  await t.test("unsupported override stays closed for degraded output and non-questions", async () => {
+  await t.test("unsupported override stays closed for non-questions but rescues schema-invalid questions", async () => {
     const suppressingProvider = new IntentQueryService(
       planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99 }),
       fakeConvoAdapter,
@@ -1024,23 +1173,34 @@ test("IntentQueryService - query routing contract", async (t) => {
       planAdapter({ detectedIntent: "unsupported", entities: "not-an-array" }),
       fakeConvoAdapter,
     );
-    assert.equal(
-      (await invalidSchema.analyzeQuery({ question: "What is the primary key in a relational database?" }, companyAdminContext)).route,
-      "unsupported",
+    const plan = await invalidSchema.analyzeQuery(
+      { question: "what is js" },
+      companyAdminContext,
     );
+    assert.equal(plan.processingMetadata.fallbackUsed, true);
+    assert.equal(plan.detectedIntent, "knowledge_question");
+    assert.equal(plan.route, "rag");
+    assert.ok(plan.semanticQueries.length > 0);
   });
 
-  await t.test("provider failure stays fail-closed for out-of-vocabulary domain questions", async () => {
+  await t.test("provider failure uses corpus-first routing for out-of-vocabulary domain questions", async () => {
     const failingService = new IntentQueryService({
       providerKey: "failing-provider",
       async complete() { throw new Error("Provider Offline"); },
     }, fakeConvoAdapter);
-    const plan = await failingService.analyzeQuery(
-      { question: "What is the primary key in a relational database?" },
-      companyAdminContext,
-    );
-    assert.equal(plan.route, "unsupported");
-    assert.equal(plan.processingMetadata.fallbackUsed, true);
+    for (const question of [
+      "What is the primary key in a relational database?",
+      "How do I install MySQL?",
+    ]) {
+      const plan = await failingService.analyzeQuery(
+        { question },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "rag", question);
+      assert.equal(plan.detectedIntent, "knowledge_question", question);
+      assert.equal(plan.processingMetadata.fallbackUsed, true, question);
+      assert.ok(plan.semanticQueries.length > 0, question);
+    }
   });
 
   await t.test("external-data short-circuit uses word boundaries, not substrings", async () => {

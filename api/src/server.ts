@@ -11,6 +11,7 @@ import { getReconciliationService } from "./modules/entitlement/reconciliation.s
 import { registerPlanChangeHook } from "./modules/billing/subscription.service.js";
 import { startNotificationOutboxScheduler } from "./modules/notifications/outbox/notificationOutbox.scheduler.js";
 import { startNotificationSweepsScheduler } from "./modules/notifications/sweeps/notificationSweeps.scheduler.js";
+import { startPolicyPropagationRecoveryScheduler, stopPolicyPropagationRecoveryScheduler } from "./modules/document-access/documentPolicyPropagation.dispatcher.js";
 import { NotificationService } from "./modules/notifications/notifications.service.js";
 import { MongoNotificationRepository } from "./modules/notifications/repositories/mongo/notification.repository.js";
 import { MongoUserNotificationStateRepository } from "./modules/notifications/repositories/mongo/userNotificationState.repository.js";
@@ -144,6 +145,8 @@ async function gracefulShutdown(signal: string) {
     ocrQuotaReservationTimer = null;
     logger.info("OCR quota reservation scheduler stopped");
   }
+
+  stopPolicyPropagationRecoveryScheduler();
 
   await new Promise<void>((resolve) => {
     server.close(() => {
@@ -313,6 +316,23 @@ if (config.NOTIFICATION_SWEEP_ENABLED) {
     logger.warn(
       { err: error },
       "Failed to start notification sweeps scheduler",
+    );
+  }
+}
+
+// ── Policy propagation recovery scheduler ───────────────────────────────────
+// Reclaims pending / claim-expired / retry_pending propagation outbox events
+// every 5s in batches of 50 so taxonomy and policy metadata propagation
+// survives dispatch failures. Failure-isolated per tick.
+
+if (process.env.POLICY_PROPAGATION_RECOVERY_ENABLED !== "false") {
+  try {
+    startPolicyPropagationRecoveryScheduler();
+    logger.info("Policy propagation recovery scheduler started");
+  } catch (error) {
+    logger.warn(
+      { err: error },
+      "Failed to start policy propagation recovery scheduler",
     );
   }
 }

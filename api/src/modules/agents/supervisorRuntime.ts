@@ -86,7 +86,7 @@ export interface SupervisorRuntimeHooks {
     toAgent: string;
     currentInput: Record<string, unknown>;
     proposedPayload: Record<string, unknown>;
-  }): Record<string, unknown>;
+  }): Record<string, unknown> | Promise<Record<string, unknown>>;
   resolveToolInput?(args: {
     workflowId: string;
     currentAgent: string;
@@ -588,7 +588,7 @@ export class SupervisorRuntime {
       let validated;
       try {
         const resolvedPayload = state.hooks.resolveHandoffPayload
-          ? state.hooks.resolveHandoffPayload({
+          ? await state.hooks.resolveHandoffPayload({
               workflowId: workflow.id,
               fromAgent,
               toAgent,

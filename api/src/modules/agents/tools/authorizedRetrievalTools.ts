@@ -385,6 +385,12 @@ const EvaluateEvidenceOutputSchema = z
      * document-level access authorization during evidence evaluation.
      */
     authorizationRestricted: z.boolean().optional(),
+    /**
+     * Chunk ids belonging to detected evidence conflict groups. Conflicts are
+     * reported from authorized evidence only; consumers must explain both
+     * positions with citations instead of picking an unsupported winner.
+     */
+    conflictEvidenceIds: z.array(z.string()).max(50).optional(),
   })
   .strict();
 
@@ -435,13 +441,51 @@ export const evaluateEvidenceSchema: ToolSchema = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-type TrustedCandidateCatalog = Map<
-  string,
-  Map<string, RetrievalCandidate>
->;
+interface TrustedCandidateEntry {
+  readonly candidates: Map<string, RetrievalCandidate>;
+  readonly expiresAt: number;
+}
+
+/** Provenance entries expire after five minutes; reads never destroy them. */
+const TRUSTED_CANDIDATE_TTL_MS = 5 * 60 * 1000;
+const TRUSTED_CANDIDATE_MAX_ENTRIES = 1_000;
+
+type TrustedCandidateCatalog = Map<string, TrustedCandidateEntry>;
 
 function catalogKey(context: RunContext): string {
-  return context.runId ?? context.traceId;
+  return `${context.tenantId}:${context.actorId}:${context.runId ?? context.traceId}`;
+}
+
+function storeTrustedCandidates(
+  catalog: TrustedCandidateCatalog,
+  key: string,
+  candidates: readonly RetrievalCandidate[],
+): void {
+  if (catalog.size >= TRUSTED_CANDIDATE_MAX_ENTRIES) {
+    // Evict the oldest entry (insertion-ordered Map) — bounded memory, never
+    // silent data-dependent destruction of the current run's entry.
+    const oldest = catalog.keys().next().value;
+    if (oldest) catalog.delete(oldest);
+  }
+  catalog.set(key, {
+    candidates: new Map(candidates.map((candidate) => [candidate.chunkId, candidate])),
+    expiresAt: Date.now() + TRUSTED_CANDIDATE_TTL_MS,
+  });
+}
+
+/** Idempotent read: expired or missing entries resolve to undefined. */
+function readTrustedCandidates(
+  catalog: TrustedCandidateCatalog | undefined,
+  key: string,
+): Map<string, RetrievalCandidate> | undefined {
+  if (!catalog) return undefined;
+  const entry = catalog.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    catalog.delete(key);
+    return undefined;
+  }
+  return entry.candidates;
 }
 
 function toRetrievalCandidate(
@@ -610,18 +654,14 @@ export function createAuthorizedHybridSearchTool(
           ? "AUTHORIZATION_FILTERED"
           : "NO_MATCHES";
       if (trustedCandidateCatalog) {
-        // Bounded, request-private provenance cache. Only the server-produced
-        // and currently retrievable candidates are retained; the model sees
-        // ids and safe metadata only.
-        if (trustedCandidateCatalog.size >= 1_000) {
-          const oldest = trustedCandidateCatalog.keys().next().value;
-          if (oldest) trustedCandidateCatalog.delete(oldest);
-        }
-        trustedCandidateCatalog.set(
+        // Bounded, request-private provenance store with a five-minute TTL.
+        // Only the server-produced and currently retrievable candidates are
+        // retained; the model sees ids and safe metadata only. Reads are
+        // idempotent — repeated evidence evaluation is deterministic.
+        storeTrustedCandidates(
+          trustedCandidateCatalog,
           catalogKey(context),
-          new Map(
-            eligibleCandidates.map((candidate) => [candidate.chunkId, candidate]),
-          ),
+          eligibleCandidates,
         );
       }
 
@@ -681,8 +721,10 @@ export function createEvaluateEvidenceTool(
     const actor = await resolveTrustedActor(context, deps);
 
     const requestedIds = parsed.candidateIds;
-    const runCandidates = trustedCandidateCatalog?.get(catalogKey(context));
-    trustedCandidateCatalog?.delete(catalogKey(context));
+    const runCandidates = readTrustedCandidates(
+      trustedCandidateCatalog,
+      catalogKey(context),
+    );
 
     // 1. Load candidates server-side by id (tenant-scoped).
     const loaded = await deps.loadChunksByIds(actor.tenantId, requestedIds);
@@ -708,6 +750,7 @@ export function createEvaluateEvidenceTool(
     // 3. Reauthorize each candidate document for use_in_ai.
     const authorizedCandidates: RetrievalCandidate[] = [];
     let authorizationRestricted = false;
+    let provenanceMissing = false;
     for (const chunk of eligibleChunks) {
       if (!eligibleDocumentIds.has(chunk.documentId)) continue;
       try {
@@ -720,15 +763,28 @@ export function createEvaluateEvidenceTool(
         authorizationRestricted = true;
         continue;
       }
-      authorizedCandidates.push(
-        toRetrievalCandidate(chunk, runCandidates?.get(chunk.chunkId)),
-      );
+      const trusted = runCandidates?.get(chunk.chunkId);
+      if (!trusted) provenanceMissing = true;
+      authorizedCandidates.push(toRetrievalCandidate(chunk, trusted));
     }
 
     const authorizedIds = new Set(
       authorizedCandidates.map((candidate) => candidate.chunkId),
     );
     const rejectedBase = requestedIds.filter((id) => !authorizedIds.has(id));
+
+    // Candidates without trusted retrieval provenance must never enter the
+    // reranker with a fabricated zero relevance score. Fail closed with a
+    // typed reason so the caller retries the authorized search once.
+    if (provenanceMissing && authorizedCandidates.length > 0) {
+      return {
+        sufficiency: "NO_EVIDENCE",
+        approvedEvidenceIds: [],
+        rejectedEvidenceIds: [...requestedIds],
+        reasonCode: "CANDIDATE_PROVENANCE_MISSING",
+        ...(authorizationRestricted ? { authorizationRestricted } : {}),
+      };
+    }
 
     if (authorizedCandidates.length === 0) {
       return {
@@ -774,6 +830,19 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: requestedIds,
         reasonCode: `EVIDENCE_${level}`,
+        ...(level === "CONFLICTING"
+          ? {
+              conflictEvidenceIds: [
+                ...new Set(
+                  bundle.conflictGroups.flatMap((group) =>
+                    group.itemIndices
+                      .map((index) => bundle.items[index]?.candidate.chunkId)
+                      .filter((id): id is string => Boolean(id)),
+                  ),
+                ),
+              ],
+            }
+          : {}),
       };
     }
 
