@@ -86,6 +86,7 @@ describe("admin subscription persistence", () => {
       );
     }
     assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
+    await SubscriptionModel.init();
   });
   beforeEach(async () => {
     assertDisposableMongoConnection(mongoose.connection, testDatabaseName);
