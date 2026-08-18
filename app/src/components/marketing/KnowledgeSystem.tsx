@@ -64,7 +64,7 @@ function DocRow({ name, meta, state, className, delay }: DocRowProps) {
         <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-semibold tracking-[0.02em] text-[#9bcfff]">
           <span
             aria-hidden="true"
-            className="h-[5px] w-[5px] animate-pulse rounded-full bg-[#1688f5]"
+            className="h-[5px] w-[5px] rounded-full bg-[#1688f5] shadow-[0_0_0_3px_rgba(22,136,245,0.14)]"
           />
           {t("landing.ksDocSelected")}
         </span>

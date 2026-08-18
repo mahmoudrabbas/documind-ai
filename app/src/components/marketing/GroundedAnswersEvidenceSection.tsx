@@ -30,10 +30,11 @@
  * kept `dir="ltr"` inside the RTL document to avoid reordering the glyphs.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { CheckGlyph, DocGlyph } from "./glyphs";
+import { useRevealOnView } from "./motion";
 
 /** Latin product identifier — identical in both locales. */
 const SOURCE_FILE = "Customer_Support_SLA.pdf";
@@ -70,7 +71,7 @@ function Reveal({
   return (
     <div
       className={cn(
-        "transition-all duration-500 ease-out",
+        "transition-all duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
         className,
       )}
@@ -318,36 +319,8 @@ function InsufficientTrace({ shown }: { shown: boolean }) {
 export function GroundedAnswersEvidenceSection() {
   const { t, dir } = useI18n();
   const [state, setState] = useState<StateId>("supported");
-  const [revealed, setRevealed] = useState(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
-      setRevealed(true);
-      return;
-    }
-    if (typeof IntersectionObserver === "undefined") {
-      setRevealed(true);
-      return;
-    }
-    const el = canvasRef.current;
-    if (!el) {
-      setRevealed(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setRevealed(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+  const { revealed } = useRevealOnView(canvasRef);
 
   return (
     <section
@@ -409,12 +382,14 @@ export function GroundedAnswersEvidenceSection() {
           </div>
 
           {/* canvas body — the active evidence story */}
-          <div className="relative px-5 py-6 sm:px-6 sm:py-7">
-            {state === "supported" ? (
-              <SupportedTrace shown={revealed} />
-            ) : (
-              <InsufficientTrace shown={revealed} />
-            )}
+          <div className="relative min-h-[300px] px-5 py-6 sm:min-h-[280px] sm:px-6 sm:py-7">
+            <div className="transition-opacity duration-200 motion-reduce:transition-none">
+              {state === "supported" ? (
+                <SupportedTrace shown={revealed} />
+              ) : (
+                <InsufficientTrace shown={revealed} />
+              )}
+            </div>
           </div>
         </div>
 

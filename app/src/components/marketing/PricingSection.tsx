@@ -45,6 +45,7 @@ import { formatPrice } from "@/lib/billing.helpers";
 import { mbToGb } from "@/lib/storage";
 import { Skeleton } from "@/components/ui";
 import type { PublicPackage } from "@/types/api/billing.types";
+import { useRevealOnView } from "./motion";
 
 /* ── Shared comparison rows ─────────────────────────────────────────────── */
 
@@ -243,7 +244,7 @@ function Reveal({
   return (
     <div
       className={cn(
-        "transition-all duration-500 ease-out",
+        "transition-all duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
         className,
       )}
@@ -545,8 +546,6 @@ export function PricingSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [shown, setShown] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -570,36 +569,7 @@ export function PricingSection() {
     return () => controller.abort();
   }, [loadAttempt]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    setReducedMotion(Boolean(reduce));
-    if (reduce) {
-      setShown(true);
-      return;
-    }
-    if (typeof IntersectionObserver === "undefined") {
-      setShown(true);
-      return;
-    }
-    const el = contentRef.current;
-    if (!el) {
-      setShown(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setShown(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
+  const { revealed: shown, reducedMotion } = useRevealOnView(contentRef);
   const animate = !reducedMotion;
   const ready = !loading && !error && packages.length > 0;
 

@@ -80,12 +80,12 @@ export function HeroSection() {
             <div className="mt-7 flex flex-wrap items-center gap-x-7 gap-y-4 min-[560px]:mt-8">
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all duration-200 hover:bg-[#e5f2ff] hover:shadow-[0_10px_30px_rgba(22,136,245,0.18)] active:scale-[0.98]"
+                className="group inline-flex items-center gap-2 rounded-xl bg-on-primary px-8 py-3.5 text-title-lg font-semibold text-primary shadow-lg shadow-primary/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#e5f2ff] hover:shadow-[0_10px_30px_rgba(22,136,245,0.18)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1688f5] active:scale-[0.98] motion-reduce:transform-none"
               >
                 {t("landing.heroCtaPrimary")}
                 <span
                   aria-hidden="true"
-                  className="material-symbols-outlined text-xl rtl:rotate-180"
+                  className="material-symbols-outlined text-xl transition-transform duration-200 group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transform-none"
                   style={{ fontVariationSettings: "'FILL' 1" }}
                 >
                   arrow_forward
@@ -93,7 +93,7 @@ export function HeroSection() {
               </Link>
               <a
                 href="#how-it-works"
-                className="inline-flex items-center gap-2 border-b border-on-primary/25 pb-1 text-title-md font-medium text-on-primary/70 transition-colors duration-200 hover:border-on-primary/60 hover:text-white"
+                className="inline-flex items-center gap-2 border-b border-on-primary/25 pb-1 text-title-md font-medium text-on-primary/70 transition-colors duration-200 hover:border-on-primary/60 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1688f5]"
               >
                 {t("landing.heroCtaSecondary")}
                 {/* Points down the page, so it is not mirrored in RTL. */}

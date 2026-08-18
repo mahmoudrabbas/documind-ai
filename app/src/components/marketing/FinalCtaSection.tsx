@@ -22,14 +22,14 @@
  * claims are repeated here.
  *
  * Motion is limited to a restrained entrance reveal and a tiny CTA arrow
- * nudge, both disabled under `prefers-reduced-motion`. The full-page
- * animation pass is a later task.
+ * nudge, both disabled under `prefers-reduced-motion`.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
+import { useRevealOnView } from "./motion";
 
 /** Latin source identifiers shown in the closing signature. Always LTR. */
 const SOURCE_FILES = ["Procurement_Policy.pdf", "Customer_Support_SLA.pdf", "Security_Policy.pdf"];
@@ -188,7 +188,7 @@ function Reveal({
   return (
     <div
       className={cn(
-        "transition-all duration-500 ease-out",
+        "transition-all duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
         className,
       )}
@@ -202,34 +202,7 @@ function Reveal({
 export function FinalCtaSection() {
   const { t, dir } = useI18n();
   const ref = useRef<HTMLElement>(null);
-  const [shown, setShown] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      setShown(true);
-      return;
-    }
-    if (typeof IntersectionObserver === "undefined") {
-      setShown(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setShown(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.12 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+  const { revealed: shown } = useRevealOnView(ref);
 
   const trustItems = [
     t("landing.finalCtaTrust1"),
@@ -283,12 +256,12 @@ export function FinalCtaSection() {
               <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
                 <Link
                   href="/register"
-                  className="group inline-flex min-h-12 items-center gap-2.5 rounded-xl bg-white px-8 py-3 text-title-lg font-semibold text-[#001524] shadow-lg shadow-black/20 transition-all duration-200 hover:bg-[#e5f2ff] hover:shadow-[0_10px_30px_rgba(22,136,245,0.18)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1688f5] active:scale-[0.98]"
+                  className="group inline-flex min-h-12 items-center gap-2.5 rounded-xl bg-white px-8 py-3 text-title-lg font-semibold text-[#001524] shadow-lg shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#e5f2ff] hover:shadow-[0_10px_30px_rgba(22,136,245,0.18)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1688f5] active:scale-[0.98] motion-reduce:transform-none"
                 >
                   {t("landing.finalCtaPrimary")}
                   <span
                     aria-hidden="true"
-                    className="material-symbols-outlined text-[20px] transition-transform duration-200 group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5"
+                    className="material-symbols-outlined text-[20px] transition-transform duration-200 group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transform-none"
                   >
                     arrow_forward
                   </span>

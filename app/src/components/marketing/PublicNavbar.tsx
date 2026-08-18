@@ -10,7 +10,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { LanguageSwitcher } from "@/components/ui";
 import { DocuMindLogo } from "@/components/brand/DocuMindLogo";
@@ -38,6 +38,7 @@ export function PublicNavbar() {
   const { t, dir } = useI18n();
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -45,6 +46,24 @@ export function PublicNavbar() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   const scrollTo = (id: string) => {
     setMobileMenuOpen(false);
@@ -95,7 +114,7 @@ export function PublicNavbar() {
           </Link>
           <Link
             href="/register"
-            className="group inline-flex items-center gap-1.5 rounded-lg bg-on-primary px-5 py-2.5 text-label-md font-semibold text-primary shadow-md shadow-black/10 transition-all duration-200 hover:bg-[#e5f2ff] active:scale-95"
+            className="group inline-flex items-center gap-1.5 rounded-lg bg-on-primary px-5 py-2.5 text-label-md font-semibold text-primary shadow-md shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#e5f2ff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary active:scale-[0.98] motion-reduce:transform-none"
           >
             {t("landing.navStartFree")}
             <span
@@ -111,7 +130,8 @@ export function PublicNavbar() {
         <button
           type="button"
           onClick={() => setMobileMenuOpen((open) => !open)}
-          className="flex h-11 w-11 items-center justify-center rounded-xl text-on-primary transition-colors hover:bg-white/10 min-[1120px]:hidden"
+          ref={menuButtonRef}
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-on-primary transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary min-[1120px]:hidden"
           aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
           aria-expanded={mobileMenuOpen}
           aria-controls="public-nav-mobile-menu"
@@ -133,7 +153,7 @@ export function PublicNavbar() {
                 key={link.id}
                 type="button"
                 onClick={() => scrollTo(link.id)}
-                className="rounded-xl px-4 py-3 text-start text-label-lg text-on-primary/80 transition-colors hover:bg-white/10 hover:text-white"
+                className="rounded-xl px-4 py-3 text-start text-label-lg text-on-primary/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
               >
                 {t(link.key)}
               </button>
@@ -144,14 +164,14 @@ export function PublicNavbar() {
               <Link
                 href="/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className="rounded-xl border border-on-primary/20 bg-white/5 py-3 text-center text-label-md font-semibold text-on-primary transition-colors hover:bg-white/15"
+                className="rounded-xl border border-on-primary/20 bg-white/5 py-3 text-center text-label-md font-semibold text-on-primary transition-colors hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
               >
                 {t("landing.navSignIn")}
               </Link>
               <Link
                 href="/register"
                 onClick={() => setMobileMenuOpen(false)}
-                className="rounded-xl bg-on-primary py-3 text-center text-label-md font-bold text-primary shadow-md transition-colors hover:bg-[#e5f2ff]"
+                className="rounded-xl bg-on-primary py-3 text-center text-label-md font-bold text-primary shadow-md transition-colors hover:bg-[#e5f2ff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
               >
                 {t("landing.navStartFree")}
               </Link>

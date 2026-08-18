@@ -31,10 +31,11 @@
  * glyphs.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { CheckGlyph, DocGlyph } from "./glyphs";
+import { useRevealOnView } from "./motion";
 
 /** Two illustrative organizations inside the same platform. */
 const ORGS: Array<{
@@ -136,7 +137,7 @@ function Reveal({
   return (
     <div
       className={cn(
-        "transition-all duration-500 ease-out",
+        "transition-all duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
         className,
       )}
@@ -368,40 +369,8 @@ function TraceableKnowledge({
 
 export function SecurityTrustSection() {
   const { t, dir } = useI18n();
-  const [revealed, setRevealed] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    setReducedMotion(Boolean(reduce));
-    if (reduce) {
-      setRevealed(true);
-      return;
-    }
-    if (typeof IntersectionObserver === "undefined") {
-      setRevealed(true);
-      return;
-    }
-    const el = canvasRef.current;
-    if (!el) {
-      setRevealed(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setRevealed(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
+  const { revealed, reducedMotion } = useRevealOnView(canvasRef);
   const animate = !reducedMotion;
 
   return (

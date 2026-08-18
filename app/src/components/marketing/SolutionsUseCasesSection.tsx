@@ -27,7 +27,7 @@
  * same governed layer. It stays subtle and never becomes a workflow diagram.
  *
  * Motion is a one-time staged entrance (row by row) driven by
- * IntersectionObserver with short 300ms transitions. prefers-reduced-motion
+ * IntersectionObserver with calm 500ms transitions. prefers-reduced-motion
  * shows the full resolved section immediately, and no meaning depends on
  * animation.
  *
@@ -35,10 +35,11 @@
  * inside the RTL document to avoid reordering the glyphs.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { DocGlyph } from "./glyphs";
+import { useRevealOnView } from "./motion";
 
 /** One scenario: which team, which question, which source, which outcome. */
 const SCENARIOS: Array<{
@@ -107,7 +108,7 @@ function Reveal({
   return (
     <div
       className={cn(
-        "transition-all duration-300 ease-out",
+        "transition-all duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
         className,
       )}
@@ -120,36 +121,8 @@ function Reveal({
 
 export function SolutionsUseCasesSection() {
   const { t, dir } = useI18n();
-  const [revealed, setRevealed] = useState(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
-      setRevealed(true);
-      return;
-    }
-    if (typeof IntersectionObserver === "undefined") {
-      setRevealed(true);
-      return;
-    }
-    const el = canvasRef.current;
-    if (!el) {
-      setRevealed(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setRevealed(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+  const { revealed } = useRevealOnView(canvasRef);
 
   return (
     <section

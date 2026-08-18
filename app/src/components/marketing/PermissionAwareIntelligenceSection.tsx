@@ -28,10 +28,11 @@
  * the RTL document to avoid reordering the glyphs.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useI18n } from "@/providers/i18n-provider";
 import { cn } from "@/lib/utils";
 import { CheckGlyph, DocGlyph, LockGlyph } from "./glyphs";
+import { useRevealOnView } from "./motion";
 
 const ACCESS_CHECKS = [
   "landing.permCheck1",
@@ -101,7 +102,7 @@ function Reveal({
   return (
     <div
       className={cn(
-        "transition-all duration-500 ease-out",
+        "transition-all duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0",
         className,
       )}
@@ -327,36 +328,8 @@ function RetrievalEligibility({ shown }: { shown: boolean }) {
 
 export function PermissionAwareIntelligenceSection() {
   const { t, dir } = useI18n();
-  const [revealed, setRevealed] = useState(false);
   const visualRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
-      setRevealed(true);
-      return;
-    }
-    if (typeof IntersectionObserver === "undefined") {
-      setRevealed(true);
-      return;
-    }
-    const el = visualRef.current;
-    if (!el) {
-      setRevealed(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setRevealed(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+  const { revealed } = useRevealOnView(visualRef);
 
   return (
     <section

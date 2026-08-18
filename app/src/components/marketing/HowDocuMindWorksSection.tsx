@@ -476,6 +476,7 @@ export function HowDocuMindWorksSection() {
   const { t, dir } = useI18n();
   const [active, setActive] = useState<number | null>(0);
   const refs = useRef<Array<HTMLDivElement | null>>([]);
+  const frame = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -502,22 +503,38 @@ export function HowDocuMindWorksSection() {
           best = i;
         }
       });
-      setActive(best);
+      setActive((current) => {
+        if (current === null || current === best) return current;
+        const currentNode = nodes[current];
+        if (!currentNode) return best;
+        const rect = currentNode.getBoundingClientRect();
+        const currentDist = Math.abs(rect.top + rect.height / 2 - vpMid);
+        return bestDist + 24 < currentDist ? best : current;
+      });
+    };
+
+    const scheduleMeasure = () => {
+      if (frame.current !== null) return;
+      frame.current = window.requestAnimationFrame(() => {
+        frame.current = null;
+        measure();
+      });
     };
 
     measure();
-    window.addEventListener("scroll", measure, { passive: true });
-    window.addEventListener("resize", measure, { passive: true });
+    window.addEventListener("scroll", scheduleMeasure, { passive: true });
+    window.addEventListener("resize", scheduleMeasure, { passive: true });
 
     const onMediaChange = () => {
       setActive(mq?.matches ? null : 0);
-      if (!mq?.matches) measure();
+      if (!mq?.matches) scheduleMeasure();
     };
     mq?.addEventListener?.("change", onMediaChange);
 
     return () => {
-      window.removeEventListener("scroll", measure);
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", scheduleMeasure);
+      window.removeEventListener("resize", scheduleMeasure);
+      if (frame.current !== null) window.cancelAnimationFrame(frame.current);
       mq?.removeEventListener?.("change", onMediaChange);
     };
   }, []);
