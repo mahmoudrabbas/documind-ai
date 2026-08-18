@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PermissionBoundary } from "@/components/auth/permission-boundary";
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
+import { AdminPagination } from "@/components/ui";
 import { PlatformState, PlatformTable, StatusPill } from "@/components/super-admin/platform-ui";
 import { useI18n } from "@/providers/i18n-provider";
 import { usePermissions } from "@/providers/permission-provider";
@@ -171,7 +172,7 @@ function RefundReviewContent() {
         >
           {refunds.map((refund) => (
             <tr key={refund.id}>
-              <td className="cell">{refund.tenant.name ?? refund.tenant.slug ?? refund.tenantId}</td>
+              <td className="cell px-4 py-3 align-middle">{refund.tenant.name ?? refund.tenant.slug ?? refund.tenantId}</td>
               <td className="cell">{refund.invoiceNumber ?? "—"}</td>
               <td className="cell">{refund.subscription?.packageName ?? "—"}</td>
               <td className="cell">{formatMoney(refund.amountMinor, refund.currency)}</td>
@@ -179,23 +180,21 @@ function RefundReviewContent() {
               <td className="cell">{formatDate(refund.requestedAt)}</td>
               <td className="cell">
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => void review(refund.id)} className="rounded border px-2 py-1 text-xs font-bold">{t("refundAdmin.viewDetails")}</button>
-                  {canConfirm && refund.status === "REQUESTED" ? <button type="button" onClick={() => setConfirmRefund(refund)} className="rounded bg-primary px-2 py-1 text-xs font-bold text-on-primary">{t("refundAdmin.confirm")}</button> : null}
-                  {canConfirm && refund.status === "REQUESTED" ? <button type="button" onClick={() => setRejectRefund(refund)} className="rounded border border-error px-2 py-1 text-xs font-bold text-error">{t("refundAdmin.reject")}</button> : null}
-                  {canConfirm && refund.status === "RETRY_PENDING" ? <button type="button" onClick={() => setRetryRefund(refund)} className="rounded bg-secondary px-2 py-1 text-xs font-bold text-on-secondary">{t("refundAdmin.retryAction")}</button> : null}
+                  <button type="button" onClick={() => void review(refund.id)} className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-low hover:border-outline active:scale-95 transition-all duration-150">{t("refundAdmin.viewDetails")}</button>
+                  {canConfirm && refund.status === "REQUESTED" ? <button type="button" onClick={() => setConfirmRefund(refund)} className="cursor-pointer rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary hover:opacity-90 active:scale-95 transition-all duration-150">{t("refundAdmin.confirm")}</button> : null}
+                  {canConfirm && refund.status === "REQUESTED" ? <button type="button" onClick={() => setRejectRefund(refund)} className="cursor-pointer rounded-lg border border-error px-3 py-1.5 text-xs font-semibold text-error hover:bg-error-container active:scale-95 transition-all duration-150">{t("refundAdmin.reject")}</button> : null}
+                  {canConfirm && refund.status === "RETRY_PENDING" ? <button type="button" onClick={() => setRetryRefund(refund)} className="cursor-pointer rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-low hover:border-outline active:scale-95 transition-all duration-150">{t("refundAdmin.retryAction")}</button> : null}
                 </div>
               </td>
             </tr>
           ))}
         </PlatformTable>
-        <div className={`mt-4 flex items-center gap-3 ${dir === "rtl" ? "flex-row-reverse justify-end" : "justify-end"}`}>
-          <button type="button" aria-label={t("refundAdmin.previous")} disabled={loading || page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="min-h-11 rounded-xl border px-4 font-semibold disabled:opacity-50">
-            {t("refundAdmin.previous")}
-          </button>
-          <span aria-live="polite" className="text-sm text-on-surface-variant">{t("refundAdmin.page")} {page} / {totalPages}</span>
-          <button type="button" aria-label={t("refundAdmin.next")} disabled={loading || page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="min-h-11 rounded-xl border px-4 font-semibold disabled:opacity-50">
-            {t("refundAdmin.next")}
-          </button>
+        <div className="sticky bottom-0 z-10">
+          <AdminPagination
+            currentPage={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
         </>
       ) : null}

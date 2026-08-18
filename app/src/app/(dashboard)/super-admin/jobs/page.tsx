@@ -12,6 +12,7 @@ import {
 } from "@/components/super-admin/platform-ui";
 import { usePlatformQuery } from "@/components/super-admin/use-platform-query";
 import { listPlatformJobs } from "@/services/super-admin.service";
+import { AdminPagination } from "@/components/ui";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { codeLabel } from "@/lib/i18n/code-label";
 
@@ -76,29 +77,12 @@ export default function JobsPage() {
               </tr>
             ))}
           </PlatformTable>
-          <div className="mt-4 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((value) => value - 1)}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              {t("superAdmin.subsPrevious")}
-            </button>
-            <span>
-              {t("superAdmin.subsPageOf", {
-                page: String(page),
-                total: String(state.data.pagination.totalPages),
-              })}
-            </span>
-            <button
-              type="button"
-              disabled={page >= state.data.pagination.totalPages}
-              onClick={() => setPage((value) => value + 1)}
-              className="rounded border px-3 py-2 disabled:opacity-50"
-            >
-              {t("superAdmin.subsNext")}
-            </button>
+          <div className="sticky bottom-0 z-10">
+            <AdminPagination
+              currentPage={page}
+              totalPages={state.data.pagination.totalPages}
+              onPageChange={setPage}
+            />
           </div>
         </>
       ) : null}

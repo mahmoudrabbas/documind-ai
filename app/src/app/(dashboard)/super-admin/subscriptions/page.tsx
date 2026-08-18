@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
+import { AdminPagination } from "@/components/ui";
 import { PlatformState, PlatformTable, StatusPill, cell } from "@/components/super-admin/platform-ui";
 import { usePlatformQuery } from "@/components/super-admin/use-platform-query";
 import { SubscriptionOperationDialog } from "@/components/super-admin/subscription-operation-dialog";
@@ -171,7 +172,7 @@ export default function SubscriptionsPage() {
         <td className={cell}><StatusPill value={item.status} label={codeLabel(t, "superAdmin.subsStatus", item.status)} /></td><td className={cell}>{item.providerManaged ? t("superAdmin.subsOwnershipProvider") : t("superAdmin.subsOwnershipLocal")}</td>
         <td className={cell}>{item.version}</td><td className={cell}>{new Date(item.updatedAt).toLocaleDateString(intlLocale)}</td>
       </tr>)}
-    </PlatformTable><div className="mt-4 flex items-center justify-end gap-3"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded border px-3 py-2 disabled:opacity-50">{t("superAdmin.subsPrevious")}</button><span>{t("superAdmin.subsPageOf", { page: String(page), total: String(state.data.pagination.totalPages) })}</span><button type="button" disabled={page >= state.data.pagination.totalPages} onClick={() => setPage((value) => value + 1)} className="rounded border px-3 py-2 disabled:opacity-50">{t("superAdmin.subsNext")}</button></div></> : null}
+    </PlatformTable><div className="sticky bottom-0 z-10"><AdminPagination currentPage={page} totalPages={state.data.pagination.totalPages} onPageChange={setPage} /></div></> : null}
     {operation && tenantId ? <SubscriptionOperationDialog tenantId={tenantId} existing={existing} action={operation} packageId={packageId || undefined} targetStatus={targetStatus || undefined} onClose={() => setOperation(null)} onSuccess={reload} /> : null}
   </DashboardPage>;
 }
