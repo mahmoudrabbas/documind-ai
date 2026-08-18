@@ -532,6 +532,43 @@ const en: TranslationDictionary = {
   "landing.groundPrinciple2Title": "Evidence can be inspected and verified.",
   "landing.groundPrinciple3Title": "No evidence means no fabricated answer.",
 
+  /* ── landing / solutions & use cases ───────────────────── */
+  "landing.solEyebrow": "Solutions across your company",
+  "landing.solTitle1": "One knowledge layer.",
+  "landing.solTitle2": "Different teams.",
+  "landing.solSupport":
+    "From support and HR to procurement and operations, DocuMind helps each team reach the company knowledge relevant to their work without losing permissions, sources, or evidence.",
+  "landing.solKnowledgeLabel": "Company knowledge",
+  "landing.solSourceLabel": "Company source",
+
+  /* scenario 01 — customer support */
+  "landing.solTeamSupport": "Customer Support",
+  "landing.solQSupport": "What is our P1 initial response target?",
+  "landing.solOutcomeSupport": "15 minutes",
+  "landing.solBodySupport": "Support teams can retrieve SLA guidance without digging through policy files.",
+
+  /* scenario 02 — human resources */
+  "landing.solTeamHr": "Human Resources",
+  "landing.solQHr": "When can an employee work remotely?",
+  "landing.solOutcomeHr": "Eligibility and manager approval",
+  "landing.solBodyHr": "HR and employees can reach current workplace policy guidance without relying on outdated copies or email threads.",
+
+  /* scenario 03 — procurement */
+  "landing.solTeamProcurement": "Procurement",
+  "landing.solQProcurement": "When is a purchase order required?",
+  "landing.solOutcomeProcurement": "The relevant purchase-order rule",
+  "landing.solBodyProcurement": "Procurement guidance becomes easy to retrieve while remaining tied to the policy that supports the answer.",
+
+  /* scenario 04 — operations / expense */
+  "landing.solTeamOperations": "Operations",
+  "landing.solQOperations": "When should an expense report be submitted?",
+  "landing.solOutcomeOperations": "The applicable submission deadline",
+  "landing.solBodyOperations": "Employees can find operational policy answers without asking another team to search the documents for them.",
+
+  /* closing */
+  "landing.solClosing1": "Different questions.",
+  "landing.solClosing2": "One governed source of truth.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",
   "auth.noPackage": "No package selected",

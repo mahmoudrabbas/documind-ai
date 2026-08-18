@@ -532,6 +532,43 @@ const ar: TranslationDictionary = {
   "landing.groundPrinciple2Title": "يمكن مراجعة الأدلة والتحقق منها.",
   "landing.groundPrinciple3Title": "عند غياب الدليل، لا تُختلق الإجابة.",
 
+  /* ── landing / حلول لفرق الشركة ────────────────────────── */
+  "landing.solEyebrow": "حلول لفرق شركتك",
+  "landing.solTitle1": "معرفة موحّدة لشركتك.",
+  "landing.solTitle2": "وإجابات تناسب عمل كل فريق.",
+  "landing.solSupport":
+    "من الدعم والموارد البشرية إلى المشتريات والعمليات، يساعد DocuMind كل فريق على الوصول إلى المعرفة المرتبطة بعمله، مع الحفاظ على صلاحيات الوصول والمصادر والأدلة.",
+  "landing.solKnowledgeLabel": "معرفة الشركة",
+  "landing.solSourceLabel": "مصدر الشركة",
+
+  /* scenario 01 — customer support */
+  "landing.solTeamSupport": "دعم العملاء",
+  "landing.solQSupport": "ما هو هدف زمن الاستجابة الأولية لحوادث P1؟",
+  "landing.solOutcomeSupport": "15 دقيقة",
+  "landing.solBodySupport": "يمكن لفريق الدعم الوصول إلى متطلبات اتفاقيات مستوى الخدمة دون البحث يدويًا داخل ملفات السياسات.",
+
+  /* scenario 02 — human resources */
+  "landing.solTeamHr": "الموارد البشرية",
+  "landing.solQHr": "متى يمكن للموظف العمل عن بُعد؟",
+  "landing.solOutcomeHr": "الأهلية وموافقة المدير",
+  "landing.solBodyHr": "يمكن للموارد البشرية والموظفين الوصول إلى سياسة العمل الحالية دون الاعتماد على نسخ قديمة أو سلاسل بريد إلكتروني متفرقة.",
+
+  /* scenario 03 — procurement */
+  "landing.solTeamProcurement": "المشتريات",
+  "landing.solQProcurement": "متى يلزم إصدار أمر شراء؟",
+  "landing.solOutcomeProcurement": "القاعدة المعتمدة لأوامر الشراء",
+  "landing.solBodyProcurement": "يمكن الوصول إلى قواعد المشتريات بسرعة، مع بقاء الإجابة مرتبطة بالسياسة التي تدعمها.",
+
+  /* scenario 04 — operations / expense */
+  "landing.solTeamOperations": "العمليات",
+  "landing.solQOperations": "متى يجب تقديم تقرير المصروفات؟",
+  "landing.solOutcomeOperations": "الموعد المحدد في السياسة",
+  "landing.solBodyOperations": "يستطيع الموظفون الوصول إلى إجابات السياسات التشغيلية دون الحاجة إلى أن يبحث فريق آخر داخل المستندات نيابةً عنهم.",
+
+  /* closing */
+  "landing.solClosing1": "تختلف الأسئلة،",
+  "landing.solClosing2": "لكن المعرفة الموثوقة تبقى موحّدة ومحكومة بالصلاحيات.",
+
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
   "auth.noPackage": "لم يتم تحديد خطة",

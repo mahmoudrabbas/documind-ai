@@ -12,6 +12,7 @@ import { BuriedKnowledgeSection } from "@/components/marketing/BuriedKnowledgeSe
 import { HowDocuMindWorksSection } from "@/components/marketing/HowDocuMindWorksSection";
 import { PermissionAwareIntelligenceSection } from "@/components/marketing/PermissionAwareIntelligenceSection";
 import { GroundedAnswersEvidenceSection } from "@/components/marketing/GroundedAnswersEvidenceSection";
+import { SolutionsUseCasesSection } from "@/components/marketing/SolutionsUseCasesSection";
 
 type PackageData = {
   id: string;
@@ -140,38 +141,6 @@ function SecuritySection() {
               </div>
               <h3 className="mt-4 text-title-lg text-on-primary">{item.title}</h3>
               <p className="mt-2 text-body-sm text-on-primary/70">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function UseCasesSection() {
-  const { t, dir } = useI18n();
-  const cases = [
-    { icon: "badge", title: t("landing.useCase1Title"), desc: t("landing.useCase1Desc") },
-    { icon: "gavel", title: t("landing.useCase2Title"), desc: t("landing.useCase2Desc") },
-    { icon: "settings", title: t("landing.useCase3Title"), desc: t("landing.useCase3Desc") },
-    { icon: "biotech", title: t("landing.useCase4Title"), desc: t("landing.useCase4Desc") },
-  ];
-  return (
-    <section className={cn("bg-surface-container-lowest", SECTION_Y)} dir={dir}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading title={t("landing.useCasesTitle")} subtitle={t("landing.useCasesSubtitle")} />
-        <div className="grid gap-8 md:grid-cols-2">
-          {cases.map((item) => (
-            <div key={item.title} className={cn(CARD_CLASS, "flex gap-6 p-8")}>
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  {item.icon}
-                </span>
-              </div>
-              <div>
-                <h3 className="text-title-lg text-primary">{item.title}</h3>
-                <p className="mt-2 text-body-md text-on-surface-variant">{item.desc}</p>
-              </div>
             </div>
           ))}
         </div>
@@ -716,9 +685,9 @@ export default function LandingPage() {
       <HowDocuMindWorksSection />
       <PermissionAwareIntelligenceSection />
       <GroundedAnswersEvidenceSection />
+      <SolutionsUseCasesSection />
       <FeaturesSection />
       <SecuritySection />
-      <UseCasesSection />
       <PricingSection />
       <FaqSection />
       <CtaSection />
