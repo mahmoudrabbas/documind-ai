@@ -208,7 +208,7 @@ test("POST /send route keeps the reviewed middleware order", async () => {
   const middleware = [
     "authenticate",
     "tenantScoping",
-    "requirePermission(Permission.CHAT_CREATE)",
+    "requireSelfPermission(Permission.CHAT_CREATE)",
     "queryGuard",
     "controller.sendMessage",
   ];
