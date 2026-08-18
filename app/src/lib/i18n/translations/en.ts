@@ -195,45 +195,16 @@ const en: TranslationDictionary = {
   "nav.analytics": "Analytics",
   "nav.settings": "Settings",
   "nav.language": "Language",
+  "nav.openMenu": "Open menu",
+  "nav.closeMenu": "Close menu",
 
   /* ── landing ───────────────────────────────────────────── */
   "landing.appName": "DocuMind AI",
-  "landing.tagline": "Private AI Workspace",
   "landing.badge": "Enterprise Knowledge Assistant",
   "landing.heroTitle": "Ask your documents. Get answers you can check.",
   "landing.heroSubtitle": "Upload PDFs, policies, and contracts. Ask in plain language. Every answer cites the page it came from.",
   "landing.heroCta": "Start Free Trial",
-  "landing.heroCtaSecondary": "See how it works",
-  "landing.valueTitle": "Turn Documents Into Answers",
-  "landing.valueSubtitle": "Stop digging through files. DocuMind AI reads your documents and delivers precise, cited answers in seconds.",
-  "landing.valueItem1Title": "Upload & Ingest",
-  "landing.valueItem1Desc": "Drop PDFs, DOCX, TXT, or MD files. We process and index them automatically.",
-  "landing.valueItem2Title": "Ask in Natural Language",
-  "landing.valueItem2Desc": "Type any question about your documents. Get instant, contextual answers.",
-  "landing.valueItem3Title": "Always Cited",
-  "landing.valueItem3Desc": "Every answer includes source references so you can verify and trust the response.",
-  "landing.howItWorksTitle": "How It Works",
-  "landing.howItWorksSubtitle": "Get started in minutes. No training or setup required.",
-  "landing.howItWorksStep1Title": "Create Your Workspace",
-  "landing.howItWorksStep1Desc": "Register your company and set up your tenant-isolated environment.",
-  "landing.howItWorksStep2Title": "Upload Documents",
-  "landing.howItWorksStep2Desc": "Drag and drop your files. We process and index them automatically.",
-  "landing.howItWorksStep3Title": "Ask Questions",
-  "landing.howItWorksStep3Desc": "Type any question and get cited answers from your documents instantly.",
-  "landing.featuresTitle": "Enterprise-Grade Features",
-  "landing.featuresSubtitle": "Everything you need to manage and query your company knowledge securely.",
-  "landing.feature1Title": "Tenant Isolation",
-  "landing.feature1Desc": "Every company gets a completely isolated workspace. Your data never mixes with others.",
-  "landing.feature2Title": "Smart Indexing",
-  "landing.feature2Desc": "Automatic OCR, chunking, and embedding for all major document formats.",
-  "landing.feature3Title": "Cited Answers",
-  "landing.feature3Desc": "Every response includes source citations so you know exactly where the information came from.",
-  "landing.feature4Title": "Role-Based Access",
-  "landing.feature4Desc": "Granular permissions control who can upload, query, and manage documents.",
-  "landing.feature5Title": "Audit Trail",
-  "landing.feature5Desc": "Complete visibility into every query, upload, and system change.",
-  "landing.feature6Title": "API Access",
-  "landing.feature6Desc": "Integrate with your existing tools through our REST API.",
+  "landing.heroCtaSecondary": "See DocuMind in action",
   "landing.securityTitle": "Security First",
   "landing.securitySubtitle": "Your data is encrypted, isolated, and protected by enterprise-grade security measures.",
   "landing.securityEncryption": "AES-256 Encryption",
@@ -255,7 +226,6 @@ const en: TranslationDictionary = {
   "landing.useCase4Title": "R&D and Engineering",
   "landing.useCase4Desc": "Query design specs, research papers, and internal wikis without leaving your workflow.",
   "landing.pricingTitle": "Simple, Transparent Pricing",
-  "landing.pricingSubtitle": "Choose the plan that fits your team. All plans include a 30-day free trial.",
   "landing.pricingMonthly": "/month",
   "landing.pricingCta": "Start Free Trial",
   "landing.pricingContact": "Contact Sales",
@@ -268,6 +238,29 @@ const en: TranslationDictionary = {
   "landing.pricingSaveBadge": "Save",
   "landing.pricingBilledAnnually": "Billed annually at {{price}}/yr",
   "landing.pricingBilledAnnuallySave": "Billed annually at {{price}}/yr — save {{percent}}%",
+  "landing.pricingEyebrow": "Pricing",
+  "landing.pricingHeadline1": "Choose the level of DocuMind",
+  "landing.pricingHeadline2": "your organization needs.",
+  "landing.pricingSupport": "Start with the plan that fits your organization today, with clear limits and capabilities you can understand before you subscribe.",
+  "landing.pricingChoose": "Choose {{name}}",
+  "landing.pricingCompareTitle": "Compare the essentials",
+  "landing.pricingPerMonth": "/ month",
+  "landing.pricingPerYear": "/ year",
+  "landing.pricingAnnualAltBefore": "or",
+  "landing.pricingAnnualSave": "Save {{percent}}% annually",
+  "landing.pricingCompareDocuments": "Documents",
+  "landing.pricingCompareQueries": "Knowledge queries / month",
+  "landing.pricingCompareMembers": "Team members",
+  "landing.pricingCompareStorage": "Storage",
+  "landing.pricingCompareSupport": "Support",
+  "landing.pricingClosing1": "Clear plans.",
+  "landing.pricingClosing2": "No guesswork about what is included.",
+  "landing.pricingUnavailableTitle": "Pricing is temporarily unavailable.",
+  "landing.pricingUnavailableDesc": "Please try again shortly.",
+  "landing.pricingShortFree": "Free",
+  "landing.pricingShortPro": "Pro",
+  "landing.pricingShortUltra": "Ultra",
+  "landing.pricingShortEnterprise": "Enterprise",
 
   "billing.packageName.free": "Free",
   "billing.packageName.pro": "DocuMind Pro",
@@ -284,39 +277,61 @@ const en: TranslationDictionary = {
   "billing.supportLevel.priority": "priority",
   "billing.supportLevel.dedicated": "dedicated",
 
-  "landing.faqTitle": "Frequently Asked Questions",
-  "landing.faqSubtitle": "Everything you need to know about DocuMind AI.",
-  "landing.faq1Q": "How does DocuMind AI work?",
-  "landing.faq1A": "Upload your documents (PDF, DOCX, TXT, MD) and DocuMind AI automatically processes, indexes, and embeds them. You can then ask questions in natural language and get precise answers with source citations.",
-  "landing.faq2Q": "Is my data secure?",
-  "landing.faq2A": "Yes. Each company gets a completely isolated tenant environment. Data is encrypted at rest (AES-256) and in transit (TLS 1.3) with strict role-based access controls.",
-  "landing.faq3Q": "What file types are supported?",
-  "landing.faq3A": "We support PDF, DOCX, TXT, and Markdown files. Each file can be up to 50 MB. We automatically handle OCR for scanned documents.",
-  "landing.faq4Q": "How long does document processing take?",
-  "landing.faq4A": "Most documents are processed within seconds. Larger files may take a few minutes. You will receive a notification when processing is complete.",
-  "landing.faq5Q": "Can I cancel my subscription?",
-  "landing.faq5A": "Yes, you can cancel at any time. Your subscription remains active until the end of the current billing period. No long-term contracts required.",
-  "landing.faq6Q": "Do you offer enterprise support?",
-  "landing.faq6A": "Yes, our enterprise plans include dedicated support, custom SLAs, onboarding assistance, and priority feature requests. Contact our sales team for more information.",
-  "landing.ctaTitle": "Ready to Transform Your Company Knowledge?",
-  "landing.ctaSubtitle": "Start your 30-day free trial. No credit card required. No commitment.",
-  "landing.ctaButton": "Start Free Trial",
-  "landing.footerTagline": "Enterprise knowledge assistant powered by AI. Secure, tenant-isolated, always cited.",
+  "landing.faqEyebrow": "Questions before you start",
+  "landing.faqHeadline1": "The questions teams ask",
+  "landing.faqHeadline2": "before they trust company knowledge to AI.",
+  "landing.faqSupport":
+    "Clear answers about access, sources, documents, language, and what happens when DocuMind cannot find enough evidence.",
+  "landing.faqBridge1": "Know what you're bringing in.",
+  "landing.faqBridge2": "Know what you'll get back.",
+  "landing.faqQ1": "How does DocuMind keep one company's knowledge separate from another?",
+  "landing.faqA1":
+    "Each organization works inside its own tenant context. Users, documents, knowledge retrieval, and permission checks are all scoped to that organization — not pooled into one shared company knowledge base.",
+  "landing.faqQ2": "Can every employee search every company document?",
+  "landing.faqA2":
+    "No. Before retrieval begins, DocuMind applies the organization's access rules, so each user searches only the knowledge their role and scope allow.",
+  "landing.faqQ3": "How can I verify where an answer came from?",
+  "landing.faqA3":
+    "When supporting company evidence is available, DocuMind keeps the answer connected to the source that supports it, so users can inspect the provenance instead of receiving only an isolated AI response.",
+  "landing.faqQ4": "What happens when the available documents do not contain enough information?",
+  "landing.faqA4":
+    "If the authorized company sources do not provide enough evidence, DocuMind can state that the available information is insufficient rather than presenting an unsupported answer as company policy.",
+  "landing.faqQ5": "What kinds of documents can we add?",
+  "landing.faqA5":
+    "DocuMind supports PDF, DOCX, and TXT files up to 50 MB each. Scanned documents are handled with OCR so their content becomes searchable like any other source.",
+  "landing.faqQ6": "Can teams use DocuMind in both Arabic and English?",
+  "landing.faqA6":
+    "Yes. DocuMind supports Arabic and English across the interface and knowledge interactions, including mixed enterprise terminology where appropriate.",
+  "landing.faqQ7": "What happens when company documents change?",
+  "landing.faqA7":
+    "You can replace a document with a new version at any time. DocuMind re-processes the updated file, so the indexed knowledge is refreshed and future answers draw on the latest content.",
+  "landing.faqQ8": "What happens when our organization reaches a plan limit?",
+  "landing.faqA8":
+    "Limits are tied to your package — such as documents, storage, and knowledge queries per month. When your organization reaches a limit, the affected action is paused and you'll see a clear message with your current usage.",
+  "landing.faqQ9": "Can we change our plan later?",
+  "landing.faqA9":
+    "Yes. From Billing, you can review a plan change before confirming — the preview shows how your limits change and when the change takes effect.",
+  "landing.finalCtaEyebrow": "Ready when your knowledge is",
+  "landing.finalCtaTitle1": "Bring your company knowledge together.",
+  "landing.finalCtaTitle2": "Make every answer easier to trust.",
+  "landing.finalCtaSupport":
+    "Start building a governed knowledge workspace where teams can find the information they are allowed to use — with the sources and evidence needed to verify it.",
+  "landing.finalCtaPrimary": "Start Free",
+  "landing.finalCtaSecondary": "Sign in",
+  "landing.finalCtaTrust1": "Permission-aware",
+  "landing.finalCtaTrust2": "Source-grounded",
+  "landing.finalCtaTrust3": "Bilingual",
+  "landing.finalCtaTrust4": "Auditable",
+  "landing.finalCtaEvidence": "Verified evidence",
+  "landing.finalCtaMinutes": "15 minutes",
+  "landing.footerStatement": "Private, permission-aware AI for company knowledge.",
   "landing.footerProduct": "Product",
-  "landing.footerProductFeatures": "Features",
+  "landing.footerProductHowItWorks": "How it works",
   "landing.footerProductPricing": "Pricing",
   "landing.footerProductSecurity": "Security",
   "landing.footerProductFaq": "FAQ",
-  "landing.footerCompany": "Company",
-  "landing.footerCompanyAbout": "About",
-  "landing.footerCompanyBlog": "Blog",
-  "landing.footerCompanyCareers": "Careers",
-  "landing.footerCompanyContact": "Contact",
-  "landing.footerLegal": "Legal",
-  "landing.footerLegalPrivacy": "Privacy Policy",
-  "landing.footerLegalTerms": "Terms of Service",
-  "landing.footerCopyright": "DocuMind Intelligence Systems. All rights reserved.",
-  "landing.footerRights": "All rights reserved.",
+  "landing.footerAccess": "Access",
+  "landing.footerCopyright": "© {{year}} DocuMind AI. All rights reserved.",
   "landing.queryLabel": "Question",
   "landing.queryExample": "What is our leave carry-over limit?",
   "landing.answerLabel": "Answer",
@@ -330,6 +345,297 @@ const en: TranslationDictionary = {
   "landing.navFaq": "FAQ",
   "landing.navSignIn": "Sign In",
   "landing.navGetStarted": "Get Started",
+  "landing.navSolutions": "Solutions",
+  "landing.navResources": "Resources",
+  "landing.navStartFree": "Start Free",
+
+  /* ── landing / hero ─────────────────────────────────────── */
+  "landing.heroEyebrow": "Enterprise Knowledge Intelligence",
+  "landing.heroTitleLine1": "Turn company knowledge",
+  "landing.heroTitleLine2": "into trusted intelligence.",
+  "landing.heroSupport":
+    "Connect your documents, respect access permissions, and get grounded answers and controlled AI workflows backed by the right evidence.",
+  "landing.heroCtaPrimary": "Start Free",
+  "landing.heroTrust1": "Permission-aware",
+  "landing.heroTrust2": "Source-grounded",
+  "landing.heroTrust3": "Bilingual",
+  "landing.heroTrust4": "Auditable",
+
+  /* ── landing / knowledge system visual ─────────────────── */
+  "landing.ksLabel": "Company knowledge",
+  "landing.ksDoc1Name": "Procurement_Policy.pdf",
+  "landing.ksDoc1Meta": "Policy · 18 pages · Indexed",
+  "landing.ksDoc2Name": "Customer_Support_SLA.pdf",
+  "landing.ksDoc2Meta": "Policy · 12 pages · Indexed",
+  "landing.ksDoc3Name": "Security_Policy.pdf",
+  "landing.ksDoc3Meta": "Policy · 18 pages",
+  "landing.ksDocSelected": "Selected",
+  "landing.ksDocRestricted": "Restricted",
+  "landing.ksPermInitials": "SM",
+  "landing.ksPermWho": "Support Manager",
+  "landing.ksPermCheck1": "Role access",
+  "landing.ksPermCheck2": "Department scope",
+  "landing.ksPermCheck3": "Document policy",
+  "landing.ksQuestion": "What is our P1 initial response target?",
+  "landing.ksAnswer": "15 minutes",
+  "landing.ksAnswerBody": "P1 incidents require an initial response within 15 minutes.",
+  "landing.ksVerified": "Verified source",
+  "landing.ksSourceName": "Customer Support SLA",
+  "landing.ksSourceSub": "P1 Incident Response",
+  "landing.ksMetaEvidence": "Evidence found",
+  "landing.ksMetaSources": "Authorized sources",
+  "landing.ksMetaGrounded": "Answer grounded",
+
+  /* ── landing / first light section (buried knowledge) ──── */
+  "landing.buriedEyebrow": "The buried-knowledge problem",
+  "landing.buriedTitle1": "Your company already has the answers.",
+  "landing.buriedTitle2": "They're just ",
+  "landing.buriedTitle3": "buried.",
+  "landing.buriedLead":
+    "The knowledge is already there — in contracts, policies, wikis, and email. It's scattered across documents, drifting out of date, locked behind permissions, and hard to trust without evidence.",
+  "landing.buriedProb1Title": "Scattered across documents",
+  "landing.buriedProb1Desc":
+    "The answer you need lives in PDFs, slides, wikis, and inboxes — nowhere you can query the whole picture at once.",
+  "landing.buriedProb2Title": "No single source of truth",
+  "landing.buriedProb2Desc":
+    "Versions pile up and copies diverge. Nobody can tell which file is current, and teams argue over the answer.",
+  "landing.buriedProb3Title": "Locked behind permissions",
+  "landing.buriedProb3Desc":
+    "The people who need an answer can't always reach the document that holds it — so retrieval means asking around.",
+  "landing.buriedProb4Title": "Trust without evidence",
+  "landing.buriedProb4Desc":
+    "A confident answer is just an opinion until it names its source. Acting on it without evidence is a risk.",
+  "landing.buriedClosing":
+    "DocuMind reads every document, respects every permission, and returns one grounded answer — with the evidence to stand on.",
+  "landing.buriedClosingLink": "See how DocuMind works",
+
+  /* ── landing / how DocuMind works ────────────────────── */
+  "landing.howEyebrow": "How DocuMind works",
+  "landing.howTitle1": "From scattered knowledge",
+  "landing.howTitle2": "to a grounded answer.",
+  "landing.howSupport":
+    "DocuMind connects your company knowledge, applies access controls, retrieves only the evidence a user is allowed to see, and turns it into answers that can be verified.",
+  "landing.howStage1Title": "Connect company knowledge",
+  "landing.howStage1Desc":
+    "Bring policies, procedures, support documents, contracts, guides, and other company knowledge into one governed knowledge layer.",
+  "landing.howStage2Title": "Understand and organize",
+  "landing.howStage2Desc":
+    "DocuMind processes and indexes document content so knowledge becomes searchable, structured, and ready for retrieval.",
+  "landing.howStage3Title": "Apply access before retrieval",
+  "landing.howStage3Desc":
+    "Tenant, role, department, and document permissions determine which knowledge a user can reach before retrieval begins.",
+  "landing.howStage4Title": "Retrieve the right evidence",
+  "landing.howStage4Desc":
+    "DocuMind searches only the authorized knowledge space and selects the sources that actually support the question.",
+  "landing.howStage5Title": "Answer with evidence",
+  "landing.howStage5Desc":
+    "The answer stays connected to its source, so users can verify where it came from — and DocuMind can refuse when the available evidence is not enough.",
+  "landing.howClosing": "The result is not just an answer.",
+  "landing.howClosing2": "It is an answer your organization can trust.",
+
+  /* ── landing / how it works · system canvas ──────────── */
+  "landing.howCanvasLabel": "Knowledge path",
+  "landing.howCanvasStage1": "Connect",
+  "landing.howCanvasStage2": "Understand",
+  "landing.howCanvasStage3": "Govern",
+  "landing.howCanvasStage4": "Retrieve",
+  "landing.howCanvasStage5": "Answer",
+  "landing.howConnectLabel": "Company knowledge",
+  "landing.howUnderstandLabel": "Structured knowledge",
+  "landing.howUnderstandTagPolicy": "Policy",
+  "landing.howUnderstandTagSupport": "Support",
+  "landing.howUnderstandTagIndexed": "Indexed",
+  "landing.howUnderstandTagPages": "12 pages",
+  "landing.howGovernWho": "Support Manager",
+  "landing.howGovernInitials": "SM",
+  "landing.howGovernCheck1": "Role access",
+  "landing.howGovernCheck2": "Department scope",
+  "landing.howGovernCheck3": "Document policy",
+  "landing.howGovernGate": "Access check",
+  "landing.howGovernAuthorized": "Authorized",
+  "landing.howGovernRestricted": "Restricted",
+  "landing.howGovernStopped": "Stops here",
+  "landing.howRetrieveQuestion": "What is our P1 initial response target?",
+  "landing.howRetrieveSelected": "Selected source",
+  "landing.howRetrieveExcluded": "Not permitted",
+  "landing.howAnswer": "15 minutes",
+  "landing.howAnswerBody": "P1 incidents require an initial response within 15 minutes.",
+  "landing.howAnswerVerified": "Verified source",
+  "landing.howAnswerSourceName": "Customer Support SLA",
+  "landing.howAnswerSourceSub": "P1 Incident Response",
+  "landing.howAnswerMetaAuth": "Authorized source",
+  "landing.howAnswerMetaGrounded": "Grounded answer",
+
+  /* ── landing / permission-aware intelligence ───────────── */
+  "landing.permEyebrow": "Permission-aware intelligence",
+  "landing.permTitle1": "Company knowledge should respect",
+  "landing.permTitle2": "company boundaries.",
+  "landing.permSupport":
+    "DocuMind applies tenant, role, department, and document access rules before retrieval begins, so users search only the knowledge they are authorized to reach.",
+
+  /* access context */
+  "landing.permAccessLabel": "User access context",
+  "landing.permRoleSupport": "Support Manager",
+  "landing.permOrg": "ACME Corp",
+  "landing.permScopeSupport": "Support scope",
+  "landing.permCheck1": "Role access",
+  "landing.permCheck2": "Department scope",
+  "landing.permCheck3": "Document policy",
+
+  /* company knowledge landscape */
+  "landing.permKnowledgeLabel": "Company knowledge",
+  "landing.permKnowledgeCount": "4 knowledge areas",
+  "landing.permKnowledgeNote": "The company holds more knowledge than any single role can reach.",
+  "landing.permDomainSupport": "Support",
+  "landing.permDomainHr": "HR",
+  "landing.permDomainSecurity": "Security",
+  "landing.permDomainProcurement": "Procurement",
+  "landing.permBoundaryLabel": "Authorization boundary",
+  "landing.permBoundaryNote": "Identity + access rules applied here, before any search runs.",
+  "landing.permScopeTitle": "Authorized knowledge",
+  "landing.permOutsideLabel": "Outside current access",
+
+  /* question → retrieval */
+  "landing.permQuestionSupport": "What is our P1 initial response target?",
+  "landing.permEligible": "Authorized for retrieval",
+  "landing.permQuestionCaption": "The access boundary resolves first, so only the authorized knowledge is searched.",
+
+  /* why it matters */
+  "landing.permWhyTitle": "Access is not an afterthought.",
+  "landing.permWhyBody":
+    "A grounded answer is only trustworthy when the system also knows which sources the user is allowed to use.",
+
+  /* principles */
+  "landing.permPrinciple1Title": "Tenant boundaries stay isolated.",
+  "landing.permPrinciple1Body": "Knowledge in one organization never leaks into another.",
+  "landing.permPrinciple2Title": "Roles and departments shape accessible knowledge.",
+  "landing.permPrinciple2Body": "The same document can be reachable for one team and invisible to another.",
+  "landing.permPrinciple3Title": "Document access is enforced before retrieval.",
+  "landing.permPrinciple3Body": "Permissions narrow the search space, not just the visible results.",
+
+  /* closing */
+  "landing.permClosing": "The right answer starts with the right access.",
+
+  /* ── landing / grounded answers & evidence ───────────────── */
+  "landing.groundEyebrow": "Grounded answers",
+  "landing.groundTitle1": "Every answer should show",
+  "landing.groundTitle2": "why it can be trusted.",
+  "landing.groundSupport":
+    "DocuMind keeps answers connected to the company evidence that supports them, so users can inspect the source, verify the context, and know when the available knowledge is not enough.",
+
+  /* evidence trace */
+  "landing.groundToggleLabel": "Evidence state",
+  "landing.groundToggleSupported": "Grounded answer",
+  "landing.groundToggleInsufficient": "Insufficient evidence",
+  "landing.groundCanvasLabel": "Evidence trace",
+
+  /* supported state */
+  "landing.groundQuestionSupported": "What is our P1 initial response target?",
+  "landing.groundAnswerSupported": "15 minutes",
+  "landing.groundAnswerBody": "P1 incidents require an initial response within 15 minutes.",
+  "landing.groundCitationSource": "Customer Support SLA",
+  "landing.groundVerifiedLabel": "Verified source",
+  "landing.groundEvidenceContext": "P1 Incident Response",
+  "landing.groundExcerptBefore": "P1 incidents require an initial response ",
+  "landing.groundExcerptMark": "within 15 minutes",
+  "landing.groundExcerptAfter": ".",
+  "landing.groundMetaPolicy": "Policy",
+  "landing.groundMetaAuthorized": "Authorized source",
+
+  /* insufficient evidence */
+  "landing.groundQuestionInsufficient": "What is our reimbursement policy for home office furniture?",
+  "landing.groundNoEvidenceTitle": "Evidence unavailable",
+  "landing.groundNoEvidenceBody":
+    "I couldn't find enough information in the authorized company sources to answer this confidently.",
+  "landing.groundNoSourceLabel": "No source found",
+  "landing.groundNoSourceBody": "No answer was generated without supporting evidence.",
+
+  /* why it matters */
+  "landing.groundWhyTitle": "Traceability changes how people use AI.",
+  "landing.groundWhyBody":
+    "When users can see the evidence behind an answer, they can verify it, challenge it, and use it with greater confidence.",
+
+  /* principles */
+  "landing.groundPrinciple1Title": "Answers stay connected to their sources.",
+  "landing.groundPrinciple2Title": "Evidence can be inspected and verified.",
+  "landing.groundPrinciple3Title": "No evidence means no fabricated answer.",
+
+  /* ── landing / solutions & use cases ───────────────────── */
+  "landing.solEyebrow": "Solutions across your company",
+  "landing.solTitle1": "One knowledge layer.",
+  "landing.solTitle2": "Different teams.",
+  "landing.solSupport":
+    "From support and HR to procurement and operations, DocuMind helps each team reach the company knowledge relevant to their work without losing permissions, sources, or evidence.",
+  "landing.solKnowledgeLabel": "Company knowledge",
+  "landing.solSourceLabel": "Company source",
+
+  /* scenario 01 — customer support */
+  "landing.solTeamSupport": "Customer Support",
+  "landing.solQSupport": "What is our P1 initial response target?",
+  "landing.solOutcomeSupport": "15 minutes",
+  "landing.solBodySupport": "Support teams can retrieve SLA guidance without digging through policy files.",
+
+  /* scenario 02 — human resources */
+  "landing.solTeamHr": "Human Resources",
+  "landing.solQHr": "When can an employee work remotely?",
+  "landing.solOutcomeHr": "Eligibility and manager approval",
+  "landing.solBodyHr": "HR and employees can reach current workplace policy guidance without relying on outdated copies or email threads.",
+
+  /* scenario 03 — procurement */
+  "landing.solTeamProcurement": "Procurement",
+  "landing.solQProcurement": "When is a purchase order required?",
+  "landing.solOutcomeProcurement": "The relevant purchase-order rule",
+  "landing.solBodyProcurement": "Procurement guidance becomes easy to retrieve while remaining tied to the policy that supports the answer.",
+
+  /* scenario 04 — operations / expense */
+  "landing.solTeamOperations": "Operations",
+  "landing.solQOperations": "When should an expense report be submitted?",
+  "landing.solOutcomeOperations": "The applicable submission deadline",
+  "landing.solBodyOperations": "Employees can find operational policy answers without asking another team to search the documents for them.",
+
+  /* closing */
+  "landing.solClosing1": "Different questions.",
+  "landing.solClosing2": "One governed source of truth.",
+
+  /* ── landing / security & trust ─────────────────────────── */
+  "landing.secEyebrow": "Security & Trust",
+  "landing.secTitle1": "Your company knowledge",
+  "landing.secTitle2a": "should stay",
+  "landing.secTitle2b": "your company knowledge.",
+  "landing.secSupport":
+    "DocuMind is built around organizational isolation, controlled access, and traceable knowledge use, so company information remains scoped to the people and contexts where it belongs.",
+  "landing.secPlatformLabel": "One platform. Separate knowledge spaces.",
+  "landing.secOrgBoundary": "Organization boundary",
+  "landing.secIsolatedScope": "Isolated scope",
+  "landing.secKnowledgeLabel": "Knowledge",
+  "landing.secUsersLabel": "Users",
+  "landing.secRoleCompanyAdmin": "Company Admin",
+  "landing.secRoleEmployee": "Employee",
+  "landing.secRoleOperationsManager": "Operations Manager",
+  "landing.secAccessLabel": "Controlled access",
+  "landing.secAccessStatement":
+    "Access follows the organization and the user's assigned scope.",
+  "landing.secAuditLabel": "Activity trace",
+  "landing.secAuditCaption": "Recorded in the platform audit log.",
+  "landing.secAuditEvent1": "Knowledge queried",
+  "landing.secAuditEvent2": "Authorized source retrieved",
+  "landing.secAuditEvent3": "Document indexed",
+  "landing.secTraceableLabel": "Traceable knowledge",
+  "landing.secTraceableLead":
+    "Secure access is stronger when answers stay traceable to their source.",
+  "landing.secAnswerLabel": "Answer",
+  "landing.secAnswer": "15 minutes",
+  "landing.secPrinciple1Title": "Organization boundaries stay isolated.",
+  "landing.secPrinciple1Body":
+    "Company knowledge is scoped to its own tenant and should not cross into another organization's workspace.",
+  "landing.secPrinciple2Title": "Access follows identity and scope.",
+  "landing.secPrinciple2Body":
+    "Users reach only the company knowledge available to their role and context.",
+  "landing.secPrinciple3Title": "Important activity stays traceable.",
+  "landing.secPrinciple3Body":
+    "Administrative and knowledge-system activity should leave a record that can be reviewed when needed.",
+  "landing.secClosing": "Trust is not one feature.",
+  "landing.secClosing2": "It is how the system is built.",
 
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "Selected Plan",

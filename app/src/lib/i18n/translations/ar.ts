@@ -195,45 +195,16 @@ const ar: TranslationDictionary = {
   "nav.analytics": "التحليلات",
   "nav.settings": "الإعدادات",
   "nav.language": "اللغة",
+  "nav.openMenu": "فتح القائمة",
+  "nav.closeMenu": "إغلاق القائمة",
 
   /* ── landing ───────────────────────────────────────────── */
   "landing.appName": "DocuMind AI",
-  "landing.tagline": "مساحة عمل ذكاء اصطناعي خاصة",
   "landing.badge": "مساعد معرفة مؤسسية",
   "landing.heroTitle": "اسأل مستنداتك، واحصل على إجابات يمكنك التحقق منها",
   "landing.heroSubtitle": "ارفع ملفات PDF والسياسات والعقود. اسأل بلغتك الطبيعية. كل إجابة تشير إلى الصفحة التي جاءت منها.",
   "landing.heroCta": "ابدأ النسخة التجريبية المجانية",
-  "landing.heroCtaSecondary": "شاهد كيف يعمل",
-  "landing.valueTitle": "حوّل المستندات إلى إجابات",
-  "landing.valueSubtitle": "توقف عن البحث في الملفات. يقرأ DocuMind AI مستنداتك ويقدم إجابات دقيقة وموثّقة في ثوانٍ.",
-  "landing.valueItem1Title": "ارفع وحمّل",
-  "landing.valueItem1Desc": "أفلت ملفات PDF وDOCX وTXT وMD. نقوم بمعالجتها وفهرستها تلقائياً.",
-  "landing.valueItem2Title": "اسأل بلغتك الطبيعية",
-  "landing.valueItem2Desc": "اكتب أي سؤال عن مستنداتك. احصل على إجابات فورية وسياقية.",
-  "landing.valueItem3Title": "دائماً موثّق",
-  "landing.valueItem3Desc": "كل إجابة تتضمن مراجع المصادر لتتمكن من التحقق والثقة في الاستجابة.",
-  "landing.howItWorksTitle": "كيف يعمل",
-  "landing.howItWorksSubtitle": "ابدأ في دقائق. لا حاجة للتدريب أو الإعداد.",
-  "landing.howItWorksStep1Title": "أنشئ مساحة عملك",
-  "landing.howItWorksStep1Desc": "سجّل شركتك وجهّز بيئتك المعزولة.",
-  "landing.howItWorksStep2Title": "ارفع المستندات",
-  "landing.howItWorksStep2Desc": "اسحب وأفلت ملفاتك. نقوم بمعالجتها وفهرستها تلقائياً.",
-  "landing.howItWorksStep3Title": "اطرح الأسئلة",
-  "landing.howItWorksStep3Desc": "اكتب أي سؤال واحصل على إجابات موثّقة من مستنداتك فوراً.",
-  "landing.featuresTitle": "ميزات على مستوى المؤسسات",
-  "landing.featuresSubtitle": "كل ما تحتاجه لإدارة والاستعلام عن معرفة شركتك بأمان.",
-  "landing.feature1Title": "عزل المستأجرين",
-  "landing.feature1Desc": "كل شركة تحصل على مساحة عمل معزولة تماماً. بياناتك لا تختلط أبداً مع الآخرين.",
-  "landing.feature2Title": "فهرسة ذكية",
-  "landing.feature2Desc": "OCR تلقائي وتقسيم وتضمين لجميع تنسيقات المستندات الرئيسية.",
-  "landing.feature3Title": "إجابات موثّقة",
-  "landing.feature3Desc": "كل استجابة تتضمن مراجع المصادر لتعرف بالضبط من أين جاءت المعلومات.",
-  "landing.feature4Title": "تحكم بالوصول",
-  "landing.feature4Desc": "صلاحيات دقيقة تتحكم في من يمكنه الرفع والاستعلام وإدارة المستندات.",
-  "landing.feature5Title": "سجل التدقيق",
-  "landing.feature5Desc": "رؤية كاملة لكل استعلام ورفع وتغيير في النظام.",
-  "landing.feature6Title": "API",
-  "landing.feature6Desc": "تكامل مع أدواتك الحالية من خلال REST API.",
+  "landing.heroCtaSecondary": "شاهد DocuMind أثناء العمل",
   "landing.securityTitle": "الأمان أولاً",
   "landing.securitySubtitle": "بياناتك مشفرة ومعزولة ومحمية بإجراءات أمان على مستوى المؤسسات.",
   "landing.securityEncryption": "تشفير AES-256",
@@ -255,7 +226,6 @@ const ar: TranslationDictionary = {
   "landing.useCase4Title": "البحث والتطوير",
   "landing.useCase4Desc": "استعلم عن مواصفات التصميم والأوراق البحثية والمواقع الداخلية دون مغادرة سير عملك.",
   "landing.pricingTitle": "أسعار بسيطة وشفافة",
-  "landing.pricingSubtitle": "اختر الخطة التي تناسب فريقك. جميع الخطط تتضمن نسخة تجريبية مجانية لمدة 30 يوماً.",
   "landing.pricingMonthly": "/شهر",
   "landing.pricingCta": "ابدأ النسخة التجريبية المجانية",
   "landing.pricingContact": "اتصل بالمبيعات",
@@ -268,6 +238,29 @@ const ar: TranslationDictionary = {
   "landing.pricingSaveBadge": "وفّر",
   "landing.pricingBilledAnnually": "فوترة سنوية بقيمة {{price}} في السنة",
   "landing.pricingBilledAnnuallySave": "فوترة سنوية بقيمة {{price}} في السنة — وفّر {{percent}}%",
+  "landing.pricingEyebrow": "الأسعار والباقات",
+  "landing.pricingHeadline1": "اختر مستوى DocuMind",
+  "landing.pricingHeadline2": "المناسب لاحتياجات مؤسستك.",
+  "landing.pricingSupport": "اختر الباقة التي تناسب مؤسستك حاليًا، مع حدود وإمكانات واضحة يمكنك مراجعتها قبل الاشتراك.",
+  "landing.pricingChoose": "اختر {{name}}",
+  "landing.pricingCompareTitle": "قارن بين الأساسيات",
+  "landing.pricingPerMonth": "/ شهر",
+  "landing.pricingPerYear": "/ سنة",
+  "landing.pricingAnnualAltBefore": "أو",
+  "landing.pricingAnnualSave": "وفّر {{percent}}% مع الدفع السنوي",
+  "landing.pricingCompareDocuments": "المستندات",
+  "landing.pricingCompareQueries": "استعلامات المعرفة شهريًا",
+  "landing.pricingCompareMembers": "أعضاء الفريق",
+  "landing.pricingCompareStorage": "التخزين",
+  "landing.pricingCompareSupport": "الدعم",
+  "landing.pricingClosing1": "باقات واضحة،",
+  "landing.pricingClosing2": "وإمكانات تعرفها قبل الاشتراك.",
+  "landing.pricingUnavailableTitle": "تعذّر تحميل معلومات الباقات مؤقتًا.",
+  "landing.pricingUnavailableDesc": "يرجى المحاولة مرة أخرى بعد قليل.",
+  "landing.pricingShortFree": "مجانية",
+  "landing.pricingShortPro": "برو",
+  "landing.pricingShortUltra": "ألترا",
+  "landing.pricingShortEnterprise": "مؤسسات",
 
   "billing.packageName.free": "الخطة المجانية",
   "billing.packageName.pro": "دوكيوميند بروفيشينال",
@@ -284,39 +277,61 @@ const ar: TranslationDictionary = {
   "billing.supportLevel.priority": "ذو أولوية",
   "billing.supportLevel.dedicated": "مخصص",
 
-  "landing.faqTitle": "الأسئلة الشائعة",
-  "landing.faqSubtitle": "كل ما تحتاج معرفته عن DocuMind AI.",
-  "landing.faq1Q": "كيف يعمل DocuMind AI؟",
-  "landing.faq1A": "ارفع مستنداتك (PDF وDOCX وTXT وMD) ويقوم DocuMind AI بمعالجتها وفهرستها وتضمينها تلقائياً. يمكنك بعد ذلك طرح الأسئلة بلغتك الطبيعية والحصول على إجابات دقيقة مع مراجع المصادر.",
-  "landing.faq2Q": "هل بياناتي آمنة؟",
-  "landing.faq2A": "نعم. كل شركة تحصل على بيئة مستأجر معزولة تماماً. البيانات مشفرة في حالة السكون (AES-256) وأثناء النقل (TLS 1.3) مع ضوابط وصول صارمة قائمة على الأدوار.",
-  "landing.faq3Q": "ما أنواع الملفات المدعومة؟",
-  "landing.faq3A": "ندعم ملفات PDF وDOCX وTXT وMarkdown. كل ملف يصل حجمه إلى 50 MB. نتعامل تلقائياً مع OCR للمستندات الممسوحة ضوئياً.",
-  "landing.faq4Q": "كم يستغرق معالجة المستندات؟",
-  "landing.faq4A": "تتم معالجة معظم المستندات في ثوانٍ. الملفات الأكبر قد تستغرق بضع دقائق. ستتلقى إشعاراً عند اكتمال المعالجة.",
-  "landing.faq5Q": "هل يمكنني إلغاء اشتراكي؟",
-  "landing.faq5A": "نعم، يمكنك الإلغاء في أي وقت. يبقى اشتراكك نشطاً حتى نهاية فترة الفوترة الحالية. لا توجد عقود طويلة الأجل.",
-  "landing.faq6Q": "هل تقدمون دعم المؤسسات؟",
-  "landing.faq6A": "نعم، خطط المؤسسات تتضمن دعماً مخصصاً واتفاقيات مستوى خدمة مخصصة ومساعدة في الإعداد وطلبات الميزات ذات الأولوية. اتصل بفريق المبيعات لمزيد من المعلومات.",
-  "landing.ctaTitle": "هل أنت مستعد لتحويل معرفة شركتك؟",
-  "landing.ctaSubtitle": "ابدأ نسختك التجريبية المجانية لمدة 30 يوماً. لا حاجة لبطاقة ائتمان. لا التزام.",
-  "landing.ctaButton": "ابدأ النسخة التجريبية المجانية",
-  "landing.footerTagline": "مساعد معرفة مؤسسية مدعوم بالذكاء الاصطناعي. آمن، معزول، دائماً موثّق.",
+  "landing.faqEyebrow": "أسئلة قبل البدء",
+  "landing.faqHeadline1": "أسئلة تحتاج الفرق إلى إجاباتها",
+  "landing.faqHeadline2": "قبل الاعتماد على الذكاء الاصطناعي في معرفة الشركة.",
+  "landing.faqSupport":
+    "إجابات واضحة حول الصلاحيات والمصادر والمستندات واللغة، وما يحدث عندما لا يجد DocuMind أدلة كافية للإجابة.",
+  "landing.faqBridge1": "اعرف ما تُدخله إلى النظام،",
+  "landing.faqBridge2": "واعرف ما يمكنك الاعتماد عليه في المقابل.",
+  "landing.faqQ1": "كيف يحافظ DocuMind على فصل معرفة كل مؤسسة عن غيرها؟",
+  "landing.faqA1":
+    "تعمل كل مؤسسة داخل نطاق مستقل خاص بها، وتُربط المستندات والمستخدمون وعمليات استرجاع المعرفة بهذا النطاق، بدل التعامل مع معرفة المؤسسات المختلفة كمصدر واحد مشترك.",
+  "landing.faqQ2": "هل يستطيع كل موظف البحث في جميع مستندات الشركة؟",
+  "landing.faqA2":
+    "لا. يبحث كل مستخدم داخل نطاق المعرفة المسموح له بالوصول إليه، وفق صلاحياته وسياق عمله قبل بدء عملية الاسترجاع.",
+  "landing.faqQ3": "كيف يمكنني التحقق من مصدر الإجابة؟",
+  "landing.faqA3":
+    "عندما تتوفر أدلة مناسبة من مستندات الشركة، يربط DocuMind الإجابة بالمصدر الذي يدعمها، بحيث يمكن للمستخدم مراجعة أصل المعلومة بدل الاعتماد على إجابة منفصلة عن دليلها.",
+  "landing.faqQ4": "ماذا يحدث إذا لم تحتوِ المستندات المتاحة على معلومات كافية؟",
+  "landing.faqA4":
+    "إذا لم توفر مصادر الشركة المسموح بها أدلة كافية، يمكن لـ DocuMind توضيح أن المعلومات المتاحة غير كافية بدل تقديم إجابة غير مدعومة على أنها سياسة معتمدة للشركة.",
+  "landing.faqQ5": "ما أنواع المستندات التي يمكن إضافتها؟",
+  "landing.faqA5":
+    "يدعم DocuMind ملفات PDF وDOCX وTXT حتى 50 ميجابايت لكل ملف، وتُعالج المستندات الممسوحة ضوئيًا عبر تقنية OCR ليكون محتواها قابلاً للبحث مثل أي مصدر آخر.",
+  "landing.faqQ6": "هل يمكن استخدام DocuMind بالعربية والإنجليزية؟",
+  "landing.faqA6":
+    "نعم. يدعم DocuMind العربية والإنجليزية في واجهة الاستخدام والتعامل مع المعرفة، مع مراعاة المصطلحات المختلطة المستخدمة داخل بيئات العمل.",
+  "landing.faqQ7": "ماذا يحدث عندما تتغير مستندات الشركة؟",
+  "landing.faqA7":
+    "يمكنك استبدال المستند بنسخة محدثة في أي وقت. يعيد DocuMind معالجة الملف المحدّث، فتتحدَّث المعرفة المفهرسة وتستند الإجابات اللاحقة إلى أحدث محتوى.",
+  "landing.faqQ8": "ماذا يحدث عندما تصل المؤسسة إلى أحد حدود الباقة؟",
+  "landing.faqA8":
+    "ترتبط الحدود بالباقة التي تختارها — مثل المستندات والتخزين واستعلامات المعرفة شهريًا. وعند بلوغ حد معين، يتوقف الإجراء المتأثر به ويظهر لك تنبيه واضح يوضح استخدامك الحالي.",
+  "landing.faqQ9": "هل يمكن تغيير الباقة لاحقًا؟",
+  "landing.faqA9":
+    "نعم. يمكنك من صفحة الفوترة مراجعة تغيير الباقة قبل تأكيده — وتُظهر المعاينة كيف تتغير حدودك ومتى يصبح التغيير ساريًا.",
+  "landing.finalCtaEyebrow": "ابدأ من معرفة شركتك",
+  "landing.finalCtaTitle1": "اجمع معرفة شركتك في مكان واحد.",
+  "landing.finalCtaTitle2": "واجعل كل إجابة أسهل في التحقق والثقة.",
+  "landing.finalCtaSupport":
+    "ابدأ ببناء مساحة معرفة محكومة تساعد فرقك على الوصول إلى المعلومات المسموح لها باستخدامها، مع المصادر والأدلة اللازمة للتحقق من كل إجابة.",
+  "landing.finalCtaPrimary": "ابدأ مجانًا",
+  "landing.finalCtaSecondary": "تسجيل الدخول",
+  "landing.finalCtaTrust1": "مراعي للصلاحيات",
+  "landing.finalCtaTrust2": "قائم على المصادر",
+  "landing.finalCtaTrust3": "ثنائي اللغة",
+  "landing.finalCtaTrust4": "قابل للتدقيق",
+  "landing.finalCtaEvidence": "أدلة موثّقة",
+  "landing.finalCtaMinutes": "15 دقيقة",
+  "landing.footerStatement": "ذكاء اصطناعي خاص بمعرفة مؤسستك، يراعي الصلاحيات ويربط الإجابات بأدلتها.",
   "landing.footerProduct": "المنتج",
-  "landing.footerProductFeatures": "الميزات",
+  "landing.footerProductHowItWorks": "كيف يعمل",
   "landing.footerProductPricing": "الأسعار",
   "landing.footerProductSecurity": "الأمان",
   "landing.footerProductFaq": "الأسئلة الشائعة",
-  "landing.footerCompany": "الشركة",
-  "landing.footerCompanyAbout": "عن الشركة",
-  "landing.footerCompanyBlog": "المدونة",
-  "landing.footerCompanyCareers": "الوظائف",
-  "landing.footerCompanyContact": "اتصل بنا",
-  "landing.footerLegal": "قانوني",
-  "landing.footerLegalPrivacy": "سياسة الخصوصية",
-  "landing.footerLegalTerms": "شروط الخدمة",
-  "landing.footerCopyright": "DocuMind Intelligence Systems. جميع الحقوق محفوظة.",
-  "landing.footerRights": "جميع الحقوق محفوظة.",
+  "landing.footerAccess": "الوصول",
+  "landing.footerCopyright": "© {{year}} DocuMind AI. جميع الحقوق محفوظة.",
   "landing.queryLabel": "السؤال",
   "landing.queryExample": "ما هو حدّ ترحيل رصيد الإجازات لدينا؟",
   "landing.answerLabel": "الإجابة",
@@ -330,6 +345,297 @@ const ar: TranslationDictionary = {
   "landing.navFaq": "الأسئلة الشائعة",
   "landing.navSignIn": "تسجيل الدخول",
   "landing.navGetStarted": "ابدأ الآن",
+  "landing.navSolutions": "الحلول",
+  "landing.navResources": "الموارد",
+  "landing.navStartFree": "ابدأ مجانًا",
+
+  /* ── landing / hero ─────────────────────────────────────── */
+  "landing.heroEyebrow": "ذكاء المعرفة للمؤسسات",
+  "landing.heroTitleLine1": "حوّل معرفة شركتك",
+  "landing.heroTitleLine2": "إلى ذكاء موثوق.",
+  "landing.heroSupport":
+    "اربط مستنداتك، وطبّق صلاحيات الوصول، واحصل على إجابات موثقة وتدفقات عمل ذكية ومحكومة ومدعومة بالأدلة المناسبة.",
+  "landing.heroCtaPrimary": "ابدأ مجانًا",
+  "landing.heroTrust1": "مراعي للصلاحيات",
+  "landing.heroTrust2": "قائم على المصادر",
+  "landing.heroTrust3": "ثنائي اللغة",
+  "landing.heroTrust4": "قابل للتدقيق",
+
+  /* ── landing / knowledge system visual ─────────────────── */
+  "landing.ksLabel": "معرفة الشركة",
+  "landing.ksDoc1Name": "Procurement_Policy.pdf",
+  "landing.ksDoc1Meta": "سياسة · 18 صفحة · مفهرس",
+  "landing.ksDoc2Name": "Customer_Support_SLA.pdf",
+  "landing.ksDoc2Meta": "سياسة · 12 صفحة · مفهرس",
+  "landing.ksDoc3Name": "Security_Policy.pdf",
+  "landing.ksDoc3Meta": "سياسة · 18 صفحة",
+  "landing.ksDocSelected": "محدد",
+  "landing.ksDocRestricted": "مقيد",
+  "landing.ksPermInitials": "مد",
+  "landing.ksPermWho": "مدير الدعم",
+  "landing.ksPermCheck1": "الوصول حسب الدور",
+  "landing.ksPermCheck2": "نطاق القسم",
+  "landing.ksPermCheck3": "سياسة المستند",
+  "landing.ksQuestion": "ما هو هدفنا لزمن الاستجابة الأولية لحوادث P1؟",
+  "landing.ksAnswer": "15 دقيقة",
+  "landing.ksAnswerBody": "تتطلب حوادث P1 استجابة أولية خلال 15 دقيقة.",
+  "landing.ksVerified": "مصدر موثق",
+  "landing.ksSourceName": "Customer Support SLA",
+  "landing.ksSourceSub": "P1 Incident Response",
+  "landing.ksMetaEvidence": "الأدلة المسترجعة",
+  "landing.ksMetaSources": "المصادر المصرح بها",
+  "landing.ksMetaGrounded": "الإجابة موثقة",
+
+  /* ── landing / first light section (buried knowledge) ──── */
+  "landing.buriedEyebrow": "مشكلة المعرفة المدفونة",
+  "landing.buriedTitle1": "الإجابات موجودة بالفعل داخل شركتك.",
+  "landing.buriedTitle2": "لكنها ",
+  "landing.buriedTitle3": "مدفونة بين المستندات.",
+  "landing.buriedLead":
+    "المعرفة موجودة بالفعل — في العقود والسياسات والمواقع الداخلية والبريد. لكنها متناثرة بين المستندات، وتقادمت نسخها، ومقيّدة بالأذونات، ويصعب الوثوق بها دون أدلة.",
+  "landing.buriedProb1Title": "متناثرة بين المستندات",
+  "landing.buriedProb1Desc":
+    "المعرفة موزعة بين ملفات PDF والمواقع الداخلية والبريد والسياسات والعقود والإجراءات — ولا مكان واحد يجمعها لك.",
+  "landing.buriedProb2Title": "لا يوجد مصدر موحّد وموثوق",
+  "landing.buriedProb2Desc":
+    "تتراكم النسخ وتقادم بعضها، فيصعب تحديد المصدر الذي يحوي الإجابة الصحيحة الحالية.",
+  "landing.buriedProb3Title": "مقيّدة بصلاحيات الوصول",
+  "landing.buriedProb3Desc":
+    "لا يستطيع الموظفون الوصول إلى كل المصادر؛ فحدود الصلاحيات ونطاق الوصول يجعلان البحث اليدوي أصعب.",
+  "landing.buriedProb4Title": "الثقة تحتاج إلى دليل",
+  "landing.buriedProb4Desc":
+    "الإجابة دون دليل يمكن تتبعه يصعب الوثوق بها أو الدفاع عنها.",
+  "landing.buriedClosing":
+    "يفهم DocuMind مستندات شركتك، ويراعي صلاحيات الوصول، ويمنحك إجابة موحّدة ومدعومة بأدلتها.",
+  "landing.buriedClosingLink": "اكتشف كيف يعمل DocuMind",
+
+  /* ── landing / how DocuMind works ────────────────────── */
+  "landing.howEyebrow": "كيف يعمل DocuMind",
+  "landing.howTitle1": "من معرفة متناثرة",
+  "landing.howTitle2": "إلى إجابة موثوقة ومدعومة بالدليل.",
+  "landing.howSupport":
+    "يربط DocuMind معرفة شركتك، ويطبّق صلاحيات الوصول، ويسترجع فقط الأدلة المسموح للمستخدم بالوصول إليها، ثم يحوّلها إلى إجابات يمكن التحقق منها.",
+  "landing.howStage1Title": "اربط معرفة شركتك",
+  "landing.howStage1Desc":
+    "اجمع السياسات والإجراءات ومستندات الدعم والعقود والأدلة ومصادر المعرفة الأخرى داخل طبقة معرفة موحّدة ومحكومة.",
+  "landing.howStage2Title": "افهم المعرفة ونظّمها",
+  "landing.howStage2Desc":
+    "يعالج DocuMind محتوى المستندات ويفهرسه لتصبح المعرفة قابلة للبحث والتنظيم والاسترجاع عند الحاجة.",
+  "landing.howStage3Title": "طبّق الصلاحيات قبل الاسترجاع",
+  "landing.howStage3Desc":
+    "تحدّد صلاحيات المؤسسة والدور والقسم والمستند المعرفة التي يمكن للمستخدم الوصول إليها قبل بدء عملية الاسترجاع.",
+  "landing.howStage4Title": "استرجع الأدلة المناسبة",
+  "landing.howStage4Desc":
+    "يبحث DocuMind داخل نطاق المعرفة المصرّح به فقط، ويختار المصادر التي تدعم السؤال فعليًا.",
+  "landing.howStage5Title": "أجب مع إرفاق الدليل",
+  "landing.howStage5Desc":
+    "تظل الإجابة مرتبطة بمصدرها حتى يتمكن المستخدم من التحقق منها، وعندما لا تتوفر أدلة كافية، يمتنع DocuMind عن اختلاق إجابة.",
+  "landing.howClosing": "النتيجة ليست مجرد إجابة،",
+  "landing.howClosing2": "بل إجابة يمكن لمؤسستك الوثوق بها.",
+
+  /* ── landing / how it works · system canvas ──────────── */
+  "landing.howCanvasLabel": "مسار المعرفة",
+  "landing.howCanvasStage1": "اربط",
+  "landing.howCanvasStage2": "افهم",
+  "landing.howCanvasStage3": "الصلاحيات",
+  "landing.howCanvasStage4": "استرجع",
+  "landing.howCanvasStage5": "أجب",
+  "landing.howConnectLabel": "معرفة الشركة",
+  "landing.howUnderstandLabel": "معرفة منظّمة",
+  "landing.howUnderstandTagPolicy": "سياسة",
+  "landing.howUnderstandTagSupport": "دعم",
+  "landing.howUnderstandTagIndexed": "مفهرس",
+  "landing.howUnderstandTagPages": "12 صفحة",
+  "landing.howGovernWho": "مدير الدعم",
+  "landing.howGovernInitials": "مد",
+  "landing.howGovernCheck1": "الوصول حسب الدور",
+  "landing.howGovernCheck2": "نطاق القسم",
+  "landing.howGovernCheck3": "سياسة المستند",
+  "landing.howGovernGate": "فحص الوصول",
+  "landing.howGovernAuthorized": "مصرّح",
+  "landing.howGovernRestricted": "مقيّد",
+  "landing.howGovernStopped": "يتوقف هنا",
+  "landing.howRetrieveQuestion": "ما هو هدفنا لزمن الاستجابة الأولية لحوادث P1؟",
+  "landing.howRetrieveSelected": "المصدر المحدد",
+  "landing.howRetrieveExcluded": "غير مسموح",
+  "landing.howAnswer": "15 دقيقة",
+  "landing.howAnswerBody": "تتطلب حوادث P1 استجابة أولية خلال 15 دقيقة.",
+  "landing.howAnswerVerified": "مصدر موثّق",
+  "landing.howAnswerSourceName": "Customer Support SLA",
+  "landing.howAnswerSourceSub": "P1 Incident Response",
+  "landing.howAnswerMetaAuth": "مصدر مصرّح",
+  "landing.howAnswerMetaGrounded": "إجابة موثقة",
+
+  /* ── landing / ذكاء يراعي صلاحيات الوصول ───────────────── */
+  "landing.permEyebrow": "ذكاء يراعي صلاحيات الوصول",
+  "landing.permTitle1": "معرفة شركتك يجب أن تحترم",
+  "landing.permTitle2": "حدود الصلاحيات داخلها.",
+  "landing.permSupport":
+    "يطبّق DocuMind نطاق المؤسسة والدور والقسم وصلاحيات المستندات قبل بدء الاسترجاع، بحيث يبحث كل مستخدم فقط داخل المعرفة المسموح له بالوصول إليها.",
+
+  /* access context */
+  "landing.permAccessLabel": "سياق وصول المستخدم",
+  "landing.permRoleSupport": "مدير الدعم",
+  "landing.permOrg": "ACME Corp",
+  "landing.permScopeSupport": "نطاق الدعم",
+  "landing.permCheck1": "الوصول حسب الدور",
+  "landing.permCheck2": "نطاق القسم",
+  "landing.permCheck3": "سياسة المستند",
+
+  /* company knowledge landscape */
+  "landing.permKnowledgeLabel": "معرفة الشركة",
+  "landing.permKnowledgeCount": "4 مجالات معرفية",
+  "landing.permKnowledgeNote": "تملك الشركة معرفة أوسع مما يستطيع أي دور واحد الوصول إليه.",
+  "landing.permDomainSupport": "الدعم",
+  "landing.permDomainHr": "الموارد البشرية",
+  "landing.permDomainSecurity": "الأمن",
+  "landing.permDomainProcurement": "المشتريات",
+  "landing.permBoundaryLabel": "حدود الصلاحيات",
+  "landing.permBoundaryNote": "تُطبّق هنا هوية المستخدم وقواعد الوصول قبل أي بحث.",
+  "landing.permScopeTitle": "المعرفة المصرّح بها",
+  "landing.permOutsideLabel": "خارج نطاق الوصول الحالي",
+
+  /* question → retrieval */
+  "landing.permQuestionSupport": "ما هو هدفنا لزمن الاستجابة الأولية لحوادث P1؟",
+  "landing.permEligible": "مصرّح للاسترجاع",
+  "landing.permQuestionCaption": "تُحدَّد حدود الوصول أولًا، فلا يُبحث إلا داخل المعرفة المصرّح بها.",
+
+  /* why it matters */
+  "landing.permWhyTitle": "الصلاحيات ليست خطوة لاحقة.",
+  "landing.permWhyBody":
+    "لا تكون الإجابة الموثوقة جديرة بالثقة إلا عندما يعرف النظام أيضًا المصادر التي يُسمح للمستخدم بالوصول إليها.",
+
+  /* principles */
+  "landing.permPrinciple1Title": "تظل معرفة كل مؤسسة معزولة عن غيرها.",
+  "landing.permPrinciple1Body": "لا تتسرب المعرفة من مؤسسة إلى أخرى.",
+  "landing.permPrinciple2Title": "يحدد الدور والقسم نطاق المعرفة المتاحة.",
+  "landing.permPrinciple2Body": "قد يكون المستند نفسه متاحًا لفريق وغير مرئي لفريق آخر.",
+  "landing.permPrinciple3Title": "تُطبّق صلاحيات المستندات قبل بدء الاسترجاع.",
+  "landing.permPrinciple3Body": "تضيّق الصلاحيات نطاق البحث نفسه، لا النتائج الظاهرة فقط.",
+
+  /* closing */
+  "landing.permClosing": "الإجابة الموثوقة تبدأ من نطاق وصول صحيح.",
+
+  /* ── landing / إجابات مدعومة بالأدلة ────────────────────── */
+  "landing.groundEyebrow": "إجابات مدعومة بالأدلة",
+  "landing.groundTitle1": "كل إجابة يجب أن توضّح",
+  "landing.groundTitle2": "لماذا يمكن الوثوق بها.",
+  "landing.groundSupport":
+    "يربط DocuMind كل إجابة بالأدلة التي تدعمها من مستندات الشركة، ليتمكن المستخدم من مراجعة المصدر والتحقق من السياق، ومعرفة متى لا تكون المعلومات المتاحة كافية لتقديم إجابة موثوقة.",
+
+  /* evidence trace */
+  "landing.groundToggleLabel": "حالة الأدلة",
+  "landing.groundToggleSupported": "إجابة مدعومة",
+  "landing.groundToggleInsufficient": "أدلة غير كافية",
+  "landing.groundCanvasLabel": "مسار الأدلة",
+
+  /* supported state */
+  "landing.groundQuestionSupported": "ما هو هدف زمن الاستجابة الأولية لحوادث P1؟",
+  "landing.groundAnswerSupported": "15 دقيقة",
+  "landing.groundAnswerBody": "تتطلب حوادث P1 استجابة أولية خلال 15 دقيقة.",
+  "landing.groundCitationSource": "Customer Support SLA",
+  "landing.groundVerifiedLabel": "مصدر موثّق",
+  "landing.groundEvidenceContext": "الاستجابة لحوادث P1",
+  "landing.groundExcerptBefore": "تتطلب حوادث P1 استجابة أولية ",
+  "landing.groundExcerptMark": "خلال 15 دقيقة",
+  "landing.groundExcerptAfter": ".",
+  "landing.groundMetaPolicy": "سياسة",
+  "landing.groundMetaAuthorized": "مصدر مصرّح",
+
+  /* insufficient evidence */
+  "landing.groundQuestionInsufficient": "ما هي سياسة تعويض أثاث المكاتب المنزلية؟",
+  "landing.groundNoEvidenceTitle": "الأدلة غير متوفرة",
+  "landing.groundNoEvidenceBody":
+    "لم أجد معلومات كافية في مصادر الشركة المسموح بها لتقديم إجابة موثوقة عن هذا السؤال.",
+  "landing.groundNoSourceLabel": "لم يُعثر على مصدر",
+  "landing.groundNoSourceBody": "لم يتم إنشاء أي إجابة دون وجود دليل يدعمها.",
+
+  /* why it matters */
+  "landing.groundWhyTitle": "إمكانية تتبّع الإجابة تغيّر طريقة استخدام الذكاء الاصطناعي.",
+  "landing.groundWhyBody":
+    "عندما يرى المستخدم الأدلة التي تستند إليها الإجابة، يمكنه التحقق منها ومراجعتها واستخدامها بثقة أكبر.",
+
+  /* principles */
+  "landing.groundPrinciple1Title": "تظل الإجابات مرتبطة بمصادرها.",
+  "landing.groundPrinciple2Title": "يمكن مراجعة الأدلة والتحقق منها.",
+  "landing.groundPrinciple3Title": "عند غياب الدليل، لا تُختلق الإجابة.",
+
+  /* ── landing / حلول لفرق الشركة ────────────────────────── */
+  "landing.solEyebrow": "حلول لفرق شركتك",
+  "landing.solTitle1": "معرفة موحّدة لشركتك.",
+  "landing.solTitle2": "وإجابات تناسب عمل كل فريق.",
+  "landing.solSupport":
+    "من الدعم والموارد البشرية إلى المشتريات والعمليات، يساعد DocuMind كل فريق على الوصول إلى المعرفة المرتبطة بعمله، مع الحفاظ على صلاحيات الوصول والمصادر والأدلة.",
+  "landing.solKnowledgeLabel": "معرفة الشركة",
+  "landing.solSourceLabel": "مصدر الشركة",
+
+  /* scenario 01 — customer support */
+  "landing.solTeamSupport": "دعم العملاء",
+  "landing.solQSupport": "ما هو هدف زمن الاستجابة الأولية لحوادث P1؟",
+  "landing.solOutcomeSupport": "15 دقيقة",
+  "landing.solBodySupport": "يمكن لفريق الدعم الوصول إلى متطلبات اتفاقيات مستوى الخدمة دون البحث يدويًا داخل ملفات السياسات.",
+
+  /* scenario 02 — human resources */
+  "landing.solTeamHr": "الموارد البشرية",
+  "landing.solQHr": "متى يمكن للموظف العمل عن بُعد؟",
+  "landing.solOutcomeHr": "الأهلية وموافقة المدير",
+  "landing.solBodyHr": "يمكن للموارد البشرية والموظفين الوصول إلى سياسة العمل الحالية دون الاعتماد على نسخ قديمة أو سلاسل بريد إلكتروني متفرقة.",
+
+  /* scenario 03 — procurement */
+  "landing.solTeamProcurement": "المشتريات",
+  "landing.solQProcurement": "متى يلزم إصدار أمر شراء؟",
+  "landing.solOutcomeProcurement": "القاعدة المعتمدة لأوامر الشراء",
+  "landing.solBodyProcurement": "يمكن الوصول إلى قواعد المشتريات بسرعة، مع بقاء الإجابة مرتبطة بالسياسة التي تدعمها.",
+
+  /* scenario 04 — operations / expense */
+  "landing.solTeamOperations": "العمليات",
+  "landing.solQOperations": "متى يجب تقديم تقرير المصروفات؟",
+  "landing.solOutcomeOperations": "الموعد المحدد في السياسة",
+  "landing.solBodyOperations": "يستطيع الموظفون الوصول إلى إجابات السياسات التشغيلية دون الحاجة إلى أن يبحث فريق آخر داخل المستندات نيابةً عنهم.",
+
+  /* closing */
+  "landing.solClosing1": "تختلف الأسئلة،",
+  "landing.solClosing2": "لكن المعرفة الموثوقة تبقى موحّدة ومحكومة بالصلاحيات.",
+
+  /* ── landing / security & trust ─────────────────────────── */
+  "landing.secEyebrow": "الأمان والثقة",
+  "landing.secTitle1": "معرفة شركتك",
+  "landing.secTitle2a": "يجب أن تبقى",
+  "landing.secTitle2b": "داخل نطاق شركتك.",
+  "landing.secSupport":
+    "بُني DocuMind حول عزل بيانات المؤسسات، والتحكم في صلاحيات الوصول، وإمكانية تتبّع استخدام المعرفة، بحيث تبقى معلومات الشركة ضمن النطاق والأشخاص المصرّح لهم بها.",
+  "landing.secPlatformLabel": "منصة واحدة. مساحات معرفية منفصلة.",
+  "landing.secOrgBoundary": "حدود المؤسسة",
+  "landing.secIsolatedScope": "نطاق معزول",
+  "landing.secKnowledgeLabel": "المعرفة",
+  "landing.secUsersLabel": "المستخدمون",
+  "landing.secRoleCompanyAdmin": "مدير الشركة",
+  "landing.secRoleEmployee": "موظف",
+  "landing.secRoleOperationsManager": "مدير العمليات",
+  "landing.secAccessLabel": "وصول مُتحكَّم به",
+  "landing.secAccessStatement":
+    "يتبع الوصول نطاق المؤسسة والصلاحيات الممنوحة للمستخدم.",
+  "landing.secAuditLabel": "سجل النشاط",
+  "landing.secAuditCaption": "يُسجَّل ذلك في سجل تدقيق المنصة.",
+  "landing.secAuditEvent1": "استعلام عن المعرفة",
+  "landing.secAuditEvent2": "استرجاع مصدر مصرّح به",
+  "landing.secAuditEvent3": "فهرسة مستند",
+  "landing.secTraceableLabel": "معرفة قابلة للتتبّع",
+  "landing.secTraceableLead":
+    "يكون الوصول الآمن أقوى عندما تبقى الإجابات قابلة للتتبّع إلى مصدرها.",
+  "landing.secAnswerLabel": "الإجابة",
+  "landing.secAnswer": "15 دقيقة",
+  "landing.secPrinciple1Title": "تظل حدود كل مؤسسة معزولة عن غيرها.",
+  "landing.secPrinciple1Body":
+    "تبقى معرفة الشركة داخل نطاق مؤسستها ولا تنتقل إلى مساحة مؤسسة أخرى.",
+  "landing.secPrinciple2Title": "يرتبط الوصول بهوية المستخدم ونطاق صلاحياته.",
+  "landing.secPrinciple2Body":
+    "لا يصل المستخدم إلا إلى المعرفة المتاحة ضمن دوره وسياق عمله.",
+  "landing.secPrinciple3Title": "تبقى الأنشطة المهمة قابلة للتتبّع.",
+  "landing.secPrinciple3Body":
+    "يمكن الرجوع إلى السجلات ذات الصلة عند الحاجة إلى المراجعة.",
+  "landing.secClosing": "الثقة ليست ميزة منفردة،",
+  "landing.secClosing2": "بل جزء من طريقة بناء النظام.",
 
   /* ── register (package selection) ───────────────────────── */
   "auth.selectedPlan": "الخطة المحددة",
