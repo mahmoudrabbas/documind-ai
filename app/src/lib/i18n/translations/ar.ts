@@ -743,6 +743,8 @@ const ar: TranslationDictionary = {
   "documents.retryUploadOptions": "إعادة المحاولة",
   "documents.noDocuments": "لا توجد مستندات بعد",
   "documents.noDocumentsHint": "ارفع مستندك الأول للبدء.",
+  "documents.noAccess": "ليس لديك صلاحية الوصول إلى أي مستندات",
+  "documents.noAccessHint": "اتصل بمسؤول النظام لطلب صلاحية الوصول.",
   "documents.tableName": "الاسم",
   "documents.tableSize": "الحجم",
   "documents.tableType": "النوع",

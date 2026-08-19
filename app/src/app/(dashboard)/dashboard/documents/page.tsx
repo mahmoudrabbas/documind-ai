@@ -488,10 +488,24 @@ export default function DocumentsPage() {
         {!isLoading && !error && documents.length === 0 ? (
           <div className="p-6 text-center sm:p-10">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container-low">
-              <span className="material-symbols-outlined text-[32px] text-outline">{showArchived ? "archive" : "folder_off"}</span>
+              <span className="material-symbols-outlined text-[32px] text-outline">{showArchived ? "archive" : canCreate ? "folder_off" : "lock"}</span>
             </div>
-            <p className="mb-2 text-title-md font-bold text-on-surface">{showArchived ? t("documents.noArchived") : t("documents.noDocuments")}</p>
-            <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{showArchived ? t("documents.noArchivedHint") : t("documents.noDocumentsHint")}</p>
+            {showArchived ? (
+              <>
+                <p className="mb-2 text-title-md font-bold text-on-surface">{t("documents.noArchived")}</p>
+                <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{t("documents.noArchivedHint")}</p>
+              </>
+            ) : !canCreate && !canManageAccess ? (
+              <>
+                <p className="mb-2 text-title-md font-bold text-on-surface">{t("documents.noAccess")}</p>
+                <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{t("documents.noAccessHint")}</p>
+              </>
+            ) : (
+              <>
+                <p className="mb-2 text-title-md font-bold text-on-surface">{t("documents.noDocuments")}</p>
+                <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{t("documents.noDocumentsHint")}</p>
+              </>
+            )}
           </div>
         ) : null}
 

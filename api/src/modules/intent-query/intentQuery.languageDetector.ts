@@ -1,6 +1,41 @@
 import type { QueryLanguageValue } from "./intentQuery.types.js";
 
 /**
+ * Common Arabizi tokens (Arabic written with Latin letters/digits). Only
+ * distinctive, bounded terms are listed so legitimate English input is never
+ * misclassified; a Latin-script message is treated as Arabizi only when it
+ * contains at least two of these tokens.
+ */
+const ARABIZI_TOKENS = new Set<string>([
+  "momken", "mumkin", "ezay", "izzay", "imta", "kam", "kaam", "yom", "yoom",
+  "3ala", "3la", "3an", "3and", "3nd", "kaman", "bardo", "mafi", "awel",
+  "akher", "keda", "kida", "sa3a", "sa3at", "bokra", "awy", "ktir", "keteer",
+  "kteer", "katir", "haga", "wayed", "lissa", "gamid", "3ashan", "3shan",
+  "zay", "zei", "yalla", "khalas", "khales", "ya3ni", "3ayez", "7aga", "feen",
+  "delwa2ti",
+]);
+
+/**
+ * Best-effort detection of Arabizi (Arabic written with Latin script, often
+ * using digits 2/3/7/9 for Arabic letters). Bounded and conservative: requires
+ * at least two distinctive Arabizi tokens so English questions containing one
+ * transliterated word are not misclassified.
+ */
+export function isLikelyArabizi(text: string): boolean {
+  if (containsArabic(text)) return false;
+  if (!containsLatin(text)) return false;
+  const tokens = text.toLowerCase().match(/[a-z][a-z0-9]*/gu) ?? [];
+  let hits = 0;
+  for (const token of tokens) {
+    if (ARABIZI_TOKENS.has(token)) {
+      hits += 1;
+      if (hits >= 2) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Detects the query language based on character set analysis.
  * Returns:
  * - "ar" if it contains Arabic characters and no Latin letters.
@@ -16,6 +51,12 @@ export function detectLanguage(text: string): QueryLanguageValue {
     return "mixed";
   }
   if (hasAr) {
+    return "ar";
+  }
+  // Arabizi is Arabic written in Latin script: route it as Arabic so the
+  // answer language and bilingual retrieval expansions follow the user's
+  // actual language.
+  if (isLikelyArabizi(text)) {
     return "ar";
   }
   return "en";

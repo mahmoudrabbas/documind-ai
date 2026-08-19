@@ -119,7 +119,7 @@ export function extractNaturalDocumentTitleHints(question: string): string[] {
           NATURAL_DOCUMENT_MARKER.test(candidate) &&
           candidate.split(/\s+/u).length <= 20,
       ),
-  ).slice(0, 1);
+  ).slice(0, 2);
 }
 
 function withoutFileExtension(value: string): string {

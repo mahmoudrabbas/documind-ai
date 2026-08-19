@@ -743,6 +743,8 @@ const en: TranslationDictionary = {
   "documents.retryUploadOptions": "Retry",
   "documents.noDocuments": "No documents yet",
   "documents.noDocumentsHint": "Upload your first document to get started.",
+  "documents.noAccess": "You don't have access to any documents",
+  "documents.noAccessHint": "Contact your administrator to request document access.",
   "documents.tableName": "Name",
   "documents.tableSize": "Size",
   "documents.tableType": "Type",

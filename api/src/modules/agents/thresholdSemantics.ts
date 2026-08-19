@@ -36,8 +36,10 @@ const NUMBER_WORD_VALUES: Readonly<Record<string, number>> = {
 
 const NUMBER_TOKEN = String.raw`(?:[+-]?\d[\d,]*(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|thirty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|forty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|fifty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|sixty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|seventy(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|eighty(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?|ninety(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?)`;
 
+const TEMPORAL_UNIT_MODIFIERS = String.raw`(?:remote|business|calendar|working|consecutive)\s+`;
+
 const NUMBER_PATTERN = new RegExp(
-  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|degrees?|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
+  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(?:${TEMPORAL_UNIT_MODIFIERS})?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|degrees?|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
   "giu",
 );
 
@@ -59,6 +61,7 @@ const EASTERN_ARABIC_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 /** Controlled parsing representation; caller-visible text is never rewritten. */
 export function normalizeNumericText(text: string): string {
   return normalizeArabic(text.normalize("NFKC"))
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212\uFE58\uFE63\uFF0D]/gu, "-")
     .replace(/[٠-٩]/gu, (digit) => String(ARABIC_INDIC_DIGITS.indexOf(digit)))
     .replace(/[۰-۹]/gu, (digit) => String(EASTERN_ARABIC_DIGITS.indexOf(digit)))
     .replace(/٫/gu, ".")

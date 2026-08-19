@@ -192,9 +192,34 @@ function extractTierValue(text: string, tier: "P1" | "P2"): string | null {
 }
 
 /**
+ * Value-assertion/confirmation follow-up ("So it is 8 hours, correct?",
+ * "Then the target is 8 hours?"). Deictic continuations that carry only a
+ * value never mention the tier explicitly, so the tier topic must come from
+ * the established answer and evidence — this is used solely to decide whether
+ * a direct P1/P2 contrast should be restored.
+ */
+function extractConfirmationValue(text: string): string | null {
+  const normalized = normalizeNumericText(text).toLowerCase();
+  const isDeicticConfirmation =
+    /^\s*(?:so|then|and|ok|okay|meaning|so\s+it\s+is)\b/u.test(normalized) &&
+    /\b(?:hours?|hrs?|h|days?|minutes?|min|seconds?|sec|percent|%)\b/u.test(normalized) &&
+    (/\b(?:correct|right|true|yes|no|confirm|does\s+that|isn'?t|aren'?t)\b/u.test(normalized) ||
+      /[?؟]$/u.test(normalized.trim()));
+  if (!isDeicticConfirmation) return null;
+  const match =
+    /\b(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h|days?|minutes?|min|seconds?|sec|percent|%)\b/iu.exec(
+      normalized,
+    );
+  return match?.[1] ?? null;
+}
+
+/**
  * Preserve a directly explanatory tier contrast when the writer omitted it.
  * The appended sentence is copied from a cited, authorized evidence sentence;
- * no contrast is synthesized when either tier or its value is absent.
+ * no contrast is synthesized when either tier or its value is absent. Works
+ * for direct tier questions ("P1 restoration target is 8 hours, correct?")
+ * and deictic value-confirmation follow-ups ("So it is 8 hours, correct?")
+ * whose P1 topic is established by the answer and evidence.
  */
 function preserveDirectTierContrast(
   answer: string,
@@ -202,9 +227,12 @@ function preserveDirectTierContrast(
   sources: readonly ChatSource[],
   citedChunkIds: readonly string[],
 ): string {
-  if (!/\bp1\b/iu.test(question) || /\bp2\b/iu.test(answer)) return answer;
+  if (!/\bp1\b/iu.test(answer) || /\bp2\b/iu.test(answer)) return answer;
 
-  const proposedValue = extractTierValue(question, "P1");
+  const directValue = /\bp1\b/iu.test(question)
+    ? extractTierValue(question, "P1")
+    : null;
+  const proposedValue = directValue ?? extractConfirmationValue(question);
   if (!proposedValue || !/\bp1\b/iu.test(answer)) return answer;
 
   const cited = new Set(citedChunkIds);
@@ -235,6 +263,36 @@ function correctionMessages(
         ...message,
         content: `${message.content} A prior candidate was rejected because it introduced a named employment phase absent from the supplied evidence. Regenerate from the same data without probation, onboarding, trial-period, or other lifecycle equivalences; state only the documented threshold comparison.`,
       }
+    : { ...message });
+}
+
+/**
+ * True when a generated answer does not follow the question's language: an
+ * Arabic/mixed-context answer must contain Arabic script, and an English
+ * answer must not be written almost entirely in Arabic.
+ */
+function answerLanguageMismatch(
+  answer: string,
+  language: QueryLanguageValue,
+): boolean {
+  if (!answer.trim()) return false;
+  if (isArabicContext(language)) {
+    return !/[\u0600-\u06FF]/u.test(answer);
+  }
+  const arabicChars = (answer.match(/[\u0600-\u06FF]/gu) ?? []).length;
+  const latinChars = (answer.match(/[a-zA-Z]/gu) ?? []).length;
+  return arabicChars > 0 && latinChars === 0;
+}
+
+function languageCorrectionMessages(
+  messages: readonly { role: "system" | "user" | "assistant"; content: string }[],
+  language: QueryLanguageValue,
+): { role: "system" | "user" | "assistant"; content: string }[] {
+  const instruction = isArabicContext(language)
+    ? "A prior candidate was not written in the user's language. Regenerate the answer value entirely in Arabic, except necessary English technical terms."
+    : "A prior candidate was written in the wrong language. Regenerate the answer value in the user's language.";
+  return messages.map((message, index) => index === 0
+    ? { ...message, content: `${message.content} ${instruction}` }
     : { ...message });
 }
 
@@ -565,7 +623,7 @@ export class AnswerWriterService {
 
     let rawContent = response.choices[0]?.message?.content ?? "";
     let parsed = parseAnswerWriterJson(rawContent);
-    if (
+    const employmentPhaseIssue =
       parsed.ok &&
       parsed.data.decision === "grounded_answer" &&
       introducesUnsupportedEmploymentPhase(
@@ -573,14 +631,20 @@ export class AnswerWriterService {
         question,
         writerSources,
         parsed.data.citedChunkIds,
-      )
-    ) {
+      );
+    const languageIssue =
+      parsed.ok &&
+      parsed.data.decision === "grounded_answer" &&
+      answerLanguageMismatch(parsed.data.answer, language);
+    if (employmentPhaseIssue || languageIssue) {
       logger.warn(
-        { stage: "answer_writer", reasonCode: "UNSUPPORTED_THRESHOLD_RELABEL", retryCount: 1 },
-        "answer writer candidate introduced an unsupported threshold relabel",
+        { stage: "answer_writer", reasonCode: employmentPhaseIssue ? "UNSUPPORTED_THRESHOLD_RELABEL" : "ANSWER_LANGUAGE_MISMATCH", retryCount: 1 },
+        "answer writer candidate violated an output invariant; retrying once",
       );
       const correctedResponse = await completeWithinBudget(
-        correctionMessages(messages),
+        employmentPhaseIssue
+          ? correctionMessages(messages)
+          : languageCorrectionMessages(messages, language),
         0,
       );
 

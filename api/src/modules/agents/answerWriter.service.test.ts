@@ -657,6 +657,136 @@ test("K7: cited tier evidence restores an omitted P1/P2 contrast", async () => {
   }
 });
 
+test("K8: cited tier evidence restores a P1/P2 contrast for a deictic value-confirmation follow-up", async () => {
+  const chunkId = "p1-p2-followup-contrast";
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "No. The P1 restoration target is 4 hours, not 8 hours.",
+    citedChunkIds: [chunkId],
+  }));
+  const result = await service.generate(generateArgs({
+    question: "So it is 8 hours, correct?",
+    evidence: [{
+      chunkId,
+      documentId: "sla",
+      text: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+    }],
+  }));
+
+  assert.equal(result.outcome, "usable");
+  if (result.outcome === "usable") {
+    assert.match(result.answer, /P1 restoration target is 4 hours/u);
+    assert.match(result.answer, /P2 restoration target is 8 hours/u);
+  }
+});
+
+test("K9: deictic confirmation matching the P1 value does not append a spurious contrast", async () => {
+  const chunkId = "p1-p2-followup-no-contrast";
+  const answer = "Yes. The P1 restoration target is 4 hours.";
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer,
+    citedChunkIds: [chunkId],
+  }));
+  const result = await service.generate(generateArgs({
+    question: "So it is 4 hours, correct?",
+    evidence: [{
+      chunkId,
+      documentId: "sla",
+      text: "P1 restoration target is 4 hours. P2 restoration target is 8 hours.",
+    }],
+  }));
+
+  assert.equal(result.outcome, "usable");
+  if (result.outcome === "usable") assert.equal(result.answer, answer);
+});
+
+test("K10: an Arabic question retries once when the writer candidate has no Arabic script", async () => {
+  const adapter = new SequenceRecordingAdapter([
+    JSON.stringify({
+      decision: "grounded_answer",
+      answer: "The remote work policy allows two days per week.",
+      citedChunkIds: [CHUNK_A],
+    }),
+    JSON.stringify({
+      decision: "grounded_answer",
+      answer: "سياسة العمل عن بعد تسمح بيومين في الأسبوع.",
+      citedChunkIds: [CHUNK_A],
+    }),
+  ]);
+  const service = new AnswerWriterService(adapter);
+  const result = await service.generate(generateArgs({
+    language: "ar",
+    question: "كم يوماً يسمح به العمل عن بعد؟",
+    evidence: [{
+      chunkId: CHUNK_A,
+      documentId: "507f1f77bcf86cd799439014",
+      text: "The remote work policy allows two days per week.",
+    }],
+  }));
+
+  assert.equal(adapter.calls.length, 2, "expected one corrective retry");
+  assert.match(adapter.calls[1]?.messages[0]?.content ?? "", /Arabic/iu);
+  assert.equal(result.outcome, "usable");
+  if (result.outcome === "usable") {
+    assert.match(result.answer, /[\u0600-\u06FF]/u);
+    assert.doesNotMatch(result.answer, /^The remote work policy/u);
+  }
+});
+
+test("K11: an English question written entirely in Arabic retries once", async () => {
+  const adapter = new SequenceRecordingAdapter([
+    JSON.stringify({
+      decision: "grounded_answer",
+      answer: "سياسة العمل عن بعد تسمح بيومين في الأسبوع فقط.",
+      citedChunkIds: [CHUNK_A],
+    }),
+    JSON.stringify({
+      decision: "grounded_answer",
+      answer: "The remote work policy allows two days per week.",
+      citedChunkIds: [CHUNK_A],
+    }),
+  ]);
+  const service = new AnswerWriterService(adapter);
+  const result = await service.generate(generateArgs({
+    language: "en",
+    question: "How many days per week does the remote work policy allow?",
+    evidence: [{
+      chunkId: CHUNK_A,
+      documentId: "507f1f77bcf86cd799439014",
+      text: "The remote work policy allows two days per week.",
+    }],
+  }));
+
+  assert.equal(adapter.calls.length, 2, "expected one corrective retry");
+  assert.equal(result.outcome, "usable");
+  if (result.outcome === "usable") {
+    assert.match(result.answer, /remote work policy allows/u);
+  }
+});
+
+test("K12: a grounded English answer in Arabic context is not retried", async () => {
+  const adapter = new RecordingAdapter();
+  adapter.setContent(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "سياسة العمل عن بعد تسمح بيومين في الأسبوع.",
+    citedChunkIds: [CHUNK_A],
+  }));
+  const service = new AnswerWriterService(adapter);
+  const result = await service.generate(generateArgs({
+    language: "ar",
+    question: "كم يوماً يسمح به العمل عن بعد؟",
+    evidence: [{
+      chunkId: CHUNK_A,
+      documentId: "507f1f77bcf86cd799439014",
+      text: "The remote work policy allows two days per week.",
+    }],
+  }));
+
+  assert.equal(adapter.calls.length, 1, "no retry when the language already matches");
+  assert.equal(result.outcome, "usable");
+});
+
 test("BUDGET-1: total runtime budget subtracts the prompt before setting provider completion maxTokens", async () => {
   const { service, adapter } = makeService(JSON.stringify({
     decision: "grounded_answer",

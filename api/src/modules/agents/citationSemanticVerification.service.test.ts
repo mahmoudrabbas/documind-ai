@@ -213,6 +213,54 @@ test("numeric contradiction is authoritative and is not sent to or salvaged by t
   assert.equal(result.releasedAnswerText, undefined);
 });
 
+test("U+2011 hyphen in answer does not create a false numeric mismatch against evidence", async () => {
+  const model = scriptedModel(supportAll);
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Any unused annual leave beyond the 10\u2011day carry\u2011over limit expires on 31 December.",
+    questionText: "What happens to unused annual leave that exceeds the 10-day carry-over limit?",
+    evidence: [{
+      chunkId: "policy-a",
+      text: "Unused annual leave may be carried over into the next calendar year up to a maximum of 10 days. Unused annual leave above the 10-day carry-over limit expires on 31 December.",
+    }],
+  });
+  assert.equal(result.claimResults[0]?.deterministicContradiction, false);
+  assert.deepEqual(result.claimResults.map((claim) => claim.state), ["SUPPORTED"]);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, "Any unused annual leave beyond the 10‑day carry‑over limit expires on 31 December.");
+});
+
+test("supported cross-document comparison claim passes the deterministic numeric gate", async () => {
+  const model = scriptedModel(supportAll);
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "The current policy allows up to 2 remote days per week, while the superseded policy allowed up to 3 remote days per week.",
+    questionText: "How many remote days per week are allowed in the current Remote Work Policy compared to the superseded Remote Work Policy?",
+    evidence: [
+      { chunkId: "policy-a", text: "Eligible employees may work remotely up to 2 days per week." },
+      { chunkId: "policy-b", text: "This old version allowed remote work up to 3 days per week." },
+    ],
+  });
+  assert.deepEqual(result.claimResults.map((claim) => claim.state), ["SUPPORTED"]);
+  assert.equal(result.claimResults[0]?.deterministicContradiction, false);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, "The current policy allows up to 2 remote days per week, while the superseded policy allowed up to 3 remote days per week.");
+});
+
+test("wrong cross-document numeric claim still fails the deterministic numeric gate", async () => {
+  const model = scriptedModel(supportAll);
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "The current policy allows up to 4 remote days per week, while the superseded policy allowed up to 3 remote days per week.",
+    questionText: "How many remote days per week are allowed in the current Remote Work Policy compared to the superseded Remote Work Policy?",
+    evidence: [
+      { chunkId: "current-policy", text: "Eligible employees may work remotely up to 2 days per week." },
+      { chunkId: "superseded-policy", text: "This old version allowed remote work up to 3 days per week." },
+    ],
+  });
+  assert.equal(result.claimResults[0]?.state, "UNSUPPORTED");
+  assert.equal(result.claimResults[0]?.deterministicContradiction, true);
+  assert.equal(model.calls.length, 0, "deterministic contradiction must not reach the model");
+  assert.equal(result.releasedAnswerText, undefined);
+});
+
 test("compound claim passes when all safely split atoms are supported", async () => {
   const result = await new CitationSemanticVerificationService(scriptedModel(supportAll)).verify({
     answerText: "Employees receive leave; remote workers must observe core hours.", evidence,

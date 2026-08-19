@@ -27,7 +27,8 @@ const KNOWLEDGE_TERMS = new Set([
   "ماده", "بند", "لائحه", "لوائح", "دوام", "ساعات", "ترقيه", "تعويض",
   "حد", "بدل", "اهليه", "شرط", "شروط", "موافقه", "مهله", "مصروفات",
   "مصروف", "ايصال", "سفر", "فندق", "وجبات", "مشتريات", "شراء", "عروض",
-  "اسعار", "استجابه", "استعاده", "دعم", "حادث", "وصول", "صلاحيات",
+  "اسعار", "استجابه", "استعاده", "دعم", "حادث", "وصول", "صلاحيات", "امان",
+  "الامان",
 ]);
 
 const ENTERPRISE_SUBJECT_TERMS = new Set([
@@ -340,9 +341,176 @@ export function hasEnterpriseSubjectTerm(raw: string): boolean {
 
 export function isLikelySensitivePersonalDataRequest(raw: string): boolean {
   const normalized = preprocessIntentText(raw).elongationReducedText;
-  return /\b(?:personal|private)\s+(?:mobile|phone|telephone|email|address|contact|number)\b/u.test(
+  const lower = normalized.toLowerCase();
+
+  // 1. Explicit "personal/private <detail>" qualifier — legacy deterministic
+  //    gate, keeps its fail-closed precedence.
+  if (/\b(?:personal|private)\s+(?:mobile|phone|telephone|email|address|contact|number)\b/u.test(normalized)) {
+    return true;
+  }
+
+  // 2. A role-holder's private contact detail, with or without the
+  //    "personal/private" qualifier ("the CEO's mobile phone number").
+  //    Roles are matched with an optional trailing "s" because apostrophes are
+  //    stripped during preprocessing.
+  if (
+    new RegExp(
+      "\\b(?:ceos?|ctos?|cfos?|coos?|founders?|chairmans?|chairwomans?|presidents?|directors?|managers?|supervisors?|bosses?|heads?|leaders?|employees?|staff|members?|colleagues?|admins?|administrators?|accountants?|hr|anyone|someone|anybody|somebody)\\s+" +
+        "(?:personal|private|mobile|direct|home|office)?\\s*" +
+        "(?:phone|telephone|mobile|cell|email|e-mail|contact|number|whatsapp)\\b",
+      "iu",
+    ).test(lower)
+  ) {
+    return true;
+  }
+
+  // 3. A named individual's clearly private contact detail ("Ahmed's home
+  //    number", "John's personal mobile"). Requires a private-contact qualifier
+  //    so ordinary office/general references ("the document's phone number")
+  //    are not blocked.
+  if (
+    /[\p{L}]+s\s+(?:personal|private|mobile|cell|home)\s*(?:phone|number|telephone|whatsapp|mobile)\b/iu.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+
+  // 4. Arabic role-holder or explicit private-detail references.
+  return /(?:رقم\s+(?:هاتف|جوال|الموبايل|المحمول)\s+(?:المدير|الرئيس|الموظف|التنفيذي|أي\s+شخص|أي\s+موظف)|(?:هاتف|جوال|بريد|عنوان)\s+(?:الخاص|الشخصي))/u.test(
     normalized,
   );
+}
+
+/**
+ * Deterministic malicious / prompt-injection / authentication-bypass /
+ * credential-theft detector. Unlike the sensitive-personal-data detector it
+ * only fires when the ACTION itself is hostile (extracting another user's
+ * credentials, bypassing access controls, impersonation, revealing the system
+ * prompt) — never on sensitive-sounding words alone. English and Arabic.
+ */
+export function isMaliciousSecurityRequest(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  const lower = normalized.toLowerCase();
+
+  // Prompt injection / system prompt extraction. Kept aligned with the fake
+  // intent adapter and the intent system prompt.
+  if (/\bunsafe\b|\bhack(?:s|ing|ed|er)?\b|ignore\s+previous|system\s+prompt/iu.test(lower)) {
+    return true;
+  }
+
+  // Authentication / authorization bypass or circumvention.
+  if (
+    /\bbypass\s+(?:authentication|auth|security|mfa|2fa|two[- ]?factor|the\s+system|login|password|access\s+controls?)\b/iu.test(lower) ||
+    /\bcircumvent\s+(?:authentication|security|access|the\s+system|controls)\b/iu.test(lower)
+  ) {
+    return true;
+  }
+
+  // Another user's credentials / credential theft / exfiltration.
+  if (
+    /\banother\s+users?\s+(?:password|passwords|credentials|tokens?|api\s+keys?|secrets?)\b/iu.test(lower) ||
+    /\bsomeone\s+elses?\s+(?:password|credentials|api\s+key)\b/iu.test(lower) ||
+    /\breveal\s+(?:hidden\s+)?credentials\b/iu.test(lower) ||
+    /\b(?:steal|exfiltrat\w*|extract|dump)\s+(?:the\s+)?(?:admin|root|user|manager)?\s*(?:credentials|passwords|tokens?|secrets|api\s+keys?)\b/iu.test(lower)
+  ) {
+    return true;
+  }
+
+  // Impersonation of another person or role.
+  if (
+    /\bimpersonat\w*(?:\s+as)?\s+(?:another\s+|an?\s+)?(?:user|admin|employee|someone|account)\b/iu.test(lower)
+  ) {
+    return true;
+  }
+
+  // Arabic equivalents.
+  if (
+    /تجاهل\s+التعليمات\s+السابقة/u.test(normalized) ||
+    /موجه\s+النظام/u.test(normalized) ||
+    /(?:أ?تجاوز|أ?تخطى|الالتفاف\s+على|اختراق)\s+(?:المصادق[ةه]|الأمان|الصلاحيات|الحماي[ةه]|النظام|الحسابات)/u.test(normalized) ||
+    /(?:كلم[ةه]\s+مرور|كلم[ةه]\s+السر)\s+(?:مستخدم\s+آخر|شخص\s+آخر)/u.test(normalized) ||
+    /بيانات\s+الاعتماد\s+المخف[يي][ةه]/u.test(normalized) ||
+    /(?:اكشف|أظهر|أعطني)\s+(?:موجه\s+النظام|بيانات\s+الاعتماد|الاعتمادات|كلمات\s+المرور)/u.test(normalized) ||
+    /انتحال\s+شخصي[ةه]/u.test(normalized)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+// Credential-value request verbs: the question/imperative asks for a concrete
+// credential VALUE ("what is", "give me", "show me", "reveal", ...).
+const CREDENTIAL_VALUE_REQUEST_VERBS =
+  /\b(?:whats?|what\s+is|give\s+me|give\s+the|show\s+me|show\s+the|reveal|tell\s+me|display|print|output|fetch|let\s+me\s+see|get\s+me|hand\s+me|need\s+the|send\s+me|share\s+the|provide\s+(?:me\s+with\s+)?the)\b/iu;
+
+// Credential nouns whose VALUE must never be produced from retrieval. "code",
+// "access code" and "security code" are deliberately EXCLUDED: those are
+// knowledge-topic terms ("What is the company's unique security code?").
+const CREDENTIAL_VALUE_NOUNS =
+  /\b(?:api\s*[- ]?keys?|apikey|apikeys|passwords?|passwds?|private\s+keys?|secret\s+keys?|preshared\s+keys?|passphrases?|otps?|one[- ]?time\s+passwords?|access\s+tokens?|bearer\s+tokens?|auth(?:entication)?\s+tokens?|refresh\s+tokens?|client\s+secrets?|signing\s+secrets?|credentials|root\s+password)\b/iu;
+
+// Policy/document-context words: when one of these appears near a credential
+// noun the question is about the TOPIC ("password rotation policy"), not a
+// request for the VALUE ("give me the database password").
+const CREDENTIAL_POLICY_CONTEXT =
+  /\b(?:policy|policies|rotation|expiry|expiration|validity|guidelines?|requirements?|rules?|procedure|procedures|process|standard|standards|stored|storage|location|used\s+for|purpose|format|length|strength|history|retention|owner|manager|classification|best\s+practices?|matrix|schedule|thresholds?|change|reset\s+process|recovery\s+process|management|governance)\b/iu;
+
+const CREDENTIAL_VALUE_REQUEST_VERBS_AR =
+  /(?:أعطني|عطني|أرني|اكشف|أظهر|أعرض|أرسل\s+لي|ما\s+هو|ما\s+هي)/u;
+
+const CREDENTIAL_VALUE_NOUNS_AR =
+  /(?:كلم[ةه]\s+مرور|كلم[ةه]\s+السر|بيانات\s+الاعتماد|الاعتمادات|التوكن|الرموز\s+المميزة|المفتاح\s+الخاص|المفتاح\s+السري|رمز\s+التحقق|رمز\s+التفعيل|كلمات\s+المرور)/u;
+
+const CREDENTIAL_POLICY_CONTEXT_AR =
+  /(?:سياس[ةه]|سياسات|قاعد[ةه]|قواعد|تناوب|انتهاء|تخزين|صلاحي[ةه]|إجراء|إجراءات|تعليمات|إرشادات|متطلبات|شروط|سريان)/u;
+
+function hasCredentialValueRequestInWindow(
+  text: string,
+  nounPattern: RegExp,
+  policyPattern: RegExp,
+): boolean {
+  const flags = nounPattern.flags.includes("g") ? nounPattern.flags : `${nounPattern.flags}g`;
+  const globalPattern = new RegExp(nounPattern.source, flags);
+  for (const match of text.matchAll(globalPattern)) {
+    const index = match.index ?? 0;
+    const windowStart = Math.max(0, index - 40);
+    const windowEnd = Math.min(text.length, index + match[0].length + 40);
+    if (!policyPattern.test(text.slice(windowStart, windowEnd))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Deterministic detector for DIRECT credential-VALUE requests ("what is the
+ * database password?", "give me the production API key"). These must stay
+ * fully protected (no retrieval, no evidence, no answer) because their answer
+ * is a stored secret, not a document fact. Topic questions about credential
+ * POLICY ("password rotation policy") are deliberately NOT matched so they
+ * keep routing to RAG. English and Arabic.
+ */
+export function isDirectCredentialValueRequest(raw: string): boolean {
+  const normalized = preprocessIntentText(raw).elongationReducedText;
+  const lower = normalized.toLowerCase();
+
+  if (
+    CREDENTIAL_VALUE_REQUEST_VERBS.test(lower) &&
+    hasCredentialValueRequestInWindow(lower, CREDENTIAL_VALUE_NOUNS, CREDENTIAL_POLICY_CONTEXT)
+  ) {
+    return true;
+  }
+
+  if (
+    CREDENTIAL_VALUE_REQUEST_VERBS_AR.test(normalized) &&
+    hasCredentialValueRequestInWindow(normalized, CREDENTIAL_VALUE_NOUNS_AR, CREDENTIAL_POLICY_CONTEXT_AR)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function isLikelyGibberish(raw: string): boolean {

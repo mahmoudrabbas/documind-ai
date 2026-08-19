@@ -403,3 +403,216 @@ function user(id: mongoose.Types.ObjectId, name: string, email: string) {
     emailVerified: true,
   };
 }
+
+test("canonical departmentId-only user receives department grant via effectiveAccess (A)", async () => {
+  const securityUserId = new mongoose.Types.ObjectId();
+  const securityDeptId = new mongoose.Types.ObjectId();
+  await Promise.all([
+    DepartmentModel.create({ _id: securityDeptId, tenantId, name: "Security", normalizedName: "security", status: "active", createdBy: ownerId, updatedBy: ownerId }),
+    classification(currentClassificationId, "Restricted", "restricted"),
+    UserModel.create({
+      _id: securityUserId, tenantId, name: "SecurityUser", email: "security@example.com",
+      passwordHash: "hash", role: "COMPANY_ADMIN", status: "active", emailVerified: true,
+      employeeProfile: { departmentId: securityDeptId },
+    }),
+  ]);
+  const permissions = new InMemoryPermissionEvaluator();
+  permissions.addUser(ownerId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  permissions.addUser(securityUserId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  setPermissionEvaluator(permissions);
+
+  const current = policy(1, [
+    { ruleId: "owner-access", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+    { ruleId: "security-dept", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["discover", "read", "download", "use_in_ai"] },
+  ]);
+
+  const service = serviceWithState(current, currentClassificationId);
+  const result = await service.effectiveAccess(documentId.toString(), { userIds: [securityUserId.toString()] }, { tenantId: tenantId.toString(), actorId: ownerId.toString() });
+
+  const securityDecision = result.users.find((u) => u.userId === securityUserId.toString());
+  assert.ok(securityDecision, "SecurityUser must appear in effectiveAccess results");
+  assert.equal(securityDecision.actions.read, true, "Security department grant must allow read for canonical departmentId-only user");
+  assert.equal(securityDecision.actions.use_in_ai, true, "Security department grant must allow use_in_ai for canonical departmentId-only user");
+});
+
+test("removing use_in_ai from department allow produces use_in_ai loss (B)", async () => {
+  const securityUserId = new mongoose.Types.ObjectId();
+  const securityDeptId = new mongoose.Types.ObjectId();
+  await Promise.all([
+    DepartmentModel.create({ _id: securityDeptId, tenantId, name: "Security", normalizedName: "security", status: "active", createdBy: ownerId, updatedBy: ownerId }),
+    classification(currentClassificationId, "Restricted", "restricted"),
+    UserModel.create({
+      _id: securityUserId, tenantId, name: "SecurityUser", email: "security@example.com",
+      passwordHash: "hash", role: "COMPANY_ADMIN", status: "active", emailVerified: true,
+      employeeProfile: { departmentId: securityDeptId },
+    }),
+  ]);
+  const permissions = new InMemoryPermissionEvaluator();
+  permissions.addUser(ownerId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  permissions.addUser(securityUserId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  setPermissionEvaluator(permissions);
+
+  const current = policy(1, [
+    { ruleId: "owner-access", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+    { ruleId: "security-dept", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["discover", "read", "download", "use_in_ai"] },
+  ]);
+  const proposed = policy(2, [
+    { ruleId: "owner-access", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+    { ruleId: "security-dept", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["discover", "read", "download"] },
+  ]);
+
+  const impact = await calculateImpact(current, proposed);
+
+  assert.equal(impact.direction, "tightening");
+  assert.deepEqual(impact.byAction.use_in_ai, { gained: 0, lost: 1 });
+  assert.equal(impact.usersLosingAny >= 1, true, `Expected usersLosingAny >= 1 but got ${impact.usersLosingAny}`);
+});
+
+test("explicit user deny over department allow produces expected loss (C)", async () => {
+  const securityUserId = new mongoose.Types.ObjectId();
+  const securityDeptId = new mongoose.Types.ObjectId();
+  await Promise.all([
+    DepartmentModel.create({ _id: securityDeptId, tenantId, name: "Security", normalizedName: "security", status: "active", createdBy: ownerId, updatedBy: ownerId }),
+    classification(currentClassificationId, "Restricted", "restricted"),
+    UserModel.create({
+      _id: securityUserId, tenantId, name: "SecurityUser", email: "security@example.com",
+      passwordHash: "hash", role: "COMPANY_ADMIN", status: "active", emailVerified: true,
+      employeeProfile: { departmentId: securityDeptId },
+    }),
+  ]);
+  const permissions = new InMemoryPermissionEvaluator();
+  permissions.addUser(ownerId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  permissions.addUser(securityUserId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  setPermissionEvaluator(permissions);
+
+  const current = policy(1, [
+    { ruleId: "owner-access", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+    { ruleId: "security-dept", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["discover", "read", "download", "use_in_ai"] },
+  ]);
+  const proposed = policy(2, [
+    { ruleId: "owner-access", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+    { ruleId: "security-dept", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["discover", "read", "download", "use_in_ai"] },
+    { ruleId: "deny-security-user", effect: "deny", subject: { type: "user", id: securityUserId.toString() }, actions: ["use_in_ai"] },
+  ]);
+
+  const impact = await calculateImpact(current, proposed);
+
+  assert.equal(impact.direction, "tightening");
+  assert.deepEqual(impact.byAction.use_in_ai, { gained: 0, lost: 1 });
+  assert.equal(impact.usersLosingAny >= 1, true, `Expected usersLosingAny >= 1 but got ${impact.usersLosingAny}`);
+});
+
+test("legacy employeeProfile.department user receives department grant via effectiveAccess (E)", async () => {
+  const legacyUserId = new mongoose.Types.ObjectId();
+  const securityDeptId = new mongoose.Types.ObjectId();
+  await Promise.all([
+    DepartmentModel.create({ _id: securityDeptId, tenantId, name: "Security", normalizedName: "security", status: "active", createdBy: ownerId, updatedBy: ownerId }),
+    classification(currentClassificationId, "Restricted", "restricted"),
+    UserModel.create({
+      _id: legacyUserId, tenantId, name: "LegacyUser", email: "legacy@example.com",
+      passwordHash: "hash", role: "COMPANY_ADMIN", status: "active", emailVerified: true,
+      employeeProfile: { department: "Security" },
+    }),
+  ]);
+  const permissions = new InMemoryPermissionEvaluator();
+  permissions.addUser(ownerId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  permissions.addUser(legacyUserId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  setPermissionEvaluator(permissions);
+
+  const current = policy(1, [
+    { ruleId: "owner-access", effect: "allow", subject: { type: "owner" }, actions: ["discover", "read", "download"] },
+    { ruleId: "security-dept", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["discover", "read", "download", "use_in_ai"] },
+  ]);
+
+  const service = serviceWithState(current, currentClassificationId);
+  const result = await service.effectiveAccess(documentId.toString(), { userIds: [legacyUserId.toString()] }, { tenantId: tenantId.toString(), actorId: ownerId.toString() });
+
+  const legacyDecision = result.users.find((u) => u.userId === legacyUserId.toString());
+  assert.ok(legacyDecision, "LegacyUser must appear in effectiveAccess results");
+  assert.equal(legacyDecision.actions.read, true, "Legacy department string must resolve and allow read");
+  assert.equal(legacyDecision.actions.use_in_ai, true, "Legacy department string must resolve and allow use_in_ai");
+});
+
+test("policyEvaluationResource applies proposed policy departmentId to resource for capability scope matching (D)", async () => {
+  const employeeUserId = new mongoose.Types.ObjectId();
+  const securityDeptId = new mongoose.Types.ObjectId();
+  const customRoleId = new mongoose.Types.ObjectId();
+  await Promise.all([
+    DepartmentModel.create({ _id: securityDeptId, tenantId, name: "Security", normalizedName: "security", status: "active", createdBy: ownerId, updatedBy: ownerId }),
+    classification(currentClassificationId, "Restricted", "restricted"),
+    UserModel.create({
+      _id: employeeUserId, tenantId, name: "EmployeeUser", email: "employee@example.com",
+      passwordHash: "hash", role: "EMPLOYEE", status: "active", emailVerified: true,
+      employeeProfile: { departmentId: securityDeptId },
+      customRoleId,
+    }),
+  ]);
+  const permissions = new InMemoryPermissionEvaluator();
+  permissions.addUser(ownerId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  permissions.addUser(employeeUserId.toString(), tenantId.toString(), "EMPLOYEE", customRoleId.toString());
+  permissions.addRole(customRoleId.toString(), tenantId.toString(), "EMPLOYEE", [
+    { permission: "documents:read", scopes: { departmentIds: [securityDeptId.toString()] } },
+  ]);
+  setPermissionEvaluator(permissions);
+
+  const tenantMemberRead = { ruleId: "tenant-read", effect: "allow" as const, subject: { type: "tenant_member" as const }, actions: ["read" as const] };
+
+  const currentPolicy = policy(1, [tenantMemberRead], {
+    classificationId: currentClassificationId.toString(), categoryId: null, departmentId: null,
+  });
+
+  const proposedPolicy = policy(2, [tenantMemberRead], {
+    classificationId: currentClassificationId.toString(), categoryId: null, departmentId: securityDeptId.toString(),
+  });
+
+  const currentState = state(currentPolicy, currentClassificationId);
+  const service = serviceWithState(currentPolicy, currentClassificationId);
+  const impact = await service.impact(currentState, proposedPolicy);
+
+  assert.deepEqual(impact.byAction.read, { gained: 1, lost: 0 },
+    "read must be gained solely because policyEvaluationResource applies proposed departmentId to resource, enabling the department-scoped capability scope match");
+  assert.equal(impact.usersGainingAny, 1,
+    "Exactly one user must gain read when proposed policy departmentId satisfies the custom role's department scope");
+});
+
+test("EMPLOYEE with custom role and canonical departmentId-only assignment is recognized (F)", async () => {
+  const employeeUserId = new mongoose.Types.ObjectId();
+  const securityDeptId = new mongoose.Types.ObjectId();
+  const customRoleId = new mongoose.Types.ObjectId();
+  await Promise.all([
+    DepartmentModel.create({ _id: securityDeptId, tenantId, name: "Security", normalizedName: "security", status: "active", createdBy: ownerId, updatedBy: ownerId }),
+    classification(currentClassificationId, "Restricted", "restricted"),
+    UserModel.create({
+      _id: employeeUserId, tenantId, name: "EmployeeUser", email: "employee@example.com",
+      passwordHash: "hash", role: "EMPLOYEE", status: "active", emailVerified: true,
+      employeeProfile: { departmentId: securityDeptId },
+      customRoleId,
+    }),
+  ]);
+  const permissions = new InMemoryPermissionEvaluator();
+  permissions.addUser(ownerId.toString(), tenantId.toString(), "COMPANY_ADMIN");
+  permissions.addUser(employeeUserId.toString(), tenantId.toString(), "EMPLOYEE", customRoleId.toString());
+  permissions.addRole(customRoleId.toString(), tenantId.toString(), "EMPLOYEE", [
+    { permission: "documents:read", scopes: { departmentIds: [securityDeptId.toString()] } },
+    { permission: "documents:use-in-ai", scopes: { departmentIds: [securityDeptId.toString()] } },
+  ]);
+  setPermissionEvaluator(permissions);
+
+  const current = policy(1, [
+    { ruleId: "security-dept-read", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["read"] },
+    { ruleId: "security-dept-use-ai", effect: "allow", subject: { type: "department", id: securityDeptId.toString() }, actions: ["use_in_ai"] },
+  ]);
+
+  const st = state(current, currentClassificationId);
+  st.resource.departmentId = securityDeptId.toString();
+  const service = new DocumentPolicyManagementService();
+  Object.defineProperty(service, "managedState", { value: async () => st });
+  const result = await service.effectiveAccess(documentId.toString(), { userIds: [employeeUserId.toString()] }, { tenantId: tenantId.toString(), actorId: ownerId.toString() });
+
+  const empDecision = result.users.find((u) => u.userId === employeeUserId.toString());
+  assert.ok(empDecision, "Employee must appear in effectiveAccess results");
+  assert.equal(empDecision.actions.read, true,
+    "Canonical departmentId must be resolved so the department ACL rule matches, AND the department-scoped custom-role capability must match the Security document");
+  assert.equal(empDecision.actions.use_in_ai, true,
+    "Canonical departmentId must be resolved so the department ACL rule matches, AND the department-scoped custom-role capability must match the Security document");
+});

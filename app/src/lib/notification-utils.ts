@@ -9,12 +9,36 @@ import type {
   UnreadCountByPriority,
 } from "@/types/api/notifications.types";
 
+const HTML_ENTITY_MAP: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&apos;": "'",
+  "&#x27;": "'",
+  "&#x2F;": "/",
+  "&#x60;": "`",
+};
+
+/**
+ * Decode common HTML entities that may appear in server-generated notification
+ * text. Handles both named entities (&amp;) and numeric character references
+ * (&#39;). Unknown entities are left untouched.
+ */
+export function decodeHtmlEntities(text: string): string {
+  return text.replace(
+    /&(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-fA-F]+);/g,
+    (entity) => HTML_ENTITY_MAP[entity] ?? entity,
+  );
+}
+
 /** Pick the localized text for the active locale (en is the canonical fallback). */
 export function localizeNotification(
   text: LocalizedText,
   locale: Locale,
 ): string {
-  return text[locale] || text.en || "";
+  return decodeHtmlEntities(text[locale] || text.en || "");
 }
 
 /**
@@ -25,7 +49,7 @@ export function toNotificationText(
   text: LocalizedText | string,
   locale: Locale,
 ): string {
-  if (typeof text === "string") return text;
+  if (typeof text === "string") return decodeHtmlEntities(text);
   return localizeNotification(text, locale);
 }
 

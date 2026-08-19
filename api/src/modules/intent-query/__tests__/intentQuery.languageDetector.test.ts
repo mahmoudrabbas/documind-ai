@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectLanguage, normalizeArabic } from "../intentQuery.languageDetector.js";
+import {
+  detectLanguage,
+  isLikelyArabizi,
+  normalizeArabic,
+} from "../intentQuery.languageDetector.js";
 
 test("Language Detector utility", async (t) => {
   await t.test("should detect pure English query", () => {
@@ -21,6 +25,23 @@ test("Language Detector utility", async (t) => {
   await t.test("should fall back to English on numbers/empty strings", () => {
     assert.equal(detectLanguage("12345"), "en");
     assert.equal(detectLanguage(""), "en");
+  });
+
+  await t.test("should detect Arabizi (Arabic written in Latin script) as Arabic", () => {
+    assert.equal(detectLanguage("el remote work momken kam yom fel week?"), "ar");
+    assert.equal(detectLanguage("kam yom fe el week"), "ar");
+    assert.equal(detectLanguage("ezay momken el vacation policy?"), "ar");
+  });
+
+  await t.test("should not misclassify ordinary English as Arabizi", () => {
+    assert.equal(isLikelyArabizi("What is the remote work policy?"), false);
+    assert.equal(isLikelyArabizi("Kam is meeting with the team today"), false);
+    assert.equal(isLikelyArabizi("The policy allows two days per week"), false);
+    assert.equal(detectLanguage("What is the remote work policy?"), "en");
+  });
+
+  await t.test("should treat a single transliterated word as English by default", () => {
+    assert.equal(detectLanguage("What does momken mean?"), "en");
   });
 });
 

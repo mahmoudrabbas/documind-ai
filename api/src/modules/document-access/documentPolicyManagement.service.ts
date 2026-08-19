@@ -86,7 +86,7 @@ export class DocumentPolicyManagementService {
   async effectiveAccess(documentId: string, input: unknown, context: PolicyManagementContext) {
     const state = await this.managedState(documentId, context); const value = object(input);
     const ids = idList(value.userIds, POLICY_PREVIEW_MAX_USERS, false);
-    const users = await UserModel.find({ _id: { $in: ids }, tenantId: context.tenantId, status: "active" }).select("name role customRoleId employeeProfile.department").lean().exec();
+    const users = await UserModel.find({ _id: { $in: ids }, tenantId: context.tenantId, status: "active" }).select("name role customRoleId employeeProfile.departmentId employeeProfile.department").lean().exec();
     const inherited = await this.inheritedPolicy(state.policy, context.tenantId, documentId);
     const decisions = [];
     for (const user of users.sort((a, b) => a._id.toString().localeCompare(b._id.toString()))) {
@@ -309,7 +309,7 @@ export class DocumentPolicyManagementService {
       const proposedResource = await policyEvaluationResource(state.resource, proposed);
       let viable = false; let after: mongoose.Types.ObjectId | null = null;
       while (!viable) {
-        const users = await UserModel.find({ tenantId: context.tenantId, status: "active", ...(after ? { _id: { $gt: after } } : {}) }).sort({ _id: 1 }).limit(100).select("role customRoleId employeeProfile.department").lean().exec();
+        const users = await UserModel.find({ tenantId: context.tenantId, status: "active", ...(after ? { _id: { $gt: after } } : {}) }).sort({ _id: 1 }).limit(100).select("role customRoleId employeeProfile.departmentId employeeProfile.department").lean().exec();
         if (!users.length) break;
         for (const user of users) if ((await evaluateUser(user, proposedResource, proposed, inherited)).manage_access) { viable = true; break; }
         after = users.at(-1)!._id; if (users.length < 100) break;
@@ -329,7 +329,7 @@ export class DocumentPolicyManagementService {
     ]);
     let usersGainingAny = 0; let usersLosingAny = 0; let after: mongoose.Types.ObjectId | null = null;
     while (true) {
-      const users = await UserModel.find({ tenantId: state.document.tenantId, status: "active", ...(after ? { _id: { $gt: after } } : {}) }).sort({ _id: 1 }).limit(100).select("role customRoleId employeeProfile.department").lean().exec();
+      const users = await UserModel.find({ tenantId: state.document.tenantId, status: "active", ...(after ? { _id: { $gt: after } } : {}) }).sort({ _id: 1 }).limit(100).select("role customRoleId employeeProfile.departmentId employeeProfile.department").lean().exec();
       if (!users.length) break;
       for (const user of users) {
         const current = await evaluateUser(user, currentResource, state.policy, currentInherited); const next = await evaluateUser(user, proposedResource, proposed, proposedInherited);
@@ -407,8 +407,16 @@ function proposedPolicy(state: { policy: DocumentAccessPolicy; resource: Documen
     effectiveUntil: draft.effectiveUntil, inherits: draft.inherits, rules: draft.rules, provenance: { createdBy: actorId, createdAt, ...(draft.reason ? { reason: draft.reason } : {}) },
     indexMetadata: { policyId: state.policy.policyId, policyVersion: version, classificationId: taxonomy.classificationId, categoryId: taxonomy.categoryId, departmentId: taxonomy.departmentId } });
 }
-async function evaluateUser(user: { _id: mongoose.Types.ObjectId; role: DocumentAccessActorContext["baseRole"]; customRoleId?: mongoose.Types.ObjectId | null; employeeProfile?: { department?: string } }, resource: DocumentAccessResourceContext, policy: DocumentAccessPolicy, inherited: DocumentAccessPolicy | null) {
-  const departmentIds: string[] = []; if (user.employeeProfile?.department) { const department = await DepartmentModel.findOne({ tenantId: resource.tenantId, normalizedName: normalizeTaxonomyName(user.employeeProfile.department), status: "active" }).select("_id").lean().exec(); if (department) departmentIds.push(department._id.toString()); }
+async function evaluateUser(user: { _id: mongoose.Types.ObjectId; role: DocumentAccessActorContext["baseRole"]; customRoleId?: mongoose.Types.ObjectId | null; employeeProfile?: { departmentId?: mongoose.Types.ObjectId | null; department?: string } }, resource: DocumentAccessResourceContext, policy: DocumentAccessPolicy, inherited: DocumentAccessPolicy | null) {
+  const departmentIds: string[] = [];
+  const canonicalDepartmentId = user.employeeProfile?.departmentId?.toString();
+  if (canonicalDepartmentId && mongoose.isObjectIdOrHexString(canonicalDepartmentId)) {
+    const department = await DepartmentModel.exists({ _id: canonicalDepartmentId, tenantId: resource.tenantId, status: "active" });
+    if (department) departmentIds.push(canonicalDepartmentId);
+  } else if (user.employeeProfile?.department) {
+    const department = await DepartmentModel.findOne({ tenantId: resource.tenantId, normalizedName: normalizeTaxonomyName(user.employeeProfile.department), status: "active" }).select("_id").lean().exec();
+    if (department) departmentIds.push(department._id.toString());
+  }
   const actor: DocumentAccessActorContext = { tenantId: resource.tenantId, actorId: user._id.toString(), baseRole: user.role, customRoleId: user.customRoleId?.toString() ?? null, departmentIds };
   const evaluator = new InMemoryDocumentAccessPolicyEvaluator(new PermissionEvaluatorDocumentCapabilityAdapter(getPermissionEvaluator())); const result = {} as Record<DocumentAccessAction, boolean>;
   for (const action of POLICY_IMPACT_ACTIONS) result[action] = (await evaluator.evaluate({ actor, resource, action, policy, inheritedPolicy: inherited, evaluatedAt: new Date().toISOString() })).allowed;
@@ -417,8 +425,9 @@ async function evaluateUser(user: { _id: mongoose.Types.ObjectId; role: Document
 function resourceFrom(document: { _id: mongoose.Types.ObjectId; tenantId: mongoose.Types.ObjectId; owner?: mongoose.Types.ObjectId | null; categoryId?: mongoose.Types.ObjectId | null; departmentId?: mongoose.Types.ObjectId | null; classificationId?: mongoose.Types.ObjectId | null; classification: string; category?: string | null; department?: string | null; activePolicyId?: mongoose.Types.ObjectId | null; activePolicyVersion?: number | null }) : DocumentAccessResourceContext { return { tenantId: document.tenantId.toString(), documentId: document._id.toString(), ownerId: document.owner?.toString() ?? null, categoryId: document.categoryId?.toString() ?? null, departmentId: document.departmentId?.toString() ?? null, classificationId: document.classificationId?.toString() ?? null, classification: document.classification, legacyCategory: document.category ?? null, legacyDepartment: document.department ?? null, activePolicyId: document.activePolicyId?.toString() ?? null, activePolicyVersion: document.activePolicyVersion ?? null }; }
 async function policyEvaluationResource(resource: DocumentAccessResourceContext, policy: DocumentAccessPolicy): Promise<DocumentAccessResourceContext> { return withCanonicalPermissionTaxonomy({ ...resource,
   classificationId: policy.indexMetadata.classificationId ?? null, categoryId: policy.indexMetadata.categoryId ?? null,
+  departmentId: policy.indexMetadata.departmentId ?? null,
   canonicalClassificationName: null, canonicalCategoryName: null,
-  departmentId: policy.indexMetadata.departmentId ?? null, activePolicyId: policy.policyId, activePolicyVersion: policy.policyVersion }); }
+  activePolicyId: policy.policyId, activePolicyVersion: policy.policyVersion }); }
 async function withCanonicalPermissionTaxonomy(resource: DocumentAccessResourceContext): Promise<DocumentAccessResourceContext> {
   const [category, classification] = await Promise.all([
     resource.categoryId && !resource.canonicalCategoryName ? DocumentCategoryModel.findOne({ _id: resource.categoryId, tenantId: resource.tenantId, status: "active" }).select("normalizedName").lean().exec() : null,

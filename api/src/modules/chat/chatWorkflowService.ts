@@ -1195,7 +1195,7 @@ function createChatRuntimePolicy(input: {
         emitStage("search");
         return {
           queryText,
-          topK: task === "document_summary"
+          topK: task === "document_summary" || intent.intent === "comparison"
             ? CHAT_SUMMARIZATION_RETRIEVAL_TOP_K
             : CHAT_DIRECT_RETRIEVAL_TOP_K,
           ...(documentIds.length > 0 ? { documentIds } : {}),

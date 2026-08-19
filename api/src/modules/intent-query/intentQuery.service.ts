@@ -28,6 +28,8 @@ import {
   isLikelyPriorDocumentTurn,
   isLikelyGibberish,
   isLikelySensitivePersonalDataRequest,
+  isMaliciousSecurityRequest,
+  isDirectCredentialValueRequest,
   isRetrievableIntent,
   selectSafeRetrievalQuestion,
 } from "./intentQuery.knowledgeSignals.js";
@@ -233,7 +235,13 @@ export class IntentQueryService {
     // Check for prompt injections/unsafe inputs upfront deterministically.
     // Word-anchored so legitimate compound words ("hackathon policy") never
     // trigger the unsafe short-circuit while genuine injection attempts do.
-    const hasUnsafeKeywords = containsUnsafeRoutingKeyword(input.question);
+    // Malicious/credential-theft requests and direct credential-VALUE requests
+    // (asking for a stored secret, e.g. a database password or API key) are
+    // also short-circuited: their answer is a secret, never a document fact.
+    const hasUnsafeKeywords =
+      containsUnsafeRoutingKeyword(input.question) ||
+      isMaliciousSecurityRequest(input.question) ||
+      isDirectCredentialValueRequest(input.question);
     if (hasUnsafeKeywords) {
       if (persistRuntimeArtifacts) await auditWriter.write({
         action: "INTENT_QUERY_UNSAFE_BLOCKED",
@@ -512,6 +520,12 @@ export class IntentQueryService {
     let conversationHistoryAvailable = false;
     let latestAssistantMessage = "";
     let latestUserMessage = "";
+    // Anchor for the deterministic contextual bridge: the most recent user
+    // turn that itself carries document-knowledge signals, so a deictic
+    // follow-up ("So it is 8 hours, correct?") after an acknowledgment or a
+    // non-substantive turn still resolves against the topic turn (e.g. the
+    // original P1/P2 question) instead of losing the subject.
+    let contextualBridgeAnchor = "";
 
     if (input.conversationId) {
       try {
@@ -548,6 +562,18 @@ export class IntentQueryService {
             [...fitHistory].reverse().find((message) => message.role === "assistant")?.content ?? "";
           latestUserMessage =
             [...fitHistory].reverse().find((message) => message.role === "user")?.content ?? "";
+          // The bridge anchor is the latest user turn that itself carries
+          // document-knowledge signals; a deictic continuation stays resolved
+          // to the substantive topic turn even across an acknowledgment or a
+          // non-substantive intermediate user message.
+          contextualBridgeAnchor =
+            [...fitHistory]
+              .reverse()
+              .find(
+                (message) =>
+                  message.role === "user" &&
+                  isLikelyPriorDocumentTurn(message.content),
+              )?.content ?? latestUserMessage;
 
           // Add history to system prompt execution context
           for (const msg of fitHistory) {
@@ -576,19 +602,19 @@ export class IntentQueryService {
 
     // Generic contextual bridge, evaluated before provider routing. The
     // current turn is a short continuation-led question whose subject lives
-    // in the immediately preceding substantive user turn — for ANY document
-    // topic (travel, procurement, onboarding, remote work, ...). Provider
-    // labels must not be able to turn this valid cross-document follow-up
-    // into an unsupported request or a 502.
+    // in the most recent substantive user turn that carried document intent —
+    // for ANY document topic (travel, procurement, onboarding, remote work,
+    // ...). Provider labels must not be able to turn this valid cross-document
+    // follow-up into an unsupported request or a 502.
     const deterministicContextualFollowUp =
       conversationHistoryAvailable &&
-      latestUserMessage.length > 0 &&
+      contextualBridgeAnchor.length > 0 &&
       isLikelyContextualFollowUp(routingQuestion) &&
-      hasSubstantivePriorTurn(latestUserMessage) &&
-      !detectAssistantIntent(latestUserMessage).isAssistantOnly &&
-      isLikelyPriorDocumentTurn(latestUserMessage);
+      hasSubstantivePriorTurn(contextualBridgeAnchor) &&
+      !detectAssistantIntent(contextualBridgeAnchor).isAssistantOnly &&
+      isLikelyPriorDocumentTurn(contextualBridgeAnchor);
     const deterministicFollowUpQuestion = deterministicContextualFollowUp
-      ? buildContextualFollowUpQuestion(latestUserMessage, routingQuestion)
+      ? buildContextualFollowUpQuestion(contextualBridgeAnchor, routingQuestion)
       : "";
 
     // Append the current question
@@ -838,8 +864,12 @@ export class IntentQueryService {
         isLikelyGibberish(routingQuestion) &&
         !deterministicContextualFollowUp
       ) {
+        // Unintelligible input is a clarification (ask the user to restate),
+        // never an out-of-domain refusal and never RAG: gibberish must not be
+        // sent to retrieval, and the user gets a chance to restate rather than
+        // a misleading "outside the scope of company documents" reply.
         rawOutput = {
-          detectedIntent: "unsupported",
+          detectedIntent: "knowledge_question",
           normalizedQuestion: routingQuestion.trim(),
           intentConfidence: 0.99,
           language,
@@ -847,8 +877,13 @@ export class IntentQueryService {
           exactTerms: [],
           semanticQueries: [],
           keywordQueries: [],
-          clarificationNeeded: false,
-          clarification: null,
+          clarificationNeeded: true,
+          clarification: {
+            reason: "vague_reference",
+            suggestedQuestions: [routingQuestion],
+            messageEn: "I couldn't understand that. Could you please restate your question?",
+            messageAr: "لم أفهم ما كتبته. هل يمكنك إعادة صياغة سؤالك من فضلك؟",
+          },
         };
       } else if (!isRetrievableIntent(rawDetectedIntent) && rawDetectedIntent == null) {
         rawOutput.detectedIntent = "unsupported";
@@ -885,9 +920,14 @@ export class IntentQueryService {
       if (sourceLessUnsupportedContinuation) {
         rawOutput.semanticQueries = [];
         rawOutput.keywordQueries = [];
-      } else if (!Array.isArray(rawOutput.semanticQueries) || rawOutput.semanticQueries.length === 0) {
+      } else if (
+        !Array.isArray(rawOutput.semanticQueries) ||
+        (rawOutput.semanticQueries.length === 0 &&
+          !isLikelyGibberish(routingQuestion))
+      ) {
         // Retrievable plans receive bounded local expansion when the provider
-        // omitted search queries.
+        // omitted search queries. Gibberish stays source-less: the rewrite
+        // above already produced a clarification plan with empty queries.
         const expansion = expandBilingual(routingQuestion, language, localEntities);
         rawOutput.semanticQueries = expansion.semanticQueries;
         rawOutput.keywordQueries = expansion.keywordQueries;
@@ -1006,7 +1046,7 @@ export class IntentQueryService {
             )
           : routingQuestion.trim();
         rawOutput.normalizedQuestion = safeRetrievalQuestion;
-        if (isRetrievableIntent(detectedIntent)) {
+        if (isRetrievableIntent(detectedIntent) && !isLikelyGibberish(routingQuestion)) {
           const currentExpansion = expandBilingual(
             safeRetrievalQuestion,
             language,
@@ -1049,8 +1089,10 @@ export class IntentQueryService {
       // turn that independently has strong, bounded enterprise/document
       // knowledge signals. This applies to valid-but-wrong classifications and
       // low-confidence clarification as well as schema-invalid output. Unsafe
-      // remains a hard boundary; deterministic assistant-only, social-only and
-      // external-current requests already returned before the provider call.
+      // remains a hard boundary EXCEPT for the narrow providerUnsafeRescue
+      // below (provider-verdict-only unsafe with every deterministic gate
+      // clear); deterministic assistant-only, social-only and external-current
+      // requests already returned before the provider call.
       //
       // Additionally, a valid provider "unsupported" verdict never blocks a
       // well-formed question about an arbitrary topic: the corpus (not the
@@ -1063,6 +1105,25 @@ export class IntentQueryService {
         !isLikelyGibberish(routingQuestion) &&
         (deterministicTitleHints.length > 0 || (hasDomainAgnosticQuestionShape(routingQuestion) && (hasInterrogativeQuestionShape(routingQuestion) || hasEnterpriseSubjectTerm(routingQuestion)))) &&
         (!isLikelyContextualFollowUp(routingQuestion) || deterministicContextualFollowUp);
+      // Narrow provider-"unsafe" rescue. The intent LLM is nondeterministic
+      // and has misclassified well-formed enterprise knowledge questions (e.g.
+      // "What is the company's unique security code?") as unsafe while the same
+      // question routes to rag on other runs. When the provider alone marked
+      // the turn unsafe, the turn is rescued to retrieval ONLY when every
+      // deterministic safety gate is clear — no injection/bypass/theft, no
+      // direct credential-VALUE request, no sensitive personal data, no
+      // external-current request — AND the turn is a well-formed interrogative
+      // with strong positive knowledge signals. Malicious, credential-value,
+      // sensitive-PD and external-current turns keep failing closed below.
+      const providerUnsafeRescue =
+        validatedPlan.route === "unsafe" &&
+        !isMaliciousSecurityRequest(input.question) &&
+        !isDirectCredentialValueRequest(input.question) &&
+        !isLikelySensitivePersonalDataRequest(input.question) &&
+        !isLikelyExternalCurrentQuestion(input.question) &&
+        hasDomainAgnosticQuestionShape(routingQuestion) &&
+        hasInterrogativeQuestionShape(routingQuestion) &&
+        knowledgeSignals.positive;
       const semanticSummarizationOverride =
         validatedPlan.detectedIntent === "summarization" &&
         validatedPlan.clarificationNeeded &&
@@ -1089,9 +1150,8 @@ export class IntentQueryService {
         );
       } else if (
         !bareSummarizationClarification &&
-        (knowledgeSignals.positive || unsupportedQuestionOverride) &&
-        validatedPlan.route !== "rag" &&
-        validatedPlan.route !== "unsafe"
+        ((knowledgeSignals.positive && validatedPlan.route !== "unsafe") || unsupportedQuestionOverride || providerUnsafeRescue) &&
+        validatedPlan.route !== "rag"
       ) {
         const fallbackQuestion = knowledgeSignals.retrievalText;
         const expansion = expandBilingual(
@@ -1129,7 +1189,7 @@ export class IntentQueryService {
           validatedPlan.processingMetadata.fallbackUsed,
         );
       }
-    } else {
+        } else {
       // Deterministic fallback execution
       const knowledgeSignals = assessPositiveKnowledgeSeeking(routingQuestion);
       // When the intent provider is unavailable or returns malformed output,
@@ -1249,6 +1309,7 @@ export class IntentQueryService {
       semanticClarificationEligible &&
       validatedPlan.clarificationNeeded &&
       !titleClarificationNeeded &&
+      !isLikelyGibberish(routingQuestion) &&
       hasSemanticRetrievalSubject(routingQuestion)
     ) {
       validatedPlan.clarificationNeeded = false;

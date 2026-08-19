@@ -212,3 +212,114 @@ test("allows only question-sourced values with an explicit compatible threshold"
     evidenceText: "The account locks for 30 minutes. Retrying is allowed after at least 10 minutes.",
   }), true);
 });
+
+test("normalizes Unicode hyphen and dash variants to equivalent numeric semantics", () => {
+  const plain = "Unused annual leave above the 10-day carry-over limit expires on 31 December.";
+  const nonBreaking = "Unused annual leave above the 10\u2011day carry\u2011over limit expires on 31 December.";
+  const enDash = "Unused annual leave above the 10\u2013day carry\u2013over limit expires on 31 December.";
+  const minus = "Unused annual leave above the 10\u2212day carry\u2212over limit expires on 31 December.";
+  const expected = [
+    { value: 10, unit: "duration:day" },
+    { value: 31, unit: "count:december" },
+  ];
+  for (const variant of [plain, nonBreaking, enDash, minus]) {
+    assert.deepEqual(
+      extractNumericMentions(variant).map(({ value, unit }) => ({ value, unit })),
+      expected,
+    );
+  }
+  assert.equal(
+    normalizeNumericText(nonBreaking),
+    normalizeNumericText(plain),
+    "normalized text must be identical across hyphen variants",
+  );
+});
+
+test("U+2011 non-breaking hyphen does not create a false numeric contradiction", () => {
+  const evidence = "Unused annual leave may be carried over into the next calendar year up to a maximum of 10 days. Unused annual leave above the 10-day carry-over limit expires on 31 December.";
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "Unused annual leave that exceeds the 10\u2011day carry\u2011over limit expires on 31 December.",
+    questionText: "When does unused annual leave that exceeds 10 days expire?",
+    evidenceText: evidence,
+  }), false);
+});
+
+test("HR-style statement with 10-day limit and 31 December does not trigger a false violation", () => {
+  const evidence = "Unused annual leave may be carried over into the next calendar year up to a maximum of 10 days. Unused annual leave above the 10-day carry-over limit expires on 31 December.";
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "Any unused annual leave beyond the 10\u2011day carry\u2011over limit expires on 31 December.",
+    questionText: "What happens to unused annual leave that exceeds the 10-day carry-over limit?",
+    evidenceText: evidence,
+  }), false);
+});
+
+test("bounded temporal-unit modifiers bind the number to the day unit", () => {
+  assert.deepEqual(
+    extractNumericMentions("The current policy allows up to 2 remote days per week.").map(({ value, unit }) => ({ value, unit })),
+    [{ value: 2, unit: "duration:day" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("The superseded policy allowed up to 3 remote days per week.").map(({ value, unit }) => ({ value, unit })),
+    [{ value: 3, unit: "duration:day" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("5 business days, 10 calendar days, and 3 working days.").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: 5, unit: "duration:day" },
+      { value: 10, unit: "duration:day" },
+      { value: 3, unit: "duration:day" },
+    ],
+  );
+  assert.deepEqual(
+    extractNumericMentions("5 written vendor quotations are allowed.").map(({ value, unit }) => ({ value, unit })),
+    [{ value: 5, unit: "count:quotation" }],
+    "non-temporal modifiers must not be treated as day units",
+  );
+});
+
+test("supported comparison claim with remote-day bounds is not a numeric contradiction", () => {
+  const claim = "The current policy allows up to 2 remote days per week, while the superseded policy allowed up to 3 remote days per week.";
+  const evidence = [
+    "Eligible employees may work remotely up to 2 days per week.",
+    "This old version allowed remote work up to 3 days per week.",
+  ].join(" ");
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: claim,
+    questionText: "How many remote days per week are allowed in the current Remote Work Policy compared to the superseded Remote Work Policy?",
+    evidenceText: evidence,
+  }), false);
+});
+
+test("higher remote-day bound remains a genuine numeric contradiction", () => {
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "The current policy allows up to 4 remote days per week.",
+    questionText: "How many remote days per week are allowed?",
+    evidenceText: "Eligible employees may work remotely up to 2 days per week.",
+  }), true);
+});
+
+test("hours and days remain different quantities despite equal values", () => {
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "Employees may work 2 hours per week.",
+    questionText: "How many hours of remote work are allowed?",
+    evidenceText: "Employees may work 2 days per week.",
+  }), true);
+});
+
+test("detects genuine numeric contradictions after hyphen normalization", () => {
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "At 120 hours, the employee satisfies the 90-day minimum.",
+    questionText: "Can an employee with 120 hours request remote work?",
+    evidenceText: "Employees with at least 90 days may request remote work.",
+  }), true);
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "The account locks for 20 minutes after 5 failed attempts.",
+    questionText: "Does it lock for 20 minutes after 5 failed attempts?",
+    evidenceText: "After 5 failed attempts, the account locks for 30 minutes.",
+  }), true);
+  assert.equal(hasNumericConsistencyViolation({
+    claimText: "Leave beyond the 10\u2011day limit expires on 31 December.",
+    questionText: "Does leave beyond 10 days expire?",
+    evidenceText: "Leave beyond the 5-day limit expires on 31 December.",
+  }), true);
+});
