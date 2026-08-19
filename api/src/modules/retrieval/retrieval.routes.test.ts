@@ -89,7 +89,8 @@ function mockReq(
 const controller = createRetrievalController(createMockService());
 
 test("standalone retrieval is gated by documents:use-in-ai, not documents:read", () => {
-  const source = readFileSync(new URL("./retrieval.routes.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("./retrieval.routes.ts", import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
   const searchRoute = source.slice(source.indexOf('router.post(\n    "/search"'));
   assert.match(searchRoute, /requirePermission\(Permission\.DOCUMENTS_USE_IN_AI, \{ allowScoped: true \}\)/);
   assert.doesNotMatch(searchRoute, /requirePermission\(Permission\.DOCUMENTS_READ/);
