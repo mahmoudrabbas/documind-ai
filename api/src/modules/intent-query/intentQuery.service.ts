@@ -171,6 +171,18 @@ function matchesManifestQuestion(
   return false;
 }
 
+/**
+ * Provider intent labels that keep priority over the deterministic gibberish
+ * clarification rewrite. Safety, assistant, and social routes are product-owned
+ * boundaries, and Arabic social misspellings ("شجرا") are deliberately social.
+ */
+const GIBBERISH_PRESERVED_INTENTS: ReadonlySet<string> = new Set([
+  "unsafe",
+  "social",
+  "assistant_identity",
+  "assistant_capabilities",
+]);
+
 export class IntentQueryService {
 
   constructor(
@@ -859,15 +871,25 @@ export class IntentQueryService {
       } else if (rawDetectedIntent === "assistant_capabilities") {
         rawOutput.assistantKind = "capabilities";
       }
+      // Unintelligible text must resolve the same way regardless of which label
+      // the provider happened to attach to it: a retrievable label previously
+      // clarified while `unsupported` (or any unversioned label) refused the
+      // identical input as out-of-domain, making the route provider-dependent.
+      const gibberishClarifiableIntent =
+        typeof rawDetectedIntent !== "string" ||
+        !GIBBERISH_PRESERVED_INTENTS.has(rawDetectedIntent);
       if (
-        isRetrievableIntent(rawDetectedIntent) &&
+        gibberishClarifiableIntent &&
         isLikelyGibberish(routingQuestion) &&
         !deterministicContextualFollowUp
       ) {
         // Unintelligible input is a clarification (ask the user to restate),
         // never an out-of-domain refusal and never RAG: gibberish must not be
         // sent to retrieval, and the user gets a chance to restate rather than
-        // a misleading "outside the scope of company documents" reply.
+        // a misleading "outside the scope of company documents" reply. The
+        // degraded deterministic fallback below stays source-less `unsupported`
+        // instead: with no provider it cannot distinguish unintelligible input
+        // from an unrecognized question, so it fails closed.
         rawOutput = {
           detectedIntent: "knowledge_question",
           normalizedQuestion: routingQuestion.trim(),

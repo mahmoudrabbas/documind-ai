@@ -464,6 +464,36 @@ test("IntentQueryService - query routing contract", async (t) => {
     }
   });
 
+  await t.test("gibberish clarification does not depend on the provider intent label", async () => {
+    // The same unintelligible input must resolve identically whichever label a
+    // healthy provider attaches to it. Only the degraded fallback (no usable
+    // provider output at all) stays source-less `unsupported`.
+    const labels = ["knowledge_question", "enterprise_fact", "unsupported"] as const;
+    for (const detectedIntent of labels) {
+      const labelledService = new IntentQueryService(
+        planAdapter({ detectedIntent, intentConfidence: 0.99, semanticQueries: [], keywordQueries: [] }),
+        fakeConvoAdapter,
+      );
+      const plan = await labelledService.analyzeQuery(
+        { question: "asdasd qwerty" },
+        companyAdminContext,
+      );
+      assert.equal(plan.route, "clarification", detectedIntent);
+      assert.equal(plan.clarificationNeeded, true, detectedIntent);
+      assert.deepEqual(plan.semanticQueries, [], detectedIntent);
+      assert.deepEqual(plan.keywordQueries, [], detectedIntent);
+      assert.equal(plan.processingMetadata.fallbackUsed, false, detectedIntent);
+    }
+
+    // Well-formed out-of-domain input is a refusal, not a restatement request.
+    const outOfDomain = await new IntentQueryService(
+      planAdapter({ detectedIntent: "unsupported", intentConfidence: 0.99, semanticQueries: [], keywordQueries: [] }),
+      fakeConvoAdapter,
+    ).analyzeQuery({ question: "What is the capital of France?" }, companyAdminContext);
+    assert.equal(outOfDomain.route, "unsupported");
+    assert.deepEqual(outOfDomain.semanticQueries, []);
+  });
+
   await t.test("contextual follow-up bridges to the latest document-knowledge turn, not the last acknowledgment", async () => {
     const conversationId = new Types.ObjectId().toString();
     fakeConvoAdapter.setConversation(conversationId, tenantId, actorId, [

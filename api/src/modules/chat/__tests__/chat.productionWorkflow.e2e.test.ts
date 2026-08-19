@@ -2445,7 +2445,7 @@ test(
 );
 
 test(
-  "production-composed workflow keeps varied social-only and unsupported input out of retrieval with empty sources",
+  "production-composed workflow keeps varied social-only, unintelligible and unsupported input out of retrieval with empty sources",
   { timeout: 90_000 },
   async () => {
     const fixture = await seedWorkflowState();
@@ -2471,7 +2471,9 @@ test(
       { message: "❤️", route: "social" },
       { message: "👍", route: "social" },
       { message: "🙏", route: "social" },
-      { message: "asdasd", route: "unsupported" },
+      // Unintelligible input asks the user to restate; out-of-domain input is
+      // refused as unsupported. Both stay out of retrieval with empty sources.
+      { message: "asdasd", route: "clarification" },
       { message: "What is the capital of France?", route: "unsupported" },
     ] as const;
 
