@@ -63,6 +63,35 @@ test("extractNaturalDocumentTitleHints handles polite modal wrappers around summ
   );
 });
 
+test("extractNaturalDocumentTitleHints deduplicates one reference matched by several patterns", () => {
+  // "give me a summary *of* the policy document" is matched by both the
+  // summarize wrapper and the preposition relation. A duplicate must not be
+  // emitted, and must not consume the slot a second document needs.
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("can you give me a summary of the policy document?"),
+    ["policy document"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints("what is in the remote work file?"),
+    ["remote work file"],
+  );
+});
+
+test("extractNaturalDocumentTitleHints keeps two distinct documents for comparison requests", () => {
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints(
+      "What is in the remote work file, and in the security manual.pdf?",
+    ),
+    ["remote work file", "security manual.pdf"],
+  );
+  assert.deepEqual(
+    extractNaturalDocumentTitleHints(
+      "Compare the leave policy document, the payroll document, and the security manual.pdf",
+    ).length <= 2,
+    true,
+  );
+});
+
 let mongoServer: MongoMemoryReplSet | null = null;
 const TEST_PASSWORD = "StrongPass123!";
 
