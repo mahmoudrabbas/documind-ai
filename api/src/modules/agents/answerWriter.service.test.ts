@@ -1031,6 +1031,10 @@ test("M1: every eligibility phrasing keeps all authorized policy sections in the
     "I have worked here for 120 days and my manager approved it. Can I work remotely two days per week?",
     "What are the requirements for working remotely?",
     "What are the core hours for remote workers?",
+    "momken asht8al remote 2 days fel week?",
+    "ana ba2aly 30 yom, momken remote 2 days?",
+    "manager approved, ينفع اشتغل remote يومين",
+    "كام يوم remote مسموح",
   ];
 
   for (const question of questions) {
@@ -1088,6 +1092,9 @@ test("M3: the qualifier instruction follows the question shape, not the topic", 
     "I started 30 days ago. Can I work remotely two days per week?",
     "Am I eligible for remote work?",
     "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+    "momken asht8al remote 2 days fel week?",
+    "ana ba2aly 30 yom, momken remote 2 days?",
+    "manager approved, ينفع اشتغل remote يومين",
   ]) {
     assert.match(ragEnvelope(permission).system, ELIGIBILITY_INSTRUCTION, permission);
   }
@@ -1098,6 +1105,7 @@ test("M3: the qualifier instruction follows the question shape, not the topic", 
     "What are the core hours for remote workers?",
     "What are the requirements for working remotely?",
     "كام يوم remote مسموح في الاسبوع؟",
+    "كام يوم remote مسموح",
   ]) {
     assert.doesNotMatch(ragEnvelope(informational).system, ELIGIBILITY_INSTRUCTION, informational);
   }

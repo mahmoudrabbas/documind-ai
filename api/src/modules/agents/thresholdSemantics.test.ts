@@ -26,6 +26,62 @@ test("evaluates inclusive employment-duration thresholds", () => {
   assert.deepEqual(outcomes("Eligible after 120 days?", evidence), [true]);
 });
 
+test("preserves Arabizi duration units and recurrence periods", () => {
+  assert.deepEqual(
+    extractNumericMentions("ana ba2aly 30 yom, momken remote 2 days?").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [
+      { value: 30, unit: "duration:day", ratePeriod: null },
+      { value: 2, unit: "duration:day", ratePeriod: null },
+    ],
+  );
+  assert.deepEqual(
+    extractNumericMentions("momken asht8al remote 2 days fel week?").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [{ value: 2, unit: "duration:day", ratePeriod: "week" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("1 sa3a, 2 osbo3, 3 shahr, 4 sana").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: 1, unit: "duration:hour" },
+      { value: 2, unit: "duration:week" },
+      { value: 3, unit: "duration:month" },
+      { value: 4, unit: "duration:year" },
+    ],
+  );
+});
+
+test("compares Arabizi tenure and weekly remote limits to matching evidence metrics", () => {
+  const tenureComparisons = deriveThresholdComparisons(
+    "ana ba2aly 30 yom, momken remote 2 days?",
+    "Employees may work remotely up to 2 days per week. Employees need at least 90 days of employment.",
+  );
+  assert.deepEqual(
+    tenureComparisons.find(({ questionValue, thresholdValue }) => questionValue === 30 && thresholdValue === 90),
+    { questionValue: 30, thresholdValue: 90, unit: "duration:day", operator: "gte", satisfied: false },
+  );
+  assert.deepEqual(
+    outcomes("momken asht8al remote 3 days fel week?", "Employees may work remotely up to 2 days per week."),
+    [false],
+  );
+});
+
+test("normalizes Arabic dual duration forms to two-unit numeric anchors", () => {
+  assert.deepEqual(
+    extractNumericMentions("ينفع اشتغل remote يومين في الأسبوع؟").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [{ value: 2, unit: "duration:day", ratePeriod: "week" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("مسموح ساعتين في اليوم؟").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [{ value: 2, unit: "duration:hour", ratePeriod: "day" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("شهرين وسنتين").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: 2, unit: "duration:month" },
+      { value: 2, unit: "duration:year" },
+    ],
+  );
+});
+
 test("evaluates procurement and purchase-order thresholds without exact-number anchoring", () => {
   const quotes = "For purchases above USD 2,000, at least three written vendor quotations are required.";
   assert.deepEqual(outcomes("Are quotations required for $1500?", quotes), [false]);

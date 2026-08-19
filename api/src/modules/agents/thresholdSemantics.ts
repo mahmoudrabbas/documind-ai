@@ -44,7 +44,7 @@ const NUMBER_TOKEN = String.raw`(?:[+-]?\d[\d,]*(?:\.\d+)?|zero|one|two|three|fo
 const TEMPORAL_UNIT_MODIFIERS = String.raw`(?:remote|business|calendar|working|consecutive)\s+`;
 
 const NUMBER_PATTERN = new RegExp(
-  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(?:${TEMPORAL_UNIT_MODIFIERS})?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|degrees?|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
+  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(?:${TEMPORAL_UNIT_MODIFIERS})?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|weeks?|months?|years?|degrees?|yom|yoom|youm|ayam|sa3a|sa3at|osbo3|esbo3|shahr|sana|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|اسابيع?|اسبوع|اشهر|شهور|شهر|سنوات|سنه|اعوام|عام|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
   "giu",
 );
 
@@ -66,6 +66,10 @@ const EASTERN_ARABIC_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 /** Controlled parsing representation; caller-visible text is never rewritten. */
 export function normalizeNumericText(text: string): string {
   return normalizeArabic(text.normalize("NFKC"))
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:يومين|يومان)(?![\p{L}\p{N}_])/gu, "$1 2 يوم")
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:ساعتين|ساعتان)(?![\p{L}\p{N}_])/gu, "$1 2 ساعه")
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:شهرين|شهران)(?![\p{L}\p{N}_])/gu, "$1 2 شهر")
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:سنتين|سنتان)(?![\p{L}\p{N}_])/gu, "$1 2 سنه")
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212\uFE58\uFE63\uFF0D]/gu, "-")
     .replace(/[٠-٩]/gu, (digit) => String(ARABIC_INDIC_DIGITS.indexOf(digit)))
     .replace(/[۰-۹]/gu, (digit) => String(EASTERN_ARABIC_DIGITS.indexOf(digit)))
@@ -91,12 +95,18 @@ function normalizeUnit(fullMatch: string, capturedUnit: string | undefined): str
     return "currency:usd";
   }
   const unit = (capturedUnit ?? "").toLowerCase();
-  if (/^days?$/u.test(unit)) return "duration:day";
-  if (/^hours?$/u.test(unit)) return "duration:hour";
+  if (/^(?:days?|yom|yoom|youm|ayam)$/u.test(unit)) return "duration:day";
+  if (/^(?:hours?|sa3a|sa3at)$/u.test(unit)) return "duration:hour";
   if (/^minutes?$/u.test(unit)) return "duration:minute";
+  if (/^(?:weeks?|osbo3|esbo3)$/u.test(unit)) return "duration:week";
+  if (/^(?:months?|shahr)$/u.test(unit)) return "duration:month";
+  if (/^(?:years?|sana)$/u.test(unit)) return "duration:year";
   if (/^(?:ايام|يوم(?:ا)?)$/u.test(unit)) return "duration:day";
   if (/^(?:ساعات?|ساعه)$/u.test(unit)) return "duration:hour";
   if (/^(?:دقائق?|دقيقه)$/u.test(unit)) return "duration:minute";
+  if (/^(?:اسابيع?|اسبوع)$/u.test(unit)) return "duration:week";
+  if (/^(?:اشهر|شهور|شهر)$/u.test(unit)) return "duration:month";
+  if (/^(?:سنوات|سنه|اعوام|عام)$/u.test(unit)) return "duration:year";
   if (/^degrees?$/u.test(unit) || /^(?:درجات?|درجه)$/u.test(unit)) return "temperature:degree";
   if (unit === "%" || /^percent(?:age)?$/u.test(unit)) return "percentage";
   if (unit === "بالمئه") return "percentage";
@@ -135,6 +145,10 @@ const RATE_PERIOD_NOUNS: Readonly<Record<string, string>> = {
   month: "month", months: "month",
   quarter: "quarter", quarters: "quarter",
   year: "year", years: "year", annum: "year",
+  yom: "day", yoom: "day", youm: "day", ayam: "day",
+  osbo3: "week", esbo3: "week",
+  shahr: "month",
+  sana: "year",
   يوم: "day", ايام: "day",
   اسبوع: "week", اسابيع: "week",
   شهر: "month", شهور: "month", اشهر: "month",
@@ -148,7 +162,7 @@ const RATE_PERIOD_ADVERBS: Readonly<Record<string, string>> = {
   يوميا: "day", اسبوعيا: "week", شهريا: "month", سنويا: "year",
 };
 
-const RATE_MARKER = /(?:\bper\b|\beach\b|\bevery\b|\/|في|كل)\s*(?:(?:a|an|one|1)\s+)?([\p{L}]+)/iu;
+const RATE_MARKER = /(?:\bper\b|\beach\b|\bevery\b|\bfel\b|\bfil\b|\bkol\b|\bkul\b|\/|في|كل)\s*(?:(?:a|an|one|1)\s+)?([\p{L}\p{N}]+)/iu;
 
 /**
  * Period a quantity recurs over, or `null` when it is stated absolutely.
