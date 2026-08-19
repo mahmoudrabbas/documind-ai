@@ -196,9 +196,20 @@ export function resolveChatOutcome(
  * Authorization restrictions, evidence conflicts, verification failures,
  * unsupported requests, and successful answers must never pollute the
  * knowledge-gap backlog with non-retrieval problems.
+ *
+ * `authorizationFiltered` additionally suppresses the partial-corpus case: the
+ * turn refused because the *authorized* slice of the corpus was insufficient,
+ * while authorization had already removed query-relevant documents. Recording
+ * that as "the company does not know this" would be false, so the gap is
+ * dropped. Only the boolean reason reaches this decision — never a denied
+ * document id, title, count, or any of its content.
  */
-export function isReportableKnowledgeGap(outcome: ChatOutcome): boolean {
-  return outcome === "no_relevant_content";
+export function isReportableKnowledgeGap(
+  outcome: ChatOutcome,
+  artifacts?: { authorizationFiltered?: boolean },
+): boolean {
+  if (outcome !== "no_relevant_content") return false;
+  return artifacts?.authorizationFiltered !== true;
 }
 
 const SAFE_RUNTIME_PROVIDER_ERRORS = {
@@ -319,6 +330,7 @@ const SearchOutputSchema = z
       .enum(["AUTHORIZED_RESULTS", "NO_MATCHES", "AUTHORIZATION_FILTERED"])
       .default("NO_MATCHES"),
     authorizationRestricted: z.boolean().optional(),
+    authorizationFiltered: z.boolean().optional(),
   })
   .strict();
 
@@ -329,6 +341,7 @@ const EvidenceOutputSchema = z
     rejectedEvidenceIds: z.array(z.string()),
     reasonCode: z.string(),
     authorizationRestricted: z.boolean().optional(),
+    authorizationFiltered: z.boolean().optional(),
     conflictEvidenceIds: z.array(z.string()).optional(),
   })
   .strict();
@@ -549,6 +562,14 @@ interface ChatRunArtifacts {
    * evidence). Such denials must never be reported as knowledge gaps.
    */
   authorizationRestricted: boolean;
+  /**
+   * True when document-level access authorization narrowed the searched corpus
+   * at all — including runs that still answered from other authorized
+   * documents. Consumed only by knowledge-gap reportability, so a refusal over
+   * a partially authorized corpus is never recorded as missing company
+   * knowledge. Carries no document identity, count, or content.
+   */
+  authorizationFiltered: boolean;
 }
 
 export interface ChatWorkflowRankedCandidateArtifact {
@@ -732,6 +753,7 @@ function createChatRuntimePolicy(input: {
     analyticsOutput: undefined,
     complianceRequested: false,
     authorizationRestricted: false,
+    authorizationFiltered: false,
   };
 
   const syncIntentDerivedState = (): void => {
@@ -1255,6 +1277,12 @@ function createChatRuntimePolicy(input: {
         if (output.authorizationRestricted === true) {
           artifacts.authorizationRestricted = true;
         }
+        if (
+          output.authorizationFiltered === true ||
+          output.authorizationRestricted === true
+        ) {
+          artifacts.authorizationFiltered = true;
+        }
         return;
       }
       if (args.toolName === "evaluate_evidence") {
@@ -1288,6 +1316,12 @@ function createChatRuntimePolicy(input: {
         }
         if (output.authorizationRestricted === true) {
           artifacts.authorizationRestricted = true;
+        }
+        if (
+          output.authorizationFiltered === true ||
+          output.authorizationRestricted === true
+        ) {
+          artifacts.authorizationFiltered = true;
         }
         return;
       }
@@ -1595,7 +1629,7 @@ export class ChatWorkflowService {
 
     const outcome = resolveChatOutcome(terminal.reasonCode, artifacts);
     if (
-      isReportableKnowledgeGap(outcome)
+      isReportableKnowledgeGap(outcome, artifacts)
     ) {
       await this.deps.reportKnowledgeGap?.({
         tenantId,
