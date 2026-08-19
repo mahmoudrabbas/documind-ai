@@ -5,7 +5,6 @@
  * Category knowledge (plan line 254). No actions (not specified by the plan).
  */
 import {
-  escapeHtml,
   resolveDedupEventId,
   resolveLocalized,
 } from "../sanitize.js";
@@ -20,16 +19,17 @@ export const knowledgeGapBuilder: NotificationBuilder = {
 
   build(event: NotificationEvent): NotificationDraft {
     const metadata: KnowledgeGapMetadata = knowledgeGapMetadataSchema.parse(event.metadata);
-    const safeTopic = escapeHtml(metadata.topic);
-    const safePreview = escapeHtml(metadata.questionPreview);
 
     const title = resolveLocalized(event.title, {
       en: "New knowledge gap",
       ar: "فجوة معرفية جديدة",
     });
+    // Topic and preview are the user's own words, carried verbatim: the reader
+    // renders them as text, so entity-encoding them here would only surface
+    // `company&#39;s` where the user wrote `company's`.
     const body = resolveLocalized(event.body, {
-      en: `A new knowledge gap was created: "${safeTopic}". Preview: "${safePreview}".`,
-      ar: `تم إنشاء فجوة معرفية جديدة: "${safeTopic}". معاينة: "${safePreview}".`,
+      en: `A new knowledge gap was created: "${metadata.topic}". Preview: "${metadata.questionPreview}".`,
+      ar: `تم إنشاء فجوة معرفية جديدة: "${metadata.topic}". معاينة: "${metadata.questionPreview}".`,
     });
 
     return {

@@ -2,7 +2,6 @@
  * Sanitization + validation helpers for the notification factory (T4).
  *
  * Responsibilities:
- *  - escapeHtml on every user-derived segment embedded in title/body text.
  *  - T1 locale fallback rule (both keys populated; missing locale falls back
  *    to the other, en canonical; both missing = factory error).
  *  - Size caps: title 256 / body 2048 / metadata 4KB (guardrail 5).
@@ -39,18 +38,16 @@ export class NotificationFactoryError extends Error {
   }
 }
 
-const HTML_ESCAPES: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-/** Escape the five HTML-significant characters `<`, `>`, `&`, `"`, `'`. */
-export function escapeHtml(input: string): string {
-  return input.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] as string);
-}
+/**
+ * `title` and `body` are PLAIN TEXT fields (LocalizedText on the notification
+ * model) served over the JSON API and rendered as text nodes by the frontend,
+ * which escapes at that point. HTML escaping therefore belongs to whichever
+ * boundary actually emits HTML — the email templates do exactly that
+ * (email-templates/templateRegistry.ts escapes every interpolated value) — and
+ * NOT to this factory: escaping here stored `company&#39;s` in Mongo and forced
+ * every reader to apply an inverse transform to show the user their own words.
+ * Segments are kept verbatim; only whitespace is trimmed.
+ */
 
 /** Partial bilingual segment a producer may pass in the event envelope. */
 export interface LocalizedSource {
@@ -61,8 +58,7 @@ export interface LocalizedSource {
 /**
  * T1 locale fallback rule: both keys MUST be populated. A missing locale
  * falls back to the other (en canonical). A source object with BOTH keys
- * missing/blank is a factory error. User-provided segments are HTML-escaped
- * before fallback so resolved text never carries raw markup.
+ * missing/blank is a factory error.
  */
 export function resolveLocalized(
   source: LocalizedSource | null | undefined,
@@ -71,11 +67,11 @@ export function resolveLocalized(
   if (source == null) return fallback;
   const en =
     typeof source.en === "string" && source.en.trim() !== ""
-      ? escapeHtml(source.en).trim()
+      ? source.en.trim()
       : undefined;
   const ar =
     typeof source.ar === "string" && source.ar.trim() !== ""
-      ? escapeHtml(source.ar).trim()
+      ? source.ar.trim()
       : undefined;
   if (en !== undefined && ar !== undefined) return { en, ar };
   if (en !== undefined) return { en, ar: en };

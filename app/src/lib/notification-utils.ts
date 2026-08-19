@@ -9,27 +9,39 @@ import type {
   UnreadCountByPriority,
 } from "@/types/api/notifications.types";
 
-const HTML_ENTITY_MAP: Record<string, string> = {
+/**
+ * The five entities the API's notification factory produced while it
+ * HTML-escaped plain-text `title`/`body`. That escaping is gone at the source
+ * (api notifications/factory/sanitize.ts) — notification text is now stored
+ * exactly as the user wrote it — but rows persisted before the fix live on
+ * until the 90-day notification TTL expires them, so the reader still has to
+ * undo precisely that escaping.
+ *
+ * Deliberately NOT listed: `&apos;`, `&#x27;`, `&#x2F;`, `&#x60;` and arbitrary
+ * numeric references. The old escaper never emitted them, so any occurrence is
+ * a literal the user typed and decoding it would corrupt their words.
+ */
+const LEGACY_ESCAPED_ENTITIES: Record<string, string> = {
   "&amp;": "&",
   "&lt;": "<",
   "&gt;": ">",
   "&quot;": '"',
   "&#39;": "'",
-  "&apos;": "'",
-  "&#x27;": "'",
-  "&#x2F;": "/",
-  "&#x60;": "`",
 };
 
 /**
- * Decode common HTML entities that may appear in server-generated notification
- * text. Handles both named entities (&amp;) and numeric character references
- * (&#39;). Unknown entities are left untouched.
+ * Undo the legacy notification escaping so pre-fix rows read as the user wrote
+ * them (`company&#39;s` → `company's`). A no-op for text stored after the fix.
+ *
+ * Single pass by construction: `&amp;lt;` decodes to the literal `&lt;` the
+ * user typed, never on to `<`. Arabic text is untouched — the old escaper only
+ * ever rewrote the five ASCII characters above. Output is rendered as a React
+ * text node, so decoding can never introduce live markup.
  */
 export function decodeHtmlEntities(text: string): string {
   return text.replace(
-    /&(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-fA-F]+);/g,
-    (entity) => HTML_ENTITY_MAP[entity] ?? entity,
+    /&(?:amp|lt|gt|quot|#39);/g,
+    (entity) => LEGACY_ESCAPED_ENTITIES[entity] ?? entity,
   );
 }
 

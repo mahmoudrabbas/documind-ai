@@ -6,7 +6,6 @@
  * dedupEventId = target userId (plan T25) — must be supplied by the event.
  */
 import {
-  escapeHtml,
   resolveDedupEventId,
   resolveLocalized,
 } from "../sanitize.js";
@@ -36,15 +35,14 @@ export const roleChangedBuilder: NotificationBuilder = {
 
   build(event: NotificationEvent): NotificationDraft {
     const metadata: RoleChangedMetadata = roleChangedMetadataSchema.parse(event.metadata);
-    const safeRoleName = escapeHtml(metadata.roleName);
 
     const title = resolveLocalized(event.title, {
       en: "Role updated",
       ar: "تم تحديث الدور",
     });
     const body = resolveLocalized(event.body, {
-      en: `Your role was ${ROLE_ACTION_EN[metadata.action]}: ${safeRoleName}.`,
-      ar: `تم تحديث دورك إلى ${ROLE_ACTION_AR[metadata.action]}: ${safeRoleName}.`,
+      en: `Your role was ${ROLE_ACTION_EN[metadata.action]}: ${metadata.roleName}.`,
+      ar: `تم تحديث دورك إلى ${ROLE_ACTION_AR[metadata.action]}: ${metadata.roleName}.`,
     });
 
     return {
