@@ -48,6 +48,14 @@ const EVIDENCE: AnswerWriterEvidenceItem[] = [
   },
 ];
 
+/** Shape captured for every recorded `complete()` invocation. */
+interface RecordedCall {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+  structuredOutput?: { type: "json_object" };
+}
+
 /**
  * Recording provider adapter: captures every complete() invocation (including
  * the structured-output request) and replays a scripted raw content string.
@@ -55,7 +63,7 @@ const EVIDENCE: AnswerWriterEvidenceItem[] = [
 class RecordingAdapter implements ModelAdapter {
   readonly providerKey = "recorded";
   readonly modelName = "recorded-model";
-  calls: Array<Record<string, unknown>> = [];
+  calls: RecordedCall[] = [];
   content = "";
 
   setContent(content: string): void {

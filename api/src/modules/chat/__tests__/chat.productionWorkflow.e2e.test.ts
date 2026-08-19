@@ -3505,8 +3505,8 @@ test(
       (call) => call.toolName === "authorized_hybrid_search",
     );
     assert.deepEqual(
-      search?.output?.candidates?.map(
-        (candidate: { chunkId: string }) => candidate.chunkId,
+      (search?.output?.candidates as Array<{ chunkId: string }> | undefined)?.map(
+        (candidate) => candidate.chunkId,
       ),
       [securityEvidence.chunkId],
     );
