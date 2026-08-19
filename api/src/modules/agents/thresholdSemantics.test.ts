@@ -323,3 +323,65 @@ test("detects genuine numeric contradictions after hyphen normalization", () => 
     evidenceText: "Leave beyond the 5-day limit expires on 31 December.",
   }), true);
 });
+
+// \u2500\u2500 metric scope: a shared unit is not a shared quantity \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+test("a recurrence rate is never compared against an absolute quantity", () => {
+  const tenure =
+    "Employees who have completed at least 90 days of continuous employment may request a regular remote-work arrangement.";
+  const weeklyLimit = "Regular remote work is limited to a maximum of two days per week.";
+
+  // "two days per week" is a weekly allowance, not tenure. Comparing it to the
+  // 90-day minimum reports 2 >= 90 -> false, which reads downstream as a
+  // documented eligibility failure the evidence never states.
+  assert.deepEqual(deriveThresholdComparisons("Can I work remotely two days per week?", tenure), []);
+  // ...and the tenure value is likewise not a weekly allowance.
+  assert.deepEqual(
+    deriveThresholdComparisons("I have worked here for 30 days. Can I work remotely?", weeklyLimit),
+    [],
+  );
+
+  // Each value still reaches the rule that measures the same thing.
+  assert.deepEqual(
+    deriveThresholdComparisons("Can I work remotely two days per week?", weeklyLimit),
+    [{ questionValue: 2, thresholdValue: 2, unit: "duration:day", operator: "lte", satisfied: true }],
+  );
+  assert.deepEqual(
+    deriveThresholdComparisons("I have worked here for 30 days. Can I work remotely two days per week?", tenure),
+    [{ questionValue: 30, thresholdValue: 90, unit: "duration:day", operator: "gte", satisfied: false }],
+  );
+});
+
+test("rates compare only against the same period", () => {
+  const weekly = "Employees may work remotely up to 2 days per week.";
+  assert.deepEqual(outcomes("Can I work 3 days per week?", weekly), [false]);
+  assert.deepEqual(outcomes("Can I work 1 day per week?", weekly), [true]);
+  assert.deepEqual(outcomes("Can I work 3 days per month?", weekly), []);
+  assert.deepEqual(outcomes("Can I take 3 days off?", weekly), []);
+});
+
+test("equivalent rate spellings resolve to one period", () => {
+  const weekly = "Remote work is limited to a maximum of 2 days per week.";
+  for (const question of [
+    "Can I work 3 days per week?",
+    "Can I work 3 days each week?",
+    "Can I work 3 days every week?",
+    "Can I work 3 days/week?",
+    "Can I work 3 days weekly?",
+  ]) {
+    assert.deepEqual(outcomes(question, weekly), [false], question);
+  }
+  assert.deepEqual(
+    outcomes("\u064a\u0646\u0641\u0639 \u0627\u0634\u062a\u063a\u0644 \u0663 \u0627\u064a\u0627\u0645 \u0641\u064a \u0627\u0644\u0627\u0633\u0628\u0648\u0639\u061f", "\u0627\u0644\u0639\u0645\u0644 \u0639\u0646 \u0628\u0639\u062f \u0628\u062d\u062f \u0627\u0642\u0635\u064a \u0662 \u064a\u0648\u0645 \u0641\u064a \u0627\u0644\u0627\u0633\u0628\u0648\u0639."),
+    [false],
+  );
+});
+
+test("an unrecognized period noun reads as absolute rather than blocking comparison", () => {
+  // Only known periods disambiguate; "per receipt" is not a recurrence period,
+  // so the existing currency comparison must keep working.
+  assert.deepEqual(
+    outcomes("Are receipts required for $30 per receipt?", "Receipts are required above USD 25 per receipt."),
+    [true],
+  );
+});
