@@ -22,7 +22,10 @@ export class LocalStorageProvider implements StorageProvider {
   private generateStoragePath(originalName: string, tenantId: string): { storagePath: string; fullPath: string } {
     const ext = path.extname(originalName) || "";
     const uniqueName = `${randomUUID()}${ext}`;
-    const relativePath = path.join(tenantId, uniqueName);
+    // Storage keys are portable identifiers, not host filesystem paths. Keep
+    // them POSIX-style so URL construction and S3/local behavior are identical
+    // on Windows and Unix; use the native separator only for the physical path.
+    const relativePath = path.posix.join(tenantId, uniqueName);
     const fullPath = path.join(this.baseDir, relativePath);
 
     return { storagePath: relativePath, fullPath };
