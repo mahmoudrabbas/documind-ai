@@ -24,6 +24,20 @@ const arDashboard: TranslationDictionary = {
   "dashboard.emails.details": "التفاصيل",
   "dashboard.emails.resend": "إعادة الإرسال",
   "dashboard.emails.noEmails": "لم يتم العثور على رسائل بريد إلكتروني.",
+  "dashboard.emails.noResults": "لا توجد رسائل بريد تطابق عوامل التصفية الحالية.",
+  "dashboard.emails.noResultsHint": "عدّل عوامل التصفية لتضييق القائمة.",
+  "dashboard.emails.noSubject": "لا يوجد موضوع",
+  "dashboard.emails.allStatuses": "جميع الحالات",
+  "dashboard.emails.recipientFilter": "البريد الإلكتروني للمستلم",
+  "dashboard.emails.templateFilter": "معرّف القالب",
+  "dashboard.emails.statusFilter": "الحالة",
+  "dashboard.emails.clearFilters": "مسح عوامل التصفية",
+  "dashboard.emails.rowsPerPage": "عدد الصفوف في الصفحة",
+  "dashboard.emails.showing": "عرض {{start}}–{{end}} من {{total}}",
+  "dashboard.emails.pageOf": "صفحة {{page}} من {{total}}",
+  "dashboard.emails.previous": "السابق",
+  "dashboard.emails.next": "التالي",
+  "dashboard.emails.resendFailed": "تعذر إعادة إرسال البريد الإلكتروني. يرجى المحاولة مرة أخرى.",
   "dashboard.emails.rateLimitedTitle": "تم تجاوز حد الطلبات. حاول مرة أخرى بعد فترة الانقضاء.",
 
   /* ── Email States ──────────────────────────────────────── */
@@ -822,6 +836,96 @@ const arDashboard: TranslationDictionary = {
     "لا تزال {{count}} فجوة معرفية من بين {{total}} فجوة متتبَّعة لديك مفتوحة. إضافة مستندات تغطي تلك الموضوعات يمكن أن يحسّن دقة الإجابات.",
   "dashboard.overview.reviewGaps": "مراجعة الفجوات",
   "dashboard.overview.summaryError": "تعذّر تحميل ملخّص لوحة التحكم",
+
+  /* ── مركز المساعدة ─────────────────────────────────────── */
+  "help.title": "مركز المساعدة",
+  "help.description": "اعثر على الإجابات وتعلّم كيفية استخدام DocuMind AI.",
+  "help.adminBadge": "مدير الشركة",
+  "help.employeeBadge": "موظف",
+  "help.section.gettingStarted.title": "البدء",
+  "help.section.gettingStarted.summary":
+    "تعرّف على أسرع طريق من أول تسجيل دخول إلى مساحة عمل مفيدة.",
+  "help.section.gettingStarted.point1":
+    "على مديري الشركة رفع أول مجموعة من المستندات والتأكد من أن الأشخاص المناسبين يستطيعون رؤيتها.",
+  "help.section.gettingStarted.point2":
+    "على الموظفين فتح المحادثة وطرح سؤال واحد من مستند مشترك وقراءة الاستشهادات.",
+  "help.section.gettingStarted.point3":
+    "يمكنك استخدام الإنجليزية أو العربية؛ فالواجهة والإجابات تتبع اللغة التي تختارها.",
+  "help.section.documents.title": "المستندات",
+  "help.section.documents.summary":
+    "أساسيات الرفع والمعالجة والوصول إلى المستندات.",
+  "help.section.documents.point1":
+    "تُدعم ملفات PDF وDOCX وTXT؛ وقد تحتاج ملفات PDF الممسوحة ضوئيًا إلى OCR قبل أن تصبح الإجابات متاحة.",
+  "help.section.documents.point2":
+    "ارفع المستندات من قسم المستندات وانتظر حتى تكتمل المعالجة قبل توقع الإجابات.",
+  "help.section.documents.point3":
+    "إذا فشل مستند في المعالجة، فتحقق من صيغة الملف وحجمه وما إذا كان OCR مطلوبًا.",
+  "help.section.documents.point4":
+    "تحدد أذونات المستندات من يستطيع البحث في ملف أو الاستشهاد به داخل المحادثة.",
+  "help.section.chat.title": "المحادثة والاستشهادات",
+  "help.section.chat.summary":
+    "اطرح أسئلة على مستندات الشركة وتحقق من الإجابات من المصادر.",
+  "help.section.chat.point1":
+    "اطرح أسئلة محددة عن مستند أو سياسة أو إجراء حتى يتمكن DocuMind من تضييق الإجابة.",
+  "help.section.chat.point2":
+    "تشير الاستشهادات إلى صفحات المصدر التي جاءت منها الإجابة، حتى تتمكن من التحقق مما استُخدم.",
+  "help.section.chat.point3":
+    "قد يرفض DocuMind الإجابة عندما لا تحتوي المستندات على دليل كافٍ أو عندما لا يملك دورك الوصول إلى المصدر.",
+  "help.section.chat.point4":
+    "تُدعم الأسئلة بالعربية والإنجليزية؛ ويتبع النموذج لغة مساحة العمل ونصّ سؤالك.",
+  "help.section.usersRoles.title": "المستخدمون والأدوار",
+  "help.section.usersRoles.summary":
+    "إدارة الوصول عبر الدور الأساسي والصلاحيات المخصصة.",
+  "help.section.usersRoles.point1":
+    "يقوم مديرو الشركة بدعوة المستخدمين ومراجعة الوصول والحفاظ على توافق مساحة العمل مع الأدوار المناسبة.",
+  "help.section.usersRoles.point2":
+    "لا يرى الموظفون إلا المستندات والميزات التي تسمح بها صلاحياتهم.",
+  "help.section.usersRoles.point3":
+    "يمكن للأدوار المخصصة تضييق الوصول أكثر من الدور الأساسي عندما تحتاج مساحة العمل إلى تحكم أدق.",
+  "help.section.usersRoles.point4":
+    "تحدد أذونات المستندات من يستطيع قراءة الملفات أو رفعها أو إدارتها.",
+  "help.section.knowledgeGaps.title": "فجوات المعرفة",
+  "help.section.knowledgeGaps.summary":
+    "استخدم الأسئلة التي لم يُجب عنها لاكتشاف المعرفة الناقصة أو الضعيفة في الشركة.",
+  "help.section.knowledgeGaps.point1":
+    "تعني فجوة المعرفة أن DocuMind لم يتمكن من الإجابة بثقة اعتمادًا على المستندات المتاحة.",
+  "help.section.knowledgeGaps.point2":
+    "تكرار الفجوات يعني عادةً أن مساحة العمل تحتاج إلى تغطية أفضل أو سياسة أوضح أو مستند جديد.",
+  "help.section.knowledgeGaps.point3":
+    "يمكن للمديرين استخدام الفجوات لتحديد ما يجب رفعه أو توضيحه لاحقًا.",
+  "help.section.usageBilling.title": "الاستخدام والفوترة",
+  "help.section.usageBilling.summary":
+    "تتبّع حدود الخطة والسعة المتبقية.",
+  "help.section.usageBilling.point1":
+    "قد تشمل حدود الاستخدام المستندات والاستعلامات والتخزين والرموز وصفحات OCR بحسب خطتك.",
+  "help.section.usageBilling.point2":
+    "إذا تم الوصول إلى حدٍّ ما، فيجب أن توضّح الواجهة ما الذي تم تقييده وما الذي يحتاج إلى تغيير.",
+  "help.section.usageBilling.point3":
+    "تظهر تفاصيل الفوترة وإجراءات الترقية فقط عندما يملك دورك حق الوصول.",
+  "help.section.troubleshooting.title": "استكشاف الأخطاء وإصلاحها",
+  "help.section.troubleshooting.summary":
+    "حلول شائعة لأكثر مشكلات مساحة العمل تكرارًا.",
+  "help.section.troubleshooting.point1":
+    "إذا فشل مستند في المعالجة أو لم يفتح ملف PDF، فتحقق من الملف والحجم ودعم OCR.",
+  "help.section.troubleshooting.point2":
+    "إذا لم تستطع المحادثة الإجابة، فقد لا تكون المعلومة موجودة في مستندات يمكن الوصول إليها أو قد تكون الاستشهادات غير متاحة.",
+  "help.section.troubleshooting.point3":
+    "إذا لم يصلك بريد الدعوة، فتأكد من العنوان وأعد إرسال الدعوة.",
+  "help.section.troubleshooting.point4":
+    "إذا فشل تحميل لوحة التحكم، أعد المحاولة مرة واحدة ثم حدّث الصفحة؛ فالأخطاء الحقيقية ستظهر برسالة لطيفة.",
+  "help.section.troubleshooting.point5":
+    "إذا بدا أن الوصول غير صحيح، فاطلب من مسؤول مراجعة دورك وأذونات المستندات.",
+  "help.section.security.title": "الأمان والخصوصية",
+  "help.section.security.summary":
+    "يعتمد المنتج على عزل المستأجرين والتحكم في الوصول حسب الدور.",
+  "help.section.security.point1":
+    "يرى كل مستأجر مستنداته وبياناته فقط.",
+  "help.section.security.point2":
+    "يعتمد الوصول إلى المستندات على الأذونات، وليس على إخفاء الواجهة فقط.",
+  "help.section.security.point3":
+    "تستشهد إجابات المحادثة بالأدلة حتى يتمكن المستخدمون من التحقق من المصدر.",
+  "help.section.security.point4":
+    "يمكن تدقيق نشاط المديرين حيثما كان سجل التدقيق مفعّلًا داخل مساحة العمل.",
 
   /* ── النظرة العامة — تذييل الصفحة ──────────────────────── */
   "dashboard.footer.copyright": "© {{year}} DocuMind AI Enterprise. جميع الحقوق محفوظة.",

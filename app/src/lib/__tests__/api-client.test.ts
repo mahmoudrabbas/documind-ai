@@ -220,21 +220,38 @@ describe("apiClient authentication", () => {
 
 describe("apiClient request and response handling", () => {
   it("loads identity-sensitive permission state with the browser cache disabled", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, {
-      success: true,
-      data: {
-        permissions: [],
-        grants: {},
-        baseRole: "EMPLOYEE",
-        customRoleId: null,
-        customRoleState: "none",
-        roleVersion: null,
-      },
-    }));
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        success: true,
+        data: {
+          permissions: [],
+          grants: {},
+          baseRole: "EMPLOYEE",
+          customRoleId: null,
+          customRoleState: "none",
+          roleVersion: null,
+        },
+      }),
+    );
 
     await getMyPermissions();
 
     expect(vi.mocked(fetch).mock.calls[0][1]?.cache).toBe("no-store");
+  });
+
+  it("preserves fetch aborts as AbortError instead of ApiError", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new TypeError("signal is aborted without reason"));
+
+    await expect(
+      apiClient("/dashboard/summary", { signal: controller.signal }),
+    ).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("signals a permission denial once without replaying the mutation", async () => {

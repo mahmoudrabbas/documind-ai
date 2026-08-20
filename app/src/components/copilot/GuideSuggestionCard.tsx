@@ -46,7 +46,7 @@ export function GuideSuggestionCard({
   return (
     <div
       role="status"
-      className="fixed bottom-24 end-5 z-50 flex w-72 flex-col gap-3 rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-4 shadow-modal"
+      className="fixed bottom-24 end-6 z-50 flex w-[min(18rem,calc(100vw-1.5rem))] flex-col gap-3 rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-4 shadow-modal sm:end-5"
     >
       <div className="flex items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">

@@ -23,7 +23,16 @@ export interface EmailAttempt {
 }
 
 export const emailService = {
-  async listEmails(filters: { page?: number; limit?: number; state?: string; recipientEmail?: string; templateId?: string } = {}) {
+  async listEmails(
+    filters: {
+      page?: number;
+      limit?: number;
+      state?: string;
+      recipientEmail?: string;
+      templateId?: string;
+    } = {},
+    signal?: AbortSignal,
+  ) {
     const params = new URLSearchParams();
     if (filters.page) params.set("page", String(filters.page));
     if (filters.limit) params.set("limit", String(filters.limit));
@@ -31,7 +40,7 @@ export const emailService = {
     if (filters.recipientEmail) params.set("recipientEmail", filters.recipientEmail);
     if (filters.templateId) params.set("templateId", filters.templateId);
 
-    const response = await api.get<{ data: EmailMessage[]; meta: { total: number; page: number; limit: number } }>(`/emails?${params.toString()}`);
+    const response = await api.get<{ data: EmailMessage[]; meta: { total: number; page: number; limit: number } }>(`/emails?${params.toString()}`, { signal });
     return response;
   },
 

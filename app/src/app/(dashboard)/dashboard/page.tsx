@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/providers/auth-provider";
 import { usePermissions } from "@/providers/permission-provider";
@@ -21,11 +21,12 @@ import RecentActivityFeed, {
   RecentActivityHeader,
 } from "@/components/dashboard/RecentActivityFeed";
 import { getDashboardSummary } from "@/services/dashboard.service";
+import { isAbortErrorLike } from "@/lib/api-client";
 import type { DashboardSummary } from "@/types/api/dashboard.types";
 
 type SummaryViewState =
   | { status: "loading" }
-  | { status: "error"; message: string }
+  | { status: "error" }
   | { status: "success"; summary: DashboardSummary };
 
 /** Right-column shortcut rows — one row per destination. */
@@ -57,21 +58,19 @@ export default function DashboardPage() {
   const intlLocale = useIntlLocale();
   const [view, setView] = useState<SummaryViewState>({ status: "loading" });
   const [retryCount, setRetryCount] = useState(0);
+  const requestSeqRef = useRef(0);
 
   const fetchSummary = useCallback(async (signal: AbortSignal) => {
+    const requestId = ++requestSeqRef.current;
     setView({ status: "loading" });
     try {
       const response = await getDashboardSummary(signal);
+      if (signal.aborted || requestId !== requestSeqRef.current) return;
       setView({ status: "success", summary: response.data });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setView({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Failed to load dashboard summary",
-      });
+      if (signal.aborted || requestId !== requestSeqRef.current) return;
+      if (isAbortErrorLike(err)) return;
+      setView({ status: "error" });
     }
   }, []);
 
@@ -154,9 +153,7 @@ export default function DashboardPage() {
       {view.status === "error" ? (
         <Alert variant="error" className="rounded-3xl">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              {view.message || t("dashboard.overview.summaryError")}
-            </span>
+            <span>{t("dashboard.overview.summaryError")}</span>
             <button
               type="button"
               onClick={() => setRetryCount((c) => c + 1)}

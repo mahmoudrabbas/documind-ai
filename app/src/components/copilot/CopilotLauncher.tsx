@@ -66,7 +66,7 @@ export function CopilotLauncher() {
         aria-label={t("copilot.launcher.label")}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="fixed bottom-5 end-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg transition-transform hover:scale-105 active:scale-95"
+        className="fixed bottom-6 end-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg transition-transform hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:bottom-5 sm:end-5"
       >
         <span
           className="material-symbols-outlined text-[28px]"

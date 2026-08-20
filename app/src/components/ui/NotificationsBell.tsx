@@ -17,9 +17,12 @@ import {
   notificationsBadgeColor,
   resolveNotificationActionHref,
 } from "@/lib/notification-utils";
+import { getRelativeTimeParts } from "@/lib/utils";
+import { NotificationActionMenu } from "./NotificationActionMenu";
 import type {
   Notification,
   NotificationPriority,
+  NotificationType,
 } from "@/types/api/notifications.types";
 
 const NOTIFICATIONS_LIMIT = 20;
@@ -30,6 +33,31 @@ const PRIORITY_DOT_CLASSES: Record<NotificationPriority, string> = {
   normal: "bg-info",
   low: "bg-on-surface-variant",
 };
+
+const NOTIFICATION_TYPE_ICONS: Partial<Record<NotificationType, string>> = {
+  processing_complete: "check_circle",
+  processing_failed: "error",
+  quota_exceeded: "warning",
+  knowledge_gap_created: "search_insights",
+  invitation_accepted: "person_check",
+  welcome: "celebration",
+  role_changed: "group",
+  document_uploaded: "description",
+};
+
+function formatNotificationTime(
+  iso: string,
+  t: (key: string, params?: Record<string, string>) => string,
+  locale: string,
+): string {
+  const parts = getRelativeTimeParts(iso);
+  if (parts.key) return t(parts.key, parts.params);
+  return new Date(iso).toLocaleDateString(locale);
+}
+
+function notificationIcon(item: Notification): string {
+  return NOTIFICATION_TYPE_ICONS[item.type] ?? "notifications";
+}
 
 /**
  * NotificationsBell — bell icon with an unread badge whose color derives from
@@ -170,9 +198,9 @@ export function NotificationsBell() {
         <div
           role="dialog"
           aria-label={t("notifications.title")}
-          className="absolute end-0 top-full z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-outline-variant bg-surface-bright shadow-lg"
+          className="absolute end-0 top-full z-50 mt-2 w-[min(26rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-outline-variant/70 bg-surface-bright shadow-xl"
         >
-          <div className="flex items-center justify-between border-b border-outline-variant px-4 py-3">
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-outline-variant/60 bg-surface-bright/98 px-4 py-3 backdrop-blur">
             <p className="text-label-md font-bold text-on-surface">
               {t("notifications.title")}
             </p>
@@ -185,7 +213,7 @@ export function NotificationsBell() {
             </Link>
           </div>
 
-          <div className="max-h-96 overflow-y-auto">
+          <div className="max-h-[min(32rem,calc(100vh-10rem))] overflow-y-auto px-2 py-2">
             {feed.isLoading && visibleItems.length === 0 ? (
               <p
                 role="status"
@@ -194,65 +222,121 @@ export function NotificationsBell() {
                 {t("common.loading")}
               </p>
             ) : visibleItems.length === 0 ? (
-              <p className="px-4 py-8 text-center text-body-sm text-on-surface-variant">
-                {t("notifications.empty")}
-              </p>
+              <div className="px-4 py-10 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-container-high text-on-surface-variant">
+                  <span
+                    className="material-symbols-outlined text-[24px]"
+                    aria-hidden="true"
+                  >
+                    notifications
+                  </span>
+                </div>
+                <p className="mt-3 text-title-md font-semibold text-on-surface">
+                  {t("notifications.empty")}
+                </p>
+                <p className="mt-1 text-body-sm text-on-surface-variant">
+                  {t("notifications.emptyHint")}
+                </p>
+              </div>
             ) : (
-              <ul className="divide-y divide-outline-variant">
+              <ul className="space-y-2">
                 {visibleItems.slice(0, NOTIFICATIONS_LIMIT).map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => void handleItemClick(item)}
-                      className="flex w-full items-start gap-3 px-4 py-3 text-start hover:bg-surface-container-low"
-                    >
-                      {!item.isRead ? (
-                        <span
-                          aria-hidden="true"
-                          data-testid="unread-dot"
-                          className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT_CLASSES[item.priority]}`}
+                  <li key={item.id} className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/90 shadow-sm">
+                    <div className="rounded-2xl px-3 py-3 transition-colors hover:bg-surface-container-low/80">
+                      <button
+                        type="button"
+                        onClick={() => void handleItemClick(item)}
+                        className={`flex w-full items-start gap-3 rounded-xl text-start transition-colors ${
+                          item.isRead
+                            ? "hover:bg-surface-container-low"
+                            : "bg-primary/5 hover:bg-primary/10"
+                        } px-1 py-1.5`}
+                      >
+                        <span className="relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-primary">
+                          <span
+                            className="material-symbols-outlined text-[20px]"
+                            aria-hidden="true"
+                          >
+                            {notificationIcon(item)}
+                          </span>
+                          {!item.isRead ? (
+                            <span
+                              aria-hidden="true"
+                              data-testid="unread-dot"
+                              className={`absolute -top-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface-container-lowest ${PRIORITY_DOT_CLASSES[item.priority]}`}
+                            />
+                          ) : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-start gap-3">
+                            <span
+                              className={`min-w-0 flex-1 text-label-md font-semibold leading-6 ${
+                                item.isRead
+                                  ? "text-on-surface-variant"
+                                  : "text-on-surface"
+                              }`}
+                            >
+                              {localizeNotification(item.title, locale)}
+                            </span>
+                            <time
+                              className="shrink-0 text-label-sm text-on-surface-variant/70"
+                              dateTime={item.createdAt}
+                              title={new Date(item.createdAt).toLocaleString(
+                                locale,
+                              )}
+                            >
+                              {formatNotificationTime(
+                                item.createdAt,
+                                t,
+                                locale,
+                              )}
+                            </time>
+                          </span>
+                          <span className="mt-1 block text-body-sm leading-relaxed text-on-surface-variant">
+                            {localizeNotification(item.body, locale)}
+                          </span>
+                        </span>
+                      </button>
+
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <NotificationActionMenu
+                          primaryAction={
+                            item.actions[0]
+                              ? {
+                                  key: `${item.id}-primary`,
+                                  label: localizeNotification(
+                                    item.actions[0].label,
+                                    locale,
+                                  ),
+                                  href: resolveNotificationActionHref(
+                                    item.actions[0].url,
+                                  ),
+                                }
+                              : null
+                          }
+                          overflowActions={[
+                            ...item.actions.slice(1).map((action, index) => ({
+                              key: `${item.id}-extra-${index}`,
+                              label: localizeNotification(action.label, locale),
+                              href: resolveNotificationActionHref(action.url),
+                            })),
+                            {
+                              key: `${item.id}-archive`,
+                              label: t("notifications.archive"),
+                              onClick: () => void handleArchive(item),
+                            },
+                            {
+                              key: `${item.id}-clear`,
+                              label: t("notifications.clear"),
+                              onClick: () => void handleClear(item),
+                              destructive: true,
+                            },
+                          ]}
+                          moreLabel={t("common.more")}
+                          onActionTriggered={() => setOpen(false)}
+                          compact
                         />
-                      ) : null}
-                      <span className="min-w-0 flex-1">
-                        <span
-                          className={`block text-label-md font-semibold ${
-                            item.isRead
-                              ? "text-on-surface-variant"
-                              : "text-on-surface"
-                          }`}
-                        >
-                          {localizeNotification(item.title, locale)}
-                        </span>
-                        <span className="block text-body-sm text-on-surface-variant">
-                          {localizeNotification(item.body, locale)}
-                        </span>
-                      </span>
-                    </button>
-                    <div className="flex flex-wrap items-center gap-2 px-4 pb-3 ps-8">
-                      {item.actions.map((action, index) => (
-                        <Link
-                          key={`${action.url}-${index}`}
-                          href={resolveNotificationActionHref(action.url)}
-                          onClick={() => setOpen(false)}
-                          className="rounded-md px-2 py-1 text-label-sm font-medium text-primary hover:bg-primary/10"
-                        >
-                          {localizeNotification(action.label, locale)}
-                        </Link>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => void handleArchive(item)}
-                        className="rounded-md px-2 py-1 text-label-sm font-medium text-on-surface-variant hover:bg-surface-container-high"
-                      >
-                        {t("notifications.archive")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleClear(item)}
-                        className="rounded-md px-2 py-1 text-label-sm font-medium text-error hover:bg-error-container"
-                      >
-                        {t("notifications.clear")}
-                      </button>
+                      </div>
                     </div>
                   </li>
                 ))}
