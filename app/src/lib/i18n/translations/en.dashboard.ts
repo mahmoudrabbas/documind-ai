@@ -24,6 +24,20 @@ const enDashboard: TranslationDictionary = {
   "dashboard.emails.details": "Details",
   "dashboard.emails.resend": "Resend",
   "dashboard.emails.noEmails": "No emails found.",
+  "dashboard.emails.noResults": "No emails match the current filters.",
+  "dashboard.emails.noResultsHint": "Adjust the filters to narrow the list.",
+  "dashboard.emails.noSubject": "No subject",
+  "dashboard.emails.allStatuses": "All statuses",
+  "dashboard.emails.recipientFilter": "Recipient email",
+  "dashboard.emails.templateFilter": "Template ID",
+  "dashboard.emails.statusFilter": "Status",
+  "dashboard.emails.clearFilters": "Clear filters",
+  "dashboard.emails.rowsPerPage": "Rows per page",
+  "dashboard.emails.showing": "Showing {{start}}–{{end}} of {{total}}",
+  "dashboard.emails.pageOf": "Page {{page}} of {{total}}",
+  "dashboard.emails.previous": "Previous",
+  "dashboard.emails.next": "Next",
+  "dashboard.emails.resendFailed": "Unable to resend email. Please try again.",
   "dashboard.emails.rateLimitedTitle": "Rate limited. Try again after the cooldown.",
 
   /* ── Email States ──────────────────────────────────────── */
@@ -822,6 +836,96 @@ const enDashboard: TranslationDictionary = {
     "{{count}} of your {{total}} tracked knowledge gaps are still open. Adding documents to cover those topics can improve response accuracy.",
   "dashboard.overview.reviewGaps": "Review Gaps",
   "dashboard.overview.summaryError": "Failed to load dashboard summary",
+
+  /* ── Help Center ──────────────────────────────────────── */
+  "help.title": "Help Center",
+  "help.description": "Find answers and learn how to use DocuMind AI.",
+  "help.adminBadge": "Company Admin",
+  "help.employeeBadge": "Employee",
+  "help.section.gettingStarted.title": "Getting Started",
+  "help.section.gettingStarted.summary":
+    "Learn the quickest path from first login to a useful workspace.",
+  "help.section.gettingStarted.point1":
+    "Company Admins should upload the first set of documents and confirm the right people can see them.",
+  "help.section.gettingStarted.point2":
+    "Employees should open Chat, ask one question from a shared document, and read the citations.",
+  "help.section.gettingStarted.point3":
+    "Use English or Arabic; the interface and answers follow the locale you pick.",
+  "help.section.documents.title": "Documents",
+  "help.section.documents.summary":
+    "Uploading, processing, and document access basics.",
+  "help.section.documents.point1":
+    "PDF, DOCX, and TXT files are supported; scanned PDFs may need OCR before answers are available.",
+  "help.section.documents.point2":
+    "Upload documents from the Documents area and wait for processing to finish before expecting answers.",
+  "help.section.documents.point3":
+    "If a document fails to process, check the file format, size, and whether OCR is required.",
+  "help.section.documents.point4":
+    "Document permissions control who can search or cite a file in Chat.",
+  "help.section.chat.title": "AI Chat & Citations",
+  "help.section.chat.summary":
+    "Ask questions against company documents and verify answers from sources.",
+  "help.section.chat.point1":
+    "Ask specific questions about a document, policy, or process so DocuMind can narrow the answer.",
+  "help.section.chat.point2":
+    "Citations point to the source pages the answer came from, so you can verify what was used.",
+  "help.section.chat.point3":
+    "DocuMind may refuse to answer when the documents do not contain enough evidence or your role cannot access the source.",
+  "help.section.chat.point4":
+    "Arabic and English questions are both supported; the model follows the workspace language and your prompt.",
+  "help.section.usersRoles.title": "Users & Roles",
+  "help.section.usersRoles.summary":
+    "Manage access by base role and custom permissions.",
+  "help.section.usersRoles.point1":
+    "Company Admins invite users, review access, and keep the workspace aligned with the right roles.",
+  "help.section.usersRoles.point2":
+    "Employees only see the documents and features their permissions allow.",
+  "help.section.usersRoles.point3":
+    "Custom roles can narrow access beyond the base role when the workspace needs more specific control.",
+  "help.section.usersRoles.point4":
+    "Document permissions control who can read, upload, or manage files.",
+  "help.section.knowledgeGaps.title": "Knowledge Gaps",
+  "help.section.knowledgeGaps.summary":
+    "Use unanswered questions to find missing or weak company knowledge.",
+  "help.section.knowledgeGaps.point1":
+    "A knowledge gap means DocuMind could not answer confidently from the available documents.",
+  "help.section.knowledgeGaps.point2":
+    "Repeated gaps usually mean the workspace needs better coverage, a clearer policy, or a new document.",
+  "help.section.knowledgeGaps.point3":
+    "Admins can use gaps to decide what to upload or clarify next.",
+  "help.section.usageBilling.title": "Usage & Billing",
+  "help.section.usageBilling.summary":
+    "Track plan limits and remaining capacity.",
+  "help.section.usageBilling.point1":
+    "Usage limits can cover documents, queries, storage, tokens, and OCR pages depending on your plan.",
+  "help.section.usageBilling.point2":
+    "If a limit is reached, the UI should explain what is capped and what needs to change.",
+  "help.section.usageBilling.point3":
+    "Billing details and upgrade actions appear only when your role has access.",
+  "help.section.troubleshooting.title": "Troubleshooting",
+  "help.section.troubleshooting.summary":
+    "Common fixes for the most frequent workspace issues.",
+  "help.section.troubleshooting.point1":
+    "If a document fails to process or a PDF will not open, check the file, size, and OCR support.",
+  "help.section.troubleshooting.point2":
+    "If Chat cannot answer, the information may not exist in accessible documents or citations may be unavailable.",
+  "help.section.troubleshooting.point3":
+    "If an invitation email is missing, confirm the address and resend the invite.",
+  "help.section.troubleshooting.point4":
+    "If the dashboard fails to load, retry once and refresh the page; genuine errors will show a friendly message.",
+  "help.section.troubleshooting.point5":
+    "If access looks wrong, ask an admin to check your role and document permissions.",
+  "help.section.security.title": "Security & Privacy",
+  "help.section.security.summary":
+    "The product is built around tenant isolation and role-based access.",
+  "help.section.security.point1":
+    "Each tenant sees only its own documents and data.",
+  "help.section.security.point2":
+    "Document access depends on permissions, not on hidden UI alone.",
+  "help.section.security.point3":
+    "Chat answers cite evidence so users can verify the source.",
+  "help.section.security.point4":
+    "Admin activity can be audited where audit logging is enabled in the workspace.",
 
   /* ── Overview — footer ─────────────────────────────────── */
   "dashboard.footer.copyright": "© {{year}} DocuMind AI Enterprise. All rights reserved.",

@@ -65,6 +65,31 @@ export class ApiError extends Error {
   }
 }
 
+export function isAbortErrorLike(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (error.name === "AbortError" || error.name === "CanceledError") {
+    return true;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return (
+    code === "ABORT_ERR" ||
+    code === "ERR_ABORTED" ||
+    code === "ERR_CANCELED"
+  );
+}
+
+export function createAbortError(message = "The operation was aborted."): DOMException {
+  return new DOMException(message, "AbortError");
+}
+
 function getEndpointPath(endpoint: string): string {
   try {
     return (
@@ -376,6 +401,9 @@ async function executeRequest<T>(
       credentials: requestInit.credentials ?? "include",
     });
   } catch (error) {
+    if (requestInit.signal?.aborted || isAbortErrorLike(error)) {
+      throw createAbortError();
+    }
     throw new ApiError({
       status: 0,
       code: "NETWORK_ERROR",

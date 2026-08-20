@@ -91,6 +91,12 @@ function primaryNavigation() {
   return screen.getByRole("complementary", { name: "Primary navigation" });
 }
 
+function helpCenterLink() {
+  return within(primaryNavigation()).getByRole("link", {
+    name: /Help Center/,
+  });
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -220,6 +226,13 @@ describe("responsive navigation", () => {
     expect(screen.getAllByText(/DocuMind/).length).toBeGreaterThan(0);
   });
 
+  it("renders Help Center as a real navigation link", () => {
+    renderNav();
+
+    const link = helpCenterLink();
+    expect(link).toHaveAttribute("href", "/dashboard/help-center");
+  });
+
   it("exposes accessible labels and tooltips for icon-only links", () => {
     grantAllPermissions();
     renderNav();
@@ -230,6 +243,14 @@ describe("responsive navigation", () => {
     );
     expect(documentsLink).toHaveAttribute("title", "Documents");
     expect(documentsLink).toHaveAttribute("aria-label", "Documents");
+  });
+
+  it("marks Help Center active on its route", () => {
+    grantAllPermissions();
+    state.pathname = "/dashboard/help-center";
+    renderNav();
+
+    expect(helpCenterLink()).toHaveAttribute("aria-current", "page");
   });
 });
 

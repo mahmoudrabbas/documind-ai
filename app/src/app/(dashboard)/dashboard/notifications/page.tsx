@@ -9,6 +9,7 @@ import {
   Tab,
   Tabs,
 } from "@/components/ui";
+import { NotificationActionMenu } from "@/components/ui/NotificationActionMenu";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { useNotificationFeed } from "@/hooks/features/useNotificationFeed";
 import { useUnreadCount } from "@/hooks/features/useUnreadCount";
@@ -17,9 +18,11 @@ import {
   localizeNotification,
   resolveNotificationActionHref,
 } from "@/lib/notification-utils";
+import { getRelativeTimeParts } from "@/lib/utils";
 import type {
   Notification,
   NotificationCategory,
+  NotificationType,
 } from "@/types/api/notifications.types";
 
 const PAGE_SIZE = 20;
@@ -39,6 +42,31 @@ type CategoryId = (typeof CATEGORY_IDS)[number];
 
 function categoryToParam(id: CategoryId): NotificationCategory | undefined {
   return id === "all" ? undefined : (id as NotificationCategory);
+}
+
+const NOTIFICATION_TYPE_ICONS: Partial<Record<NotificationType, string>> = {
+  processing_complete: "check_circle",
+  processing_failed: "error",
+  quota_exceeded: "warning",
+  knowledge_gap_created: "search_insights",
+  invitation_accepted: "person_check",
+  welcome: "celebration",
+  role_changed: "group",
+  document_uploaded: "description",
+};
+
+function notificationIcon(item: Notification): string {
+  return NOTIFICATION_TYPE_ICONS[item.type] ?? "notifications";
+}
+
+function formatNotificationTime(
+  iso: string,
+  t: (key: string, params?: Record<string, string>) => string,
+  locale: string,
+): string {
+  const parts = getRelativeTimeParts(iso);
+  if (parts.key) return t(parts.key, parts.params);
+  return new Date(iso).toLocaleDateString(locale);
 }
 
 export default function NotificationsPage() {
@@ -177,59 +205,102 @@ export default function NotificationsPage() {
           </div>
         ) : (
           <>
-            <ul className="divide-y divide-outline-variant">
+            <ul className="space-y-2 p-2">
               {items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => void handleItemClick(item)}
-                    className="flex w-full items-start gap-3 px-5 py-4 text-start hover:bg-surface-container-low"
-                  >
-                    {!item.isRead ? (
-                      <span
-                        aria-hidden="true"
-                        data-testid="unread-dot"
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                          {
-                            critical: "bg-error",
-                            high: "bg-warning",
-                            normal: "bg-info",
-                            low: "bg-on-surface-variant",
-                          }[item.priority]
-                        }`}
-                      />
-                    ) : null}
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className={`block text-label-md font-semibold ${
-                          item.isRead
-                            ? "text-on-surface-variant"
-                            : "text-on-surface"
-                        }`}
-                      >
-                        {localizeNotification(item.title, locale)}
-                      </span>
-                      <span className="block text-body-sm text-on-surface-variant">
-                        {localizeNotification(item.body, locale)}
-                      </span>
-                      <span className="mt-1 block text-label-sm text-on-surface-variant/70">
-                        {new Date(item.createdAt).toLocaleString(intlLocale)}
-                      </span>
-                    </span>
-                  </button>
-                  {item.actions.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-2 px-5 pb-4 ps-10">
-                      {item.actions.map((action, index) => (
-                        <a
-                          key={`${action.url}-${index}`}
-                          href={resolveNotificationActionHref(action.url)}
-                          className="rounded-md px-2 py-1 text-label-sm font-medium text-primary hover:bg-primary/10"
+                <li
+                  key={item.id}
+                  className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/90 shadow-sm"
+                >
+                  <div className="rounded-2xl px-4 py-4 transition-colors hover:bg-surface-container-low/80">
+                    <button
+                      type="button"
+                      onClick={() => void handleItemClick(item)}
+                      className={`flex w-full items-start gap-3 rounded-xl px-1 py-1.5 text-start transition-colors ${
+                        item.isRead
+                          ? "hover:bg-surface-container-low"
+                          : "bg-primary/5 hover:bg-primary/10"
+                      }`}
+                    >
+                      <span className="relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-primary">
+                        <span
+                          className="material-symbols-outlined text-[20px]"
+                          aria-hidden="true"
                         >
-                          {localizeNotification(action.label, locale)}
-                        </a>
-                      ))}
+                          {notificationIcon(item)}
+                        </span>
+                        {!item.isRead ? (
+                          <span
+                            aria-hidden="true"
+                            data-testid="unread-dot"
+                            className={`absolute -top-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface-container-lowest ${
+                              {
+                                critical: "bg-error",
+                                high: "bg-warning",
+                                normal: "bg-info",
+                                low: "bg-on-surface-variant",
+                              }[item.priority]
+                            }`}
+                          />
+                        ) : null}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-start gap-3">
+                          <span
+                            className={`min-w-0 flex-1 text-label-md font-semibold leading-6 ${
+                              item.isRead
+                                ? "text-on-surface-variant"
+                                : "text-on-surface"
+                            }`}
+                          >
+                            {localizeNotification(item.title, locale)}
+                          </span>
+                          <time
+                            className="shrink-0 text-label-sm text-on-surface-variant/70"
+                            dateTime={item.createdAt}
+                            title={new Date(item.createdAt).toLocaleString(
+                              intlLocale,
+                            )}
+                          >
+                            {formatNotificationTime(
+                              item.createdAt,
+                              t,
+                              locale,
+                            )}
+                          </time>
+                        </span>
+                        <span className="mt-1 block text-body-sm leading-relaxed text-on-surface-variant">
+                          {localizeNotification(item.body, locale)}
+                        </span>
+                      </span>
+                    </button>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                      <NotificationActionMenu
+                        primaryAction={
+                          item.actions[0]
+                            ? {
+                                key: `${item.id}-primary`,
+                                label: localizeNotification(
+                                  item.actions[0].label,
+                                  locale,
+                                ),
+                                href: resolveNotificationActionHref(
+                                  item.actions[0].url,
+                                ),
+                              }
+                            : null
+                        }
+                        overflowActions={item.actions.slice(1).map((action, index) => ({
+                          key: `${item.id}-extra-${index}`,
+                          label: localizeNotification(action.label, locale),
+                          href: resolveNotificationActionHref(action.url),
+                        }))}
+                        moreLabel={t("common.more")}
+                        onActionTriggered={() => undefined}
+                        compact
+                      />
                     </div>
-                  ) : null}
+                  </div>
                 </li>
               ))}
             </ul>

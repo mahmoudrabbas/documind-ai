@@ -19,9 +19,7 @@ import {
 } from "@/constants/platform-navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
-import { useCopilot } from "@/providers/copilot-provider";
 import { getNavGuideTargetId } from "@/lib/copilot/guide-targets";
-import { COPILOT_ENABLED } from "@/config/public-env";
 import { cn } from "@/lib/utils";
 
 type AppNavigationProps = {
@@ -97,7 +95,6 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
   const permissions = usePermissions();
   const tenant = useTenantSettings();
   const { t } = useI18n();
-  const { setOpen: setCopilotOpen } = useCopilot();
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -231,6 +228,10 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         ? "text-error hover:text-on-surface disabled:opacity-60"
         : "text-on-surface-variant hover:text-on-surface"
     }`;
+  const helpCenterHref = "/dashboard/help-center";
+  const isHelpCenterActive =
+    pathname === helpCenterHref ||
+    pathname.startsWith(`${helpCenterHref}/`);
 
   let navContent: ReactNode;
   if (permissions.status === "loading" || permissions.status === "idle") {
@@ -400,19 +401,31 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
             <div className="px-4 pb-2 sm:hidden">
               <LanguageSwitcher className="w-full justify-center" />
             </div>
-            {COPILOT_ENABLED ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  setCopilotOpen(true);
-                }}
-                className="flex w-full items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface"
+            <Link
+              href={helpCenterHref}
+              onClick={onClose}
+              aria-current={isHelpCenterActive ? "page" : undefined}
+              className={`${secondaryLinkClassName("muted")} rounded-lg ${
+                isHelpCenterActive
+                  ? "border border-outline-variant/40 border-s-4 border-s-primary bg-secondary-container/20 font-semibold text-on-surface shadow-sm hover:bg-secondary-container/30"
+                  : "hover:bg-surface-container-high"
+              }`}
+            >
+              <span
+                className="material-symbols-outlined text-[20px]"
+                aria-hidden="true"
+                style={
+                  isHelpCenterActive
+                    ? { fontVariationSettings: "'FILL' 1" }
+                    : undefined
+                }
               >
-                <span className="material-symbols-outlined">help</span>
-                <span className="text-body-sm">{t("shell.helpCenter")}</span>
-              </button>
-            ) : null}
+                help
+              </span>
+              <span className="text-body-sm font-medium md:hidden xl:inline">
+                {t("shell.helpCenter")}
+              </span>
+            </Link>
             <button
               onClick={() => void handleLogout()}
               disabled={loggingOut}
@@ -420,7 +433,9 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
               aria-label={loggingOut ? "Logging out…" : "Logout"}
               className={`w-full ${secondaryLinkClassName("error")}`}
             >
-              <span className="material-symbols-outlined">logout</span>
+              <span className="material-symbols-outlined" aria-hidden="true">
+                logout
+              </span>
               <span className="text-body-sm md:hidden xl:inline">
                 {loggingOut ? t("shell.loggingOut") : t("shell.logout")}
               </span>

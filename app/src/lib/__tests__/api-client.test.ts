@@ -218,6 +218,21 @@ describe("apiClient authentication", () => {
 });
 
 describe("apiClient request and response handling", () => {
+  it("preserves fetch aborts as AbortError instead of ApiError", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new TypeError("signal is aborted without reason"));
+
+    await expect(
+      apiClient("/dashboard/summary", { signal: controller.signal }),
+    ).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("signals a permission denial once without replaying the mutation", async () => {
     const listener = vi.fn();
     const unsubscribe = subscribePermissionDenied(listener);

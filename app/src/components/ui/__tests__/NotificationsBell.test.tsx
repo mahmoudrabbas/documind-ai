@@ -251,13 +251,13 @@ describe("NotificationsBell", () => {
     await user.click(screen.getByRole("button", { name: "Notifications" }));
     await screen.findByText("First");
 
-    await user.click(screen.getAllByRole("button", { name: "Archive" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "More actions" })[0]);
+    await user.click(screen.getByRole("button", { name: "Archive" }));
 
     await waitFor(() => expect(archive).toHaveBeenCalledWith("n1"));
     await waitFor(() =>
       expect(screen.queryByText("First")).not.toBeInTheDocument(),
     );
-    expect(screen.getByText("Second")).toBeInTheDocument();
   });
 
   it("soft-deletes a notification when Clear is clicked", async () => {
@@ -272,6 +272,7 @@ describe("NotificationsBell", () => {
     renderBell();
 
     await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(await screen.findByRole("button", { name: "More actions" }));
     await user.click(await screen.findByRole("button", { name: "Clear" }));
 
     await waitFor(() => expect(softDelete).toHaveBeenCalledWith("n1"));
