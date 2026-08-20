@@ -35,6 +35,7 @@ const state = vi.hoisted(() => {
       customRoleState: "none",
       roleVersion: null,
       can: (permission: PermissionValue) => permissionSet.has(permission),
+      refreshPermissions: vi.fn(),
     },
     tenantSettings: { status: "idle" },
   };
@@ -98,6 +99,8 @@ beforeEach(() => {
   state.permissions.baseRole = "COMPANY_ADMIN";
   state.auth.user.role = "COMPANY_ADMIN";
   state.tenantSettings = { status: "idle" };
+  state.permissions.status = "ready";
+  state.permissions.refreshPermissions.mockReset();
   grantOnly();
 });
 
@@ -230,6 +233,20 @@ describe("responsive navigation", () => {
     );
     expect(documentsLink).toHaveAttribute("title", "Documents");
     expect(documentsLink).toHaveAttribute("aria-label", "Documents");
+  });
+
+  it("shows a localized retry alert when permission loading fails", () => {
+    state.permissions.status = "error";
+    renderNav();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Unable to verify access",
+    );
+    const retry = within(screen.getByRole("alert")).getByRole("button", {
+      name: "Retry",
+    });
+    retry.click();
+    expect(state.permissions.refreshPermissions).toHaveBeenCalledTimes(1);
   });
 });
 

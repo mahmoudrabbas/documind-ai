@@ -1,4 +1,15 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   createIdentityKey,
   computeNextPermissionAction,
@@ -9,7 +20,243 @@ import {
   isTenantSelectable,
   combineSelectableWithActorGrants,
 } from "@/lib/permission-utils";
-import type { PermissionCatalogEntry } from "@/types/api/permissions.types";
+import {
+  Permission,
+  type CurrentPermissionsResponse,
+  type PermissionCatalogEntry,
+} from "@/types/api/permissions.types";
+
+const providerMocks = vi.hoisted(() => ({
+  auth: {
+    status: "authenticated",
+    user: { id: "user-1", role: "EMPLOYEE" },
+    tenant: { id: "tenant-1" },
+  },
+  getMyPermissions: vi.fn(),
+  deniedListeners: new Set<(error: import("@/lib/api-client").ApiError) => void>(),
+}));
+
+vi.mock("@/providers/auth-provider", () => ({
+  useAuth: () => providerMocks.auth,
+}));
+
+vi.mock("@/services/permissions.service", () => ({
+  getMyPermissions: providerMocks.getMyPermissions,
+}));
+
+vi.mock("@/lib/api-client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-client")>(
+    "@/lib/api-client",
+  );
+  return {
+    ...actual,
+    subscribePermissionDenied: vi.fn(
+      (listener: (error: import("@/lib/api-client").ApiError) => void) => {
+        providerMocks.deniedListeners.add(listener);
+        return () => providerMocks.deniedListeners.delete(listener);
+      },
+    ),
+  };
+});
+
+import { ApiError } from "@/lib/api-client";
+import {
+  PermissionProvider,
+  usePermissions,
+} from "@/providers/permission-provider";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function permissionResponse(
+  permissions: string[] = [Permission.KNOWLEDGE_GAPS_READ],
+): CurrentPermissionsResponse {
+  return {
+    success: true,
+    data: {
+      permissions,
+      grants: Object.fromEntries(
+        permissions.map((permission) => [
+          permission,
+          { source: "base-role" as const, scope: null },
+        ]),
+      ),
+      baseRole: "EMPLOYEE",
+      customRoleId: null,
+      customRoleState: "none",
+      roleVersion: null,
+    },
+  };
+}
+
+function PermissionProbe() {
+  const permissions = usePermissions();
+  return (
+    <>
+      <output data-testid="permission-status">{permissions.status}</output>
+      {permissions.status === "error" ? (
+        <output data-testid="permission-error">
+          {permissions.error.message}
+        </output>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => void permissions.refreshPermissions()}
+      >
+        Retry permissions
+      </button>
+    </>
+  );
+}
+
+function renderPermissionProvider() {
+  return render(
+    <PermissionProvider>
+      <PermissionProbe />
+    </PermissionProvider>,
+  );
+}
+
+function emitPermissionDenied(): void {
+  const error = new ApiError({
+    status: 403,
+    code: "PERMISSION_REQUIRED",
+    message: "Permission required",
+  });
+  providerMocks.deniedListeners.forEach((listener) => listener(error));
+}
+
+beforeEach(() => {
+  providerMocks.auth.status = "authenticated";
+  providerMocks.auth.user.id = "user-1";
+  providerMocks.auth.user.role = "EMPLOYEE";
+  providerMocks.auth.tenant.id = "tenant-1";
+  providerMocks.getMyPermissions.mockReset();
+  providerMocks.deniedListeners.clear();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe("PermissionProvider request lifecycle", () => {
+  it("reuses the active request when rapid permission denials request a refresh", async () => {
+    vi.useFakeTimers();
+    const initial = deferred<CurrentPermissionsResponse>();
+    const competing = deferred<CurrentPermissionsResponse>();
+    providerMocks.getMyPermissions
+      .mockReturnValueOnce(initial.promise)
+      .mockReturnValueOnce(competing.promise);
+
+    renderPermissionProvider();
+    await act(async () => undefined);
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      emitPermissionDenied();
+      emitPermissionDenied();
+      emitPermissionDenied();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      initial.resolve(permissionResponse());
+      await initial.promise;
+    });
+
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("ready");
+  });
+
+  it("times out a stalled request and recovers through a fresh manual retry", async () => {
+    vi.useFakeTimers();
+    const stalled = deferred<CurrentPermissionsResponse>();
+    const retry = deferred<CurrentPermissionsResponse>();
+    providerMocks.getMyPermissions
+      .mockReturnValueOnce(stalled.promise)
+      .mockReturnValueOnce(retry.promise);
+
+    renderPermissionProvider();
+    await act(async () => undefined);
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("loading");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("error");
+    expect(screen.getByTestId("permission-error")).toHaveTextContent(
+      "Permissions check timed out",
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Retry permissions" }));
+      await Promise.resolve();
+    });
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      retry.resolve(permissionResponse());
+      await retry.promise;
+    });
+
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("ready");
+  });
+
+  it("ignores a stale response after unmount and lets the remounted provider settle", async () => {
+    const stale = deferred<CurrentPermissionsResponse>();
+    const current = deferred<CurrentPermissionsResponse>();
+    providerMocks.getMyPermissions
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(current.promise);
+
+    const firstMount = renderPermissionProvider();
+    await act(async () => undefined);
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(1);
+    firstMount.unmount();
+
+    renderPermissionProvider();
+    await act(async () => undefined);
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      stale.resolve(permissionResponse([]));
+      await stale.promise;
+    });
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("loading");
+
+    await act(async () => {
+      current.resolve(permissionResponse());
+      await current.promise;
+    });
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("ready");
+  });
+
+  it("turns a synchronous permission client failure into a retryable error", async () => {
+    providerMocks.getMyPermissions.mockImplementationOnce(() => {
+      throw new Error("Permission client failed");
+    });
+
+    renderPermissionProvider();
+    await act(async () => undefined);
+
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("error");
+    expect(screen.getByTestId("permission-error")).toHaveTextContent(
+      "Permission client failed",
+    );
+  });
+});
 
 const baseEntry: PermissionCatalogEntry = {
   id: "documents:read",

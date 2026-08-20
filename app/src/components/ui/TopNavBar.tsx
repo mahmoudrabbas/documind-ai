@@ -72,6 +72,8 @@ export function TopNavBar({
   // top bar stays a quiet utility bar with no global search or duplicate
   // section links.
   const isPlatform = appContext === "platform";
+  const isTenantCompanyAdmin =
+    appContext === "tenant" && role === "COMPANY_ADMIN";
   const candidateLinks =
     appContext === "platform"
       ? PLATFORM_TOPBAR_LINKS
@@ -114,7 +116,7 @@ export function TopNavBar({
         >
           <span className="material-symbols-outlined">menu</span>
         </button>
-        {!isPlatform ? (
+        {!isPlatform && !isTenantCompanyAdmin ? (
           <div className="relative hidden w-64 xl:block 2xl:w-96">
             <span className="material-symbols-outlined absolute start-3 top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
               search
@@ -127,7 +129,7 @@ export function TopNavBar({
           </div>
         ) : null}
 
-        {!isPlatform && topLinks.length > 0 ? (
+        {!isPlatform && !isTenantCompanyAdmin && topLinks.length > 0 ? (
           <nav className="hidden items-center gap-md lg:flex">
             {topLinks.map(({ label, labelKey, href }) => {
               const isActive = pathname === href;

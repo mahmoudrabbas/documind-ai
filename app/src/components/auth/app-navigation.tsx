@@ -249,18 +249,24 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
     permissions.status === "error" ||
     permissions.status === "maintenance"
   ) {
+    const permissionStatusTitle =
+      permissions.status === "denied"
+        ? t("permissions.deniedTitle")
+        : permissions.status === "maintenance"
+          ? t("permissions.maintenanceTitle")
+          : t("permissions.failedTitle");
     navContent = (
       <div
         role="alert"
         className="mx-md rounded-xl border border-error/20 bg-error-container p-4 text-on-error-container"
       >
-        <p className="text-body-sm">Navigation is unavailable right now.</p>
+        <p className="text-body-sm">{permissionStatusTitle}</p>
         <button
           type="button"
           onClick={() => void permissions.refreshPermissions()}
           className="mt-3 min-h-10 rounded-lg bg-error px-4 py-2 font-bold text-on-error"
         >
-          Retry
+          {t("common.retry")}
         </button>
       </div>
     );
