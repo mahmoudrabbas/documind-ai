@@ -57,7 +57,7 @@ export interface GapOccurrence {
   id: string;
   tenantId: string;
   gapId: string;
-  question: string;
+  question?: string;
   normalizedIntent?: string | null;
   outcome: GapCandidateOutcome;
   category?: string | null;

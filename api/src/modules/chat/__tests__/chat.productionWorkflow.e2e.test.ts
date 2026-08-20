@@ -3864,6 +3864,82 @@ test(
 );
 
 test(
+  "an EMPLOYEE without use_in_ai access receives an access-safe answer and no Knowledge Gap",
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await seedWorkflowState();
+    const employeeUpdate = await UserModel.updateOne(
+      { _id: fixture.actorId, tenantId: fixture.tenantId },
+      { $set: { role: "EMPLOYEE" } },
+    ).exec();
+    assert.equal(employeeUpdate.modifiedCount, 1);
+
+    const deniedEvidence = await seedAdditionalAuthorizedEvidence(fixture, {
+      fileName: "employee-readable-no-ai.pdf",
+      title: "Employee Restricted Launch Plan",
+      question: USE_IN_AI_DENIED_QUESTION,
+      text: `The restricted launch date is ${USE_IN_AI_DENIED_MARKER}.`,
+      sectionTitle: "Launch schedule",
+      pageNumber: 6,
+      policyActions: ["discover", "read"],
+      allowAiUse: false,
+    });
+    const requestId = "request-employee-use-in-ai-denied";
+    const service = await productionService(fixture, {
+      evidence: [deniedEvidence],
+    });
+
+    const response = await service.execute(
+      {
+        conversationId: fixture.conversationId,
+        message: USE_IN_AI_DENIED_QUESTION,
+      },
+      {
+        ...executionContext(fixture, requestId),
+        actorRole: "EMPLOYEE" as const,
+        actorEmail: "workflow-employee@example.test",
+      },
+    );
+    const graph = await loadSupervisorGraph(requestId);
+    const searchCall = graph.toolCalls.find(
+      (toolCall) => toolCall.toolName === "authorized_hybrid_search",
+    );
+
+    assert.ok(searchCall);
+    assert.equal(searchCall.output?.retrievalOutcome, "AUTHORIZATION_FILTERED");
+    assert.deepEqual(searchCall.output?.candidates, []);
+    assert.equal(
+      graph.toolCalls.some((toolCall) => toolCall.toolName === "evaluate_evidence"),
+      false,
+    );
+    assert.equal(
+      response.answer,
+      "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    assert.deepEqual(response.sources, []);
+    assertValuesAbsent({ response, graph }, [
+      deniedEvidence.chunkId,
+      deniedEvidence.documentId,
+      deniedEvidence.title,
+      deniedEvidence.text,
+      USE_IN_AI_DENIED_MARKER,
+    ]);
+    assert.equal(
+      await KnowledgeGapModel.countDocuments({ tenantId: fixture.tenantId }),
+      0,
+    );
+    assert.equal(
+      await NotificationOutboxModel.countDocuments({
+        tenantId: fixture.tenantId,
+        notificationType: "knowledge_gap_created",
+      }),
+      0,
+    );
+    assertPersistenceSafety(graph);
+  },
+);
+
+test(
   "a genuine authorized-corpus no-match still creates a durable Knowledge Gap",
   { timeout: 60_000 },
   async () => {

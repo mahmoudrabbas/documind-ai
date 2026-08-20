@@ -256,6 +256,69 @@ describe("PermissionProvider request lifecycle", () => {
       "Permission client failed",
     );
   });
+
+  it("cancels a pending denial refresh when the actor logs out", async () => {
+    vi.useFakeTimers();
+    providerMocks.getMyPermissions.mockResolvedValueOnce(permissionResponse());
+
+    const view = renderPermissionProvider();
+    await act(async () => undefined);
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("ready");
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      emitPermissionDenied();
+    });
+    providerMocks.auth.status = "unauthenticated";
+    view.rerender(
+      <PermissionProvider>
+        <PermissionProbe />
+      </PermissionProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("idle");
+  });
+
+  it("cancels the old denial refresh when the authenticated identity changes", async () => {
+    vi.useFakeTimers();
+    const switchedIdentity = deferred<CurrentPermissionsResponse>();
+    providerMocks.getMyPermissions
+      .mockResolvedValueOnce(permissionResponse())
+      .mockReturnValueOnce(switchedIdentity.promise);
+
+    const view = renderPermissionProvider();
+    await act(async () => undefined);
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("ready");
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      emitPermissionDenied();
+    });
+    providerMocks.auth.tenant.id = "tenant-2";
+    view.rerender(
+      <PermissionProvider>
+        <PermissionProbe />
+      </PermissionProvider>,
+    );
+    await act(async () => undefined);
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(providerMocks.getMyPermissions).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      switchedIdentity.resolve(permissionResponse());
+      await switchedIdentity.promise;
+    });
+    expect(screen.getByTestId("permission-status")).toHaveTextContent("ready");
+  });
 });
 
 const baseEntry: PermissionCatalogEntry = {

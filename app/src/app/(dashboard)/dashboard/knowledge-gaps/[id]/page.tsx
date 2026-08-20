@@ -406,7 +406,9 @@ export default function KnowledgeGapDetailPage({ params }: { params: Promise<{ i
               <div className="mt-3 space-y-2.5">
                 {occurrences.map((occ) => (
                   <div key={occ.id} className="rounded-2xl border border-outline-variant/30 bg-surface p-3 text-xs">
-                    <p className="font-semibold text-on-surface">&ldquo;{occ.question}&rdquo;</p>
+                    {occ.question ? (
+                      <p className="font-semibold text-on-surface">&ldquo;{occ.question}&rdquo;</p>
+                    ) : null}
                     <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-on-surface-variant">
                       <span className="rounded-md bg-surface-container px-2 py-0.5 font-medium">
                         {t("dashboard.gapDetail.outcomeLabel")}{" "}

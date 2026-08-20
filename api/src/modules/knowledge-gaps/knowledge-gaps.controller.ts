@@ -1,6 +1,16 @@
 import type { Request, Response, NextFunction } from "express";
 import { knowledgeGapsService } from "./knowledge-gaps.service.js";
 import type { ListGapsQueryInput } from "./knowledge-gaps.dto.js";
+import type { KnowledgeGapVisibility } from "./knowledge-gaps.repository.js";
+
+function readVisibility(req: Request): KnowledgeGapVisibility {
+  const scopes = req.permissionAuthorization?.scopes ?? null;
+  return {
+    actorId: req.auth?.userId,
+    assignedOnly: req.auth?.role === "EMPLOYEE",
+    scopes,
+  };
+}
 
 export async function reportGapCandidateController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -19,11 +29,7 @@ export async function listGapsController(req: Request, res: Response, next: Next
     const tenantId = req.tenantId!;
     const query = { ...(res.locals.validatedQuery || {}) };
 
-    if (req.auth?.role === "EMPLOYEE" && req.auth.userId) {
-      query.assigneeId = req.auth.userId;
-    }
-
-    const result = await knowledgeGapsService.listGaps(tenantId, query as ListGapsQueryInput);
+    const result = await knowledgeGapsService.listGaps(tenantId, query as ListGapsQueryInput, readVisibility(req));
     res.json(result);
   } catch (error) {
     next(error);
@@ -34,13 +40,7 @@ export async function getGapByIdController(req: Request, res: Response, next: Ne
   try {
     const tenantId = req.tenantId!;
     const gapId = req.params.id as string;
-    const gap = await knowledgeGapsService.getGapById(tenantId, gapId);
-
-    if (req.auth?.role === "EMPLOYEE" && String(gap.assigneeId || "") !== req.auth.userId) {
-      res.status(403).json({ error: "Access denied. This knowledge gap is not assigned to you." });
-      return;
-    }
-
+    const gap = await knowledgeGapsService.getGapById(tenantId, gapId, readVisibility(req));
     res.json({ gap });
   } catch (error) {
     next(error);
@@ -158,7 +158,7 @@ export async function getOccurrencesController(req: Request, res: Response, next
     const page = req.query.page ? Number(req.query.page) : 1;
     const pageSize = req.query.pageSize ? Number(req.query.pageSize) : 20;
 
-    const result = await knowledgeGapsService.getOccurrences(tenantId, gapId, page, pageSize);
+    const result = await knowledgeGapsService.getOccurrences(tenantId, gapId, page, pageSize, readVisibility(req));
     res.json(result);
   } catch (error) {
     next(error);
@@ -170,7 +170,7 @@ export async function getReevaluationsController(req: Request, res: Response, ne
     const tenantId = req.tenantId!;
     const gapId = req.params.id as string;
 
-    const reevaluations = await knowledgeGapsService.getReevaluations(tenantId, gapId);
+    const reevaluations = await knowledgeGapsService.getReevaluations(tenantId, gapId, readVisibility(req));
     res.json({ reevaluations });
   } catch (error) {
     next(error);
@@ -180,7 +180,7 @@ export async function getReevaluationsController(req: Request, res: Response, ne
 export async function getMetricsController(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantId = req.tenantId!;
-    const metrics = await knowledgeGapsService.getMetrics(tenantId);
+    const metrics = await knowledgeGapsService.getMetrics(tenantId, readVisibility(req));
     res.json({ metrics });
   } catch (error) {
     next(error);

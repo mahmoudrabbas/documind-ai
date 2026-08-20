@@ -86,6 +86,12 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     activeRequestRef.current = null;
   }, []);
 
+  const clearDenialRefreshTimer = useCallback(() => {
+    if (!denialRefreshTimerRef.current) return;
+    clearTimeout(denialRefreshTimerRef.current);
+    denialRefreshTimerRef.current = null;
+  }, []);
+
   const refreshPermissions = useCallback(async () => {
     if (!canRefreshPermissions(authStatus) || !authIdentityKey) return;
 
@@ -166,12 +172,13 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     return () => {
       mountedRef.current = false;
       invalidateActiveRequest();
-      if (denialRefreshTimerRef.current) {
-        clearTimeout(denialRefreshTimerRef.current);
-        denialRefreshTimerRef.current = null;
-      }
+      clearDenialRefreshTimer();
     };
-  }, [invalidateActiveRequest]);
+  }, [clearDenialRefreshTimer, invalidateActiveRequest]);
+
+  useEffect(() => {
+    clearDenialRefreshTimer();
+  }, [authIdentityKey, authStatus, clearDenialRefreshTimer]);
 
   useEffect(() => {
     const action = computeNextPermissionAction(

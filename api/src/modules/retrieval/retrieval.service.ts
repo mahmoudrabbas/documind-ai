@@ -475,6 +475,7 @@ const AUTHORIZED_ID_SEARCH_CONCURRENCY = 4;
 
 function partitionSearchFilter(filter: AdapterFilter): AdapterFilter[] {
   const ids = filter.documentIds;
+  if (ids !== undefined && ids.length === 0) return [];
   if (!ids || ids.length <= AUTHORIZED_ID_SEARCH_BATCH_SIZE) return [filter];
   const batches: AdapterFilter[] = [];
   for (let index = 0; index < ids.length; index += AUTHORIZED_ID_SEARCH_BATCH_SIZE) {
@@ -682,12 +683,24 @@ function mergeVariantResults(
 
 function hasAuthorizationScope(filter: AdapterFilter, context: AccessContext): boolean {
   return Boolean(
+    context.authorizedDocumentIds !== undefined ||
     filter.classification ||
     filter.department ||
     filter.category ||
     context.permissionScopes?.selfOnly,
   );
 }
+
+function hasUnsupportedProbeNarrowing(query: RetrievalQuery): boolean {
+  const filter = query.filter;
+  return Boolean(
+    filter?.dateFrom ||
+    filter?.dateTo ||
+    (filter?.versionIds !== undefined && filter.versionIds.length > 0),
+  );
+}
+
+type ScopeProbeResult = "FOUND" | "NOT_FOUND" | "UNAVAILABLE";
 
 async function scopeProbeFoundTenantCandidate(
   deps: RetrievalServiceDeps,
@@ -697,15 +710,22 @@ async function scopeProbeFoundTenantCandidate(
   vectors: number[][],
   keywordTexts: string[],
   scopedCandidateIds: ReadonlySet<string>,
-): Promise<boolean> {
-  if (!hasAuthorizationScope(mergedFilter, context)) return false;
+): Promise<ScopeProbeResult> {
+  if (!hasAuthorizationScope(mergedFilter, context)) return "NOT_FOUND";
 
+  // AdapterFilter has no deployed representation for document date ranges or
+  // multi-value version IDs. Dropping those caller constraints would let an
+  // unrelated tenant result create a false authorization diagnosis, so the
+  // probe fails closed until those fields are supported end to end.
+  if (hasUnsupportedProbeNarrowing(query)) return "UNAVAILABLE";
+
+  // Preserve caller-requested narrowing while removing only mandatory
+  // authorization scope. In canonical allowlist mode, `mergedFilter` carries
+  // the authorized document IDs and must never be reused for this probe.
+  const explicitQueryFilter = deps.filterCompiler.compileQueryFilters(query.filter);
   const probeFilter: AdapterFilter = {
     tenantId: context.tenantId,
-    ...(mergedFilter.documentIds ? { documentIds: mergedFilter.documentIds } : {}),
-    ...(mergedFilter.documentVersionId
-      ? { documentVersionId: mergedFilter.documentVersionId }
-      : {}),
+    ...explicitQueryFilter,
   };
   const [vectorProbe, keywordProbe] = await Promise.allSettled([
     Promise.all(vectors.map((vector) => deps.vectorAdapter.search({
@@ -719,6 +739,8 @@ async function scopeProbeFoundTenantCandidate(
       filter: probeFilter,
     }))),
   ]);
+  const probeUnavailable =
+    vectorProbe.status === "rejected" || keywordProbe.status === "rejected";
   const probeIds = new Set<string>();
   if (vectorProbe.status === "fulfilled") {
     for (const result of vectorProbe.value) {
@@ -731,23 +753,34 @@ async function scopeProbeFoundTenantCandidate(
     }
   }
   const newlyVisibleIds = [...probeIds].filter((id) => !scopedCandidateIds.has(id));
-  if (newlyVisibleIds.length === 0) return false;
+  if (newlyVisibleIds.length === 0) {
+    return probeUnavailable ? "UNAVAILABLE" : "NOT_FOUND";
+  }
 
   // Tenant-scoped hydration prevents cross-tenant adapter hits from affecting
   // authorization provenance. No chunk text or document metadata leaves this
   // internal probe.
   const chunks = await deps.repository.findChunksByIds(context.tenantId, newlyVisibleIds);
-  if (chunks.length === 0) return false;
-  const documentIds = [...new Set(chunks.map((chunk) => chunk.documentId.toString()))];
+  if (chunks.length === 0) return probeUnavailable ? "UNAVAILABLE" : "NOT_FOUND";
+  const hiddenChunks = chunks.filter((chunk) => {
+    if (context.authorizedDocumentIds === undefined) return true;
+    return !context.authorizedDocumentIds.includes(chunk.documentId.toString());
+  });
+  if (hiddenChunks.length === 0) return probeUnavailable ? "UNAVAILABLE" : "NOT_FOUND";
+  const documentIds = [...new Set(hiddenChunks.map((chunk) => chunk.documentId.toString()))];
   if (deps.findActiveDocumentIds) {
-    return (await deps.findActiveDocumentIds(context.tenantId, documentIds)).length > 0;
+    const active = await deps.findActiveDocumentIds(context.tenantId, documentIds);
+    if (active.length > 0) return "FOUND";
+    return probeUnavailable ? "UNAVAILABLE" : "NOT_FOUND";
   }
   if (DocumentModel.db?.readyState === 1) {
-    return Boolean(await DocumentModel.exists(
+    const active = await DocumentModel.exists(
       buildRetrievableDocumentFilter(context.tenantId, documentIds),
-    ));
+    );
+    if (active) return "FOUND";
+    return probeUnavailable ? "UNAVAILABLE" : "NOT_FOUND";
   }
-  return true;
+  return "FOUND";
 }
 
 // ---------------------------------------------------------------------------
@@ -861,6 +894,9 @@ export function createRetrievalService(
       const keywordTexts = selectLexicalTexts(query);
       const vectors = await resolveQueryEmbeddings(deps, query, semanticTexts);
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
+      if (merged.documentIds?.length === 0) {
+        return deniedCorpusResult(query, authorizationContext, traceId, "NO_AUTHORIZED_DOCUMENTS");
+      }
 
       // Run vector + keyword searches (one per query variant, fanned out over
       // authorized-ID batches of at most 500 with bounded concurrency) with
@@ -970,10 +1006,16 @@ export function createRetrievalService(
       );
       authorizationFiltered ||= finalAuthorization.authorizationFiltered;
       const hydrated = finalAuthorization.candidates;
+      let authorizationProbeUnavailable = false;
 
-      if (hydrated.length === 0 && !authorizationFiltered) {
+      // Scoped searches need provenance even when authorized candidates
+      // survive, because a hidden tenant match can explain a weak answer.
+      const shouldProbeAuthorizationScope =
+        !authorizationFiltered &&
+        hasAuthorizationScope(merged, authorizationContext);
+      if (shouldProbeAuthorizationScope) {
         try {
-          authorizationFiltered = await scopeProbeFoundTenantCandidate(
+          const probeResult = await scopeProbeFoundTenantCandidate(
             deps,
             query,
             authorizationContext,
@@ -982,7 +1024,10 @@ export function createRetrievalService(
             keywordTexts,
             scopedCandidateIds,
           );
+          if (probeResult === "FOUND") authorizationFiltered = true;
+          if (probeResult === "UNAVAILABLE") authorizationProbeUnavailable = true;
         } catch (error) {
+          authorizationProbeUnavailable = true;
           logger.warn({ traceId, error }, "Authorization-scope provenance probe failed");
         }
       }
@@ -990,22 +1035,41 @@ export function createRetrievalService(
       const totalLatencyMs = Date.now() - totalStartTime;
       const filterSummary = buildFilterSummary(authorizationContext, query.filter);
       const evidenceBundle = await buildEvidenceBundle(deps, hydrated, query.queryText, traceId);
+      if (
+        authorizationProbeUnavailable &&
+        (
+          hydrated.length === 0 ||
+          (evidenceBundle !== undefined &&
+            evidenceBundle.sufficiency.level !== "SUFFICIENT")
+        )
+      ) {
+        throw new AppError(
+          503,
+          "RETRIEVAL_UNAVAILABLE",
+          "Authorization provenance probe unavailable",
+        );
+      }
       const evidenceCounts = countEvidenceApprovals(evidenceBundle);
-      const zeroCandidateReason =
-        rawVectorCandidateCount + rawKeywordCandidateCount === 0
-          ? "NO_RAW_SEARCH_RESULTS"
-          : vectorResults.length + keywordResults.length === 0
-            ? "NO_AUTHORIZED_CANDIDATES"
-            : fused.length === 0
-              ? "NO_FUSED_CANDIDATES"
-              : hydrated.length === 0
-                ? "NO_HYDRATED_CANDIDATES"
-                : undefined;
-      const retrievalOutcome = resolveRetrievalOutcome({
-        hydratedCount: hydrated.length,
-        rawCandidateCount: rawVectorCandidateCount + rawKeywordCandidateCount,
-        postAuthorizationCandidateCount: vectorResults.length + keywordResults.length,
-      });
+      let zeroCandidateReason: string | undefined;
+      if (authorizationFiltered && hydrated.length === 0) {
+        zeroCandidateReason = "NO_AUTHORIZED_DOCUMENTS";
+      } else if (rawVectorCandidateCount + rawKeywordCandidateCount === 0) {
+        zeroCandidateReason = "NO_RAW_SEARCH_RESULTS";
+      } else if (vectorResults.length + keywordResults.length === 0) {
+        zeroCandidateReason = "NO_AUTHORIZED_CANDIDATES";
+      } else if (fused.length === 0) {
+        zeroCandidateReason = "NO_FUSED_CANDIDATES";
+      } else if (hydrated.length === 0) {
+        zeroCandidateReason = "NO_HYDRATED_CANDIDATES";
+      }
+      const retrievalOutcome =
+        authorizationFiltered && hydrated.length === 0
+          ? "NO_AUTHORIZED_DOCUMENTS"
+          : resolveRetrievalOutcome({
+              hydratedCount: hydrated.length,
+              rawCandidateCount: rawVectorCandidateCount + rawKeywordCandidateCount,
+              postAuthorizationCandidateCount: vectorResults.length + keywordResults.length,
+            });
       const diagnostics = buildDiagnostics({
         traceId,
         vectorLatencyMs: reportedVectorLatencyMs,
@@ -1019,7 +1083,7 @@ export function createRetrievalService(
         postAuthorizationVectorCandidateCount: vectorResults.length,
         postAuthorizationKeywordCandidateCount: keywordResults.length,
         authorizationFiltered,
-        authorizationRestricted: authorizationFiltered,
+        authorizationRestricted: authorizationFiltered && hydrated.length === 0,
         fusedCandidateCount: fused.length,
         hydratedCandidateCount: hydrated.length,
         evidenceItemCount: evidenceBundle?.items.length ?? 0,
@@ -1069,7 +1133,7 @@ export function createRetrievalService(
           evidenceSufficiency: evidenceBundle?.sufficiency.level,
           zeroCandidateReason,
           retrievalOutcome,
-          authorizationRestricted: authorizationFiltered,
+          authorizationRestricted: authorizationFiltered && hydrated.length === 0,
         },
         "Hybrid retrieval stage counts",
       );
@@ -1113,6 +1177,9 @@ export function createRetrievalService(
       }
       const vector = await resolveQueryEmbedding(deps, query);
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
+      if (merged.documentIds?.length === 0) {
+        return deniedCorpusResult(query, authorizationContext, traceId, "NO_AUTHORIZED_DOCUMENTS");
+      }
 
       // Run vector search only
       const vectorStartTime = Date.now();
@@ -1210,6 +1277,9 @@ export function createRetrievalService(
         );
       }
       const { mandatory, merged } = await compileFilters(deps, query, authorizationContext);
+      if (merged.documentIds?.length === 0) {
+        return deniedCorpusResult(query, authorizationContext, traceId, "NO_AUTHORIZED_DOCUMENTS");
+      }
 
       // Run keyword search only
       const keywordStartTime = Date.now();

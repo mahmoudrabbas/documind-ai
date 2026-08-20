@@ -30,6 +30,9 @@ app/public/pdfjs/
 # Agent working files
 .omo/
 **/.omo/
+.tmp-api-test/
+**/.tmp-api-test/
+
 
 # Validation & analysis artifacts
 *-validation-summary/

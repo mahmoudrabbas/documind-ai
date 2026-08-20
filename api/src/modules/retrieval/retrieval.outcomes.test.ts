@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { AppError } from "../../common/errors/AppError.js";
 import type { DocumentChunkDocument } from "../../db/models/documentChunk.model.js";
+import type { AdapterFilter } from "../../providers/embedding/adapterFilter.types.js";
 import type { KeywordAdapter } from "../../providers/embedding/keywordAdapter.js";
 import type { VectorStoreAdapter } from "../../providers/embedding/vectorStoreAdapter.js";
 import type { RerankerService } from "../reranker/reranker.service.js";
@@ -16,11 +17,17 @@ import type { DocumentRetrievalAuthorizationResult } from "../document-access/do
 const tenantA = "64a000000000000000000001";
 const omar = "64a000000000000000000003";
 const documentA = "64a000000000000000000005";
+const documentB = "64a000000000000000000006";
 const version = "64a000000000000000000007";
 
 function chunk(
   id: string,
-  opts: { documentId?: string; classification?: string } = {},
+  opts: {
+    documentId?: string;
+    classification?: string;
+    category?: string;
+    department?: string;
+  } = {},
 ): DocumentChunkDocument {
   return {
     _id: { toString: () => id },
@@ -29,6 +36,8 @@ function chunk(
     documentVersionId: { toString: () => version },
     text: "protected rag value",
     classification: opts.classification ?? "public",
+    category: opts.category,
+    department: opts.department,
     pageNumber: 1,
     sectionTitle: "Section",
   } as unknown as DocumentChunkDocument;
@@ -80,6 +89,7 @@ function context(actorId = omar, traceId?: string): AccessContext {
 
 interface HarnessOptions {
   raw: { chunkId: string; score: number }[];
+  rawForFilter?: (filter: AdapterFilter) => { chunkId: string; score: number }[];
   chunks: DocumentChunkDocument[];
   authorizedActors?: string[];
   activeDocumentIds?: string[];
@@ -100,18 +110,19 @@ function harness(options: HarnessOptions) {
   const searchFilters: unknown[][] = [];
   const vectorAdapter = {
     providerKey: "test-vector",
-    search: async (request: { filter?: unknown }) => {
+    search: async (request: { filter: AdapterFilter }) => {
       searchFilters.push([request.filter]);
-      return options.raw;
+      return options.rawForFilter?.(request.filter) ?? options.raw;
     },
   } as unknown as VectorStoreAdapter;
   const keywordAdapter = {
     providerKey: "test-keyword",
-    search: async (request: { filter?: unknown }) => {
+    search: async (request: { filter: AdapterFilter }) => {
       searchFilters.push([request.filter]);
-      return options.raw;
+      return options.rawForFilter?.(request.filter) ?? options.raw;
     },
-  } as unknown as KeywordAdapter;  const repository = {
+  } as unknown as KeywordAdapter;
+  const repository = {
     findChunksByIds: async (tenant: string, ids: string[]) =>
       options.chunks.filter(
         (item) =>
@@ -288,12 +299,286 @@ describe("retrieval diagnostics typed outcomes", () => {
     // grant must not be blocked by the base-role classification ceiling.
     assert.equal(result.diagnostics.retrievalOutcome, "AUTHORIZED_RESULTS");
     assert.ok(searchFilters.length > 0);
-    for (const [filter] of searchFilters) {
+    const primaryFilters = searchFilters.filter(
+      ([filter]) => (filter as AdapterFilter).documentIds !== undefined,
+    );
+    assert.ok(primaryFilters.length > 0);
+    for (const [filter] of primaryFilters) {
       assert.deepEqual((filter as { documentIds?: string[] }).documentIds, [documentA]);
       assert.equal((filter as { classification?: unknown }).classification, undefined);
       assert.equal((filter as { department?: unknown }).department, undefined);
       assert.equal((filter as { category?: unknown }).category, undefined);
     }
+  });
+
+  test("canonical allowlist zero-match is diagnosed from a tenant-scoped probe", async () => {
+    const { service, searchFilters } = harness({
+      raw: [],
+      rawForFilter: (filter) =>
+        filter.documentIds === undefined
+          ? [{ chunkId: "chunk-b", score: 0.95 }]
+          : [],
+      chunks: [
+        chunk("chunk-a", { documentId: documentA }),
+        chunk("chunk-b", { documentId: documentB }),
+      ],
+      activeDocumentIds: [documentA, documentB],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+
+    const result = await service.hybridSearch(
+      { queryText: "procurement approval threshold", topK: 5 },
+      context(),
+    );
+
+    assert.equal(result.totalCandidates, 0);
+    assert.equal(result.diagnostics.authorizationFiltered, true);
+    assert.equal(result.diagnostics.authorizationRestricted, true);
+    assert.equal(result.diagnostics.zeroCandidateReason, "NO_AUTHORIZED_DOCUMENTS");
+    assert.equal(result.diagnostics.retrievalOutcome, "NO_AUTHORIZED_DOCUMENTS");
+    assert.ok(
+      searchFilters.some(
+        ([filter]) => (filter as AdapterFilter).documentIds === undefined,
+      ),
+      "the provenance probe must remove the canonical allowlist",
+    );
+  });
+
+  test("authorization probe failure fails closed instead of creating a content gap", async () => {
+    const { service } = harness({
+      raw: [],
+      rawForFilter: (filter) => {
+        if (filter.documentIds === undefined) {
+          throw new Error("probe backend unavailable");
+        }
+        return [];
+      },
+      chunks: [
+        chunk("chunk-a", { documentId: documentA }),
+        chunk("chunk-b", { documentId: documentB }),
+      ],
+      activeDocumentIds: [documentA, documentB],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        service.hybridSearch(
+          { queryText: "procurement approval threshold", topK: 5 },
+          context(),
+        ),
+      (error: unknown) =>
+        error instanceof AppError && error.code === "RETRIEVAL_UNAVAILABLE",
+    );
+  });
+
+  test("canonical allowlist partial match is filtered but not terminally restricted", async () => {
+    const { service } = harness({
+      raw: [],
+      rawForFilter: (filter) => {
+        if (filter.documentIds === undefined) {
+          return [
+            { chunkId: "chunk-a", score: 0.7 },
+            { chunkId: "chunk-b", score: 0.95 },
+          ];
+        }
+        return filter.documentIds.includes(documentA)
+          ? [{ chunkId: "chunk-a", score: 0.7 }]
+          : [];
+      },
+      chunks: [
+        chunk("chunk-a", { documentId: documentA }),
+        chunk("chunk-b", { documentId: documentB }),
+      ],
+      activeDocumentIds: [documentA, documentB],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+
+    const result = await service.hybridSearch(
+      { queryText: "procurement approval threshold", topK: 5 },
+      context(),
+    );
+
+    assert.equal(result.totalCandidates, 1);
+    assert.equal(result.candidates[0]?.documentId, documentA);
+    assert.equal(result.diagnostics.authorizationFiltered, true);
+    assert.equal(result.diagnostics.authorizationRestricted, false);
+    assert.equal(result.diagnostics.zeroCandidateReason, undefined);
+    assert.equal(result.diagnostics.retrievalOutcome, "AUTHORIZED_RESULTS");
+  });
+
+  test("canonical probe preserves explicit metadata filters while removing only authorization scope", async () => {
+    const { service, searchFilters } = harness({
+      raw: [],
+      rawForFilter: (filter) =>
+        filter.documentIds === undefined &&
+        filter.category?.$in.includes("finance")
+          ? [{ chunkId: "chunk-b", score: 0.95 }]
+          : [],
+      chunks: [
+        chunk("chunk-a", { documentId: documentA, category: "security" }),
+        chunk("chunk-b", { documentId: documentB, category: "finance" }),
+      ],
+      activeDocumentIds: [documentA, documentB],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+
+    const result = await service.hybridSearch(
+      {
+        queryText: "procurement approval threshold",
+        topK: 5,
+        filter: { categories: ["finance"] },
+      },
+      context(),
+    );
+
+    assert.equal(result.diagnostics.retrievalOutcome, "NO_AUTHORIZED_DOCUMENTS");
+    assert.ok(
+      searchFilters.some(([filter]) => {
+        const probe = filter as AdapterFilter;
+        return (
+          probe.documentIds === undefined &&
+          probe.category?.$in.includes("finance") === true
+        );
+      }),
+      "the probe must retain the caller's explicit category narrowing",
+    );
+  });
+
+  test("legacy scoped partial results run provenance probing before declaring content sufficient", async () => {
+    const { service } = harness({
+      raw: [],
+      rawForFilter: (filter) =>
+        filter.classification?.$in.includes("public")
+          ? [{ chunkId: "chunk-a", score: 0.7 }]
+          : [{ chunkId: "chunk-b", score: 0.95 }],
+      chunks: [
+        chunk("chunk-a", { documentId: documentA, classification: "public" }),
+        chunk("chunk-b", { documentId: documentB, classification: "confidential" }),
+      ],
+      activeDocumentIds: [documentA, documentB],
+    });
+
+    const result = await service.hybridSearch(
+      { queryText: "procurement approval threshold", topK: 5 },
+      context(),
+    );
+
+    assert.equal(result.totalCandidates, 1);
+    assert.equal(result.candidates[0]?.documentId, documentA);
+    assert.equal(result.diagnostics.authorizationFiltered, true);
+    assert.equal(result.diagnostics.authorizationRestricted, false);
+    assert.equal(result.diagnostics.retrievalOutcome, "AUTHORIZED_RESULTS");
+  });
+
+  test("unsupported date/version narrowing fails closed instead of misclassifying another version as restricted", async () => {
+    const { service, searchFilters } = harness({
+      raw: [],
+      chunks: [
+        chunk("chunk-a", { documentId: documentA }),
+        chunk("chunk-b", { documentId: documentB }),
+      ],
+      activeDocumentIds: [documentA, documentB],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        service.hybridSearch(
+          {
+            queryText: "procurement approval threshold",
+            topK: 5,
+            filter: {
+              dateFrom: "2025-01-01",
+              versionIds: [version],
+            },
+          },
+          context(),
+        ),
+      (error: unknown) =>
+        error instanceof AppError && error.code === "RETRIEVAL_UNAVAILABLE",
+    );
+    assert.equal(
+      searchFilters.some(
+        ([filter]) => (filter as AdapterFilter).documentIds === undefined,
+      ),
+      false,
+      "unsupported narrowing must never be dropped from an authorization probe",
+    );
+  });
+
+  test("empty authorized document intersection never reaches a search adapter", async () => {
+    const { service, searchFilters } = harness({
+      raw: [],
+      rawForFilter: (filter) => {
+        if (filter.documentIds?.length === 0) {
+          return [{ chunkId: "chunk-b", score: 0.95 }];
+        }
+        return filter.documentIds?.includes(documentB)
+          ? [{ chunkId: "chunk-b", score: 0.95 }]
+          : [];
+      },
+      chunks: [chunk("chunk-b", { documentId: documentB })],
+      activeDocumentIds: [documentB],
+      corpusAuthorization: {
+        mode: "constrained",
+        allowedDocumentIds: [documentA],
+      },
+    });
+
+    const result = await service.hybridSearch(
+      {
+        queryText: "procurement approval threshold",
+        topK: 5,
+        filter: { documentIds: [documentB] },
+      },
+      context(),
+    );
+    await service.vectorSearch(
+      {
+        queryText: "procurement approval threshold",
+        topK: 5,
+        filter: { documentIds: [documentB] },
+      },
+      context(),
+    );
+    await service.keywordSearch(
+      {
+        queryText: "procurement approval threshold",
+        topK: 5,
+        filter: { documentIds: [documentB] },
+      },
+      context(),
+    );
+
+    assert.equal(result.diagnostics.retrievalOutcome, "NO_AUTHORIZED_DOCUMENTS");
+    assert.equal(
+      searchFilters.some(
+        ([filter]) => (filter as AdapterFilter).documentIds?.length === 0,
+      ),
+      false,
+      "an empty allowlist intersection must fail closed before adapter search",
+    );
+    assert.equal(
+      searchFilters.length,
+      0,
+      "a provably empty authorized intersection must deny before any probe",
+    );
   });
 
   test("user-requested document filters only narrow the authorized corpus", async () => {

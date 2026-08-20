@@ -14,6 +14,7 @@ import {
   getAccessToken,
   setAccessToken,
 } from "../auth-tokens";
+import { getMyPermissions } from "@/services/permissions.service";
 
 const localStorageMock = {
   getItem: vi.fn(),
@@ -218,6 +219,24 @@ describe("apiClient authentication", () => {
 });
 
 describe("apiClient request and response handling", () => {
+  it("loads identity-sensitive permission state with the browser cache disabled", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, {
+      success: true,
+      data: {
+        permissions: [],
+        grants: {},
+        baseRole: "EMPLOYEE",
+        customRoleId: null,
+        customRoleState: "none",
+        roleVersion: null,
+      },
+    }));
+
+    await getMyPermissions();
+
+    expect(vi.mocked(fetch).mock.calls[0][1]?.cache).toBe("no-store");
+  });
+
   it("signals a permission denial once without replaying the mutation", async () => {
     const listener = vi.fn();
     const unsubscribe = subscribePermissionDenied(listener);

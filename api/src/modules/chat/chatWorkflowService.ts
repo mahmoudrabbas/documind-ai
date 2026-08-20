@@ -123,7 +123,7 @@ const FALLBACK_OUT_OF_DOMAIN_AR =
  */
 function fallbackReplyFor(
   reasonCode: ComplianceReasonCodeValue,
-  authorizationRestricted: boolean,
+  authorizationConstrained: boolean,
   language: QueryLanguageValue,
 ): string | null {
   const ar = isArabicContext(language);
@@ -134,7 +134,7 @@ function fallbackReplyFor(
     reasonCode === "INSUFFICIENT_EVIDENCE" ||
     reasonCode === "UNVERIFIED_GROUNDED_RESPONSE"
   ) {
-    if (authorizationRestricted) {
+    if (authorizationConstrained) {
       return ar
         ? FALLBACK_AUTHORIZATION_RESTRICTED_AR
         : FALLBACK_AUTHORIZATION_RESTRICTED;
@@ -1798,12 +1798,14 @@ export class ChatWorkflowService {
       return failClosed("Runtime output does not equal this run's Compliance authority");
     }
     // Select the exact user-facing fallback for refusal terminals. The
-    // authorizationRestricted artifact distinguishes a permission restriction
-    // from a genuine knowledge gap; only the displayed answer is replaced, so
-    // the Knowledge Gap logging decision (reasonCode + artifact) is unchanged.
+    // Either authorization artifact distinguishes an access-constrained turn
+    // from a genuine knowledge gap. `authorizationFiltered` matters when the
+    // actor can use some documents but the relevant corpus was narrowed by
+    // document/role policy. Only the displayed answer is replaced, so the
+    // Knowledge Gap logging decision remains driven by trusted artifacts.
     const fallback = fallbackReplyFor(
       terminal.reasonCode,
-      artifacts.authorizationRestricted,
+      artifacts.authorizationRestricted || artifacts.authorizationFiltered,
       artifacts.intent?.language ?? "en",
     );
     const resolvedTerminal = fallback

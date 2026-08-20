@@ -24,6 +24,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { AppError } from "../../common/errors/AppError.js";
 import type { DocumentChunkDocument } from "../../db/models/documentChunk.model.js";
+import type { AdapterFilter } from "../../providers/embedding/adapterFilter.types.js";
 import type { KeywordAdapter } from "../../providers/embedding/keywordAdapter.js";
 import type { VectorStoreAdapter } from "../../providers/embedding/vectorStoreAdapter.js";
 import type { DocumentRetrievalAuthorizationResult } from "../document-access/documentAccess.retrievalAuthorization.js";
@@ -162,6 +163,10 @@ interface HarnessOptions {
   readonly tenantId?: string;
   /** Simulates a fail-closed deny-all corpus with a typed denial reason. */
   readonly corpusDenial?: DocumentRetrievalAuthorizationResult["denialReason"];
+  /** Simulates the canonical constrained allowlist used by production retrieval. */
+  readonly canonicalAllowedDocumentIds?: readonly string[];
+  /** Documents the search backends would match before authorization filtering. */
+  readonly matchingDocumentIds?: readonly string[];
   /** Sufficiency the reranker reports for whatever survives authorization. */
   readonly sufficiency?: EvidenceBundle["sufficiency"]["level"];
 }
@@ -176,11 +181,20 @@ function harness(options: HarnessOptions) {
   const byChunkId = new Map(options.corpus.map((doc) => [doc.chunkId, doc]));
   const byDocumentId = new Map(options.corpus.map((doc) => [doc.documentId, doc]));
   const raw = options.corpus.map((doc) => ({ chunkId: doc.chunkId, score: 0.9 }));
+  const matchingDocumentIds = new Set(
+    options.matchingDocumentIds ?? options.corpus.map((doc) => doc.documentId),
+  );
 
   const isAuthorized = (documentId: string): boolean =>
     byDocumentId.get(documentId)?.authorizedActors.includes(actorId) ?? false;
 
-  const search = async () => raw;
+  const search = async (request: { filter?: AdapterFilter }) =>
+    raw.filter((candidate) => {
+      const fixture = byChunkId.get(candidate.chunkId);
+      if (!fixture || !matchingDocumentIds.has(fixture.documentId)) return false;
+      const documentIds = request.filter?.documentIds;
+      return documentIds === undefined || documentIds.includes(fixture.documentId);
+    });
   const vectorAdapter = {
     providerKey: "test-vector",
     search,
@@ -219,7 +233,7 @@ function harness(options: HarnessOptions) {
     }),
     findActiveDocumentIds: async (_tenantId: string, ids: string[]) =>
       ids.filter((id) => byDocumentId.has(id)),
-    ...(options.corpusDenial
+    ...(options.corpusDenial || options.canonicalAllowedDocumentIds
       ? {
           resolveRetrievalAuthorization:
             async (): Promise<DocumentRetrievalAuthorizationResult> => ({
@@ -229,10 +243,12 @@ function harness(options: HarnessOptions) {
                 tenantId,
                 actorId,
                 action: "use_in_ai" as const,
-                mode: "deny_all" as const,
+                mode: options.corpusDenial ? "deny_all" : "constrained",
                 failClosed: true as const,
                 requiresCurrentPolicyRevalidation: true as const,
-                allowedDocumentIds: [],
+                allowedDocumentIds: options.corpusDenial
+                  ? []
+                  : [...(options.canonicalAllowedDocumentIds ?? [])],
                 deniedDocumentIds: [],
                 allowedOwnerIds: [],
                 allowedCategoryIds: [],
@@ -240,8 +256,10 @@ function harness(options: HarnessOptions) {
                 allowedClassifications: [],
                 policyVersions: [],
               },
-              denialReason: options.corpusDenial,
-              resolvedDocumentCount: 0,
+              ...(options.corpusDenial
+                ? { denialReason: options.corpusDenial }
+                : {}),
+              resolvedDocumentCount: options.corpus.length,
             }),
         }
       : {}),
@@ -427,6 +445,21 @@ describe("knowledge gap × authorization (KG-1 … KG-10)", () => {
 
     assert.equal(result.search.retrievalOutcome, "AUTHORIZATION_FILTERED");
     assert.equal(result.search.authorizationRestricted, true);
+    assert.equal(result.outcome, "authorization_restricted");
+    assert.equal(result.knowledgeGapReported, false);
+    assertNoRestrictedLeak(result.search);
+  });
+
+  test("KG-2b: canonical allowlist miss reports restriction instead of a knowledge gap", async () => {
+    const result = await runTurn({
+      corpus: [SECURITY, PROCUREMENT],
+      canonicalAllowedDocumentIds: [securityDoc],
+      matchingDocumentIds: [procurementDoc],
+    });
+
+    assert.equal(result.search.candidates.length, 0);
+    assert.equal(result.search.authorizationRestricted, true);
+    assert.equal(result.search.authorizationFiltered, true);
     assert.equal(result.outcome, "authorization_restricted");
     assert.equal(result.knowledgeGapReported, false);
     assertNoRestrictedLeak(result.search);
