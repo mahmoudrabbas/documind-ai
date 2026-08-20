@@ -20,7 +20,6 @@ import {
   canPermission,
   createIdentityKey,
   computeNextPermissionAction,
-  shouldApplyResponse,
   canRefreshPermissions,
 } from "@/lib/permission-utils";
 import type {
@@ -54,27 +53,76 @@ type PermissionContextValue = PermissionState & {
 
 const PermissionContext = createContext<PermissionContextValue | null>(null);
 
+const PERMISSION_REQUEST_TIMEOUT_MS = 8_000;
+const PERMISSION_DENIED_REFRESH_DEBOUNCE_MS = 150;
+
+type ActivePermissionRequest = {
+  identityKey: string;
+  token: symbol;
+  promise: Promise<void>;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
 export function PermissionProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const [state, setState] = useState<PermissionState>({ status: "loading" });
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
   const lastIdentityRef = useRef<string | null>(null);
-  const reqGenRef = useRef(0);
-  const denialRefreshInFlightRef = useRef(false);
+  const readyIdentityRef = useRef<string | null>(null);
+  const activeRequestRef = useRef<ActivePermissionRequest | null>(null);
+  const denialRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const authStatus = auth.status;
   const authIdentityKey = auth.status === "authenticated"
     ? createIdentityKey(auth.tenant.id, auth.user.id)
     : null;
 
-  const refreshPermissions = useCallback(async () => {
-    if (!canRefreshPermissions(authStatus)) return;
+  const invalidateActiveRequest = useCallback(() => {
+    const activeRequest = activeRequestRef.current;
+    if (!activeRequest) return;
+    clearTimeout(activeRequest.timeoutId);
+    activeRequestRef.current = null;
+  }, []);
 
-    const gen = ++reqGenRef.current;
+  const clearDenialRefreshTimer = useCallback(() => {
+    if (!denialRefreshTimerRef.current) return;
+    clearTimeout(denialRefreshTimerRef.current);
+    denialRefreshTimerRef.current = null;
+  }, []);
+
+  const refreshPermissions = useCallback(async () => {
+    if (!canRefreshPermissions(authStatus) || !authIdentityKey) return;
+
+    const activeRequest = activeRequestRef.current;
+    if (activeRequest?.identityKey === authIdentityKey) {
+      return activeRequest.promise;
+    }
+    if (activeRequest) invalidateActiveRequest();
+
+    const identityKey = authIdentityKey;
+    const token = Symbol(identityKey);
     setState({ status: "loading" });
-    try {
-      const response = await getMyPermissions();
-      if (shouldApplyResponse(reqGenRef.current, gen, mountedRef.current)) {
+    readyIdentityRef.current = null;
+
+    let timeoutId!: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error("Permissions check timed out"));
+      }, PERMISSION_REQUEST_TIMEOUT_MS);
+    });
+
+    const isCurrentRequest = () =>
+      mountedRef.current &&
+      activeRequestRef.current?.token === token &&
+      activeRequestRef.current.identityKey === identityKey;
+
+    const request = Promise.resolve().then(() => getMyPermissions());
+    const promise = Promise.race([request, timeout])
+      .then((response) => {
+        if (!isCurrentRequest()) return;
+        readyIdentityRef.current = identityKey;
         setState({
           status: "ready",
           permissions: new Set(response.data.permissions as PermissionValue[]),
@@ -84,9 +132,10 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
           customRoleState: response.data.customRoleState,
           roleVersion: response.data.roleVersion,
         });
-      }
-    } catch (error) {
-      if (shouldApplyResponse(reqGenRef.current, gen, mountedRef.current)) {
+      })
+      .catch((error: unknown) => {
+        if (!isCurrentRequest()) return;
+        readyIdentityRef.current = null;
         if (error instanceof ApiError && error.code === "MAINTENANCE_MODE") {
           setState({ status: "maintenance", error });
         } else {
@@ -102,13 +151,36 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
                 },
           );
         }
-      }
-    }
-  }, [authStatus]);
+      })
+      .finally(() => {
+        if (activeRequestRef.current?.token !== token) return;
+        clearTimeout(timeoutId);
+        activeRequestRef.current = null;
+      });
+
+    activeRequestRef.current = {
+      identityKey,
+      token,
+      promise,
+      timeoutId,
+    };
+    return promise;
+  }, [authIdentityKey, authStatus, invalidateActiveRequest]);
 
   useEffect(() => {
     mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      invalidateActiveRequest();
+      clearDenialRefreshTimer();
+    };
+  }, [clearDenialRefreshTimer, invalidateActiveRequest]);
 
+  useEffect(() => {
+    clearDenialRefreshTimer();
+  }, [authIdentityKey, authStatus, clearDenialRefreshTimer]);
+
+  useEffect(() => {
     const action = computeNextPermissionAction(
       authStatus,
       authIdentityKey,
@@ -116,42 +188,58 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     );
 
     if (action.kind === "set_loading") {
-      ++reqGenRef.current;
+      invalidateActiveRequest();
       lastIdentityRef.current = null;
+      readyIdentityRef.current = null;
       setState({ status: "loading" });
-      return () => { mountedRef.current = false; };
+      return;
     }
 
     if (action.kind === "set_idle") {
-      ++reqGenRef.current;
+      invalidateActiveRequest();
       setState({ status: "idle" });
       lastIdentityRef.current = null;
-      return () => { mountedRef.current = false; };
+      readyIdentityRef.current = null;
+      return;
     }
 
     if (action.kind === "load_permissions") {
+      invalidateActiveRequest();
       lastIdentityRef.current = action.identityKey;
-      ++reqGenRef.current;
+      readyIdentityRef.current = null;
       setState({ status: "loading" });
       void refreshPermissions();
+      return;
     }
 
-    return () => { mountedRef.current = false; };
-  }, [authStatus, authIdentityKey, refreshPermissions]);
+    if (
+      authStatus === "authenticated" &&
+      authIdentityKey &&
+      state.status === "loading" &&
+      readyIdentityRef.current !== authIdentityKey &&
+      activeRequestRef.current?.identityKey !== authIdentityKey
+    ) {
+      void refreshPermissions();
+    }
+  }, [
+    authStatus,
+    authIdentityKey,
+    invalidateActiveRequest,
+    refreshPermissions,
+    state.status,
+  ]);
 
   useEffect(
     () =>
       subscribePermissionDenied(() => {
-        if (
-          authStatus !== "authenticated" ||
-          denialRefreshInFlightRef.current
-        ) {
-          return;
+        if (authStatus !== "authenticated") return;
+        if (denialRefreshTimerRef.current) {
+          clearTimeout(denialRefreshTimerRef.current);
         }
-        denialRefreshInFlightRef.current = true;
-        void refreshPermissions().finally(() => {
-          denialRefreshInFlightRef.current = false;
-        });
+        denialRefreshTimerRef.current = setTimeout(() => {
+          denialRefreshTimerRef.current = null;
+          void refreshPermissions();
+        }, PERMISSION_DENIED_REFRESH_DEBOUNCE_MS);
       }),
     [authStatus, refreshPermissions],
   );

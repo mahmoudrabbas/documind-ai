@@ -22,6 +22,13 @@ export interface GapAuditRecord {
   changes?: Record<string, unknown>;
 }
 
+export interface KnowledgeGapVisibilityMetadata {
+  reporterActorIds: mongoose.Types.ObjectId[];
+  departmentIds: mongoose.Types.ObjectId[];
+  documentCategories: string[];
+  documentClassifications: string[];
+}
+
 export interface KnowledgeGapDocument extends mongoose.Document {
   tenantId: mongoose.Types.ObjectId;
   status: GapStatus;
@@ -46,6 +53,7 @@ export interface KnowledgeGapDocument extends mongoose.Document {
   dismissalReason?: string | null;
   source: GapSource;
   sourceMetadata?: Record<string, unknown>;
+  visibilityMetadata: KnowledgeGapVisibilityMetadata;
   agentProposal?: AgentProposalSubdocument | null;
   auditHistory: GapAuditRecord[];
   createdAt: Date;
@@ -72,6 +80,22 @@ const gapAuditRecordSchema = new Schema<GapAuditRecord>(
     actorId: { type: Schema.Types.Mixed, required: true },
     timestamp: { type: Date, required: true, default: Date.now },
     changes: { type: Schema.Types.Mixed, default: {} },
+  },
+  { _id: false },
+);
+
+const knowledgeGapVisibilityMetadataSchema = new Schema<KnowledgeGapVisibilityMetadata>(
+  {
+    reporterActorIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
+    departmentIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: "Department" }],
+      default: [],
+    },
+    documentCategories: { type: [String], default: [] },
+    documentClassifications: { type: [String], default: [] },
   },
   { _id: false },
 );
@@ -190,6 +214,11 @@ const knowledgeGapSchema = new Schema<KnowledgeGapDocument>(
       type: Schema.Types.Mixed,
       default: {},
     },
+    visibilityMetadata: {
+      type: knowledgeGapVisibilityMetadataSchema,
+      default: () => ({}),
+      select: false,
+    },
     agentProposal: {
       type: agentProposalSchema,
       default: null,
@@ -207,6 +236,7 @@ const knowledgeGapSchema = new Schema<KnowledgeGapDocument>(
         record.id = record._id?.toString?.() ?? "";
         delete record._id;
         delete record.__v;
+        delete record.visibilityMetadata;
         return record;
       },
     },
@@ -217,6 +247,8 @@ knowledgeGapSchema.index({ tenantId: 1, status: 1, severity: 1 });
 knowledgeGapSchema.index({ tenantId: 1, clusterKey: 1 });
 knowledgeGapSchema.index({ tenantId: 1, topic: 1 });
 knowledgeGapSchema.index({ tenantId: 1, assigneeId: 1 });
+knowledgeGapSchema.index({ tenantId: 1, "visibilityMetadata.reporterActorIds": 1 });
+knowledgeGapSchema.index({ tenantId: 1, "visibilityMetadata.departmentIds": 1 });
 knowledgeGapSchema.index({ tenantId: 1, createdAt: -1 });
 
 const KnowledgeGapModel = mongoose.model<KnowledgeGapDocument>("KnowledgeGap", knowledgeGapSchema);

@@ -151,7 +151,7 @@ router.use(authenticate, tenantScoping);
  *       403:
  *         description: Insufficient permissions
  */
-router.get("/", requirePermission(Permission.KNOWLEDGE_GAPS_READ), validateListGapsQuery, listGapsController);
+router.get("/", requirePermission(Permission.KNOWLEDGE_GAPS_READ, { allowScoped: true }), validateListGapsQuery, listGapsController);
 /**
  * @openapi
  * /knowledge-gaps/metrics:
@@ -195,7 +195,7 @@ router.get("/", requirePermission(Permission.KNOWLEDGE_GAPS_READ), validateListG
  *       403:
  *         description: Insufficient permissions
  */
-router.get("/metrics", requirePermission(Permission.KNOWLEDGE_GAPS_READ), getMetricsController);
+router.get("/metrics", requirePermission(Permission.KNOWLEDGE_GAPS_READ, { allowScoped: true }), getMetricsController);
 /**
  * @openapi
  * /knowledge-gaps/candidates:
@@ -355,7 +355,7 @@ router.post("/candidates", requirePermission(Permission.KNOWLEDGE_GAPS_UPDATE), 
  *       404:
  *         description: Knowledge gap not found
  */
-router.get("/:id", requirePermission(Permission.KNOWLEDGE_GAPS_READ), getGapByIdController);
+router.get("/:id", requirePermission(Permission.KNOWLEDGE_GAPS_READ, { allowScoped: true }), getGapByIdController);
 /**
  * @openapi
  * /knowledge-gaps/{id}/assign:
@@ -911,7 +911,7 @@ router.post("/:id/reevaluate", requirePermission(Permission.KNOWLEDGE_GAPS_UPDAT
  *       404:
  *         description: Knowledge gap not found
  */
-router.get("/:id/occurrences", requirePermission(Permission.KNOWLEDGE_GAPS_READ), getOccurrencesController);
+router.get("/:id/occurrences", requirePermission(Permission.KNOWLEDGE_GAPS_READ, { allowScoped: true }), getOccurrencesController);
 /**
  * @openapi
  * /knowledge-gaps/{id}/reevaluations:
@@ -964,6 +964,6 @@ router.get("/:id/occurrences", requirePermission(Permission.KNOWLEDGE_GAPS_READ)
  *       404:
  *         description: Knowledge gap not found
  */
-router.get("/:id/reevaluations", requirePermission(Permission.KNOWLEDGE_GAPS_READ), getReevaluationsController);
+router.get("/:id/reevaluations", requirePermission(Permission.KNOWLEDGE_GAPS_READ, { allowScoped: true }), getReevaluationsController);
 
 export default router;

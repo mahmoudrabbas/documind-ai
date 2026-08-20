@@ -5,6 +5,11 @@ export type ThresholdOperator = "gt" | "gte" | "lt" | "lte";
 export interface NumericMention {
   readonly value: number;
   readonly unit: string | null;
+  /**
+   * Period this quantity is measured over ("week" for "2 days per week"), or
+   * `null` when it is an absolute quantity ("90 days of employment").
+   */
+  readonly ratePeriod: string | null;
   readonly start: number;
   readonly end: number;
 }
@@ -39,7 +44,7 @@ const NUMBER_TOKEN = String.raw`(?:[+-]?\d[\d,]*(?:\.\d+)?|zero|one|two|three|fo
 const TEMPORAL_UNIT_MODIFIERS = String.raw`(?:remote|business|calendar|working|consecutive)\s+`;
 
 const NUMBER_PATTERN = new RegExp(
-  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(?:${TEMPORAL_UNIT_MODIFIERS})?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|degrees?|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
+  String.raw`(?<![\p{L}\p{N}_])(?:USD\s*|\$\s*)?(${NUMBER_TOKEN})(?:\s*(?:-\s*)?(?:${TEMPORAL_UNIT_MODIFIERS})?(%|percent(?:age)?|USD|dollars?|days?|hours?|minutes?|weeks?|months?|years?|degrees?|yom|yoom|youm|ayam|sa3a|sa3at|osbo3|esbo3|shahr|sana|دولار(?:ا)?|ايام|يوم(?:ا)?|ساعات?|ساعه|دقائق?|دقيقه|اسابيع?|اسبوع|اشهر|شهور|شهر|سنوات|سنه|اعوام|عام|درجات?|درجه|بالمئه))?(?![\p{L}\p{N}_])`,
   "giu",
 );
 
@@ -61,6 +66,10 @@ const EASTERN_ARABIC_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 /** Controlled parsing representation; caller-visible text is never rewritten. */
 export function normalizeNumericText(text: string): string {
   return normalizeArabic(text.normalize("NFKC"))
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:يومين|يومان)(?![\p{L}\p{N}_])/gu, "$1 2 يوم")
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:ساعتين|ساعتان)(?![\p{L}\p{N}_])/gu, "$1 2 ساعه")
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:شهرين|شهران)(?![\p{L}\p{N}_])/gu, "$1 2 شهر")
+    .replace(/(?<![\p{L}\p{N}_])(و?)(?:سنتين|سنتان)(?![\p{L}\p{N}_])/gu, "$1 2 سنه")
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212\uFE58\uFE63\uFF0D]/gu, "-")
     .replace(/[٠-٩]/gu, (digit) => String(ARABIC_INDIC_DIGITS.indexOf(digit)))
     .replace(/[۰-۹]/gu, (digit) => String(EASTERN_ARABIC_DIGITS.indexOf(digit)))
@@ -86,12 +95,18 @@ function normalizeUnit(fullMatch: string, capturedUnit: string | undefined): str
     return "currency:usd";
   }
   const unit = (capturedUnit ?? "").toLowerCase();
-  if (/^days?$/u.test(unit)) return "duration:day";
-  if (/^hours?$/u.test(unit)) return "duration:hour";
+  if (/^(?:days?|yom|yoom|youm|ayam)$/u.test(unit)) return "duration:day";
+  if (/^(?:hours?|sa3a|sa3at)$/u.test(unit)) return "duration:hour";
   if (/^minutes?$/u.test(unit)) return "duration:minute";
+  if (/^(?:weeks?|osbo3|esbo3)$/u.test(unit)) return "duration:week";
+  if (/^(?:months?|shahr)$/u.test(unit)) return "duration:month";
+  if (/^(?:years?|sana)$/u.test(unit)) return "duration:year";
   if (/^(?:ايام|يوم(?:ا)?)$/u.test(unit)) return "duration:day";
   if (/^(?:ساعات?|ساعه)$/u.test(unit)) return "duration:hour";
   if (/^(?:دقائق?|دقيقه)$/u.test(unit)) return "duration:minute";
+  if (/^(?:اسابيع?|اسبوع)$/u.test(unit)) return "duration:week";
+  if (/^(?:اشهر|شهور|شهر)$/u.test(unit)) return "duration:month";
+  if (/^(?:سنوات|سنه|اعوام|عام)$/u.test(unit)) return "duration:year";
   if (/^degrees?$/u.test(unit) || /^(?:درجات?|درجه)$/u.test(unit)) return "temperature:degree";
   if (unit === "%" || /^percent(?:age)?$/u.test(unit)) return "percentage";
   if (unit === "بالمئه") return "percentage";
@@ -100,9 +115,7 @@ function normalizeUnit(fullMatch: string, capturedUnit: string | undefined): str
 }
 
 function inferCountUnit(text: string, end: number): string | null {
-  const suffix = text.slice(end, Math.min(text.length, end + 48));
-  const phrase = suffix.split(/[,.;:!?]|\b(?:is|are|was|were|may|must|shall|requires?|needed|allowed)\b/iu)[0] ?? "";
-  const words = phrase.toLowerCase().match(/[a-z]+/gu) ?? [];
+  const words = boundedFollowingClause(text, end).toLowerCase().match(/[a-z]+/gu) ?? [];
   const noun = words.at(-1);
   if (!noun) return null;
   const singular = noun.endsWith("ies")
@@ -111,6 +124,69 @@ function inferCountUnit(text: string, end: number): string | null {
       ? noun.slice(0, -1)
       : noun;
   return `count:${singular}`;
+}
+
+/**
+ * Text following a number, bounded to the same clause so a later, unrelated
+ * clause cannot describe this quantity.
+ */
+function boundedFollowingClause(text: string, end: number): string {
+  const suffix = text.slice(end, Math.min(text.length, end + 48));
+  return suffix.split(CLAUSE_BOUNDARY)[0] ?? "";
+}
+
+const CLAUSE_BOUNDARY =
+  /[,.;:!?؛؟]|\b(?:is|are|was|were|may|must|shall|requires?|needed|allowed)\b/iu;
+
+/** Nouns that name a recurrence period, in normalized (see `normalizeArabic`) form. */
+const RATE_PERIOD_NOUNS: Readonly<Record<string, string>> = {
+  day: "day", days: "day",
+  week: "week", weeks: "week",
+  month: "month", months: "month",
+  quarter: "quarter", quarters: "quarter",
+  year: "year", years: "year", annum: "year",
+  yom: "day", yoom: "day", youm: "day", ayam: "day",
+  osbo3: "week", esbo3: "week",
+  shahr: "month",
+  sana: "year",
+  يوم: "day", ايام: "day",
+  اسبوع: "week", اسابيع: "week",
+  شهر: "month", شهور: "month", اشهر: "month",
+  سنه: "year", سنوات: "year", عام: "year", اعوام: "year",
+};
+
+/** Single words that carry the period on their own ("2 days weekly"). */
+const RATE_PERIOD_ADVERBS: Readonly<Record<string, string>> = {
+  daily: "day", weekly: "week", monthly: "month", quarterly: "quarter",
+  yearly: "year", annual: "year", annually: "year",
+  يوميا: "day", اسبوعيا: "week", شهريا: "month", سنويا: "year",
+};
+
+const RATE_MARKER = /(?:\bper\b|\beach\b|\bevery\b|\bfel\b|\bfil\b|\bkol\b|\bkul\b|\/|في|كل)\s*(?:(?:a|an|one|1)\s+)?([\p{L}\p{N}]+)/iu;
+
+/**
+ * Period a quantity recurs over, or `null` when it is stated absolutely.
+ *
+ * "2 days per week" and "90 days of continuous employment" share the unit
+ * `duration:day` while measuring different things: a weekly allowance and an
+ * absolute tenure. The recurrence period is therefore part of the quantity's
+ * identity, and it is read only from the same clause as the number itself.
+ * An unrecognized period noun ("USD 25 per receipt") reads as absolute, which
+ * keeps this strictly a disambiguator between known periods.
+ */
+function ratePeriodFor(text: string, end: number): string | null {
+  const phrase = boundedFollowingClause(text, end);
+  const marker = RATE_MARKER.exec(phrase);
+  if (marker) {
+    const noun = (marker[1] ?? "").toLowerCase().replace(/^ال/u, "");
+    const period = RATE_PERIOD_NOUNS[noun];
+    if (period) return period;
+  }
+  for (const word of phrase.toLowerCase().match(/[\p{L}]+/gu) ?? []) {
+    const period = RATE_PERIOD_ADVERBS[word];
+    if (period) return period;
+  }
+  return null;
 }
 
 function overlapsStructuredNumber(text: string, start: number, end: number): boolean {
@@ -135,6 +211,7 @@ function extractNormalizedNumericMentions(text: string): NumericMention[] {
     mentions.push({
       value,
       unit: explicitUnit ?? inferCountUnit(text, end),
+      ratePeriod: ratePeriodFor(text, end),
       start: match.index,
       end,
     });
@@ -170,6 +247,19 @@ function compatibleUnits(left: string | null, right: string | null): boolean {
   return left !== null && right !== null && left === right;
 }
 
+/**
+ * A question value may be compared to a documented threshold only when both
+ * measure the same METRIC: same unit AND the same recurrence period. Equal
+ * units alone are not enough — "two days per week" and "90 days of continuous
+ * employment" are both `duration:day`, and comparing them yields
+ * `2 >= 90 -> false`, a nonsense row that reads downstream as a documented
+ * eligibility failure. Absolute values compare only to absolute thresholds, and
+ * rates only to rates over the same period.
+ */
+function comparableQuantities(question: NumericMention, rule: ThresholdRule): boolean {
+  return compatibleUnits(question.unit, rule.unit) && question.ratePeriod === rule.ratePeriod;
+}
+
 function evaluate(value: number, operator: ThresholdOperator, threshold: number): boolean {
   if (operator === "gt") return value > threshold;
   if (operator === "gte") return value >= threshold;
@@ -186,7 +276,7 @@ export function deriveThresholdComparisons(
   const comparisons: ThresholdComparison[] = [];
   for (const question of questionMentions) {
     for (const rule of rules) {
-      if (!compatibleUnits(question.unit, rule.unit)) continue;
+      if (!comparableQuantities(question, rule)) continue;
       comparisons.push({
         questionValue: question.value,
         thresholdValue: rule.value,
@@ -233,6 +323,12 @@ function hasComparativeMeaning(text: string): boolean {
  * when it came from the current question and authorized evidence contains an
  * explicit, unit-compatible inequality against which that value can be
  * compared. Semantic entailment still validates the resulting prose.
+ *
+ * This gate stays unit-only, not metric-scoped like `comparableQuantities`: it
+ * decides whether a claimed number is DEFENSIBLE, so narrowing it would refuse
+ * more answers rather than fewer. That is a separate behavior change from
+ * bounding which comparisons are derived FOR the writer, and is out of scope
+ * here.
  */
 export function hasNumericConsistencyViolation(input: {
   readonly claimText: string;

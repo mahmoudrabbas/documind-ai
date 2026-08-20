@@ -4,7 +4,7 @@
  *
  * Round-9: category workflow, priority low, NO actions (plan line 254).
  */
-import { escapeHtml, resolveDedupEventId, resolveLocalized } from "../sanitize.js";
+import { resolveDedupEventId, resolveLocalized } from "../sanitize.js";
 import {
   welcomeMetadataSchema,
   type WelcomeMetadata,
@@ -16,15 +16,14 @@ export const welcomeBuilder: NotificationBuilder = {
 
   build(event: NotificationEvent): NotificationDraft {
     const metadata: WelcomeMetadata = welcomeMetadataSchema.parse(event.metadata);
-    const safeCompany = escapeHtml(metadata.companyName);
 
     const title = resolveLocalized(event.title, {
       en: "Welcome to DocuMind",
       ar: "مرحباً بك في DocuMind",
     });
     const body = resolveLocalized(event.body, {
-      en: `Welcome to ${safeCompany}! Your account is ready.`,
-      ar: `مرحباً بك في ${safeCompany}! حسابك جاهز.`,
+      en: `Welcome to ${metadata.companyName}! Your account is ready.`,
+      ar: `مرحباً بك في ${metadata.companyName}! حسابك جاهز.`,
     });
 
     return {

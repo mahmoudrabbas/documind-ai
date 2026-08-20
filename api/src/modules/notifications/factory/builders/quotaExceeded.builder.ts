@@ -7,7 +7,6 @@
  * read/archived or 90-day TTL — no auto-resolution (plan review round 4 #6).
  */
 import {
-  escapeHtml,
   resolveDedupEventId,
   resolveLocalized,
 } from "../sanitize.js";
@@ -22,15 +21,14 @@ export const quotaExceededBuilder: NotificationBuilder = {
 
   build(event: NotificationEvent): NotificationDraft {
     const metadata: QuotaExceededMetadata = quotaExceededMetadataSchema.parse(event.metadata);
-    const safeQuotaType = escapeHtml(metadata.quotaType);
 
     const title = resolveLocalized(event.title, {
       en: "Quota exceeded",
       ar: "تم تجاوز الحصة",
     });
     const body = resolveLocalized(event.body, {
-      en: `Your ${safeQuotaType} quota (${metadata.usage}/${metadata.limit}) has been reached. It resets on ${metadata.resetAt}.`,
-      ar: `تم بلوغ حصة "${safeQuotaType}" (${metadata.usage}/${metadata.limit}). سيتم إعادة التحديد في ${metadata.resetAt}.`,
+      en: `Your ${metadata.quotaType} quota (${metadata.usage}/${metadata.limit}) has been reached. It resets on ${metadata.resetAt}.`,
+      ar: `تم بلوغ حصة "${metadata.quotaType}" (${metadata.usage}/${metadata.limit}). سيتم إعادة التحديد في ${metadata.resetAt}.`,
     });
 
     return {

@@ -14,6 +14,7 @@ import type {
   AccessContext,
   RetrievalCandidate,
 } from "../../retrieval/retrieval.types.js";
+import { resolveRetrievalAuthorizationSignals } from "../../retrieval/retrieval.authorizationSignals.js";
 import type { EvidenceBundle } from "../../reranker/reranker.types.js";
 import { EVIDENCE_ITEM_MIN_TOTAL_SCORE } from "../../reranker/reranker.types.js";
 import { AppError } from "../../../common/errors/AppError.js";
@@ -371,6 +372,13 @@ const HybridSearchOutputSchema = z
      * denials must never be misread as genuine knowledge gaps.
      */
     authorizationRestricted: z.boolean().optional(),
+    /**
+     * True when authorization narrowed the searched corpus at all, including
+     * runs that still returned usable candidates from other authorized
+     * documents. Never says which document, how many, or what they contain —
+     * it only records that "no results" cannot be read as "no such content".
+     */
+    authorizationFiltered: z.boolean().optional(),
   })
   .strict();
 
@@ -385,6 +393,12 @@ const EvaluateEvidenceOutputSchema = z
      * document-level access authorization during evidence evaluation.
      */
     authorizationRestricted: z.boolean().optional(),
+    /**
+     * True when at least one loaded candidate document was denied during
+     * `use_in_ai` reauthorization, including runs where other candidates
+     * survived and produced a weak or sufficient bundle.
+     */
+    authorizationFiltered: z.boolean().optional(),
     /**
      * Chunk ids belonging to detected evidence conflict groups. Conflicts are
      * reported from authorized evidence only; consumers must explain both
@@ -648,9 +662,24 @@ export function createAuthorizedHybridSearchTool(
       const postAuthorizationCandidateCount = postAuthorizationVectorCandidateCount !== undefined || postAuthorizationKeywordCandidateCount !== undefined
         ? (postAuthorizationVectorCandidateCount ?? 0) + (postAuthorizationKeywordCandidateCount ?? 0)
         : result.candidates.length;
+      // The retrieval service is authoritative for *why* a run produced no
+      // usable candidates: it emits `retrievalOutcome`,
+      // `authorizationRestricted`, `authorizationFiltered`, and a typed
+      // `zeroCandidateReason` drawn from the authorization vocabulary. This
+      // boundary translates those signals; it must never recompute them from
+      // candidate counts alone. A fail-closed denied corpus reports zero raw
+      // and zero post-authorization candidates, so a count-based guess reads
+      // it as an ordinary "no matches" and downstream knowledge-gap detection
+      // then claims the company has no such knowledge.
+      const authorizationSignals = resolveRetrievalAuthorizationSignals({
+        diagnostics: result.diagnostics,
+        usableCandidateCount: eligibleCandidates.length,
+        rawCandidateCount,
+        postAuthorizationCandidateCount,
+      });
       const retrievalOutcome = eligibleCandidates.length > 0
         ? "AUTHORIZED_RESULTS"
-        : result.diagnostics.authorizationFiltered || rawCandidateCount > postAuthorizationCandidateCount
+        : authorizationSignals.authorizationRestricted
           ? "AUTHORIZATION_FILTERED"
           : "NO_MATCHES";
       if (trustedCandidateCatalog) {
@@ -679,8 +708,10 @@ export function createAuthorizedHybridSearchTool(
         reasonCode:
           eligibleCandidates.length > 0 ? "SEARCH_COMPLETED" : "NO_RESULTS",
         retrievalOutcome,
-        authorizationRestricted:
-          result.diagnostics?.zeroCandidateReason === "NO_AUTHORIZED_CANDIDATES",
+        authorizationRestricted: authorizationSignals.authorizationRestricted,
+        ...(authorizationSignals.authorizationFiltered
+          ? { authorizationFiltered: true }
+          : {}),
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -749,7 +780,11 @@ export function createEvaluateEvidenceTool(
 
     // 3. Reauthorize each candidate document for use_in_ai.
     const authorizedCandidates: RetrievalCandidate[] = [];
-    let authorizationRestricted = false;
+    // True as soon as one candidate document is denied, even if others
+    // survive. A partially authorized corpus that yields weak evidence is not
+    // proof the tenant lacks the knowledge, so this signal must reach every
+    // return path below — not only the zero-authorized-candidate ones.
+    let authorizationDenied = false;
     let provenanceMissing = false;
     for (const chunk of eligibleChunks) {
       if (!eligibleDocumentIds.has(chunk.documentId)) continue;
@@ -760,7 +795,7 @@ export function createEvaluateEvidenceTool(
           "use_in_ai",
         );
       } catch {
-        authorizationRestricted = true;
+        authorizationDenied = true;
         continue;
       }
       const trusted = runCandidates?.get(chunk.chunkId);
@@ -772,6 +807,12 @@ export function createEvaluateEvidenceTool(
       authorizedCandidates.map((candidate) => candidate.chunkId),
     );
     const rejectedBase = requestedIds.filter((id) => !authorizedIds.has(id));
+    // Safe internal authorization metadata, carried on every return path.
+    // `authorizationRestricted` stays terminal (nothing usable survived) so a
+    // successful turn is never labelled a permission refusal.
+    const authorizationMeta = authorizationDenied
+      ? { authorizationFiltered: true as const }
+      : {};
 
     // Candidates without trusted retrieval provenance must never enter the
     // reranker with a fabricated zero relevance score. Fail closed with a
@@ -782,7 +823,8 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: [...requestedIds],
         reasonCode: "CANDIDATE_PROVENANCE_MISSING",
-        ...(authorizationRestricted ? { authorizationRestricted } : {}),
+        ...(authorizationDenied ? { authorizationRestricted: true } : {}),
+        ...authorizationMeta,
       };
     }
 
@@ -792,7 +834,8 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: rejectedBase,
         reasonCode: "NO_EVIDENCE",
-        ...(authorizationRestricted ? { authorizationRestricted } : {}),
+        ...(authorizationDenied ? { authorizationRestricted: true } : {}),
+        ...authorizationMeta,
       };
     }
 
@@ -810,6 +853,7 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: requestedIds,
         reasonCode: "RERANKER_UNAVAILABLE",
+        ...authorizationMeta,
       };
     }
 
@@ -820,6 +864,7 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: requestedIds,
         reasonCode: "RERANKER_UNAVAILABLE",
+        ...authorizationMeta,
       };
     }
 
@@ -830,6 +875,7 @@ export function createEvaluateEvidenceTool(
         approvedEvidenceIds: [],
         rejectedEvidenceIds: requestedIds,
         reasonCode: `EVIDENCE_${level}`,
+        ...authorizationMeta,
         ...(level === "CONFLICTING"
           ? {
               conflictEvidenceIds: [
@@ -861,6 +907,7 @@ export function createEvaluateEvidenceTool(
       approvedEvidenceIds: approved,
       rejectedEvidenceIds,
       reasonCode: "EVIDENCE_SUFFICIENT",
+      ...authorizationMeta,
     };
   };
 

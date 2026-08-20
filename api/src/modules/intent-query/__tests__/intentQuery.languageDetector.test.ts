@@ -43,6 +43,36 @@ test("Language Detector utility", async (t) => {
   await t.test("should treat a single transliterated word as English by default", () => {
     assert.equal(detectLanguage("What does momken mean?"), "en");
   });
+
+  await t.test("should keep structurally marked Arabizi questions in Arabic response mode", () => {
+    assert.equal(detectLanguage("momken asht8al remote 2 days fel week?"), "ar");
+    assert.equal(detectLanguage("ana ba2aly 30 yom, momken remote 2 days?"), "ar");
+    assert.equal(detectLanguage("momken a3raf el remote work policy?"), "ar");
+    assert.equal(detectLanguage("manager approved, ينفع اشتغل remote يومين"), "mixed");
+    assert.equal(detectLanguage("كام يوم remote مسموح"), "mixed");
+    assert.equal(isLikelyArabizi("ya3ni momken remote?"), true);
+    assert.equal(isLikelyArabizi("sa3a momken?"), true);
+  });
+
+  await t.test("should exclude technical identifiers from structural Arabizi detection", () => {
+    for (const text of [
+      "utf8 encoding",
+      "utf8mb4 collation",
+      "base64 payload",
+      "oauth2 flow",
+      "s3 bucket",
+      "ec2 instance",
+      "sha256 digest",
+      "log4j patch",
+      "i18n support",
+      "p2p network",
+      "b2b workflow",
+      "h2o molecule",
+    ]) {
+      assert.equal(isLikelyArabizi(text), false, text);
+      assert.equal(detectLanguage(text), "en", text);
+    }
+  });
 });
 
 test("Arabic Normalizer utility", async (t) => {

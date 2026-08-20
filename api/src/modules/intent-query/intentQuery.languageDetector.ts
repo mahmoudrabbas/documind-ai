@@ -15,9 +15,15 @@ const ARABIZI_TOKENS = new Set<string>([
   "delwa2ti",
 ]);
 
+const ARABIZI_SUBSTITUTION_TOKEN = /^[a-z]+[2356789][a-z]+$/u;
+
+function hasArabiziSubstitutionDigit(token: string): boolean {
+  return token.length >= 4 && ARABIZI_SUBSTITUTION_TOKEN.test(token);
+}
+
 /**
  * Best-effort detection of Arabizi (Arabic written with Latin script, often
- * using digits 2/3/7/9 for Arabic letters). Bounded and conservative: requires
+ * using digits as Arabic-letter substitutions). Bounded and conservative: requires
  * at least two distinctive Arabizi tokens so English questions containing one
  * transliterated word are not misclassified.
  */
@@ -27,7 +33,7 @@ export function isLikelyArabizi(text: string): boolean {
   const tokens = text.toLowerCase().match(/[a-z][a-z0-9]*/gu) ?? [];
   let hits = 0;
   for (const token of tokens) {
-    if (ARABIZI_TOKENS.has(token)) {
+    if (ARABIZI_TOKENS.has(token) || hasArabiziSubstitutionDigit(token)) {
       hits += 1;
       if (hits >= 2) return true;
     }

@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import {
   assessPositiveKnowledgeSeeking,
   hasDomainAgnosticQuestionShape,
+  buildContextualFollowUpQuestion,
+  isLikelyAccessContextFollowUp,
+  isLikelyContextualFollowUp,
+  isLikelyPriorDocumentTurn,
   isLikelyGibberish,
   selectSafeRetrievalQuestion,
   stripLeadingSocialExpression,
@@ -142,4 +146,17 @@ test("question shape is domain-agnostic but never promotes greetings, gibberish 
   ]) {
     assert.equal(hasDomainAgnosticQuestionShape(input), false, input);
   }
+});
+
+test("recognizes the remote-work to internal-systems contextual bridge", () => {
+  const followUp = "What if I need to access internal systems while doing that?";
+  const prior = "Can I work remotely two days per week?";
+
+  assert.equal(isLikelyAccessContextFollowUp(followUp), true);
+  assert.equal(isLikelyContextualFollowUp(followUp), true);
+  assert.equal(isLikelyPriorDocumentTurn(prior), true);
+  assert.equal(
+    buildContextualFollowUpQuestion(prior, followUp),
+    `Regarding the previous question, "${prior}", ${followUp}`,
+  );
 });

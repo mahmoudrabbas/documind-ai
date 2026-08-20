@@ -176,7 +176,12 @@ describe("RetrievalService - multi-variant queries", () => {
       makeAccessContext(),
     );
 
-    assert.equal(vectorAdapter.calls.length, 2, "primary + one variant searched");
+    assert.equal(
+      vectorAdapter.calls.filter((call) => call.filter?.classification).length,
+      2,
+      "primary + one variant searched within the authorized scope",
+    );
+    assert.equal(vectorAdapter.calls.length, 4, "the scoped variants are repeated for provenance");
     const scores = Object.fromEntries(result.candidates.map((c) => [c.chunkId, c.score]));
     assert.ok(scores["chunkA"]! > 0, "chunkA present");
     assert.ok(scores["chunkB"]! >= 0.9, "best variant score retained for chunkB");
@@ -200,7 +205,12 @@ describe("RetrievalService - multi-variant queries", () => {
       makeAccessContext(),
     );
 
-    assert.equal(vectorAdapter.calls.length, 3, "primary + 2 variants searched");
+    assert.equal(
+      vectorAdapter.calls.filter((call) => call.filter?.classification).length,
+      3,
+      "primary + 2 variants searched within the authorized scope",
+    );
+    assert.equal(vectorAdapter.calls.length, 6, "the scoped variants are repeated for provenance");
     assert.equal(result.candidates.length, 1, "chunk appears exactly once");
     assert.ok(result.candidates[0]!.score >= 0.4, "best score kept");
   });
@@ -223,7 +233,12 @@ describe("RetrievalService - multi-variant queries", () => {
       makeAccessContext(),
     );
 
-    assert.equal(keywordAdapter.calls.length, 2, "primary + one keyword variant searched");
+    assert.equal(
+      keywordAdapter.calls.filter((call) => call.filter?.classification).length,
+      2,
+      "primary + one keyword variant searched within the authorized scope",
+    );
+    assert.equal(keywordAdapter.calls.length, 4, "the scoped variants are repeated for provenance");
     assert.equal(result.candidates.length, 1);
     assert.ok(result.candidates[0]!.score >= 0.8, "best keyword score retained");
   });

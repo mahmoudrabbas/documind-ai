@@ -1,11 +1,19 @@
 import { AppError } from "../../common/errors/AppError.js";
+import mongoose from "mongoose";
 import {
   NOT_FOUND,
   BAD_REQUEST,
 } from "../../common/errors/errorCodes.js";
 import { MongoAuditWriter } from "../../common/observability/auditWriter.js";
-import { knowledgeGapsRepository, KnowledgeGapsRepository } from "./knowledge-gaps.repository.js";
+import {
+  knowledgeGapsRepository,
+  KnowledgeGapsRepository,
+  requiresKnowledgeGapChildRedaction,
+  type KnowledgeGapVisibility,
+} from "./knowledge-gaps.repository.js";
 import type { KnowledgeGapDocument } from "../../db/models/knowledgeGap.model.js";
+import UserModel from "../../db/models/user.model.js";
+import DepartmentModel from "../../db/models/department.model.js";
 import { normalizeQuestion, generateClusterKey } from "./knowledge-gaps.clustering.js";
 import type { KnowledgeGapAgentPort } from "./knowledge-gaps.agent.js";
 import { FakeKnowledgeGapAgent } from "./knowledge-gaps.agent.fake.js";
@@ -23,8 +31,79 @@ import type {
   SplitGapInput,
   LinkDocumentsInput,
 } from "./knowledge-gaps.dto.js";
+import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
+import { Permission } from "../permissions/permissions.catalog.js";
+import { normalizeTaxonomyName } from "../document-taxonomy/documentTaxonomy.normalization.js";
+import type { KnowledgeGapVisibilityMetadataInput } from "./knowledge-gaps.repository.js";
 
 const auditWriter = new MongoAuditWriter();
+
+export interface KnowledgeGapVisibilityResolver {
+  resolve(tenantId: string, actorId: string): Promise<KnowledgeGapVisibilityMetadataInput>;
+}
+
+class MongoKnowledgeGapVisibilityResolver implements KnowledgeGapVisibilityResolver {
+  async resolve(tenantId: string, actorId: string): Promise<KnowledgeGapVisibilityMetadataInput> {
+    const empty = {
+      reporterActorIds: [],
+      departmentIds: [],
+      documentCategories: [],
+      documentClassifications: [],
+    };
+    if (
+      actorId === "system" ||
+      !mongoose.Types.ObjectId.isValid(tenantId) ||
+      !mongoose.Types.ObjectId.isValid(actorId)
+    ) {
+      return empty;
+    }
+
+    const user = await UserModel.findOne({ _id: actorId, tenantId, status: "active" })
+      .select("role customRoleId employeeProfile.departmentId employeeProfile.department")
+      .lean()
+      .exec();
+    if (!user) return empty;
+
+    const resolved = await getPermissionEvaluator().resolve({
+      tenantId,
+      actorId,
+      baseRole: user.role,
+      customRoleId: user.customRoleId?.toString() ?? null,
+    });
+    const scope = resolved.grants.get(Permission.KNOWLEDGE_GAPS_READ)?.scope ?? null;
+    const departmentIds: string[] = [];
+    const assignedDepartmentId = user.employeeProfile?.departmentId?.toString();
+    if (assignedDepartmentId) {
+      const departmentExists = await DepartmentModel.exists({
+        _id: assignedDepartmentId,
+        tenantId,
+        status: "active",
+      });
+      if (departmentExists) departmentIds.push(assignedDepartmentId);
+    } else if (user.employeeProfile?.department?.trim()) {
+      const department = await DepartmentModel.findOne({
+        tenantId,
+        normalizedName: normalizeTaxonomyName(user.employeeProfile.department),
+        status: "active",
+      }).select("_id").lean().exec();
+      if (department) departmentIds.push(department._id.toString());
+    }
+    if (departmentIds.length === 0) {
+      departmentIds.push(
+        ...(scope?.departmentIds ?? []).filter((departmentId) =>
+          mongoose.Types.ObjectId.isValid(departmentId),
+        ),
+      );
+    }
+
+    return {
+      reporterActorIds: [actorId],
+      departmentIds,
+      documentCategories: scope?.documentCategories ?? [],
+      documentClassifications: scope?.documentClassifications ?? [],
+    };
+  }
+}
 
 export class KnowledgeGapsService {
   constructor(
@@ -32,11 +111,13 @@ export class KnowledgeGapsService {
     private agent: KnowledgeGapAgentPort = new FakeKnowledgeGapAgent(),
     private reevaluator: KnowledgeGapReevaluationPort = new FakeKnowledgeGapReevaluationAdapter(),
     private triggerPort: OutboxTriggerPort | null = null,
+    private visibilityResolver: KnowledgeGapVisibilityResolver = new MongoKnowledgeGapVisibilityResolver(),
   ) {}
 
   async reportCandidate(tenantId: string, actorId: string, input: ReportGapCandidateInput) {
     const normalizedText = input.normalizedIntent || normalizeQuestion(input.question);
     const clusterKey = generateClusterKey(normalizedText);
+    const visibilityMetadata = await this.visibilityResolver.resolve(tenantId, actorId);
 
     // 1. Check if a matching gap already exists for this tenant & cluster key
     const existingGap = await this.repo.findByClusterKey(tenantId, clusterKey);
@@ -58,7 +139,7 @@ export class KnowledgeGapsService {
       const updated = await this.repo.incrementOccurrence(tenantId, gapIdStr, actorId, {
         category: input.category,
         severity: proposal.severity,
-      });
+      }, visibilityMetadata);
 
       await this.repo.createOccurrence({
         tenantId,
@@ -108,6 +189,7 @@ export class KnowledgeGapsService {
         evidenceSummaryIds: input.evidenceSummaryIds,
         conflictType: input.conflictType,
       },
+      visibilityMetadata,
       agentProposal: {
         topic: proposal.topic,
         severity: proposal.severity,
@@ -180,12 +262,12 @@ export class KnowledgeGapsService {
     return newGap;
   }
 
-  async listGaps(tenantId: string, query: ListGapsQueryInput) {
-    return this.repo.findGaps({ tenantId, ...query });
+  async listGaps(tenantId: string, query: ListGapsQueryInput, visibility?: KnowledgeGapVisibility) {
+    return this.repo.findGaps({ tenantId, ...query, visibility });
   }
 
-  async getGapById(tenantId: string, gapId: string) {
-    const gap = await this.repo.findGapById(tenantId, gapId);
+  async getGapById(tenantId: string, gapId: string, visibility?: KnowledgeGapVisibility) {
+    const gap = await this.repo.findGapById(tenantId, gapId, visibility);
     if (!gap) {
       throw new AppError(404, NOT_FOUND, "Knowledge gap not found");
     }
@@ -465,19 +547,30 @@ export class KnowledgeGapsService {
     return record;
   }
 
-  async getOccurrences(tenantId: string, gapId: string, page = 1, pageSize = 20) {
-    await this.getGapById(tenantId, gapId);
-    return this.repo.findOccurrences(tenantId, gapId, page, pageSize);
+  async getOccurrences(tenantId: string, gapId: string, page = 1, pageSize = 20, visibility?: KnowledgeGapVisibility) {
+    await this.getGapById(tenantId, gapId, visibility);
+    return this.repo.findOccurrences(
+      tenantId,
+      gapId,
+      page,
+      pageSize,
+      requiresKnowledgeGapChildRedaction(visibility),
+    );
   }
 
-  async getReevaluations(tenantId: string, gapId: string) {
-    await this.getGapById(tenantId, gapId);
-    return this.repo.findReevaluations(tenantId, gapId);
+  async getReevaluations(tenantId: string, gapId: string, visibility?: KnowledgeGapVisibility) {
+    await this.getGapById(tenantId, gapId, visibility);
+    return this.repo.findReevaluations(
+      tenantId,
+      gapId,
+      requiresKnowledgeGapChildRedaction(visibility),
+    );
   }
 
-  async getMetrics(tenantId: string) {
-    return this.repo.getMetrics(tenantId);
+  async getMetrics(tenantId: string, visibility?: KnowledgeGapVisibility) {
+    return this.repo.getMetrics(tenantId, visibility);
   }
+
 }
 
 export const knowledgeGapsService = new KnowledgeGapsService();

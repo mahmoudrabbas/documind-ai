@@ -48,6 +48,14 @@ const EVIDENCE: AnswerWriterEvidenceItem[] = [
   },
 ];
 
+/** Shape captured for every recorded `complete()` invocation. */
+interface RecordedCall {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+  structuredOutput?: { type: "json_object" };
+}
+
 /**
  * Recording provider adapter: captures every complete() invocation (including
  * the structured-output request) and replays a scripted raw content string.
@@ -55,7 +63,7 @@ const EVIDENCE: AnswerWriterEvidenceItem[] = [
 class RecordingAdapter implements ModelAdapter {
   readonly providerKey = "recorded";
   readonly modelName = "recorded-model";
-  calls: Array<Record<string, unknown>> = [];
+  calls: RecordedCall[] = [];
   content = "";
 
   setContent(content: string): void {
@@ -950,4 +958,175 @@ test("K6: fails closed when a bounded retry repeats an unsupported employment ph
   assert.equal(result.outcome, "usable");
   assert.equal(result.outcome === "usable" ? result.decision : null, "insufficient_evidence");
   assert.deepEqual(result.outcome === "usable" ? result.citedChunkIds : [], []);
+});
+
+// ── eligibility completeness (Remote Work Policy regression matrix) ──────────
+
+/**
+ * A materially misleading partial answer ("Yes, up to two days per week") was
+ * produced without the model ever seeing the qualifiers: the writer envelope
+ * had already lost them. These cases pin the two deterministic properties the
+ * envelope must hold before any provider call — every authorized section of the
+ * governing document survives, and no comparison pairs quantities that measure
+ * different things — plus the question shapes that do and do not receive the
+ * eligibility-qualifier instruction.
+ */
+const REMOTE_POLICY_SECTIONS: ChatSource[] = [
+  {
+    chunkId: "eligibility",
+    documentId: "remote-policy",
+    documentTitle: "Remote Work Policy",
+    sectionTitle: "Eligibility",
+    text: [
+      "Employees who have completed at least 90 days of continuous employment may request a regular remote-work arrangement.",
+      "Prior manager approval is required before any remote-work arrangement begins.",
+    ].join(" "),
+    score: 1,
+  },
+  {
+    chunkId: "schedule",
+    documentId: "remote-policy",
+    documentTitle: "Remote Work Policy",
+    sectionTitle: "Schedule",
+    text: "Regular remote work is limited to a maximum of two days per week.",
+    score: 0.9,
+  },
+  {
+    chunkId: "core-hours",
+    documentId: "remote-policy",
+    documentTitle: "Remote Work Policy",
+    sectionTitle: "Core hours",
+    text: "Remote employees must be reachable during core hours from 10:00 AM to 3:00 PM local time.",
+    score: 0.8,
+  },
+];
+
+const ELIGIBILITY_INSTRUCTION = /asks whether something is permitted/u;
+
+function ragEnvelope(question: string, sources: ChatSource[] = REMOTE_POLICY_SECTIONS) {
+  const messages = buildRagMessages({ citationsEnabled: true, sources, userMessage: question });
+  const system = messages.find((message) => message.role === "system");
+  const data = messages.find((message) => message.content.includes("RAG_REQUEST_DATA_START"));
+  assert.ok(system);
+  assert.ok(data);
+  const payload = JSON.parse(data.content.split("\n")[1] ?? "{}") as {
+    authorizedEvidence: Array<{ chunkId: string }>;
+    thresholdComparisons: Array<{ chunkId: string; conditions: Array<Record<string, unknown>> }>;
+  };
+  return {
+    system: system.content,
+    chunkIds: payload.authorizedEvidence.map((item) => item.chunkId),
+    conditions: payload.thresholdComparisons.flatMap((row) => row.conditions),
+  };
+}
+
+test("M1: every eligibility phrasing keeps all authorized policy sections in the envelope", () => {
+  const questions = [
+    "How many remote days per week are allowed?",
+    "Can I work remotely two days per week?",
+    "I started 30 days ago. Can I work remotely two days per week?",
+    "I have worked here for 30 days. Can I work remotely two days per week?",
+    "My manager approved it. Can I work remotely two days per week?",
+    "I have worked here for 120 days. Can I work remotely two days per week?",
+    "I have worked here for 120 days and my manager approved it. Can I work remotely two days per week?",
+    "What are the requirements for working remotely?",
+    "What are the core hours for remote workers?",
+    "momken asht8al remote 2 days fel week?",
+    "ana ba2aly 30 yom, momken remote 2 days?",
+    "manager approved, ينفع اشتغل remote يومين",
+    "كام يوم remote مسموح",
+  ];
+
+  for (const question of questions) {
+    const { chunkIds } = ragEnvelope(question);
+    assert.deepEqual(
+      chunkIds,
+      ["eligibility", "schedule", "core-hours"],
+      `qualifiers dropped from the envelope for: ${question}`,
+    );
+  }
+});
+
+test("M2: derived comparisons never pair a weekly allowance with a tenure minimum", () => {
+  const weeklyAgainstTenure = { questionValue: 2, thresholdValue: 90 };
+  const tenureAgainstWeekly = { questionValue: 30, thresholdValue: 2 };
+
+  for (const question of [
+    "Can I work remotely two days per week?",
+    "I started 30 days ago. Can I work remotely two days per week?",
+    "My manager approved it. Can I work remotely two days per week?",
+    "I have worked here for 120 days. Can I work remotely two days per week?",
+  ]) {
+    const { conditions } = ragEnvelope(question);
+    for (const nonsense of [weeklyAgainstTenure, tenureAgainstWeekly]) {
+      assert.ok(
+        !conditions.some((condition) =>
+          condition.questionValue === nonsense.questionValue &&
+          condition.thresholdValue === nonsense.thresholdValue,
+        ),
+        `${JSON.stringify(nonsense)} derived for: ${question}`,
+      );
+    }
+  }
+
+  // The comparisons that do measure the same thing are still derived.
+  assert.deepEqual(
+    ragEnvelope("I started 30 days ago. Can I work remotely two days per week?").conditions,
+    [
+      { questionValue: 30, thresholdValue: 90, unit: "duration:day", operator: "gte", satisfied: false },
+      { questionValue: 2, thresholdValue: 2, unit: "duration:day", operator: "lte", satisfied: true },
+    ],
+  );
+  assert.deepEqual(
+    ragEnvelope("I have worked here for 120 days. Can I work remotely two days per week?").conditions,
+    [
+      { questionValue: 120, thresholdValue: 90, unit: "duration:day", operator: "gte", satisfied: true },
+      { questionValue: 2, thresholdValue: 2, unit: "duration:day", operator: "lte", satisfied: true },
+    ],
+  );
+});
+
+test("M3: the qualifier instruction follows the question shape, not the topic", () => {
+  for (const permission of [
+    "Can I work remotely two days per week?",
+    "I started 30 days ago. Can I work remotely two days per week?",
+    "Am I eligible for remote work?",
+    "هل الموظف اللي اشتغل ٣٠ يوم يقدر يطلب العمل عن بعد؟",
+    "momken asht8al remote 2 days fel week?",
+    "ana ba2aly 30 yom, momken remote 2 days?",
+    "manager approved, ينفع اشتغل remote يومين",
+  ]) {
+    assert.match(ragEnvelope(permission).system, ELIGIBILITY_INSTRUCTION, permission);
+  }
+
+  // Requests for a documented value must not be padded with eligibility text.
+  for (const informational of [
+    "How many remote days per week are allowed?",
+    "What are the core hours for remote workers?",
+    "What are the requirements for working remotely?",
+    "كام يوم remote مسموح في الاسبوع؟",
+    "كام يوم remote مسموح",
+  ]) {
+    assert.doesNotMatch(ragEnvelope(informational).system, ELIGIBILITY_INSTRUCTION, informational);
+  }
+});
+
+test("M4: a failed tenure threshold narrows by document, keeping the governing policy's other sections", () => {
+  const unrelated: ChatSource = {
+    chunkId: "unrelated-hr",
+    documentId: "hr-policy",
+    documentTitle: "HR Policy",
+    text: "New employees complete a probation period before confirmation.",
+    score: 0.5,
+  };
+  const { chunkIds } = ragEnvelope(
+    "I have worked here for 30 days. Can I work remotely two days per week?",
+    [...REMOTE_POLICY_SECTIONS, unrelated],
+  );
+
+  // The unrelated document is still excluded, as it was before...
+  assert.ok(!chunkIds.includes("unrelated-hr"));
+  // ...but the approval requirement and the weekly limit live in sibling
+  // sections of the governing document and must survive.
+  assert.deepEqual(chunkIds, ["eligibility", "schedule", "core-hours"]);
 });

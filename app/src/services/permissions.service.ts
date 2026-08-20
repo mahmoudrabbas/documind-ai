@@ -9,5 +9,7 @@ export function getPermissionCatalog() {
 }
 
 export function getMyPermissions() {
-  return apiClient<CurrentPermissionsResponse>("/permissions/me");
+  return apiClient<CurrentPermissionsResponse>("/permissions/me", {
+    cache: "no-store",
+  });
 }

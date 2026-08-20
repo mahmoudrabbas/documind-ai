@@ -32,6 +32,7 @@ import {
 import { getDocumentUploadOptions } from "@/services/documents.service";
 import type { DocumentUploadOptionsResponse } from "@/types/api/documents.types";
 import { formatFileType } from "@/lib/utils";
+import { getDocumentsEmptyState } from "@/lib/documents/empty-state";
 
 const STATUS_BADGE_MAP: Record<string, string> = {
   uploaded: "info",
@@ -155,6 +156,21 @@ export default function DocumentsPage() {
   const handleSearch = useCallback(() => {
     updateFilters({ ...filters, search: searchInput || undefined, isArchived: showArchived });
   }, [searchInput, showArchived, filters, updateFilters]);
+
+  const hasActiveDocumentFilters = Boolean(
+    filters.search?.trim() || filters.status || filters.category || filters.classification,
+  );
+  const emptyState = getDocumentsEmptyState({
+    hasActiveFilters: hasActiveDocumentFilters,
+    showArchived,
+    canCreate,
+    canManageAccess,
+  });
+
+  function clearDocumentFilters() {
+    setSearchInput("");
+    updateFilters({ isArchived: showArchived });
+  }
 
   const uploadConfig = uploadOptions?.upload;
   const maxFileSizeBytes = uploadConfig?.maxFileSizeBytes ?? 50 * 1024 * 1024;
@@ -488,14 +504,22 @@ export default function DocumentsPage() {
         {!isLoading && !error && documents.length === 0 ? (
           <div className="p-6 text-center sm:p-10">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container-low">
-              <span className="material-symbols-outlined text-[32px] text-outline">{showArchived ? "archive" : canCreate ? "folder_off" : "lock"}</span>
+              <span className="material-symbols-outlined text-[32px] text-outline">
+                {emptyState === "filtered" ? "search_off" : emptyState === "archived" ? "archive" : emptyState === "access" ? "lock" : "folder_off"}
+              </span>
             </div>
-            {showArchived ? (
+            {emptyState === "filtered" ? (
+              <>
+                <p className="mb-2 text-title-md font-bold text-on-surface">{t("documents.noMatchingDocuments")}</p>
+                <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{t("documents.noMatchingDocumentsHint")}</p>
+                <Button className="mt-4" variant="outline" onClick={clearDocumentFilters}>{t("documents.clearFilters")}</Button>
+              </>
+            ) : emptyState === "archived" ? (
               <>
                 <p className="mb-2 text-title-md font-bold text-on-surface">{t("documents.noArchived")}</p>
                 <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{t("documents.noArchivedHint")}</p>
               </>
-            ) : !canCreate && !canManageAccess ? (
+            ) : emptyState === "access" ? (
               <>
                 <p className="mb-2 text-title-md font-bold text-on-surface">{t("documents.noAccess")}</p>
                 <p className="mx-auto max-w-sm text-body-sm leading-relaxed text-on-surface-variant">{t("documents.noAccessHint")}</p>

@@ -26,6 +26,62 @@ test("evaluates inclusive employment-duration thresholds", () => {
   assert.deepEqual(outcomes("Eligible after 120 days?", evidence), [true]);
 });
 
+test("preserves Arabizi duration units and recurrence periods", () => {
+  assert.deepEqual(
+    extractNumericMentions("ana ba2aly 30 yom, momken remote 2 days?").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [
+      { value: 30, unit: "duration:day", ratePeriod: null },
+      { value: 2, unit: "duration:day", ratePeriod: null },
+    ],
+  );
+  assert.deepEqual(
+    extractNumericMentions("momken asht8al remote 2 days fel week?").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [{ value: 2, unit: "duration:day", ratePeriod: "week" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("1 sa3a, 2 osbo3, 3 shahr, 4 sana").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: 1, unit: "duration:hour" },
+      { value: 2, unit: "duration:week" },
+      { value: 3, unit: "duration:month" },
+      { value: 4, unit: "duration:year" },
+    ],
+  );
+});
+
+test("compares Arabizi tenure and weekly remote limits to matching evidence metrics", () => {
+  const tenureComparisons = deriveThresholdComparisons(
+    "ana ba2aly 30 yom, momken remote 2 days?",
+    "Employees may work remotely up to 2 days per week. Employees need at least 90 days of employment.",
+  );
+  assert.deepEqual(
+    tenureComparisons.find(({ questionValue, thresholdValue }) => questionValue === 30 && thresholdValue === 90),
+    { questionValue: 30, thresholdValue: 90, unit: "duration:day", operator: "gte", satisfied: false },
+  );
+  assert.deepEqual(
+    outcomes("momken asht8al remote 3 days fel week?", "Employees may work remotely up to 2 days per week."),
+    [false],
+  );
+});
+
+test("normalizes Arabic dual duration forms to two-unit numeric anchors", () => {
+  assert.deepEqual(
+    extractNumericMentions("ينفع اشتغل remote يومين في الأسبوع؟").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [{ value: 2, unit: "duration:day", ratePeriod: "week" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("مسموح ساعتين في اليوم؟").map(({ value, unit, ratePeriod }) => ({ value, unit, ratePeriod })),
+    [{ value: 2, unit: "duration:hour", ratePeriod: "day" }],
+  );
+  assert.deepEqual(
+    extractNumericMentions("شهرين وسنتين").map(({ value, unit }) => ({ value, unit })),
+    [
+      { value: 2, unit: "duration:month" },
+      { value: 2, unit: "duration:year" },
+    ],
+  );
+});
+
 test("evaluates procurement and purchase-order thresholds without exact-number anchoring", () => {
   const quotes = "For purchases above USD 2,000, at least three written vendor quotations are required.";
   assert.deepEqual(outcomes("Are quotations required for $1500?", quotes), [false]);
@@ -322,4 +378,66 @@ test("detects genuine numeric contradictions after hyphen normalization", () => 
     questionText: "Does leave beyond 10 days expire?",
     evidenceText: "Leave beyond the 5-day limit expires on 31 December.",
   }), true);
+});
+
+// \u2500\u2500 metric scope: a shared unit is not a shared quantity \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+test("a recurrence rate is never compared against an absolute quantity", () => {
+  const tenure =
+    "Employees who have completed at least 90 days of continuous employment may request a regular remote-work arrangement.";
+  const weeklyLimit = "Regular remote work is limited to a maximum of two days per week.";
+
+  // "two days per week" is a weekly allowance, not tenure. Comparing it to the
+  // 90-day minimum reports 2 >= 90 -> false, which reads downstream as a
+  // documented eligibility failure the evidence never states.
+  assert.deepEqual(deriveThresholdComparisons("Can I work remotely two days per week?", tenure), []);
+  // ...and the tenure value is likewise not a weekly allowance.
+  assert.deepEqual(
+    deriveThresholdComparisons("I have worked here for 30 days. Can I work remotely?", weeklyLimit),
+    [],
+  );
+
+  // Each value still reaches the rule that measures the same thing.
+  assert.deepEqual(
+    deriveThresholdComparisons("Can I work remotely two days per week?", weeklyLimit),
+    [{ questionValue: 2, thresholdValue: 2, unit: "duration:day", operator: "lte", satisfied: true }],
+  );
+  assert.deepEqual(
+    deriveThresholdComparisons("I have worked here for 30 days. Can I work remotely two days per week?", tenure),
+    [{ questionValue: 30, thresholdValue: 90, unit: "duration:day", operator: "gte", satisfied: false }],
+  );
+});
+
+test("rates compare only against the same period", () => {
+  const weekly = "Employees may work remotely up to 2 days per week.";
+  assert.deepEqual(outcomes("Can I work 3 days per week?", weekly), [false]);
+  assert.deepEqual(outcomes("Can I work 1 day per week?", weekly), [true]);
+  assert.deepEqual(outcomes("Can I work 3 days per month?", weekly), []);
+  assert.deepEqual(outcomes("Can I take 3 days off?", weekly), []);
+});
+
+test("equivalent rate spellings resolve to one period", () => {
+  const weekly = "Remote work is limited to a maximum of 2 days per week.";
+  for (const question of [
+    "Can I work 3 days per week?",
+    "Can I work 3 days each week?",
+    "Can I work 3 days every week?",
+    "Can I work 3 days/week?",
+    "Can I work 3 days weekly?",
+  ]) {
+    assert.deepEqual(outcomes(question, weekly), [false], question);
+  }
+  assert.deepEqual(
+    outcomes("\u064a\u0646\u0641\u0639 \u0627\u0634\u062a\u063a\u0644 \u0663 \u0627\u064a\u0627\u0645 \u0641\u064a \u0627\u0644\u0627\u0633\u0628\u0648\u0639\u061f", "\u0627\u0644\u0639\u0645\u0644 \u0639\u0646 \u0628\u0639\u062f \u0628\u062d\u062f \u0627\u0642\u0635\u064a \u0662 \u064a\u0648\u0645 \u0641\u064a \u0627\u0644\u0627\u0633\u0628\u0648\u0639."),
+    [false],
+  );
+});
+
+test("an unrecognized period noun reads as absolute rather than blocking comparison", () => {
+  // Only known periods disambiguate; "per receipt" is not a recurrence period,
+  // so the existing currency comparison must keep working.
+  assert.deepEqual(
+    outcomes("Are receipts required for $30 per receipt?", "Receipts are required above USD 25 per receipt."),
+    [true],
+  );
 });

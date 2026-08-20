@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
+import { fireEvent, render as renderComponent, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PermissionStatus } from "@/components/auth/permission-boundary";
 import { I18nProvider } from "@/providers/i18n-provider";
 
@@ -33,5 +37,17 @@ describe("permission access states", () => {
     expect(html).toContain("Unable to verify access");
     expect(html).toContain("<button");
     expect(html).toContain("Retry");
+  });
+
+  it("invokes the supplied retry action from the failed state", () => {
+    const onRetry = vi.fn();
+    renderComponent(
+      <I18nProvider>
+        <PermissionStatus kind="failed" onRetry={onRetry} />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

@@ -10,7 +10,6 @@ import {
   NotificationFactoryError,
   assertActionUrlAllowed,
   assertMetadataSize,
-  escapeHtml,
   isActionUrlAllowed,
   resolveLocalized,
   MAX_TITLE_LENGTH,
@@ -117,7 +116,7 @@ describe("notification factory (T4)", () => {
       expect(draft.actions.map((a) => a.url)).not.toContain("/documents/doc_123/ocr/retry");
     });
 
-    it("escapes HTML in user-derived documentTitle (XSS attempt sanitized)", () => {
+    it("carries a user-derived documentTitle verbatim (no entity encoding at rest)", () => {
       const draft = createNotificationDraft(
         processingFailedEvent({
           metadata: {
@@ -130,9 +129,51 @@ describe("notification factory (T4)", () => {
         }),
       );
 
-      expect(draft.body.en).toContain("&lt;script&gt;");
-      expect(draft.body.en).not.toContain("<script>");
-      expect(draft.body.ar).not.toContain("<script>");
+      // title/body are PLAIN TEXT. Entity-encoding them here corrupted the
+      // stored value (`company&#39;s` for `company's`) and made every reader
+      // undo it; markup stays inert because the renderers escape at output
+      // (React text nodes; email templateRegistry escapes what it interpolates).
+      expect(draft.body.en).toContain('<script>alert("1")</script>');
+      expect(draft.body.ar).toContain('<script>alert("1")</script>');
+      expect(draft.body.en).not.toContain("&lt;");
+      expect(draft.body.en).not.toContain("&quot;");
+    });
+
+    it("keeps apostrophes, ampersands, entity-looking text and Arabic intact", () => {
+      const draft = createNotificationDraft({
+        type: "knowledge_gap_created",
+        dedupEventId: "gap_1",
+        metadata: {
+          topic: "the company's R&D \"budget\"",
+          severity: "medium",
+          questionPreview: "Why does the export show &lt;b&gt; and &amp;?",
+        },
+      });
+
+      // The exact reported symptom: the user's apostrophe must survive.
+      expect(draft.body.en).toContain(`the company's R&D "budget"`);
+      expect(draft.body.en).not.toContain("&#39;");
+      expect(draft.body.en).not.toContain("&amp;amp;");
+      // Text a user literally typed as entities is data, not markup: it is
+      // neither re-encoded here nor decoded downstream.
+      expect(draft.body.en).toContain("Why does the export show &lt;b&gt; and &amp;?");
+      expect(draft.body.ar).toContain(`the company's R&D "budget"`);
+    });
+
+    it("keeps Arabic segments byte-identical", () => {
+      const draft = createNotificationDraft({
+        type: "knowledge_gap_created",
+        dedupEventId: "gap_2",
+        metadata: {
+          topic: "سياسة العمل عن بُعد",
+          severity: "low",
+          questionPreview: "كام يوم remote مسموح؟",
+        },
+      });
+
+      expect(draft.body.ar).toContain("سياسة العمل عن بُعد");
+      expect(draft.body.ar).toContain("كام يوم remote مسموح؟");
+      expect(draft.body.en).toContain("سياسة العمل عن بُعد");
     });
 
     it("rejects metadata with an unknown key (zod strict)", () => {
@@ -417,10 +458,14 @@ describe("notification factory (T4)", () => {
   });
 
   describe("sanitize helpers", () => {
-    it("escapeHtml escapes < > & \" '", () => {
-      expect(escapeHtml(`<script>"&'</script>`)).toBe(
-        "&lt;script&gt;&quot;&amp;&#39;&lt;/script&gt;",
-      );
+    it("resolveLocalized keeps producer-supplied text verbatim", () => {
+      // Producer overrides are plain text too — trimmed, never entity-encoded.
+      expect(
+        resolveLocalized(
+          { en: `  the company's "R&D" <team>  `, ar: "  فريق البحث  " },
+          { en: "EN", ar: "AR" },
+        ),
+      ).toEqual({ en: `the company's "R&D" <team>`, ar: "فريق البحث" });
     });
 
     it("allowlist rejects any URL not in the verified endpoint set", () => {

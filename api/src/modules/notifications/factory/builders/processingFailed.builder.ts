@@ -10,7 +10,6 @@
 import type { NotificationAction } from "../../../../db/models/notification.model.js";
 import {
   buildActionUrl,
-  escapeHtml,
   resolveDedupEventId,
   resolveLocalized,
 } from "../sanitize.js";
@@ -35,15 +34,14 @@ export const processingFailedBuilder: NotificationBuilder = {
 
   build(event: NotificationEvent): NotificationDraft {
     const metadata: ProcessingFailedMetadata = processingFailedMetadataSchema.parse(event.metadata);
-    const safeTitle = escapeHtml(metadata.documentTitle);
 
     const title = resolveLocalized(event.title, {
       en: "Document processing failed",
       ar: "فشل معالجة المستند",
     });
     const body = resolveLocalized(event.body, {
-      en: `Your document "${safeTitle}" could not be processed.`,
-      ar: `تعذرت معالجة المستند "${safeTitle}".`,
+      en: `Your document "${metadata.documentTitle}" could not be processed.`,
+      ar: `تعذرت معالجة المستند "${metadata.documentTitle}".`,
     });
 
     const retryUrl = buildActionUrl(retryEndpointFor(metadata.stage), metadata.documentId);

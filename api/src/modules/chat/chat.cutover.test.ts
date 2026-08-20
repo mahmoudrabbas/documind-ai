@@ -200,7 +200,8 @@ test("HTTP send controller returns the unchanged public ChatResponse envelope", 
 });
 
 test("POST /send route keeps the reviewed middleware order", async () => {
-  const source = await readFile(new URL("./chat.routes.ts", import.meta.url), "utf8");
+  const source = (await readFile(new URL("./chat.routes.ts", import.meta.url), "utf8"))
+    .replace(/\r\n/g, "\n");
   const sendRoute = source.slice(
     source.indexOf("router.post(\n    \"/send\""),
     source.indexOf("controller.sendMessage") + "controller.sendMessage".length,

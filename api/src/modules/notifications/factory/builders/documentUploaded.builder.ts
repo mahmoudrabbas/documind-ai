@@ -8,7 +8,6 @@
 import type { NotificationAction } from "../../../../db/models/notification.model.js";
 import {
   buildActionUrl,
-  escapeHtml,
   resolveDedupEventId,
   resolveLocalized,
 } from "../sanitize.js";
@@ -23,15 +22,14 @@ export const documentUploadedBuilder: NotificationBuilder = {
 
   build(event: NotificationEvent): NotificationDraft {
     const metadata: DocumentUploadedMetadata = documentUploadedMetadataSchema.parse(event.metadata);
-    const safeTitle = escapeHtml(metadata.documentTitle);
 
     const title = resolveLocalized(event.title, {
       en: "New document",
       ar: "مستند جديد",
     });
     const body = resolveLocalized(event.body, {
-      en: `A new document "${safeTitle}" was uploaded.`,
-      ar: `تم رفع مستند جديد "${safeTitle}".`,
+      en: `A new document "${metadata.documentTitle}" was uploaded.`,
+      ar: `تم رفع مستند جديد "${metadata.documentTitle}".`,
     });
 
     const actions: NotificationAction[] = [

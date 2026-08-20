@@ -14,6 +14,122 @@ import GapReevaluationModel, {
   type GapReevaluationDocument,
   type ReevaluationResultOutcome,
 } from "../../db/models/gapReevaluation.model.js";
+import type { PermissionScopes } from "../permissions/permissions.types.js";
+
+export interface KnowledgeGapVisibility {
+  actorId?: string;
+  assignedOnly?: boolean;
+  scopes: PermissionScopes | null;
+}
+
+export interface KnowledgeGapVisibilityMetadataInput {
+  reporterActorIds: string[];
+  departmentIds: string[];
+  documentCategories: string[];
+  documentClassifications: string[];
+}
+
+/**
+ * Converts a scoped knowledge-gap grant into a fail-closed Mongo filter.
+ * Knowledge-gap records only expose the safe, persisted visibility fields;
+ * no hidden document content is consulted to broaden this query.
+ */
+export function buildKnowledgeGapVisibilityQuery(
+  visibility: KnowledgeGapVisibility,
+): Record<string, unknown> {
+  const scopes = visibility.scopes;
+  const clauses: Record<string, unknown>[] = [];
+  if (visibility.assignedOnly || scopes?.selfOnly) {
+    clauses.push(
+      visibility.actorId
+        ? {
+            $or: [
+              { assigneeId: visibility.actorId },
+              { "visibilityMetadata.reporterActorIds": visibility.actorId },
+            ],
+          }
+        : { _id: { $exists: false } },
+    );
+  }
+  if (!scopes) return clauses.length > 0 ? { $and: clauses } : {};
+
+  if (scopes.departmentIds.length > 0) {
+    clauses.push({
+      "visibilityMetadata.departmentIds.0": { $exists: true },
+    }, {
+      "visibilityMetadata.departmentIds": {
+        $not: { $elemMatch: { $nin: scopes.departmentIds } },
+      },
+    });
+  }
+  if (scopes.documentCategories.length > 0) {
+    const categories = scopes.documentCategories.map((value) => value.trim().toLowerCase());
+    clauses.push({
+      "visibilityMetadata.documentCategories.0": { $exists: true },
+    }, {
+      "visibilityMetadata.documentCategories": {
+        $not: { $elemMatch: { $nin: categories } },
+      },
+    });
+  }
+  if (scopes.documentClassifications.length > 0) {
+    const classifications = scopes.documentClassifications.map((value) => value.trim().toLowerCase());
+    clauses.push({
+      "visibilityMetadata.documentClassifications.0": { $exists: true },
+    }, {
+      "visibilityMetadata.documentClassifications": {
+        $not: { $elemMatch: { $nin: classifications } },
+      },
+    });
+  }
+  return clauses.length > 0 ? { $and: clauses } : {};
+}
+
+export function requiresKnowledgeGapChildRedaction(
+  visibility: KnowledgeGapVisibility | undefined,
+): boolean {
+  if (!visibility) return false;
+  if (visibility.assignedOnly || visibility.scopes?.selfOnly) return true;
+  const scopes = visibility.scopes;
+  return Boolean(
+    scopes &&
+      (scopes.departmentIds.length > 0 ||
+        scopes.documentCategories.length > 0 ||
+        scopes.documentClassifications.length > 0),
+  );
+}
+
+function toObjectIds(values: string[]): mongoose.Types.ObjectId[] {
+  return values
+    .filter((value) => mongoose.Types.ObjectId.isValid(value))
+    .map((value) => new mongoose.Types.ObjectId(value));
+}
+
+function normalizeVisibilityMetadata(
+  metadata: KnowledgeGapVisibilityMetadataInput | undefined,
+): {
+  reporterActorIds: mongoose.Types.ObjectId[];
+  departmentIds: mongoose.Types.ObjectId[];
+  documentCategories: string[];
+  documentClassifications: string[];
+} {
+  return {
+    reporterActorIds: toObjectIds(metadata?.reporterActorIds ?? []),
+    departmentIds: toObjectIds(metadata?.departmentIds ?? []),
+    documentCategories: (metadata?.documentCategories ?? []).map((value) => value.trim().toLowerCase()),
+    documentClassifications: (metadata?.documentClassifications ?? []).map((value) => value.trim().toLowerCase()),
+  };
+}
+
+function buildVisibilityAddToSet(metadata: KnowledgeGapVisibilityMetadataInput | undefined) {
+  const normalized = normalizeVisibilityMetadata(metadata);
+  return {
+    "visibilityMetadata.reporterActorIds": { $each: normalized.reporterActorIds },
+    "visibilityMetadata.departmentIds": { $each: normalized.departmentIds },
+    "visibilityMetadata.documentCategories": { $each: normalized.documentCategories },
+    "visibilityMetadata.documentClassifications": { $each: normalized.documentClassifications },
+  };
+}
 
 export interface CreateGapData {
   tenantId: string;
@@ -27,6 +143,7 @@ export interface CreateGapData {
   clusterKey: string;
   source: GapSource;
   sourceMetadata?: Record<string, unknown>;
+  visibilityMetadata?: KnowledgeGapVisibilityMetadataInput;
   agentProposal?: AgentProposalSubdocument;
   auditActorId: string;
 }
@@ -43,6 +160,7 @@ export interface ListGapsFilter {
   pageSize?: number;
   sortBy?: "createdAt" | "updatedAt" | "occurrenceCount" | "severity";
   sortOrder?: "asc" | "desc";
+  visibility?: KnowledgeGapVisibility;
 }
 
 export interface CreateOccurrenceData {
@@ -75,6 +193,7 @@ export class KnowledgeGapsRepository {
       clusterKey: data.clusterKey,
       source: data.source,
       sourceMetadata: data.sourceMetadata || {},
+      visibilityMetadata: normalizeVisibilityMetadata(data.visibilityMetadata),
       agentProposal: data.agentProposal || null,
       occurrenceCount: 1,
       firstOccurrence: new Date(),
@@ -93,12 +212,20 @@ export class KnowledgeGapsRepository {
     return doc.save();
   }
 
-  async findGapById(tenantId: string, gapId: string): Promise<KnowledgeGapDocument | null> {
+  async findGapById(
+    tenantId: string,
+    gapId: string,
+    visibility?: KnowledgeGapVisibility,
+  ): Promise<KnowledgeGapDocument | null> {
     if (!mongoose.Types.ObjectId.isValid(gapId)) return null;
-    return KnowledgeGapModel.findOne({
+    const query: Record<string, unknown> = {
       _id: new mongoose.Types.ObjectId(gapId),
       tenantId: new mongoose.Types.ObjectId(tenantId),
-    }).exec();
+    };
+    if (visibility) {
+      Object.assign(query, buildKnowledgeGapVisibilityQuery(visibility));
+    }
+    return KnowledgeGapModel.findOne(query).exec();
   }
 
   async findByClusterKey(tenantId: string, clusterKey: string): Promise<KnowledgeGapDocument | null> {
@@ -127,6 +254,10 @@ export class KnowledgeGapsRepository {
         { representativeQuestion: { $regex: filter.search, $options: "i" } },
       ];
     }
+    const visibilityQuery = filter.visibility
+      ? buildKnowledgeGapVisibilityQuery(filter.visibility)
+      : {};
+    Object.assign(query, visibilityQuery);
 
     const page = filter.page ?? 1;
     const pageSize = filter.pageSize ?? 20;
@@ -151,6 +282,7 @@ export class KnowledgeGapsRepository {
     gapId: string,
     actorId: string,
     updates?: { category?: string; severity?: GapSeverity },
+    visibilityMetadata?: KnowledgeGapVisibilityMetadataInput,
   ): Promise<KnowledgeGapDocument | null> {
     const setUpdates: Record<string, unknown> = { lastOccurrence: new Date() };
     if (updates?.category) {
@@ -168,6 +300,7 @@ export class KnowledgeGapsRepository {
       {
         $inc: { occurrenceCount: 1 },
         $set: setUpdates,
+        $addToSet: buildVisibilityAddToSet(visibilityMetadata),
         $push: {
           auditHistory: {
             action: "OCCURRENCE_ADDED",
@@ -240,6 +373,7 @@ export class KnowledgeGapsRepository {
     gapId: string,
     page = 1,
     pageSize = 20,
+    redactSensitive = false,
   ): Promise<{ occurrences: GapOccurrenceDocument[]; total: number }> {
     const query = {
       tenantId: new mongoose.Types.ObjectId(tenantId),
@@ -247,8 +381,15 @@ export class KnowledgeGapsRepository {
     };
     const skip = (page - 1) * pageSize;
 
+    const occurrenceQuery = GapOccurrenceModel.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize);
+    if (redactSensitive) {
+      occurrenceQuery.select("_id outcome category confidence createdAt");
+    }
     const [occurrences, total] = await Promise.all([
-      GapOccurrenceModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(pageSize).exec(),
+      occurrenceQuery.exec(),
       GapOccurrenceModel.countDocuments(query).exec(),
     ]);
 
@@ -286,16 +427,20 @@ export class KnowledgeGapsRepository {
   async findReevaluations(
     tenantId: string,
     gapId: string,
+    redactSensitive = false,
   ): Promise<GapReevaluationDocument[]> {
-    return GapReevaluationModel.find({
+    const query = GapReevaluationModel.find({
       tenantId: new mongoose.Types.ObjectId(tenantId),
       gapId: new mongoose.Types.ObjectId(gapId),
     })
-      .sort({ createdAt: -1 })
-      .exec();
+      .sort({ createdAt: -1 });
+    if (redactSensitive) {
+      query.select("_id result notes createdAt");
+    }
+    return query.exec();
   }
 
-  async getMetrics(tenantId: string): Promise<{
+  async getMetrics(tenantId: string, visibility?: KnowledgeGapVisibility): Promise<{
     totalGaps: number;
     byStatus: Record<GapStatus, number>;
     bySeverity: Record<GapSeverity, number>;
@@ -306,10 +451,14 @@ export class KnowledgeGapsRepository {
   }> {
     const tenantObjId = new mongoose.Types.ObjectId(tenantId);
 
+    const visibilityQuery = visibility
+      ? buildKnowledgeGapVisibilityQuery(visibility)
+      : {};
+    const baseQuery = { tenantId: tenantObjId, ...visibilityQuery };
     const [allGaps, topUnresolved] = await Promise.all([
-      KnowledgeGapModel.find({ tenantId: tenantObjId }).exec(),
+      KnowledgeGapModel.find(baseQuery).exec(),
       KnowledgeGapModel.find({
-        tenantId: tenantObjId,
+        ...baseQuery,
         status: { $in: ["open", "triaged", "assigned", "reopened"] },
       })
         .sort({ occurrenceCount: -1, severity: -1 })

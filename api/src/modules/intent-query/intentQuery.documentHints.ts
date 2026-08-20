@@ -85,6 +85,16 @@ const NATURAL_DOCUMENT_MARKER =
   /(?:\s+(?:file|document|pdf|presentation|ملف|وثيقة|مستند|عرض)|\.(?:pdf|docx?|pptx?|xlsx?|txt))$/iu;
 
 /**
+ * Bound on distinct explicit document references carried out of one question.
+ * Two is deliberate: a single request may legitimately name two documents (the
+ * multi-document comparison case), while more strongly suggests the extractor
+ * matched prose rather than titles. Duplicates are collapsed before this bound
+ * applies, so an alternate phrasing matched by two patterns can never consume
+ * the slot a genuine second document needs.
+ */
+const MAX_NATURAL_TITLE_HINTS = 2;
+
+/**
  * Extracts only explicit natural-language document references. This is not a
  * fuzzy title detector: a candidate must end in a known document wrapper or
  * file extension, and the authorized exact/wrapper resolver below remains the
@@ -111,15 +121,27 @@ export function extractNaturalDocumentTitleHints(question: string): string[] {
     if (match[1]) candidates.push(match[1]);
   }
 
+  // The summarize wrapper and the preposition relation legitimately match the
+  // same phrase ("give me a summary *of* the policy document"), so the same
+  // reference can arrive twice. Collapse on the comparison form used by the
+  // resolver — the surviving hint keeps its original surface text.
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const candidate of candidates) {
+    const hint = candidate.trim();
+    const key = normalizeForComparison(hint);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(hint);
+  }
+
   return validTitleHints(
-    candidates
-      .map((candidate) => candidate.trim())
-      .filter(
-        (candidate) =>
-          NATURAL_DOCUMENT_MARKER.test(candidate) &&
-          candidate.split(/\s+/u).length <= 20,
-      ),
-  ).slice(0, 2);
+    deduped.filter(
+      (candidate) =>
+        NATURAL_DOCUMENT_MARKER.test(candidate) &&
+        candidate.split(/\s+/u).length <= 20,
+    ),
+  ).slice(0, MAX_NATURAL_TITLE_HINTS);
 }
 
 function withoutFileExtension(value: string): string {

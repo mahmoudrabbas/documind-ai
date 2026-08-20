@@ -113,7 +113,9 @@ interface HarnessOptions {
   resolvedTitleDocumentIds?: string[];
   secondSearchCandidates?: HarnessOptions["searchCandidates"];
   searchAuthorizationRestricted?: boolean;
+  searchAuthorizationFiltered?: boolean;
   evidenceAuthorizationRestricted?: boolean;
+  evidenceAuthorizationFiltered?: boolean;
   /** First evaluate_evidence returns CANDIDATE_PROVENANCE_MISSING. */
   evidenceProvenanceMissingOnce?: boolean;
   /** Every evaluate_evidence returns CANDIDATE_PROVENANCE_MISSING. */
@@ -387,6 +389,9 @@ function makeHarness(options: HarnessOptions = {}) {
           ...(options.searchAuthorizationRestricted !== undefined
             ? { authorizationRestricted: options.searchAuthorizationRestricted }
             : {}),
+          ...(options.searchAuthorizationFiltered !== undefined
+            ? { authorizationFiltered: options.searchAuthorizationFiltered }
+            : {}),
         };
         observations.sourceCatalogOutput = searchOutput;
         hooks.onToolResult?.({
@@ -462,6 +467,9 @@ function makeHarness(options: HarnessOptions = {}) {
                 reasonCode: scenario === "grounded" ? "EVIDENCE_SUFFICIENT" : scenario === "weak" ? "EVIDENCE_WEAK" : "NO_EVIDENCE",
                 ...(options.evidenceAuthorizationRestricted !== undefined
                   ? { authorizationRestricted: options.evidenceAuthorizationRestricted }
+                  : {}),
+                ...(options.evidenceAuthorizationFiltered !== undefined
+                  ? { authorizationFiltered: options.evidenceAuthorizationFiltered }
                   : {}),
               };
           hooks.onToolResult?.({
@@ -2030,6 +2038,25 @@ describe("ChatWorkflowService controlled short paths", () => {
     const response = await executeHarness(harness);
     expect(response.answer).toContain(
       "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    expect(response.sources).toEqual([]);
+    expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();
+  });
+
+  it("describes a partially authorized employee refusal without recording a Knowledge Gap", async () => {
+    const harness = makeHarness({
+      scenario: "insufficient",
+      retrievalOutcome: "AUTHORIZED_RESULTS",
+      searchAuthorizationFiltered: true,
+      evidenceAuthorizationFiltered: true,
+    });
+    const response = await executeHarness(harness);
+
+    expect(response.answer).toContain(
+      "I don't have sufficient authorized access to the documents needed to answer this question.",
+    );
+    expect(response.answer).not.toContain(
+      "I couldn't find any information regarding your query in the available company documents.",
     );
     expect(response.sources).toEqual([]);
     expect(harness.reportKnowledgeGap).not.toHaveBeenCalled();

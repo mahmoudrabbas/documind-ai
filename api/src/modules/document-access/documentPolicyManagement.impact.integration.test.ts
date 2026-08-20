@@ -306,15 +306,19 @@ test("delegated non-owner manager can edit non-owner rules even with taxonomy pr
   assert.equal(preview.impact.direction, "broadening");
 });
 
-async function calculateImpact(current: DocumentAccessPolicy, proposed: DocumentAccessPolicy) {
-  const service = serviceWithState(current) as unknown as {
+async function calculateImpact(
+  current: DocumentAccessPolicy,
+  proposed: DocumentAccessPolicy,
+  documentClassificationId?: mongoose.Types.ObjectId,
+) {
+  const service = serviceWithState(current, documentClassificationId) as unknown as {
     impact(state: {
       document: { _id: mongoose.Types.ObjectId; tenantId: mongoose.Types.ObjectId };
       resource: DocumentAccessResourceContext;
       policy: DocumentAccessPolicy;
     }, proposedPolicy: DocumentAccessPolicy): Promise<PolicyImpact>;
   };
-  return service.impact(state(current), proposed);
+  return service.impact(state(current, documentClassificationId), proposed);
 }
 
 function serviceWithState(current: DocumentAccessPolicy, documentClassificationId?: mongoose.Types.ObjectId) {
@@ -326,18 +330,23 @@ function serviceWithState(current: DocumentAccessPolicy, documentClassificationI
 }
 
 function state(current: DocumentAccessPolicy, documentClassificationId?: mongoose.Types.ObjectId) {
+  const resource: DocumentAccessResourceContext = {
+    tenantId: tenantId.toString(),
+    documentId: documentId.toString(),
+    ownerId: ownerId.toString(),
+    classificationId: documentClassificationId?.toString() ?? null,
+    classification: "internal",
+    activePolicyId: policyId.toString(),
+    activePolicyVersion: current.policyVersion,
+  };
   return {
     document: { _id: documentId, tenantId, version: 1, classificationId: documentClassificationId },
-    resource: {
-      tenantId: tenantId.toString(),
-      documentId: documentId.toString(),
-      ownerId: ownerId.toString(),
-      classificationId: documentClassificationId?.toString() ?? null,
-      classification: "internal",
-      activePolicyId: policyId.toString(),
-      activePolicyVersion: current.policyVersion,
-    },
+    resource,
     policy: current,
+    // `managedState` resolves the actor's own base role. The fixture models a
+    // delegated (non-admin) manager, so taxonomy edits stay owner-gated: the
+    // owner actor is permitted, a delegated non-owner is rejected.
+    actorRole: "MANAGER",
   };
 }
 
@@ -565,9 +574,9 @@ test("policyEvaluationResource applies proposed policy departmentId to resource 
     classificationId: currentClassificationId.toString(), categoryId: null, departmentId: securityDeptId.toString(),
   });
 
-  const currentState = state(currentPolicy, currentClassificationId);
-  const service = serviceWithState(currentPolicy, currentClassificationId);
-  const impact = await service.impact(currentState, proposedPolicy);
+  // Reuses the file's impact accessor so the private method is reached through
+  // one typed indirection rather than an ad-hoc call site.
+  const impact = await calculateImpact(currentPolicy, proposedPolicy, currentClassificationId);
 
   assert.deepEqual(impact.byAction.read, { gained: 1, lost: 0 },
     "read must be gained solely because policyEvaluationResource applies proposed departmentId to resource, enabling the department-scoped capability scope match");

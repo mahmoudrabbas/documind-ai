@@ -57,6 +57,13 @@ export async function getMyPermissionsController(
   next: NextFunction,
 ) {
   try {
+    // Permission state is identity-sensitive and must never be served from a
+    // browser/proxy conditional cache. A 304 has no JSON body, which leaves
+    // the client-side PermissionProvider stuck in its loading boundary.
+    delete req.headers["if-none-match"];
+    delete req.headers["if-modified-since"];
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
     if (!req.auth) {
       throw new AppError(
         401,

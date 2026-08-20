@@ -58,6 +58,12 @@ test("tenant catalog exposes exactly active tenant-grantable permissions", () =>
   assert.ok(!PERMISSION_CATALOG.some((permission) => permission.id === ("audit:platform-read" as never)));
 });
 
+test("employee base role can read knowledge gaps", () => {
+  assert.ok(
+    BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.KNOWLEDGE_GAPS_READ),
+  );
+});
+
 test("catalog identifiers are normalized, unique, versioned, and cover all twelve groups", () => {
   const ids = PERMISSION_CATALOG.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);

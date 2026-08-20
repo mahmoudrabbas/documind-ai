@@ -5,7 +5,7 @@
  * Round-9: category workflow, priority normal, NO actions (plan line 254).
  * dedupEventId = invitee userId (per admin recipient — plan T25).
  */
-import { escapeHtml, resolveDedupEventId, resolveLocalized } from "../sanitize.js";
+import { resolveDedupEventId, resolveLocalized } from "../sanitize.js";
 import {
   invitationAcceptedMetadataSchema,
   type InvitationAcceptedMetadata,
@@ -19,15 +19,13 @@ export const invitationAcceptedBuilder: NotificationBuilder = {
     const metadata: InvitationAcceptedMetadata = invitationAcceptedMetadataSchema.parse(
       event.metadata,
     );
-    const safeName = escapeHtml(metadata.inviteeName);
-
     const title = resolveLocalized(event.title, {
       en: "New team member",
       ar: "عضو جديد في الفريق",
     });
     const body = resolveLocalized(event.body, {
-      en: `${safeName} joined the company.`,
-      ar: `انضم ${safeName} إلى الشركة.`,
+      en: `${metadata.inviteeName} joined the company.`,
+      ar: `انضم ${metadata.inviteeName} إلى الشركة.`,
     });
 
     return {
