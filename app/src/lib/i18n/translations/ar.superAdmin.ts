@@ -23,15 +23,6 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.statusDistribution": "توزيع الحالات",
   "superAdmin.auditLogTitle": "سجل تدقيق المنصة",
   "superAdmin.auditLogDesc": "فحص الإجراءات الإدارية عبر المنصة.",
-  "superAdmin.processingOverviewTitle": "نظرة عامة على المعالجة",
-  "superAdmin.processingOverviewDesc":
-    "عرض على مستوى المنصة لعمليات معالجة المستندات الفاشلة لدى جميع المستأجرين.",
-  "superAdmin.processingOverviewEmpty":
-    "لا توجد مهام معالجة فاشلة لدى أي مستأجر.",
-  "superAdmin.processingOverviewLoadError": "تعذّر تحميل مهام المعالجة",
-  "superAdmin.processingOverviewRetryError": "تعذّرت إعادة المحاولة",
-  "superAdmin.processingOverviewReprocessError": "تعذّرت إعادة المعالجة",
-  "superAdmin.processingOverviewTimelineTitle": "المسار الزمني للمعالجة",
   "superAdmin.refundReviewsTitle": "مراجعة الاسترداد",
   "superAdmin.refundReviewsDesc":
     "مراجعة ومعالجة طلبات استرداد الأموال للعملاء.",
@@ -63,9 +54,42 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.systemHealthTitle": "حالة النظام",
   "superAdmin.systemHealthDesc":
     "مراجعة مؤشرات الجاهزية الحية للخدمات الأساسية في DocuMind AI.",
+  "superAdmin.systemHealthSummary.healthy":
+    "جميع الخدمات الحرجة وعددها {{count}} تعمل بشكل سليم.",
+  "superAdmin.systemHealthSummary.degraded":
+    "{{healthyCount}} من {{totalCount}} خدمة حرجة تعمل بشكل سليم.",
+  "superAdmin.systemHealthSummary.down": "الخدمات الحرجة للمنصة غير متاحة.",
+  "superAdmin.systemHealthLatency": "زمن الاستجابة",
+  "superAdmin.systemHealthUptime": "مدة التشغيل",
+  "superAdmin.systemHealthCheckedAt": "وقت الفحص",
+  "superAdmin.systemHealthLastChecked": "آخر فحص",
+  "superAdmin.systemHealthStatus": "الحالة",
+  "superAdmin.systemHealthSummaryTitle": "ملخص الخدمات",
+  "superAdmin.systemHealthServicesTitle": "الخدمات الحرجة",
+  "superAdmin.systemHealthServiceSignal": "مؤشر الجاهزية المباشر",
+  "superAdmin.systemHealthTotalServices": "إجمالي الخدمات",
+  "superAdmin.systemHealthHealthy": "سليمة",
+  "superAdmin.systemHealthDegraded": "متدهورة",
+  "superAdmin.systemHealthUnavailable": "غير متاحة",
+  "superAdmin.systemHealthViewDetails": "عرض التفاصيل",
+  "superAdmin.systemHealthLiveDetails": "تفاصيل الجاهزية المباشرة",
+  "superAdmin.systemHealthOverview": "نظرة عامة",
+  "superAdmin.systemHealthHealthChecks": "فحوصات الصحة",
+  "superAdmin.systemHealthRuntimeDetails": "تفاصيل وقت التشغيل",
+  "superAdmin.systemHealthReady": "جاهز",
+  "superAdmin.systemHealthNotReady": "غير جاهز",
+  "superAdmin.systemHealthYes": "نعم",
+  "superAdmin.systemHealthNo": "لا",
+  "superAdmin.systemHealthWorkerReason.timeout":
+    "انتهت مهلة فحص صحة العامل الخلفي.",
+  "superAdmin.systemHealthWorkerReason.unreachable":
+    "تعذر الوصول إلى العامل الخلفي.",
+  "superAdmin.systemHealthWorkerReason.not_ready":
+    "العامل الخلفي غير جاهز بعد.",
   "superAdmin.serviceStatus.healthy": "سليم",
   "superAdmin.serviceStatus.degraded": "متدهور",
   "superAdmin.serviceStatus.unavailable": "غير متاح",
+  "superAdmin.serviceStatus.down": "متوقف",
   "superAdmin.serviceStatus.connected": "متصل",
 
   /* ── Platform Users ────────────────────────────────────── */
@@ -80,10 +104,6 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.userStatus.disabled": "معطل",
   "superAdmin.userStatus.pending_email_verification": "في انتظار التحقق",
 
-  /* ── Processing Jobs ───────────────────────────────────── */
-  "superAdmin.jobsTitle": "مهام المعالجة",
-  "superAdmin.jobsDesc": "مراقبة استيعاب المستندات ونشاط المعالجة عبر الشركات.",
-
   /* ── Usage & Costs ─────────────────────────────────────── */
   "superAdmin.usageTitle": "الاستخدام والتكاليف",
   "superAdmin.usageDesc":
@@ -94,6 +114,93 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.usageDailyVolume": "حجم الاستعلامات اليومي",
   "superAdmin.usageDailyVolumeChart": "مخطط حجم الاستعلامات اليومي",
   "superAdmin.usageQueriesTooltip": "{{count}} استعلام",
+
+  /* ── Help Center ──────────────────────────────────────── */
+  "superAdmin.help.badge": "المسؤول العام",
+  "superAdmin.help.title": "مركز المساعدة",
+  "superAdmin.help.description":
+    "إرشادات تشغيلية لإدارة المنصة والتهيئة والدعم.",
+  "superAdmin.help.gettingStarted.title": "البدء",
+  "superAdmin.help.gettingStarted.summary":
+    "فهم واجهة المنصة وأول المهام التي تُبقيها تعمل.",
+  "superAdmin.help.gettingStarted.point1":
+    "ابدأ من صفحة النظرة العامة لمراجعة الشركات ونشاط المنصة والمؤشرات التشغيلية.",
+  "superAdmin.help.gettingStarted.point2":
+    "استخدم الشريط الجانبي للتنقل بين العملاء والفوترة والعمليات والتحليلات والحوكمة.",
+  "superAdmin.help.gettingStarted.point3":
+    "اترك صفحات المنصة مفتوحة أثناء تغيير الإعدادات حتى تتحقق من أثر كل تحديث.",
+  "superAdmin.help.customers.title": "العملاء / الشركات",
+  "superAdmin.help.customers.summary":
+    "مكان فحص سجلات المستأجرين وتفاصيل الحساب.",
+  "superAdmin.help.customers.point1":
+    "افتح الشركات لمراجعة حالة المستأجر وبيانات الحساب ومستوى الظهور على المنصة.",
+  "superAdmin.help.customers.point2":
+    "استخدم مستخدمي المنصة لفحص الحسابات عبر المستأجرين دون تعديل صلاحياتهم.",
+  "superAdmin.help.customers.point3":
+    "احتفظ بالتغييرات الخاصة بالمستأجر داخل تدفقها الخاص؛ فواجهة المنصة للمراقبة.",
+  "superAdmin.help.billing.title": "الفوترة والباقات",
+  "superAdmin.help.billing.summary":
+    "إدارة الباقات والاشتراكات والمدفوعات والاستردادات وتجاوزات الحصص.",
+  "superAdmin.help.billing.point1":
+    "استخدم الباقات لإدارة الخطط التجارية ذات الإصدارات الثابتة والاستحقاقات.",
+  "superAdmin.help.billing.point2":
+    "استخدم الاشتراكات وتشخيص المدفوعات ومراجعات الاسترداد لمتابعة دورة الفوترة.",
+  "superAdmin.help.billing.point3":
+    "طبّق تجاوزات الحصص فقط عند الحاجة لتعديل حدود المنصة بشكل مقصود.",
+  "superAdmin.help.systemHealth.title": "حالة النظام",
+  "superAdmin.help.systemHealth.summary":
+    "قراءة الحالة الحية لـ API وMongoDB وRedis والعاملين الخلفيين.",
+  "superAdmin.help.systemHealth.point1":
+    "سليم يعني أن الفحص نجح؛ متدهور أو غير متاح يعني أن اعتمادًا حقيقيًا فشل.",
+  "superAdmin.help.systemHealth.point2":
+    "حدّث الصفحة عند التحقق من التعافي أو إعادة التشغيل أو تغيير الاتصال.",
+  "superAdmin.help.systemHealth.point3":
+    "استخدم إشارة العامل للتأكد من أن مستهلك قائمة الانتظار يعمل فعلًا، لا أنه مهيأ فقط.",
+  "superAdmin.help.aiConfiguration.title": "إعدادات الذكاء الاصطناعي",
+  "superAdmin.help.aiConfiguration.summary":
+    "مراجعة القيم الافتراضية الفعلية المستخدمة في مزوّدي الذكاء الاصطناعي وعمليات التوليد.",
+  "superAdmin.help.aiConfiguration.point1":
+    "يُتحقق من المزوّد ونموذج المحادثة ونموذج التضمين ودرجة العشوائية وحدود الرموز قبل التطبيق.",
+  "superAdmin.help.aiConfiguration.point2":
+    "يجب التعامل بحذر مع تغييرات التضمين لأن المتجهات غير المتوافقة تتطلب إعادة معالجة.",
+  "superAdmin.help.aiConfiguration.point3":
+    "احفظ فقط القيم التي يدعمها المزوّد المهيأ فعلًا.",
+  "superAdmin.help.analytics.title": "الاستخدام / التحليلات",
+  "superAdmin.help.analytics.summary":
+    "تتبع استخدام المنصة والتكلفة والاتجاهات عبر المستأجرين.",
+  "superAdmin.help.analytics.point1":
+    "تُلخص الاستخدامات والتكاليف الحجم التشغيلي والإنفاق التقديري.",
+  "superAdmin.help.analytics.point2":
+    "تحليلات المنصة المتعمقة هي المكان المناسب لفحص أنماط الأداء بين المستأجرين.",
+  "superAdmin.help.analytics.point3":
+    "استخدم هذه الصفحات للمراجعة والتخطيط، لا للتعديل على مستوى المستأجر.",
+  "superAdmin.help.security.title": "الأمان والتدقيق",
+  "superAdmin.help.security.summary":
+    "تدقيق تغييرات المنصة والتأكد من بقاء التحكم ضمن نطاقه.",
+  "superAdmin.help.security.point1":
+    "يسجل الأمان والتدقيق النشاط الإداري والتغييرات التشغيلية المهمة.",
+  "superAdmin.help.security.point2":
+    "استخدم بيانات التدقيق للتحقق من من غيّر إعدادات المنصة ومتى.",
+  "superAdmin.help.security.point3":
+    "حافظ على عزل المستأجرين: إشراف المنصة لا يمنح صلاحية تعديل بياناتهم.",
+  "superAdmin.help.settings.title": "الإعدادات العامة",
+  "superAdmin.help.settings.summary":
+    "تعديل القيم الافتراضية على مستوى المنصة التي تؤثر في المنتج كله.",
+  "superAdmin.help.settings.point1":
+    "تغطي الإعدادات العامة جهات الاتصال للدعم ووضع الصيانة والتسجيلات والاحتفاظ.",
+  "superAdmin.help.settings.point2":
+    "عامل التعديلات العامة كأنها تغييرات إنتاج وتأكد من أثرها قبل الحفظ.",
+  "superAdmin.help.settings.point3":
+    "استخدم الصفحة للقيم التي تكون عامة فعلًا في DocuMind AI فقط.",
+  "superAdmin.help.troubleshooting.title": "استكشاف الأخطاء وإصلاحها",
+  "superAdmin.help.troubleshooting.summary":
+    "فحوصات شائعة عندما تبدو صفحات المنصة أو خدماتها غير سليمة.",
+  "superAdmin.help.troubleshooting.point1":
+    "إذا أصبحت خدمة غير متاحة، فتأكد أن API وRedis وMongoDB والعمال تعمل فعلًا.",
+  "superAdmin.help.troubleshooting.point2":
+    "إذا بدت إعدادات الذكاء الاصطناعي غير متغيرة، فأعد تحميل الصفحة وتحقق من قبول القيم المحفوظة.",
+  "superAdmin.help.troubleshooting.point3":
+    "إذا اختفى مسار، فتحقق مما إذا كان قد أزيل عمدًا من التنقل.",
 
   /* ── Subscriptions ─────────────────────────────────────── */
   "superAdmin.subsTitle": "الاشتراكات",
@@ -476,52 +583,6 @@ const arSuperAdmin: TranslationDictionary = {
   "superAdmin.operationMode.local-only": "محلي فقط",
   "superAdmin.operationMode.provider-managed": "مُدار من المزوّد",
 
-  /* ── Retrieval debug ───────────────────────────────────── */
-  "superAdmin.retrievalDebug.title": "تشخيص الاسترجاع",
-  "superAdmin.retrievalDebug.desc": "فحص مسار الاسترجاع الهجين وتشخيصه",
-  "superAdmin.retrievalDebug.searchError": "تعذّر تنفيذ بحث الاسترجاع",
-  "superAdmin.retrievalDebug.queryPlaceholder": "أدخل عبارة البحث...",
-  "superAdmin.retrievalDebug.method": "الطريقة",
-  "superAdmin.retrievalDebug.topK": "أفضل K",
-  "superAdmin.retrievalDebug.searching": "جارٍ البحث...",
-  "superAdmin.retrievalDebug.totalLatency": "زمن الاستجابة الكلي",
-  "superAdmin.retrievalDebug.latencyMs": "{{value}} م.ث",
-  "superAdmin.retrievalDebug.vectorCandidates": "مرشحات المتجهات",
-  "superAdmin.retrievalDebug.keywordCandidates": "مرشحات الكلمات المفتاحية",
-  "superAdmin.retrievalDebug.traceId": "معرّف التتبع",
-  "superAdmin.retrievalDebug.tenantFilter": "تصفية المستأجر: {{state}}",
-  "superAdmin.retrievalDebug.roleFilter": "تصفية الدور: {{role}}",
-  "superAdmin.retrievalDebug.versionFilter": "تصفية الإصدار: {{state}}",
-  "superAdmin.retrievalDebug.filterOn": "مُفعّلة",
-  "superAdmin.retrievalDebug.filterOff": "مُعطّلة",
-  "superAdmin.retrievalDebug.scope": "النطاق: {{scope}}",
-  "superAdmin.retrievalDebug.filter": "التصفية: {{filter}}",
-  "superAdmin.retrievalDebug.noChunks": "لم يتم العثور على مقاطع مطابقة",
-  "superAdmin.retrievalDebug.tableScore": "الدرجة",
-  "superAdmin.retrievalDebug.tablePage": "الصفحة",
-  "superAdmin.retrievalDebug.tableSection": "القسم",
-  "superAdmin.retrievalDebug.tableClassification": "التصنيف",
-  "superAdmin.retrievalDebug.tableSnippet": "المقتطف",
-  "superAdmin.retrievalDebug.evidenceBundle": "حزمة الأدلة",
-  "superAdmin.retrievalDebug.sufficiency": "الكفاية",
-  "superAdmin.retrievalDebug.inputCandidates": "المرشحات المُدخلة",
-  "superAdmin.retrievalDebug.outputItems": "العناصر المُخرجة",
-  "superAdmin.retrievalDebug.tokenBudget": "حد الرموز",
-  "superAdmin.retrievalDebug.tokenBudgetValue": "{{used}} / {{max}}",
-  "superAdmin.retrievalDebug.conflictsDetected": "التعارضات المكتشفة",
-  "superAdmin.retrievalDebug.reasonsLabel": "الأسباب:",
-  "superAdmin.retrievalDebug.tableRank": "الترتيب",
-  "superAdmin.retrievalDebug.tableTotal": "الإجمالي",
-  "superAdmin.retrievalDebug.tableRerank": "إعادة الترتيب",
-  "superAdmin.retrievalDebug.tableSemantic": "الدلالي",
-  "superAdmin.retrievalDebug.tableExact": "المطابقة التامة",
-  "superAdmin.retrievalDebug.tableAuthority": "الموثوقية",
-  "superAdmin.retrievalDebug.tableExcerpt": "مقتطف النص",
-  "superAdmin.retrievalDebug.rankValue": "#{{rank}}",
-  "superAdmin.retrievalDebug.conflictGroups": "مجموعات التعارض",
-  "superAdmin.retrievalDebug.conflictDetail":
-    "{{description}} (العناصر: {{items}})",
-  "superAdmin.retrievalDebug.scoreExplanation": "تفسير الدرجة:",
   "superAdmin.retrievalMethod.hybrid": "هجين",
   "superAdmin.retrievalMethod.vector": "متجهي",
   "superAdmin.retrievalMethod.keyword": "كلمات مفتاحية",

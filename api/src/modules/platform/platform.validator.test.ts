@@ -129,16 +129,36 @@ test("subscription provisioning and update contracts are strict, trimmed, and ex
   }), { action: "update", packageId, expectedVersion: 3 });
 });
 
-test("platform settings accept primitives and reject nested secrets", () => {
+test("platform settings accept AI configuration fields and reject nested secrets", () => {
   assert.deepEqual(
-    parse(settingsBodySchema, { maintenanceMode: true, trialDays: 14 }),
+    parse(settingsBodySchema, {
+      provider: "groq",
+      chatModel: "llama-3.3-70b-versatile",
+      embeddingModel: "jina-embeddings-v3",
+      temperature: 0.2,
+      maxOutputTokens: 2048,
+    }),
     {
-      maintenanceMode: true,
-      trialDays: 14,
+      provider: "groq",
+      chatModel: "llama-3.3-70b-versatile",
+      embeddingModel: "jina-embeddings-v3",
+      temperature: 0.2,
+      maxOutputTokens: 2048,
     },
   );
   assert.throws(
     () => parse(settingsBodySchema, { provider: { apiKey: "secret" } }),
+    AppError,
+  );
+  assert.throws(
+    () =>
+      parse(settingsBodySchema, {
+        provider: "openai",
+        chatModel: "x",
+        embeddingModel: "y",
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+      }),
     AppError,
   );
 });

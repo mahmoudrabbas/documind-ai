@@ -22,6 +22,18 @@ import type {
 } from "@/types/api/super-admin.types";
 
 type Success<T> = { success: true; data: T };
+
+export interface PlatformServiceHealthDetails extends Record<string, unknown> {
+  uptimeMs?: number | null;
+  reachable?: boolean;
+  reason?: string;
+  workerStatus?: string;
+  checks?: Record<string, unknown>;
+  details?: Record<string, unknown>;
+  connected?: boolean;
+  response?: string;
+}
+
 export const getPlatformOverview = (signal?: AbortSignal) =>
   apiClient<
     Success<{
@@ -166,8 +178,18 @@ export const getPlatformHealth = (signal?: AbortSignal) =>
   apiClient<
     Success<{
       status: string;
-      services: Array<{ name: string; status: string }>;
+      summary: string;
       checkedAt: string;
+      services: Record<
+        string,
+        {
+          name: string;
+          status: string;
+          checkedAt: string;
+          latencyMs: number | null;
+          details: PlatformServiceHealthDetails;
+        }
+      >;
     }>
   >("/platform/system-health", { signal });
 export const listPlatformAudit = (

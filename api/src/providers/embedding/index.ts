@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "./embeddingProvider.port.js";
 import { FakeEmbeddingProvider } from "./fakeEmbeddingProvider.js";
+import { getEffectiveAiRuntimeConfig } from "../../modules/platform/ai-runtime-config.js";
 
 let singleton: EmbeddingProvider | null = null;
 
@@ -20,6 +21,9 @@ export function resolveEmbeddingProviderKey(
   env: NodeJS.ProcessEnv = process.env,
 ): EmbeddingProviderKey {
   if (env.NODE_ENV === "test") return "fake";
+  const runtime = getEffectiveAiRuntimeConfig();
+  if (runtime.provider === "student-bedrock") return "student-bedrock";
+  if (runtime.provider === "groq") return "groq";
   const explicit = env.AI_PROVIDER?.trim().toLowerCase();
   if (
     explicit === "fake" ||
@@ -87,6 +91,7 @@ export async function getEmbeddingProviderAsync(): Promise<EmbeddingProvider> {
 
 async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
   const aiProvider = resolveEmbeddingProviderKey();
+  const runtime = getEffectiveAiRuntimeConfig();
 
   if (aiProvider === "student-bedrock") {
     const { createStudentBedrockProvider } = await import("../bedrock/index.js");
@@ -96,7 +101,7 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
   if (aiProvider === "groq") {
     const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
     const apiKey = process.env.JINA_API_KEY;
-    const model = process.env.JINA_EMBEDDING_MODEL || "jina-embeddings-v3";
+    const model = runtime.embeddingModel || process.env.JINA_EMBEDDING_MODEL || "jina-embeddings-v3";
     const dimensions = parseInt(process.env.JINA_EMBEDDING_DIMENSIONS || "1024", 10);
     if (!apiKey) throw new Error("JINA_API_KEY is required for groq provider");
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions, "https://api.jina.ai/v1");
@@ -107,7 +112,7 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
     const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
     if (!apiKey) throw new Error("OPENAI_API_KEY is required for openai provider");
     const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
-    const model = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+    const model = runtime.embeddingModel || process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions);
   }
 

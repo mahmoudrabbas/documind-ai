@@ -143,20 +143,27 @@ export function PlatformTable({
  * it falls back to the humanised code so untranslated call sites are
  * unchanged.
  */
-export function StatusPill({ value, label }: { value: string; label?: ReactNode }) {
+export function StatusPill({
+  value,
+  label,
+}: {
+  value: string;
+  label?: ReactNode;
+}) {
   const positive = ["active", "healthy", "processed", "connected"].includes(
     value,
   );
+  const warning = ["degraded"].includes(value);
   const negative = [
     "failed",
     "suspended",
     "cancelled",
     "unavailable",
-    "degraded",
+    "down",
   ].includes(value);
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${positive ? "bg-tertiary-container/20 text-on-tertiary-container" : negative ? "bg-error-container text-on-error-container" : "bg-surface-container text-on-surface-variant"}`}
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${positive ? "bg-tertiary-container/20 text-on-tertiary-container" : warning ? "bg-secondary-container/40 text-on-secondary-container" : negative ? "bg-error-container text-on-error-container" : "bg-surface-container text-on-surface-variant"}`}
     >
       {label ?? value.replaceAll("_", " ")}
     </span>

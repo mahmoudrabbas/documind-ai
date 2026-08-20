@@ -28,15 +28,6 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.auditLogTitle": "Platform Audit Log",
   "superAdmin.auditLogDesc":
     "Inspect administrative actions across the platform.",
-  "superAdmin.processingOverviewTitle": "Processing Overview",
-  "superAdmin.processingOverviewDesc":
-    "Platform-wide view of failed document processing runs across all tenants.",
-  "superAdmin.processingOverviewEmpty":
-    "No failed processing jobs across any tenant.",
-  "superAdmin.processingOverviewLoadError": "Failed to load processing jobs",
-  "superAdmin.processingOverviewRetryError": "Failed to retry",
-  "superAdmin.processingOverviewReprocessError": "Failed to reprocess",
-  "superAdmin.processingOverviewTimelineTitle": "Processing Timeline",
   "superAdmin.refundReviewsTitle": "Refund Reviews",
   "superAdmin.refundReviewsDesc":
     "Review and process customer refund requests.",
@@ -68,9 +59,43 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.systemHealthTitle": "System Health",
   "superAdmin.systemHealthDesc":
     "Review live readiness signals for core DocuMind AI services.",
+  "superAdmin.systemHealthSummary.healthy":
+    "All {{count}} critical services operational.",
+  "superAdmin.systemHealthSummary.degraded":
+    "{{healthyCount}} of {{totalCount}} critical services operational.",
+  "superAdmin.systemHealthSummary.down":
+    "Critical platform services unavailable.",
+  "superAdmin.systemHealthLatency": "Latency",
+  "superAdmin.systemHealthUptime": "Uptime",
+  "superAdmin.systemHealthCheckedAt": "Checked",
+  "superAdmin.systemHealthLastChecked": "Last checked",
+  "superAdmin.systemHealthStatus": "Status",
+  "superAdmin.systemHealthSummaryTitle": "Service summary",
+  "superAdmin.systemHealthServicesTitle": "Critical services",
+  "superAdmin.systemHealthServiceSignal": "Live readiness signal",
+  "superAdmin.systemHealthTotalServices": "Total services",
+  "superAdmin.systemHealthHealthy": "Healthy",
+  "superAdmin.systemHealthDegraded": "Degraded",
+  "superAdmin.systemHealthUnavailable": "Unavailable",
+  "superAdmin.systemHealthViewDetails": "View details",
+  "superAdmin.systemHealthLiveDetails": "Live readiness details",
+  "superAdmin.systemHealthOverview": "Overview",
+  "superAdmin.systemHealthHealthChecks": "Health checks",
+  "superAdmin.systemHealthRuntimeDetails": "Runtime details",
+  "superAdmin.systemHealthReady": "Ready",
+  "superAdmin.systemHealthNotReady": "Not ready",
+  "superAdmin.systemHealthYes": "Yes",
+  "superAdmin.systemHealthNo": "No",
+  "superAdmin.systemHealthWorkerReason.timeout":
+    "Worker health check timed out.",
+  "superAdmin.systemHealthWorkerReason.unreachable":
+    "Unable to reach background worker.",
+  "superAdmin.systemHealthWorkerReason.not_ready":
+    "Background worker is not ready.",
   "superAdmin.serviceStatus.healthy": "Healthy",
   "superAdmin.serviceStatus.degraded": "Degraded",
   "superAdmin.serviceStatus.unavailable": "Unavailable",
+  "superAdmin.serviceStatus.down": "Down",
   "superAdmin.serviceStatus.connected": "Connected",
 
   /* ── Platform Users ────────────────────────────────────── */
@@ -85,11 +110,6 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.userStatus.disabled": "Disabled",
   "superAdmin.userStatus.pending_email_verification": "Pending Verification",
 
-  /* ── Processing Jobs ───────────────────────────────────── */
-  "superAdmin.jobsTitle": "Processing Jobs",
-  "superAdmin.jobsDesc":
-    "Monitor document ingestion and processing activity across companies.",
-
   /* ── Usage & Costs ─────────────────────────────────────── */
   "superAdmin.usageTitle": "Usage & Costs",
   "superAdmin.usageDesc":
@@ -100,6 +120,93 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.usageDailyVolume": "Daily query volume",
   "superAdmin.usageDailyVolumeChart": "Daily query volume chart",
   "superAdmin.usageQueriesTooltip": "{{count}} queries",
+
+  /* ── Help Center ──────────────────────────────────────── */
+  "superAdmin.help.badge": "Super Admin",
+  "superAdmin.help.title": "Help Center",
+  "superAdmin.help.description":
+    "Operational guidance for platform administration, configuration, and support.",
+  "superAdmin.help.gettingStarted.title": "Getting Started",
+  "superAdmin.help.gettingStarted.summary":
+    "Understand the platform shell and the first tasks that keep it running.",
+  "superAdmin.help.gettingStarted.point1":
+    "Start from the Overview page to review companies, platform activity, and operational signals.",
+  "superAdmin.help.gettingStarted.point2":
+    "Use the sidebar to move between customers, billing, operations, analytics, and governance.",
+  "superAdmin.help.gettingStarted.point3":
+    "Keep the platform pages open while changing settings so you can verify the effect of each update.",
+  "superAdmin.help.customers.title": "Customers / Companies",
+  "superAdmin.help.customers.summary":
+    "Where to inspect tenant records and account-level details.",
+  "superAdmin.help.customers.point1":
+    "Open Companies to review tenant status, account metadata, and platform-level visibility.",
+  "superAdmin.help.customers.point2":
+    "Use Platform Users to inspect accounts across tenants without changing tenant-scoped permissions.",
+  "superAdmin.help.customers.point3":
+    "Keep tenant-scoped changes inside their own workflows; the platform shell is for oversight.",
+  "superAdmin.help.billing.title": "Billing & Plans",
+  "superAdmin.help.billing.summary":
+    "Manage packages, subscriptions, payments, refunds, and quota overrides.",
+  "superAdmin.help.billing.point1":
+    "Use Packages to manage versioned commercial plans and their entitlements.",
+  "superAdmin.help.billing.point2":
+    "Use Subscriptions, Payment Diagnostics, and Refund Reviews to follow the billing lifecycle.",
+  "superAdmin.help.billing.point3":
+    "Apply Quota Overrides only when you need to adjust platform limits deliberately.",
+  "superAdmin.help.systemHealth.title": "System Health",
+  "superAdmin.help.systemHealth.summary":
+    "Read the live state of API, MongoDB, Redis, and background workers.",
+  "superAdmin.help.systemHealth.point1":
+    "Healthy means the service probe succeeded; degraded or unavailable means a real dependency failed.",
+  "superAdmin.help.systemHealth.point2":
+    "Refresh the page if you are validating a recovery, restart, or connectivity change.",
+  "superAdmin.help.systemHealth.point3":
+    "Use the worker signal to confirm that the queue consumer is alive, not just configured.",
+  "superAdmin.help.aiConfiguration.title": "AI Configuration",
+  "superAdmin.help.aiConfiguration.summary":
+    "Review the effective runtime defaults used by AI providers and generation calls.",
+  "superAdmin.help.aiConfiguration.point1":
+    "Provider, chat model, embedding model, temperature, and output-token limits are validated before they are applied.",
+  "superAdmin.help.aiConfiguration.point2":
+    "Embedding changes should be treated carefully because incompatible vectors require reprocessing.",
+  "superAdmin.help.aiConfiguration.point3":
+    "Save only values that the configured provider actually supports.",
+  "superAdmin.help.analytics.title": "Usage / Analytics",
+  "superAdmin.help.analytics.summary":
+    "Track platform usage, costs, and cross-tenant trends.",
+  "superAdmin.help.analytics.point1":
+    "Usage & Costs summarizes operational volume and estimated spend.",
+  "superAdmin.help.analytics.point2":
+    "AI Analytics Deep Dive is where you inspect cross-tenant performance patterns.",
+  "superAdmin.help.analytics.point3":
+    "Use these views for investigation and planning, not for tenant-level editing.",
+  "superAdmin.help.security.title": "Security & Audit",
+  "superAdmin.help.security.summary":
+    "Audit platform changes and confirm that control remains scoped.",
+  "superAdmin.help.security.point1":
+    "Security & Audit records administrative activity and high-value operational changes.",
+  "superAdmin.help.security.point2":
+    "Use audit data to verify who changed platform settings and when.",
+  "superAdmin.help.security.point3":
+    "Keep tenant isolation intact: platform oversight does not grant tenant mutation access.",
+  "superAdmin.help.settings.title": "Global Settings",
+  "superAdmin.help.settings.summary":
+    "Adjust platform-wide defaults that affect the whole product.",
+  "superAdmin.help.settings.point1":
+    "Global Settings covers support contacts, maintenance mode, registrations, and retention defaults.",
+  "superAdmin.help.settings.point2":
+    "Treat platform-wide edits as production changes and confirm the impact before saving.",
+  "superAdmin.help.settings.point3":
+    "Use the page only for values that are truly global to DocuMind AI.",
+  "superAdmin.help.troubleshooting.title": "Troubleshooting",
+  "superAdmin.help.troubleshooting.summary":
+    "Common checks when platform pages or services look unhealthy.",
+  "superAdmin.help.troubleshooting.point1":
+    "If a service turns unavailable, confirm the API, Redis, MongoDB, and worker processes are actually up.",
+  "superAdmin.help.troubleshooting.point2":
+    "If AI settings appear unchanged, reload the page and verify that the saved values were accepted.",
+  "superAdmin.help.troubleshooting.point3":
+    "If a route disappears, verify whether it was intentionally removed from the navigation.",
 
   /* ── Subscriptions ─────────────────────────────────────── */
   "superAdmin.subsTitle": "Subscriptions",
@@ -498,53 +605,6 @@ const enSuperAdmin: TranslationDictionary = {
   "superAdmin.operationMode.local-only": "Local only",
   "superAdmin.operationMode.provider-managed": "Provider-managed",
 
-  /* ── Retrieval debug ───────────────────────────────────── */
-  "superAdmin.retrievalDebug.title": "Retrieval Debug",
-  "superAdmin.retrievalDebug.desc":
-    "Inspect and debug the hybrid retrieval pipeline",
-  "superAdmin.retrievalDebug.searchError": "Failed to execute retrieval search",
-  "superAdmin.retrievalDebug.queryPlaceholder": "Enter search query...",
-  "superAdmin.retrievalDebug.method": "Method",
-  "superAdmin.retrievalDebug.topK": "Top K",
-  "superAdmin.retrievalDebug.searching": "Searching...",
-  "superAdmin.retrievalDebug.totalLatency": "Total Latency",
-  "superAdmin.retrievalDebug.latencyMs": "{{value}}ms",
-  "superAdmin.retrievalDebug.vectorCandidates": "Vector Candidates",
-  "superAdmin.retrievalDebug.keywordCandidates": "Keyword Candidates",
-  "superAdmin.retrievalDebug.traceId": "Trace ID",
-  "superAdmin.retrievalDebug.tenantFilter": "Tenant filter: {{state}}",
-  "superAdmin.retrievalDebug.roleFilter": "Role filter: {{role}}",
-  "superAdmin.retrievalDebug.versionFilter": "Version filter: {{state}}",
-  "superAdmin.retrievalDebug.filterOn": "ON",
-  "superAdmin.retrievalDebug.filterOff": "OFF",
-  "superAdmin.retrievalDebug.scope": "Scope: {{scope}}",
-  "superAdmin.retrievalDebug.filter": "Filter: {{filter}}",
-  "superAdmin.retrievalDebug.noChunks": "No matching chunks found",
-  "superAdmin.retrievalDebug.tableScore": "Score",
-  "superAdmin.retrievalDebug.tablePage": "Page",
-  "superAdmin.retrievalDebug.tableSection": "Section",
-  "superAdmin.retrievalDebug.tableClassification": "Classification",
-  "superAdmin.retrievalDebug.tableSnippet": "Snippet",
-  "superAdmin.retrievalDebug.evidenceBundle": "Evidence Bundle",
-  "superAdmin.retrievalDebug.sufficiency": "Sufficiency",
-  "superAdmin.retrievalDebug.inputCandidates": "Input Candidates",
-  "superAdmin.retrievalDebug.outputItems": "Output Items",
-  "superAdmin.retrievalDebug.tokenBudget": "Token Budget",
-  "superAdmin.retrievalDebug.tokenBudgetValue": "{{used}} / {{max}}",
-  "superAdmin.retrievalDebug.conflictsDetected": "Conflicts Detected",
-  "superAdmin.retrievalDebug.reasonsLabel": "Reasons:",
-  "superAdmin.retrievalDebug.tableRank": "Rank",
-  "superAdmin.retrievalDebug.tableTotal": "Total",
-  "superAdmin.retrievalDebug.tableRerank": "Rerank",
-  "superAdmin.retrievalDebug.tableSemantic": "Semantic",
-  "superAdmin.retrievalDebug.tableExact": "Exact",
-  "superAdmin.retrievalDebug.tableAuthority": "Authority",
-  "superAdmin.retrievalDebug.tableExcerpt": "Text Excerpt",
-  "superAdmin.retrievalDebug.rankValue": "#{{rank}}",
-  "superAdmin.retrievalDebug.conflictGroups": "Conflict Groups",
-  "superAdmin.retrievalDebug.conflictDetail":
-    "{{description}} (items: {{items}})",
-  "superAdmin.retrievalDebug.scoreExplanation": "Score Explanation:",
   "superAdmin.retrievalMethod.hybrid": "Hybrid",
   "superAdmin.retrievalMethod.vector": "Vector",
   "superAdmin.retrievalMethod.keyword": "Keyword",

@@ -15,13 +15,10 @@ const EXPECTED_GROUP_MEMBERSHIP: Record<string, readonly string[]> = {
     "/super-admin/entitlement",
   ],
   operations: [
-    "/super-admin/jobs",
-    "/super-admin/processing-overview",
     "/super-admin/system-health",
   ],
   intelligence: [
     "/super-admin/ai-configuration",
-    "/super-admin/retrieval-debug",
     "/super-admin/usage",
     "/super-admin/analytics",
   ],
@@ -41,7 +38,7 @@ describe("platform navigation configuration", () => {
   });
 
   it("flattens to seventeen nav items", () => {
-    expect(PLATFORM_NAV_ITEMS).toHaveLength(17);
+    expect(PLATFORM_NAV_ITEMS).toHaveLength(14);
   });
 
   it("places every flat item in exactly one group", () => {

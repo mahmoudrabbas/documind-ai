@@ -77,6 +77,7 @@ const envSchema = z
       .default(20),
 
     APP_FRONTEND_URL: z.string().url().default("http://localhost:3000"),
+    WORKER_HEALTH_URL: z.string().url().default("http://127.0.0.1:3001/readyz"),
 
     JWT_SECRET: z.string().min(1).default("development-only-jwt-secret"),
     JWT_EXPIRES_IN: z.string().default("15m"),

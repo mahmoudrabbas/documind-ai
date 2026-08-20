@@ -73,6 +73,7 @@ Example:
 ```env
 PORT=5000
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retryWrites=true&w=majority
+WORKER_HEALTH_URL=http://worker:3001/readyz
 ```
 
 ---

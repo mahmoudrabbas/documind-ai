@@ -26,6 +26,7 @@ services:
       - SMTP_FROM=DocuMind AI <marcoreda51@gmail.com>
       - APP_FRONTEND_URL=${APP_FRONTEND_URL:-http://localhost:3000}
       - PUBLIC_API_URL=${PUBLIC_API_URL:-http://localhost:5000}
+      - WORKER_HEALTH_URL=${WORKER_HEALTH_URL:-http://worker:3001/readyz}
       - SUPER_ADMIN_BOOTSTRAP_KEY_FILE=/run/secrets/api_super_admin_bootstrap_key
       - STRIPE_SECRET_KEY_FILE=/run/secrets/stripe_secret_key
       - STRIPE_WEBHOOK_SECRET_FILE=/run/secrets/stripe_webhook_secret

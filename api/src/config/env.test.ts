@@ -51,6 +51,25 @@ test("fake provider does not require Stripe secrets", () => {
   assert.equal(env.STRIPE_BILLING_PORTAL_RETURN_URL, "http://localhost:3000/dashboard/settings/billing");
 });
 
+test("WORKER_HEALTH_URL accepts a valid internal worker readiness endpoint", () => {
+  const secret = "test-only-secret-value-with-32-characters-minimum";
+  const env = parseEnv({
+    NODE_ENV: "test",
+    PAYMENT_PROVIDER: "fake",
+    MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test",
+    REDIS_URL: "redis://127.0.0.1:6379/1",
+    APP_FRONTEND_URL: "https://app.test.invalid",
+    WORKER_HEALTH_URL: "http://worker:3001/readyz",
+    JWT_SECRET: secret,
+    JWT_REFRESH_SECRET: `${secret}-refresh`,
+    EMAIL_VERIFICATION_JWT_SECRET: `${secret}-verification`,
+    PASSWORD_RESET_JWT_SECRET: `${secret}-reset`,
+    EMAIL_WEBHOOK_SECRET: `${secret}-webhook`,
+    NOTIFICATION_SOCKET_SERVICE_TOKEN: `${secret}-socket`,
+  });
+  assert.equal(env.WORKER_HEALTH_URL, "http://worker:3001/readyz");
+});
+
 test("Stripe portal return URL must match its configured allowed origin", () => {
   assert.throws(
     () => parseEnv({ NODE_ENV: "test", MONGODB_URI: "mongodb://127.0.0.1:27017/documind-test", NOTIFICATION_SOCKET_SERVICE_TOKEN: "test-only-secret-value-with-32-characters-minimum-socket", PAYMENT_PROVIDER: "stripe", STRIPE_SECRET_KEY: "sk_test_explicit", STRIPE_WEBHOOK_SECRET: "whsec_explicit", STRIPE_BILLING_PORTAL_RETURN_URL: "https://evil.example/checkout", BILLING_PORTAL_ALLOWED_ORIGIN: "https://app.example" }),

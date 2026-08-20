@@ -7,6 +7,7 @@ import { FailoverModelAdapter } from "./failoverModelAdapter.js";
 import { GroqChatAdapter } from "./groqChat.adapter.js";
 import { ItiBedrockChatAdapter } from "./itiBedrockAdapter.js";
 import { createStudentBedrockProvider } from "../bedrock/index.js";
+import { getEffectiveAiRuntimeConfig } from "../../modules/platform/ai-runtime-config.js";
 
 let singleton: ModelAdapter | null = null;
 
@@ -17,7 +18,10 @@ function isSupportedProvider(value: string): value is SupportedProvider {
   return (SUPPORTED_PROVIDERS as readonly string[]).includes(value);
 }
 
-function buildSupportedProvider(key: SupportedProvider): ModelAdapter {
+function buildSupportedProvider(
+  key: SupportedProvider,
+  config = getEffectiveAiRuntimeConfig(),
+): ModelAdapter {
   switch (key) {
     case "groq": {
       const apiKey = process.env.GROQ_API_KEY;
@@ -30,7 +34,7 @@ function buildSupportedProvider(key: SupportedProvider): ModelAdapter {
       }
       return new GroqChatAdapter(
         apiKey,
-        process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+        config.chatModel || process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
       );
     }
     case "iti-bedrock": {
@@ -54,7 +58,7 @@ function buildSupportedProvider(key: SupportedProvider): ModelAdapter {
       return new ItiBedrockChatAdapter({
         apiKey,
         baseUrl,
-        model: model || undefined,
+        model: config.chatModel || model || undefined,
         timeoutMs: parseInt(process.env.BEDROCK_TIMEOUT_MS || "30000", 10),
         maxRetries: parseInt(process.env.BEDROCK_MAX_RETRIES || "2", 10),
         retryDelayMs: parseInt(process.env.BEDROCK_RETRY_DELAY_MS || "500", 10),
@@ -115,14 +119,15 @@ export async function getModelAdapterAsync(): Promise<ModelAdapter> {
  * serving simulated responses.
  */
 function buildModelAdapterChain(): ModelAdapter {
-  const primaryProvider = process.env.LLM_PRIMARY_PROVIDER?.trim().toLowerCase();
+  const config = getEffectiveAiRuntimeConfig();
+  const primaryProvider = config.provider || process.env.LLM_PRIMARY_PROVIDER?.trim().toLowerCase();
   if (primaryProvider) {
-    return buildEnvDrivenChain(primaryProvider);
+    return buildEnvDrivenChain(primaryProvider, config);
   }
   return buildLegacyChain();
 }
 
-function buildEnvDrivenChain(primaryProvider: string): ModelAdapter {
+function buildEnvDrivenChain(primaryProvider: string, config = getEffectiveAiRuntimeConfig()): ModelAdapter {
   if (!isSupportedProvider(primaryProvider)) {
     throw new AppError(
       503,
@@ -154,7 +159,7 @@ function buildEnvDrivenChain(primaryProvider: string): ModelAdapter {
 
   for (const key of [primaryProvider, ...(fallbackKey ? [fallbackKey] : [])]) {
     try {
-      providers.push(buildSupportedProvider(key as SupportedProvider));
+      providers.push(buildSupportedProvider(key as SupportedProvider, config));
     } catch (error) {
       configError = error;
       const missingUnderTest =

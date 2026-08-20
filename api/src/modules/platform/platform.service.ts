@@ -7,6 +7,7 @@ import UsageEventModel from "../../db/models/usageEvent.model.js";
 import PackageModel from "../../db/models/package.model.js";
 import SubscriptionModel from "../../db/models/subscription.model.js";
 import PlatformSettingModel from "../../db/models/platformSetting.model.js";
+import ChunkEmbeddingModel from "../../db/models/chunkEmbedding.model.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
   getGlobalSettings,
@@ -14,8 +15,6 @@ import {
   normalizeGlobalSettings,
   GLOBAL_SETTINGS_KEY,
 } from "./global-settings.js";
-import { isMongoConnected } from "../../db/connection.js";
-import { isRedisConnected } from "../../db/redis.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import * as PackageService from "../billing/package.service.js";
 import * as SubscriptionService from "../billing/subscription.service.js";
@@ -37,6 +36,13 @@ import {
   authorizePlatformOperation,
   type OperationAuthorizationContext,
 } from "../permissions/permissions.operation.js";
+import { buildPlatformHealthSummary } from "./system-health.js";
+import {
+  getEffectiveAiRuntimeConfig,
+  primeEffectiveAiRuntimeConfig,
+  updateEffectiveAiRuntimeConfig,
+} from "./ai-runtime-config.js";
+import { EMBEDDING_MODEL_REINDEX_REQUIRED } from "../../common/errors/errorCodes.js";
 
 const tenantFilter = {
   isSystemTenant: { $ne: true },
@@ -647,19 +653,7 @@ export async function getSystemHealth(context: OperationAuthorizationContext) {
     context,
     Permission.COMPANY_SETTINGS_READ,
   );
-  return {
-    status: isMongoConnected() && isRedisConnected() ? "healthy" : "degraded",
-    services: [
-      { name: "API", status: "healthy" },
-      {
-        name: "MongoDB",
-        status: isMongoConnected() ? "healthy" : "unavailable",
-      },
-      { name: "Redis", status: isRedisConnected() ? "healthy" : "unavailable" },
-      { name: "Background workers", status: "not_configured" },
-    ],
-    checkedAt: new Date().toISOString(),
-  };
+  return buildPlatformHealthSummary();
 }
 
 export async function listAudit(input: {
@@ -678,6 +672,10 @@ export async function getSetting(
   await authorizePlatformOperation(context, Permission.COMPANY_SETTINGS_READ);
   if (key === GLOBAL_SETTINGS_KEY) {
     return getGlobalSettings();
+  }
+  if (key === "ai_configuration") {
+    await primeEffectiveAiRuntimeConfig();
+    return getEffectiveAiRuntimeConfig();
   }
   return sanitizeSettingValue(
     (await PlatformSettingModel.findOne({ key }).lean().exec())?.value ?? {}
@@ -704,6 +702,28 @@ export async function updateSetting(
       currentRaw as Record<string, unknown>,
     );
     finalValue = { ...normalized, ...value };
+  }
+  if (key === "ai_configuration") {
+    const currentAiConfig = getEffectiveAiRuntimeConfig();
+    const nextEmbeddingModel =
+      typeof value.embeddingModel === "string" && value.embeddingModel.trim()
+        ? value.embeddingModel.trim()
+        : currentAiConfig.embeddingModel;
+    if (nextEmbeddingModel !== currentAiConfig.embeddingModel) {
+      const incompatibleEmbeddings = await ChunkEmbeddingModel.exists({
+        modelVersion: { $ne: nextEmbeddingModel },
+      })
+        .lean()
+        .exec();
+      if (incompatibleEmbeddings) {
+        throw new AppError(
+          409,
+          EMBEDDING_MODEL_REINDEX_REQUIRED,
+          "Embedding model changes require reindexing existing documents before activation.",
+        );
+      }
+    }
+    finalValue = { ...updateEffectiveAiRuntimeConfig(value) };
   }
 
   const setting = await PlatformSettingModel.findOneAndUpdate(

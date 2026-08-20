@@ -111,20 +111,6 @@ export const PLATFORM_NAV_GROUPS: readonly PlatformNavGroup[] = [
     defaultOpen: true,
     items: [
       {
-        label: "Processing Jobs",
-        labelKey: "nav.processingJobs",
-        href: "/super-admin/jobs",
-        icon: "manufacturing",
-        requiredPermissions: [Permission.DOCUMENTS_READ],
-      },
-      {
-        label: "Processing Overview",
-        labelKey: "nav.processingOverview",
-        href: "/super-admin/processing-overview",
-        icon: "monitoring",
-        requiredPermissions: [Permission.DOCUMENTS_READ],
-      },
-      {
         label: "System Health",
         labelKey: "nav.systemHealth",
         href: "/super-admin/system-health",
@@ -145,13 +131,6 @@ export const PLATFORM_NAV_GROUPS: readonly PlatformNavGroup[] = [
         labelKey: "nav.aiConfiguration",
         href: "/super-admin/ai-configuration",
         icon: "psychology",
-        requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
-      },
-      {
-        label: "Retrieval Debug",
-        labelKey: "nav.retrievalDebug",
-        href: "/super-admin/retrieval-debug",
-        icon: "search",
         requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
       },
       {

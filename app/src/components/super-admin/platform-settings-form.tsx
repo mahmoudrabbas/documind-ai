@@ -16,12 +16,27 @@ import { Permission } from "@/types/api/permissions.types";
 import { ApiError } from "@/lib/api-client";
 
 const aiConfigurationDefaults = {
-  provider: "openai",
+  provider: "groq",
   chatModel: "",
   embeddingModel: "",
   maxOutputTokens: 2048,
   temperature: 0.2,
 };
+
+const aiConfigurationFields: Array<{
+  key: keyof typeof aiConfigurationDefaults;
+  label: string;
+  type: "select" | "text" | "number";
+  min?: number;
+  max?: number;
+  step?: number;
+}> = [
+  { key: "provider", label: "superAdmin.platformSettings.aiProvider", type: "select" },
+  { key: "chatModel", label: "superAdmin.platformSettings.aiChatModel", type: "text" },
+  { key: "embeddingModel", label: "superAdmin.platformSettings.aiEmbeddingModel", type: "text" },
+  { key: "temperature", label: "superAdmin.platformSettings.aiTemperature", type: "number", min: 0, max: 2, step: 0.1 },
+  { key: "maxOutputTokens", label: "superAdmin.platformSettings.aiMaxOutputTokens", type: "number", min: 128, max: 8192, step: 1 },
+];
 
 const globalSettingsDefaults: GlobalSettings = {
   supportEmail: "",
@@ -87,17 +102,6 @@ export function PlatformSettingsForm({
      untranslated message straight from the API. */
   const [notice, setNotice] = useState("");
 
-  /* AI configuration fields are discovered from the API response, so only
-     the known defaults get an authored label; anything else keeps the
-     previous camelCase-to-words rendering. */
-  const aiFieldLabels: Record<string, string> = {
-    provider: t("superAdmin.platformSettings.aiProvider"),
-    chatModel: t("superAdmin.platformSettings.aiChatModel"),
-    embeddingModel: t("superAdmin.platformSettings.aiEmbeddingModel"),
-    maxOutputTokens: t("superAdmin.platformSettings.aiMaxOutputTokens"),
-    temperature: t("superAdmin.platformSettings.aiTemperature"),
-  };
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canUpdate) return;
@@ -140,10 +144,23 @@ export function PlatformSettingsForm({
       }
     } else {
       const body: Record<string, unknown> = {};
-      for (const [key, fallback] of Object.entries(aiConfigurationDefaults)) {
-        if (typeof fallback === "boolean") body[key] = form.get(key) === "on";
-        else if (typeof fallback === "number") body[key] = Number(form.get(key));
-        else body[key] = String(form.get(key) ?? "");
+      for (const field of aiConfigurationFields) {
+        const raw = form.get(field.key);
+        if (field.type === "number") {
+          const parsed = Number(raw);
+          if (!Number.isFinite(parsed)) {
+            setNotice(
+              t("superAdmin.platformSettings.wholeNumber", {
+                field: t(field.label),
+              }),
+            );
+            setPending(false);
+            return;
+          }
+          body[field.key] = parsed;
+        } else {
+          body[field.key] = String(raw ?? "");
+        }
       }
       try {
         await updateAiConfiguration(body);
@@ -209,36 +226,40 @@ export function PlatformSettingsForm({
                       </label>
                     );
                   })
-                : Object.entries(values).map(([key, value]) =>
-                    typeof value === "boolean" ? (
-                      <label
-                        key={key}
-                        className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-outline-variant/30 p-3 text-sm font-bold"
-                      >
-                        <span>
-                          {aiFieldLabels[key] ??
-                            key.replaceAll(/([A-Z])/g, " $1")}
-                        </span>
+                : aiConfigurationFields.map((field) => {
+                    const value = (values as Record<string, unknown>)[field.key];
+                    if (field.type === "select") {
+                      return (
+                        <label key={field.key} className="min-w-0 text-sm font-bold">
+                          {t(field.label)}
+                          <select
+                            name={field.key}
+                            defaultValue={String(value ?? "")}
+                            className={input}
+                          >
+                            <option value="groq">Groq</option>
+                            <option value="iti-bedrock">ITI Bedrock</option>
+                            <option value="student-bedrock">Student Bedrock</option>
+                          </select>
+                        </label>
+                      );
+                    }
+                    return (
+                      <label key={field.key} className="min-w-0 text-sm font-bold">
+                        {t(field.label)}
                         <input
-                          name={key}
-                          type="checkbox"
-                          defaultChecked={value}
-                          className="h-5 w-5"
-                        />
-                      </label>
-                    ) : (
-                      <label key={key} className="min-w-0 text-sm font-bold">
-                        {aiFieldLabels[key] ??
-                          key.replaceAll(/([A-Z])/g, " $1")}
-                        <input
-                          name={key}
-                          type={typeof value === "number" ? "number" : "text"}
+                          name={field.key}
+                          type={field.type}
+                          inputMode={field.type === "number" ? "numeric" : undefined}
+                          min={field.min}
+                          max={field.max}
+                          step={field.step}
                           defaultValue={String(value ?? "")}
                           className={input}
                         />
                       </label>
-                    ),
-                  )}
+                    );
+                  })}
             </div>
             {notice ? (
               <p aria-live="polite" className="text-sm">
@@ -246,16 +267,16 @@ export function PlatformSettingsForm({
               </p>
             ) : null}
             {canUpdate ? (
-            <div className="flex justify-end">
-              <button
-                disabled={pending}
-                className="min-h-10 w-full rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:opacity-50 sm:w-auto"
-              >
-                {pending
-                  ? t("superAdmin.platformSettings.saving")
-                  : t("superAdmin.platformSettings.saveSettings")}
-              </button>
-            </div>
+              <div className="flex justify-end">
+                <button
+                  disabled={pending}
+                  className="min-h-10 w-full rounded-lg bg-primary px-5 py-2 font-bold text-on-primary disabled:opacity-50 sm:w-auto"
+                >
+                  {pending
+                    ? t("superAdmin.platformSettings.saving")
+                    : t("superAdmin.platformSettings.saveSettings")}
+                </button>
+              </div>
             ) : null}
           </form>
         </DashboardPanel>

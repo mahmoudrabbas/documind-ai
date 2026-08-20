@@ -229,8 +229,14 @@ export const subscriptionImpactQuerySchema = z
     message: "A target package or status is required",
   });
 export const settingsBodySchema = z
-  .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
-  .refine((value) => Object.keys(value).length > 0, "Settings are required");
+  .object({
+    provider: z.enum(["groq", "iti-bedrock", "student-bedrock"]),
+    chatModel: z.string().trim().min(1).max(120),
+    embeddingModel: z.string().trim().min(1).max(120),
+    temperature: z.number().min(0).max(2),
+    maxOutputTokens: z.number().int().min(128).max(8192),
+  })
+  .strict();
 export const idSchema = z.object({ id: objectId }).strict();
 export const tenantIdSchema = z.object({ tenantId: objectId }).strict();
 export const listSchema = z

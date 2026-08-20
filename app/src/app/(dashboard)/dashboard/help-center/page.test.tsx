@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
       id: "u1",
       name: "Admin",
       email: "admin@example.com",
-      role: "COMPANY_ADMIN" as "COMPANY_ADMIN" | "EMPLOYEE",
+      role: "COMPANY_ADMIN" as "COMPANY_ADMIN" | "EMPLOYEE" | "SUPER_ADMIN",
     },
     tenant: { id: "t1", name: "Acme" },
   },
@@ -24,11 +24,17 @@ const state = vi.hoisted(() => ({
     status: "ready" as const,
     can: vi.fn((permission: PermissionValue) => false),
   },
+  router: {
+    replace: vi.fn(),
+  },
 }));
 
 vi.mock("@/providers/auth-provider", () => ({ useAuth: () => state.auth }));
 vi.mock("@/providers/permission-provider", () => ({
   usePermissions: () => state.permissions,
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => state.router,
 }));
 
 import HelpCenterPage from "./page";
@@ -38,6 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.auth.user.role = "COMPANY_ADMIN";
   state.permissions.can.mockImplementation((permission: PermissionValue) => false);
+  state.router.replace.mockReset();
 });
 
 function renderPage(locale: "en" | "ar" = "en") {
@@ -107,5 +114,13 @@ describe("HelpCenterPage", () => {
     expect(screen.getByText("مركز المساعدة")).toBeInTheDocument();
     expect(screen.getByText("المستخدمون والأدوار")).toBeInTheDocument();
     expect(document.documentElement.dir).toBe("rtl");
+  });
+
+  it("redirects super admins to the platform help center route", () => {
+    state.auth.user.role = "SUPER_ADMIN";
+
+    renderPage("en");
+
+    expect(state.router.replace).toHaveBeenCalledWith("/super-admin/help-center");
   });
 });

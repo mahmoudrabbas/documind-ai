@@ -123,27 +123,9 @@ export const GUIDE_TARGETS: readonly GuideTargetRegistryEntry[] = [
     requiredPermissions: [Permission.ANALYTICS_READ],
   },
   {
-    targetId: "nav-sa-jobs",
-    route: "/super-admin/jobs",
-    description: "Platform Processing Jobs navigation link in sidebar",
-    requiredPermissions: [Permission.DOCUMENTS_READ],
-  },
-  {
-    targetId: "nav-sa-processing-overview",
-    route: "/super-admin/processing-overview",
-    description: "Platform Processing Overview navigation link in sidebar",
-    requiredPermissions: [Permission.DOCUMENTS_READ],
-  },
-  {
     targetId: "nav-sa-system-health",
     route: "/super-admin/system-health",
     description: "Platform System Health navigation link in sidebar",
-    requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
-  },
-  {
-    targetId: "nav-sa-retrieval-debug",
-    route: "/super-admin/retrieval-debug",
-    description: "Platform Retrieval Debug navigation link in sidebar",
     requiredPermissions: [Permission.COMPANY_SETTINGS_READ],
   },
   {

@@ -17,8 +17,6 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
   { prefix: "/super-admin/subscriptions", permissions: [Permission.BILLING_READ] },
   { prefix: "/super-admin/users", permissions: [Permission.USERS_READ] },
   { prefix: "/super-admin/usage", permissions: [Permission.ANALYTICS_READ] },
-  { prefix: "/super-admin/jobs", permissions: [Permission.DOCUMENTS_READ] },
-  { prefix: "/super-admin/processing-overview", permissions: [Permission.DOCUMENTS_READ] },
   { prefix: "/super-admin/system-health", permissions: [Permission.COMPANY_SETTINGS_READ] },
   { prefix: "/super-admin/ai-configuration", permissions: [Permission.COMPANY_SETTINGS_READ] },
   { prefix: "/super-admin/audit", permissions: [Permission.AUDIT_READ] },
@@ -26,7 +24,6 @@ const ROUTE_PERMISSIONS: ReadonlyArray<{
   { prefix: "/super-admin/payments", permissions: [Permission.BILLING_READ] },
   { prefix: "/super-admin/refunds", permissions: [Permission.BILLING_READ] },
   { prefix: "/super-admin/entitlement", permissions: [Permission.BILLING_MANAGE] },
-  { prefix: "/super-admin/retrieval-debug", permissions: [Permission.DOCUMENTS_READ] },
   { prefix: "/super-admin", permissions: [Permission.AUDIT_READ] },
 ];
 

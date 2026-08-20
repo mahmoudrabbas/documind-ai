@@ -74,6 +74,7 @@ import { createChatRoutes } from "./modules/chat/chat.routes.js";
 import { getModelAdapter, getModelAdapterAsync } from "./providers/llm/index.js";
 import { wireFeedbackJudge } from "./modules/feedback/feedback.service.js";
 import { getJudgeEvaluationService } from "./modules/analytics/judgeEvaluation.module.js";
+import { primeEffectiveAiRuntimeConfig } from "./modules/platform/ai-runtime-config.js";
 import documentTaxonomyRoutes from "./modules/document-taxonomy/documentTaxonomy.routes.js";
 import knowledgeGapsRoutes from "./modules/knowledge-gaps/knowledge-gaps.routes.js";
 import feedbackRoutes from "./modules/feedback/feedback.routes.js";
@@ -403,6 +404,7 @@ if (config.COPILOT_ENABLED) {
   logger.info("Copilot runtime initialized (COPILOT_ENABLED=true).");
 }
 
+await primeEffectiveAiRuntimeConfig();
 const modelAdapter = getModelAdapter();
 const chatWorkflowService = createProductionChatWorkflowService({
   model: modelAdapter,

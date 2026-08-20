@@ -223,12 +223,13 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
         : null;
 
   const secondaryLinkClassName = (tone: "muted" | "error") =>
-    `flex items-center gap-3 px-4 py-2 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
+    `flex h-11 items-center gap-3 rounded-lg px-4 py-2 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-4 ${
       tone === "error"
-        ? "text-error hover:text-on-surface disabled:opacity-60"
-        : "text-on-surface-variant hover:text-on-surface"
+        ? "text-error hover:bg-error-container/30 hover:text-on-surface disabled:opacity-60"
+        : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
     }`;
-  const helpCenterHref = "/dashboard/help-center";
+  const helpCenterHref =
+    appContext === "platform" ? "/super-admin/help-center" : "/dashboard/help-center";
   const isHelpCenterActive =
     pathname === helpCenterHref ||
     pathname.startsWith(`${helpCenterHref}/`);
@@ -283,10 +284,10 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                     onClick={() => toggleGroup(group.id)}
                     aria-expanded={!collapsed}
                     aria-controls={`nav-group-${group.id}`}
-                    className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-3"
+                    className="mt-2 flex h-10 w-full items-center gap-2 rounded-lg px-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-on-surface-variant hover:bg-surface-container-high md:justify-center md:px-0 xl:justify-start xl:px-3"
                   >
                     {group.icon ? (
-                      <span className="material-symbols-outlined text-[18px]">
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
                         {group.icon}
                       </span>
                     ) : null}
@@ -407,8 +408,8 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
               aria-current={isHelpCenterActive ? "page" : undefined}
               className={`${secondaryLinkClassName("muted")} rounded-lg ${
                 isHelpCenterActive
-                  ? "border border-outline-variant/40 border-s-4 border-s-primary bg-secondary-container/20 font-semibold text-on-surface shadow-sm hover:bg-secondary-container/30"
-                  : "hover:bg-surface-container-high"
+                  ? "border border-outline-variant/40 border-s-4 border-s-primary bg-secondary-container/30 font-semibold text-primary shadow-sm hover:bg-secondary-container/40"
+                  : "border border-transparent hover:bg-surface-container-high"
               }`}
             >
               <span

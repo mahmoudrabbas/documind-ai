@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useCopilot } from "@/providers/copilot-provider";
+import { useAuth } from "@/providers/auth-provider";
 import { useI18n } from "@/providers/i18n-provider";
 import { GuideSuggestionCard } from "./GuideSuggestionCard";
 import {
@@ -21,20 +22,24 @@ import {
  * suppressed while the panel or an overlay guide is active.
  */
 export function CopilotLauncher() {
+  const auth = useAuth();
   const { open, setOpen, startGuide, guide } = useCopilot();
   const { t } = useI18n();
   const [suggestion, setSuggestion] = useState<GuideSuggestion | null>(null);
+  const isSuperAdmin =
+    auth.status === "authenticated" && auth.user.role === "SUPER_ADMIN";
 
   const hide = useCallback(() => {
     setSuggestion(null);
   }, []);
 
   useEffect(() => {
+    if (isSuperAdmin) return;
     const unsubscribe = subscribeGuideTriggers((next) => {
       setSuggestion(next);
     });
     return unsubscribe;
-  }, []);
+  }, [isSuperAdmin]);
 
   // Halt the card while the panel is open or an overlay guide is running.
   const active = suggestion !== null && !open && guide?.status !== "running";
@@ -51,6 +56,8 @@ export function CopilotLauncher() {
     if (suggestion) dismissGuideTrigger(suggestion.event);
     hide();
   }, [suggestion, hide]);
+
+  if (isSuperAdmin) return null;
 
   return (
     <>

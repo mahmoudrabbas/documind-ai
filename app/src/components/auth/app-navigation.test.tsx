@@ -233,6 +233,16 @@ describe("responsive navigation", () => {
     expect(link).toHaveAttribute("href", "/dashboard/help-center");
   });
 
+  it("points Super Admin Help Center to the platform route", () => {
+    state.auth.user.role = "SUPER_ADMIN";
+    state.permissions.baseRole = "SUPER_ADMIN";
+    grantAllPermissions();
+    renderNav();
+
+    const link = helpCenterLink();
+    expect(link).toHaveAttribute("href", "/super-admin/help-center");
+  });
+
   it("exposes accessible labels and tooltips for icon-only links", () => {
     grantAllPermissions();
     renderNav();
