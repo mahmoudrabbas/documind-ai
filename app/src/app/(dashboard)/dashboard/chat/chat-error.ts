@@ -32,6 +32,11 @@ export function getChatErrorPresentation(
           message: t("chat.error.quotaExhausted"),
           retryAfterSeconds: null,
         };
+      case "RETRIEVAL_UNAVAILABLE":
+        return {
+          message: t("chat.error.retrievalUnavailable"),
+          retryAfterSeconds: null,
+        };
     }
   }
 

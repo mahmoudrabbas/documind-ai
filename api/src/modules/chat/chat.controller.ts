@@ -6,6 +6,7 @@ import {
   ENTITLEMENT_EXCEEDED,
   LLM_RATE_LIMITED,
   LLM_TIMEOUT,
+  RETRIEVAL_UNAVAILABLE,
   UNAUTHORIZED,
   VALIDATION_ERROR,
 } from "../../common/errors/errorCodes.js";
@@ -29,6 +30,10 @@ const SAFE_STREAM_ERRORS = {
   [LLM_TIMEOUT]: {
     statusCode: 503,
     message: "The AI service took too long to respond. Please try again.",
+  },
+  [RETRIEVAL_UNAVAILABLE]: {
+    statusCode: 503,
+    message: "Document search is temporarily unavailable. Please try again shortly.",
   },
 } as const;
 

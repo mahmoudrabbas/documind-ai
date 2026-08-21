@@ -254,10 +254,13 @@ export class FakeModelAdapter implements AvailabilityProbeModelAdapter {
           const id = match[1] ?? match[2];
           if (id && !ids.includes(id)) ids.push(id);
         }
+        const isArabic = params.messages.some((m) => /[\u0600-\u06FF]/.test(m.content));
         const cited = ids.slice(0, 5);
         const json = {
           decision: cited.length > 0 ? "grounded_answer" : "insufficient_evidence",
-          answer: cited.length > 0 ? "Simulated grounded answer." : "I could not find sufficient information in the provided documents.",
+          answer: cited.length > 0
+            ? (isArabic ? "إجابة مستندة إلى الأدلة المتاحة." : "Simulated grounded answer.")
+            : (isArabic ? "لم أتمكن من العثور على معلومات كافية في المستندات المتاحة." : "I could not find sufficient information in the provided documents."),
           citedChunkIds: cited,
         };
         text = JSON.stringify(json);

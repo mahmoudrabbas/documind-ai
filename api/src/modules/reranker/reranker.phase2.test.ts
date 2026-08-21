@@ -148,6 +148,15 @@ describe("ConflictDetector", () => {
     assert.equal(conflicts.length, 0);
   });
 
+  it("does not flag SQL syntax idioms like IF NOT EXISTS or NOT NULL as negation conflicts", () => {
+    const items = [
+      { text: "CREATE TABLE [IF NOT EXISTS] tbl_name (column_specs NOT NULL);", documentId: "d1", documentVersionId: "v1" },
+      { text: "CREATE TABLE new_tbl_name LIKE tbl_name; INSERT INTO new_tbl_name SELECT * FROM tbl_name;", documentId: "d1", documentVersionId: "v1" },
+    ];
+    const conflicts = detectConflicts(items, undefined, "how to create a table in mysql");
+    assert.equal(conflicts.length, 0);
+  });
+
   it("returns empty for empty input", () => {
     assert.deepEqual(detectConflicts([]), []);
   });

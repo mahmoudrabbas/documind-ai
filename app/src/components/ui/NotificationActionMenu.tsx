@@ -10,6 +10,7 @@ export type NotificationActionItem = {
   href?: string;
   onClick?: () => void;
   destructive?: boolean;
+  icon?: string;
 };
 
 export interface NotificationActionMenuProps {
@@ -18,14 +19,15 @@ export interface NotificationActionMenuProps {
   moreLabel: string;
   onActionTriggered?: () => void;
   compact?: boolean;
+  className?: string;
 }
 
 function actionClassName(destructive?: boolean) {
   return cn(
-    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-label-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-label-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
     destructive
-      ? "text-error hover:bg-error-container"
-      : "text-on-surface hover:bg-surface-container-high",
+      ? "text-error hover:bg-error-container/60 active:bg-error-container"
+      : "text-on-surface hover:bg-surface-container-high active:bg-surface-container-highest",
   );
 }
 
@@ -35,6 +37,7 @@ export function NotificationActionMenu({
   moreLabel,
   onActionTriggered,
   compact = false,
+  className,
 }: NotificationActionMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -72,39 +75,63 @@ export function NotificationActionMenu({
   return (
     <div
       ref={rootRef}
-      className={cn("flex items-center gap-2", compact && "gap-1.5")}
+      className={cn(
+        "flex w-full items-center",
+        visiblePrimary ? "justify-between" : "justify-end",
+        compact ? "gap-1.5" : "gap-2",
+        open ? "relative z-30" : "relative",
+        className,
+      )}
     >
       {visiblePrimary ? (
         visiblePrimary.href ? (
           <Link
             href={visiblePrimary.href}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               onActionTriggered?.();
             }}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-label-sm font-medium transition-colors",
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-label-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
               visiblePrimary.destructive
                 ? "border-error/20 bg-error-container text-error hover:border-error/30 hover:bg-error-container/80"
-                : "border-outline-variant/40 bg-surface-container-lowest text-primary hover:bg-primary/10",
+                : "border-primary/20 bg-primary/5 text-primary hover:border-primary/40 hover:bg-primary/10",
             )}
           >
-            {visiblePrimary.label}
+            {visiblePrimary.icon ? (
+              <span
+                className="material-symbols-outlined text-[16px] shrink-0"
+                aria-hidden="true"
+              >
+                {visiblePrimary.icon}
+              </span>
+            ) : null}
+            <span>{visiblePrimary.label}</span>
           </Link>
         ) : (
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               visiblePrimary.onClick?.();
               onActionTriggered?.();
             }}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-label-sm font-medium transition-colors",
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-label-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
               visiblePrimary.destructive
                 ? "border-error/20 bg-error-container text-error hover:border-error/30 hover:bg-error-container/80"
-                : "border-outline-variant/40 bg-surface-container-lowest text-primary hover:bg-primary/10",
+                : "border-primary/20 bg-primary/5 text-primary hover:border-primary/40 hover:bg-primary/10",
             )}
           >
-            {visiblePrimary.label}
+            {visiblePrimary.icon ? (
+              <span
+                className="material-symbols-outlined text-[16px] shrink-0"
+                aria-hidden="true"
+              >
+                {visiblePrimary.icon}
+              </span>
+            ) : null}
+            <span>{visiblePrimary.label}</span>
           </button>
         )
       ) : null}
@@ -115,11 +142,20 @@ export function NotificationActionMenu({
             type="button"
             aria-label={moreLabel}
             aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            aria-haspopup="menu"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen((value) => !value);
+            }}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+              open
+                ? "bg-surface-container-highest text-on-surface shadow-sm"
+                : "text-on-surface-variant/80 hover:bg-surface-container-high hover:text-on-surface",
+            )}
           >
             <span
-              className="material-symbols-outlined text-[20px]"
+              className="material-symbols-outlined text-[20px] select-none"
               aria-hidden="true"
             >
               more_horiz
@@ -127,36 +163,60 @@ export function NotificationActionMenu({
           </button>
 
           {open ? (
-            <div className="absolute end-0 top-full z-20 mt-2 w-44 overflow-hidden rounded-xl border border-outline-variant bg-surface-bright shadow-lg">
-              <div className="py-1">
-                {visibleActions.map((action) =>
-                  action.href ? (
+            <div
+              aria-label={moreLabel}
+              className="absolute end-0 top-full z-40 mt-1.5 min-w-[11rem] overflow-hidden rounded-xl border border-outline-variant/70 bg-surface-bright p-1 shadow-xl ring-1 ring-black/5 backdrop-blur-md"
+            >
+              <div className="space-y-0.5">
+                {visibleActions.map((action) => {
+                  const content = (
+                    <>
+                      {action.icon ? (
+                        <span
+                          className={cn(
+                            "material-symbols-outlined text-[18px] shrink-0",
+                            action.destructive
+                              ? "text-error"
+                              : "text-on-surface-variant",
+                          )}
+                          aria-hidden="true"
+                        >
+                          {action.icon}
+                        </span>
+                      ) : null}
+                      <span className="flex-1 truncate">{action.label}</span>
+                    </>
+                  );
+
+                  return action.href ? (
                     <Link
                       key={action.key}
                       href={action.href}
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setOpen(false);
                         onActionTriggered?.();
                       }}
                       className={actionClassName(action.destructive)}
                     >
-                      {action.label}
+                      {content}
                     </Link>
                   ) : (
                     <button
                       key={action.key}
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setOpen(false);
                         action.onClick?.();
                         onActionTriggered?.();
                       }}
                       className={actionClassName(action.destructive)}
                     >
-                      {action.label}
+                      {content}
                     </button>
-                  ),
-                )}
+                  );
+                })}
               </div>
             </div>
           ) : null}

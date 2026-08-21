@@ -355,13 +355,18 @@ function tokenize(text: string): string[] {
 }
 
 function matchesNegation(terms: string[], rawText: string, negationTerms: string[]): boolean {
-  const termSet = new Set(terms);
-  const normalizedRaw = rawText.toLowerCase();
+  const sanitized = rawText
+    .toLowerCase()
+    .replace(/\bif\s+not\s+exists\b/giu, " ")
+    .replace(/\bnot\s+null\b/giu, " ")
+    .replace(/\bnot\s+only\b/giu, " ")
+    .replace(/\bwhether\s+or\s+not\b/giu, " ");
+  const termSet = new Set(tokenize(sanitized));
   return negationTerms.some((negation) => {
     const words = negation.split(/\s+/u);
     return words.length === 1
       ? termSet.has(words[0]!)
-      : normalizedRaw.includes(negation.toLowerCase());
+      : sanitized.includes(negation.toLowerCase());
   });
 }
 

@@ -216,6 +216,39 @@ describe("apiClient authentication", () => {
     expect(getAccessToken()).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("waits for the cross-document refresh lock before rotating the cookie", async () => {
+    let runLockedRefresh: (() => void) | undefined;
+    const lockRequest = vi.fn(
+      (_name: string, callback: () => Promise<string>) => {
+        return new Promise<string>((resolve, reject) => {
+          runLockedRefresh = () => {
+            callback().then(resolve, reject);
+          };
+        });
+      },
+    );
+    vi.stubGlobal("navigator", { locks: { request: lockRequest } });
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        success: true,
+        data: { tokens: { accessToken: "fresh-token" } },
+      }),
+    );
+
+    const refresh = refreshAccessToken();
+    await vi.waitFor(() => expect(lockRequest).toHaveBeenCalledTimes(1));
+
+    expect(lockRequest).toHaveBeenCalledWith(
+      "documind-auth-refresh",
+      expect.any(Function),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+
+    runLockedRefresh?.();
+    await refresh;
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("apiClient request and response handling", () => {

@@ -212,6 +212,7 @@ interface RefreshResponse {
 }
 
 let refreshRequest: Promise<string> | null = null;
+const REFRESH_LOCK_NAME = "documind-auth-refresh";
 let explicitLogout = false;
 type SessionListener = () => void;
 type PermissionDeniedListener = (error: ApiError) => void;
@@ -296,7 +297,15 @@ export async function refreshAccessToken(): Promise<string> {
     });
   }
   if (!refreshRequest) {
-    refreshRequest = (async () => {
+    const performRefresh = async () => {
+      if (explicitLogout) {
+        throw new ApiError({
+          status: 401,
+          code: "LOGOUT_IN_PROGRESS",
+          message: "Session restoration is disabled during logout",
+        });
+      }
+
       let response: Response;
 
       try {
@@ -343,7 +352,15 @@ export async function refreshAccessToken(): Promise<string> {
 
       setAccessToken(accessToken);
       return accessToken;
-    })().finally(() => {
+    };
+
+    const refreshLocks =
+      typeof navigator !== "undefined" ? navigator.locks : undefined;
+    refreshRequest = (
+      refreshLocks
+        ? refreshLocks.request(REFRESH_LOCK_NAME, performRefresh)
+        : performRefresh()
+    ).finally(() => {
       refreshRequest = null;
     });
   }

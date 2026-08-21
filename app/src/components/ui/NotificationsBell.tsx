@@ -298,7 +298,7 @@ export function NotificationsBell() {
                         </span>
                       </button>
 
-                      <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="mt-2.5 flex w-full items-center">
                         <NotificationActionMenu
                           primaryAction={
                             item.actions[0]
@@ -319,15 +319,18 @@ export function NotificationsBell() {
                               key: `${item.id}-extra-${index}`,
                               label: localizeNotification(action.label, locale),
                               href: resolveNotificationActionHref(action.url),
+                              icon: "open_in_new",
                             })),
                             {
                               key: `${item.id}-archive`,
                               label: t("notifications.archive"),
+                              icon: "archive",
                               onClick: () => void handleArchive(item),
                             },
                             {
                               key: `${item.id}-clear`,
                               label: t("notifications.clear"),
+                              icon: "delete",
                               onClick: () => void handleClear(item),
                               destructive: true,
                             },

@@ -7,6 +7,7 @@ import {
   LLM_PROVIDER_UNAVAILABLE,
   LLM_RATE_LIMITED,
   LLM_TIMEOUT,
+  RETRIEVAL_UNAVAILABLE,
   VALIDATION_ERROR,
 } from "../../common/errors/errorCodes.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
@@ -224,6 +225,10 @@ const SAFE_RUNTIME_PROVIDER_ERRORS = {
   [LLM_TIMEOUT]: {
     statusCode: 503,
     message: "The AI service took too long to respond. Please try again.",
+  },
+  [RETRIEVAL_UNAVAILABLE]: {
+    statusCode: 503,
+    message: "Document search is temporarily unavailable. Please try again shortly.",
   },
 } as const;
 

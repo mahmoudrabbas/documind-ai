@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { shouldUseRealAdapters } from "./adapterLoader.js";
-import { resolveEmbeddingProviderKey } from "./index.js";
+import {
+  resolveEmbeddingModel,
+  resolveEmbeddingProviderKey,
+} from "./index.js";
 
 describe("production retrieval adapter selection", () => {
   test("uses Atlas for a non-test MongoDB runtime without legacy AI_PROVIDER", () => {
@@ -53,6 +56,26 @@ describe("production retrieval adapter selection", () => {
         JINA_API_KEY: "configured",
       }),
       "fake",
+    );
+  });
+
+  test("selects the Jina model independently from the chat runtime model", () => {
+    assert.equal(
+      resolveEmbeddingModel("groq", {
+        JINA_EMBEDDING_MODEL: "jina-embeddings-v3",
+        BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0",
+      }),
+      "jina-embeddings-v3",
+    );
+  });
+
+  test("selects the OpenAI model independently from the chat runtime model", () => {
+    assert.equal(
+      resolveEmbeddingModel("openai", {
+        OPENAI_EMBEDDING_MODEL: "text-embedding-3-large",
+        BEDROCK_EMBEDDING_MODEL: "amazon.titan-embed-text-v2:0",
+      }),
+      "text-embedding-3-large",
     );
   });
 });

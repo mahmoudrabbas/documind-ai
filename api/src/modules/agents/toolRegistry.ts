@@ -1,4 +1,5 @@
 import type { RegisteredTool, RunContext, ToolCallResult } from "./agents.types.js";
+import { AppError } from "../../common/errors/AppError.js";
 
 export class ToolRegistry {
   private tools = new Map<string, RegisteredTool>();
@@ -68,7 +69,9 @@ export class ToolRegistry {
         ok: false,
         status: "failed",
         output: null,
-        error: { message: error instanceof Error ? error.message : "Tool execution failed" },
+        error: error instanceof AppError
+          ? { code: error.code, message: error.message }
+          : { message: error instanceof Error ? error.message : "Tool execution failed" },
         latencyMs: Date.now() - start,
         tokensUsed: null,
         estimatedCost: null,

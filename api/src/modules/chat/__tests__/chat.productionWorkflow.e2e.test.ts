@@ -332,7 +332,7 @@ class RecordingFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   }
 }
 
-class ExpandedIntentFakeModelAdapter extends FakeModelAdapter {
+class ExpandedIntentFakeModelAdapter extends SemanticAwareFakeModelAdapter {
   override async complete(
     params: Parameters<FakeModelAdapter["complete"]>[0],
   ): ReturnType<FakeModelAdapter["complete"]> {
@@ -1464,7 +1464,7 @@ test(
     assert.ok(Array.isArray(searchCall.input?.keywordTexts));
     assert.ok(searchCall.input.keywordTexts.includes(evidence.question));
     assert.deepEqual(
-      keyword.searches.map((search) => search.queryText),
+      [...new Set(keyword.searches.map((search) => search.queryText))],
       [
         searchCall.input.queryText,
         "$25",

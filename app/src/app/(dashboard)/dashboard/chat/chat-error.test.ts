@@ -67,6 +67,21 @@ describe("chat provider error presentation", () => {
     )).toEqual({ message, retryAfterSeconds: null });
   });
 
+  it("presents streamed retrieval failures as temporarily unavailable", () => {
+    expect(getChatErrorPresentation(
+      new ChatStreamError(
+        "safe backend message",
+        "RETRIEVAL_UNAVAILABLE",
+        503,
+        true,
+      ),
+      translate,
+    )).toEqual({
+      message: "Document search is temporarily unavailable. Please try again shortly.",
+      retryAfterSeconds: null,
+    });
+  });
+
   it.each([
     [
       "LLM_RATE_LIMITED",

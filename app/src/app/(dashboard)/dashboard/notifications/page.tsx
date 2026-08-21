@@ -13,7 +13,12 @@ import { NotificationActionMenu } from "@/components/ui/NotificationActionMenu";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
 import { useNotificationFeed } from "@/hooks/features/useNotificationFeed";
 import { useUnreadCount } from "@/hooks/features/useUnreadCount";
-import { markAllRead, clearAllNotifications } from "@/services/notifications.service";
+import {
+  archive as archiveNotification,
+  clearAllNotifications,
+  markAllRead,
+  softDelete,
+} from "@/services/notifications.service";
 import {
   localizeNotification,
   resolveNotificationActionHref,
@@ -120,6 +125,18 @@ export default function NotificationsPage() {
       await markRead(item.id);
       void unread.refresh();
     }
+  }
+
+  async function handleArchive(item: Notification) {
+    await archiveNotification(item.id);
+    void unread.refresh();
+    void refresh();
+  }
+
+  async function handleClear(item: Notification) {
+    await softDelete(item.id);
+    void unread.refresh();
+    void refresh();
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -274,7 +291,7 @@ export default function NotificationsPage() {
                       </span>
                     </button>
 
-                    <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                    <div className="mt-2.5 flex w-full items-center">
                       <NotificationActionMenu
                         primaryAction={
                           item.actions[0]
@@ -290,11 +307,27 @@ export default function NotificationsPage() {
                               }
                             : null
                         }
-                        overflowActions={item.actions.slice(1).map((action, index) => ({
-                          key: `${item.id}-extra-${index}`,
-                          label: localizeNotification(action.label, locale),
-                          href: resolveNotificationActionHref(action.url),
-                        }))}
+                        overflowActions={[
+                          ...item.actions.slice(1).map((action, index) => ({
+                            key: `${item.id}-extra-${index}`,
+                            label: localizeNotification(action.label, locale),
+                            href: resolveNotificationActionHref(action.url),
+                            icon: "open_in_new",
+                          })),
+                          {
+                            key: `${item.id}-archive`,
+                            label: t("notifications.archive"),
+                            icon: "archive",
+                            onClick: () => void handleArchive(item),
+                          },
+                          {
+                            key: `${item.id}-clear`,
+                            label: t("notifications.clear"),
+                            icon: "delete",
+                            onClick: () => void handleClear(item),
+                            destructive: true,
+                          },
+                        ]}
                         moreLabel={t("common.more")}
                         onActionTriggered={() => undefined}
                         compact

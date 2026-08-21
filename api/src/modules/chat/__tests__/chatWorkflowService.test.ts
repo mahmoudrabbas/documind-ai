@@ -1222,6 +1222,11 @@ describe("ChatWorkflowService lifecycle and trusted context", () => {
       503,
       "The AI service took too long to respond. Please try again.",
     ],
+    [
+      "RETRIEVAL_UNAVAILABLE",
+      503,
+      "Document search is temporarily unavailable. Please try again shortly.",
+    ],
   ])("preserves safe public runtime provider error %s", async (code, statusCode, message) => {
     const harness = makeHarness({
       runtimeFailure: true,

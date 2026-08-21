@@ -191,6 +191,22 @@ test("malformed structured responses remain UNKNOWN and fail closed", async () =
   assert.equal(model.calls.length, 2, "malformed output receives only the bounded UNKNOWN retry");
 });
 
+test("fenced JSON semantic judgments are parsed and released", async () => {
+  const model = scriptedModel((payload) => [
+    "```json",
+    JSON.stringify(judgments(payload)),
+    "```",
+  ].join("\n"));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Employees qualify for annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
+  });
+
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, "Employees qualify for annual leave.");
+  assert.equal(model.calls.length, 2, "initial and final fenced responses should both be parsed");
+});
+
 test("valid citation membership with unrelated evidence is semantically unsupported", async () => {
   const model = scriptedModel((payload) => judgments(payload, () => "unsupported"));
   const result = await new CitationSemanticVerificationService(model).verify({
@@ -198,6 +214,172 @@ test("valid citation membership with unrelated evidence is semantically unsuppor
     evidence,
   });
   assert.deepEqual(result.unsupportedClaims, ["Family health insurance is included."]);
+  assert.equal(result.releasedAnswerText, undefined);
+});
+
+test("directly supported compound shell commands survive a semantic false negative", async () => {
+  const answerText =
+    "For Ubuntu/Debian: sudo apt-get install mariadb-server. " +
+    "For CentOS/Red Hat Distros: sudo yum install mariadb-server, then sudo systemctl enable mariadb and sudo systemctl start mariadb.";
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText,
+    questionText: "How to install MySQL in Linux?",
+    evidence: [{
+      chunkId: "mysql-install",
+      text: [
+        "Installing",
+        "For Ubuntu/Debian:",
+        "$ sudo apt-get install mariadb-server",
+        "For CentOS/Red Hat Distros:",
+        "$ sudo yum install mariadb-server",
+        "$ sudo systemctl enable mariadb",
+        "$ sudo systemctl start mariadb",
+      ].join("\n"),
+    }],
+  });
+
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, answerText);
+  assert.deepEqual(result.supportingEvidenceIds, ["mysql-install"]);
+  assert.equal(model.calls.length, 0, "verbatim authorized support must not depend on a model judgment");
+});
+
+test("natural command wording with quoted commands survives a semantic false negative", async () => {
+  const answerText =
+    "For Ubuntu/Debian, use 'sudo apt-get install mariadb-server'. " +
+    "For CentOS/Red Hat distributions, use 'sudo yum install mariadb-server', then enable and start the service with 'sudo systemctl enable mariadb' and 'sudo systemctl start mariadb'.";
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText,
+    questionText: "How to install MySQL in Linux?",
+    evidence: [{
+      chunkId: "mysql-install",
+      text: [
+        "Installing",
+        "For Ubuntu/Debian:",
+        "$ sudo apt-get install mariadb-server",
+        "For CentOS/Red Hat Distros:",
+        "$ sudo yum install mariadb-server",
+        "$ sudo systemctl enable mariadb",
+        "$ sudo systemctl start mariadb",
+      ].join("\n"),
+    }],
+  });
+
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, answerText);
+  assert.deepEqual(result.supportingEvidenceIds, ["mysql-install"]);
+  assert.equal(model.calls.length, 0, "explicit commands with safe presentation glue should not need the model");
+});
+
+test("unsupported extra shell command does not pass deterministic direct support", async () => {
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText:
+      "For Ubuntu/Debian: sudo apt-get install mariadb-server. " +
+      "For CentOS/Red Hat Distros: sudo yum install mariadb-server, then sudo systemctl enable mariadb and sudo systemctl restart mariadb.",
+    questionText: "How to install MySQL in Linux?",
+    evidence: [{
+      chunkId: "mysql-install",
+      text: [
+        "Installing",
+        "For Ubuntu/Debian:",
+        "$ sudo apt-get install mariadb-server",
+        "For CentOS/Red Hat Distros:",
+        "$ sudo yum install mariadb-server",
+        "$ sudo systemctl enable mariadb",
+        "$ sudo systemctl start mariadb",
+      ].join("\n"),
+    }],
+  });
+
+  assert.ok(model.calls.length > 0, "an unmatched factual command must reach semantic verification");
+  assert.deepEqual(result.unsupportedClaims, [
+    "sudo yum install mariadb-server, then sudo systemctl enable mariadb and sudo systemctl restart mariadb.",
+  ]);
+  assert.doesNotMatch(result.releasedAnswerText ?? "", /restart/u);
+});
+
+test("contextual command mentions do not bypass semantic verification", async () => {
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "sudo systemctl start mariadb.",
+    evidence: [{
+      chunkId: "mysql-install",
+      text: "Do not run sudo systemctl start mariadb; this is only a historical example.",
+    }],
+  });
+
+  assert.ok(model.calls.length > 0, "contextual evidence must reach semantic verification");
+  assert.equal(result.releasedAnswerText, undefined);
+  assert.deepEqual(result.unsupportedClaims, ["sudo systemctl start mariadb."]);
+});
+
+test("quoted or example command mentions do not bypass semantic verification", async () => {
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "sudo systemctl start mariadb.",
+    evidence: [{
+      chunkId: "mysql-install",
+      text: 'Example text: "$ sudo systemctl start mariadb" is shown for reference only.',
+    }],
+  });
+
+  assert.ok(model.calls.length > 0, "quoted/example evidence must reach semantic verification");
+  assert.equal(result.releasedAnswerText, undefined);
+});
+
+test("direct support never combines command lines across evidence chunks", async () => {
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText:
+      "sudo yum install mariadb-server, then sudo systemctl enable mariadb and sudo systemctl start mariadb.",
+    evidence: [
+      { chunkId: "install", text: "$ sudo yum install mariadb-server" },
+      {
+        chunkId: "service",
+        text: "$ sudo systemctl enable mariadb\n$ sudo systemctl start mariadb",
+      },
+    ],
+  });
+
+  assert.ok(model.calls.length > 0, "separate chunks must not be assembled into one direct proof");
+  assert.equal(result.releasedAnswerText, undefined);
+});
+
+test("unsupported command qualifiers do not bypass semantic verification", async () => {
+  const model = scriptedModel((payload) =>
+    judgments(payload, () => "unsupported"),
+  );
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "sudo systemctl start mariadb immediately.",
+    evidence: [{
+      chunkId: "mysql-install",
+      text: "$ sudo systemctl start mariadb",
+    }],
+  });
+
+  assert.ok(model.calls.length > 0, "unsupported qualifiers must reach semantic verification");
   assert.equal(result.releasedAnswerText, undefined);
 });
 
@@ -371,8 +553,8 @@ test("finite semantic budget lowers the provider completion allowance", async ()
   const model = scriptedModel(supportAll);
 
   const result = await new CitationSemanticVerificationService(model).verify({
-    answerText: "Employees receive 21 days of annual leave.",
-    evidence: [{ chunkId: "policy-a", text: "Employees receive 21 days of annual leave." }],
+    answerText: "Employees qualify for annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
     maxTokens: 700,
   });
 
@@ -411,8 +593,8 @@ test("actual usage from an earlier pass reduces the budget available to the next
   };
 
   await new CitationSemanticVerificationService(model).verify({
-    answerText: "Employees receive 21 days of annual leave.",
-    evidence: [{ chunkId: "policy-a", text: "Employees receive 21 days of annual leave." }],
+    answerText: "Employees qualify for annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
     maxTokens: 1_000,
   });
 
@@ -445,8 +627,8 @@ test("exhausted shared budget prevents additional semantic provider calls and fa
   };
 
   const result = await new CitationSemanticVerificationService(model).verify({
-    answerText: "Employees receive 21 days of annual leave.",
-    evidence: [{ chunkId: "policy-a", text: "Employees receive 21 days of annual leave." }],
+    answerText: "Employees qualify for annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
     maxTokens: 900,
   });
 
@@ -467,14 +649,14 @@ test("budget too small for the semantic prompt makes zero provider calls and lea
   };
 
   const result = await new CitationSemanticVerificationService(model).verify({
-    answerText: "Employees receive 21 days of annual leave.",
-    evidence,
+    answerText: "Employees qualify for annual leave.",
+    evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
     maxTokens: 1,
   });
 
   assert.equal(calls, 0);
   assert.deepEqual(result.claimResults.map((claim) => claim.state), ["UNKNOWN"]);
-  assert.deepEqual(result.unknownClaims, ["Employees receive 21 days of annual leave."]);
+  assert.deepEqual(result.unknownClaims, ["Employees qualify for annual leave."]);
   assert.equal(result.releasedAnswerText, undefined);
   assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
 });

@@ -355,6 +355,32 @@ describe("POST /chat/send/stream SSE progress", () => {
     expect(JSON.stringify(errorFrames[0]!.data)).not.toContain("org_123");
   });
 
+  it("preserves RETRIEVAL_UNAVAILABLE across the SSE error boundary", async () => {
+    const workflowExecute = vi.fn(async () => {
+      throw new AppError(
+        503,
+        "RETRIEVAL_UNAVAILABLE",
+        "raw embedding provider body org_123",
+      );
+    });
+    const { port } = await startApp(workflowExecute);
+
+    const response = await fetch(`http://127.0.0.1:${port}/chat/send/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "What is the leave policy?" }),
+    });
+
+    const frames = parseFrames(await response.text());
+    const errorFrame = frames.find((frame) => frame.event === "error");
+    expect(errorFrame?.data).toEqual({
+      success: false,
+      error: "RETRIEVAL_UNAVAILABLE",
+      message: "Document search is temporarily unavailable. Please try again shortly.",
+      statusCode: 503,
+    });
+  });
+
   it("keeps pre-handler entitlement denials as plain JSON responses", async () => {
     entitlementState.denied = true;
     const workflowExecute = vi.fn(async () => ({}) as ChatResponse);

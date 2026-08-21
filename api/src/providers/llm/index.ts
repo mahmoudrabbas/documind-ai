@@ -120,7 +120,9 @@ export async function getModelAdapterAsync(): Promise<ModelAdapter> {
  */
 function buildModelAdapterChain(): ModelAdapter {
   const config = getEffectiveAiRuntimeConfig();
-  const primaryProvider = config.provider || process.env.LLM_PRIMARY_PROVIDER?.trim().toLowerCase();
+  const envProvider = process.env.LLM_PRIMARY_PROVIDER?.trim().toLowerCase();
+  const primaryProvider =
+    envProvider || (config.source === "database" ? config.provider : undefined);
   if (primaryProvider) {
     return buildEnvDrivenChain(primaryProvider, config);
   }

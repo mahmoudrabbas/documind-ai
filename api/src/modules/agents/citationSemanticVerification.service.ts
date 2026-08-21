@@ -16,6 +16,13 @@ const MAX_EVIDENCE_CHARS = 30_000;
 const MAX_CHUNK_CHARS = 4_000;
 const MAX_SEMANTIC_VERIFICATION_TOKENS = 2_000;
 const SEMANTIC_PROMPT_SAFETY_TOKENS = 32;
+const MIN_DIRECT_SUPPORT_SPAN_TOKENS = 3;
+const DIRECT_SUPPORT_CONNECTORS = new Set(["and", "then"]);
+const DIRECT_COMMAND_STARTERS = new Set([
+  "apt-get", "chmod", "chown", "curl", "docker", "git", "kubectl",
+  "make", "mysql", "node", "npm", "npx", "pip", "psql", "python",
+  "python3", "sqlite3", "sudo", "systemctl", "service", "wget", "yum",
+]);
 
 interface SemanticTokenBudget {
   remainingTotalTokens: number;
@@ -329,6 +336,153 @@ function boundedEvidence(evidence: readonly CitationSemanticEvidence[]): Citatio
   return result;
 }
 
+function directSupportTokens(text: string): string[] {
+  return stripMarkdownDecoration(text)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\u2010-\u2015\u2212]/gu, "-")
+    .replace(/[^\p{L}\p{N}._:/-]+/gu, " ")
+    .trim()
+    .split(/\s+/u)
+    .map((token) => token.replace(/^[._:/-]+|[._:/-]+$/gu, ""))
+    .filter(Boolean);
+}
+
+function promptMarkedCommandTokens(text: string): string[][] {
+  return text
+    .split(/\r?\n/u)
+    .map((line) => /^\s*(?:[$#]\s+|[A-Za-z][\w-]*>\s+)(?<command>.+?)\s*$/u.exec(line)?.groups?.command)
+    .filter((command): command is string => typeof command === "string")
+    .map(directSupportTokens)
+    .filter((tokens) => tokens.length >= MIN_DIRECT_SUPPORT_SPAN_TOKENS);
+}
+
+function commandStarterIndexes(tokens: readonly string[]): number[] {
+  return tokens.flatMap((token, index) =>
+    DIRECT_COMMAND_STARTERS.has(token) ? [index] : [],
+  );
+}
+
+function hasSafeCommandPresentationPrefix(text: string): boolean {
+  return /^\s*for\s+[^:]{1,80}:\s*/iu.test(text);
+}
+
+interface QuotedDirectCommand {
+  readonly tokens: readonly string[];
+}
+
+const QUOTED_DIRECT_COMMAND_PATTERN = /(?<quote>[`'])(?<command>[^`']+)\k<quote>/gu;
+
+function quotedDirectCommands(text: string): QuotedDirectCommand[] {
+  return [...text.matchAll(QUOTED_DIRECT_COMMAND_PATTERN)]
+    .map((match) => ({
+      tokens: directSupportTokens(match.groups?.command ?? ""),
+    }))
+    .filter(({ tokens }) =>
+      tokens.length >= MIN_DIRECT_SUPPORT_SPAN_TOKENS &&
+      commandStarterIndexes(tokens).length > 0,
+    );
+}
+
+function hasSafeQuotedCommandPresentation(text: string): boolean {
+  const commands = quotedDirectCommands(text);
+  if (commands.length === 0) return false;
+  const template = text
+    .replace(QUOTED_DIRECT_COMMAND_PATTERN, "__command__")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return /^(?:for|on|in)\s+[^,]{1,80},\s*(?:use|run|execute)\s+__command__(?:,\s*then\s+enable\s+and\s+start\s+the\s+service\s+with\s+__command__\s+and\s+__command__)?[.]?$/iu.test(template);
+}
+
+function hasQuotedCommandSupport(
+  claimText: string,
+  evidenceText: string,
+): boolean {
+  const commands = quotedDirectCommands(claimText);
+  if (commands.length === 0 || !hasSafeQuotedCommandPresentation(claimText)) {
+    return false;
+  }
+  const evidenceCommands = promptMarkedCommandTokens(evidenceText);
+  let evidenceCursor = 0;
+  for (const command of commands) {
+    const matchIndex = evidenceCommands.findIndex(
+      (candidate, index) =>
+        index >= evidenceCursor &&
+        candidate.length === command.tokens.length &&
+        candidate.every(
+          (token, tokenIndex) => token === command.tokens[tokenIndex],
+        ),
+    );
+    if (matchIndex < 0) return false;
+    evidenceCursor = matchIndex + 1;
+  }
+  return true;
+}
+
+function findContiguousTokenSequence(
+  haystack: readonly string[],
+  needle: readonly string[],
+  startAt = 0,
+): number {
+  if (needle.length === 0 || needle.length > haystack.length) return -1;
+  const lastStart = haystack.length - needle.length;
+  for (let index = startAt; index <= lastStart; index += 1) {
+    if (needle.every((token, offset) => haystack[index + offset] === token)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function hasDirectTokenSupport(claimText: string, evidenceText: string): boolean {
+  if (hasQuotedCommandSupport(claimText, evidenceText)) return true;
+  const claimTokens = directSupportTokens(claimText);
+  const evidenceCommands = promptMarkedCommandTokens(evidenceText);
+  const claimStarters = commandStarterIndexes(claimTokens);
+  if (claimTokens.length === 0 || evidenceCommands.length === 0 || claimStarters.length === 0) {
+    return false;
+  }
+
+  const matchedClaimTokenIndexes = new Set<number>();
+  let claimCursor = 0;
+  let matchedCommandCount = 0;
+  for (const command of evidenceCommands) {
+    const matchIndex = findContiguousTokenSequence(claimTokens, command, claimCursor);
+    if (matchIndex < 0) continue;
+    matchedCommandCount += 1;
+    for (let index = matchIndex; index < matchIndex + command.length; index += 1) {
+      matchedClaimTokenIndexes.add(index);
+    }
+    claimCursor = matchIndex + command.length;
+  }
+  if (matchedCommandCount === 0) return false;
+
+  const firstCommandIndex = claimStarters[0];
+  if (
+    firstCommandIndex !== 0 &&
+    !hasSafeCommandPresentationPrefix(claimText)
+  ) {
+    return false;
+  }
+  for (let index = firstCommandIndex; index < claimTokens.length; index += 1) {
+    if (
+      !matchedClaimTokenIndexes.has(index) &&
+      !DIRECT_SUPPORT_CONNECTORS.has(claimTokens[index] ?? "")
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function directlySupportingEvidenceId(
+  claimText: string,
+  evidence: readonly CitationSemanticEvidence[],
+): string | null {
+  return evidence.find((item) => hasDirectTokenSupport(claimText, item.text))
+    ?.chunkId ?? null;
+}
+
 export function buildSemanticVerificationMessages(input: {
   readonly claims: readonly string[];
   readonly evidence: readonly CitationSemanticEvidence[];
@@ -389,6 +543,21 @@ function recordOf(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function parseJsonEnvelope(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/iu.exec(trimmed)?.[1];
+  const candidates = fenced ? [trimmed, fenced.trim()] : [trimmed];
+  for (const candidate of candidates) {
+    try {
+      const parsed = recordOf(JSON.parse(candidate));
+      if (parsed) return parsed;
+    } catch {
+      // Try the next strictly bounded representation.
+    }
+  }
+  return null;
+}
+
 /**
  * Parse judgments independently. Missing, duplicate, malformed, or
  * membership-invalid entries affect only their own index and remain UNKNOWN.
@@ -404,12 +573,8 @@ function parseProviderJudgments(
       { state: "UNKNOWN" as const, supportingEvidenceIds: [] },
     ]),
   );
-  let envelope: Record<string, unknown> | null;
-  try {
-    envelope = recordOf(JSON.parse(raw));
-  } catch {
-    return unknown();
-  }
+  const envelope = parseJsonEnvelope(raw);
+  if (!envelope) return unknown();
   if (!envelope || !Array.isArray(envelope.judgments)) return unknown();
 
   const grouped = new Map<number, unknown[]>();
@@ -580,7 +745,20 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
           deterministicContradiction: true,
         });
       } else {
-        retryable.push(claim);
+        const supportingEvidenceId = directlySupportingEvidenceId(
+          claim.text,
+          input.evidence,
+        );
+        if (supportingEvidenceId) {
+          results.set(claim.claimIndex, {
+            ...claim,
+            state: "SUPPORTED",
+            supportingEvidenceIds: [supportingEvidenceId],
+            deterministicContradiction: false,
+          });
+        } else {
+          retryable.push(claim);
+        }
       }
     }
 
