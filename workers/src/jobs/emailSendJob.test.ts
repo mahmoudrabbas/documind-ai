@@ -17,15 +17,31 @@ const mockPort: EmailDispatchPort = {
   send: async (): Promise<EmailDispatchResult> => ({ providerMessageId: null, state: "SENT" }),
 };
 
-const mockCtx: JobHandlerContext = {
-  envelope: {} as JobHandlerContext["envelope"],
-  traceId: "trace-1",
-  isRetry: false,
-  attemptsMade: 0,
-  maxAttempts: 5,
-  signal: new AbortController().signal,
-  progress: () => {},
-};
+function makeCtx(tenantId: string): JobHandlerContext {
+  return {
+    envelope: {
+      jobType: "email.send",
+      schemaVersion: "1.0.0",
+      tenantId,
+      actorId: "system",
+      traceId: "trace-1",
+      idempotencyKey: "email-test",
+      payload: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    traceId: "trace-1",
+    isRetry: false,
+    attemptsMade: 0,
+    maxAttempts: 5,
+    signal: new AbortController().signal,
+    progress: () => {},
+    enqueue: async (input) => ({
+      jobId: "mock-job",
+      idempotencyKey: input.idempotencyKey,
+      deduplicated: false,
+    }),
+  };
+}
 
 test("happy path: queues email, sends it, transitions to SENT", async () => {
   const messageId = new ObjectId();
@@ -92,7 +108,7 @@ test("happy path: queues email, sends it, transitions to SENT", async () => {
   };
 
   const handler = createEmailSendJobHandler(mockPort);
-  const result = await handler.handle({ messageId: messageId.toString() }, mockCtx);
+  const result = await handler.handle({ messageId: messageId.toString() }, makeCtx(tenantId.toString()));
 
   assert.deepEqual(result, { summary: { sent: true, providerMessageId: "prov-1" } });
   assert.equal(mockMessage.state, "SENT");
@@ -104,10 +120,68 @@ test("happy path: queues email, sends it, transitions to SENT", async () => {
   setMockClient(null);
 });
 
+test("rejects tenant/resource mismatch before state, attempt, or provider side effects", async () => {
+  const messageId = new ObjectId();
+  const messageTenantId = new ObjectId();
+  const envelopeTenantId = new ObjectId();
+  let updateCalls = 0;
+  let attemptWrites = 0;
+  let providerCalls = 0;
+
+  const mockClient = {
+    db: () => ({
+      collection: (name: string) => ({
+        findOne: async () =>
+          name === "emailmessages"
+            ? {
+                _id: messageId,
+                tenantId: messageTenantId,
+                recipientEmail: "private@example.test",
+                state: "QUEUED",
+              }
+            : null,
+        updateOne: async () => {
+          updateCalls += 1;
+          return { matchedCount: 1, modifiedCount: 1 };
+        },
+        insertOne: async () => {
+          attemptWrites += 1;
+          return { insertedId: new ObjectId() };
+        },
+      }),
+    }),
+  } as unknown as MongoClient;
+  setMockClient(mockClient);
+
+  const handler = createEmailSendJobHandler({
+    send: async () => {
+      providerCalls += 1;
+      return { providerMessageId: null, state: "SENT" };
+    },
+  });
+
+  await assert.rejects(
+    handler.handle(
+      { messageId: messageId.toString() },
+      makeCtx(envelopeTenantId.toString()),
+    ),
+    (error: unknown) =>
+      error instanceof PermanentJobError &&
+      error.message === "Tenant mismatch for email message",
+  );
+
+  assert.equal(updateCalls, 0);
+  assert.equal(attemptWrites, 0);
+  assert.equal(providerCalls, 0);
+  setMockClient(null);
+});
+
 test("discards if CANCELLED", async () => {
   const messageId = new ObjectId();
+  const tenantId = new ObjectId();
   const mockMessage = {
     _id: messageId,
+    tenantId,
     state: "CANCELLED",
   };
 
@@ -132,7 +206,7 @@ test("discards if CANCELLED", async () => {
   };
 
   const handler = createEmailSendJobHandler(mockPort);
-  const result = await handler.handle({ messageId: messageId.toString() }, mockCtx);
+  const result = await handler.handle({ messageId: messageId.toString() }, makeCtx(tenantId.toString()));
 
   assert.deepEqual(result, { summary: { discarded: true, reason: "state_CANCELLED" } });
   assert.equal(sendCalled, false);
@@ -196,7 +270,7 @@ test("throws RetryableJobError on TEMPORARY_FAILURE", async () => {
 
   const handler = createEmailSendJobHandler(mockPort);
   await assert.rejects(
-    handler.handle({ messageId: messageId.toString() }, mockCtx),
+    handler.handle({ messageId: messageId.toString() }, makeCtx(tenantId.toString())),
     RetryableJobError
   );
 
@@ -264,7 +338,7 @@ test("throws PermanentJobError and suppresses on hard bounce", async () => {
 
   const handler = createEmailSendJobHandler(mockPort);
   await assert.rejects(
-    handler.handle({ messageId: messageId.toString() }, mockCtx),
+    handler.handle({ messageId: messageId.toString() }, makeCtx(tenantId.toString())),
     PermanentJobError
   );
 

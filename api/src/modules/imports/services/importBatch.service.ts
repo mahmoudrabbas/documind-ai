@@ -104,6 +104,37 @@ export function validateTransition(
 // ─── Service ───────────────────────────────────────────────────────────────────
 
 export class ImportBatchService {
+  private static tenantBatchFilter(batchId: string, tenantId: string) {
+    try {
+      return {
+        _id: new mongoose.Types.ObjectId(batchId),
+        tenantId: new mongoose.Types.ObjectId(tenantId),
+      };
+    } catch {
+      throw new AppError(404, "NOT_FOUND", "Batch not found");
+    }
+  }
+
+  /**
+   * Establishes resource ownership without disclosing whether another tenant's
+   * batch exists. Every request-driven batch operation must pass through this
+   * loader before reading rows or performing a mutation.
+   */
+  static async loadTenantBatchOrThrow(
+    batchId: string,
+    tenantId: string,
+  ): Promise<IEmployeeImportBatch> {
+    const batch = await EmployeeImportBatchModel.findOne(
+      this.tenantBatchFilter(batchId, tenantId),
+    );
+
+    if (!batch) {
+      throw new AppError(404, "NOT_FOUND", "Batch not found");
+    }
+
+    return batch as unknown as IEmployeeImportBatch;
+  }
+
   /**
    * Atomically creates a batch document and all its row documents inside a
    * transaction. Returns the batch and the number of rows created.
@@ -204,7 +235,10 @@ export class ImportBatchService {
       const message = error instanceof Error ? error.message : String(error);
       // If a batch with this idempotency key already exists, return it instead of failing
       if (message.includes("E11000 duplicate key")) {
-        const existing = await EmployeeImportBatchModel.findOne({ idempotencyKey }).lean();
+        const existing = await EmployeeImportBatchModel.findOne({
+          idempotencyKey,
+          tenantId,
+        }).lean();
         if (existing) {
           logger.warn({ idempotencyKey, batchId: existing._id }, "duplicate batch upload, returning existing");
           return { batch: existing as unknown as IEmployeeImportBatch, rowCount: 0 };
@@ -224,22 +258,19 @@ export class ImportBatchService {
    */
   static async updateMapping(
     batchId: string,
+    tenantId: string,
     mapping: {
       columnMapping: Record<string, string>;
       unmappedColumns: string[];
       confidence: "high" | "medium" | "low";
     },
   ): Promise<IEmployeeImportBatch> {
-    const batch = await EmployeeImportBatchModel.findById(batchId);
-
-    if (!batch) {
-      throw new AppError(404, "NOT_FOUND", "Batch not found");
-    }
+    const batch = await this.loadTenantBatchOrThrow(batchId, tenantId);
 
     validateTransition(batch.state as ImportBatchState, "PARSED");
 
-    const updated = await EmployeeImportBatchModel.findByIdAndUpdate(
-      batchId,
+    const updated = await EmployeeImportBatchModel.findOneAndUpdate(
+      this.tenantBatchFilter(batchId, tenantId),
       {
         $set: {
           mapping: {
@@ -278,13 +309,10 @@ export class ImportBatchService {
    */
   static async preparePreview(
     batchId: string,
+    tenantId: string,
     validationSummary: { valid: number; warning: number; invalid: number },
   ): Promise<IEmployeeImportBatch> {
-    const batch = await EmployeeImportBatchModel.findById(batchId);
-
-    if (!batch) {
-      throw new AppError(404, "NOT_FOUND", "Batch not found");
-    }
+    const batch = await this.loadTenantBatchOrThrow(batchId, tenantId);
 
     const currentState = batch.state as ImportBatchState;
     if (currentState !== "PARSED" && currentState !== "PREVIEW_READY") {
@@ -295,8 +323,8 @@ export class ImportBatchService {
       );
     }
 
-    const updated = await EmployeeImportBatchModel.findByIdAndUpdate(
-      batchId,
+    const updated = await EmployeeImportBatchModel.findOneAndUpdate(
+      this.tenantBatchFilter(batchId, tenantId),
       {
         $set: {
           "summary.valid": validationSummary.valid,
@@ -337,31 +365,36 @@ export class ImportBatchService {
    */
   static async confirmBatch(
     batchId: string,
+    tenantId: string,
     actorId: string,
   ): Promise<{ batch: IEmployeeImportBatch; jobResult: unknown }> {
-    let batch = await EmployeeImportBatchModel.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(batchId), state: "PREVIEW_READY" },
+    await this.loadTenantBatchOrThrow(batchId, tenantId);
+
+    const queuedBatch = await EmployeeImportBatchModel.findOneAndUpdate(
+      {
+        ...this.tenantBatchFilter(batchId, tenantId),
+        state: "PREVIEW_READY",
+      },
       { $set: { state: "QUEUED" as ImportBatchState } },
       { new: true },
     );
 
-    if (!batch) {
-      batch = await EmployeeImportBatchModel.findById(batchId);
-      if (!batch) {
-        throw new AppError(404, "NOT_FOUND", "Batch not found");
-      }
-      if (batch.state === "QUEUED" || batch.state === "PROCESSING") {
+    if (!queuedBatch) {
+      const existingBatch = await this.loadTenantBatchOrThrow(batchId, tenantId);
+      if (existingBatch.state === "QUEUED" || existingBatch.state === "PROCESSING") {
         return {
-          batch: batch as unknown as IEmployeeImportBatch,
+          batch: existingBatch,
           jobResult: { ok: true, deduplicated: true },
         };
       }
       throw new AppError(
         400,
         "INVALID_STATE_TRANSITION",
-        `Cannot confirm batch in ${batch.state} state`,
+        `Cannot confirm batch in ${existingBatch.state} state`,
       );
     }
+
+    const batch = queuedBatch as unknown as IEmployeeImportBatch;
 
     const jobResult = await getApiJobDispatcher().enqueue({
       jobType: "import.employee.batch",
@@ -395,13 +428,10 @@ export class ImportBatchService {
    */
   static async cancelBatch(
     batchId: string,
+    tenantId: string,
     actorId: string,
   ): Promise<IEmployeeImportBatch> {
-    const batch = await EmployeeImportBatchModel.findById(batchId);
-
-    if (!batch) {
-      throw new AppError(404, "NOT_FOUND", "Batch not found");
-    }
+    const batch = await this.loadTenantBatchOrThrow(batchId, tenantId);
 
     const currentState = batch.state as ImportBatchState;
     const cancellableStates: ImportBatchState[] = [
@@ -419,8 +449,8 @@ export class ImportBatchService {
       );
     }
 
-    const updated = await EmployeeImportBatchModel.findByIdAndUpdate(
-      batchId,
+    const updated = await EmployeeImportBatchModel.findOneAndUpdate(
+      this.tenantBatchFilter(batchId, tenantId),
       {
         $set: {
           state: "CANCELLED",
@@ -449,16 +479,6 @@ export class ImportBatchService {
     );
 
     return updated as unknown as IEmployeeImportBatch;
-  }
-
-  /**
-   * Retrieves a single batch by ID.
-   */
-  static async getBatch(
-    batchId: string,
-  ): Promise<IEmployeeImportBatch | null> {
-    const batch = await EmployeeImportBatchModel.findById(batchId).lean();
-    return batch as unknown as IEmployeeImportBatch | null;
   }
 
   /**
@@ -513,6 +533,7 @@ export class ImportBatchService {
    */
   static async recordRowResult(
     batchId: string,
+    tenantId: string,
     rowNumber: number,
     newState: ImportRowState,
     createdUserId?: string,
@@ -532,7 +553,11 @@ export class ImportBatchService {
     }
 
     const updated = await EmployeeImportRowModel.findOneAndUpdate(
-      { batchId: new mongoose.Types.ObjectId(batchId), rowNumber },
+      {
+        batchId: new mongoose.Types.ObjectId(batchId),
+        tenantId: new mongoose.Types.ObjectId(tenantId),
+        rowNumber,
+      },
       { $set: updateFields },
       { new: true },
     );

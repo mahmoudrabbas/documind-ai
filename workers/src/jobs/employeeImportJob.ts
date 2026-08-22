@@ -77,10 +77,12 @@ function buildInvitationUrl(token: string) {
 async function markRowCreated(
   db: Db,
   rowId: ObjectId,
+  batchId: ObjectId,
+  tenantId: ObjectId,
   userId: ObjectId,
 ): Promise<void> {
   await collections(db).rows.updateOne(
-    { _id: rowId },
+    { _id: rowId, batchId, tenantId },
     {
       $set: { state: "CREATED", createdUserId: userId, processedAt: new Date() },
       $unset: { errorMessage: 1 },
@@ -91,10 +93,12 @@ async function markRowCreated(
 async function markRowFailed(
   db: Db,
   rowId: ObjectId,
+  batchId: ObjectId,
+  tenantId: ObjectId,
   error: string,
 ): Promise<void> {
   await collections(db).rows.updateOne(
-    { _id: rowId },
+    { _id: rowId, batchId, tenantId },
     {
       $set: {
         state: "FAILED",
@@ -108,10 +112,12 @@ async function markRowFailed(
 async function markRowSkipped(
   db: Db,
   rowId: ObjectId,
+  batchId: ObjectId,
+  tenantId: ObjectId,
   reason: string,
 ): Promise<void> {
   await collections(db).rows.updateOne(
-    { _id: rowId },
+    { _id: rowId, batchId, tenantId },
     {
       $set: {
         state: "SKIPPED",
@@ -153,7 +159,11 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
     const { batches, rows, users, emails, tenants } = collections(db);
 
     const batchId = new ObjectId(payload.batchId);
-    const tenantId = new ObjectId(payload.tenantId);
+    const envelopeTenantId = ctx.envelope.tenantId;
+    if (payload.tenantId !== envelopeTenantId) {
+      throw new PermanentJobError("Tenant mismatch for import job");
+    }
+    const tenantId = new ObjectId(envelopeTenantId);
     const actorId = new ObjectId(payload.actorId);
 
     // ── 1. Load batch ──────────────────────────────────────────────────────────
@@ -162,6 +172,10 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
     const batch = await batches.findOne({ _id: batchId });
     if (!batch) {
       throw new PermanentJobError("Batch not found");
+    }
+
+    if (batch.tenantId?.toString() !== envelopeTenantId) {
+      throw new PermanentJobError("Tenant mismatch for import batch");
     }
 
     if (batch.state !== "QUEUED" && batch.state !== "PROCESSING") {
@@ -175,7 +189,7 @@ export const employeeImportJobHandler: JobHandlerDefinition<EmployeeImportPayloa
     if (batch.state === "QUEUED") {
       processingStartTime = new Date();
       await batches.updateOne(
-        { _id: batchId },
+        { _id: batchId, tenantId },
         { $set: { state: "PROCESSING", processingStartedAt: processingStartTime } },
       );
       ctx.progress("Batch transitioned QUEUED → PROCESSING");
@@ -225,6 +239,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const pendingRows = await rows
       .find({
         batchId,
+        tenantId,
         state: { $in: ["PENDING", "VALID", "WARNING", "FAILED"] },
       })
       .sort({ rowNumber: 1 })
@@ -232,7 +247,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (pendingRows.length === 0) {
       await batches.updateOne(
-        { _id: batchId },
+        { _id: batchId, tenantId },
         { $set: { state: "COMPLETED", completedAt: new Date() } },
       );
 
@@ -316,7 +331,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           const reason = !rowEmail
             ? "Missing or empty email field"
             : `Invalid email format: "${rowEmail}"`;
-          await markRowFailed(db, row._id, reason);
+          await markRowFailed(db, row._id, batchId, tenantId, reason);
           failedCount++;
           continue;
         }
@@ -324,7 +339,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         // ── 5c. Dedup: existing user with same email + tenant ────────────────
         const existingUser = await users.findOne({ tenantId, email: rowEmail }) as Record<string, unknown> | null;
         if (existingUser) {
-          await markRowSkipped(db, row._id, `User already exists: ${rowEmail}`);
+          await markRowSkipped(db, row._id, batchId, tenantId, `User already exists: ${rowEmail}`);
           skippedCount++;
           processedKeys.add(row.idempotencyKey);
           continue;
@@ -335,6 +350,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           await markRowFailed(
             db,
             row._id,
+            batchId,
+            tenantId,
             `Tenant user limit reached (${planLimit})`,
           );
           failedCount++;
@@ -412,7 +429,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
               email: rowEmail,
             })) as Record<string, unknown> | null;
             if (dup) {
-              await markRowCreated(db, row._id, dup._id as ObjectId);
+              await markRowCreated(db, row._id, batchId, tenantId, dup._id as ObjectId);
               createdCount++;
               processedKeys.add(row.idempotencyKey);
               continue;
@@ -526,7 +543,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         }
 
         // ── 5i. Mark row CREATED ─────────────────────────────────────────────
-        await markRowCreated(db, row._id, newUserId);
+        await markRowCreated(db, row._id, batchId, tenantId, newUserId);
         createdCount++;
         processedKeys.add(row.idempotencyKey);
 
@@ -540,13 +557,13 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           rowNumber: row.rowNumber,
           error: errorMsg.substring(0, 200),
         });
-        await markRowFailed(db, row._id, errorMsg);
+        await markRowFailed(db, row._id, batchId, tenantId, errorMsg);
         failedCount++;
       }
     }
 
     // Recount actual row states from DB to avoid $inc accumulation across retries
-    const allRows = await rows.find({ batchId }).sort({ rowNumber: 1 }).toArray();
+    const allRows = await rows.find({ batchId, tenantId }).sort({ rowNumber: 1 }).toArray();
     const actualCreated = allRows.filter((r) => r.state === "CREATED" || r.state === "INVITED").length;
     const actualFailed = allRows.filter((r) => r.state === "FAILED").length;
     const actualSkipped = allRows.filter((r) => r.state === "SKIPPED").length;
@@ -561,7 +578,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             : "FAILED";
 
     await batches.updateOne(
-      { _id: batchId },
+      { _id: batchId, tenantId },
       {
         $set: {
           state: finalState,

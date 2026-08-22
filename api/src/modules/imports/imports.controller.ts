@@ -204,7 +204,10 @@ export async function uploadAndPreview(
 
     if (rowCount === 0) {
       const RowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
-      const existingRows = await RowModel.find({ batchId: new mongoose.Types.ObjectId(batchId) }).sort({ rowNumber: 1 }).lean();
+      const existingRows = await RowModel.find({
+        batchId: new mongoose.Types.ObjectId(batchId),
+        tenantId: new mongoose.Types.ObjectId(req.tenantId),
+      }).sort({ rowNumber: 1 }).lean();
       const columns = existingRows[0] ? Object.keys(existingRows[0].rawData ?? {}) : [];
 
       res.status(200).json({
@@ -241,7 +244,7 @@ export async function uploadAndPreview(
     }
 
     // New batch — save mapping and transition to PARSED
-    await ImportBatchService.updateMapping(batchId, {
+    await ImportBatchService.updateMapping(batchId, req.tenantId, {
       columnMapping: fieldMap,
       unmappedColumns: proposal.unmappedHeaders,
       confidence,
@@ -258,7 +261,7 @@ export async function uploadAndPreview(
     });
 
     // Transition to PREVIEW_READY so confirmImport can proceed
-    await ImportBatchService.preparePreview(batchId, rawPreview.summary);
+    await ImportBatchService.preparePreview(batchId, req.tenantId, rawPreview.summary);
 
     const columns = parsed.headers;
 
@@ -328,7 +331,7 @@ export async function updateMapping(
         columnMapping[key] = value;
       }
     }
-    const updatedBatch = await ImportBatchService.updateMapping(batchId, {
+    const updatedBatch = await ImportBatchService.updateMapping(batchId, req.tenantId, {
       columnMapping,
       unmappedColumns: [],
       confidence: "medium",
@@ -345,7 +348,10 @@ export async function updateMapping(
 
     // ── Fetch stored rows ──────────────────────────────────────────────────
     const EmployeeImportRowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
-    const storedRows = await EmployeeImportRowModel.find({ batchId: new mongoose.Types.ObjectId(batchId) }).sort({ rowNumber: 1 }).lean();
+    const storedRows = await EmployeeImportRowModel.find({
+      batchId: new mongoose.Types.ObjectId(batchId),
+      tenantId: new mongoose.Types.ObjectId(req.tenantId),
+    }).sort({ rowNumber: 1 }).lean();
 
     // ── Reconstruct ParsedRow[] from stored rawData ────────────────────────
     const parsedRows: ParsedRow[] = storedRows.map((row) => ({
@@ -396,7 +402,7 @@ export async function updateMapping(
     const requestedNetNew = computeNetNewEmployeeCount(validation);
 
     // Transition back to PREVIEW_READY so confirmImport can proceed
-    await ImportBatchService.preparePreview(batchId, validation.summary);
+    await ImportBatchService.preparePreview(batchId, req.tenantId, validation.summary);
 
     res.status(200).json({
       success: true,
@@ -448,7 +454,7 @@ export async function confirmImport(
 
     const batchId = extractBatchId(req.params);
 
-    const existingBatch = await ImportBatchService.getBatch(batchId);
+    const existingBatch = await ImportBatchService.loadTenantBatchOrThrow(batchId, req.tenantId);
     if (existingBatch) {
       const svc = getEntitlementService();
       const check = await svc.check(req.tenantId, "employees");
@@ -456,6 +462,7 @@ export async function confirmImport(
       const EmployeeImportRowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
       const storedRows = await EmployeeImportRowModel.find({
         batchId: new mongoose.Types.ObjectId(batchId),
+        tenantId: new mongoose.Types.ObjectId(req.tenantId),
       }).lean();
 
       const tenantUsers = await User.find({ tenantId: req.tenantId }).lean();
@@ -504,7 +511,7 @@ export async function confirmImport(
       }
     }
 
-    const result = await ImportBatchService.confirmBatch(batchId, req.auth.userId);
+    const result = await ImportBatchService.confirmBatch(batchId, req.tenantId, req.auth.userId);
 
     res.status(200).json({
       success: true,
@@ -533,17 +540,14 @@ export async function getBatchStatus(
     }
 
     const batchId = extractBatchId(req.params);
-    const batch = await ImportBatchService.getBatch(batchId);
-
-    if (!batch) {
-      throw new AppError(404, "NOT_FOUND", "Batch not found");
-    }
+    const batch = await ImportBatchService.loadTenantBatchOrThrow(batchId, req.tenantId);
 
     let rows: unknown[] | undefined;
     if (req.query.includeRows === "true") {
       const EmployeeImportRowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
       const storedRows = await EmployeeImportRowModel.find({
         batchId: new mongoose.Types.ObjectId(batchId),
+        tenantId: new mongoose.Types.ObjectId(req.tenantId),
       })
         .sort({ rowNumber: 1 })
         .lean();
@@ -639,7 +643,7 @@ export async function cancelBatch(
     }
 
     const batchId = extractBatchId(req.params);
-    const batch = await ImportBatchService.cancelBatch(batchId, req.auth.userId);
+    const batch = await ImportBatchService.cancelBatch(batchId, req.tenantId, req.auth.userId);
 
     res.status(200).json({
       success: true,
@@ -673,10 +677,7 @@ export async function retryFailedRows(
     const rowNumbers = parsed.data.rowNumbers;
 
     // ── 1. Load batch and validate state ───────────────────────────────────
-    const batch = await ImportBatchService.getBatch(batchId);
-    if (!batch) {
-      throw new AppError(404, "NOT_FOUND", "Batch not found");
-    }
+    const batch = await ImportBatchService.loadTenantBatchOrThrow(batchId, req.tenantId);
 
     const state = batch.state as string;
     const RETRYABLE_STATES = ["PARTIALLY_COMPLETED", "FAILED", "COMPLETED"];
@@ -695,6 +696,7 @@ export async function retryFailedRows(
 
     const filter: Record<string, unknown> = {
       batchId: new mongoose.Types.ObjectId(batchId),
+      tenantId: new mongoose.Types.ObjectId(req.tenantId),
       state: "FAILED",
     };
     if (rowNumbers && rowNumbers.length > 0) {
@@ -722,14 +724,20 @@ export async function retryFailedRows(
 
     // ── 3. Reset batch state to QUEUED (from terminal states) ──────────────
     if (state === "COMPLETED" || state === "PARTIALLY_COMPLETED" || state === "FAILED") {
-      await EmployeeImportBatchModel.findByIdAndUpdate(batchId, {
-        $set: {
-          state: "QUEUED",
-          completedAt: null,
-          processingStartedAt: null,
-          errorMessage: null,
+      await EmployeeImportBatchModel.findOneAndUpdate(
+        {
+          _id: new mongoose.Types.ObjectId(batchId),
+          tenantId: new mongoose.Types.ObjectId(req.tenantId),
         },
-      });
+        {
+          $set: {
+            state: "QUEUED",
+            completedAt: null,
+            processingStartedAt: null,
+            errorMessage: null,
+          },
+        },
+      );
     }
 
     // ── 4. Enqueue a new import.employee.batch job ──────────────────────────
@@ -737,17 +745,17 @@ export async function retryFailedRows(
     const _jobResult = await getApiJobDispatcher().enqueue({
       jobType: "import.employee.batch",
       idempotencyKey: retryIdempotencyKey,
-      tenantId: req.tenantId,
+      tenantId: batch.tenantId.toString(),
       actorId: req.auth.userId,
       payload: {
         batchId,
-        tenantId: req.tenantId,
+        tenantId: batch.tenantId.toString(),
         actorId: req.auth.userId,
       },
       traceId: crypto.randomUUID(),
     });
 
-    const updatedBatch = await ImportBatchService.getBatch(batchId);
+    const updatedBatch = await ImportBatchService.loadTenantBatchOrThrow(batchId, req.tenantId);
 
     res.status(200).json({
       success: true,
@@ -780,11 +788,14 @@ export async function exportResults(
     const batchId = extractBatchId(req.params);
     const { format, status } = parsed.data;
 
+    await ImportBatchService.loadTenantBatchOrThrow(batchId, req.tenantId);
+
     const EmployeeImportRowModel = (await import("../../db/models/employeeImportRow.model.js")).default;
     const mongoose = (await import("mongoose")).default;
 
     const rowFilter: Record<string, unknown> = {
       batchId: new mongoose.Types.ObjectId(batchId),
+      tenantId: new mongoose.Types.ObjectId(req.tenantId),
     };
     if (status) {
       rowFilter.state = status;

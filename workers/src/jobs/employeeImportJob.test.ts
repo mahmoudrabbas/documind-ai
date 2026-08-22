@@ -107,6 +107,81 @@ test("throws PermanentJobError when batch not found", async () => {
   setMockClient(null);
 });
 
+test("rejects tenant/resource mismatch before any import side effect", async () => {
+  const batchId = new ObjectId();
+  const batchTenantId = new ObjectId();
+  const envelopeTenantId = new ObjectId();
+  let batchMutations = 0;
+  let rowAccesses = 0;
+  let userMutations = 0;
+  let emailMutations = 0;
+
+  setDb({
+    employeeimportbatches: {
+      findOne: async () => ({
+        _id: batchId,
+        tenantId: batchTenantId,
+        state: "QUEUED",
+      }),
+      updateOne: async () => {
+        batchMutations += 1;
+        return { matchedCount: 1, modifiedCount: 1 };
+      },
+    },
+    employeeimportrows: {
+      find: () => {
+        rowAccesses += 1;
+        return { sort: () => ({ toArray: async () => [] }) };
+      },
+      updateOne: async () => {
+        rowAccesses += 1;
+        return { matchedCount: 1, modifiedCount: 1 };
+      },
+    },
+    users: {
+      countDocuments: async () => {
+        userMutations += 1;
+        return 0;
+      },
+      insertOne: async () => {
+        userMutations += 1;
+        return { insertedId: new ObjectId() };
+      },
+    },
+    emailmessages: {
+      insertOne: async () => {
+        emailMutations += 1;
+        return { insertedId: new ObjectId() };
+      },
+    },
+  });
+
+  await assert.rejects(
+    employeeImportJobHandler.handle(
+      {
+        batchId: batchId.toString(),
+        tenantId: envelopeTenantId.toString(),
+        actorId: mockActorId.toString(),
+      },
+      makeCtx({
+        envelope: {
+          ...makeCtx().envelope,
+          tenantId: envelopeTenantId.toString(),
+        },
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof PermanentJobError &&
+      error.message === "Tenant mismatch for import batch",
+  );
+
+  assert.equal(batchMutations, 0);
+  assert.equal(rowAccesses, 0);
+  assert.equal(userMutations, 0);
+  assert.equal(emailMutations, 0);
+  setMockClient(null);
+});
+
 test("throws PermanentJobError on invalid batch state", async () => {
   const batchId = new ObjectId();
   setDb({

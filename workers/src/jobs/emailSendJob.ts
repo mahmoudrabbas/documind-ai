@@ -31,6 +31,13 @@ export function createEmailSendJobHandler(dispatchPort: EmailDispatchPort): JobH
         return { summary: { discarded: true, reason: "not_found" } };
       }
 
+      // The queue producer is not an authorization boundary. Verify the
+      // persisted resource against the envelope before changing state, writing
+      // an attempt, rendering tenant data, or calling the provider.
+      if (message.tenantId?.toString() !== ctx.envelope.tenantId) {
+        throw new PermanentJobError("Tenant mismatch for email message");
+      }
+
       // 2. Validate state
       if (message.state === "CANCELLED" || message.state === "SENT" || message.state === "DELIVERED") {
         ctx.progress("EmailMessage is already in a terminal state, discarding job", { state: message.state });

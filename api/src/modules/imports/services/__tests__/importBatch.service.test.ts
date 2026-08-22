@@ -34,6 +34,7 @@ const mockMongoose = vi.hoisted(() => ({
 
 const mockBatchModel = vi.hoisted(() => ({
   create: vi.fn(),
+  findOne: vi.fn(),
   findById: vi.fn(),
   findByIdAndUpdate: vi.fn(),
   findOneAndUpdate: vi.fn(),
@@ -305,7 +306,7 @@ describe("ImportBatchService", () => {
   describe("updateMapping", () => {
     it("updates mapping and transitions to PARSED", async () => {
       const batchDoc = importBatchFactory({ state: "UPLOADED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
       const updatedDoc = importBatchFactory({
         state: "PARSED",
@@ -315,9 +316,9 @@ describe("ImportBatchService", () => {
           confidence: "high",
         },
       });
-      mockBatchModel.findByIdAndUpdate.mockResolvedValue(updatedDoc);
+      mockBatchModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
 
-      const result = await ImportBatchService.updateMapping(BATCH_ID, {
+      const result = await ImportBatchService.updateMapping(BATCH_ID, TENANT_ID, {
         columnMapping: { Name: "fullName", Email: "email" },
         unmappedColumns: ["Notes"],
         confidence: "high",
@@ -325,8 +326,8 @@ describe("ImportBatchService", () => {
 
       expect(result.state).toBe("PARSED");
       expect(result.mapping.confidence).toBe("high");
-      expect(mockBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        BATCH_ID,
+      expect(mockBatchModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: expect.any(Object), tenantId: expect.any(Object) },
         {
           $set: {
             mapping: {
@@ -347,10 +348,10 @@ describe("ImportBatchService", () => {
     });
 
     it("throws on non-existent batch (404)", async () => {
-      mockBatchModel.findById.mockResolvedValue(null);
+      mockBatchModel.findOne.mockResolvedValue(null);
 
       await expect(
-        ImportBatchService.updateMapping(BATCH_ID, {
+        ImportBatchService.updateMapping(BATCH_ID, TENANT_ID, {
           columnMapping: {},
           unmappedColumns: [],
           confidence: "high",
@@ -363,10 +364,10 @@ describe("ImportBatchService", () => {
 
     it("throws on invalid state transition", async () => {
       const batchDoc = importBatchFactory({ state: "QUEUED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
       await expect(
-        ImportBatchService.updateMapping(BATCH_ID, {
+        ImportBatchService.updateMapping(BATCH_ID, TENANT_ID, {
           columnMapping: {},
           unmappedColumns: [],
           confidence: "high",
@@ -381,15 +382,15 @@ describe("ImportBatchService", () => {
   describe("preparePreview", () => {
     it("updates summary and transitions to PREVIEW_READY", async () => {
       const batchDoc = importBatchFactory({ state: "PARSED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
       const updatedDoc = importBatchFactory({
         state: "PREVIEW_READY",
         summary: { valid: 8, warning: 1, invalid: 1, skipped: 0, created: 0, failed: 0 },
       });
-      mockBatchModel.findByIdAndUpdate.mockResolvedValue(updatedDoc);
+      mockBatchModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
 
-      const result = await ImportBatchService.preparePreview(BATCH_ID, {
+      const result = await ImportBatchService.preparePreview(BATCH_ID, TENANT_ID, {
         valid: 8,
         warning: 1,
         invalid: 1,
@@ -406,10 +407,10 @@ describe("ImportBatchService", () => {
 
     it("rejects when batch is in QUEUED state", async () => {
       const batchDoc = importBatchFactory({ state: "QUEUED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
       await expect(
-        ImportBatchService.preparePreview(BATCH_ID, {
+        ImportBatchService.preparePreview(BATCH_ID, TENANT_ID, {
           valid: 5,
           warning: 0,
           invalid: 0,
@@ -427,6 +428,7 @@ describe("ImportBatchService", () => {
         state: "QUEUED",
         idempotencyKey: "batch-ik-123",
       });
+      mockBatchModel.findOne.mockResolvedValue(updatedDoc);
       mockBatchModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
 
       const jobResult = {
@@ -437,12 +439,12 @@ describe("ImportBatchService", () => {
       };
       mockJobDispatcher.enqueue.mockResolvedValue(jobResult);
 
-      const result = await ImportBatchService.confirmBatch(BATCH_ID, USER_ID);
+      const result = await ImportBatchService.confirmBatch(BATCH_ID, TENANT_ID, USER_ID);
 
       expect(result.batch.state).toBe("QUEUED");
       expect(result.jobResult).toEqual(jobResult);
       expect(mockBatchModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { _id: expect.any(Object), state: "PREVIEW_READY" },
+        { _id: expect.any(Object), tenantId: expect.any(Object), state: "PREVIEW_READY" },
         { $set: { state: "QUEUED" } },
         { new: true },
       );
@@ -466,11 +468,9 @@ describe("ImportBatchService", () => {
 
     it("returns idempotent result when batch already confirmed", async () => {
       mockBatchModel.findOneAndUpdate.mockResolvedValue(null);
-      mockBatchModel.findById.mockResolvedValue(
-        importBatchFactory({ state: "QUEUED" }),
-      );
+      mockBatchModel.findOne.mockResolvedValue(importBatchFactory({ state: "QUEUED" }));
 
-      const result = await ImportBatchService.confirmBatch(BATCH_ID, USER_ID);
+      const result = await ImportBatchService.confirmBatch(BATCH_ID, TENANT_ID, USER_ID);
 
       expect(result.jobResult).toEqual({ ok: true, deduplicated: true });
       expect(result.batch.state).toBe("QUEUED");
@@ -478,10 +478,10 @@ describe("ImportBatchService", () => {
 
     it("throws 404 when batch does not exist", async () => {
       mockBatchModel.findOneAndUpdate.mockResolvedValue(null);
-      mockBatchModel.findById.mockResolvedValue(null);
+      mockBatchModel.findOne.mockResolvedValue(null);
 
       await expect(
-        ImportBatchService.confirmBatch(BATCH_ID, USER_ID),
+        ImportBatchService.confirmBatch(BATCH_ID, TENANT_ID, USER_ID),
       ).rejects.toMatchObject({
         statusCode: 404,
         code: "NOT_FOUND",
@@ -490,12 +490,10 @@ describe("ImportBatchService", () => {
 
     it("throws 400 for invalid state transition", async () => {
       mockBatchModel.findOneAndUpdate.mockResolvedValue(null);
-      mockBatchModel.findById.mockResolvedValue(
-        importBatchFactory({ state: "UPLOADED" }),
-      );
+      mockBatchModel.findOne.mockResolvedValue(importBatchFactory({ state: "UPLOADED" }));
 
       await expect(
-        ImportBatchService.confirmBatch(BATCH_ID, USER_ID),
+        ImportBatchService.confirmBatch(BATCH_ID, TENANT_ID, USER_ID),
       ).rejects.toMatchObject({
         statusCode: 400,
         code: "INVALID_STATE_TRANSITION",
@@ -503,15 +501,15 @@ describe("ImportBatchService", () => {
     });
 
     it("returns jobResult with error when job enqueue fails", async () => {
-      mockBatchModel.findOneAndUpdate.mockResolvedValue(
-        importBatchFactory({ state: "QUEUED" }),
-      );
+      const queued = importBatchFactory({ state: "QUEUED" });
+      mockBatchModel.findOne.mockResolvedValue(queued);
+      mockBatchModel.findOneAndUpdate.mockResolvedValue(queued);
       mockJobDispatcher.enqueue.mockResolvedValue({
         ok: false,
         error: "Queue is full",
       });
 
-      const result = await ImportBatchService.confirmBatch(BATCH_ID, USER_ID);
+      const result = await ImportBatchService.confirmBatch(BATCH_ID, TENANT_ID, USER_ID);
 
       expect(result.batch.state).toBe("QUEUED");
       expect(result.jobResult).toEqual({
@@ -524,20 +522,20 @@ describe("ImportBatchService", () => {
   describe("cancelBatch", () => {
     it("cancels from UPLOADED → CANCELLED", async () => {
       const batchDoc = importBatchFactory({ state: "UPLOADED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
       const cancelledDoc = importBatchFactory({
         state: "CANCELLED",
         completedAt: new Date(),
       });
-      mockBatchModel.findByIdAndUpdate.mockResolvedValue(cancelledDoc);
+      mockBatchModel.findOneAndUpdate.mockResolvedValue(cancelledDoc);
 
-      const result = await ImportBatchService.cancelBatch(BATCH_ID, USER_ID);
+      const result = await ImportBatchService.cancelBatch(BATCH_ID, TENANT_ID, USER_ID);
 
       expect(result.state).toBe("CANCELLED");
       expect(result.completedAt).toBeInstanceOf(Date);
-      expect(mockBatchModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        BATCH_ID,
+      expect(mockBatchModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: expect.any(Object), tenantId: expect.any(Object) },
         {
           $set: {
             state: "CANCELLED",
@@ -555,20 +553,20 @@ describe("ImportBatchService", () => {
 
     it("cancels from QUEUED → CANCELLED", async () => {
       const batchDoc = importBatchFactory({ state: "QUEUED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
-      mockBatchModel.findByIdAndUpdate.mockResolvedValue(
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
+      mockBatchModel.findOneAndUpdate.mockResolvedValue(
         importBatchFactory({ state: "CANCELLED", completedAt: new Date() }),
       );
 
-      const result = await ImportBatchService.cancelBatch(BATCH_ID, USER_ID);
+      const result = await ImportBatchService.cancelBatch(BATCH_ID, TENANT_ID, USER_ID);
       expect(result.state).toBe("CANCELLED");
     });
 
     it("throws when processing (invalid transition)", async () => {
       const batchDoc = importBatchFactory({ state: "PROCESSING" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
-      const err = await ImportBatchService.cancelBatch(BATCH_ID, USER_ID).catch(e => e);
+      const err = await ImportBatchService.cancelBatch(BATCH_ID, TENANT_ID, USER_ID).catch(e => e);
       expect(err).toMatchObject({
         statusCode: 400,
         code: "INVALID_STATE_TRANSITION",
@@ -577,10 +575,10 @@ describe("ImportBatchService", () => {
 
     it("throws when COMPLETED (invalid transition)", async () => {
       const batchDoc = importBatchFactory({ state: "COMPLETED" });
-      mockBatchModel.findById.mockResolvedValue(batchDoc);
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
       await expect(
-        ImportBatchService.cancelBatch(BATCH_ID, USER_ID),
+        ImportBatchService.cancelBatch(BATCH_ID, TENANT_ID, USER_ID),
       ).rejects.toMatchObject({
         statusCode: 400,
         code: "INVALID_STATE_TRANSITION",
@@ -591,25 +589,24 @@ describe("ImportBatchService", () => {
   describe("getBatch", () => {
     it("returns batch by ID", async () => {
       const batchDoc = importBatchFactory();
-      // getBatch calls findById().lean() — mock the chain
-      mockBatchModel.findById.mockReturnValue({
-        lean: vi.fn().mockResolvedValue(batchDoc),
-      });
+      mockBatchModel.findOne.mockResolvedValue(batchDoc);
 
-      const result = await ImportBatchService.getBatch(BATCH_ID);
+      const result = await ImportBatchService.loadTenantBatchOrThrow(BATCH_ID, TENANT_ID);
 
       expect(result).not.toBeNull();
       expect(result!._id).toBe(BATCH_ID);
-      expect(mockBatchModel.findById).toHaveBeenCalledWith(BATCH_ID);
+      expect(mockBatchModel.findOne).toHaveBeenCalledWith({
+        _id: expect.any(Object),
+        tenantId: expect.any(Object),
+      });
     });
 
     it("returns null for non-existent batch", async () => {
-      mockBatchModel.findById.mockReturnValue({
-        lean: vi.fn().mockResolvedValue(null),
-      });
+      mockBatchModel.findOne.mockResolvedValue(null);
 
-      const result = await ImportBatchService.getBatch("nonexistent-id");
-      expect(result).toBeNull();
+      await expect(
+        ImportBatchService.loadTenantBatchOrThrow("nonexistent-id", TENANT_ID),
+      ).rejects.toMatchObject({ statusCode: 404, code: "NOT_FOUND" });
     });
   });
 
@@ -687,6 +684,7 @@ describe("ImportBatchService", () => {
 
       const result = await ImportBatchService.recordRowResult(
         BATCH_ID,
+        TENANT_ID,
         1,
         "CREATED" as ImportRowState,
         USER_ID,
@@ -695,7 +693,11 @@ describe("ImportBatchService", () => {
       expect(result).not.toBeNull();
       expect(result!.state).toBe("CREATED");
       expect(mockRowModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { batchId: expect.any(Object), rowNumber: 1 },
+        {
+          batchId: expect.any(Object),
+          tenantId: expect.any(Object),
+          rowNumber: 1,
+        },
         {
           $set: {
             state: "CREATED",
@@ -712,6 +714,7 @@ describe("ImportBatchService", () => {
 
       const result = await ImportBatchService.recordRowResult(
         BATCH_ID,
+        TENANT_ID,
         999,
         "FAILED" as ImportRowState,
       );
@@ -729,6 +732,7 @@ describe("ImportBatchService", () => {
 
       const result = await ImportBatchService.recordRowResult(
         BATCH_ID,
+        TENANT_ID,
         1,
         "FAILED" as ImportRowState,
         undefined,
@@ -738,7 +742,11 @@ describe("ImportBatchService", () => {
       expect(result).not.toBeNull();
       expect(result!.errorMessage).toBe("Invalid email format");
       expect(mockRowModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { batchId: expect.any(Object), rowNumber: 1 },
+        {
+          batchId: expect.any(Object),
+          tenantId: expect.any(Object),
+          rowNumber: 1,
+        },
         {
           $set: {
             state: "FAILED",
