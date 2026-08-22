@@ -1,7 +1,6 @@
 "use client";
 
 import { DashboardPage, DashboardPageHeader, DashboardPanel } from "@/components/ui/DashboardPage";
-import { Button } from "@/components/ui/Button";
 import { useI18n } from "@/providers/i18n-provider";
 
 export default function PlatformEmailsPage() {
@@ -20,11 +19,9 @@ export default function PlatformEmailsPage() {
           <p className="text-body-sm text-on-surface-variant">
             {t("superAdmin.platformEmails.smtpDescription")}
           </p>
-          <div className="mt-4">
-            <Button onClick={() => alert(t("superAdmin.platformEmails.notImplemented"))}>
-              {t("superAdmin.platformEmails.sendTest")}
-            </Button>
-          </div>
+          <p className="mt-4 rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-body-sm text-on-surface-variant" role="status">
+            {t("superAdmin.platformEmails.notImplemented")}
+          </p>
         </DashboardPanel>
       </div>
     </DashboardPage>

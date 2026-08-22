@@ -32,6 +32,7 @@ export class AnalyticsRepository {
 
   async getOverviewStats(tenantId: string | null, start: Date, end: Date, query?: AnalyticsQueryFilters) {
     const matchFilter = this.buildMatchFilter(tenantId, start, end, query);
+    matchFilter.eventType = "question_asked";
 
     const agg = await UsageEventModel.aggregate([
       { $match: matchFilter },

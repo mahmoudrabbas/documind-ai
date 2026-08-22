@@ -1,6 +1,9 @@
 export type InsightCategory = "cost" | "quality" | "performance" | "usage_pattern" | "anomaly";
 export type InsightConfidence = "high" | "medium" | "low";
 
+/** Average request latency above this value is operationally degraded. */
+export const INSIGHT_LATENCY_WARNING_THRESHOLD_MS = 5_000;
+
 export interface InsightProposal {
   id: string;
   tenantId: string;
@@ -21,15 +24,15 @@ export interface InsightAgentMetricsInput {
     totalQueries: number;
     totalTokens: number;
     totalCostUsd: number;
-    avgLatencyMs: number;
+    avgLatencyMs: number | null;
     qualityScore: number;
     reconciliationDriftCount: number;
   };
   qualityMetrics: {
     noEvidenceRate: number;
     refusalRate: number;
-    citationCoverage: number;
-    citationPrecision: number;
+    citationCoverage: number | null;
+    citationPrecision: number | null;
     feedbackPositiveRate: number;
     retrievalRecall: number;
     processingSuccessRate: number;

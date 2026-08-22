@@ -183,12 +183,6 @@ const en: TranslationDictionary = {
   "auth.restoringSession": "Restoring your session…",
   "auth.signingOut": "Signing you out…",
   "auth.redirectingToLogin": "Redirecting to login",
-  /* Placeholder screen at /chat — the live assistant lives at /dashboard/chat. */
-  "chat.placeholderHeading": "Chat",
-  "chat.placeholderSubtitle": "Ask DocuMind AI anything about your knowledge base.",
-  "chat.comingSoonTitle": "AI Chat Coming Soon",
-  "chat.comingSoonDescription": "The unified conversational interface for interacting with your enterprise document knowledge base is currently under construction.",
-
   /* ── nav ───────────────────────────────────────────────── */
   "nav.home": "Home",
   "nav.chat": "Chat",

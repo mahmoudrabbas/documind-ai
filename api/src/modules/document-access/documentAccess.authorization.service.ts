@@ -3,6 +3,7 @@ import { AppError } from "../../common/errors/AppError.js";
 import { DOCUMENT_NOT_FOUND } from "../../common/errors/errorCodes.js";
 import { getAuditWriter } from "../../common/observability/index.js";
 import type { AuditWriter } from "../../common/observability/auditWriter.js";
+import type { AuditEventInput } from "../../common/observability/auditEvents.js";
 import DepartmentModel from "../../db/models/department.model.js";
 import DocumentCategoryModel from "../../db/models/documentCategory.model.js";
 import DocumentClassificationModel from "../../db/models/documentClassification.model.js";
@@ -20,17 +21,62 @@ import type { DocumentAccessActorContext, DocumentAccessResourceContext } from "
 
 export interface DocumentAuthorizationContext { tenantId: string; actorId: string }
 
+export function buildDocumentAccessDeniedAuditEvent(
+  context: DocumentAuthorizationContext,
+  documentId: string,
+  action: DocumentAccessAction,
+  reasonCode: string,
+  auditActor: DocumentAccessActorContext | null,
+): AuditEventInput {
+  const authenticated = Boolean(auditActor?.actorId);
+  return {
+    action: "DOCUMENT_ACCESS_DENIED",
+    resourceType: "Document",
+    resourceId: documentId,
+    tenantId: context.tenantId,
+    ...(authenticated ? {
+      actorId: auditActor!.actorId,
+      actorEmail: auditActor!.actorEmail ?? null,
+      actorRole: auditActor!.baseRole,
+      actorKind: "USER" as const,
+    } : {
+      actorId: undefined,
+      actorEmail: null,
+      actorRole: null,
+      actorKind: "UNAUTHENTICATED" as const,
+    }),
+    outcome: "DENIED",
+    metadata: {
+      documentId,
+      action,
+      reasonCode,
+      ...(auditActor?.customRoleId ? { customRoleId: auditActor.customRoleId } : {}),
+      ...(auditActor && auditActor.tenantId !== context.tenantId
+        ? { actorTenantId: auditActor.tenantId }
+        : {}),
+    },
+  };
+}
+
 export class DocumentAccessAuthorizationService {
   private readonly policies = new MongoDocumentAccessPolicyRepository();
 
   constructor(private readonly auditWriter: AuditWriter = getAuditWriter()) {}
 
   async authorizeDocumentAction(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction): Promise<void> {
+    let actorForAudit: DocumentAccessActorContext | null = null;
     try {
       const [actor, document] = await Promise.all([this.loadActor(context).catch(() => null), this.loadDocument(context.tenantId, documentId)]);
-      if (!actor) return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
-      if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING");
-      if (document.deletedAt && action !== "restore" && action !== "delete") return this.deny(context, documentId, action, "DOCUMENT_DELETED");
+      if (!actor) {
+        // Preserve a valid authenticated principal even when the requested
+        // tenant does not match that principal. This is attribution only; the
+        // authorization decision remains fail-closed and tenant-scoped.
+        const auditActor = await this.loadAuditActor(context).catch(() => null);
+        return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT", auditActor);
+      }
+      actorForAudit = actor;
+      if (!document) return this.deny(context, documentId, action, "DOCUMENT_MISSING", actor);
+      if (document.deletedAt && action !== "restore" && action !== "delete") return this.deny(context, documentId, action, "DOCUMENT_DELETED", actor);
       const resource = await this.withCanonicalTaxonomy(resourceContext(document));
 
       // Control-plane recovery is limited to policy management. It does not grant
@@ -44,24 +90,24 @@ export class DocumentAccessAuthorizationService {
         return;
       }
 
-      if (!resource.activePolicyId || !resource.activePolicyVersion) return this.deny(context, documentId, action, "POLICY_MISSING");
+      if (!resource.activePolicyId || !resource.activePolicyVersion) return this.deny(context, documentId, action, "POLICY_MISSING", actor);
       const policy = await this.policies.findExact(context.tenantId, documentId, resource.activePolicyId, resource.activePolicyVersion);
-      if (!policy) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT");
+      if (!policy) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT", actor);
       if ((policy.indexMetadata.categoryId ?? null) !== (resource.categoryId ?? null) ||
           (policy.indexMetadata.departmentId ?? null) !== (resource.departmentId ?? null) ||
-          (policy.indexMetadata.classificationId ?? null) !== (resource.classificationId ?? null)) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT");
+          (policy.indexMetadata.classificationId ?? null) !== (resource.classificationId ?? null)) return this.deny(context, documentId, action, "STALE_POLICY_CONTEXT", actor);
       const inherited = policy.inherits
         ? await this.policies.findExact(context.tenantId, documentId, policy.inherits.policyId, policy.inherits.policyVersion)
         : null;
-      if (policy.inherits && !inherited) return this.deny(context, documentId, action, "INVALID_INHERITED_POLICY");
+      if (policy.inherits && !inherited) return this.deny(context, documentId, action, "INVALID_INHERITED_POLICY", actor);
       const evaluator = new InMemoryDocumentAccessPolicyEvaluator(
         new PermissionEvaluatorDocumentCapabilityAdapter(getPermissionEvaluator()),
       );
       const decision = await evaluator.evaluate({ actor, resource, action, policy, inheritedPolicy: inherited, evaluatedAt: new Date().toISOString() });
-      if (!decision.allowed) return this.deny(context, documentId, action, decision.reasonCode);
+      if (!decision.allowed) return this.deny(context, documentId, action, decision.reasonCode, actor);
     } catch (error) {
       if (error instanceof AppError) throw error;
-      return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT");
+      return this.deny(context, documentId, action, "MALFORMED_AUTHORIZATION_CONTEXT", actorForAudit);
     }
   }
 
@@ -78,13 +124,20 @@ export class DocumentAccessAuthorizationService {
     const resolved = await getPermissionEvaluator().resolve({ tenantId: actor.tenantId, actorId: actor.actorId, baseRole: actor.baseRole, customRoleId: actor.customRoleId });
     const grant = resolved.grants.get(Permission.DOCUMENTS_READ);
     if (!grant) return [{ $match: { _id: { $exists: false } } }];
+    // Administrative inventory visibility is distinct from content access.
+    // Base admins with the normal document-read permission can discover
+    // tenant metadata, while read/download/use_in_ai remain policy-enforced
+    // on their respective endpoints and retrieval paths.
+    if (actor.baseRole === "SUPER_ADMIN" || actor.baseRole === "COMPANY_ADMIN") {
+      return [];
+    }
     return buildDiscoverPolicyPipeline(actor, grant.scope);
   }
 
   private async loadActor(context: DocumentAuthorizationContext): Promise<DocumentAccessActorContext> {
     if (!mongoose.isObjectIdOrHexString(context.tenantId) || !mongoose.isObjectIdOrHexString(context.actorId)) return hidden();
     const user = await UserModel.findOne({ _id: context.actorId, tenantId: context.tenantId, status: "active" })
-      .select("role customRoleId employeeProfile.departmentId employeeProfile.department").lean().exec();
+      .select("email role customRoleId employeeProfile.departmentId employeeProfile.department").lean().exec();
     if (!user) return hidden();
     const resolved = await getPermissionEvaluator().resolve({ tenantId: context.tenantId, actorId: context.actorId, baseRole: user.role, customRoleId: user.customRoleId?.toString() });
     if (resolved.customRoleState === "invalid" || resolved.customRoleState === "missing" || resolved.customRoleState === "archived") return hidden();
@@ -98,7 +151,26 @@ export class DocumentAccessAuthorizationService {
       const department = await DepartmentModel.findOne({ tenantId: context.tenantId, normalizedName: normalizeTaxonomyName(legacyDepartment), status: "active" }).select("_id").lean().exec();
       if (department) departmentIds.push(department._id.toString());
     }
-    return { tenantId: context.tenantId, actorId: context.actorId, baseRole: resolved.baseRole, customRoleId: resolved.customRoleId, departmentIds };
+    return { tenantId: context.tenantId, actorId: context.actorId, actorEmail: user.email ?? null, baseRole: resolved.baseRole, customRoleId: resolved.customRoleId, departmentIds };
+  }
+
+  private async loadAuditActor(context: DocumentAuthorizationContext): Promise<DocumentAccessActorContext | null> {
+    if (!mongoose.isObjectIdOrHexString(context.actorId)) return null;
+    const user = await UserModel.findById(context.actorId).select("tenantId email role customRoleId").lean().exec();
+    if (!user || !mongoose.isObjectIdOrHexString(user.tenantId?.toString())) return null;
+    const resolved = await getPermissionEvaluator().resolve({
+      tenantId: user.tenantId.toString(),
+      actorId: context.actorId,
+      baseRole: user.role,
+      customRoleId: user.customRoleId?.toString(),
+    });
+    return {
+      tenantId: user.tenantId.toString(),
+      actorId: context.actorId,
+      actorEmail: user.email ?? null,
+      baseRole: resolved.baseRole,
+      customRoleId: resolved.customRoleId,
+    };
   }
 
   private async loadDocument(tenantId: string, documentId: string) {
@@ -133,9 +205,14 @@ export class DocumentAccessAuthorizationService {
     };
   }
 
-  private async deny(context: DocumentAuthorizationContext, documentId: string, action: DocumentAccessAction, reasonCode: string): Promise<never> {
-    await this.auditWriter.write({ action: "DOCUMENT_ACCESS_DENIED", resourceType: "Document", resourceId: documentId,
-      tenantId: context.tenantId, actorId: context.actorId, outcome: "DENIED", metadata: { documentId, action, reasonCode } });
+  private async deny(
+    context: DocumentAuthorizationContext,
+    documentId: string,
+    action: DocumentAccessAction,
+    reasonCode: string,
+    auditActor: DocumentAccessActorContext | null = null,
+  ): Promise<never> {
+    await this.auditWriter.write(buildDocumentAccessDeniedAuditEvent(context, documentId, action, reasonCode, auditActor));
     return hidden();
   }
 }

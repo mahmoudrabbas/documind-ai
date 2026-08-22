@@ -8,6 +8,12 @@ export interface EmailMessage {
   createdAt: string;
   subject: string;
   attemptCount: number;
+  scheduledFor?: string | null;
+  sentAt?: string | null;
+  lastAttemptAt?: string | null;
+  providerMessageId?: string | null;
+  correlationId?: string | null;
+  errorCategory?: string | null;
 }
 
 export interface EmailAttempt {

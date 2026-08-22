@@ -19,7 +19,10 @@ export function buildTenantAuditFilter(
     tenantId: new mongoose.Types.ObjectId(tenantId),
   };
 
-  if (filter.action) query.action = filter.action;
+  if (filter.action) {
+    const escaped = filter.action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.action = { $regex: escaped, $options: "i" };
+  }
   if (filter.actorId) query.actorId = new mongoose.Types.ObjectId(filter.actorId);
   if (filter.actorEmail) query.actorEmail = filter.actorEmail;
   if (filter.resourceType) query.resourceType = filter.resourceType;

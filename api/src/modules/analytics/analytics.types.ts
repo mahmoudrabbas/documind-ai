@@ -70,8 +70,8 @@ export interface QualityJudgeScores {
 export interface QualityOverviewMetrics {
   noEvidenceRate: number;
   refusalRate: number;
-  citationCoverage: number;
-  citationPrecision: number;
+  citationCoverage: number | null;
+  citationPrecision: number | null;
   feedbackPositiveRate: number;
   retrievalRecall: number;
   processingSuccessRate: number;

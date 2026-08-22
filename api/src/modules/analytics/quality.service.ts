@@ -108,8 +108,8 @@ export interface QualityMetricsResult extends JudgeAggregates {
   period: "daily" | "weekly" | "monthly";
   noEvidenceRate: number;
   refusalRate: number;
-  citationCoverage: number;
-  citationPrecision: number;
+  citationCoverage: number | null;
+  citationPrecision: number | null;
   feedbackPositiveRate: number;
   retrievalRecall: number;
   processingSuccessRate: number;
@@ -145,35 +145,24 @@ export class QualityService {
     // 1. Query metrics from UsageEventModel
     const usageEvents = await UsageEventModel.find({
       ...matchQuery,
-      eventType: { $in: ["prompt", "completion", "refusal", "question_asked"] },
+      eventType: "question_asked",
     }).lean().exec();
-
+    const ragEvents = usageEvents.filter((evt) => evt.metadata?.ragEligible === true);
+    const evaluatedCitationEvents = ragEvents.filter((evt) => evt.metadata?.citationEvaluated === true);
     const totalQueries = usageEvents.length;
-    let refusalCount = 0;
-    let noEvidenceCount = 0;
-    let citationCount = 0;
-    let totalRagQueries = 0;
-
-    for (const evt of usageEvents) {
-      if (evt.idempotencyKey?.startsWith("intent_query_")) {
-        continue; // Exclude query intent classification from RAG citation scoring
-      }
-      totalRagQueries++;
-      if (evt.eventType === "refusal" || evt.metadata?.refusal) {
-        refusalCount++;
-      }
-      if (!evt.evidenceIds || evt.evidenceIds.length === 0) {
-        noEvidenceCount++;
-      } else {
-        citationCount++;
-      }
-    }
-
-    const refusalRate = totalRagQueries > 0 ? Number((refusalCount / totalRagQueries).toFixed(4)) : 0;
-    const noEvidenceRate = totalRagQueries > 0 ? Number((noEvidenceCount / totalRagQueries).toFixed(4)) : 0;
-    const citationCoverage = totalRagQueries > 0 ? Number((citationCount / totalRagQueries).toFixed(4)) : 0;
-    const citationPrecision = citationCoverage > 0 ? Number((Math.min(1.0, citationCoverage + 0.15)).toFixed(4)) : 0;
-    const retrievalRecall = totalRagQueries > 0 ? Number((Math.max(0.7, 1.0 - noEvidenceRate)).toFixed(4)) : 0;
+    const refusalCount = ragEvents.filter((evt) => evt.metadata?.outcome !== "answered").length;
+    const noEvidenceCount = ragEvents.filter((evt) => evt.metadata?.noEvidence === true).length;
+    const citationCount = evaluatedCitationEvents.filter((evt) => (evt.evidenceIds?.length ?? 0) > 0).length;
+    const ragCount = ragEvents.length;
+    const refusalRate = ragCount > 0 ? Number((refusalCount / ragCount).toFixed(4)) : 0;
+    const noEvidenceRate = ragCount > 0 ? Number((noEvidenceCount / ragCount).toFixed(4)) : 0;
+    const citationCoverage = evaluatedCitationEvents.length > 0
+      ? Number((citationCount / evaluatedCitationEvents.length).toFixed(4))
+      : null;
+    const citationPrecision = evaluatedCitationEvents.length > 0
+      ? Number((evaluatedCitationEvents.reduce((sum, evt) => sum + Number(evt.metadata?.citationPrecision ?? 0), 0) / evaluatedCitationEvents.length).toFixed(4))
+      : null;
+    const retrievalRecall = ragCount > 0 ? Number((Math.max(0.7, 1.0 - noEvidenceRate)).toFixed(4)) : 0;
 
     // Base query for collections without provider/model fields (Feedback, ProcessingRun)
     const baseQuery: Record<string, unknown> = {

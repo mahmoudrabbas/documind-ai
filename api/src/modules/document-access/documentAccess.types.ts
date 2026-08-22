@@ -16,6 +16,7 @@ export interface DocumentAccessActorContext {
   /** Must be derived from authenticated server context, never trusted client input. */
   tenantId: string;
   actorId: string;
+  actorEmail?: string | null;
   baseRole: BaseRole;
   customRoleId?: string | null;
   departmentIds?: readonly string[];

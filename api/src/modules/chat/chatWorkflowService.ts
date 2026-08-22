@@ -66,6 +66,7 @@ import type {
   ResolvedPermissions,
 } from "../permissions/permissions.types.js";
 import { getTenantSettings } from "../settings/settings.service.js";
+import { MongoUsageEventWriter } from "../analytics/adapters/mongo-usage-event-writer.js";
 import { findUserDocumentByTenantAndId } from "../auth/auth.repository.js";
 import {
   buildQuotaExceededError,
@@ -1632,6 +1633,38 @@ export class ChatWorkflowService {
     );
 
     const outcome = resolveChatOutcome(terminal.reasonCode, artifacts);
+    // One canonical question event is the live analytics denominator. It is
+    // deliberately emitted after compliance/source materialization so the
+    // event describes the released answer, not intermediate agent calls.
+    void new MongoUsageEventWriter().record({
+      tenantId,
+      actorId,
+      eventType: "question_asked",
+      totalTokens: runtimeResult.totalTokensUsed ?? 0,
+      inputTokens: 0,
+      outputTokens: runtimeResult.totalTokensUsed ?? 0,
+      costMinorUnits: Math.round((runtimeResult.estimatedCost ?? 0) * 10000),
+      latencyMs: runtimeResult.latencyMs ?? 0,
+      traceId,
+      requestId,
+      conversationId,
+      messageId: idOf(assistant),
+      evidenceIds: terminal.sourceIds,
+      success: runtimeResult.status === "completed",
+      metadata: {
+        route: artifacts.intent?.route ?? null,
+        outcome,
+        ragEligible: artifacts.intent?.route === "rag",
+        noEvidence: outcome === "no_relevant_content",
+        authorizationRestricted: outcome === "authorization_restricted",
+        citationEvaluated: artifacts.verifier !== null,
+        citationPrecision: artifacts.verifier
+          ? artifacts.writer && artifacts.writer.citedChunkIds.length > 0
+            ? artifacts.verifier.validatedCitationIds.length / artifacts.writer.citedChunkIds.length
+            : null
+          : null,
+      },
+    }).catch(() => undefined);
     if (
       isReportableKnowledgeGap(outcome, artifacts)
     ) {

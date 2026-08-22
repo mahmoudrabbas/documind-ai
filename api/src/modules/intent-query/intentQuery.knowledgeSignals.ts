@@ -244,7 +244,9 @@ export function isLikelyContextualFollowUp(raw: string): boolean {
     /\b(?:that|this|it|they|those|these|the\s+same|such|also|too|there|then)\b/u.test(normalized) ||
     /\b(?:what|how)\s+about\b/iu.test(normalized) ||
     /^\s*(?:and|و)\b/iu.test(normalized) ||
-    /(?:أيضاً|ايضاً|هل هذا|وماذا عن|وكيف|كذلك)/u.test(normalized);
+    /(?:أيضاً|ايضاً|هل هذا|وماذا عن|وكيف|كذلك)/u.test(normalized) ||
+    /^(?:طيب|طب|ومين|ومن|وموافقه|وموافقه مين)(?:\s|$)/u.test(normalized.trim()) ||
+    /^(?:whose|which)\s+(?:approval|permission|consent|authorization)\b/iu.test(normalized.trim());
   if (!hasContinuation) return false;
   // The continuation must lead the turn: a deictic subject (that/this/it/…)
   // within the first few words, or an explicit continuation opener. A long
@@ -255,8 +257,12 @@ export function isLikelyContextualFollowUp(raw: string): boolean {
   const phraseLead =
     /^(?:what about|how about|what if|and the|and what|and how|and does|and is|and are|and can|and do|and)\b/u.test(leadFour);
   const arabicLead =
-    /^(?:وماذا عن|وكيف|هل هذا|أيضاً|ايضاً|كذلك)/u.test(normalized.trim());
-  return deicticLead || phraseLead || arabicLead;
+    /^(?:وماذا عن|ومين|ومن|وموافقة|وموافقة مين|طيب|طب|هل هذا|أيضاً|ايضاً|كذلك)/u.test(normalized.trim());
+  const arabicEllipticalQuestion =
+    /(?:مين|من|موافقه|يوافق|لازم يوافق|الموافقه)\s*(?:مين|من)?[؟?]?$/u.test(normalized.trim()) &&
+    words.length <= 8;
+  const EnglishEllipticalQuestion = /^(?:whose|which)\s+(?:approval|permission|consent|authorization)\b/iu.test(normalized.trim());
+  return deicticLead || phraseLead || arabicLead || arabicEllipticalQuestion || EnglishEllipticalQuestion;
 }
 
 /**

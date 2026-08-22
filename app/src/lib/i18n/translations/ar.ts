@@ -183,12 +183,6 @@ const ar: TranslationDictionary = {
   "auth.restoringSession": "جارٍ استعادة جلستك…",
   "auth.signingOut": "جارٍ تسجيل خروجك…",
   "auth.redirectingToLogin": "جارٍ التحويل إلى تسجيل الدخول",
-  /* شاشة مؤقتة على /chat — المساعد الفعلي في /dashboard/chat. */
-  "chat.placeholderHeading": "المحادثة",
-  "chat.placeholderSubtitle": "اسأل DocuMind AI عن أي شيء في قاعدة معارفك.",
-  "chat.comingSoonTitle": "محادثة الذكاء الاصطناعي قريبًا",
-  "chat.comingSoonDescription": "واجهة المحادثة الموحّدة للتفاعل مع قاعدة معارف مستندات مؤسستك قيد التطوير حاليًا.",
-
   /* ── nav ───────────────────────────────────────────────── */
   "nav.home": "الرئيسية",
   "nav.chat": "المحادثة",

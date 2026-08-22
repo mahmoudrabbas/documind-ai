@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
-import { delimiter, resolve } from "node:path";
+import { delimiter, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { clearTimeout, setTimeout } from "node:timers";
@@ -152,6 +152,9 @@ const path = [
 
 function runTestFile(testFile, mongodbUri) {
   return new Promise((resolveRun) => {
+    const label = relative(root, testFile);
+    const startedAt = Date.now();
+    console.log(`\n── API test start: ${label} ──`);
     const child = spawn(process.execPath, ["--import", "tsx", "--test", testFile], {
       cwd: apiRoot,
       stdio: "inherit",
@@ -165,10 +168,12 @@ function runTestFile(testFile, mongodbUri) {
     child.once("error", (error) => {
       clearTimeout(timeout);
       console.error(`Unable to run API test ${testFile}: ${error.message}`);
+      console.error(`── API test failed to start: ${label} (${Date.now() - startedAt}ms) ──`);
       resolveRun(1);
     });
     child.once("exit", (code) => {
       clearTimeout(timeout);
+      console.log(`── API test ${code === 0 ? "passed" : "failed"}: ${label} (${Date.now() - startedAt}ms) ──`);
       resolveRun(code ?? 1);
     });
   });

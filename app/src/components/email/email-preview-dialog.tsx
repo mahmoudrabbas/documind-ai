@@ -10,6 +10,15 @@ export interface EmailPreviewData {
   recipientEmail: string;
   templateId: string;
   state: string;
+  createdAt?: string;
+  scheduledFor?: string | null;
+  sentAt?: string | null;
+  lastAttemptAt?: string | null;
+  attemptCount?: number;
+  providerMessageId?: string | null;
+  correlationId?: string | null;
+  errorCategory?: string | null;
+  attempts?: Array<{ attemptNumber: number; state: string; startedAt: string; completedAt?: string | null }>;
 }
 
 interface EmailPreviewDialogProps {
@@ -66,6 +75,17 @@ export function EmailPreviewDialog({ isOpen, onClose, data }: EmailPreviewDialog
             </span>{" "}
             {codeLabel(t, "dashboard.emailState", data.state)}
           </p>
+          <dl className="grid grid-cols-1 gap-2 border-t border-outline-variant pt-4 text-sm text-on-surface-variant sm:grid-cols-2">
+            {data.createdAt ? <div><dt className="font-semibold text-on-surface">Created</dt><dd>{new Date(data.createdAt).toLocaleString()}</dd></div> : null}
+            {data.scheduledFor ? <div><dt className="font-semibold text-on-surface">Scheduled</dt><dd>{new Date(data.scheduledFor).toLocaleString()}</dd></div> : null}
+            {data.sentAt ? <div><dt className="font-semibold text-on-surface">Sent</dt><dd>{new Date(data.sentAt).toLocaleString()}</dd></div> : null}
+            {data.lastAttemptAt ? <div><dt className="font-semibold text-on-surface">Last attempt</dt><dd>{new Date(data.lastAttemptAt).toLocaleString()}</dd></div> : null}
+            {data.attemptCount !== undefined ? <div><dt className="font-semibold text-on-surface">Attempts</dt><dd>{data.attemptCount}</dd></div> : null}
+            {data.providerMessageId ? <div><dt className="font-semibold text-on-surface">Provider message ID</dt><dd>{data.providerMessageId}</dd></div> : null}
+            {data.correlationId ? <div><dt className="font-semibold text-on-surface">Trace / correlation ID</dt><dd>{data.correlationId}</dd></div> : null}
+            {data.errorCategory ? <div><dt className="font-semibold text-on-surface">Failure category</dt><dd>{data.errorCategory}</dd></div> : null}
+          </dl>
+          {data.attempts?.length ? <div className="mt-4 border-t border-outline-variant pt-4 text-sm text-on-surface-variant"><p className="font-semibold text-on-surface">Attempts</p>{data.attempts.map((attempt) => <p key={attempt.attemptNumber}>#{attempt.attemptNumber} — {attempt.state}</p>)}</div> : null}
         </div>
       </div>
     </dialog>

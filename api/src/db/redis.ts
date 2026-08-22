@@ -73,6 +73,7 @@ export function getRedisClient(): Redis {
 }
 
 export async function connectRedis(): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const redis = getRedisClient();
 
@@ -82,9 +83,21 @@ export async function connectRedis(): Promise<void> {
       return;
     }
 
-    await redis.ping();
+    const timeoutMs = isTestEnv() ? 1_000 : 5_000;
+    await Promise.race([
+      redis.ping(),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`Redis ping timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
     isConnected = true;
   } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId);
+    // A failed startup probe must not leave an offline ioredis client or its
+    // reconnect timers keeping test workers alive. A later operation can
+    // create a fresh client through getRedisClient().
+    client?.disconnect(false);
+    client = null;
     if (!isTestEnv()) {
       console.warn(
         "[redis] Initial connection failed. App will run without Redis.",
@@ -92,6 +105,8 @@ export async function connectRedis(): Promise<void> {
       );
     }
     isConnected = false;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 

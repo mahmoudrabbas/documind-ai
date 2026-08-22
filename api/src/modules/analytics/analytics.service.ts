@@ -61,16 +61,15 @@ export class AnalyticsService {
       return Number((((curr - prev) / prev) * 100).toFixed(1));
     };
 
-    const qualityScore = stats.totalQueries > 0
-      ? Number(
-          (
-            (quality.citationCoverage * 0.3 +
-              quality.feedbackPositiveRate * 0.3 +
-              quality.processingSuccessRate * 0.2 +
-              (1 - quality.noEvidenceRate) * 0.2) *
-            100
-          ).toFixed(1)
-        )
+    const qualityComponents = [
+      ...(quality.citationCoverage === null ? [] : [{ value: quality.citationCoverage, weight: 0.3 }]),
+      ...(quality.totalFeedback > 0 ? [{ value: quality.feedbackPositiveRate, weight: 0.3 }] : []),
+      ...(quality.totalProcessingRuns > 0 ? [{ value: quality.processingSuccessRate, weight: 0.2 }] : []),
+      ...(quality.totalQueries > 0 ? [{ value: 1 - quality.noEvidenceRate, weight: 0.2 }] : []),
+    ];
+    const qualityWeight = qualityComponents.reduce((sum, item) => sum + item.weight, 0);
+    const qualityScore = qualityWeight > 0
+      ? Number(((qualityComponents.reduce((sum, item) => sum + item.value * item.weight, 0) / qualityWeight) * 100).toFixed(1))
       : 0;
 
     return {

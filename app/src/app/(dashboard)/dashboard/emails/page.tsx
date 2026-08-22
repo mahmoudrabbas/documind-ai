@@ -373,12 +373,21 @@ export default function CompanyEmailsPage() {
                             data-guide-id="emails-details-button"
                             className="h-9 px-3 text-label-sm font-medium text-primary hover:bg-primary/10"
                             onClick={() => {
-                              setPreviewData({
+                              void emailService.getEmailStatus(email._id).then((detail) => setPreviewData({
                                 subject: email.subject || t("dashboard.emails.noSubject"),
                                 recipientEmail: email.recipientEmail,
                                 templateId: email.templateId,
                                 state: email.state,
-                              });
+                                createdAt: detail.message.createdAt,
+                                scheduledFor: detail.message.scheduledFor,
+                                sentAt: detail.message.sentAt,
+                                lastAttemptAt: detail.message.lastAttemptAt,
+                                attemptCount: detail.message.attemptCount,
+                                providerMessageId: detail.message.providerMessageId,
+                                correlationId: detail.message.correlationId,
+                                errorCategory: detail.message.errorCategory,
+                                attempts: detail.attempts,
+                              })).catch(() => setPreviewData({ subject: email.subject || t("dashboard.emails.noSubject"), recipientEmail: email.recipientEmail, templateId: email.templateId, state: email.state }));
                               setIsPreviewOpen(true);
                             }}
                           >

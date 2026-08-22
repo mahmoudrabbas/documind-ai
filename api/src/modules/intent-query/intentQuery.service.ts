@@ -933,6 +933,15 @@ export class IntentQueryService {
         }
         rawOutput.clarificationNeeded = false;
         rawOutput.clarification = null;
+        // A contextual rewrite enriches the search text but is not an
+        // implicit document pin. Only explicit current-turn document ids or
+        // title hints may constrain this fresh retrieval. This preserves
+        // same-document continuity through the rewritten query while allowing
+        // an access/security follow-up to move to another authorized document.
+        if (deterministicTitleHints.length === 0 && (input.referencedDocumentIds?.length ?? 0) === 0) {
+          rawOutput.referencedDocumentIds = [];
+          rawOutput.referencedDocumentTitles = [];
+        }
       }
 
       const sourceLessUnsupportedContinuation =

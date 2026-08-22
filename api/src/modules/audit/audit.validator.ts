@@ -3,7 +3,10 @@ import { AppError } from "../../common/errors/AppError.js";
 import { VALIDATION_ERROR } from "../../common/errors/errorCodes.js";
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid identifier");
-const action = z.string().trim().min(3).max(80).regex(/^[A-Z][A-Z0-9_]+$/);
+// Action is a search term, not an enum. Audit actions are uppercase by
+// convention, but partial input such as "policy" is a valid UI filter and
+// must never turn into a server error.
+const action = z.string().trim().min(1).max(80);
 const resourceType = z.enum([
   "User", "Role", "Document", "DocumentQuality", "OcrPageResult", "Package",
   "Subscription", "PlatformSetting", "Tenant", "Session", "System", "Permission",

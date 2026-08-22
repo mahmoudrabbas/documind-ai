@@ -4,11 +4,14 @@ import type {
   InsightAgentMetricsInput,
   InsightProposal,
 } from "./insight-agent.types.js";
+import { INSIGHT_LATENCY_WARNING_THRESHOLD_MS } from "./insight-agent.types.js";
 
 export class InsightAgentService implements InsightAgentPort {
   constructor(private readonly modelAdapter?: ModelAdapter) {}
 
   async generateInsights(input: InsightAgentMetricsInput): Promise<InsightProposal[]> {
+    const deterministicAnomalies = buildDeterministicInsights(input);
+
     if (this.modelAdapter) {
       try {
         const prompt = `You are the DocuMind AI Operational & Analytics Insight Agent. Analyze these sanitized, aggregated metrics for tenant "${input.tenantId}" over period ${input.startDate} to ${input.endDate} and return JSON array of insight proposals.
@@ -50,7 +53,7 @@ Return ONLY a JSON array of objects with this shape:
         }
 
         const parsed = JSON.parse(cleanText);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && deterministicAnomalies.length === 0) {
           return parsed as InsightProposal[];
         }
       } catch {
@@ -58,7 +61,16 @@ Return ONLY a JSON array of objects with this shape:
       }
     }
 
-    // Heuristic analysis generator
+    return deterministicAnomalies;
+  }
+}
+
+/**
+ * Trusted operational checks run before and independently of any model output.
+ * A model must not be able to turn a measured outage/quality regression into a
+ * healthy response. Missing latency is intentionally not treated as slow.
+ */
+function buildDeterministicInsights(input: InsightAgentMetricsInput): InsightProposal[] {
     const proposals: InsightProposal[] = [];
     const now = new Date().toISOString();
 
@@ -76,16 +88,39 @@ Return ONLY a JSON array of objects with this shape:
       });
     }
 
-    if (input.qualityMetrics.noEvidenceRate > 0.15) {
+    if (
+      typeof input.overview.avgLatencyMs === "number" &&
+      Number.isFinite(input.overview.avgLatencyMs) &&
+      input.overview.avgLatencyMs > INSIGHT_LATENCY_WARNING_THRESHOLD_MS
+    ) {
+      proposals.push({
+        id: `ins_latency_${Date.now()}`,
+        tenantId: input.tenantId,
+        statement: `Average request latency reached ${Math.round(input.overview.avgLatencyMs).toLocaleString()} ms, above the ${INSIGHT_LATENCY_WARNING_THRESHOLD_MS.toLocaleString()} ms operational baseline.`,
+        evidenceMetricIds: ["avgLatencyMs"],
+        confidence: "high",
+        category: "performance",
+        recommendedAction: "Inspect provider latency, queue depth, and downstream dependencies before increasing traffic.",
+        reasoning: "The measured average latency exceeded the centralized operational warning threshold.",
+        generatedAt: now,
+      });
+    }
+
+    const qualityAnomaly =
+      input.overview.qualityScore < 70 ||
+      input.qualityMetrics.noEvidenceRate > 0.15 ||
+      (input.qualityMetrics.citationCoverage !== null && input.qualityMetrics.citationCoverage < 0.8) ||
+      (input.qualityMetrics.citationPrecision !== null && input.qualityMetrics.citationPrecision < 0.8);
+    if (qualityAnomaly) {
       proposals.push({
         id: `ins_evid_${Date.now()}`,
         tenantId: input.tenantId,
-        statement: `No-evidence query rate is elevated at ${(input.qualityMetrics.noEvidenceRate * 100).toFixed(1)}%.`,
-        evidenceMetricIds: ["noEvidenceRate"],
+        statement: `AI quality telemetry is below the configured baseline (quality index ${(input.overview.qualityScore).toFixed(1)}%).`,
+        evidenceMetricIds: ["qualityScore", "citationCoverage", "citationPrecision", "noEvidenceRate"],
         confidence: "high",
         category: "quality",
         recommendedAction: "Review knowledge gaps and index additional domain documentation.",
-        reasoning: "Queries are frequently failing to retrieve relevant source evidence.",
+        reasoning: "The deterministic health check treats low quality or citation telemetry as an operational issue; unavailable evaluation metrics are not treated as failures.",
         generatedAt: now,
       });
     }
@@ -119,5 +154,4 @@ Return ONLY a JSON array of objects with this shape:
     }
 
     return proposals;
-  }
 }

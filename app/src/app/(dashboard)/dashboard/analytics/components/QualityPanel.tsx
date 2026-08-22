@@ -106,8 +106,8 @@ export function QualityPanel({ metrics }: QualityPanelProps) {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {items.map((item, idx) => {
-            const hasSample = !sampleSizesAvailable || item.sampleSize > 0;
-            const pct = hasSample ? Math.round(item.val * 100) : null;
+            const hasSample = !sampleSizesAvailable || (item.sampleSize > 0 && item.val !== null);
+            const pct = hasSample && item.val !== null ? Math.round(item.val * 100) : null;
             const isGood = pct !== null && (item.inverse ? pct < 10 : pct > 80);
 
             return (
