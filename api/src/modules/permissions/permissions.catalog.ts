@@ -119,7 +119,16 @@ const definitions: readonly PermissionDefinitionSource[] = [
   { id: Permission.DOCUMENTS_DOWNLOAD, group: "documents", label: "Download Documents", description: "Download tenant document files", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.DOCUMENTS_ARCHIVE, group: "documents", label: "Archive Documents", description: "Archive and restore tenant documents", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.DOCUMENTS_MANAGE_ACCESS, group: "documents", label: "Manage Document Access", description: "Manage document access policies", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
-  { id: Permission.DOCUMENTS_USE_IN_AI, group: "documents", label: "Use Documents in AI", description: "Use authorized documents in AI requests", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
+  // Deliberately not an EMPLOYEE default. A base-role default is an
+  // unconditional inherited grant that a custom role can narrow but never
+  // revoke, so defaulting this for EMPLOYEE made the role editor's
+  // "Use Documents in AI" checkbox unable to deny anything: a document access
+  // policy granting `use_in_ai` to a role was then the only gate, and it
+  // could hand AI access to a role that was never given the capability.
+  // Employees must be granted this explicitly; it stays fully grantable to
+  // EMPLOYEE custom roles because `allowedCustomRoleBases` derives from
+  // `tenantGrantable`, not from `defaultBaseRoles`.
+  { id: Permission.DOCUMENTS_USE_IN_AI, group: "documents", label: "Use Documents in AI", description: "Use authorized documents in AI requests", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: ALL_SCOPES },
   { id: Permission.CHAT_READ, group: "chat", label: "View Conversations", description: "View conversations", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
   { id: Permission.CHAT_CREATE, group: "chat", label: "Create Conversations", description: "Create conversations", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },
   { id: Permission.CHAT_DELETE, group: "chat", label: "Delete Conversations", description: "Delete conversations", defaultBaseRoles: ["SUPER_ADMIN", "COMPANY_ADMIN"], delegableByTenantAdmin: true, platformOnly: false, deprecated: false, compatibleScopes: SELF_SCOPE },

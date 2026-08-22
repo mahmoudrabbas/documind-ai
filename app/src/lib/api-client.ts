@@ -213,6 +213,30 @@ interface RefreshResponse {
 
 let refreshRequest: Promise<string> | null = null;
 const REFRESH_LOCK_NAME = "documind-auth-refresh";
+/**
+ * Deadline for waiting on the cross-document refresh lock, and a separate one
+ * for the request that runs while holding it. A Web Lock is held until its
+ * callback settles, so without these a stall in one tab blocks every other tab
+ * indefinitely: queued calls never resolve and the user sees a permanent
+ * spinner with no error and no redirect to login.
+ */
+const REFRESH_LOCK_TIMEOUT_MS = 10_000;
+const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * `AbortSignal.timeout` is unavailable in some older runtimes; a missing signal
+ * degrades to the previous unbounded behaviour rather than throwing.
+ */
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal === "undefined") return undefined;
+  if (typeof AbortSignal.timeout !== "function") return undefined;
+  return AbortSignal.timeout(ms);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 let explicitLogout = false;
 type SessionListener = () => void;
 type PermissionDeniedListener = (error: ApiError) => void;
@@ -313,6 +337,7 @@ export async function refreshAccessToken(): Promise<string> {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
+          signal: timeoutSignal(REFRESH_REQUEST_TIMEOUT_MS),
         });
       } catch (error) {
         clearAccessToken();
@@ -356,11 +381,40 @@ export async function refreshAccessToken(): Promise<string> {
 
     const refreshLocks =
       typeof navigator !== "undefined" ? navigator.locks : undefined;
-    refreshRequest = (
-      refreshLocks
-        ? refreshLocks.request(REFRESH_LOCK_NAME, performRefresh)
-        : performRefresh()
-    ).finally(() => {
+
+    const refreshUnderLock = async (manager: LockManager): Promise<string> => {
+      // `signal` cannot be combined with `ifAvailable` or `steal`, and neither is
+      // used here. It only bounds the wait: once the lock is granted the request
+      // has settled, so a later abort is ignored and the callback runs to
+      // completion under its own deadline.
+      const lockSignal = timeoutSignal(REFRESH_LOCK_TIMEOUT_MS);
+      try {
+        // Awaited here rather than chained: `LockGrantedCallback<T>` returns `T`
+        // verbatim, so a promise-returning callback makes `request` resolve to a
+        // nested promise. Current DOM types unwrap it with `Awaited<T>`, older
+        // ones do not; `await` flattens it either way.
+        return await manager.request(
+          REFRESH_LOCK_NAME,
+          lockSignal ? { signal: lockSignal } : {},
+          performRefresh,
+        );
+      } catch (error: unknown) {
+        // A timed-out wait has to surface as a refresh failure so the existing
+        // session-expiry path runs instead of hanging forever.
+        if (!isAbortError(error)) throw error;
+        clearAccessToken();
+        throw new ApiError({
+          status: 0,
+          code: "REFRESH_FAILED",
+          message: "Timed out waiting for the token refresh lock",
+        });
+      }
+    };
+
+    const locked: Promise<string> = refreshLocks
+      ? refreshUnderLock(refreshLocks)
+      : performRefresh();
+    refreshRequest = locked.finally(() => {
       refreshRequest = null;
     });
   }

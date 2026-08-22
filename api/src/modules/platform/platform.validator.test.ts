@@ -163,6 +163,65 @@ test("platform settings accept AI configuration fields and reject nested secrets
   );
 });
 
+test("platform settings reject a model that belongs to a different provider", () => {
+  const base = { temperature: 0.2, maxOutputTokens: 2048 };
+  // A Bedrock chat model on groq 404s on every completion, and the serving
+  // provider can be pinned by LLM_PRIMARY_PROVIDER rather than by this document,
+  // so the pair has to be rejected before it is persisted.
+  assert.throws(
+    () =>
+      parse(settingsBodySchema, {
+        ...base,
+        provider: "groq",
+        chatModel: "anthropic.claude-sonnet-4-6",
+        embeddingModel: "jina-embeddings-v3",
+      }),
+    AppError,
+  );
+  assert.throws(
+    () =>
+      parse(settingsBodySchema, {
+        ...base,
+        provider: "student-bedrock",
+        chatModel: "llama-3.3-70b-versatile",
+        embeddingModel: "amazon.titan-embed-text-v2:0",
+      }),
+    AppError,
+  );
+  assert.throws(
+    () =>
+      parse(settingsBodySchema, {
+        ...base,
+        provider: "groq",
+        chatModel: "llama-3.3-70b-versatile",
+        embeddingModel: "amazon.titan-embed-text-v2:0",
+      }),
+    AppError,
+  );
+  // Dotted Groq ids such as llama-3.3-70b-versatile must still be accepted: the
+  // discriminator is a letters-only vendor segment, not the presence of a dot.
+  assert.equal(
+    parse(settingsBodySchema, {
+      ...base,
+      provider: "groq",
+      chatModel: "llama-3.3-70b-versatile",
+      embeddingModel: "jina-embeddings-v3",
+    }).chatModel,
+    "llama-3.3-70b-versatile",
+  );
+  // iti-bedrock can embed through OpenAI on credentials alone, so its embedding
+  // model is deliberately not shape-checked.
+  assert.equal(
+    parse(settingsBodySchema, {
+      ...base,
+      provider: "iti-bedrock",
+      chatModel: "openai.gpt-oss-120b-1:0",
+      embeddingModel: "text-embedding-3-small",
+    }).embeddingModel,
+    "text-embedding-3-small",
+  );
+});
+
 // ─── Global Settings strict validation tests ────────────────────────────────
 
 test("global settings patch accepts complete valid settings", () => {

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import { NotificationActionMenu } from "@/components/ui/NotificationActionMenu";
 import { useI18n, useIntlLocale } from "@/providers/i18n-provider";
+import { useToasts } from "@/providers/toast-provider";
 import { useNotificationFeed } from "@/hooks/features/useNotificationFeed";
 import { useUnreadCount } from "@/hooks/features/useUnreadCount";
 import {
@@ -79,11 +80,25 @@ export default function NotificationsPage() {
   const intlLocale = useIntlLocale();
   const feed = useNotificationFeed();
   const unread = useUnreadCount();
+  const { toast } = useToasts();
   const { load, refresh, markRead, items, total, isLoading, error } = feed;
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [page, setPage] = useState(1);
   const [markingAllRead, setMarkingAllRead] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
+  // Optimistically hidden rows, mirroring NotificationsBell: the row goes away
+  // on click and comes back if the request fails, so the click always has a
+  // visible outcome and cannot be repeated into duplicate requests.
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+
+  /** Report a failed action; `feed.error` is reserved for load failures. */
+  function reportActionError(description: string) {
+    toast({
+      variant: "error",
+      title: t("notifications.actionFailed"),
+      description,
+    });
+  }
 
   useEffect(() => {
     const category = categoryToParam(activeCategory);
@@ -99,6 +114,11 @@ export default function NotificationsPage() {
       await markAllRead();
       await unread.refresh();
       await refresh();
+    } catch {
+      // Without this arm the rejection escaped as an unhandled promise
+      // rejection: no message, and the refreshes above never ran.
+      reportActionError(t("notifications.markAllReadError"));
+      void refresh();
     } finally {
       setMarkingAllRead(false);
     }
@@ -110,6 +130,9 @@ export default function NotificationsPage() {
       await clearAllNotifications();
       await unread.refresh();
       await refresh();
+    } catch {
+      reportActionError(t("notifications.clearAllError"));
+      void refresh();
     } finally {
       setClearingAll(false);
     }
@@ -127,18 +150,64 @@ export default function NotificationsPage() {
     }
   }
 
+  /**
+   * Removing the only row on the last page leaves the user on a page that is
+   * now out of range, which renders as "No notifications" even though earlier
+   * pages are full. Clamp to the last page that still holds rows and let the
+   * load effect refetch; returning true tells the caller not to refresh too.
+   */
+  function clampPageAfterRemoval(): boolean {
+    const remainingPages = Math.max(
+      1,
+      Math.ceil(Math.max(0, total - 1) / PAGE_SIZE),
+    );
+    if (page <= remainingPages) return false;
+    setPage(remainingPages);
+    return true;
+  }
+
+  /**
+   * Shared body for the per-row removals. Hides the row immediately, restores
+   * it and surfaces a toast if the request fails, and re-syncs with the server
+   * on both paths so the list never diverges from it.
+   */
+  async function removeItem(
+    item: Notification,
+    remove: (id: string) => Promise<unknown>,
+    errorMessage: string,
+  ) {
+    setRemovedIds((prev) => new Set(prev).add(item.id));
+    let clamped = false;
+    try {
+      await remove(item.id);
+      clamped = clampPageAfterRemoval();
+    } catch {
+      setRemovedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      reportActionError(errorMessage);
+    } finally {
+      void unread.refresh();
+      // A clamp moves the page, and the load effect refetches for it.
+      if (!clamped) void refresh();
+    }
+  }
+
   async function handleArchive(item: Notification) {
-    await archiveNotification(item.id);
-    void unread.refresh();
-    void refresh();
+    await removeItem(
+      item,
+      archiveNotification,
+      t("notifications.archiveError"),
+    );
   }
 
   async function handleClear(item: Notification) {
-    await softDelete(item.id);
-    void unread.refresh();
-    void refresh();
+    await removeItem(item, softDelete, t("notifications.clearError"));
   }
 
+  const visibleItems = items.filter((item) => !removedIds.has(item.id));
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
@@ -211,133 +280,137 @@ export default function NotificationsPage() {
               </Button>
             </div>
           </div>
-        ) : items.length === 0 ? (
-          <div className="px-4 py-12 text-center">
-            <p className="text-title-lg font-bold text-on-surface">
-              {t("notifications.empty")}
-            </p>
-            <p className="mt-1 text-body-sm text-on-surface-variant">
-              {t("notifications.emptyHint")}
-            </p>
-          </div>
         ) : (
           <>
-            <ul className="space-y-2 p-2">
-              {items.map((item) => (
-                <li
-                  key={item.id}
-                  className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/90 shadow-sm"
-                >
-                  <div className="rounded-2xl px-4 py-4 transition-colors hover:bg-surface-container-low/80">
-                    <button
-                      type="button"
-                      onClick={() => void handleItemClick(item)}
-                      className={`flex w-full items-start gap-3 rounded-xl px-1 py-1.5 text-start transition-colors ${
-                        item.isRead
-                          ? "hover:bg-surface-container-low"
-                          : "bg-primary/5 hover:bg-primary/10"
-                      }`}
-                    >
-                      <span className="relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-primary">
-                        <span
-                          className="material-symbols-outlined text-[20px]"
-                          aria-hidden="true"
-                        >
-                          {notificationIcon(item)}
-                        </span>
-                        {!item.isRead ? (
+            {visibleItems.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <p className="text-title-lg font-bold text-on-surface">
+                  {t("notifications.empty")}
+                </p>
+                <p className="mt-1 text-body-sm text-on-surface-variant">
+                  {t("notifications.emptyHint")}
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-2 p-2">
+                {visibleItems.map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/90 shadow-sm"
+                  >
+                    <div className="rounded-2xl px-4 py-4 transition-colors hover:bg-surface-container-low/80">
+                      <button
+                        type="button"
+                        onClick={() => void handleItemClick(item)}
+                        className={`flex w-full items-start gap-3 rounded-xl px-1 py-1.5 text-start transition-colors ${
+                          item.isRead
+                            ? "hover:bg-surface-container-low"
+                            : "bg-primary/5 hover:bg-primary/10"
+                        }`}
+                      >
+                        <span className="relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-primary">
                           <span
+                            className="material-symbols-outlined text-[20px]"
                             aria-hidden="true"
-                            data-testid="unread-dot"
-                            className={`absolute -top-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface-container-lowest ${
-                              {
-                                critical: "bg-error",
-                                high: "bg-warning",
-                                normal: "bg-info",
-                                low: "bg-on-surface-variant",
-                              }[item.priority]
-                            }`}
-                          />
-                        ) : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-start gap-3">
-                          <span
-                            className={`min-w-0 flex-1 text-label-md font-semibold leading-6 ${
-                              item.isRead
-                                ? "text-on-surface-variant"
-                                : "text-on-surface"
-                            }`}
                           >
-                            {localizeNotification(item.title, locale)}
+                            {notificationIcon(item)}
                           </span>
-                          <time
-                            className="shrink-0 text-label-sm text-on-surface-variant/70"
-                            dateTime={item.createdAt}
-                            title={new Date(item.createdAt).toLocaleString(
-                              intlLocale,
-                            )}
-                          >
-                            {formatNotificationTime(
-                              item.createdAt,
-                              t,
-                              locale,
-                            )}
-                          </time>
+                          {!item.isRead ? (
+                            <span
+                              aria-hidden="true"
+                              data-testid="unread-dot"
+                              className={`absolute -top-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface-container-lowest ${
+                                {
+                                  critical: "bg-error",
+                                  high: "bg-warning",
+                                  normal: "bg-info",
+                                  low: "bg-on-surface-variant",
+                                }[item.priority]
+                              }`}
+                            />
+                          ) : null}
                         </span>
-                        <span className="mt-1 block text-body-sm leading-relaxed text-on-surface-variant">
-                          {localizeNotification(item.body, locale)}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-start gap-3">
+                            <span
+                              className={`min-w-0 flex-1 text-label-md font-semibold leading-6 ${
+                                item.isRead
+                                  ? "text-on-surface-variant"
+                                  : "text-on-surface"
+                              }`}
+                            >
+                              {localizeNotification(item.title, locale)}
+                            </span>
+                            <time
+                              className="shrink-0 text-label-sm text-on-surface-variant/70"
+                              dateTime={item.createdAt}
+                              title={new Date(item.createdAt).toLocaleString(
+                                intlLocale,
+                              )}
+                            >
+                              {formatNotificationTime(
+                                item.createdAt,
+                                t,
+                                locale,
+                              )}
+                            </time>
+                          </span>
+                          <span className="mt-1 block text-body-sm leading-relaxed text-on-surface-variant">
+                            {localizeNotification(item.body, locale)}
+                          </span>
                         </span>
-                      </span>
-                    </button>
+                      </button>
 
-                    <div className="mt-2.5 flex w-full items-center">
-                      <NotificationActionMenu
-                        primaryAction={
-                          item.actions[0]
-                            ? {
-                                key: `${item.id}-primary`,
-                                label: localizeNotification(
-                                  item.actions[0].label,
-                                  locale,
-                                ),
-                                href: resolveNotificationActionHref(
-                                  item.actions[0].url,
-                                ),
-                              }
-                            : null
-                        }
-                        overflowActions={[
-                          ...item.actions.slice(1).map((action, index) => ({
-                            key: `${item.id}-extra-${index}`,
-                            label: localizeNotification(action.label, locale),
-                            href: resolveNotificationActionHref(action.url),
-                            icon: "open_in_new",
-                          })),
-                          {
-                            key: `${item.id}-archive`,
-                            label: t("notifications.archive"),
-                            icon: "archive",
-                            onClick: () => void handleArchive(item),
-                          },
-                          {
-                            key: `${item.id}-clear`,
-                            label: t("notifications.clear"),
-                            icon: "delete",
-                            onClick: () => void handleClear(item),
-                            destructive: true,
-                          },
-                        ]}
-                        moreLabel={t("common.more")}
-                        onActionTriggered={() => undefined}
-                        compact
-                      />
+                      <div className="mt-2.5 flex w-full items-center">
+                        <NotificationActionMenu
+                          primaryAction={
+                            item.actions[0]
+                              ? {
+                                  key: `${item.id}-primary`,
+                                  label: localizeNotification(
+                                    item.actions[0].label,
+                                    locale,
+                                  ),
+                                  href: resolveNotificationActionHref(
+                                    item.actions[0].url,
+                                  ),
+                                }
+                              : null
+                          }
+                          overflowActions={[
+                            ...item.actions.slice(1).map((action, index) => ({
+                              key: `${item.id}-extra-${index}`,
+                              label: localizeNotification(action.label, locale),
+                              href: resolveNotificationActionHref(action.url),
+                              icon: "open_in_new",
+                            })),
+                            {
+                              key: `${item.id}-archive`,
+                              label: t("notifications.archive"),
+                              icon: "archive",
+                              onClick: () => void handleArchive(item),
+                            },
+                            {
+                              key: `${item.id}-clear`,
+                              label: t("notifications.clear"),
+                              icon: "delete",
+                              onClick: () => void handleClear(item),
+                              destructive: true,
+                            },
+                          ]}
+                          moreLabel={t("common.more")}
+                          onActionTriggered={() => undefined}
+                          compact
+                        />
+                      </div>
                     </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
 
+            {/* Outside the empty/non-empty split: a page that has been emptied
+                out from under the user still needs its escape controls. */}
             {total > PAGE_SIZE ? (
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-outline-variant px-5 py-4">
                 <span className="text-body-sm text-on-surface-variant">

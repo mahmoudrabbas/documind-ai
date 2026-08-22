@@ -38,14 +38,14 @@ describe("NotificationActionMenu", () => {
     const moreButton = screen.getByRole("button", { name: "More actions" });
     await user.click(moreButton);
 
-    const archiveButton = screen.getByRole("button", { name: "Archive" });
+    const archiveButton = screen.getByRole("menuitem", { name: "Archive" });
     expect(archiveButton).toBeInTheDocument();
     await user.click(archiveButton);
     expect(onArchive).toHaveBeenCalledTimes(1);
     expect(onTriggered).toHaveBeenCalledTimes(2);
 
     // Menu is closed after clicking
-    expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).not.toBeInTheDocument();
   });
 
   it("aligns to the end when there is no primary action", () => {
@@ -75,10 +75,10 @@ describe("NotificationActionMenu", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "More actions" }));
-    expect(screen.getByRole("button", { name: "Option 1" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Option 1" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("button", { name: "Option 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Option 1" })).not.toBeInTheDocument();
   });
 
   it("renders link actions properly", async () => {
@@ -94,5 +94,94 @@ describe("NotificationActionMenu", () => {
 
     const primaryLink = screen.getByRole("link", { name: "Go to link" });
     expect(primaryLink).toHaveAttribute("href", "/dashboard/test");
+  });
+
+  it("exposes the popup as a menu whose actions are menuitems", async () => {
+    const user = userEvent.setup();
+    render(
+      <NotificationActionMenu
+        overflowActions={[
+          {
+            key: "archive",
+            label: "Archive",
+            onClick: vi.fn(),
+            icon: "archive",
+          },
+          {
+            key: "open",
+            label: "Open document",
+            href: "/dashboard/documents/1",
+          },
+        ]}
+        moreLabel="More actions"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+
+    // aria-haspopup="menu" on the trigger promises a menu; the popup has to
+    // actually expose one, or its aria-label is not reliably announced.
+    expect(
+      screen.getByRole("menu", { name: "More actions" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Archive" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Open document" }),
+    ).toHaveAttribute("href", "/dashboard/documents/1");
+  });
+
+  it("renders the menu outside a clipping ancestor via a portal", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <div className="overflow-hidden" data-testid="clipper">
+        <NotificationActionMenu
+          overflowActions={[{ key: "clear", label: "Clear", onClick: vi.fn() }]}
+          moreLabel="More actions"
+        />
+      </div>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+
+    const menu = screen.getByRole("menu", { name: "More actions" });
+    // An absolutely positioned descendant cannot escape an ancestor with a
+    // non-visible overflow, and z-index does not affect overflow clipping, so
+    // the menu must not be a descendant of the clipping box at all.
+    expect(screen.getByTestId("clipper").contains(menu)).toBe(false);
+    expect(container.contains(menu)).toBe(false);
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu.className).toContain("fixed");
+  });
+
+  it("keeps a portaled menu item clickable and still closes on an outside click", async () => {
+    const onClear = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <div>
+        <button type="button">Elsewhere</button>
+        <NotificationActionMenu
+          overflowActions={[{ key: "clear", label: "Clear", onClick: onClear }]}
+          moreLabel="More actions"
+        />
+      </div>,
+    );
+
+    // The menu lives outside the component root, so the outside-pointer handler
+    // has to treat it as inside; otherwise mousedown closes the menu and
+    // unmounts the item before its click handler can run.
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Clear" }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.getByRole("menu", { name: "More actions" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Elsewhere" }));
+    expect(
+      screen.queryByRole("menu", { name: "More actions" }),
+    ).not.toBeInTheDocument();
   });
 });

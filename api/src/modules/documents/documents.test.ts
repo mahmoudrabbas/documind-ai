@@ -250,7 +250,7 @@ interface TestDocOverrides {
   additionalPolicyRules?: Array<{
     ruleId: string;
     effect: "allow" | "deny";
-    subject: { type: "tenant_member" | "user"; id?: string };
+    subject: { type: "tenant_member" | "user" | "custom_role"; id?: string };
     actions: DocumentAccessAction[];
   }>;
 }
@@ -894,9 +894,19 @@ void test("ordinary metadata update rejects every owner assignment and cannot gr
   }
 });
 
-void test("use_in_ai continues to require exact policy authorization for Company Admin and owner", async () => {
+void test("use_in_ai continues to require exact policy authorization for Company Admin and a capable owner", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const employee = await createEmployee(tenant.id);
+  const aiRole = await RoleModel.create({
+    tenantId: tenant._id,
+    name: "AI Employee",
+    normalizedName: "ai employee",
+    baseRole: "EMPLOYEE",
+    grants: [{ permission: Permission.DOCUMENTS_USE_IN_AI }],
+    createdBy: user._id,
+    updatedBy: user._id,
+  });
+  await UserModel.updateOne({ _id: employee._id }, { $set: { customRoleId: aiRole._id } });
   const adminDocument = await createTestDocumentWithPolicy(tenant.id, user.id, "internal", ["use_in_ai"]);
   const ownerDocument = await createTestDocumentWithPolicy(tenant.id, employee.id, "internal", ["use_in_ai"], {
     fileName: "owner-ai.pdf",
@@ -926,6 +936,72 @@ void test("use_in_ai continues to require exact policy authorization for Company
   ));
   await assert.rejects(authorization.authorizeDocumentAction(
     { tenantId: tenant.id, actorId: employee.id }, deniedOwnerDocument.doc.id, "use_in_ai",
+  ));
+});
+
+/**
+ * A document access policy must not be able to hand AI use to a role that was
+ * never granted the `documents:use-in-ai` capability. The policy narrows an
+ * existing capability; it is not an alternative source of one.
+ */
+void test("use_in_ai policy grants cannot escalate a role without the AI capability", async () => {
+  const { tenant, user } = await createActiveTenantAdmin();
+  const noAiRole = await RoleModel.create({
+    tenantId: tenant._id,
+    name: "Reader Only",
+    normalizedName: "reader only",
+    baseRole: "EMPLOYEE",
+    grants: [{ permission: Permission.DOCUMENTS_READ }],
+    createdBy: user._id,
+    updatedBy: user._id,
+  });
+  const [roleEmployee, plainEmployee] = await Promise.all([
+    createEmployee(tenant.id, { email: "no-ai-role@acme.com" }),
+    createEmployee(tenant.id, { email: "no-custom-role@acme.com" }),
+  ]);
+  await UserModel.updateOne({ _id: roleEmployee._id }, { $set: { customRoleId: noAiRole._id } });
+
+  // The policy grants `use_in_ai` to the role and to every tenant member, which
+  // is exactly the "Manage Access" configuration that used to be sufficient.
+  const document = await createTestDocumentWithPolicy(tenant.id, user.id, "internal", ["read", "use_in_ai"], {
+    fileName: "policy-granted-ai.pdf",
+    checksum: "policy-granted-ai-checksum",
+    additionalPolicyRules: [
+      { ruleId: "role-ai-grant", effect: "allow", subject: { type: "custom_role", id: noAiRole.id }, actions: ["read", "use_in_ai"] },
+      { ruleId: "member-ai-grant", effect: "allow", subject: { type: "tenant_member" }, actions: ["read", "use_in_ai"] },
+    ],
+  });
+  const authorization = getDocumentAccessAuthorizationService();
+
+  // `read` passes for both, so the policy is live and its rules match these
+  // actors — the only thing left to deny `use_in_ai` is the missing capability.
+  await assert.doesNotReject(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: roleEmployee.id }, document.doc.id, "read",
+  ));
+  await assert.doesNotReject(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: plainEmployee.id }, document.doc.id, "read",
+  ));
+
+  await assert.rejects(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: roleEmployee.id }, document.doc.id, "use_in_ai",
+  ));
+  await assert.rejects(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: plainEmployee.id }, document.doc.id, "use_in_ai",
+  ));
+
+  // Granting the capability on the role — ticking "Use Documents in AI" in the
+  // role editor — is what actually unlocks it. Resolution is uncached, so the
+  // updated grant applies immediately. The role schema rejects query updates,
+  // so the grant is appended through the document itself.
+  noAiRole.grants.push({ permission: Permission.DOCUMENTS_USE_IN_AI });
+  noAiRole.version += 1;
+  await noAiRole.save();
+  await assert.doesNotReject(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: roleEmployee.id }, document.doc.id, "use_in_ai",
+  ));
+  // The role-less employee is still denied: no role, no capability.
+  await assert.rejects(authorization.authorizeDocumentAction(
+    { tenantId: tenant.id, actorId: plainEmployee.id }, document.doc.id, "use_in_ai",
   ));
 });
 

@@ -44,11 +44,11 @@ Expected: the direct-support test fails because the semantic model's false negat
 
 **Step 1: Add direct-support normalization**
 
-Create a private helper that recognizes only isolated prompt-marked shell/code lines, strips their prompt decoration, lowercases text, normalizes punctuation and hyphen variants, and returns command tokens without changing factual words or numbers. Add a separate exact-template matcher for quoted/backticked command literals in natural-language distribution instructions.
+Create a private helper that recognizes only isolated prompt-marked shell/code lines, strips their prompt decoration, lowercases text, normalizes punctuation and hyphen variants, and returns command tokens without changing factual words or numbers. Add a separate exact-template matcher for single-quoted command literals in natural-language distribution instructions; backticked code spans are already stripped before the matcher sees the claim.
 
 **Step 2: Add ordered span coverage**
 
-Create a helper that checks whether all command-starting claim tokens are covered by ordered contiguous evidence-line spans. Permit only `and` and `then` between spans. Require at least three tokens per partial span, while allowing an exact contiguous match for a complete short command. Do not flatten prose or cross line boundaries.
+Create a helper that checks whether all command-starting claim tokens are covered by ordered contiguous evidence-line spans. Permit only `and` and `then` between spans. Require at least three tokens per span, with no exception for short commands. Do not flatten prose or cross line boundaries.
 
 Add a bounded JSON-envelope parser that accepts plain JSON or one complete fenced JSON block, and returns unknown judgments for all other representations.
 

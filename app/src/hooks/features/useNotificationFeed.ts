@@ -55,10 +55,16 @@ export function useNotificationFeed(): UseNotificationFeedResult {
     itemsRef.current = items;
   }, [items]);
 
+  // The options the current page was loaded with, so `refresh` can replay them.
+  // Without this, refresh() reloaded unfiltered at the default page size while
+  // the filtered tab stayed selected, and recomputed `total` tenant-wide.
+  const lastOptionsRef = useRef<NotificationFeedOptions | undefined>(undefined);
+
   const load = useCallback(
     async (nextPage: number, options?: NotificationFeedOptions) => {
       setIsLoading(true);
       setError(null);
+      lastOptionsRef.current = options;
       try {
         const response = await listNotifications({
           page: nextPage,
@@ -85,7 +91,7 @@ export function useNotificationFeed(): UseNotificationFeedResult {
   );
 
   const refresh = useCallback(async () => {
-    await load(page);
+    await load(page, lastOptionsRef.current);
   }, [load, page]);
 
   const markReadLocal = useCallback(async (id: string) => {

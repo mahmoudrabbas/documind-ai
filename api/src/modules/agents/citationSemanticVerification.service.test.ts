@@ -5,6 +5,7 @@ import type { ModelAdapter, ModelCompletionResponse } from "./agents.types.js";
 import {
   CitationSemanticVerificationService,
   extractBoundedFactualClaims,
+  MAX_RELEASE_GATE_PASSES,
   MAX_UNKNOWN_RETRIES,
   prepareSemanticClaims,
 } from "./citationSemanticVerification.service.js";
@@ -118,6 +119,85 @@ test("four supported claims remain supported and pass the final gate", async () 
   assert.deepEqual(result.claimResults.map((claim) => claim.state), ["SUPPORTED", "SUPPORTED", "SUPPORTED", "SUPPORTED"]);
   assert.equal(result.releasedAnswerText, "Alpha fact. Beta fact. Gamma fact. Delta fact.");
   assert.equal(model.calls.length, 2, "initial and mandatory final passes");
+});
+
+test("a claim the final gate rejects narrows the answer instead of suppressing it", async () => {
+  // The initial pass supports everything, so the candidate is the full answer and
+  // the gate re-verifies it. The gate then declines one claim. The whole answer
+  // used to be discarded here, which is how a single flaky verdict suppressed
+  // every other verified claim in the same answer.
+  const model = scriptedModel((payload, call) =>
+    judgments(payload, (claim) =>
+      call === 2 && claim.includes("Two") ? "unsupported" : "supported"));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Fact One. Fact Two. Fact Three.",
+    evidence,
+  });
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, "Fact One.\nFact Three.");
+  assert.doesNotMatch(result.releasedAnswerText ?? "", /Two/u);
+  assert.equal(result.releasedClaimCount, 2);
+  assert.equal(model.calls.length, 3, "initial pass, rejecting gate pass, then the narrowed re-verification");
+});
+
+test("released text is always re-verified in the exact form it ships in", async () => {
+  // Guards the safety property the gate exists for: the last pass must have run
+  // on precisely the released string, never on a superset of it.
+  const model = scriptedModel((payload, call) =>
+    judgments(payload, (claim) =>
+      call === 2 && claim.includes("Two") ? "unsupported" : "supported"));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Fact One. Fact Two. Fact Three.",
+    evidence,
+  });
+  const releasedClaims = prepareSemanticClaims(result.releasedAnswerText ?? "")
+    .factualClaims.map((claim) => claim.text);
+  assert.deepEqual(model.calls.at(-1)?.claims, releasedClaims);
+});
+
+test("a gate that rejects every claim still fails closed", async () => {
+  const model = scriptedModel((payload, call) =>
+    judgments(payload, () => (call === 2 ? "unsupported" : "supported")));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Fact one. Fact two. Fact three.",
+    evidence,
+  });
+  assert.equal(result.releasedAnswerText, undefined);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
+  assert.equal(result.releasedClaimCount, 0);
+  assert.deepEqual(result.supportingEvidenceIds, []);
+  assert.equal(model.calls.length, 2, "nothing survived, so there is nothing to re-verify");
+});
+
+test("a gate that keeps rejecting is bounded and fails closed rather than looping", async () => {
+  // Every gate pass declines the last remaining claim, so narrowing never
+  // converges. The pass budget has to stop it.
+  const model = scriptedModel((payload, call) =>
+    judgments(payload, (claim, index) =>
+      call >= 2 && index === payload.claims.length - 1 ? "unsupported" : "supported"));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Fact one. Fact two. Fact three. Fact four.",
+    evidence,
+  });
+  assert.equal(result.releasedAnswerText, undefined);
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
+  assert.equal(model.calls.length, 1 + MAX_RELEASE_GATE_PASSES, "initial pass plus the capped gate passes");
+});
+
+test("a claim dropped by the initial pass and another by the gate both stay out", async () => {
+  const model = scriptedModel((payload, call) =>
+    judgments(payload, (claim) => {
+      if (claim.includes("Invented")) return "unsupported";
+      return call === 2 && claim.includes("Doubtful") ? "unsupported" : "supported";
+    }));
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Solid fact. Invented benefit. Doubtful fact. Other solid fact.",
+    evidence,
+  });
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, "Solid fact.\nOther solid fact.");
+  assert.deepEqual(result.unsupportedClaims, ["Invented benefit."]);
+  assert.doesNotMatch(result.releasedAnswerText ?? "", /Invented|Doubtful/u);
 });
 
 test("three supported plus one explicit unsupported preserves and releases only supported claims", async () => {

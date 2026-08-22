@@ -1639,6 +1639,15 @@ const en: TranslationDictionary = {
   "notifications.empty": "No notifications",
   "notifications.emptyHint": "You're all caught up.",
   "notifications.loadError": "Failed to load notifications.",
+  "notifications.actionFailed": "Action failed",
+  "notifications.archiveError":
+    "Could not archive the notification. Please try again.",
+  "notifications.clearError":
+    "Could not clear the notification. Please try again.",
+  "notifications.markAllReadError":
+    "Could not mark all notifications as read. Please try again.",
+  "notifications.clearAllError":
+    "Could not clear all notifications. Please try again.",
   "notifications.unreadCount": "{{count}} unread",
   "notifications.markAllRead": "Mark all as read",
   "notifications.clearAll": "Clear all",

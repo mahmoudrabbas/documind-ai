@@ -167,10 +167,8 @@ function checkNegationConflict(
   config: ConflictDetectorConfig,
   questionText: string,
 ): ConflictResult {
-  const termsA = tokenize(textA);
-  const termsB = tokenize(textB);
-  if (matchesNegation(termsA, textA, config.negationTerms) ===
-      matchesNegation(termsB, textB, config.negationTerms)) {
+  if (matchesNegation(textA, config.negationTerms) ===
+      matchesNegation(textB, config.negationTerms)) {
     return noConflict();
   }
   if (!textTopicsAlign(textA, textB, questionText, config.topicSimilarityThreshold)) {
@@ -354,7 +352,9 @@ function tokenize(text: string): string[] {
     .filter((token) => token.length > 1);
 }
 
-function matchesNegation(terms: string[], rawText: string, negationTerms: string[]): boolean {
+// Tokenizes the sanitized text itself; a caller-supplied token list of the raw
+// text would reintroduce the false positives the sanitizer removes.
+function matchesNegation(rawText: string, negationTerms: string[]): boolean {
   const sanitized = rawText
     .toLowerCase()
     .replace(/\bif\s+not\s+exists\b/giu, " ")

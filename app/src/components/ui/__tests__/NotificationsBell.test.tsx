@@ -252,7 +252,7 @@ describe("NotificationsBell", () => {
     await screen.findByText("First");
 
     await user.click(screen.getAllByRole("button", { name: "More actions" })[0]);
-    await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
 
     await waitFor(() => expect(archive).toHaveBeenCalledWith("n1"));
     await waitFor(() =>
@@ -273,7 +273,7 @@ describe("NotificationsBell", () => {
 
     await user.click(screen.getByRole("button", { name: "Notifications" }));
     await user.click(await screen.findByRole("button", { name: "More actions" }));
-    await user.click(await screen.findByRole("button", { name: "Clear" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Clear" }));
 
     await waitFor(() => expect(softDelete).toHaveBeenCalledWith("n1"));
   });

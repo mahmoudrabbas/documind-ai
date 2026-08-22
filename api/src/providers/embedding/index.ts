@@ -27,6 +27,32 @@ export function resolveEmbeddingModel(
 }
 
 /**
+ * Honours the database-configured embeddingModel, but only when the database's
+ * provider is also the one resolved here. resolveEmbeddingProviderKey can infer
+ * a different backend from credentials alone (an iti-bedrock config falls
+ * through to openai, which AiProviderKey cannot even express), and a model name
+ * keyed to the wrong provider fails every embedding call.
+ *
+ * For environment-sourced configs it deliberately re-reads env through
+ * resolveEmbeddingModel rather than trusting runtime.embeddingModel, which is a
+ * module-load snapshot and therefore stale whenever env changes after boot.
+ *
+ * platform.service.ts gates embeddingModel changes behind a reindex, so that
+ * guard's subject and the model actually used here must stay coupled.
+ */
+export function resolveConfiguredEmbeddingModel(
+  provider: EmbeddingProviderKey,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const runtime = getEffectiveAiRuntimeConfig();
+  if (runtime.source === "database" && runtime.provider === provider) {
+    const configured = runtime.embeddingModel.trim();
+    if (configured) return configured;
+  }
+  return resolveEmbeddingModel(provider, env);
+}
+
+/**
  * Resolve embedding configuration independently from chat-model failover.
  * AI_PROVIDER remains an explicit override for backwards compatibility. When
  * it is absent, infer the embedding backend from its own credential, matching
@@ -116,7 +142,7 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
   if (aiProvider === "groq") {
     const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
     const apiKey = process.env.JINA_API_KEY;
-    const model = resolveEmbeddingModel(aiProvider);
+    const model = resolveConfiguredEmbeddingModel(aiProvider);
     const dimensions = parseInt(process.env.JINA_EMBEDDING_DIMENSIONS || "1024", 10);
     if (!apiKey) throw new Error("JINA_API_KEY is required for groq provider");
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions, "https://api.jina.ai/v1");
@@ -127,7 +153,7 @@ async function createEmbeddingProvider(): Promise<EmbeddingProvider> {
     const dimensions = parseInt(process.env.OPENAI_EMBEDDING_DIMENSIONS || "1536", 10);
     if (!apiKey) throw new Error("OPENAI_API_KEY is required for openai provider");
     const { OpenAIEmbeddingProvider } = await import("./openaiEmbedding.adapter.js");
-    const model = resolveEmbeddingModel(aiProvider);
+    const model = resolveConfiguredEmbeddingModel(aiProvider);
     return new OpenAIEmbeddingProvider(apiKey, model, dimensions);
   }
 

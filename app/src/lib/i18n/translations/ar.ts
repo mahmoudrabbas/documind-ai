@@ -1632,6 +1632,12 @@ const ar: TranslationDictionary = {
   "notifications.empty": "لا توجد إشعارات",
   "notifications.emptyHint": "لا يوجد شيء جديد.",
   "notifications.loadError": "تعذّر تحميل الإشعارات.",
+  "notifications.actionFailed": "تعذّر تنفيذ الإجراء",
+  "notifications.archiveError": "تعذّرت أرشفة الإشعار. حاول مرة أخرى.",
+  "notifications.clearError": "تعذّر مسح الإشعار. حاول مرة أخرى.",
+  "notifications.markAllReadError":
+    "تعذّر تعيين جميع الإشعارات كمقروءة. حاول مرة أخرى.",
+  "notifications.clearAllError": "تعذّر مسح جميع الإشعارات. حاول مرة أخرى.",
   "notifications.unreadCount": "{{count}} غير مقروء",
   "notifications.markAllRead": "تحديد الكل كمقروء",
   "notifications.clearAll": "مسح الكل",

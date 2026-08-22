@@ -17,6 +17,15 @@ const MAX_CHUNK_CHARS = 4_000;
 const MAX_SEMANTIC_VERIFICATION_TOKENS = 2_000;
 const SEMANTIC_PROMPT_SAFETY_TOKENS = 32;
 const MIN_DIRECT_SUPPORT_SPAN_TOKENS = 3;
+/**
+ * How many times the release gate may verify a candidate answer.
+ *
+ * The gate re-verifies the exact text it is about to release, so narrowing a
+ * rejected candidate requires another pass over what survived. One pass is the
+ * happy path; the extra two let a partially-rejected answer converge instead of
+ * being discarded whole. Token spend stays bounded by the shared budget.
+ */
+export const MAX_RELEASE_GATE_PASSES = 3;
 const DIRECT_SUPPORT_CONNECTORS = new Set(["and", "then"]);
 const DIRECT_COMMAND_STARTERS = new Set([
   "apt-get", "chmod", "chown", "curl", "docker", "git", "kubectl",
@@ -892,31 +901,50 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       budget,
     );
     const supported = initial.results.filter((result) => result.state === "SUPPORTED");
-    const candidate = initial.results.every((result) => result.state === "SUPPORTED")
+
+    // Release gate. Only text that passed a verification pass in its exact final
+    // form is ever released, so a recomposed answer is always re-verified before
+    // it ships. When a pass rejects part of the candidate, drop those claims and
+    // re-verify what is left rather than discarding the answer outright: a single
+    // claim the verifier declines would otherwise suppress every other claim that
+    // did pass alongside it.
+    let candidate = initial.results.every((result) => result.state === "SUPPORTED")
       ? input.answerText.trim()
       : recomposeSupportedClaims(initial.results);
+    const releasePasses: VerificationPass[] = [];
+    let finalSupported = false;
 
-    let finalPass: VerificationPass | null = null;
-    let finalPrepared: PreparedSemanticAnswer | null = null;
-    if (candidate) {
-      finalPrepared = prepareSemanticClaims(candidate);
-      if (finalPrepared.factualClaims.length > 0) {
-        finalPass = await this.verificationPassBounded(
-          {
-            prepared: finalPrepared,
-            evidence,
-            questionText: input.questionText ?? "",
-            thresholdComparisons: thresholdComparisonItems,
-          },
-          budget,
-        );
+    while (candidate && releasePasses.length < MAX_RELEASE_GATE_PASSES) {
+      const preparedCandidate = prepareSemanticClaims(candidate);
+      if (preparedCandidate.factualClaims.length === 0) break;
+      const pass = await this.verificationPassBounded(
+        {
+          prepared: preparedCandidate,
+          evidence,
+          questionText: input.questionText ?? "",
+          thresholdComparisons: thresholdComparisonItems,
+        },
+        budget,
+      );
+      releasePasses.push(pass);
+      if (
+        pass.results.length > 0 &&
+        pass.results.every((result) => result.state === "SUPPORTED")
+      ) {
+        finalSupported = true;
+        break;
       }
+      // Narrow to the surviving claims and try again. Bail when nothing survived
+      // or narrowing made no progress, so the loop cannot spin on a stable
+      // rejection.
+      const narrowed = recomposeSupportedClaims(pass.results);
+      if (!narrowed || narrowed === candidate) break;
+      candidate = narrowed;
     }
 
+    const finalPass = releasePasses.at(-1) ?? null;
     const finalResults = finalPass?.results ?? [];
-    const finalSupported = finalResults.length > 0 &&
-      finalResults.every((result) => result.state === "SUPPORTED");
-    const allResponses = [...initial.responses, ...(finalPass?.responses ?? [])];
+    const allResponses = [...initial.responses, ...releasePasses.flatMap((pass) => pass.responses)];
     const usage = mergeResponseUsage(allResponses);
     const unsupportedClaims = initial.results
       .filter((result) => result.state === "UNSUPPORTED")
@@ -927,7 +955,11 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     const supportingEvidenceIds = finalSupported
       ? [...new Set(finalResults.flatMap((result) => result.supportingEvidenceIds))]
       : [];
-    const retryCount = initial.retryCount + (finalPass?.retryCount ?? 0);
+    const retryCount = initial.retryCount +
+      releasePasses.reduce((total, pass) => total + pass.retryCount, 0);
+    const complete = initial.complete &&
+      releasePasses.length > 0 &&
+      releasePasses.every((pass) => pass.complete);
 
     logger.info({
       stage: "semantic_verification",
@@ -938,7 +970,8 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       retryCount,
       finalReleasedClaimCount: finalSupported ? finalResults.length : 0,
       verifierProvider: this.model.providerKey,
-      complete: initial.complete && (finalPass?.complete ?? false),
+      complete,
+      releaseGatePassCount: releasePasses.length,
     }, "semantic claim verification completed");
 
     return {
@@ -950,7 +983,7 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       ...(finalSupported ? { releasedAnswerText: candidate } : {}),
       releasedClaimCount: finalSupported ? finalResults.length : 0,
       retryCount,
-      complete: initial.complete && (finalPass?.complete ?? false),
+      complete,
       reasonCode: finalSupported ? "SEMANTIC_VERIFIED" : "SEMANTIC_VERIFICATION_FAILED",
       ...usage,
     };

@@ -7,7 +7,11 @@ import { FailoverModelAdapter } from "./failoverModelAdapter.js";
 import { GroqChatAdapter } from "./groqChat.adapter.js";
 import { ItiBedrockChatAdapter } from "./itiBedrockAdapter.js";
 import { createStudentBedrockProvider } from "../bedrock/index.js";
-import { getEffectiveAiRuntimeConfig } from "../../modules/platform/ai-runtime-config.js";
+import { logger } from "../../common/logger/logger.js";
+import {
+  getEffectiveAiRuntimeConfig,
+  type EffectiveAiRuntimeConfig,
+} from "../../modules/platform/ai-runtime-config.js";
 
 let singleton: ModelAdapter | null = null;
 
@@ -16,6 +20,26 @@ type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 function isSupportedProvider(value: string): value is SupportedProvider {
   return (SUPPORTED_PROVIDERS as readonly string[]).includes(value);
+}
+
+/**
+ * A configured chatModel is only meaningful for the provider that selected it:
+ * a model name normalized for one provider is rejected by another. Two paths
+ * can now pair a config with a different provider — LLM_PRIMARY_PROVIDER wins
+ * over a database-sourced config.provider, and a failover chain builds a second
+ * provider from the same config — so both must fall back to the resolved
+ * provider's own env default instead of borrowing this model name.
+ *
+ * Environment-sourced configs fall back for a second reason: their chatModel is
+ * a module-load snapshot, so re-reading env here keeps a post-boot change (and a
+ * per-test override) authoritative. The env defaults are identical either way.
+ */
+function resolveConfiguredChatModel(
+  key: SupportedProvider,
+  config: EffectiveAiRuntimeConfig,
+): string | undefined {
+  if (config.source !== "database" || config.provider !== key) return undefined;
+  return config.chatModel.trim() || undefined;
 }
 
 function buildSupportedProvider(
@@ -34,7 +58,9 @@ function buildSupportedProvider(
       }
       return new GroqChatAdapter(
         apiKey,
-        config.chatModel || process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+        resolveConfiguredChatModel("groq", config) ||
+          process.env.GROQ_CHAT_MODEL ||
+          "llama-3.3-70b-versatile",
       );
     }
     case "iti-bedrock": {
@@ -58,7 +84,7 @@ function buildSupportedProvider(
       return new ItiBedrockChatAdapter({
         apiKey,
         baseUrl,
-        model: config.chatModel || model || undefined,
+        model: resolveConfiguredChatModel("iti-bedrock", config) || model || undefined,
         timeoutMs: parseInt(process.env.BEDROCK_TIMEOUT_MS || "30000", 10),
         maxRetries: parseInt(process.env.BEDROCK_MAX_RETRIES || "2", 10),
         retryDelayMs: parseInt(process.env.BEDROCK_RETRY_DELAY_MS || "500", 10),
@@ -123,6 +149,16 @@ function buildModelAdapterChain(): ModelAdapter {
   const envProvider = process.env.LLM_PRIMARY_PROVIDER?.trim().toLowerCase();
   const primaryProvider =
     envProvider || (config.source === "database" ? config.provider : undefined);
+  if (envProvider && config.source === "database" && config.provider !== envProvider) {
+    logger.warn(
+      {
+        envProvider,
+        configuredProvider: config.provider,
+        configuredChatModel: config.chatModel,
+      },
+      "LLM_PRIMARY_PROVIDER overrides the database-configured AI provider; the configured chat model is ignored because it belongs to a different provider",
+    );
+  }
   if (primaryProvider) {
     return buildEnvDrivenChain(primaryProvider, config);
   }

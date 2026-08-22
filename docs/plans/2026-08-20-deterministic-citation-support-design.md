@@ -19,9 +19,9 @@ Add a deterministic direct-support check inside `CitationSemanticVerificationSer
 
 A claim is directly supported only when it is composed of shell/code commands and one supplied evidence chunk covers those commands through ordered verbatim matches on isolated prompt-marked lines. Punctuation, shell prompt characters, casing, and whitespace are presentation differences. The connectors `and` and `then` may bridge otherwise exact command spans from separate evidence lines.
 
-Each matched span must contain at least three tokens, except when the entire short command is an exact contiguous match. All command-starting claim tokens must be covered, matches must remain in claim and evidence order, and all spans must come from one chunk. Prose, negated statements, historical text, examples, and quoted mentions are not direct-support candidates; they remain subject to semantic verification. This prevents unrelated or context-sensitive text from being assembled across documents, lines, or chunks.
+Each matched span must contain at least three tokens, with no exception for short commands: a two-token match such as `npm install` carries too little context to justify skipping semantic verification. All command-starting claim tokens must be covered, matches must remain in claim and evidence order, and all spans must come from one chunk. Prose, negated statements, historical text, examples, and quoted mentions are not direct-support candidates; they remain subject to semantic verification. This prevents unrelated or context-sensitive text from being assembled across documents, lines, or chunks.
 
-Natural-language answers may use a bounded presentation template around quoted or backticked command literals: `For <distribution>, use <command>` and the exact multi-command form `..., then enable and start the service with <command> and <command>`. Other prose remains on the semantic-verification path.
+Natural-language answers may use a bounded presentation template around single-quoted command literals: `For <distribution>, use <command>` and the exact multi-command form `..., then enable and start the service with <command> and <command>`. Markdown code spans do not qualify, because `stripMarkdownDecoration` removes their backticks before the matcher runs. Other prose remains on the semantic-verification path.
 
 ## Verification Flow
 

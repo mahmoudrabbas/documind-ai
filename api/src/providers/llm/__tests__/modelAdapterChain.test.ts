@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { getModelAdapter, setModelAdapter } from "../index.js";
 import { AppError } from "../../../common/errors/AppError.js";
 import { LLM_PROVIDER_UNAVAILABLE } from "../../../common/errors/errorCodes.js";
+import {
+  resetEffectiveAiRuntimeConfigForTests,
+  updateEffectiveAiRuntimeConfig,
+} from "../../../modules/platform/ai-runtime-config.js";
 
 // The chain is built from process.env at first access. Each test resets the
 // singleton and controls the environment directly.
@@ -15,6 +19,7 @@ function withEnv(env: Record<string, string | undefined>): void {
   delete process.env.SBG_BASE_URL;
   delete process.env.ITI_BEDROCK_BASE_URL;
   delete process.env.ITI_BEDROCK_MODEL;
+  delete process.env.GROQ_CHAT_MODEL;
   delete process.env.LLM_PRIMARY_PROVIDER;
   delete process.env.LLM_FALLBACK_PROVIDER;
   for (const [key, value] of Object.entries(env)) {
@@ -28,10 +33,12 @@ function withEnv(env: Record<string, string | undefined>): void {
 
 beforeEach(() => {
   setModelAdapter(null);
+  resetEffectiveAiRuntimeConfigForTests();
 });
 
 afterEach(() => {
   setModelAdapter(null);
+  resetEffectiveAiRuntimeConfigForTests();
   process.env.NODE_ENV = ORIGINAL_ENV.NODE_ENV ?? "test";
 });
 
@@ -278,4 +285,65 @@ test("legacy StudentBedrock embedding provider is untouched (SBG-only legacy cha
   });
 
   assert.equal(getModelAdapter().providerKey, "student-bedrock");
+});
+
+function seedDatabaseConfig(provider: string, chatModel: string): void {
+  updateEffectiveAiRuntimeConfig({
+    provider,
+    chatModel,
+    embeddingModel: "amazon.titan-embed-text-v2:0",
+    temperature: 0.2,
+    maxOutputTokens: 2048,
+  });
+}
+
+test("an env-pinned provider does not inherit a chat model configured for another provider", () => {
+  // LLM_PRIMARY_PROVIDER wins over the database provider, so passing the
+  // database chatModel through would send a Bedrock model id to Groq and 404
+  // every completion.
+  process.env.NODE_ENV = "development";
+  withEnv({
+    LLM_PRIMARY_PROVIDER: "groq",
+    GROQ_API_KEY: "test-groq-key",
+    GROQ_CHAT_MODEL: "llama-3.3-70b-versatile",
+  });
+  seedDatabaseConfig("student-bedrock", "anthropic.claude-sonnet-4-6");
+
+  const adapter = getModelAdapter() as { providerKey: string; model?: string };
+  assert.equal(adapter.providerKey, "groq");
+  assert.equal(adapter.model, "llama-3.3-70b-versatile");
+});
+
+test("a database-configured chat model is honoured when the database also chose the provider", () => {
+  process.env.NODE_ENV = "development";
+  withEnv({ GROQ_API_KEY: "test-groq-key", GROQ_CHAT_MODEL: "llama-3.3-70b-versatile" });
+  seedDatabaseConfig("groq", "openai/gpt-oss-120b");
+
+  const adapter = getModelAdapter() as { providerKey: string; model?: string };
+  assert.equal(adapter.providerKey, "groq");
+  assert.equal(adapter.model, "openai/gpt-oss-120b");
+});
+
+test("a failover provider does not inherit the primary provider's configured chat model", () => {
+  process.env.NODE_ENV = "development";
+  withEnv({
+    LLM_PRIMARY_PROVIDER: "groq",
+    LLM_FALLBACK_PROVIDER: "iti-bedrock",
+    GROQ_API_KEY: "test-groq-key",
+    SBG_API_KEY: "test-sbg-key",
+    ITI_BEDROCK_BASE_URL: "https://bedrock.example.com",
+    ITI_BEDROCK_MODEL: "openai.gpt-oss-120b-1:0",
+  });
+  seedDatabaseConfig("groq", "openai/gpt-oss-120b");
+
+  const chain = getModelAdapter().runtimeIdentity?.chain ?? [];
+  assert.equal(chain.length, 2, "primary and fallback should both be built");
+  assert.equal(chain[0]?.provider, "groq");
+  assert.equal(chain[0]?.model, "openai/gpt-oss-120b");
+  assert.equal(chain[1]?.provider, "iti-bedrock");
+  assert.equal(
+    chain[1]?.model,
+    "openai.gpt-oss-120b-1:0",
+    "the fallback must use its own model, not the primary provider's",
+  );
 });

@@ -228,6 +228,30 @@ export const subscriptionImpactQuerySchema = z
   .refine((value) => value.packageId !== undefined || value.targetStatus !== undefined, {
     message: "A target package or status is required",
   });
+/**
+ * Bedrock model ids are "<vendor>.<model>" (anthropic.claude-sonnet-4-6,
+ * amazon.titan-embed-text-v2:0, us.anthropic.claude-...), where the vendor
+ * segment is pure letters. Groq ids are bare or slash-separated
+ * (llama-3.3-70b-versatile, openai/gpt-oss-120b) and never take that shape —
+ * note llama-3.3-... does contain dots, which is why the letters-only vendor
+ * segment rather than the mere presence of a dot is what discriminates.
+ */
+const BEDROCK_MODEL_ID_PATTERN = /^[a-z]+\.[a-z0-9]/iu;
+
+function modelMatchesProvider(
+  provider: "groq" | "iti-bedrock" | "student-bedrock",
+  model: string,
+): boolean {
+  const bedrockShaped = BEDROCK_MODEL_ID_PATTERN.test(model);
+  return provider === "groq" ? !bedrockShaped : bedrockShaped;
+}
+
+/**
+ * A model name is only meaningful for the provider it belongs to, and the
+ * provider serving requests can be pinned by LLM_PRIMARY_PROVIDER rather than
+ * by this document. Accepting a mismatched pair here would persist a config
+ * whose model 404s on every completion, so reject it at the edge.
+ */
 export const settingsBodySchema = z
   .object({
     provider: z.enum(["groq", "iti-bedrock", "student-bedrock"]),
@@ -236,7 +260,24 @@ export const settingsBodySchema = z
     temperature: z.number().min(0).max(2),
     maxOutputTokens: z.number().int().min(128).max(8192),
   })
-  .strict();
+  .strict()
+  .refine((value) => modelMatchesProvider(value.provider, value.chatModel), {
+    path: ["chatModel"],
+    message:
+      "Chat model does not belong to the selected provider. Bedrock providers require a \"<vendor>.<model>\" id; groq requires a Groq model id.",
+  })
+  // iti-bedrock is exempt: resolveEmbeddingProviderKey can fall through to
+  // OpenAI on credentials alone, so text-embedding-3-small is legitimate there.
+  .refine(
+    (value) =>
+      value.provider === "iti-bedrock" ||
+      modelMatchesProvider(value.provider, value.embeddingModel),
+    {
+      path: ["embeddingModel"],
+      message:
+        "Embedding model does not belong to the selected provider. student-bedrock requires a \"<vendor>.<model>\" id; groq requires a Jina model id.",
+    },
+  );
 export const idSchema = z.object({ id: objectId }).strict();
 export const tenantIdSchema = z.object({ tenantId: objectId }).strict();
 export const listSchema = z

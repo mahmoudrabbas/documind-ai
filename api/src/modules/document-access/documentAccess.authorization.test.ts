@@ -29,10 +29,14 @@ test("canonical permission defaults are distinct and tenant delegable", () => {
   const manage = getPermissionDefinition(Permission.DOCUMENTS_MANAGE_ACCESS);
   const ai = getPermissionDefinition(Permission.DOCUMENTS_USE_IN_AI);
   assert.deepEqual(manage?.defaultBaseRoles, ["SUPER_ADMIN", "COMPANY_ADMIN"]);
-  assert.deepEqual(ai?.defaultBaseRoles, ["SUPER_ADMIN", "COMPANY_ADMIN", "EMPLOYEE"]);
+  // Employees must be granted AI use explicitly. A base-role default is an
+  // unconditional inherited grant a custom role can never revoke, so defaulting
+  // this for EMPLOYEE would let a document policy hand AI access to a role that
+  // was never given the capability.
+  assert.deepEqual(ai?.defaultBaseRoles, ["SUPER_ADMIN", "COMPANY_ADMIN"]);
   assert.equal(manage?.tenantGrantable, true); assert.equal(ai?.tenantGrantable, true);
   assert.equal(BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.DOCUMENTS_MANAGE_ACCESS), false);
-  assert.equal(BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.DOCUMENTS_USE_IN_AI), true);
+  assert.equal(BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.DOCUMENTS_USE_IN_AI), false);
 });
 
 test("discover pipeline joins exact policy before matching and facets remain repository-owned", () => {

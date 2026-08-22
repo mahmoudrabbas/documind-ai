@@ -3901,17 +3901,26 @@ test(
       },
     );
     const graph = await loadSupervisorGraph(requestId);
-    const searchCall = graph.toolCalls.find(
-      (toolCall) => toolCall.toolName === "authorized_hybrid_search",
-    );
 
-    assert.ok(searchCall);
-    assert.equal(searchCall.output?.retrievalOutcome, "AUTHORIZATION_FILTERED");
-    assert.deepEqual(searchCall.output?.candidates, []);
+    // An EMPLOYEE role that was never granted `documents:use-in-ai` does not
+    // hold the retrieval tool's required permission, so ToolPermissionGuardrail
+    // denies the call before it runs. No search is attempted at all — a
+    // stronger guarantee than "the search ran and returned nothing
+    // authorized" — and the blocked guardrail step is the only record of it.
+    assert.equal(
+      graph.toolCalls.some(
+        (toolCall) => toolCall.toolName === "authorized_hybrid_search",
+      ),
+      false,
+    );
     assert.equal(
       graph.toolCalls.some((toolCall) => toolCall.toolName === "evaluate_evidence"),
       false,
     );
+    const blockedStep = graph.steps.find((step) => step.action === "guardrail");
+    assert.ok(blockedStep);
+    assert.equal(blockedStep.status, "failed");
+    assert.equal(blockedStep.error?.code, "AGENT_TOOL_PERMISSION_DENIED");
     assert.equal(
       response.answer,
       "I don't have sufficient authorized access to the documents needed to answer this question.",

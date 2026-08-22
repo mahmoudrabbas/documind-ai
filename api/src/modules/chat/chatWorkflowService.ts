@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { BaseRole } from "../../common/auth/baseRoles.js";
 import { AppError } from "../../common/errors/AppError.js";
 import {
+  AGENT_TOOL_PERMISSION_DENIED,
   LLM_PROVIDER_UNAVAILABLE,
   LLM_RATE_LIMITED,
   LLM_TIMEOUT,
@@ -1603,12 +1604,10 @@ export class ChatWorkflowService {
       });
     }
 
-    if (runtimeResult.status !== "completed" || !runtimeResult.output) {
-      const providerError = safeRuntimeProviderError(runtimeResult.error?.code);
-      if (providerError) throw providerError;
-      throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Controlled chat workflow failed");
-    }
-    const terminal = this.validateTerminal(runtimeResult.output, artifacts);
+    const terminal =
+      runtimeResult.status === "completed" && runtimeResult.output
+        ? this.validateTerminal(runtimeResult.output, artifacts)
+        : this.terminalForFailedRuntime(runtimeResult, artifacts);
     let materialized: { persisted: MessageSource[]; response: ChatSource[] };
     try {
       materialized = await this.materializeSources(
@@ -1789,6 +1788,38 @@ export class ChatWorkflowService {
       throw new AppError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
     }
     return input.conversationId;
+  }
+
+  /**
+   * Terminal for a run the supervisor could not complete.
+   *
+   * Every failure is an infrastructure fault except one: a tool the actor is
+   * not permitted to call. `ToolPermissionGuardrail` denies such a call before
+   * it executes and fails the whole run, so a member without
+   * `documents:use-in-ai` would otherwise get a 502 for what is really an
+   * authorization outcome. That case answers with the access-restricted reply
+   * instead, and sets `authorizationRestricted` so the outcome resolves to
+   * `authorization_restricted` and no knowledge gap is recorded — the company
+   * may well hold the answer; this actor may not use it. No tool ran, so there
+   * are no sources and nothing about the denied tool reaches the reply.
+   */
+  private terminalForFailedRuntime(
+    runtimeResult: SupervisorRunResult,
+    artifacts: ChatRunArtifacts,
+  ): TrustedTerminal {
+    const providerError = safeRuntimeProviderError(runtimeResult.error?.code);
+    if (providerError) throw providerError;
+    if (runtimeResult.error?.code !== AGENT_TOOL_PERMISSION_DENIED) {
+      throw new AppError(502, "CHAT_WORKFLOW_FAILED", "Controlled chat workflow failed");
+    }
+    artifacts.authorizationRestricted = true;
+    const reasonCode = "INSUFFICIENT_EVIDENCE";
+    return ComplianceAgentOutputSchema.parse({
+      action: "refuse",
+      answer: fallbackReplyFor(reasonCode, true, artifacts.intent?.language ?? "en"),
+      sourceIds: [],
+      reasonCode,
+    });
   }
 
   private validateTerminal(

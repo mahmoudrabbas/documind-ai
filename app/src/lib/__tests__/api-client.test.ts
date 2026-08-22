@@ -220,7 +220,11 @@ describe("apiClient authentication", () => {
   it("waits for the cross-document refresh lock before rotating the cookie", async () => {
     let runLockedRefresh: (() => void) | undefined;
     const lockRequest = vi.fn(
-      (_name: string, callback: () => Promise<string>) => {
+      (
+        _name: string,
+        _options: LockOptions,
+        callback: () => Promise<string>,
+      ) => {
         return new Promise<string>((resolve, reject) => {
           runLockedRefresh = () => {
             callback().then(resolve, reject);
@@ -241,6 +245,8 @@ describe("apiClient authentication", () => {
 
     expect(lockRequest).toHaveBeenCalledWith(
       "documind-auth-refresh",
+      // The wait is bounded so one stalled tab cannot block the others.
+      { signal: expect.any(AbortSignal) },
       expect.any(Function),
     );
     expect(fetch).not.toHaveBeenCalled();
@@ -248,6 +254,38 @@ describe("apiClient authentication", () => {
     runLockedRefresh?.();
     await refresh;
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails the refresh instead of hanging when the lock wait times out", async () => {
+    setAccessToken("stale-token");
+    // Stand in for another tab holding the lock: the wait only ends when the
+    // caller's signal aborts, which is what the deadline exists to guarantee.
+    const lockRequest = vi.fn(
+      (_name: string, options: LockOptions) =>
+        new Promise<string>((_resolve, reject) => {
+          options.signal?.addEventListener("abort", () => {
+            reject(
+              Object.assign(new Error("The operation was aborted."), {
+                name: "AbortError",
+              }),
+            );
+          });
+        }),
+    );
+    vi.stubGlobal("navigator", { locks: { request: lockRequest } });
+    globalThis.fetch = vi.fn();
+
+    const refresh = refreshAccessToken();
+    await vi.waitFor(() => expect(lockRequest).toHaveBeenCalledTimes(1));
+    // Fire the abort directly rather than waiting out the real deadline: this
+    // asserts the wiring and the failure conversion, not the timeout duration.
+    const signal = lockRequest.mock.calls[0][1].signal;
+    signal?.dispatchEvent(new Event("abort"));
+
+    await expect(refresh).rejects.toMatchObject({ code: "REFRESH_FAILED" });
+    // The lock was never granted, so no refresh cookie was rotated.
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBeNull();
   });
 });
 

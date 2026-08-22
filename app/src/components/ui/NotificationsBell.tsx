@@ -18,7 +18,10 @@ import {
   resolveNotificationActionHref,
 } from "@/lib/notification-utils";
 import { getRelativeTimeParts } from "@/lib/utils";
-import { NotificationActionMenu } from "./NotificationActionMenu";
+import {
+  NotificationActionMenu,
+  isInsideNotificationActionMenu,
+} from "./NotificationActionMenu";
 import type {
   Notification,
   NotificationPriority,
@@ -92,6 +95,10 @@ export function NotificationsBell() {
   useEffect(() => {
     if (!open) return;
     function handlePointerDown(event: MouseEvent | TouchEvent) {
+      // A row action menu is portaled to document.body, so it is outside
+      // containerRef; without this the popover would close on the pointer down
+      // and unmount the menu item before its click handler could run.
+      if (isInsideNotificationActionMenu(event.target)) return;
       if (
         containerRef.current &&
         !containerRef.current.contains(event.target as Node)
