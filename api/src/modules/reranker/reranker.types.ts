@@ -113,8 +113,13 @@ export interface RerankerConfig {
 }
 
 export const DEFAULT_RERANKER_CONFIG: RerankerConfig = {
-  maxItems: 10,
-  maxTokenBudget: 4000,
+  // 10 truncated the bundle below the point where the answer survived: a
+  // question whose answer sat on one page of a 58-chunk document had that page
+  // ranked 11th and dropped, so `evaluate_evidence` rejected it and the answer
+  // writer correctly reported insufficient evidence. The budget rises with the
+  // count so the extra items are not immediately trimmed again.
+  maxItems: 20,
+  maxTokenBudget: 8000,
   deduplicationThreshold: 0.85,
   conflictSimilarityThreshold: 0.3,
 };

@@ -321,6 +321,30 @@ describe("AnswerWriterAgentExecutor", () => {
     assert.equal(generateCalls.length, 1);
   });
 
+  it("preserves approved evidence rank when the database loader returns chunks out of order", async () => {
+    const { answerWriter, generateCalls } = fakeAnswerWriter();
+    const { deps } = makeDeps({
+      answerWriter,
+      loadChunksByIds: async () => [
+        makeLoadedChunk({ chunkId: CHUNK_ID_B, text: "Second-ranked evidence." }),
+        makeLoadedChunk({ chunkId: CHUNK_ID, text: "Top-ranked evidence." }),
+      ],
+    });
+
+    await makeExecutor(deps).execute(runContext(), {
+      ...VALID_INPUT,
+      approvedEvidenceIds: [CHUNK_ID, CHUNK_ID_B],
+    });
+
+    const generateInput = generateCalls[0] as {
+      evidence: Array<{ chunkId: string }>;
+    };
+    assert.deepEqual(
+      generateInput.evidence.map((item) => item.chunkId),
+      [CHUNK_ID, CHUNK_ID_B],
+    );
+  });
+
   it("drops chunks whose parent document is ineligible", async () => {
     const { deps } = makeDeps({
       loadEligibleDocumentIds: async () => [DOC_ID],

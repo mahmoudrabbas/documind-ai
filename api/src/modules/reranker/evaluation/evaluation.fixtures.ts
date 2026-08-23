@@ -78,7 +78,10 @@ export const EVALUATION_SCENARIOS: EvaluationScenario[] = [
     expectations: {
       minItemCount: 1,
       maxItemCount: 3,
-      sufficiencyLevel: "WEAK",
+      // The top item answers the query outright. Sufficiency is a per-item gate
+      // now, not a mean, so the two weak tail matches alongside it no longer
+      // dilute the bundle into a refusal.
+      sufficiencyLevel: "SUFFICIENT",
       expectConflicts: false,
       expectDeduplication: false,
       maxReductionRatio: 1.0,
@@ -217,7 +220,10 @@ export const EVALUATION_SCENARIOS: EvaluationScenario[] = [
     expectations: {
       minItemCount: 1,
       maxItemCount: 10,
-      sufficiencyLevel: "WEAK",
+      // What this scenario measures is truncation, not sufficiency: every
+      // candidate is on topic, and the items that survive the budget all clear
+      // the per-item gate.
+      sufficiencyLevel: "SUFFICIENT",
       expectConflicts: false,
       expectDeduplication: false,
       maxReductionRatio: 0.8,
@@ -277,6 +283,36 @@ export const EVALUATION_SCENARIOS: EvaluationScenario[] = [
       minItemCount: 1,
       maxItemCount: 2,
       sufficiencyLevel: "SUFFICIENT",
+      expectConflicts: false,
+      expectDeduplication: false,
+      maxReductionRatio: 1.0,
+      maxTotalTokens: 200,
+    },
+  },
+
+  // ── Scenario 9: Weak tail only ─────────────────────────────────────
+  {
+    id: "weak-tail-only",
+    description: "Retrieval returned documents, none of which address the query",
+    queryText: "parental leave entitlement",
+    candidates: [
+      makeCandidate({
+        text: "Visitor badges must be returned to reception at the end of each day",
+        documentId: "doc-reception",
+        score: 0.06,
+      }),
+      makeCandidate({
+        text: "The cafeteria menu rotates on a four week cycle",
+        documentId: "doc-cafeteria",
+        score: 0.05,
+      }),
+    ],
+    expectations: {
+      minItemCount: 1,
+      maxItemCount: 2,
+      // Nothing here clears the per-item gate, so the bundle must refuse rather
+      // than hand the writer two off-topic chunks to answer from.
+      sufficiencyLevel: "WEAK",
       expectConflicts: false,
       expectDeduplication: false,
       maxReductionRatio: 1.0,

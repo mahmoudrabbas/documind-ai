@@ -88,13 +88,82 @@ import { ChatSendBodySchema, type ChatSendBody } from "./chat.validator.js";
 import * as chatRepo from "./chat.repository.js";
 
 const WORKFLOW_ID = "chat-rag-v1" as const;
-const DEFAULT_MAX_TOKENS = 1024;
+/**
+ * Answer Writer completion ceilings, and why they are not the size of the
+ * answer.
+ *
+ * The configured chat model is a reasoning model on both providers in the
+ * chain (`openai.gpt-oss-120b-1:0` on the ITI Bedrock gateway,
+ * `openai/gpt-oss-120b` on Groq). Reasoning tokens are billed as completion
+ * tokens, so `max_tokens` bounds *thinking plus output* - and the thinking is
+ * the larger half. These two numbers were originally sized for the visible
+ * JSON the writer emits, which is why they were 1024 and 2048.
+ *
+ * Measured by replaying the live 13-chunk MySQL-lecture summary bundle (3051
+ * evidence characters, prompt ~1500 tokens) through AnswerWriterService:
+ *
+ *   maxTokens=1024 -> no content at all, twice out of two
+ *   maxTokens=2048 -> valid JSON, 1998 tokens used of 2048 available
+ *   maxTokens=4000 -> valid grounded summary, three times out of three
+ *
+ * A truncated reasoning model does not report truncation as an error the
+ * pipeline can act on. The gateway answers 200 with `content: null`; Groq,
+ * asked for `response_format: json_object`, answers 400 `json_validate_failed`
+ * with an empty `failed_generation`. So the writer either took the
+ * parse-failure branch - which returns `insufficient_evidence` carrying the
+ * localized "I don't have sufficient authorized evidence" message and no
+ * citations - or the request failed outright and surfaced as a 503. Both read
+ * to the user as "the assistant cannot answer from my document", on a bundle
+ * that `evaluate_evidence` had already approved as SUFFICIENT with 13 chunks.
+ *
+ * That is why the same question intermittently answered and intermittently
+ * refused: at 2048 a summary sits within a few tokens of the ceiling, so
+ * whether it fits depends on how long the model happens to think.
+ *
+ * Both ceilings are therefore sized to clear the measured need with room for a
+ * longer-than-usual reasoning pass, not to bound answer length. Answer length
+ * is bounded by the prompt (see `systemPromptFor`), which is the right place
+ * for it: a token cap cannot shorten an answer, it can only destroy one.
+ */
+const DEFAULT_MAX_TOKENS = 3072;
 const CHAT_WORKFLOW_MAX_TOTAL_TOKENS = 50_000;
 const CHAT_MIN_RUNNABLE_TOTAL_TOKENS = 1_000;
-export const CHAT_DIRECT_RETRIEVAL_TOP_K = 5;
+// Direct questions retrieve 12 candidates, not 5. At 5, a fused list whose
+// scores all sit at the RRF floor routinely dropped the one chunk holding the
+// answer just below the cut, and the writer then grounded on a keyword-adjacent
+// neighbour instead. Summarization already used 12 and did not show the failure.
+export const CHAT_DIRECT_RETRIEVAL_TOP_K = 12;
 export const CHAT_SUMMARIZATION_RETRIEVAL_TOP_K = 12;
-const SUMMARY_MAX_TOKENS = 2048;
+// A structured summary is the longest thing the writer emits and needs the most
+// reasoning to assemble, so it gets more headroom than a direct answer. See
+// DEFAULT_MAX_TOKENS above for the measurements.
+const SUMMARY_MAX_TOKENS = 6144;
 const MAX_SEARCH_QUERY_CHARS = 2_000;
+
+/**
+ * The completion allowance for one Answer Writer call.
+ *
+ * `configuredMaxTokens` is the tenant's `aiRuntimePreferences.maxTokens`, a
+ * setting whose intent is "how long should answers be". Against a reasoning
+ * model it cannot express that: thinking is billed as completion, so lowering
+ * the number does not shorten the answer, it decides whether an answer is
+ * returned at all. Below the floor the provider emits no content and the writer
+ * takes its parse-failure branch, which refuses with "I don't have sufficient
+ * authorized evidence" on evidence that was approved as SUFFICIENT. The tenant
+ * default is 1024, and 1024 was measured returning no content twice out of two.
+ *
+ * So the preference is honoured upward and floored downward: an admin can ask
+ * for more room, and cannot configure the writer into never answering. Answer
+ * length stays bounded by the writer's prompt, which is where it belongs.
+ */
+function writerCompletionAllowance(
+  task: AnswerTask,
+  configuredMaxTokens: number,
+): number {
+  const floor =
+    task === "document_summary" ? SUMMARY_MAX_TOKENS : DEFAULT_MAX_TOKENS;
+  return Math.max(floor, configuredMaxTokens);
+}
 
 // ── Fallback reply templates ──────────────────────────────────────────────
 // The Compliance agent's deterministic refusal answers are replaced at the
@@ -1069,8 +1138,7 @@ function createChatRuntimePolicy(input: {
           ]),
           task,
           citationsEnabled: input.citationsEnabled,
-          maxTokens:
-            task === "document_summary" ? SUMMARY_MAX_TOKENS : input.maxTokens,
+          maxTokens: writerCompletionAllowance(task, input.maxTokens),
         };
       } else if (args.toAgent === "citation-verification-agent") {
         const writer = artifacts.writer ?? failClosed("Trusted Answer Writer output is required");

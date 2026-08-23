@@ -254,10 +254,17 @@ export class AnswerWriterAgentExecutor implements AgentContract {
       context.tenantId,
       approvedEvidenceIds,
     );
+    const rankByChunkId = new Map(
+      approvedEvidenceIds.map((chunkId, index) => [chunkId, index]),
+    );
     const eligibleChunks = loaded.filter((chunk) =>
       RETRIEVABLE_CHUNK_STATUSES.includes(
         chunk.status as (typeof RETRIEVABLE_CHUNK_STATUSES)[number],
       ),
+    ).sort(
+      (left, right) =>
+        (rankByChunkId.get(left.chunkId) ?? Number.MAX_SAFE_INTEGER) -
+        (rankByChunkId.get(right.chunkId) ?? Number.MAX_SAFE_INTEGER),
     );
 
     const documentIds = [...new Set(eligibleChunks.map((c) => c.documentId))];

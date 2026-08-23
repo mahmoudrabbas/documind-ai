@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AppError } from "../../common/errors/AppError.js";
+import { logger } from "../../common/logger/logger.js";
 import type { ModelAdapter, ModelCompletionResponse } from "./agents.types.js";
 import {
   CitationSemanticVerificationService,
@@ -110,7 +111,59 @@ test("safe independent clauses become atomic claims without inventing abstract a
   );
 });
 
-test("four supported claims remain supported and pass the final gate", async () => {
+// A live "what is MySQL?" answer shipped as "it is available as both a free
+// Community Server and a commercial Enterprise Server." - the writer had joined
+// two clauses with ", and", the splitter made the second one its own claim, the
+// first was judged unsupported and filtered, and the survivor went out with no
+// subject. The clause is also unjudgeable alone: nothing in it says what "it" is.
+test("an anaphoric clause is not split away from the antecedent it needs", () => {
+  assert.deepEqual(
+    extractBoundedFactualClaims(
+      "MySQL is a relational database management system, and it is available as both a free Community Server and a commercial Enterprise Server.",
+    ),
+    [
+      "MySQL is a relational database management system, and it is available as both a free Community Server and a commercial Enterprise Server.",
+    ],
+  );
+  // Clauses that carry their own subject still split.
+  assert.deepEqual(
+    extractBoundedFactualClaims(
+      "MySQL provides a Community Server, and the server uses port 3306.",
+    ),
+    ["MySQL provides a Community Server.", "the server uses port 3306."],
+  );
+});
+
+test("a released claim never opens with an anaphor whose antecedent was filtered out", async () => {
+  // Keyed on claim text, not index: the release gate re-verifies the narrowed
+  // candidate, which renumbers its claims.
+  const model = scriptedModel((payload) =>
+    judgments(payload, (claim) => (claim.startsWith("Alpha") ? "unsupported" : "supported")),
+  );
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Alpha fact. It follows from alpha. Gamma fact.",
+    evidence,
+  });
+
+  // The middle claim was supported on its own terms, but "It follows from alpha."
+  // is unreadable once "Alpha fact." is gone, so it is dropped with it.
+  assert.deepEqual(result.unsupportedClaims, ["Alpha fact."]);
+  assert.equal(result.releasedAnswerText, "Gamma fact.");
+});
+
+test("an anaphoric claim is released when its antecedent survives", async () => {
+  const model = scriptedModel((payload) =>
+    judgments(payload, (_claim, index) => (index === 2 ? "unsupported" : "supported")),
+  );
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Alpha fact. It follows from alpha. Gamma fact.",
+    evidence,
+  });
+
+  assert.equal(result.releasedAnswerText, ["Alpha fact.", "It follows from alpha."].join("\n"));
+});
+
+test("four supported unchanged claims release after one verification pass", async () => {
   const model = scriptedModel(supportAll);
   const result = await new CitationSemanticVerificationService(model).verify({
     answerText: "Alpha fact. Beta fact. Gamma fact. Delta fact.",
@@ -118,17 +171,33 @@ test("four supported claims remain supported and pass the final gate", async () 
   });
   assert.deepEqual(result.claimResults.map((claim) => claim.state), ["SUPPORTED", "SUPPORTED", "SUPPORTED", "SUPPORTED"]);
   assert.equal(result.releasedAnswerText, "Alpha fact. Beta fact. Gamma fact. Delta fact.");
-  assert.equal(model.calls.length, 2, "initial and mandatory final passes");
+  assert.equal(model.calls.length, 1, "the unchanged answer is already verified");
 });
 
-test("a claim the final gate rejects narrows the answer instead of suppressing it", async () => {
-  // The initial pass supports everything, so the candidate is the full answer and
-  // the gate re-verifies it. The gate then declines one claim. The whole answer
-  // used to be discarded here, which is how a single flaky verdict suppressed
-  // every other verified claim in the same answer.
+test("a fully supported unchanged answer skips redundant release verification", async () => {
+  const model = scriptedModel((payload, call) => {
+    if (call > 1) {
+      return new Error("the unchanged answer must not be verified twice");
+    }
+    return judgments(payload);
+  });
+
+  const answerText = "Alpha fact. Beta fact. Gamma fact. Delta fact.";
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText,
+    evidence,
+  });
+
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(result.releasedAnswerText, answerText);
+  assert.equal(result.releasedClaimCount, 4);
+  assert.equal(model.calls.length, 1);
+});
+
+test("an initial rejection narrows the answer and re-verifies the surviving text", async () => {
   const model = scriptedModel((payload, call) =>
     judgments(payload, (claim) =>
-      call === 2 && claim.includes("Two") ? "unsupported" : "supported"));
+      call === 1 && claim.includes("Two") ? "unsupported" : "supported"));
   const result = await new CitationSemanticVerificationService(model).verify({
     answerText: "Fact One. Fact Two. Fact Three.",
     evidence,
@@ -137,27 +206,35 @@ test("a claim the final gate rejects narrows the answer instead of suppressing i
   assert.equal(result.releasedAnswerText, "Fact One.\nFact Three.");
   assert.doesNotMatch(result.releasedAnswerText ?? "", /Two/u);
   assert.equal(result.releasedClaimCount, 2);
-  assert.equal(model.calls.length, 3, "initial pass, rejecting gate pass, then the narrowed re-verification");
+  assert.equal(model.calls.length, 2, "initial filtering and exact release verification");
+  assert.deepEqual(model.calls[1]?.claims, ["Fact One.", "Fact Three."]);
 });
 
 test("released text is always re-verified in the exact form it ships in", async () => {
   // Guards the safety property the gate exists for: the last pass must have run
   // on precisely the released string, never on a superset of it.
   const model = scriptedModel((payload, call) =>
-    judgments(payload, (claim) =>
-      call === 2 && claim.includes("Two") ? "unsupported" : "supported"));
+    judgments(payload, (claim) => {
+      if (call === 1 && claim.includes("Two")) return "unsupported";
+      if (call === 2 && claim.includes("Three")) return "unsupported";
+      return "supported";
+    }));
   const result = await new CitationSemanticVerificationService(model).verify({
     answerText: "Fact One. Fact Two. Fact Three.",
     evidence,
   });
   const releasedClaims = prepareSemanticClaims(result.releasedAnswerText ?? "")
     .factualClaims.map((claim) => claim.text);
+  assert.equal(model.calls.length, 3, "each changed candidate is verified before release");
   assert.deepEqual(model.calls.at(-1)?.claims, releasedClaims);
 });
 
 test("a gate that rejects every claim still fails closed", async () => {
   const model = scriptedModel((payload, call) =>
-    judgments(payload, () => (call === 2 ? "unsupported" : "supported")));
+    judgments(payload, (claim) => {
+      if (call === 1 && claim.includes("three")) return "unsupported";
+      return call === 2 ? "unsupported" : "supported";
+    }));
   const result = await new CitationSemanticVerificationService(model).verify({
     answerText: "Fact one. Fact two. Fact three.",
     evidence,
@@ -166,17 +243,18 @@ test("a gate that rejects every claim still fails closed", async () => {
   assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
   assert.equal(result.releasedClaimCount, 0);
   assert.deepEqual(result.supportingEvidenceIds, []);
-  assert.equal(model.calls.length, 2, "nothing survived, so there is nothing to re-verify");
+  assert.equal(model.calls.length, 2, "the changed candidate is rejected once, then nothing survives");
+  assert.deepEqual(model.calls[1]?.claims, ["Fact one.", "Fact two."]);
 });
 
 test("a gate that keeps rejecting is bounded and fails closed rather than looping", async () => {
   // Every gate pass declines the last remaining claim, so narrowing never
   // converges. The pass budget has to stop it.
-  const model = scriptedModel((payload, call) =>
-    judgments(payload, (claim, index) =>
-      call >= 2 && index === payload.claims.length - 1 ? "unsupported" : "supported"));
+  const model = scriptedModel((payload) =>
+    judgments(payload, (_claim, index) =>
+      index === payload.claims.length - 1 ? "unsupported" : "supported"));
   const result = await new CitationSemanticVerificationService(model).verify({
-    answerText: "Fact one. Fact two. Fact three. Fact four.",
+    answerText: "Alpha is valid. Beta is valid. Gamma is valid. Delta is valid.",
     evidence,
   });
   assert.equal(result.releasedAnswerText, undefined);
@@ -284,7 +362,7 @@ test("fenced JSON semantic judgments are parsed and released", async () => {
 
   assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
   assert.equal(result.releasedAnswerText, "Employees qualify for annual leave.");
-  assert.equal(model.calls.length, 2, "initial and final fenced responses should both be parsed");
+  assert.equal(model.calls.length, 1, "the unchanged fenced answer is already verified");
 });
 
 test("valid citation membership with unrelated evidence is semantically unsupported", async () => {
@@ -560,14 +638,6 @@ test("all unsupported or unresolved claims produce no releasable answer", async 
   }
 });
 
-test("mandatory final verification blocks a candidate when the verifier later rejects it", async () => {
-  const model = scriptedModel((payload, call) => judgments(payload, () => call === 1 ? "supported" : "unsupported"));
-  const result = await new CitationSemanticVerificationService(model).verify({ answerText: "Initially supported fact.", evidence });
-  assert.equal(result.claimResults[0]?.state, "SUPPORTED");
-  assert.equal(result.releasedAnswerText, undefined);
-  assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
-});
-
 test("redundant factual summary is verified as written without invented category atoms", async () => {
   const model = scriptedModel(supportAll);
   const summary = "Overall, the policy covers leave, remote scheduling, and security.";
@@ -629,6 +699,29 @@ test("scripted incomplete variations have deterministic safe release semantics a
   }
 });
 
+test("a 13-claim summary receives the adaptive reasoning completion ceiling", async () => {
+  const model = scriptedModel(supportAll);
+  const labels = [
+    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta",
+    "theta", "iota", "kappa", "lambda", "mu", "nu",
+  ];
+  const answerText = labels
+    .map((label) => `Documented summary fact ${label} is supported.`)
+    .join(" ");
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText,
+    evidence,
+  });
+
+  assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  assert.equal(model.calls.length, 1, "the unchanged summary is verified once");
+  // Base plus per-claim allowance. The base clears the worst case measured on a
+  // reasoning verifier at the *small* end of the claim range, so wide summaries
+  // like this one - which have never been observed to truncate - carry it too.
+  assert.deepEqual(model.maxTokensByCall, [7_600]);
+});
+
 test("finite semantic budget lowers the provider completion allowance", async () => {
   const model = scriptedModel(supportAll);
 
@@ -647,7 +740,7 @@ test("finite semantic budget lowers the provider completion allowance", async ()
   assert.ok(result.claimResults.length > 0);
 });
 
-test("actual usage from an earlier pass reduces the budget available to the next pass", async () => {
+test("actual usage from filtering reduces the budget available to release verification", async () => {
   const calls: Payload[] = [];
   const maxTokensByCall: Array<number | undefined> = [];
   let call = 0;
@@ -660,7 +753,8 @@ test("actual usage from an earlier pass reduces the budget available to the next
       maxTokensByCall.push(params.maxTokens);
       call += 1;
 
-      const response = completion(judgments(payload));
+      const response = completion(judgments(payload, (claim) =>
+        call === 1 && claim.includes("Fabricated") ? "unsupported" : "supported"));
       return {
         ...response,
         usage: {
@@ -673,12 +767,12 @@ test("actual usage from an earlier pass reduces the budget available to the next
   };
 
   await new CitationSemanticVerificationService(model).verify({
-    answerText: "Employees qualify for annual leave.",
+    answerText: "Grounded fact. Fabricated benefit.",
     evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
     maxTokens: 1_000,
   });
 
-  assert.equal(calls.length, 2, "initial and final verification should run");
+  assert.equal(calls.length, 2, "the recomposed answer needs release verification");
   assert.ok(
     (maxTokensByCall[1] ?? 0) < (maxTokensByCall[0] ?? 0),
     `expected second call budget ${String(maxTokensByCall[1])} < first ${String(maxTokensByCall[0])}`,
@@ -693,7 +787,8 @@ test("exhausted shared budget prevents additional semantic provider calls and fa
     async complete(params) {
       calls += 1;
       const payload = payloadFrom(params.messages.at(-1)?.content ?? "");
-      const response = completion(judgments(payload));
+      const response = completion(judgments(payload, (claim) =>
+        claim.includes("Fabricated") ? "unsupported" : "supported"));
 
       return {
         ...response,
@@ -707,12 +802,12 @@ test("exhausted shared budget prevents additional semantic provider calls and fa
   };
 
   const result = await new CitationSemanticVerificationService(model).verify({
-    answerText: "Employees qualify for annual leave.",
+    answerText: "Grounded fact. Fabricated benefit.",
     evidence: [{ chunkId: "policy-a", text: "Annual leave is available to every employee." }],
     maxTokens: 900,
   });
 
-  assert.equal(calls, 1, "final verification must not start after the shared budget is exhausted");
+  assert.equal(calls, 1, "release verification must not start after the shared budget is exhausted");
   assert.equal(result.releasedAnswerText, undefined);
   assert.equal(result.reasonCode, "SEMANTIC_VERIFICATION_FAILED");
 });
@@ -761,7 +856,7 @@ test("provider timeout remains a canonical infrastructure error", async () => {
   await assertProviderError(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }), "LLM_TIMEOUT");
 });
 
-test("a 25-sentence summary verifies in batches of at most 20 claims", async () => {
+test("a 25-sentence summary verifies in bounded batches and re-verifies after overflow recomposition", async () => {
   const sentences = Array.from({ length: 25 }, () =>
     "Employees receive twenty-one days of annual leave under company policy rules.",
   );
@@ -779,13 +874,20 @@ test("a 25-sentence summary verifies in batches of at most 20 claims", async () 
   });
 
   assert.notEqual(result.reasonCode, "VERIFICATION_BOUNDS_EXCEEDED");
-  assert.ok(model.calls.length >= 2, "batched verification must issue multiple passes");
+  assert.equal(model.calls.length, 4, "two initial batches and two release-verification batches");
   for (const call of model.calls) {
     assert.ok(call.claims.length <= 20, `batch size ${call.claims.length} exceeds 20`);
   }
   assert.equal(result.claimResults.length, 25);
   assert.ok(result.claimResults.every((claim) => claim.state === "SUPPORTED"));
   assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+  const releasedClaims = prepareSemanticClaims(result.releasedAnswerText ?? "")
+    .factualClaims.map((claim) => claim.text);
+  assert.deepEqual(
+    model.calls.slice(-2).flatMap((call) => call.claims),
+    releasedClaims,
+    "overflow release verification must judge exactly the recomposed text",
+  );
 });
 
 test("oversized claims are split before verification instead of failing the whole answer", async () => {
@@ -809,4 +911,125 @@ test("oversized claims are split before verification instead of failing the whol
     }
   }
   assert.equal(result.reasonCode, "SEMANTIC_VERIFIED");
+});
+
+// ── truncated verifier completions ─────────────────────────────────────────
+
+/**
+ * A verifier whose first `truncatedCalls` passes run out of room mid-JSON.
+ *
+ * Distinct from `scriptedModel`, which always reports finishReason "stop": what
+ * matters here is a *non-empty* completion that cannot be parsed, which is what
+ * a reasoning model returns when its thinking plus its output overruns
+ * max_tokens. The batch degrades to UNKNOWN exactly as an empty completion
+ * would, but only this case is fixed by asking for a larger ceiling.
+ */
+function truncatingModel(truncatedCalls: number): ModelAdapter & {
+  maxTokensByCall: number[];
+} {
+  const maxTokensByCall: number[] = [];
+
+  return {
+    providerKey: "truncating-verifier",
+    maxTokensByCall,
+    async complete(params) {
+      maxTokensByCall.push(params.maxTokens ?? 0);
+      const payload = payloadFrom(params.messages.at(-1)?.content ?? "");
+
+      if (maxTokensByCall.length > truncatedCalls) {
+        return completion(judgments(payload), "truncating-verifier");
+      }
+      const cut = '{"judgments":[{"claimIndex":0,"verdict":"sup';
+      return {
+        id: "verification",
+        provider: "truncating-verifier",
+        model: "verifier-model",
+        choices: [{
+          index: 0,
+          finishReason: "length",
+          message: { role: "assistant" as const, content: cut },
+        }],
+        usage: {
+          promptTokens: 881,
+          completionTokens: params.maxTokens ?? 0,
+          totalTokens: 881 + (params.maxTokens ?? 0),
+        },
+        latencyMs: 4,
+        estimatedCost: 0.001,
+      };
+    },
+  };
+}
+
+test("a truncated verification pass is retried with an escalated ceiling", async () => {
+  const model = truncatingModel(1);
+
+  const result = await new CitationSemanticVerificationService(model).verify({
+    answerText: "Fact one. Fact two.",
+    evidence,
+  });
+
+  // Re-asking for the ceiling that just ran out has no better chance, so the
+  // retry doubles it. Both passes judge the same two claims, because a
+  // truncated batch degrades wholesale rather than resolving part of itself.
+  assert.equal(model.maxTokensByCall.length, 2);
+  assert.equal(
+    model.maxTokensByCall[1],
+    (model.maxTokensByCall[0] ?? 0) * 2,
+    `expected the retry ceiling to double, got ${model.maxTokensByCall.join(" then ")}`,
+  );
+  assert.deepEqual(result.claimResults.map((claim) => claim.state), ["SUPPORTED", "SUPPORTED"]);
+  assert.equal(result.retryCount, 1);
+  assert.equal(result.releasedAnswerText, "Fact one. Fact two.");
+});
+
+test("the two-claim ceiling clears the measured worst case for the reasoning verifier", async () => {
+  const model = truncatingModel(0);
+
+  await new CitationSemanticVerificationService(model).verify({
+    answerText: "Fact one. Fact two.",
+    evidence,
+  });
+
+  // 2558 completion tokens was the worst of nine live samples of this exact
+  // shape of prompt on nvidia/nemotron-3-ultra-550b-a55b. A first pass sized
+  // inside that spread makes a correct answer's survival a coin flip.
+  assert.ok(
+    (model.maxTokensByCall[0] ?? 0) > 2_558,
+    `expected the first-pass ceiling to clear the measured worst case, got ${String(model.maxTokensByCall[0])}`,
+  );
+});
+
+test("truncation is logged distinctly from an empty completion", async () => {
+  const model = truncatingModel(1);
+  const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
+  const restore = logger.warn;
+  // The service logs through the module singleton, and the test env silences it,
+  // so intercept the method itself rather than a destination stream.
+  (logger as { warn: unknown }).warn = (fields: unknown, message?: string) => {
+    warnings.push({ fields: fields as Record<string, unknown>, message: message ?? "" });
+  };
+  try {
+    await new CitationSemanticVerificationService(model).verify({
+      answerText: "Fact one. Fact two.",
+      evidence,
+    });
+  } finally {
+    (logger as { warn: unknown }).warn = restore;
+  }
+
+  const truncationWarnings = warnings.filter((entry) =>
+    entry.message.includes("truncated mid-output"),
+  );
+  assert.equal(truncationWarnings.length, 1);
+  assert.equal(truncationWarnings[0]?.fields.stage, "semantic_verification");
+  assert.equal(truncationWarnings[0]?.fields.claimCount, 2);
+  assert.equal(truncationWarnings[0]?.fields.attempt, 0);
+  // The empty-completion warn must not also fire: the completion was present,
+  // just unfinished, and the two failures have different fixes.
+  assert.equal(
+    warnings.some((entry) => entry.message.includes("returned no content")),
+    false,
+    `unexpected empty-completion warning: ${warnings.map((entry) => entry.message).join(" | ")}`,
+  );
 });

@@ -77,3 +77,21 @@ test("maps timeout variants separately", () => {
     assert.equal(mapped.code, "LLM_TIMEOUT");
   }
 });
+
+test("classifies an adapter deadline abort as a timeout, not an unavailable provider", () => {
+  // The OpenAI SDK raises APIUserAbortError when the AbortSignal.timeout an
+  // adapter attaches to its own request fires; the shape carries neither a
+  // status nor a code. Misreading it as LLM_PROVIDER_UNAVAILABLE parks a
+  // healthy-but-slow provider in the failover availability cache, which is how
+  // a working NVIDIA fallback ended up skipped for a full cache TTL.
+  const sdkAbort = Object.assign(new Error("Request was aborted."), {
+    name: "APIUserAbortError",
+  });
+  const fetchTimeout = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+
+  for (const error of [sdkAbort, fetchTimeout]) {
+    const mapped = mapLlmProviderError(error);
+    assert.equal(mapped.statusCode, 503);
+    assert.equal(mapped.code, "LLM_TIMEOUT");
+  }
+});

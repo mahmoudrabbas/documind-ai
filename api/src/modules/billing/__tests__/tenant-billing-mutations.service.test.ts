@@ -232,7 +232,7 @@ describe("tenant billing mutations service", () => {
       targetPackageVersion: 4,
       targetBillingInterval: "monthly",
       currency: "USD",
-      expiresAt: new Date("2026-08-20T00:15:00.000Z"),
+      expiresAt: new Date("2099-08-20T00:15:00.000Z"),
       subscriptionRevision: 3,
       providerPreviewReference: "preview_provider_1",
     }) as never);
@@ -266,7 +266,7 @@ describe("tenant billing mutations service", () => {
       targetPackageVersion: 4,
       targetBillingInterval: "monthly",
       currency: "USD",
-      expiresAt: new Date("2026-08-20T00:15:00.000Z"),
+      expiresAt: new Date("2099-08-20T00:15:00.000Z"),
       subscriptionRevision: 3,
       providerPreviewReference: "preview_provider_1",
     }) as never);

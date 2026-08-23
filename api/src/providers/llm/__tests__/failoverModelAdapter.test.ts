@@ -334,3 +334,80 @@ test("rate-limited primary alone propagates the controlled 429", async () => {
     },
   );
 });
+
+test("cached-down provider is retried when the whole chain would otherwise 503", async () => {
+  // Reproduces the live outage: NVIDIA's own completion deadline fired, which
+  // cached it down for the probe TTL; on the next request ITI was genuinely
+  // down and Groq was rate-limited, so the chain had nothing left and returned
+  // 503 while NVIDIA was in fact healthy. A cached verdict may reorder healthy
+  // providers, never leave the caller with no provider at all.
+  const primary = new ProbeAdapter("iti-bedrock", { probeResult: { available: false, reason: "gateway down" } });
+  const rateLimited = new ProbeAdapter("groq", { completeError: rateLimitError() });
+  const slow = new ProbeAdapter("nvidia-nim");
+  const adapter = new FailoverModelAdapter([primary, rateLimited, slow]);
+
+  // First request: the adapter's own deadline fires, caching nvidia-nim down.
+  slow.completeError = Object.assign(new Error("Request was aborted."), {
+    name: "APIUserAbortError",
+  });
+  await assert.rejects(adapter.complete(PARAMS), (error: AppError) => {
+    assert.equal(error.code, LLM_TIMEOUT);
+    return true;
+  });
+  assert.equal(slow.completeCalls, 1);
+
+  // Second request: nvidia-nim is cache-skipped, but nothing else can answer.
+  slow.completeError = undefined;
+  const response = await adapter.complete(PARAMS);
+
+  assert.equal(response.provider, "nvidia-nim");
+  assert.equal(slow.completeCalls, 2);
+  // The last-resort pass re-probes for real rather than trusting the cache.
+  assert.equal(slow.probeCalls, 2);
+});
+
+test("last-resort retry still respects a live probe that reports the provider down", async () => {
+  const primary = new ProbeAdapter("groq", { completeError: httpStatusError(500) });
+  const cachedDown = new ProbeAdapter("nvidia-nim", { probeResult: { available: false, reason: "HTTP 503" } });
+  const adapter = new FailoverModelAdapter([primary, cachedDown]);
+
+  // Warm the cache with a down verdict, then confirm the retry pass re-probes
+  // and honors a provider that is genuinely still down.
+  await assert.rejects(adapter.complete(PARAMS));
+  assert.equal(cachedDown.probeCalls, 1);
+
+  await assert.rejects(adapter.complete(PARAMS), (error: AppError) => {
+    assert.equal(error.statusCode, 503);
+    return true;
+  });
+  assert.equal(cachedDown.probeCalls, 2);
+  assert.equal(cachedDown.completeCalls, 0);
+});
+
+test("a provider that already failed this request is not retried by the last-resort pass", async () => {
+  // Only cache-skipped providers are eligible: one that was actually attempted
+  // and rate-limited seconds ago would just hit the same 429.
+  const primary = new ProbeAdapter("groq", { completeError: rateLimitError() });
+  const adapter = new FailoverModelAdapter([primary]);
+
+  await assert.rejects(adapter.complete(PARAMS), (error: AppError) => {
+    assert.equal(error.code, LLM_RATE_LIMITED);
+    return true;
+  });
+  assert.equal(primary.completeCalls, 1);
+});
+
+test("a successful chain never runs the last-resort pass", async () => {
+  const cachedDown = new ProbeAdapter("iti-bedrock", { probeResult: { available: false, reason: "down" } });
+  const healthy = new ProbeAdapter("groq");
+  const adapter = new FailoverModelAdapter([cachedDown, healthy]);
+
+  await adapter.complete(PARAMS);
+  const response = await adapter.complete(PARAMS);
+
+  assert.equal(response.provider, "groq");
+  // Second request skipped iti-bedrock from cache and succeeded downstream, so
+  // no re-probe was needed.
+  assert.equal(cachedDown.probeCalls, 1);
+  assert.equal(cachedDown.completeCalls, 0);
+});

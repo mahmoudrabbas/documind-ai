@@ -209,6 +209,24 @@ const envSchema = z
     GROQ_CHAT_MODEL: z.string().default("llama-3.3-70b-versatile"),
     GROQ_VISION_MODEL: z.string().default("qwen/qwen3.6-27b"),
 
+    LLM_PRIMARY_PROVIDER: z.string().default(""),
+    LLM_FALLBACK_PROVIDER: z.string().default(""),
+    LLM_FALLBACK_PROVIDERS: z.string().default(""),
+
+    NVIDIA_API_KEY: z.string().default(""),
+    NVIDIA_BASE_URL: z
+      .string()
+      .url()
+      .default("https://integrate.api.nvidia.com/v1"),
+    NVIDIA_CHAT_MODEL: z
+      .string()
+      .default("nvidia/nemotron-3-super-120b-a12b"),
+    NVIDIA_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+    // "default" omits the parameter for NIM models that reject it.
+    NVIDIA_REASONING_EFFORT: z
+      .enum(["low", "medium", "high", "default"])
+      .default("low"),
+
     JINA_API_KEY: z.string().default(""),
     JINA_EMBEDDING_MODEL: z.string().default("jina-embeddings-v3"),
     JINA_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1024),

@@ -20,6 +20,10 @@ function withEnv(env: Record<string, string | undefined>): void {
   delete process.env.ITI_BEDROCK_BASE_URL;
   delete process.env.ITI_BEDROCK_MODEL;
   delete process.env.GROQ_CHAT_MODEL;
+  delete process.env.NVIDIA_API_KEY;
+  delete process.env.NVIDIA_BASE_URL;
+  delete process.env.NVIDIA_CHAT_MODEL;
+  delete process.env.LLM_FALLBACK_PROVIDERS;
   delete process.env.LLM_PRIMARY_PROVIDER;
   delete process.env.LLM_FALLBACK_PROVIDER;
   for (const [key, value] of Object.entries(env)) {
@@ -150,6 +154,62 @@ test("LLM_PRIMARY_PROVIDER=iti-bedrock + LLM_FALLBACK_PROVIDER=groq builds ITI p
   });
 
   assert.equal(getModelAdapter().providerKey, "failover(iti-bedrock,groq)");
+});
+
+test("ordered fallback providers build an ITI, Groq, NVIDIA NIM chain", () => {
+  process.env.NODE_ENV = "production";
+  withEnv({
+    LLM_PRIMARY_PROVIDER: "iti-bedrock",
+    LLM_FALLBACK_PROVIDERS: "groq,nvidia-nim",
+    SBG_API_KEY: "test-sbg-key",
+    ITI_BEDROCK_BASE_URL: "http://host.docker.internal:8787/v1",
+    GROQ_API_KEY: "test-groq-key",
+    NVIDIA_API_KEY: "test-nvidia-key",
+    NVIDIA_CHAT_MODEL: "nvidia/nemotron-3-ultra-550b-a55b",
+  });
+
+  const adapter = getModelAdapter();
+  assert.equal(adapter.providerKey, "failover(iti-bedrock,groq,nvidia-nim)");
+  assert.deepEqual(
+    adapter.runtimeIdentity?.chain?.map((identity) => identity.provider),
+    ["iti-bedrock", "groq", "nvidia-nim"],
+  );
+});
+
+test("ordered fallback providers reject duplicates including the primary", () => {
+  process.env.NODE_ENV = "production";
+  withEnv({
+    LLM_PRIMARY_PROVIDER: "iti-bedrock",
+    LLM_FALLBACK_PROVIDERS: "groq,iti-bedrock,groq",
+    SBG_API_KEY: "test-sbg-key",
+    ITI_BEDROCK_BASE_URL: "http://host.docker.internal:8787/v1",
+    GROQ_API_KEY: "test-groq-key",
+  });
+
+  assert.throws(
+    () => getModelAdapter(),
+    (err: unknown) => {
+      assert.ok(err instanceof AppError);
+      assert.equal((err as AppError).code, LLM_PROVIDER_UNAVAILABLE);
+      assert.match((err as AppError).message, /duplicate|differ/i);
+      return true;
+    },
+  );
+});
+
+test("ordered fallback providers take precedence over the legacy single fallback variable", () => {
+  process.env.NODE_ENV = "production";
+  withEnv({
+    LLM_PRIMARY_PROVIDER: "iti-bedrock",
+    LLM_FALLBACK_PROVIDERS: "nvidia-nim",
+    LLM_FALLBACK_PROVIDER: "groq",
+    SBG_API_KEY: "test-sbg-key",
+    ITI_BEDROCK_BASE_URL: "http://host.docker.internal:8787/v1",
+    GROQ_API_KEY: "test-groq-key",
+    NVIDIA_API_KEY: "test-nvidia-key",
+  });
+
+  assert.equal(getModelAdapter().providerKey, "failover(iti-bedrock,nvidia-nim)");
 });
 
 test("iti-bedrock without SBG_API_KEY fails safely outside tests", () => {

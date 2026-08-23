@@ -25,8 +25,14 @@ function runScript(args: string[], options?: { env?: NodeJS.ProcessEnv }): { cod
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "test",
+    // vitest loads the repo .env, so the child inherits whatever real
+    // credentials the developer has configured. Every provider the LLM chain
+    // can build must be blanked here — one live key is enough to turn the
+    // "all degraded" cases below into real network calls whose exit code
+    // depends on the machine rather than on the code under test.
     GROQ_API_KEY: "",
     SBG_API_KEY: "",
+    NVIDIA_API_KEY: "",
     BEDROCK_GATEWAY_API_KEY: "",
     OPENAI_API_KEY: "",
     ...options?.env,
@@ -208,8 +214,7 @@ describe("run-evaluation CLI exit codes", () => {
   });
 
   it("exits 1 for a fixture run with no completed evaluations (all degraded)", () => {
-    const env = { ...process.env, GROQ_API_KEY: "", SBG_API_KEY: "", NODE_ENV: "test" };
-    const { code } = runScript(["--fixture"], { env });
+    const { code } = runScript(["--fixture"]);
     expect(code).toBe(EXIT_EVAL_FAILED);
   }, 120_000);
 

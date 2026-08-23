@@ -88,7 +88,17 @@ export function mapLlmProviderError(error: unknown): AppError {
     code === "UND_ERR_CONNECT_TIMEOUT" ||
     code === "TIMEOUT_ERROR" ||
     name === "AbortError" ||
-    name === "APIConnectionTimeoutError"
+    name === "APIConnectionTimeoutError" ||
+    // Adapters bound each attempt with their own AbortSignal.timeout deadline.
+    // When that deadline fires the OpenAI SDK raises APIUserAbortError and a
+    // bare fetch raises a TimeoutError DOMException — neither carries a status
+    // or a code. Caller cancellation is rethrown before mapping (see
+    // FailoverModelAdapter.complete), so an abort reaching here is our own
+    // deadline and must classify as a timeout rather than as a dead provider:
+    // LLM_PROVIDER_UNAVAILABLE is the code that parks a healthy-but-slow
+    // provider in the failover availability cache.
+    name === "APIUserAbortError" ||
+    name === "TimeoutError"
   ) {
     return new AppError(503, LLM_TIMEOUT, "The AI provider timed out. Please try again.");
   }

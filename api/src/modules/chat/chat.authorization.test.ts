@@ -76,7 +76,7 @@ test("citations enabled uses the citing system prompt and instructs to always ci
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "user");
   assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
-  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
+  assert.match(contextMsg.content, /"chunkId":"E1"/);
   assert.match(contextMsg.content, /"documentId":"doc-1"/);
   assert.match(contextMsg.content, /The protected value is 42/);
   assert.match(contextMsg.content, /"currentQuestion":"What is the protected value\?"/);
@@ -102,7 +102,7 @@ test("Arabic language uses Arabic RAG system prompt and context instructions", (
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "user");
   assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
-  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
+  assert.match(contextMsg.content, /"chunkId":"E1"/);
   assert.match(contextMsg.content, /"currentQuestion":"ما هي القيمة المحمية؟"/);
 });
 
@@ -123,7 +123,7 @@ test("Arabic language with citations disabled uses Arabic no-citations prompt", 
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "user");
   assert.match(contextMsg.content, /RAG_REQUEST_DATA_START/);
-  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
+  assert.match(contextMsg.content, /"chunkId":"E1"/);
 });
 
 test("mixed language is treated as Arabic context", () => {
@@ -139,7 +139,7 @@ test("mixed language is treated as Arabic context", () => {
 
   const contextMsg = messages[1];
   assert.equal(contextMsg.role, "user");
-  assert.match(contextMsg.content, /"chunkId":"chunk-1"/);
+  assert.match(contextMsg.content, /"chunkId":"E1"/);
 });
 
 test("mixed language insufficient evidence returns Arabic response", () => {

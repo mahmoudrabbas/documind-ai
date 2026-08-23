@@ -353,6 +353,9 @@ async function findDocumentByFuzzyHint(
   context: DocumentHintContext,
   hint: string,
 ): Promise<{ docs: HintCandidateDoc[]; ambiguous: boolean }> {
+  const hintForms = hintAliases(hint);
+  if (hintForms.length === 0) return { docs: [], ambiguous: false };
+
   const docs = await DocumentModel.find({
     tenantId: context.tenantObjectId,
     deletedAt: null,
@@ -371,7 +374,16 @@ async function findDocumentByFuzzyHint(
       doc.metadata?.title ?? "",
       ...(Array.isArray(doc.metadata?.aliases) ? doc.metadata!.aliases! : []),
     ].filter((s): s is string => Boolean(s && s.trim()));
-    const score = fuzzyScore(identifiers, hint);
+    // Score every hint form, not just the raw surface text. The extractor
+    // keeps the document wrapper that marked the reference ("mysql file"), and
+    // that trailing noise token halves token containment: "mysql" alone covers
+    // `MySQL_Lec1.pdf` completely, while "mysql file" covers it by half and
+    // lands under the threshold. The exact matcher already compares against
+    // these same unwrapped/extensionless forms, so the fuzzy fallback was the
+    // only path still judging the hint by its wrapper.
+    const score = Math.max(
+      ...hintForms.map((form) => fuzzyScore(identifiers, form)),
+    );
     if (score >= FUZZY_MATCH_THRESHOLD) {
       scored.push({ doc, score });
     }

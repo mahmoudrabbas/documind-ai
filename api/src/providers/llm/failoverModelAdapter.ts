@@ -99,8 +99,12 @@ interface CachedAvailability {
  * and the next provider in the chain is used instead.
  *
  * A completion failure classified as provider-unavailable or timeout marks the
- * provider down for the TTL window so subsequent requests skip it too. If every
- * provider fails, the last (mapped, controlled) error is rethrown.
+ * provider down for the TTL window so subsequent requests skip it too.
+ *
+ * Before giving up, providers that were skipped only because of a cached verdict
+ * are re-probed live and retried: the cache is there to order healthy providers,
+ * not to be the reason a request has no provider at all. If every provider still
+ * fails, the last (mapped, controlled) error is rethrown.
  */
 export class FailoverModelAdapter implements ModelAdapter {
   readonly providerKey: string;
@@ -144,11 +148,20 @@ export class FailoverModelAdapter implements ModelAdapter {
       "No LLM provider adapters available",
     );
 
+    // Providers skipped purely on the strength of a cached down verdict, in
+    // chain order. They are the last-resort pool below.
+    const cacheSkipped: ModelAdapter[] = [];
+
     for (const adapter of this.adapters) {
-      if (await this.isDowned(adapter, params.signal)) {
+      const verdict = await this.downCheck(adapter, params.signal);
+      if (verdict.downed) {
+        if (verdict.fromCache) {
+          cacheSkipped.push(adapter);
+        }
         logger.info({
           provider: adapter.providerKey,
           chain: this.providerKey,
+          fromCache: verdict.fromCache,
         }, "LLM provider skipped; availability probe reports provider down");
         lastError = new AppError(
           503,
@@ -158,75 +171,121 @@ export class FailoverModelAdapter implements ModelAdapter {
         continue;
       }
 
-      try {
-        const response = await adapter.complete(params);
-        this.recordAvailable(adapter.providerKey);
-        logger.info({
-          provider: adapter.providerKey,
-          chain: this.providerKey,
-        }, "LLM request succeeded");
-        return response;
-      } catch (error) {
-        // Honor caller cancellation: never fail over after the user aborted.
-        if (params.signal?.aborted) {
-          throw error;
-        }
-        const mapped = mapLlmProviderError(error);
-        lastError = mapped;
+      const attempt = await this.attemptProvider(adapter, params, false);
+      if (attempt.ok) return attempt.response;
+      lastError = attempt.error;
+    }
 
-        // Client-side request errors (4xx) and unexpected non-LLM errors are
-        // NOT provider outages: a rejected request or a contract-level failure
-        // must fail closed on this provider rather than burn the fallback.
-        if (!FAILOVER_CODES.has(mapped.code) || isClientRequestError(mapped)) {
-          logger.warn({
-            failedProvider: adapter.providerKey,
-            chain: this.providerKey,
-            errorCode: mapped.code,
-            statusCode: mapped.statusCode,
-            failedOver: false,
-          }, "LLM provider request error; not failing over");
-          throw mapped;
-        }
+    // Every provider is now either skipped or failed, so the caller is about to
+    // get a 503. A cached down verdict is an optimisation for choosing between
+    // live providers and must never be the sole reason the chain has no answer
+    // at all: the verdict can be a full TTL old, and a completion timeout
+    // records one for a provider that is merely slow rather than dead. Re-probe
+    // the cache-skipped providers for real and attempt any that answer.
+    for (const adapter of cacheSkipped) {
+      const verdict = await this.downCheck(adapter, params.signal, { ignoreCache: true });
+      if (verdict.downed) continue;
 
-        const marksDown = DOWNED_CODES.has(mapped.code);
-        if (marksDown) {
-          this.availabilityCache.set(adapter.providerKey, {
-            available: false,
-            reason: mapped.message,
-            checkedAt: Date.now(),
-          });
-        }
-        logger.warn({
-          failedProvider: adapter.providerKey,
-          chain: this.providerKey,
-          errorCode: mapped.code,
-          statusCode: mapped.statusCode,
-          markedDown: marksDown,
-          failedOver: true,
-        }, "LLM provider failed; falling back to next provider");
-      }
+      logger.info({
+        provider: adapter.providerKey,
+        chain: this.providerKey,
+      }, "LLM chain exhausted; retrying a cache-skipped provider that now probes healthy");
+      const attempt = await this.attemptProvider(adapter, params, true);
+      if (attempt.ok) return attempt.response;
+      lastError = attempt.error;
     }
 
     throw lastError;
   }
 
   /**
-   * Returns true when the provider is known to be down (fresh cache entry) or
-   * a live probe reports it unavailable. Plain ModelAdapters without a probe
-   * are never skipped here — they are always attempted.
+   * Runs one completion attempt against one provider, recording availability and
+   * classifying the failure. Returns the mapped error for failover-eligible
+   * failures; rethrows anything the chain must not fail over (caller
+   * cancellation, client 4xx, non-LLM errors).
    */
-  private async isDowned(
+  private async attemptProvider(
+    adapter: ModelAdapter,
+    params: ModelCompletionParams,
+    lastResort: boolean,
+  ): Promise<
+    | { ok: true; response: ModelCompletionResponse }
+    | { ok: false; error: AppError }
+  > {
+    try {
+      const response = await adapter.complete(params);
+      this.recordAvailable(adapter.providerKey);
+      logger.info({
+        provider: adapter.providerKey,
+        chain: this.providerKey,
+        ...(lastResort ? { lastResort: true } : {}),
+      }, "LLM request succeeded");
+      return { ok: true, response };
+    } catch (error) {
+      // Honor caller cancellation: never fail over after the user aborted.
+      if (params.signal?.aborted) {
+        throw error;
+      }
+      const mapped = mapLlmProviderError(error);
+
+      // Client-side request errors (4xx) and unexpected non-LLM errors are
+      // NOT provider outages: a rejected request or a contract-level failure
+      // must fail closed on this provider rather than burn the fallback.
+      if (!FAILOVER_CODES.has(mapped.code) || isClientRequestError(mapped)) {
+        logger.warn({
+          failedProvider: adapter.providerKey,
+          chain: this.providerKey,
+          errorCode: mapped.code,
+          statusCode: mapped.statusCode,
+          failedOver: false,
+        }, "LLM provider request error; not failing over");
+        throw mapped;
+      }
+
+      const marksDown = DOWNED_CODES.has(mapped.code);
+      if (marksDown) {
+        this.availabilityCache.set(adapter.providerKey, {
+          available: false,
+          reason: mapped.message,
+          checkedAt: Date.now(),
+        });
+      }
+      logger.warn({
+        failedProvider: adapter.providerKey,
+        chain: this.providerKey,
+        errorCode: mapped.code,
+        statusCode: mapped.statusCode,
+        markedDown: marksDown,
+        failedOver: true,
+        ...(lastResort ? { lastResort: true } : {}),
+      }, "LLM provider failed; falling back to next provider");
+      return { ok: false, error: mapped };
+    }
+  }
+
+  /**
+   * Reports whether the provider is down, and whether that verdict came from the
+   * cache or from a probe run just now. Plain ModelAdapters without a probe are
+   * never skipped here — they are always attempted.
+   *
+   * `ignoreCache` forces a live probe, for the last-resort pass that must not
+   * let a stale verdict stand between the caller and a working provider.
+   */
+  private async downCheck(
     adapter: ModelAdapter,
     signal?: AbortSignal,
-  ): Promise<boolean> {
+    options: { ignoreCache?: boolean } = {},
+  ): Promise<{ downed: boolean; fromCache: boolean }> {
     if (!this.probeEnabled || !isAvailabilityProbeAdapter(adapter)) {
-      return false;
+      return { downed: false, fromCache: false };
     }
 
-    const cached = this.availabilityCache.get(adapter.providerKey);
     const now = Date.now();
-    if (cached && now - cached.checkedAt < this.probeTtlMs) {
-      return !cached.available;
+    if (!options.ignoreCache) {
+      const cached = this.availabilityCache.get(adapter.providerKey);
+      if (cached && now - cached.checkedAt < this.probeTtlMs) {
+        return { downed: !cached.available, fromCache: true };
+      }
     }
 
     let result: AvailabilityProbeResult;
@@ -246,7 +305,7 @@ export class FailoverModelAdapter implements ModelAdapter {
       reason: result.reason,
       checkedAt: now,
     });
-    return !result.available;
+    return { downed: !result.available, fromCache: false };
   }
 
   private buildProbeSignal(signal?: AbortSignal): AbortSignal {

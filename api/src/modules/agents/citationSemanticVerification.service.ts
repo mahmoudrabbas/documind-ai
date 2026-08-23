@@ -14,7 +14,88 @@ export const MAX_SEMANTIC_CLAIM_LENGTH = 500;
 export const MAX_UNKNOWN_RETRIES = 1;
 const MAX_EVIDENCE_CHARS = 30_000;
 const MAX_CHUNK_CHARS = 4_000;
-const MAX_SEMANTIC_VERIFICATION_TOKENS = 2_000;
+/**
+ * Completion-token ceiling for one verification call, and why it is derived
+ * from the claim count instead of being a single constant.
+ *
+ * The configured verifier is a reasoning model (`openai.gpt-oss-120b-1:0` on
+ * both the ITI Bedrock gateway and Groq). Reasoning tokens are billed as
+ * completion tokens, so `max_tokens` bounds *thinking plus output*, not output.
+ * The visible envelope is small - roughly 33 tokens per judgment - but the
+ * reasoning that produces it scales with the number of claims being judged.
+ *
+ * Measured on the 13-claim summary of the indexed MySQL lecture deck, prompt
+ * 2218 tokens:
+ *
+ *   max_tokens=2000 -> completion_tokens=2000, content **null**, finish "stop"
+ *   max_tokens=4000 -> completion_tokens=3898, 1724 chars of valid JSON
+ *   max_tokens=8000 -> completion_tokens=5232, 1748 chars of valid JSON
+ *
+ * At a flat 2000 the model spent the entire allowance thinking and returned no
+ * content at all. That is not an error either provider reports as such: the
+ * gateway answers 200 with `content: null`, and Groq - asked for
+ * `response_format: json_object` - answers 400 `json_validate_failed` with an
+ * empty `failed_generation`. So the pass degraded every claim to UNKNOWN,
+ * `citation-verification-agent` returned UNRESOLVED_CLAIMS, and the compliance
+ * agent refused a correct, fully-grounded answer. Two- to four-claim answers
+ * fit their reasoning inside 2000 and verified normally, which is why only
+ * summaries failed.
+ *
+ * The ceiling therefore scales: a fixed base for the framing and the model's
+ * initial reasoning, plus a per-claim allowance covering both that claim's
+ * reasoning and its judgment.
+ *
+ * The base was later raised because the same failure recurred at the *small*
+ * end of the range on a heavier reasoner. `nvidia/nemotron-3-ultra-550b` was the
+ * configured NIM model then; the live two-claim answer to "what is MySQL?"
+ * (prompt 881 tokens, five cited chunks) was replayed against the real endpoint:
+ *
+ *   completion tokens over nine samples: 843, 925, 1009, 1086, 1118, 1134,
+ *                                        1650, 2141, 2558
+ *   at max_tokens=2000: two of four samples returned finish_reason "length"
+ *                       with 93 and 121 characters of JSON cut mid-token
+ *
+ * A 1200 base put the two-claim ceiling at exactly 2000, i.e. *inside* that
+ * spread, so whether a correct answer shipped depended on how long the model
+ * happened to think - the same intermittency the writer showed at 2048, in the
+ * same shape, one agent downstream. Unlike an empty completion, a truncated one
+ * leaves partial JSON: `parseProviderJudgments` cannot parse it, every claim in
+ * the batch degrades to UNKNOWN, `citation-verification-agent` returns
+ * UNRESOLVED_CLAIMS, and the compliance agent refuses a fully-cited answer.
+ *
+ * The default NIM model has since moved to the faster `nemotron-3-super-120b`,
+ * which was never observed to truncate; the ceilings stay sized for the heavier
+ * reasoner because the model is configuration, and a ceiling that only fits the
+ * lighter one would reintroduce the bug the moment it is pointed back.
+ *
+ * So the base clears the measured worst case rather than sitting in it, and a
+ * retry escalates instead of re-asking for the same doomed allowance: a pass
+ * that truncated has no better chance at an unchanged ceiling. The cap is
+ * unchanged, so claim counts already near it escalate little - they are also the
+ * counts with no observed truncation (a ten-claim summary verified in one pass).
+ */
+const MAX_SEMANTIC_VERIFICATION_TOKENS = 8_000;
+const SEMANTIC_VERIFICATION_BASE_TOKENS = 2_400;
+const SEMANTIC_VERIFICATION_TOKENS_PER_CLAIM = 400;
+/** Ceiling multiplier per retry, so a truncated pass is re-asked with room. */
+const SEMANTIC_VERIFICATION_RETRY_CEILING_FACTOR = 2;
+
+/**
+ * Completion-token ceiling for judging `claimCount` claims on `attempt`.
+ *
+ * Sized from the measurements above with headroom: two claims yields 3200
+ * against a measured worst case of 2558, and 13 claims yields 7600 against a
+ * measured need of 3898.
+ */
+function semanticCompletionTokenCeiling(claimCount: number, attempt = 0): number {
+  const sized =
+    SEMANTIC_VERIFICATION_BASE_TOKENS +
+    claimCount * SEMANTIC_VERIFICATION_TOKENS_PER_CLAIM;
+  return Math.min(
+    MAX_SEMANTIC_VERIFICATION_TOKENS,
+    sized * SEMANTIC_VERIFICATION_RETRY_CEILING_FACTOR ** Math.max(0, attempt),
+  );
+}
 const SEMANTIC_PROMPT_SAFETY_TOKENS = 32;
 const MIN_DIRECT_SUPPORT_SPAN_TOKENS = 3;
 /**
@@ -101,7 +182,7 @@ export interface CitationSemanticVerificationResult {
   readonly unsupportedClaims: readonly string[];
   readonly unknownClaims: readonly string[];
   readonly supportingEvidenceIds: readonly string[];
-  /** Present only after every factual claim in this exact text passed the final gate. */
+  /** Present only after every factual claim in this exact text passed verification. */
   readonly releasedAnswerText?: string;
   readonly releasedClaimCount: number;
   readonly retryCount: number;
@@ -227,11 +308,32 @@ function hasIndependentEnglishClause(text: string): boolean {
   return /^(?:the\s+)?[\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,8}\s+(?:is|are|was|were|has|have|had|must|may|can|will|shall|should|does|do|did|receives?|provides?|requires?|allows?|prohibits?|includes?|excludes?|works?|uses?|applies?|becomes?|remains?|starts?|ends?)\b/iu.test(text.trim());
 }
 
+/**
+ * A clause opening with one of these borrows its subject from the clause before
+ * it, so it is not a standalone claim: "…, and it is available as a free
+ * Community Server" states nothing verifiable once "MySQL is a relational
+ * database management system" is no longer in front of it.
+ */
+const ANAPHORIC_CLAUSE_OPENER =
+  /^(?:it|he|she|they|them|this|that|these|those|which|who|its|his|her|their)\b/iu;
+
+function startsWithAnaphor(text: string): boolean {
+  return ANAPHORIC_CLAUSE_OPENER.test(text.trim());
+}
+
 function splitAtomicClauses(text: string): string[] {
   const terminator = /[.!?؟]$/u.exec(text.trim())?.[0] ?? ".";
   const body = text.replace(/[.!?؟]\s*$/u, "").trim();
   const candidates = body.split(/\s*;\s*|\s*,\s*(?:and|but)\s+(?=(?:the\s+)?[\p{L}])/iu);
   if (candidates.length < 2 || candidates.some((candidate) => !hasIndependentEnglishClause(candidate))) {
+    return [text];
+  }
+  // Splitting an anaphoric clause away from its antecedent yields a claim the
+  // verifier cannot judge on its own, and - once the sibling clause is filtered
+  // out - released text that reads as a fragment ("it is available as both a free
+  // Community Server..."). Keep the sentence whole so it is judged, kept, or
+  // dropped as one unit.
+  if (candidates.slice(1).some(startsWithAnaphor)) {
     return [text];
   }
   return candidates.map((candidate) => `${normalizeClaimText(candidate).replace(/[.!?؟]$/u, "")}${terminator}`);
@@ -642,9 +744,26 @@ function mergeResponseUsage(responses: readonly ModelCompletionResponse[]): {
   };
 }
 
+/**
+ * Joins the claims cleared for release, in answer order.
+ *
+ * A claim opening with an anaphor is only readable while the claim it refers back
+ * to is still in front of it, and filtering can remove that antecedent - it was
+ * unsupported, or it was judged UNKNOWN. Such a claim is dropped along with its
+ * antecedent rather than shipped subjectless: releasing less is the safe
+ * direction, and the alternative is text the reader cannot resolve.
+ */
 function recomposeSupportedClaims(results: readonly SemanticClaimVerification[]): string {
+  const released = new Set<number>();
+  for (const [index, result] of results.entries()) {
+    if (result.state !== "SUPPORTED") continue;
+    if (index > 0 && startsWithAnaphor(result.text) && !released.has(index - 1)) {
+      continue;
+    }
+    released.add(index);
+  }
   return results
-    .filter((result) => result.state === "SUPPORTED")
+    .filter((result, index) => result.state === "SUPPORTED" && released.has(index))
     .map((result) => {
       const text = result.text.trim();
       return /[.!?؟]$/u.test(text) ? text : `${text}.`;
@@ -666,6 +785,7 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       thresholdComparisons: unknown[];
     },
     budget: SemanticTokenBudget,
+    attempt = 0,
   ): Promise<ModelCompletionResponse | null> {
     const messages = buildSemanticVerificationMessages({
       claims: input.claims.map((claim) => claim.text),
@@ -684,12 +804,20 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       return null;
     }
 
+    // Sized for the claims actually being judged in this call, so a retry pass
+    // over a smaller `pending` set asks for proportionally less - but escalated
+    // by the attempt index, because a pass that ran out of room needs more of it.
+    const completionCeiling = semanticCompletionTokenCeiling(
+      input.claims.length,
+      attempt,
+    );
+
     const availableCompletionTokens = finiteBudget
       ? budget.remainingTotalTokens - estimatedPromptTokens
-      : MAX_SEMANTIC_VERIFICATION_TOKENS;
+      : completionCeiling;
 
     const maxTokens = Math.min(
-      MAX_SEMANTIC_VERIFICATION_TOKENS,
+      completionCeiling,
       Math.max(0, Math.floor(availableCompletionTokens)),
     );
 
@@ -778,12 +906,48 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       const response = await this.completeClaims(
         { ...input, claims: pending },
         budget,
+        attempt,
       );
       if (!response) break;
 
       responses.push(response);
+      const rawContent = response.choices[0]?.message.content ?? "";
+      if (rawContent.trim() !== "" && response.choices[0]?.finishReason === "length") {
+        // Distinct from the empty-completion case below: the model reasoned its
+        // way to an answer and then ran out of room mid-JSON, so what arrives is
+        // syntactically broken rather than absent. Both degrade the batch to
+        // UNKNOWN, but only this one is fixed by a larger ceiling, so the two
+        // must be separable in the logs.
+        logger.warn(
+          {
+            stage: "semantic_verification",
+            claimCount: pending.length,
+            attempt,
+            completionTokens: response.usage.completionTokens,
+            contentChars: rawContent.length,
+            model: response.model,
+          },
+          "semantic verifier response truncated mid-output; batch degrades to UNKNOWN",
+        );
+      }
+      if (rawContent.trim() === "") {
+        // A reasoning model that spends its whole completion allowance thinking
+        // returns an empty message rather than an error, and every claim in the
+        // batch then degrades to UNKNOWN - which reads downstream as "the
+        // evidence does not support this answer" rather than "the verifier
+        // never answered". Log the distinction so the two are separable.
+        logger.warn(
+          {
+            stage: "semantic_verification",
+            claimCount: pending.length,
+            completionTokens: response.usage.completionTokens,
+            model: response.model,
+          },
+          "semantic verifier returned no content; batch degrades to UNKNOWN",
+        );
+      }
       const parsed = parseProviderJudgments(
-        response.choices[0]?.message.content ?? "",
+        rawContent,
         pending.length,
         evidenceIds,
       );
@@ -901,20 +1065,27 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
       budget,
     );
     const supported = initial.results.filter((result) => result.state === "SUPPORTED");
+    const initialAnswerFullySupported =
+      !prepared.diagnostics.overflowType &&
+      initial.complete &&
+      initial.results.length === prepared.factualClaims.length &&
+      initial.results.every((result, index) =>
+        result.state === "SUPPORTED" &&
+        result.text === prepared.factualClaims[index]?.text,
+      );
 
-    // Release gate. Only text that passed a verification pass in its exact final
-    // form is ever released, so a recomposed answer is always re-verified before
-    // it ships. When a pass rejects part of the candidate, drop those claims and
-    // re-verify what is left rather than discarding the answer outright: a single
-    // claim the verifier declines would otherwise suppress every other claim that
-    // did pass alongside it.
-    let candidate = initial.results.every((result) => result.state === "SUPPORTED")
+    // The initial pass already verifies the unchanged answer. Re-run the release
+    // gate only after filtering/recomposition changes the text that will ship.
+    // When a pass rejects part of the candidate, drop those claims and re-verify
+    // what is left rather than discarding the answer outright: a single claim the
+    // verifier declines would otherwise suppress every other verified claim.
+    let candidate = initialAnswerFullySupported
       ? input.answerText.trim()
       : recomposeSupportedClaims(initial.results);
     const releasePasses: VerificationPass[] = [];
-    let finalSupported = false;
+    let finalSupported = initialAnswerFullySupported;
 
-    while (candidate && releasePasses.length < MAX_RELEASE_GATE_PASSES) {
+    while (!finalSupported && candidate && releasePasses.length < MAX_RELEASE_GATE_PASSES) {
       const preparedCandidate = prepareSemanticClaims(candidate);
       if (preparedCandidate.factualClaims.length === 0) break;
       const pass = await this.verificationPassBounded(
@@ -943,7 +1114,9 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     }
 
     const finalPass = releasePasses.at(-1) ?? null;
-    const finalResults = finalPass?.results ?? [];
+    const finalResults = initialAnswerFullySupported
+      ? initial.results
+      : finalPass?.results ?? [];
     const allResponses = [...initial.responses, ...releasePasses.flatMap((pass) => pass.responses)];
     const usage = mergeResponseUsage(allResponses);
     const unsupportedClaims = initial.results
@@ -958,8 +1131,8 @@ export class CitationSemanticVerificationService implements CitationSemanticVeri
     const retryCount = initial.retryCount +
       releasePasses.reduce((total, pass) => total + pass.retryCount, 0);
     const complete = initial.complete &&
-      releasePasses.length > 0 &&
-      releasePasses.every((pass) => pass.complete);
+      (initialAnswerFullySupported ||
+        (releasePasses.length > 0 && releasePasses.every((pass) => pass.complete)));
 
     logger.info({
       stage: "semantic_verification",

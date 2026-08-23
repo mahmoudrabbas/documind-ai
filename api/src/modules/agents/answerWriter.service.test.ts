@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   AnswerWriterService,
+  buildEvidenceLabels,
   buildRagMessages,
   insufficientEvidenceMessage,
+  resolveCitedEvidenceIds,
+  stripEvidenceLabelReferences,
   type AnswerWriterEvidenceItem,
   type AnswerWriterServiceResult,
 } from "./answerWriter.service.js";
@@ -446,12 +449,15 @@ test("J: English evidence is delimited in a user-role data envelope with id and 
   const contextMsg = messages.find((m) => m.content.includes("RAG_REQUEST_DATA_START"));
   assert.ok(contextMsg, "English data message must be emitted");
   assert.equal(contextMsg.role, "user");
-  assert.match(contextMsg.content, /"chunkId":"chunk-a"/u);
+  assert.match(contextMsg.content, /"chunkId":"E1"/u);
   assert.match(contextMsg.content, /"documentId":"doc-a"/u);
   assert.match(contextMsg.content, /"documentTitle":"Company Handbook"/u);
   assert.match(contextMsg.content, /"sectionTitle":"Protected Values"/u);
   assert.match(contextMsg.content, /"pageNumber":3/u);
-  assert.match(contextMsg.content, /"chunkId":"chunk-b"/u);
+  assert.match(contextMsg.content, /"chunkId":"E2"/u);
+  // Raw chunk ids must not reach the generator at all: that is what let it
+  // mis-copy one sibling chunk's id for another's.
+  assert.doesNotMatch(contextMsg.content, /chunk-a|chunk-b/u);
 });
 
 test("K: Arabic evidence uses the same provider-neutral user-role data boundary", () => {
@@ -465,7 +471,7 @@ test("K: Arabic evidence uses the same provider-neutral user-role data boundary"
   const contextMsg = messages.find((m) => m.content.includes("RAG_REQUEST_DATA_START"));
   assert.ok(contextMsg, "Arabic data message must be emitted");
   assert.equal(contextMsg.role, "user");
-  assert.match(contextMsg.content, /"chunkId":"chunk-a"/u);
+  assert.match(contextMsg.content, /"chunkId":"E1"/u);
   assert.match(contextMsg.content, /"documentId":"doc-a"/u);
   assert.equal(messages.some((message) =>
     message.role === "system" && message.content.includes(SOURCES[0]?.text ?? ""),
@@ -530,7 +536,8 @@ test("L: threshold questions receive only bounded question-and-evidence comparis
   assert.match(derived.content, /"thresholdValue":25/);
   assert.match(derived.content, /"operator":"gt"/);
   assert.match(derived.content, /"satisfied":false/);
-  assert.match(derived.content, /"chunkId":"receipt-rule"/);
+  assert.match(derived.content, /"chunkId":"E1"/);
+  assert.doesNotMatch(derived.content, /receipt-rule/u);
   const controlled = messages.find((message) =>
     message.role === "system" && message.content.includes("thresholdComparisons"),
   );
@@ -579,8 +586,8 @@ test("K4: direct threshold instructions forbid cross-chunk probation equivalence
   const data = messages.find((message) => message.content.includes("RAG_REQUEST_DATA_START"));
   assert.ok(data);
   assert.equal(data.role, "user");
-  assert.match(data.content, /"chunkId":"remote-eligibility"/u);
-  assert.doesNotMatch(data.content, /related-hr-policy/u);
+  assert.match(data.content, /"chunkId":"E1"/u);
+  assert.doesNotMatch(data.content, /"documentId":"hr-policy"/u);
   assert.match(data.content, /"questionValue":30/u);
   assert.match(data.content, /"thresholdValue":90/u);
   assert.match(data.content, /"satisfied":false/u);
@@ -1010,12 +1017,18 @@ function ragEnvelope(question: string, sources: ChatSource[] = REMOTE_POLICY_SEC
   assert.ok(system);
   assert.ok(data);
   const payload = JSON.parse(data.content.split("\n")[1] ?? "{}") as {
-    authorizedEvidence: Array<{ chunkId: string }>;
+    authorizedEvidence: Array<{
+      chunkId: string;
+      documentId: string;
+      sectionTitle?: string;
+    }>;
     thresholdComparisons: Array<{ chunkId: string; conditions: Array<Record<string, unknown>> }>;
   };
   return {
     system: system.content,
-    chunkIds: payload.authorizedEvidence.map((item) => item.chunkId),
+    labels: payload.authorizedEvidence.map((item) => item.chunkId),
+    sectionTitles: payload.authorizedEvidence.map((item) => item.sectionTitle),
+    documentIds: payload.authorizedEvidence.map((item) => item.documentId),
     conditions: payload.thresholdComparisons.flatMap((row) => row.conditions),
   };
 }
@@ -1038,13 +1051,36 @@ test("M1: every eligibility phrasing keeps all authorized policy sections in the
   ];
 
   for (const question of questions) {
-    const { chunkIds } = ragEnvelope(question);
+    const { labels, sectionTitles } = ragEnvelope(question);
     assert.deepEqual(
-      chunkIds,
-      ["eligibility", "schedule", "core-hours"],
+      sectionTitles,
+      ["Eligibility", "Schedule", "Core hours"],
       `qualifiers dropped from the envelope for: ${question}`,
     );
+    assert.deepEqual(labels, ["E1", "E2", "E3"], question);
   }
+});
+
+test("J2: writer context is bounded to the highest-ranked ten evidence items", () => {
+  const sources = Array.from({ length: 11 }, (_, index) => ({
+    chunkId: `chunk-${index + 1}`,
+    documentId: "doc-a",
+    documentTitle: "Company Handbook",
+    text: `Evidence item ${index + 1}`,
+    pageNumber: index + 1,
+    score: 1 - index / 20,
+  }));
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    sources,
+    userMessage: "Summarize the evidence.",
+    task: "document_summary",
+  });
+  const contextMsg = messages.find((m) => m.content.includes("RAG_REQUEST_DATA_START"));
+  assert.ok(contextMsg);
+  assert.match(contextMsg.content, /"chunkId":"E10"/u);
+  assert.doesNotMatch(contextMsg.content, /Evidence item 11/u);
+  assert.doesNotMatch(contextMsg.content, /"chunkId":"E11"/u);
 });
 
 test("M2: derived comparisons never pair a weekly allowance with a tenure minimum", () => {
@@ -1119,14 +1155,232 @@ test("M4: a failed tenure threshold narrows by document, keeping the governing p
     text: "New employees complete a probation period before confirmation.",
     score: 0.5,
   };
-  const { chunkIds } = ragEnvelope(
+  const { sectionTitles, documentIds } = ragEnvelope(
     "I have worked here for 30 days. Can I work remotely two days per week?",
     [...REMOTE_POLICY_SECTIONS, unrelated],
   );
 
   // The unrelated document is still excluded, as it was before...
-  assert.ok(!chunkIds.includes("unrelated-hr"));
+  assert.ok(!documentIds.includes("hr-policy"));
   // ...but the approval requirement and the weekly limit live in sibling
   // sections of the governing document and must survive.
-  assert.deepEqual(chunkIds, ["eligibility", "schedule", "core-hours"]);
+  assert.deepEqual(sectionTitles, ["Eligibility", "Schedule", "Core hours"]);
+});
+
+// ── N: evidence labels, not raw chunk ids ───────────────────────────────────
+//
+// Live failure this pins: a two-chunk CV whose page-1 chunk listed programming
+// languages and whose page-2 chunk listed spoken languages. Their ObjectIds
+// differed only in the final character. The writer answered correctly from page
+// 2 and cited page 1; the verifier read page 1, found no support, and the whole
+// answer was refused as UNVERIFIED_GROUNDED_RESPONSE.
+
+const SIBLING_EVIDENCE: AnswerWriterEvidenceItem[] = [
+  {
+    chunkId: "6a892a29f7bf4eb62bf85170",
+    documentId: "6a892a1b78ad12f92586f6b4",
+    pageNumber: 1,
+    text: "SKILLS Languages: PHP, JavaScript, TypeScript, Python, SQL",
+  },
+  {
+    chunkId: "6a892a29f7bf4eb62bf85171",
+    documentId: "6a892a1b78ad12f92586f6b4",
+    pageNumber: 2,
+    text: "LANGUAGES Arabic :native | English",
+  },
+];
+
+test("N1: sibling chunk ids never reach the generator", () => {
+  const messages = buildRagMessages({
+    citationsEnabled: true,
+    sources: SIBLING_EVIDENCE.map((item) => ({
+      chunkId: item.chunkId,
+      documentId: item.documentId,
+      text: item.text,
+      pageNumber: item.pageNumber,
+      score: 0,
+      documentTitle: "CV",
+    })),
+    userMessage: "What language does the candidate speak?",
+  });
+  const data = messages.find((message) => message.content.includes("RAG_REQUEST_DATA_START"));
+  assert.ok(data);
+  for (const item of SIBLING_EVIDENCE) {
+    assert.doesNotMatch(data.content, new RegExp(item.chunkId, "u"));
+  }
+  assert.match(data.content, /"chunkId":"E1"/u);
+  assert.match(data.content, /"chunkId":"E2"/u);
+});
+
+test("N2: a cited label resolves to that exact chunk, not its sibling", () => {
+  const labels = buildEvidenceLabels(SIBLING_EVIDENCE);
+  assert.deepEqual(labels.map((entry) => entry.label), ["E1", "E2"]);
+
+  assert.deepEqual(
+    resolveCitedEvidenceIds(["E2"], SIBLING_EVIDENCE),
+    ["6a892a29f7bf4eb62bf85171"],
+  );
+  // Case-insensitive, de-duplicated, and order-preserving.
+  assert.deepEqual(
+    resolveCitedEvidenceIds(["e2", "E1", "E2"], SIBLING_EVIDENCE),
+    ["6a892a29f7bf4eb62bf85171", "6a892a29f7bf4eb62bf85170"],
+  );
+  // Real ids stay acceptable so programmatic callers keep working.
+  assert.deepEqual(
+    resolveCitedEvidenceIds(["6a892a29f7bf4eb62bf85170"], SIBLING_EVIDENCE),
+    ["6a892a29f7bf4eb62bf85170"],
+  );
+  // Anything else is dropped rather than passed through unresolved.
+  assert.deepEqual(resolveCitedEvidenceIds(["E9", "", "nope"], SIBLING_EVIDENCE), []);
+});
+
+test("N3: a labelled citation is returned as the real chunk id", async () => {
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "The candidate speaks Arabic (native) and English.",
+    citedChunkIds: ["E2"],
+  }));
+  const result = await service.generate(generateArgs({
+    task: "direct_question",
+    question: "What language does the candidate speak?",
+    evidence: SIBLING_EVIDENCE,
+  }));
+
+  assert.ok(result.outcome === "usable");
+  if (result.outcome === "usable") {
+    assert.equal(result.decision, "grounded_answer");
+    assert.deepEqual(result.citedChunkIds, ["6a892a29f7bf4eb62bf85171"]);
+  }
+});
+
+test("N4: an unresolvable citation downgrades the decision instead of releasing it", async () => {
+  const { service } = makeService(JSON.stringify({
+    decision: "grounded_answer",
+    answer: "The candidate speaks Arabic (native) and English.",
+    citedChunkIds: ["E7"],
+  }));
+  const result = await service.generate(generateArgs({
+    task: "direct_question",
+    question: "What language does the candidate speak?",
+    evidence: SIBLING_EVIDENCE,
+  }));
+
+  assert.ok(result.outcome === "usable");
+  if (result.outcome === "usable") {
+    assert.equal(result.parsedDecision, "grounded_answer");
+    assert.equal(result.decision, "insufficient_evidence");
+    assert.deepEqual(result.citedChunkIds, []);
+  }
+});
+
+test("N5: the writer is told to cite the item containing the fact and not to weld ungrounded clauses", () => {
+  for (const language of ["en", "ar"] as const) {
+    const [system] = buildRagMessages({
+      citationsEnabled: true,
+      sources: [],
+      userMessage: "What language does the candidate speak?",
+      language,
+    });
+    assert.ok(system);
+    if (language === "en") {
+      assert.match(system.content, /cite the evidence item whose text actually contains that fact/u);
+      assert.match(system.content, /a partly grounded sentence is not grounded/u);
+    } else {
+      assert.match(system.content, /[\u0600-\u06FF]/u);
+      assert.match(system.content, /insufficient_evidence/u);
+    }
+  }
+});
+
+// ── P: internal evidence labels never reach the reader ───────────────────────
+
+test("P1: a trailing label group is removed without leaving a doubled sentence terminator", () => {
+  // Observed verbatim in production on the primary provider, which had the full
+  // ten-item evidence bundle and so was issued labels up to E10.
+  const tenSources = Array.from({ length: 10 }, (_, index) => ({
+    chunkId: "chunk-" + (index + 1),
+  }));
+  const answer = stripEvidenceLabelReferences(
+    "MySQL had its first internal release on 23 May 1995. (E8).",
+    tenSources,
+  );
+
+  assert.equal(answer, "MySQL had its first internal release on 23 May 1995.");
+});
+
+test("P2: a mid-sentence label group is removed without collapsing the surrounding words", () => {
+  assert.equal(
+    stripEvidenceLabelReferences("The client supports queries (E1) and views (E2).", SOURCES),
+    "The client supports queries and views.",
+  );
+  assert.equal(
+    stripEvidenceLabelReferences("Drills run every Q1 [E1].", SOURCES),
+    "Drills run every Q1.",
+  );
+  assert.equal(
+    stripEvidenceLabelReferences("Two rules apply (E1, E2), both mandatory.", SOURCES),
+    "Two rules apply, both mandatory.",
+  );
+});
+
+test("P3: only labels issued for this request are stripped, so document prose survives", () => {
+  // Two sources were supplied, so E1 and E2 are the only issued labels. A model
+  // that invents E9 is a provenance bug for resolveCitedEvidenceIds to fail
+  // closed on, not text for this function to silently tidy away — and a group
+  // mixing an issued label with an unissued one is left intact for the same
+  // reason.
+  const invented = "Section E9 covers escalation (E9).";
+  assert.equal(stripEvidenceLabelReferences(invented, SOURCES), invented);
+
+  const mixed = "Both rules apply (E1, E9).";
+  assert.equal(stripEvidenceLabelReferences(mixed, SOURCES), mixed);
+
+  // Prose with no bracket around the token is never touched.
+  const prose = "The E1 connector pin is documented separately.";
+  assert.equal(stripEvidenceLabelReferences(prose, SOURCES), prose);
+});
+
+test("P4: text without labels is returned byte-identical", () => {
+  const answer = "Incident command must publish a public status page within 30 minutes.";
+  assert.equal(stripEvidenceLabelReferences(answer, SOURCES), answer);
+  assert.equal(stripEvidenceLabelReferences("", SOURCES), "");
+  // No sources means no issued labels, so nothing can be attributed or stripped.
+  assert.equal(stripEvidenceLabelReferences("Answer (E1).", []), "Answer (E1).");
+});
+
+test("P5: generate() strips labels the model emitted before the answer is released", async () => {
+  const { service } = makeService(
+    JSON.stringify({
+      decision: "grounded_answer",
+      answer: "CivicOps runs an annual flood-response drill every Q1. (E1)",
+      citedChunkIds: ["E1"],
+    }),
+  );
+
+  const result = await service.generate(generateArgs());
+
+  assert.ok(result.outcome === "usable");
+  if (result.outcome === "usable") {
+    assert.equal(result.answer, "CivicOps runs an annual flood-response drill every Q1.");
+    assert.equal(result.decision, "grounded_answer");
+    // The provenance survives where it belongs: resolved onto the real chunk.
+    assert.deepEqual(result.citedChunkIds, [CHUNK_A]);
+  }
+});
+
+test("P6: the writer is told the chunk IDs are internal and must stay out of the answer", () => {
+  for (const language of ["en", "ar"] as const) {
+    const [system] = buildRagMessages({
+      citationsEnabled: true,
+      sources: SOURCES,
+      userMessage: "When was the first internal release?",
+      language,
+    });
+    assert.ok(system);
+    if (language === "en") {
+      assert.match(system.content, /never write them inside the answer value/u);
+    } else {
+      assert.match(system.content, /مُعرِّفات داخلية/u);
+    }
+  }
 });

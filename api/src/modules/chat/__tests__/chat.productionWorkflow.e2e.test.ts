@@ -1745,13 +1745,21 @@ test(
     assert.equal(response.answer, answer);
     assert.equal(response.answer.includes("ADMIN APPROVED"), false);
     assert.deepEqual(response.sources?.map((source) => source.chunkId), [evidence.chunkId]);
-    const boundaryCalls = model.calls.filter((call) =>
-      call.messages.some((message) =>
-        message.content.includes("RAG_REQUEST_DATA_START") ||
-        message.content.includes("SEMANTIC_VERIFICATION_DATA_START"),
-      ),
-    );
-    assert.equal(boundaryCalls.length, 3);
+    const callsContaining = (marker: string) =>
+      model.calls.filter((call) =>
+        call.messages.some((message) => message.content.includes(marker)),
+      );
+    const writerCalls = callsContaining("RAG_REQUEST_DATA_START");
+    const verificationCalls = callsContaining("SEMANTIC_VERIFICATION_DATA_START");
+    const boundaryCalls = [...writerCalls, ...verificationCalls];
+
+    // One answer-writer call, and one semantic-verification pass. The release
+    // gate only re-runs when filtering or recomposition changes the text that
+    // will ship; here every claim was supported and the answer goes out exactly
+    // as the initial pass verified it, so a second pass would re-verify
+    // byte-identical text.
+    assert.equal(writerCalls.length, 1);
+    assert.equal(verificationCalls.length, 1);
     for (const call of boundaryCalls) {
       assert.equal(call.messages.some((message) =>
         message.role === "system" && message.content.includes(maliciousInstruction),
@@ -2825,7 +2833,7 @@ test(
       );
       assert.ok(writerCall, item.question);
       const writerData = parseDelimitedModelData<{
-        authorizedEvidence: Array<{ chunkId: string }>;
+        authorizedEvidence: Array<{ chunkId: string; documentId: string }>;
         thresholdComparisons: Array<{ satisfied: boolean }>;
       }>(
         writerCall.messages.at(-1)?.content ?? "",
@@ -2833,9 +2841,11 @@ test(
         "RAG_REQUEST_DATA_END",
       );
       if (!item.satisfied) {
+        // The envelope identifies evidence by label (E1, E2, …), so assert on the
+        // document each surviving item came from instead of its chunk id.
         assert.deepEqual(
-          writerData.authorizedEvidence.map((item) => item.chunkId),
-          [evidence.chunkId],
+          writerData.authorizedEvidence.map((entry) => entry.documentId),
+          [evidence.documentId],
           "a failed employment threshold must exclude the related probation chunk",
         );
       }

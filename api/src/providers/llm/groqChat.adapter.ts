@@ -127,11 +127,12 @@ export class GroqChatAdapter implements AvailabilityProbeModelAdapter {
       requestParams.top_p = params.topP;
     }
 
-    // Map the provider-neutral structured-output request to Groq's native
-    // OpenAI-compatible JSON mode. JSON mode guarantees a syntactically valid
-    // JSON object, so the model cannot emit literal control characters inside
-    // string values. Server-side strict parsing/validation still applies.
-    if (params.structuredOutput?.type === "json_object") {
+    // Groq's GPT-OSS endpoint can reject otherwise valid verification prompts
+    // with `json_validate_failed` when native JSON mode is enabled. The prompt
+    // still requires JSON and callers still apply strict server-side parsing.
+    // Other Groq models retain native JSON mode.
+    const isGptOss = this.model.toLowerCase().includes("gpt-oss");
+    if (params.structuredOutput?.type === "json_object" && !isGptOss) {
       requestParams.response_format = { type: "json_object" };
     }
 

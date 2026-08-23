@@ -12,6 +12,7 @@ import type {
 } from "../../permissions/permissions.types.js";
 import {
   buildAuthorizedSearchQueryText,
+  CHAT_DIRECT_RETRIEVAL_TOP_K,
   ChatWorkflowService,
   type ChatWorkflowRepository,
   type ChatWorkflowServiceDependencies,
@@ -1286,7 +1287,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     expect(writer?.payload.approvedEvidenceIds).toEqual([chunkB]);
   });
 
-  it("projects trusted direct-question settings without conversation content", async () => {
+  it("floors an undersized direct-question completion budget without conversation content", async () => {
     const harness = makeHarness();
     vi.mocked(harness.dependencies.loadSettings).mockResolvedValueOnce({
       citationsEnabled: false,
@@ -1297,9 +1298,20 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     expect(writer?.payload).toMatchObject({
       task: "direct_question",
       citationsEnabled: false,
-      maxTokens: 1536,
+      maxTokens: 3072,
     });
     expect(writer?.payload).not.toHaveProperty("historyFromDb");
+  });
+
+  it("honors a configured direct-question completion budget above the reasoning floor", async () => {
+    const harness = makeHarness();
+    vi.mocked(harness.dependencies.loadSettings).mockResolvedValueOnce({
+      citationsEnabled: true,
+      maxTokens: 4096,
+    });
+    await executeHarness(harness);
+    const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
+    expect(writer?.payload.maxTokens).toBe(4096);
   });
 
   it("uses summary retrieval/generation settings for summary questions", async () => {
@@ -1311,7 +1323,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
     expect(writer?.payload).toMatchObject({
       task: "document_summary",
-      maxTokens: 2048,
+      maxTokens: 6144,
     });
   });
 
@@ -1359,7 +1371,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
       input: {
         queryText: "trusted normalized question",
         queryVariants: ["trusted semantic query"],
-        topK: 5,
+        topK: CHAT_DIRECT_RETRIEVAL_TOP_K,
       },
     });
   });
@@ -1379,7 +1391,7 @@ describe("ChatWorkflowService trusted projections and provenance", () => {
     expect(harness.observations.tools[0].input).toEqual({
       queryText: "trusted normalized question",
       queryVariants: ["trusted semantic query"],
-      topK: 5,
+      topK: CHAT_DIRECT_RETRIEVAL_TOP_K,
       documentIds: [documentA],
     });
   });
@@ -1711,7 +1723,7 @@ describe("ChatWorkflowService terminal authority and persistence", () => {
     const response = await executeHarness(harness);
     expect(response.sources).toHaveLength(2);
     const writer = harness.observations.handoffs.find((entry) => entry.agent === "answer-writer-agent");
-    expect(writer?.payload.maxTokens).toBe(1024);
+    expect(writer?.payload.maxTokens).toBe(3072);
   });
 
   it("never releases an unverified grounded answer", async () => {
@@ -1918,7 +1930,7 @@ describe("ChatWorkflowService controlled short paths", () => {
     expect(writer?.payload).toMatchObject({
       task: "document_summary",
       language: "ar",
-      maxTokens: 2048,
+      maxTokens: 6144,
     });
   });
 
@@ -1959,7 +1971,7 @@ describe("ChatWorkflowService controlled short paths", () => {
       input: {
         queryText: "trusted normalized question",
         queryVariants: ["trusted semantic query"],
-        topK: 5,
+        topK: CHAT_DIRECT_RETRIEVAL_TOP_K,
         documentIds: [documentA],
       },
     });

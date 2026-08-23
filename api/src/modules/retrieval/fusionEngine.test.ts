@@ -236,4 +236,98 @@ describe("FusionEngine", () => {
     assert.equal(candidates[0]!.scoreBreakdown!.keywordScore, 0.95);
     assert.equal(candidates[0]!.scoreBreakdown!.vectorScore, undefined);
   });
+
+  /**
+   * Regression: relevanceScore is consumed by the reranker as a 0..1 *semantic*
+   * signal and carries 70% of an evidence item's total score. The two legs do
+   * not share a scale - Atlas `vectorSearchScore` is a similarity already
+   * inside 0..1, while Atlas Search `searchScore` is BM25-style and unbounded
+   * (2.98 at the top of the real lecture-deck query these cases are drawn
+   * from). Clamping both with `min(1, score)` saturated every keyword hit above
+   * 1 onto exactly 1.0, and a chunk the vector leg had measured then received
+   * its honest fractional cosine and ranked *below* those ties.
+   */
+  it("an unbounded keyword leg is scaled, not saturated at 1.0", () => {
+    const engine = new FusionEngine();
+
+    const results = new Map<RetrievalMethod, { chunkId: string; score: number }[]>([
+      // Real BM25 magnitudes: every one of these exceeds 1.
+      [
+        "keyword",
+        [
+          { chunkId: "kw-top", score: 2.98 },
+          { chunkId: "kw-second", score: 2.88 },
+          { chunkId: "kw-third", score: 2.05 },
+        ],
+      ],
+      ["vector", [{ chunkId: "measured", score: 0.84 }]],
+    ]);
+
+    const candidates = engine.fuse(results);
+    const rel = (chunkId: string) =>
+      candidates.find((c) => c.chunkId === chunkId)!.scoreBreakdown!
+        .relevanceScore!;
+
+    // No tie at a perfect relevance, and the keyword leg keeps its own order.
+    assert.ok(rel("kw-top") < 1, "top keyword hit must not saturate at 1.0");
+    assert.ok(rel("kw-top") > rel("kw-second"));
+    assert.ok(rel("kw-second") > rel("kw-third"));
+  });
+
+  it("a keyword-only hit does not outrank a chunk whose similarity was measured", () => {
+    const engine = new FusionEngine();
+
+    const results = new Map<RetrievalMethod, { chunkId: string; score: number }[]>([
+      // "install" is the page that answers the question: found by the vector
+      // leg with a strong similarity, but absent from the keyword leg because
+      // its text says `apt-get install mariadb-server` and never repeats the
+      // question's own words.
+      [
+        "vector",
+        [
+          { chunkId: "install", score: 0.84 },
+          { chunkId: "other", score: 0.8 },
+        ],
+      ],
+      // "cv" is an unrelated document that merely mentions the query term. Its
+      // BM25 score is the highest in its leg, and it has no measured
+      // similarity at all.
+      ["keyword", [{ chunkId: "cv", score: 2.98 }]],
+    ]);
+
+    const candidates = engine.fuse(results);
+    const rel = (chunkId: string) =>
+      candidates.find((c) => c.chunkId === chunkId)!.scoreBreakdown!
+        .relevanceScore!;
+
+    // The regression this pins: "cv" was promoted to relevance 1.0 and ranked
+    // first, pushing "install" out of the answer writer's usable window.
+    assert.ok(
+      rel("install") > rel("cv"),
+      "a measured similarity must outrank an unmeasured term match",
+    );
+    // Bounded by the weakest measured similarity, so it stays a candidate.
+    assert.ok(rel("cv") > 0, "the keyword-only hit is still retrievable");
+    assert.ok(rel("cv") <= rel("other"));
+  });
+
+  it("a vector leg already inside 0..1 is left on its own scale", () => {
+    const engine = new FusionEngine();
+
+    const results = new Map<RetrievalMethod, { chunkId: string; score: number }[]>([
+      ["vector", [{ chunkId: "weak-a", score: 0.31 }]],
+      ["keyword", [{ chunkId: "weak-b", score: 0.22 }]],
+    ]);
+
+    const candidates = engine.fuse(results);
+    const rel = (chunkId: string) =>
+      candidates.find((c) => c.chunkId === chunkId)!.scoreBreakdown!
+        .relevanceScore!;
+
+    // Rescaling a bounded leg to its own maximum would report a perfect 1.0
+    // for the best of a uniformly poor result set and defeat the evidence gate,
+    // which has to be able to conclude that nothing retrieved was relevant.
+    assert.equal(rel("weak-a"), 0.31);
+    assert.equal(rel("weak-b"), 0.22);
+  });
 });

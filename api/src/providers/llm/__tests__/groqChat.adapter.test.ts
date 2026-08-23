@@ -61,6 +61,23 @@ test("structuredOutput json_object maps to native Groq response_format json_obje
   assert.equal(params.max_tokens, 512);
 });
 
+test("GPT-OSS omits native Groq JSON mode while retaining the strict JSON prompt", () => {
+  const adapter = new GroqChatAdapter("test-key", "openai/gpt-oss-120b");
+
+  const params = adapter.buildRequestParams({
+    messages: [
+      { role: "system", content: "Return JSON ONLY with the exact required keys." },
+      { role: "user", content: "Verify these claims." },
+    ],
+    temperature: 0,
+    maxTokens: 2_800,
+    structuredOutput: { type: "json_object" },
+  });
+
+  assert.equal(params.response_format, undefined);
+  assert.equal(params.messages[0]?.content, "Return JSON ONLY with the exact required keys.");
+});
+
 test("no structuredOutput leaves the provider request free-form (backward compatible)", () => {
   const adapter = new GroqChatAdapter("test-key", "llama-3.3-70b-versatile");
 

@@ -6,6 +6,7 @@ import { FallbackModelAdapter } from "./fallbackAdapter.js";
 import { FailoverModelAdapter } from "./failoverModelAdapter.js";
 import { GroqChatAdapter } from "./groqChat.adapter.js";
 import { ItiBedrockChatAdapter } from "./itiBedrockAdapter.js";
+import { NvidiaNimChatAdapter } from "./nvidiaNimChat.adapter.js";
 import { createStudentBedrockProvider } from "../bedrock/index.js";
 import { logger } from "../../common/logger/logger.js";
 import {
@@ -15,7 +16,12 @@ import {
 
 let singleton: ModelAdapter | null = null;
 
-const SUPPORTED_PROVIDERS = ["groq", "iti-bedrock", "student-bedrock"] as const;
+const SUPPORTED_PROVIDERS = [
+  "groq",
+  "iti-bedrock",
+  "nvidia-nim",
+  "student-bedrock",
+] as const;
 type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 function isSupportedProvider(value: string): value is SupportedProvider {
@@ -90,6 +96,25 @@ function buildSupportedProvider(
         retryDelayMs: parseInt(process.env.BEDROCK_RETRY_DELAY_MS || "500", 10),
       });
     }
+    case "nvidia-nim": {
+      const apiKey = process.env.NVIDIA_API_KEY;
+      if (!apiKey || apiKey.trim() === "") {
+        throw new AppError(
+          503,
+          LLM_PROVIDER_UNAVAILABLE,
+          'LLM provider "nvidia-nim" requires NVIDIA_API_KEY.',
+        );
+      }
+      return new NvidiaNimChatAdapter({
+        apiKey,
+        baseUrl: process.env.NVIDIA_BASE_URL,
+        model:
+          resolveConfiguredChatModel("nvidia-nim", config) ||
+          process.env.NVIDIA_CHAT_MODEL,
+        timeoutMs: Number.parseInt(process.env.NVIDIA_TIMEOUT_MS || "120000", 10),
+        reasoningEffort: process.env.NVIDIA_REASONING_EFFORT,
+      });
+    }
     case "student-bedrock": {
       return createStudentBedrockProvider();
     }
@@ -124,7 +149,9 @@ export async function getModelAdapterAsync(): Promise<ModelAdapter> {
  * Routing strategy 1 — explicit env-driven routing (default when
  * LLM_PRIMARY_PROVIDER is set):
  *   LLM_PRIMARY_PROVIDER   (required)  first provider, e.g. groq | iti-bedrock | student-bedrock
- *   LLM_FALLBACK_PROVIDER  (optional)  failover provider; must differ from primary
+ *   LLM_FALLBACK_PROVIDERS (optional)  ordered comma-separated failovers
+ *   LLM_FALLBACK_PROVIDER  (optional)  legacy single failover, used only when
+ *                                      LLM_FALLBACK_PROVIDERS is empty
  *   → FailoverModelAdapter (proactive availability probing, skips downed
  *     providers). A single configured provider is returned unwrapped.
  *
@@ -174,28 +201,59 @@ function buildEnvDrivenChain(primaryProvider: string, config = getEffectiveAiRun
     );
   }
 
-  const fallbackRaw = process.env.LLM_FALLBACK_PROVIDER?.trim().toLowerCase();
-  const fallbackKey =
-    fallbackRaw && fallbackRaw !== "none" ? fallbackRaw : undefined;
-  if (fallbackKey && !isSupportedProvider(fallbackKey)) {
+  const orderedFallbackRaw = process.env.LLM_FALLBACK_PROVIDERS
+    ?.trim()
+    .toLowerCase();
+  const legacyFallbackRaw = process.env.LLM_FALLBACK_PROVIDER
+    ?.trim()
+    .toLowerCase();
+  const fallbackValues = orderedFallbackRaw
+    ? orderedFallbackRaw.split(",").map((value) => value.trim()).filter(Boolean)
+    : legacyFallbackRaw
+      ? [legacyFallbackRaw]
+      : [];
+  const fallbackKeys = fallbackValues.length === 1 && fallbackValues[0] === "none"
+    ? []
+    : fallbackValues;
+
+  if (fallbackKeys.includes("none")) {
     throw new AppError(
       503,
       LLM_PROVIDER_UNAVAILABLE,
-      `Unknown LLM_FALLBACK_PROVIDER "${fallbackKey}". Supported values: ${SUPPORTED_PROVIDERS.join(", ")}, none.`,
+      "LLM_FALLBACK_PROVIDERS may use none only as its sole value.",
     );
   }
-  if (fallbackKey === primaryProvider) {
-    throw new AppError(
-      503,
-      LLM_PROVIDER_UNAVAILABLE,
-      "LLM_FALLBACK_PROVIDER must differ from LLM_PRIMARY_PROVIDER.",
-    );
+
+  for (const fallbackKey of fallbackKeys) {
+    if (!isSupportedProvider(fallbackKey)) {
+      const variable = orderedFallbackRaw
+        ? "LLM_FALLBACK_PROVIDERS"
+        : "LLM_FALLBACK_PROVIDER";
+      throw new AppError(
+        503,
+        LLM_PROVIDER_UNAVAILABLE,
+        `Unknown ${variable} provider "${fallbackKey}". Supported values: ${SUPPORTED_PROVIDERS.join(", ")}, none.`,
+      );
+    }
+  }
+
+  const providerOrder = [primaryProvider, ...fallbackKeys];
+  const seenProviders = new Set<string>();
+  for (const provider of providerOrder) {
+    if (seenProviders.has(provider)) {
+      throw new AppError(
+        503,
+        LLM_PROVIDER_UNAVAILABLE,
+        `LLM provider "${provider}" is duplicated; fallback providers must differ from the primary and from each other.`,
+      );
+    }
+    seenProviders.add(provider);
   }
 
   const providers: ModelAdapter[] = [];
   let configError: unknown;
 
-  for (const key of [primaryProvider, ...(fallbackKey ? [fallbackKey] : [])]) {
+  for (const key of providerOrder) {
     try {
       providers.push(buildSupportedProvider(key as SupportedProvider, config));
     } catch (error) {

@@ -663,6 +663,49 @@ test("fuzzy title hints never resolve unauthorized documents", async () => {
   assert.deepEqual(result.unresolvedTitleHints, ["employee handbook"]);
 });
 
+test("a document wrapper in the hint does not defeat fuzzy resolution", async () => {
+  // The regression: asking to summarize "mysql file" refused with
+  // CLARIFICATION_REQUIRED even though MySQL_Lec1.pdf was authorized and
+  // indexed. The extractor keeps the wrapper word that marked the reference,
+  // and scoring "mysql file" against the filename halved token containment
+  // (1 of 2 hint tokens) to below the fuzzy threshold, so the hint came back
+  // unresolved and forced a clarification.
+  const doc = await createDoc({
+    tenantId,
+    ownerId: actorId,
+    fileName: "MySQL_Lec1.pdf",
+    title: "sql",
+  });
+  await createDoc({ tenantId, ownerId: actorId, fileName: "resume.pdf", title: "mycv" });
+
+  const hints = extractNaturalDocumentTitleHints("summarize mysql file");
+  assert.deepEqual(hints, ["mysql file"]);
+
+  const result = await resolveAuthorizedDocumentHints([], hintContext(), hints);
+
+  assert.deepEqual(result.referencedDocumentIds, [doc.id]);
+  assert.deepEqual(result.unresolvedTitleHints, []);
+  assert.equal(result.ambiguousTitleMatches, false);
+});
+
+test("stripping the wrapper does not invent a match for an absent document", async () => {
+  // The wrapper-stripped forms only ever raise a score, so precision has to be
+  // asserted alongside the fix: a hint naming a document the tenant does not
+  // have must still come back unresolved rather than snapping to the nearest
+  // title.
+  await createDoc({ tenantId, ownerId: actorId, fileName: "MySQL_Lec1.pdf", title: "sql" });
+
+  const result = await resolveAuthorizedDocumentHints(
+    [],
+    hintContext(),
+    extractNaturalDocumentTitleHints("summarize the payroll file"),
+  );
+
+  assert.deepEqual(result.referencedDocumentIds, []);
+  assert.deepEqual(result.unresolvedTitleHints, ["payroll file"]);
+  assert.equal(result.ambiguousTitleMatches, false);
+});
+
 test("fuzzy resolution is rejected when the hint is too far from every title", async () => {
   await createDoc({ tenantId, ownerId: actorId, fileName: "handbook.pdf", title: "Employee Handbook" });
 
