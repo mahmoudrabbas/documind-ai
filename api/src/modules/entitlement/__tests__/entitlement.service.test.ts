@@ -747,6 +747,28 @@ describe("EntitlementService", () => {
   // ── Usage & metadata ─────────────────────────────────────────────────────
 
   describe("usage and metadata", () => {
+    it("getUsage reconciles employee and admin dimensions for the UI", async () => {
+      const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+      counter._seed(TENANT_A, "employees", periodKey, 0);
+
+      const reconciler = vi.fn(async (tenantId: string) => {
+        counter._seed(tenantId, "employees", periodKey, 1);
+        counter._seed(tenantId, "admins", periodKey, 2);
+      });
+      const reconciledService = new EntitlementService(
+        counter,
+        provider,
+        undefined,
+        reconciler,
+      );
+
+      const usage = await reconciledService.getUsage(TENANT_A);
+
+      expect(usage.employees).toBe(1);
+      expect(usage.admins).toBe(2);
+      expect(reconciler).toHaveBeenCalled();
+    });
+
     it("getUsage returns all dimensions with correct values", async () => {
       const periodKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
       counter._seed(TENANT_A, "documents", periodKey, 30);

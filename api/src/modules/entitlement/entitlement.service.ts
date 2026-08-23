@@ -389,6 +389,14 @@ export class EntitlementService {
     tenantId: string,
   ): Promise<Record<EntitlementDimension, number>> {
     const periodStart = await this.getCounterPeriodKey(tenantId);
+
+    // Seat usage is backed by the user collection and can change outside the
+    // quota consume path (for example, when an invitation is accepted). Repair
+    // both dimensions before reading the response so the Usage & Limits page
+    // does not expose stale or missing employee/admin counters.
+    await this.reconcileSnapshotUsage(tenantId, "employees");
+    await this.reconcileSnapshotUsage(tenantId, "admins");
+
     return this.counter.getAllUsage(tenantId, periodStart);
   }
 
