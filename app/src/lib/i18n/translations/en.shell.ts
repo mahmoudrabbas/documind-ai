@@ -52,6 +52,7 @@ const enShell: TranslationDictionary = {
   "shell.searchPlaceholder": "Search knowledge base...",
   "shell.settings": "Settings",
   "shell.helpCenter": "Help Center",
+  "shell.navActions": "Actions",
   "shell.logout": "Logout",
   "shell.loggingOut": "Logging out…",
   "shell.enterpriseKnowledge": "Enterprise Knowledge",

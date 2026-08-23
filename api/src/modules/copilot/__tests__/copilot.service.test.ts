@@ -20,6 +20,13 @@ vi.mock("../copilotComposition.js", () => ({
     getRun: vi.fn(),
     completeRun: vi.fn(),
   }),
+  getCopilotToolRegistry: () => ({
+    list: () => [],
+    get: () => undefined,
+  }),
+  createCopilotRunHooks: () => ({}),
+  missingFieldsFromIssues: () => [],
+  schemaFieldMap: () => ({}),
 }));
 
 vi.mock("../guide/guide.service.js", async (importOriginal) => {
@@ -320,7 +327,7 @@ describe("createActionPlan", () => {
       },
     });
 
-    const plan = await createActionPlan(
+    const result = await createActionPlan(
       { utterance: "delete this document" },
       baseContext,
     );
@@ -330,6 +337,7 @@ describe("createActionPlan", () => {
       runId: string;
     };
     expect(runInput.runId).toBe("run-persisted-2");
-    expect(plan.runId).toBe("run-persisted-2");
+    expect(result.mode).toBe("action");
+    expect((result as { actionPlan: { runId: string } }).actionPlan.runId).toBe("run-persisted-2");
   });
 });

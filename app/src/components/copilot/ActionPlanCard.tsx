@@ -23,6 +23,8 @@ export function ActionPlanCard() {
   const plan = action.plan;
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [needsDoubleConfirm, setNeedsDoubleConfirm] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const isAwaiting = action.phase === "awaiting_confirmation";
 
   if (!plan) return null;
@@ -34,10 +36,32 @@ export function ActionPlanCard() {
         ? t("copilot.action.plan.risk.reversible")
         : t("copilot.action.plan.risk.destructive");
 
+  const isDestructive = plan.risk === "destructive";
+
   const handleDecision = async (decision: "approve" | "reject") => {
+    if (decision === "approve" && isDestructive && !needsDoubleConfirm) {
+      setNeedsDoubleConfirm(true);
+      return;
+    }
+    setNeedsDoubleConfirm(false);
+    setLocalError(null);
     setBusy(true);
-    await confirm(decision, note.trim() || undefined);
-    setBusy(false);
+    try {
+      const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 30_000));
+      const result = await Promise.race([
+        confirm(decision, note.trim() || undefined),
+        timeout,
+      ]);
+      if (result === "timeout") {
+        setLocalError(t("copilot.action.plan.confirm.timeout"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCancelConfirm = () => {
+    setNeedsDoubleConfirm(false);
   };
 
   return (
@@ -92,29 +116,63 @@ export function ActionPlanCard() {
             {t("copilot.action.executing")}
           </p>
         ) : null}
+
+        {localError ? (
+          <p className="text-label-sm text-red-800">
+            {localError}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2 border-t border-outline-variant px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            className="flex-1"
-            disabled={busy}
-            onClick={() => handleDecision("approve")}
-          >
-            {t("copilot.action.plan.approve")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            disabled={busy}
-            onClick={() => handleDecision("reject")}
-          >
-            {t("copilot.action.plan.reject")}
-          </Button>
-        </div>
+        {needsDoubleConfirm ? (
+          <div className="space-y-2">
+            <p className="text-label-sm text-red-800">
+              {t("copilot.action.plan.confirmDoubleCheck")}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                className="flex-1 bg-red-600 hover:bg-red-700"
+                disabled={busy}
+                onClick={() => handleDecision("approve")}
+              >
+                {t("copilot.action.plan.approve")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                disabled={busy}
+                onClick={handleCancelConfirm}
+              >
+                {t("copilot.action.plan.cancel")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              className="flex-1"
+              disabled={busy}
+              onClick={() => handleDecision("approve")}
+            >
+              {t("copilot.action.plan.approve")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              disabled={busy}
+              onClick={() => handleDecision("reject")}
+            >
+              {t("copilot.action.plan.reject")}
+            </Button>
+          </div>
+        )}
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}

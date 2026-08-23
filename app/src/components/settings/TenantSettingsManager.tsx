@@ -411,6 +411,7 @@ export function TenantSettingsManager() {
               updateProfile("companyName", emptyToNull(event.target.value))
             }
             placeholder={t("settings.companyNamePlaceholder")}
+            data-guide-id="settings-company-name-input"
           />
           <Input
             label={t("settings.timezoneLabel")}

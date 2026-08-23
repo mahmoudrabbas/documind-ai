@@ -12,6 +12,7 @@ import {
   groupFlowsByCategory,
   partitionFlows,
 } from "@/lib/copilot/flow-catalog";
+import { permittedActions, ACTION_CATALOG } from "@/lib/copilot/action-catalog";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission, type PermissionValue } from "@/types/api/permissions.types";
 import {
@@ -29,6 +30,19 @@ function isAdminView(can: (permission: PermissionValue) => boolean): boolean {
     can(Permission.ROLES_READ) ||
     can(Permission.COMPANY_SETTINGS_READ)
   );
+}
+
+/** Resolves a question labelKey through the dictionary, falling back to the
+ * server-provided English label when the key is missing or resolves to itself. */
+function questionLabel(
+  labelKey: string,
+  fallback: string,
+  t: (key: string) => string,
+): string {
+  const localized = t(labelKey);
+  return localized !== labelKey && localized.trim().length > 0
+    ? localized
+    : fallback;
 }
 
 /**
@@ -52,15 +66,22 @@ export function CopilotPanel() {
     guideActions,
     action,
     clarify,
+    draft,
+    transcript,
     sendMessage,
     startGuide,
+    runAction,
+    sectionFilter,
+    answerDraft,
+    cancelDraft,
     loadFlows,
   } = useCopilot();
   const { t, dir } = useI18n();
   const { user } = useAuth();
   const permissions = usePermissions();
-  const [draft, setDraft] = useState("");
+  const [input, setInput] = useState("");
   const [offerHidden, setOfferHidden] = useState(false);
+  const [view, setView] = useState<"guide" | "action">("guide");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const showTourOffer =
@@ -75,6 +96,17 @@ export function CopilotPanel() {
       window.setTimeout(() => inputRef.current?.focus(), 150);
     }
   }, [open, loadFlows]);
+
+  // Auto-switch the active tab when a mode activates so the user always sees
+  // the relevant content without manual tab switching. A sidebar section
+  // filter opens onto the tab that carries its chips: flows → Guides,
+  // tools-only → Actions.
+  useEffect(() => {
+    if (mode === "guide") setView("guide");
+    else if (mode === "action" || mode === "action_input") setView("action");
+    else if (sectionFilter?.flows.length) setView("guide");
+    else if (sectionFilter?.tools.length) setView("action");
+  }, [mode, sectionFilter]);
 
   useEffect(() => {
     if (open && guide?.status === "running") setOpen(false);
@@ -103,27 +135,51 @@ export function CopilotPanel() {
 
   // Role-aware relevance: employees get a "Recommended for you" section on
   // top (audience employee/all, tagged server-side); admins see the full
-  // catalog grouped by category as before.
+  // catalog grouped by category as before. A sidebar section filter narrows
+  // both the flow chips and the action chips to that section.
   const adminView = useMemo(
     () => isAdminView(permissions.can),
     [permissions.can],
   );
-  const { recommended: recommendedFlows, rest: otherFlows } =
-    useMemo(() => partitionFlows(flows), [flows]);
-  const flowGroups = useMemo(
-    () => groupFlowsByCategory(adminView ? flows : otherFlows),
-    [adminView, flows, otherFlows],
+  const sectionFlowIds = sectionFilter?.flows.length
+    ? sectionFilter.flows
+    : null;
+  const visibleFlows = useMemo(
+    () =>
+      sectionFlowIds
+        ? flows.filter((flow) => sectionFlowIds.includes(flow.flowId))
+        : flows,
+    [flows, sectionFlowIds],
   );
+  const { recommended: recommendedFlows, rest: otherFlows } =
+    useMemo(() => partitionFlows(visibleFlows), [visibleFlows]);
+  const flowGroups = useMemo(
+    () => groupFlowsByCategory(adminView ? visibleFlows : otherFlows),
+    [adminView, visibleFlows, otherFlows],
+  );
+
+  const sectionToolIds = sectionFilter?.tools.length
+    ? sectionFilter.tools
+    : null;
+  const availableActions = useMemo(() => {
+    const permitted = permittedActions(permissions.can);
+    if (!sectionToolIds) return permitted;
+    return permitted.filter((action) => sectionToolIds.includes(action.toolName));
+  }, [permissions.can, sectionToolIds]);
 
   if (!open) return null;
 
   const currentStep = guide ? getCurrentStep(guide) : null;
 
   const handleSend = async () => {
-    const utterance = draft.trim();
-    if (!utterance || loading) return;
-    setDraft("");
-    await sendMessage(utterance);
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput("");
+    if (mode === "action_input") {
+      await answerDraft(text);
+      return;
+    }
+    await sendMessage(text);
   };
 
   return (
@@ -180,6 +236,33 @@ export function CopilotPanel() {
             </div>
           ) : null}
 
+          <div className="flex rounded-xl border border-outline-variant/30 bg-surface-container-low p-0.5">
+            <button
+              type="button"
+              onClick={() => setView("guide")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-label-md font-medium transition-colors ${
+                view === "guide"
+                  ? "bg-primary/15 text-primary"
+                  : "text-on-surface-variant hover:bg-surface-container-high"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">menu_book</span>
+              {t("copilot.tabs.guides")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("action")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-label-md font-medium transition-colors ${
+                view === "action"
+                  ? "bg-primary/15 text-primary"
+                  : "text-on-surface-variant hover:bg-surface-container-high"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">bolt</span>
+              {t("copilot.tabs.actions")}
+            </button>
+          </div>
+
           {mode === "guide" && guide ? (
             <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
               <p className="text-label-sm font-bold uppercase tracking-wider text-primary">
@@ -220,10 +303,77 @@ export function CopilotPanel() {
             <ActionPlanCard />
           ) : null}
           {mode === "action" &&
-          ["succeeded", "failed", "rejected", "expired"].includes(
+          ["succeeded", "failed", "rejected"].includes(
             action.phase,
           ) ? (
             <ActionResultCard />
+          ) : null}
+
+          {mode === "action_input" && draft ? (
+            <div className="space-y-3">
+              {transcript.length > 0 ? (
+                <div className="space-y-2" role="log" aria-live="polite" aria-label="Conversation">
+                  {transcript.map((entry, index) => (
+                    <div
+                      key={`${entry.role}-${index}`}
+                      className={`flex ${
+                        entry.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-body-sm ${
+                          entry.role === "user"
+                            ? "rounded-ee-sm bg-primary/15 text-on-surface"
+                            : "rounded-es-sm bg-surface-container-high text-on-surface"
+                        }`}
+                      >
+                        {entry.text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {draft.question ? (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                  <p className="text-body-md font-semibold text-on-surface">
+                    {questionLabel(draft.question.labelKey, draft.question.label, t)}
+                  </p>
+                  {draft.questionsRemaining > 0 ? (
+                    <p className="mt-1 text-label-sm text-on-surface-variant">
+                      {t("copilot.action.input.progress", {
+                        remaining: String(draft.questionsRemaining),
+                      })}
+                    </p>
+                  ) : null}
+                  {draft.question.options && draft.question.options.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {draft.question.options.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          disabled={loading}
+                          onClick={() => void answerDraft(option.value)}
+                          className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-label-md text-primary transition-colors hover:border-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={loading}
+                      onClick={() => void cancelDraft()}
+                    >
+                      {t("copilot.action.cancel")}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
 
           {mode === "clarify" && clarify ? (
@@ -300,23 +450,26 @@ export function CopilotPanel() {
                     {t("copilot.clarify.actionsHeading")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {clarify.suggestedActions.map((action) => (
-                      <button
-                        key={action}
-                        type="button"
-                        onClick={() => void sendMessage(action)}
-                        className="rounded-full border border-outline-variant/40 bg-surface-bright px-3 py-1.5 text-label-md text-on-surface transition-colors hover:border-primary hover:text-primary"
-                      >
-                        {action}
-                      </button>
-                    ))}
+                    {clarify.suggestedActions.map((action) => {
+                      const catalogEntry = ACTION_CATALOG.find((e) => e.toolName === action);
+                      return (
+                        <button
+                          key={action}
+                          type="button"
+                          onClick={() => void sendMessage(action)}
+                          className="rounded-full border border-outline-variant/40 bg-surface-bright px-3 py-1.5 text-label-md text-on-surface transition-colors hover:border-primary hover:text-primary"
+                        >
+                          {catalogEntry ? t(catalogEntry.labelKey) : action}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
             </div>
           ) : null}
 
-          {showTourOffer ? (
+          {showTourOffer && view === "guide" ? (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -367,13 +520,13 @@ export function CopilotPanel() {
             </div>
           ) : null}
 
-          {!mode ? (
+          {!mode && view === "guide" ? (
             <div className="rounded-xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 p-4 text-body-md text-on-surface-variant">
               {t("copilot.panel.placeholder")}
             </div>
           ) : null}
 
-          {flows.length > 0 ? (
+          {flows.length > 0 && view === "guide" ? (
             <div>
               {!adminView && recommendedFlows.length > 0 ? (
                 <div className="mb-4">
@@ -424,21 +577,52 @@ export function CopilotPanel() {
               </div>
             </div>
           ) : null}
+
+          {availableActions.length > 0 && !mode && view === "action" ? (
+            <div>
+              <p className="text-label-sm font-semibold text-on-surface-variant">
+                {t("copilot.actions.title")}
+              </p>
+              <p className="mt-0.5 text-body-sm text-on-surface-variant">
+                {t("copilot.actions.subtitle")}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2" role="listbox" aria-label={t("copilot.actions.title")}>
+                {availableActions.map((action) => (
+                  <button
+                    key={action.toolName}
+                    type="button"
+                    onClick={() => void runAction(action.toolName)}
+                    className={`rounded-full border px-3 py-1.5 text-label-md transition-colors ${
+                      action.destructive
+                        ? "border-danger/40 bg-danger/5 text-danger hover:border-danger hover:bg-danger/10"
+                        : "border-outline-variant/40 bg-surface-bright text-on-surface hover:border-primary hover:text-primary"
+                    }`}
+                  >
+                    {t(action.labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="border-t border-outline-variant/30 px-5 py-4">
           <div className="flex items-end gap-2">
             <textarea
               ref={inputRef}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   void handleSend();
                 }
               }}
-              placeholder={t("copilot.panel.placeholder")}
+              placeholder={
+                mode === "action_input"
+                  ? t("copilot.action.input.placeholder")
+                  : t("copilot.panel.placeholder")
+              }
               rows={2}
               className="flex-1 resize-none rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-body-md text-on-surface outline-none placeholder:text-on-surface-variant focus:border-primary"
             />
@@ -446,7 +630,7 @@ export function CopilotPanel() {
               variant="primary"
               size="md"
               isLoading={loading}
-              disabled={!draft.trim() || loading}
+              disabled={!input.trim() || loading}
               onClick={() => void handleSend()}
               aria-label={t("copilot.panel.send")}
             >

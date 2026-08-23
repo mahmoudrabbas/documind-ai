@@ -50,6 +50,13 @@ copilotActionIdempotencySchema.index(
   { unique: true },
 );
 
+// Auto-expire idempotency records after 24 hours to prevent unbounded
+// collection growth. The TTL index uses createdAt as the expiry anchor.
+copilotActionIdempotencySchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: 86400 },
+);
+
 export default mongoose.models.CopilotActionIdempotency ||
   mongoose.model<CopilotActionIdempotencyDocument>(
     "CopilotActionIdempotency",

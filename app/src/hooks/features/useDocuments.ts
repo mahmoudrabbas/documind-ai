@@ -204,6 +204,18 @@ export function useDocuments() {
     }
   }
 
+  async function updateMetadata(id: string, data: { title?: string; description?: string; tags?: string[] }) {
+    try {
+      const response = await documentsService.updateDocumentMetadata(id, data);
+      setSelectedDocument(response.data.document);
+      fetchDocuments(page, filters);
+    } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to update document metadata:", err);
+        throw err;
+    }
+  }
+
   async function loadVersions(documentId: string) {
     setIsLoadingVersions(true);
     try {
@@ -273,6 +285,7 @@ export function useDocuments() {
     archive,
     restore,
     replace,
+    updateMetadata,
     goToPage,
     fetchDocuments,
     openDrawer,

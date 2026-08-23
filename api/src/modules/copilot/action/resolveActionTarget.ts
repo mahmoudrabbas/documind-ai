@@ -87,14 +87,108 @@ function escapeRegExp(value: string): string {
 /**
  * Maps a raw tool failure to a human-readable error. Zod input-validation
  * failures for a missing target field (documentId/targetUserId) are rewritten
- * so the user sees guidance instead of a serialized schema dump.
+ * so the user sees guidance instead of a serialized schema dump. Known domain
+ * errors (entitlement, missing documents, permission) get a friendly message
+ * with actionable guidance, mirroring the manual UI copy.
  */
 export function humanizeToolFailure(
-  error: { code?: string; message?: string } | null | undefined,
+  error: { code?: string; message?: string; details?: Record<string, unknown> } | null | undefined,
   toolName: string,
 ): { code: string; message: string } {
   const rawMessage = error?.message ?? "Tool execution failed";
   const code = error?.code ?? "RUN_FAILED";
+  const details = error?.details ?? {};
+
+  if (code === "ENTITLEMENT_EXCEEDED") {
+    const limit =
+      typeof details.limit === "number"
+        ? details.limit
+        : Number.parseInt(rawMessage.match(/(\d+)\/(\d+)/)?.[2] ?? "", 10) || 0;
+    const canUpgrade = details.canUpgrade === true;
+    const base =
+      limit > 0
+        ? `You've reached your plan's limit of ${limit} team ${limit === 1 ? "member" : "members"}.`
+        : "You've reached your plan's team member limit.";
+    return {
+      code,
+      message: canUpgrade
+        ? `${base} Upgrade your plan to invite more people.`
+        : `${base} Ask a company admin to upgrade your plan.`,
+    };
+  }
+
+  if (code === "DOCUMENT_NOT_FOUND" || code === "NOT_FOUND") {
+    const isUserTool = USER_TARGET_TOOLS.has(toolName);
+    return {
+      code,
+      message: isUserTool
+        ? "The user was not found. They may have been removed, or you may not have access. Try naming the user by email or full name."
+        : 'The document was not found. It may have been deleted, or you may not have access to it. Try naming the document again, e.g. "Delete the file contract.pdf".',
+    };
+  }
+
+  if (code === "DOCUMENT_NOT_SOFT_DELETED") {
+    return {
+      code,
+      message:
+        "The document is still active. It was moved to trash automatically — you can now delete it permanently.",
+    };
+  }
+
+  if (code === "PERMISSION_DENIED" || code === "FORBIDDEN") {
+    return {
+      code,
+      message:
+        "You don't have permission to do this. Ask a company admin to grant you access or do it for you.",
+    };
+  }
+
+  if (code === "EMAIL_ALREADY_EXISTS") {
+    return {
+      code,
+      message:
+        "A user with this email already exists in your company. Check the users list before inviting again.",
+    };
+  }
+
+  if (code === "DUPLICATE_ROLE_NAME") {
+    return {
+      code,
+      message:
+        "A role with this name already exists in your tenant. Try a different role name.",
+    };
+  }
+
+  if (code === "PRIVILEGE_ESCALATION" || code === "UNKNOWN_PERMISSION") {
+    const hint =
+      code === "PRIVILEGE_ESCALATION"
+        ? "Some requested permissions can't be delegated to custom roles by a company admin. Remove those permissions and try again."
+        : "One of the requested permissions doesn't exist or can't be granted. Remove it and try again.";
+    const grantDetails = details.grants;
+    if (Array.isArray(grantDetails) && grantDetails.length > 0) {
+      const fields = (grantDetails as { field?: string; message?: string }[])
+        .filter((item) => item?.message)
+        .map((item) => item.message as string);
+      if (fields.length > 0) return { code, message: `${hint} ${fields.join(" ")}` };
+    }
+    return { code, message: hint };
+  }
+
+  if (code === "VALIDATION_ERROR" && toolName === "roles.create") {
+    const grantDetails = details.grants;
+    if (Array.isArray(grantDetails) && grantDetails.length > 0) {
+      const fields = (grantDetails as { field?: string; message?: string }[])
+        .filter((item) => item?.message)
+        .map((item) => item.message as string);
+      if (fields.length > 0) {
+        return {
+          code,
+          message: `The requested permissions couldn't be saved: ${fields.join(" ")}`,
+        };
+      }
+    }
+  }
+
   const idField = getTargetIdField(toolName);
   if (idField && rawMessage.includes(idField)) {
     return {
@@ -105,7 +199,7 @@ export function humanizeToolFailure(
           : "No user was specified or the user could not be found. Try again and name the user by email or name.",
     };
   }
-  return { code, message: rawMessage };
+  return { code, message: "Something went wrong while processing your request. Please try again." };
 }
 
 /** Resolve a likely resource name out of the utterance (quoted, "named X", file-like). */
@@ -138,13 +232,18 @@ export async function resolveTargetFromUtterance(opts: {
   toolName: string;
   utterance: string;
   tenantId: string;
+  /** When true, the whole utterance is treated as the resource name (draft
+   * answers to "Which document?"), skipping phrase-style extraction. */
+  bareName?: boolean;
 }): Promise<{ idField: "documentId" | "targetUserId"; id: string } | null> {
-  const { toolName, utterance, tenantId } = opts;
+  const { toolName, utterance, tenantId, bareName = false } = opts;
   const idField = getTargetIdField(toolName);
   if (!idField) return null;
 
   if (idField === "documentId") {
-    const name = extractDocumentNameFromUtterance(utterance);
+    const name = bareName
+      ? utterance.trim()
+      : extractDocumentNameFromUtterance(utterance);
     if (!name) return null;
     const pattern = new RegExp(escapeRegExp(name), "i");
     const docs = await DocumentModel.find({
@@ -161,7 +260,9 @@ export async function resolveTargetFromUtterance(opts: {
     return null;
   }
 
-  const identity = extractUserIdentityFromUtterance(utterance);
+  const identity = bareName
+    ? utterance.trim()
+    : extractUserIdentityFromUtterance(utterance);
   if (!identity) return null;
   const pattern = new RegExp(escapeRegExp(identity), "i");
   const users = await UserModel.find({

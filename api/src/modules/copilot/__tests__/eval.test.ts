@@ -138,7 +138,12 @@ test("eval dataset: classifier decisions match the deterministic fallback", asyn
   const classifier = new CopilotClassifier(new FakeModelAdapter());
 
   for (const entry of EVAL_DATASET) {
-    const decision = await classifier.classify(entry.utterance, entry.locale);
+    const decision = await classifier.classify(entry.utterance, entry.locale, undefined, {
+      role: entry.role,
+      permissions: entry.role
+        ? [...(BASE_ROLE_DEFAULTS[entry.role] as readonly string[])]
+        : undefined,
+    });
 
     if (entry.expected.mode === "clarify") {
       assert.equal(
@@ -147,6 +152,23 @@ test("eval dataset: classifier decisions match the deterministic fallback", asyn
         `${entry.id}: expected clarify for "${entry.utterance}"`,
       );
       assert.equal(decision.flowIdHint, null, `${entry.id}: clarify must carry no flow`);
+      assert.equal(decision.toolNameHint, null, `${entry.id}: clarify must carry no tool`);
+      continue;
+    }
+
+    if (entry.expected.mode === "action" && entry.expected.denied) {
+      // A tool the actor is not permitted to use must surface as an
+      // unavailable capability, never as a proposed (denied) action.
+      assert.equal(
+        decision.mode,
+        "clarify",
+        `${entry.id}: denied tool "${entry.expected.toolName}" must not be proposed for "${entry.utterance}"`,
+      );
+      assert.equal(
+        decision.reasonCode,
+        "capability_unavailable",
+        `${entry.id}: denied tool must report capability_unavailable, got ${decision.reasonCode}`,
+      );
       assert.equal(decision.toolNameHint, null, `${entry.id}: clarify must carry no tool`);
       continue;
     }

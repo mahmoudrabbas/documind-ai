@@ -28,7 +28,7 @@ const SCAN_RESULT_MAP: Record<string, string> = {
   error: "warning",
 };
 
-function ConfirmDialog({ action, onConfirm, onCancel }: { action: string; onConfirm: () => void; onCancel: () => void }) {
+function ConfirmDialog({ action, onConfirm, onCancel, guideId }: { action: string; onConfirm: () => void; onCancel: () => void; guideId?: string }) {
   const { t } = useI18n();
   const isDestructive = action === "delete" || action === "permanentDelete";
   return (
@@ -36,7 +36,7 @@ function ConfirmDialog({ action, onConfirm, onCancel }: { action: string; onConf
       <div className="mx-4 w-full max-w-sm rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-modal" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true">
         <p className="text-title-lg font-bold text-on-surface">{t(`documents.${action}Confirm`)}</p>
         <div className="mt-5 flex gap-3">
-          <Button variant={isDestructive ? "danger" : "primary"} onClick={onConfirm}>{t("common.confirm")}</Button>
+          <Button variant={isDestructive ? "danger" : "primary"} onClick={onConfirm} data-guide-id={guideId}>{t("common.confirm")}</Button>
           <Button variant="ghost" onClick={onCancel}>{t("common.cancel")}</Button>
         </div>
       </div>
@@ -52,6 +52,7 @@ interface DocumentDetailDrawerProps {
   onSoftDelete: (id: string) => void;
   onPermanentDelete: (id: string) => void;
   onReplace: (id: string, file: File, desc?: string) => void;
+  onUpdateMetadata: (id: string, data: { title?: string; description?: string; tags?: string[] }) => void;
   versions: DocumentVersionView[];
   isLoadingVersions: boolean;
   highlightPage?: number;
@@ -65,6 +66,7 @@ export function DocumentDetailDrawer({
   onSoftDelete,
   onPermanentDelete,
   onReplace,
+  onUpdateMetadata,
   versions,
   isLoadingVersions,
   highlightPage,
@@ -83,6 +85,12 @@ export function DocumentDetailDrawer({
   const [replaceError, setReplaceError] = useState<string | null>(null);
   const [replaceDesc, setReplaceDesc] = useState("");
   const [isReplacing, setIsReplacing] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editTitle, setEditTitle] = useState(doc.metadata.title ?? "");
+  const [editDescription, setEditDescription] = useState(doc.metadata?.description ?? "");
+  const [editTags, setEditTags] = useState(doc.metadata?.tags.join(", ") ?? "");
+  const [isSavingMetadata, setIsSavingMetadata] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<"archive" | "restore" | "softDelete" | "permanentDelete" | null>(null);
 
   const [processingRun, setProcessingRun] = useState<ProcessingRunView | null>(null);
@@ -211,6 +219,36 @@ export function DocumentDetailDrawer({
     setShowReplaceForm(false);
     setReplaceFile(null);
     setReplaceDesc("");
+  }
+
+  function startEditDetails() {
+    setEditTitle(doc.metadata.title ?? "");
+    setEditDescription(doc.metadata.description ?? "");
+    setEditTags(doc.metadata.tags.join(", "));
+    setEditError(null);
+    setShowEditForm(true);
+  }
+
+  async function handleSaveMetadata() {
+    if (!canUpdate) return;
+    setIsSavingMetadata(true);
+    setEditError(null);
+    try {
+      const tagsArray = editTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      await onUpdateMetadata(doc.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        tags: tagsArray,
+      });
+      setShowEditForm(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update document details");
+    } finally {
+      setIsSavingMetadata(false);
+    }
   }
 
   const isActive = processingRun && ["queued", "running", "paused"].includes(processingRun.status);
@@ -477,7 +515,27 @@ export function DocumentDetailDrawer({
 
         {/* Action bar */}
         <div className="border-t border-outline-variant/30 bg-surface-container-lowest px-6 py-4">
-          {showReplaceForm && canUpdate ? (
+          {showEditForm && canUpdate ? (
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="drawer-edit-title" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataTitle")}</label>
+                <input id="drawer-edit-title" type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} data-guide-id="documents-drawer-edit-title" className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+              </div>
+              <div>
+                <label htmlFor="drawer-edit-description" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataDescription")}</label>
+                <input id="drawer-edit-description" type="text" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} data-guide-id="documents-drawer-edit-description" className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+              </div>
+              <div>
+                <label htmlFor="drawer-edit-tags" className="mb-2 block text-label-md font-bold text-on-surface-variant">{t("documents.metadataTags")}</label>
+                <input id="drawer-edit-tags" type="text" value={editTags} onChange={(e) => setEditTags(e.target.value)} placeholder={t("documents.metadataTagsPlaceholder")} data-guide-id="documents-drawer-edit-tags" className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+              </div>
+              {editError ? <p className="text-xs text-error" role="alert">{editError}</p> : null}
+              <div className="flex gap-2">
+                <Button size="sm" isLoading={isSavingMetadata} disabled={!editTitle.trim()} data-guide-id="documents-drawer-edit-save" onClick={handleSaveMetadata}>{t("common.save")}</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setShowEditForm(false); setEditError(null); }}>{t("common.cancel")}</Button>
+              </div>
+            </div>
+          ) : showReplaceForm && canUpdate ? (
             <div className="space-y-3">
               <div>
                 <input type="file" accept=".pdf,.docx,.txt" data-guide-id="documents-drawer-replace-file" onChange={(e) => handleReplaceFileSelect(e.target.files?.[0] ?? null)} className="w-full text-body-sm" />
@@ -497,6 +555,12 @@ export function DocumentDetailDrawer({
                   {t("documents.download")}
                 </Button>
               ) : null}
+              {canUpdate && !doc.isArchived && !doc.deletedAt && (
+                <Button size="sm" variant="secondary" onClick={startEditDetails} data-guide-id="documents-drawer-edit">
+                  <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">edit_note</span>
+                  {t("documents.editDetails")}
+                </Button>
+              )}
               {canUpdate && !doc.isArchived && !doc.deletedAt && (
                 <Button size="sm" variant="secondary" onClick={() => setShowReplaceForm(true)} data-guide-id="documents-drawer-replace">
                   <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">swap_horiz</span>
@@ -522,6 +586,7 @@ export function DocumentDetailDrawer({
                     variant="secondary"
                     className="shrink-0 whitespace-nowrap border-amber-300 bg-amber-50 px-3 text-amber-800 hover:bg-amber-100 hover:text-amber-900"
                     onClick={() => setConfirmAction("softDelete")}
+                    data-guide-id="documents-drawer-delete"
                   >
                     <span className="material-symbols-outlined me-1 text-[18px]" aria-hidden="true">delete</span>
                     {t("documents.moveToTrash")}
@@ -541,7 +606,7 @@ export function DocumentDetailDrawer({
 
       {confirmAction === "archive" && <ConfirmDialog action="archive" onConfirm={() => { onArchive(doc.id); setConfirmAction(null); }} onCancel={() => setConfirmAction(null)} />}
       {confirmAction === "restore" && <ConfirmDialog action="restore" onConfirm={() => { onRestore(doc.id); setConfirmAction(null); }} onCancel={() => setConfirmAction(null)} />}
-      {confirmAction === "softDelete" && <ConfirmDialog action="delete" onConfirm={() => { onSoftDelete(doc.id); setConfirmAction(null); }} onCancel={() => setConfirmAction(null)} />}
+      {confirmAction === "softDelete" && <ConfirmDialog action="delete" guideId="documents-delete-confirm" onConfirm={() => { onSoftDelete(doc.id); setConfirmAction(null); }} onCancel={() => setConfirmAction(null)} />}
       {confirmAction === "permanentDelete" && <ConfirmDialog action="permanentDelete" onConfirm={() => { onPermanentDelete(doc.id); setConfirmAction(null); }} onCancel={() => setConfirmAction(null)} />}
 
       <RetryConfirmDialog

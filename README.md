@@ -76,6 +76,13 @@ MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<dbname>?retry
 WORKER_HEALTH_URL=http://worker:3001/readyz
 ```
 
+The Copilot assistant (in-app guide overlay + action panel) is **enabled by
+default** on both the API and the app. To turn it off, set
+`COPILOT_ENABLED=false` in `api/.env` and `NEXT_PUBLIC_COPILOT_ENABLED=false`
+in `app/.env`, then restart the API and app containers (the app reads
+`NEXT_PUBLIC_*` values when it starts). Note that Docker Compose `environment`
+values take precedence over `.env` files.
+
 ---
 
 # Run the Project

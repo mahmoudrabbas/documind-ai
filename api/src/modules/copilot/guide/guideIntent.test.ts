@@ -102,6 +102,10 @@ test("matchFlowToUtterance: how-to phrasing routes to flows", () => {
   assert.equal(flowOf("how do I archive a document?", "en"), "documents.archive");
   assert.equal(flowOf("how do I restore a deleted document?", "en"), "documents.restore");
   assert.equal(flowOf("how do I replace a document file?", "en"), "documents.replace");
+  assert.equal(flowOf("how do I download a document?", "en"), "documents.download");
+  assert.equal(flowOf("كيف أنزّل مستنداً؟", "ar"), "documents.download");
+  assert.equal(flowOf("how do I edit a document's metadata?", "en"), "documents.editMetadata");
+  assert.equal(flowOf("كيف أعدّل بيانات المستند؟", "ar"), "documents.editMetadata");
   assert.equal(flowOf("how do I resend an invitation?", "en"), "users.resendInvitation");
   assert.equal(flowOf("كيف أعيد إرسال الدعوة؟", "ar"), "users.resendInvitation");
   assert.equal(flowOf("how do I revoke an invitation?", "en"), "users.revokeInvitation");
@@ -109,6 +113,8 @@ test("matchFlowToUtterance: how-to phrasing routes to flows", () => {
   assert.equal(flowOf("how do I create a role?", "en"), "roles.create");
   assert.equal(flowOf("how do I update my profile?", "en"), "settings.updateProfile");
   assert.equal(flowOf("كيف أعدّل بيانات الشركة؟", "ar"), "settings.updateProfile");
+  assert.equal(flowOf("how do I update the company settings?", "en"), "settings.updateTenant");
+  assert.equal(flowOf("كيف أحدّث إعدادات الشركة؟", "ar"), "settings.updateTenant");
   assert.equal(flowOf("how do I check my usage limits?", "en"), "usage.view");
   assert.equal(flowOf("كيف أعرف حجم التخزين؟", "ar"), "usage.view");
   assert.equal(flowOf("how do I view failed documents?", "en"), "documents.failedReview");
@@ -123,6 +129,14 @@ test("matchFlowToUtterance: neutral phrasing picks the strongest keyword", () =>
   assert.equal(flowOf("update my password", "en"), "settings.open");
   assert.equal(flowOf("usage and limits", "en"), "usage.view");
   assert.equal(flowOf("storage usage", "en"), "usage.view");
+  assert.equal(flowOf("list all users", "en"), "users.list");
+  assert.equal(flowOf("show me the users", "en"), "users.list");
+  assert.equal(flowOf("عرض المستخدمين", "ar"), "users.list");
+  assert.equal(flowOf("download a file", "en"), "documents.download");
+  assert.equal(flowOf("تنزيل مستند", "ar"), "documents.download");
+  assert.equal(flowOf("rename a document", "en"), "documents.editMetadata");
+  assert.equal(flowOf("change the company name", "en"), "settings.updateTenant");
+  assert.equal(flowOf("update company settings", "en"), "settings.updateTenant");
 });
 
 test("matchFlowToUtterance: role creation phrasing matches roles.create", () => {

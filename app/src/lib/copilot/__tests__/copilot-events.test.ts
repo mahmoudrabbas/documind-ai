@@ -41,6 +41,18 @@ describe("actionLifecycleReducer", () => {
     expect(state.approvalId).toBe("ap-1");
   });
 
+  it("awaiting_confirmation preserves existing approvalId when payload omits it", () => {
+    const state = actionLifecycleReducer(
+      { phase: "planning", plan, approvalId: "existing-ap" },
+      {
+        event: "action.awaiting_confirmation",
+        payload: { runId: "run-1" },
+      },
+    );
+    expect(state.phase).toBe("awaiting_confirmation");
+    expect(state.approvalId).toBe("existing-ap");
+  });
+
   it("executed transitions to succeeded with the result", () => {
     const state = actionLifecycleReducer(
       { phase: "awaiting_confirmation", plan, approvalId: "ap-1" },

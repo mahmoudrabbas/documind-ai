@@ -114,12 +114,47 @@ export interface ClarifyPayload {
   recommendedFlowId?: string;
 }
 
-export type CopilotMode = "guide" | "action" | "clarify";
+export type ActionQuestionType =
+  | "text"
+  | "email"
+  | "enum"
+  | "document"
+  | "user"
+  | "settings"
+  | "grants";
+
+export interface ActionQuestion {
+  field: string;
+  type: ActionQuestionType;
+  labelKey: string;
+  /** Shown verbatim when no localized label exists for `labelKey`. */
+  label: string;
+  options?: { value: string; label: string }[];
+}
+
+export interface ActionDraft {
+  draftId: string;
+  toolName: string;
+  summary: string;
+  /** Fields the user already provided (for the transcript). */
+  answered: { field: string; value: string }[];
+  /** The single question to answer next, or null when all fields are present. */
+  question: ActionQuestion | null;
+  questionsRemaining: number;
+  /** Feedback for the last answer when it could not be used. */
+  message?: string | null;
+}
+
+export type CopilotMode = "guide" | "action" | "action_input" | "clarify";
 
 export interface CopilotMessageResult {
   mode: CopilotMode;
   guideSession?: GuideSession;
   actionPlan?: ActionPlan;
+  /** Present when a low-risk action executed directly and produced a result. */
+  result?: ActionResult;
+  /** Present when the action needs more parameters and an interactive draft was opened. */
+  actionDraft?: ActionDraft;
   approvalId?: string;
   clarify?: ClarifyPayload;
 }

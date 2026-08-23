@@ -6,6 +6,8 @@ import { Readable } from "node:stream";
 
 import TenantModel from "../../../../db/models/tenant.model.js";
 import UserModel from "../../../../db/models/user.model.js";
+import SubscriptionModel from "../../../../db/models/subscription.model.js";
+import PackageModel from "../../../../db/models/package.model.js";
 import { hashPassword } from "../../../auth/passwordHashing.js";
 import { disconnectRedis } from "../../../../db/redis.js";
 import { ToolRegistry } from "../../../agents/toolRegistry.js";
@@ -48,9 +50,87 @@ after(async () => {
 
 let tenantId: string;
 
+async function seedEntitlement() {
+  const pkg = await PackageModel.create({
+    name: "User Auth Package",
+    code: `user-auth-pkg-${new mongoose.Types.ObjectId().toString()}`,
+    description: "Seeded package for user tool authorization tests",
+    active: true,
+    version: 1,
+    monthlyPrice: 0,
+    annualPrice: 0,
+    currency: "USD",
+    entitlements: {
+      employees: 25,
+      admins: 5,
+      documents: 1000,
+      storageMb: 10240,
+      fileSizeMb: 100,
+      queriesPerMonth: 5000,
+      tokensPerMonth: 1000000,
+      ocrPagesPerMonth: 2000,
+    },
+    trialDays: 0,
+    visibility: "public",
+    supportedModels: ["basic", "standard"],
+    analyticsLevel: "basic",
+    retentionDays: 90,
+    supportLevel: "community",
+    stripeProductId: "",
+    stripePriceId: "",
+    stripeAnnualPriceId: "",
+    versions: [
+      {
+        _id: new mongoose.Types.ObjectId(),
+        version: 1,
+        name: "User Auth Package v1",
+        code: `user-auth-pkg-${new mongoose.Types.ObjectId().toString()}-v1`,
+        description: "Version 1",
+        monthlyPrice: 0,
+        annualPrice: 0,
+        currency: "USD",
+        entitlements: {
+          employees: 25,
+          admins: 5,
+          documents: 1000,
+          storageMb: 10240,
+          fileSizeMb: 100,
+          queriesPerMonth: 5000,
+          tokensPerMonth: 1000000,
+          ocrPagesPerMonth: 2000,
+        },
+        trialDays: 0,
+        visibility: "public",
+        supportedModels: ["basic", "standard"],
+        analyticsLevel: "basic",
+        retentionDays: 90,
+        supportLevel: "community",
+        stripeProductId: "",
+        stripePriceId: "",
+        stripeAnnualPriceId: "",
+        createdAt: new Date(),
+      },
+    ],
+  });
+  await SubscriptionModel.create({
+    tenantId,
+    packageId: pkg._id,
+    packageVersion: 1,
+    status: "ACTIVE",
+    startedAt: new Date(),
+    periodStart: new Date("2026-01-01T00:00:00.000Z"),
+    periodEnd: new Date("2027-01-01T00:00:00.000Z"),
+    billingInterval: "monthly",
+    provider: "test",
+    paymentState: "paid",
+  });
+}
+
 beforeEach(async () => {
   await TenantModel.deleteMany({});
   await UserModel.deleteMany({});
+  await SubscriptionModel.deleteMany({});
+  await PackageModel.deleteMany({});
   const tenant = await TenantModel.create({
     name: "User Auth Corp",
     slug: "user-auth-corp",
@@ -58,6 +138,7 @@ beforeEach(async () => {
     plan: "free",
   });
   tenantId = tenant.id;
+  await seedEntitlement();
 });
 
 function runContext(opts: {

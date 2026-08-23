@@ -17,17 +17,23 @@ export const copilotActionSchema = z.object({
   toolInput: z.record(z.string(), z.unknown()).optional(),
   locale: z.enum(["en", "ar"]).default("en"),
 }).refine(
-  (data) => data.utterance !== undefined || (data.toolName !== undefined && data.toolInput !== undefined),
-  { message: "Either utterance or toolName+toolInput must be provided" }
+  (data) => data.utterance !== undefined || data.toolName !== undefined,
+  { message: "Either utterance or toolName must be provided" }
 );
 
 export const copilotActionConfirmSchema = z.object({
   decision: z.enum(["approve", "reject"]),
   note: z.string().trim().max(500).optional(),
   approvalId: z.string().trim().min(1).max(64),
+  locale: z.enum(["en", "ar"]).default("en"),
+});
+
+export const copilotActionAnswerSchema = z.object({
+  answer: z.string().trim().min(1).max(2048),
 });
 
 export type CopilotMessageInput = z.infer<typeof copilotMessageSchema>;
 export type CopilotGuideResolveInput = z.infer<typeof copilotGuideResolveSchema>;
 export type CopilotActionInput = z.infer<typeof copilotActionSchema>;
 export type CopilotActionConfirmInput = z.infer<typeof copilotActionConfirmSchema>;
+export type CopilotActionAnswerInput = z.infer<typeof copilotActionAnswerSchema>;

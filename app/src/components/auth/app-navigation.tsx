@@ -19,12 +19,29 @@ import {
 } from "@/constants/platform-navigation";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useI18n } from "@/providers/i18n-provider";
+import { useCopilot } from "@/providers/copilot-provider";
 import { getNavGuideTargetId } from "@/lib/copilot/guide-targets";
+import {
+  permittedSectionQuickGuides,
+  type SectionQuickGuides,
+} from "@/lib/copilot/nav-actions";
 import { cn } from "@/lib/utils";
 
 type AppNavigationProps = {
   open: boolean;
   onClose: () => void;
+};
+
+type NavItemProps = {
+  href: string;
+  label: string;
+  labelKey?: string;
+  icon: string;
+  isActive: boolean;
+  onClose: () => void;
+  /** Section quick guides (action + flow chips) for this destination, or
+   * null when the section has no matching guides — hides the button. */
+  sectionGuides: SectionQuickGuides | null;
 };
 
 function isItemActive(
@@ -53,40 +70,59 @@ function NavItem({
   icon,
   isActive,
   onClose,
-}: {
-  href: string;
-  label: string;
-  labelKey?: string;
-  icon: string;
-  isActive: boolean;
-  onClose: () => void;
-}) {
+  sectionGuides,
+}: NavItemProps) {
   const { t } = useI18n();
+  const { openSection } = useCopilot();
   return (
-    <Link
-      href={href}
-      onClick={onClose}
-      data-guide-id={getNavGuideTargetId(href)}
-      title={label}
-      aria-label={label}
-      aria-current={isActive ? "page" : undefined}
-      className={cn(
-        "flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-3",
-        isActive
-          ? "bg-secondary-container/20 font-semibold text-primary hover:bg-secondary-container/30"
-          : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
-      )}
-    >
-      <span
-        className="material-symbols-outlined shrink-0 text-[20px]"
-        style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+    <div className="flex min-w-0 items-center">
+      <Link
+        href={href}
+        onClick={onClose}
+        data-guide-id={getNavGuideTargetId(href)}
+        title={label}
+        aria-label={label}
+        aria-current={isActive ? "page" : undefined}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors md:justify-center md:px-0 xl:justify-start xl:px-3",
+          isActive
+            ? "bg-secondary-container/20 font-semibold text-primary hover:bg-secondary-container/30"
+            : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
+        )}
       >
-        {icon}
-      </span>
-      <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
-        {labelKey ? t(labelKey) : label}
-      </span>
-    </Link>
+        <span
+          className="material-symbols-outlined shrink-0 text-[20px]"
+          style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+        >
+          {icon}
+        </span>
+        <span className="min-w-0 truncate text-body-md md:hidden xl:inline">
+          {labelKey ? t(labelKey) : label}
+        </span>
+      </Link>
+      {sectionGuides ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+            openSection(sectionGuides);
+          }}
+          aria-label={t("shell.navActions")}
+          title={t("shell.navActions")}
+          data-testid="nav-action-button"
+          className={cn(
+            "me-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors",
+            isActive
+              ? "text-primary hover:bg-primary/10"
+              : "text-on-surface-variant hover:bg-surface-container-high hover:text-primary",
+          )}
+        >
+          <span className="material-symbols-outlined text-[18px]">bolt</span>
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -322,6 +358,10 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
                           groupedAllHrefs,
                         )}
                         onClose={onClose}
+                        sectionGuides={permittedSectionQuickGuides(
+                          item.href,
+                          permissions.can,
+                        )}
                       />
                     ))}
                   </div>
@@ -348,6 +388,7 @@ export function AppNavigation({ open, onClose }: AppNavigationProps) {
               icon={icon}
               isActive={isItemActive(pathname, href, tenantAllHrefs)}
               onClose={onClose}
+              sectionGuides={permittedSectionQuickGuides(href, permissions.can)}
             />
           ))}
         </div>

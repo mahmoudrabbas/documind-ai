@@ -31,6 +31,7 @@ import {
   resolveApproval,
   getApproval,
   listApprovals,
+  listApprovalsForRun,
   expirePendingApprovals,
 } from "./agents.repository.js";
 import AgentRunModel from "../../db/models/agentRun.model.js";
@@ -609,17 +610,16 @@ export async function getRunDetails(
   }
   const run = await getRun(resolvedTenantId, runId);
   if (!run) throw new AppError(404, NOT_FOUND, "Run not found");
-  const [stepsRes, toolCallsRes, approvalsRes] = await Promise.all([
+  const [stepsRes, toolCallsRes, approvals] = await Promise.all([
     getSteps(resolvedTenantId, runId, { page: 1, pageSize: 50 }),
     getToolCalls(resolvedTenantId, runId, { page: 1, pageSize: 100 }),
-    listApprovals(resolvedTenantId, { page: 1, pageSize: 50 }),
+    listApprovalsForRun(resolvedTenantId, runId),
   ]);
-  const runApprovals = approvalsRes.approvals.filter((a) => a.runId === runId);
   return {
     run,
     steps: stepsRes.steps,
     toolCalls: toolCallsRes.toolCalls,
-    approvals: runApprovals,
+    approvals,
   };
 }
 

@@ -834,6 +834,9 @@ export class SupervisorRuntime {
         typeof result.error?.code === "string"
           ? result.error.code
           : AGENT_PROVIDER_ERROR,
+        typeof result.error?.message === "string"
+          ? result.error.message
+          : undefined,
       );
     }
 

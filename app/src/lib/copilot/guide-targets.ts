@@ -349,6 +349,48 @@ export const GUIDE_TARGETS: readonly GuideTargetEntry[] = [
     requiredPermissions: ["documents:archive"],
   },
   {
+    targetId: "documents-drawer-delete",
+    route: "/dashboard/documents",
+    description: "Move to trash button in the document detail drawer",
+    requiredPermissions: ["documents:delete"],
+  },
+  {
+    targetId: "documents-delete-confirm",
+    route: "/dashboard/documents",
+    description: "Confirm button in the delete confirmation dialog",
+    requiredPermissions: ["documents:delete"],
+  },
+  {
+    targetId: "documents-drawer-edit",
+    route: "/dashboard/documents",
+    description: "Edit details button in the document detail drawer",
+    requiredPermissions: ["documents:update"],
+  },
+  {
+    targetId: "documents-drawer-edit-title",
+    route: "/dashboard/documents",
+    description: "Title input in the edit details form of the document drawer",
+    requiredPermissions: ["documents:update"],
+  },
+  {
+    targetId: "documents-drawer-edit-description",
+    route: "/dashboard/documents",
+    description: "Description input in the edit details form of the document drawer",
+    requiredPermissions: ["documents:update"],
+  },
+  {
+    targetId: "documents-drawer-edit-tags",
+    route: "/dashboard/documents",
+    description: "Tags input in the edit details form of the document drawer",
+    requiredPermissions: ["documents:update"],
+  },
+  {
+    targetId: "documents-drawer-edit-save",
+    route: "/dashboard/documents",
+    description: "Save button in the edit details form of the document drawer",
+    requiredPermissions: ["documents:update"],
+  },
+  {
     targetId: "documents-drawer-replace",
     route: "/dashboard/documents",
     description: "Replace file button in the document detail drawer",
@@ -389,6 +431,18 @@ export const GUIDE_TARGETS: readonly GuideTargetEntry[] = [
     route: "/dashboard/users",
     description: "Delete user button in the users table",
     requiredPermissions: ["users:delete"],
+  },
+  {
+    targetId: "users-table",
+    route: "/dashboard/users",
+    description: "Users table",
+    requiredPermissions: ["users:read"],
+  },
+  {
+    targetId: "settings-company-name-input",
+    route: "/dashboard/settings",
+    description: "Company name input in the company profile settings section",
+    requiredPermissions: ["company-settings:update"],
   },
   {
     targetId: "roles-create-button",

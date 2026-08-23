@@ -65,13 +65,17 @@ export class ToolRegistry {
         approvalId: null,
       };
     } catch (error) {
+      const operational =
+        error instanceof AppError
+          ? { code: error.code, message: error.message, details: error.details }
+          : undefined;
       return {
         ok: false,
         status: "failed",
         output: null,
-        error: error instanceof AppError
-          ? { code: error.code, message: error.message }
-          : { message: error instanceof Error ? error.message : "Tool execution failed" },
+        error: operational ?? {
+          message: error instanceof Error ? error.message : "Tool execution failed",
+        },
         latencyMs: Date.now() - start,
         tokensUsed: null,
         estimatedCost: null,

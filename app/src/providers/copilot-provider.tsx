@@ -14,13 +14,21 @@ import {
 import { useI18n } from "@/providers/i18n-provider";
 import { useCopilotSocket } from "@/hooks/features/useCopilotSocket";
 import {
+  answerActionDraft,
+  cancelActionDraft,
   confirmAction,
+  createActionPlan,
+  getActionStatus,
   getGuideFlows,
   resolveGuideFlow as resolveGuideFlowApi,
   sendCopilotMessage,
 } from "@/services/copilot.service";
+import { ACTION_CATALOG } from "@/lib/copilot/action-catalog";
+import type { SectionQuickGuides } from "@/lib/copilot/nav-actions";
 import type {
+  ActionDraft,
   ActionPlan,
+  ActionResultStatus,
   ClarifyPayload,
   CopilotLifecycleEvent,
   CopilotLifecyclePayload,
@@ -39,7 +47,28 @@ import {
   type ActionLifecycleState,
 } from "@/lib/copilot/copilot-events";
 
-export type CopilotPanelMode = "guide" | "action" | "clarify" | null;
+/** Merge the top-level approvalId from a copilot response into the plan object. */
+function mergeApprovalId(
+  plan: ActionPlan,
+  approvalId?: string,
+): ActionPlan {
+  return approvalId ? { ...plan, approvalId } : plan;
+}
+
+export type CopilotPanelMode =
+  | "guide"
+  | "action"
+  | "action_input"
+  | "clarify"
+  | null;
+
+/** Q&A bubbles shown while the assistant collects action parameters. */
+export interface TranscriptEntry {
+  role: "user" | "assistant";
+  text: string;
+  /** i18n key for assistant entries so they re-render on locale switch. */
+  labelKey?: string;
+}
 
 /** Default action chips offered when the assistant needs clarification. */
 const DEFAULT_CLARIFY_ACTIONS = [
@@ -55,6 +84,15 @@ export interface CopilotContextValue {
   mode: CopilotPanelMode;
   loading: boolean;
   error: string | null;
+
+  /**
+   * Restricts the panel chips to a sidebar section's quick guides — action
+   * tools on the Actions tab and/or guide flows on the Guides tab. Null
+   * shows the full permission-filtered catalog.
+   */
+  sectionFilter: SectionQuickGuides | null;
+  /** Opens the panel filtered to the given section chips. */
+  openSection: (guides: SectionQuickGuides) => void;
 
   flows: GuideFlowMeta[];
 
@@ -72,9 +110,17 @@ export interface CopilotContextValue {
   action: ActionLifecycleState;
   clarify: ClarifyPayload | null;
 
+  /** Interactive action-input draft (mode "action_input"). */
+  draft: ActionDraft | null;
+  /** Q&A bubbles for the current action-input conversation. */
+  transcript: TranscriptEntry[];
+
   sendMessage: (utterance: string) => Promise<void>;
   startGuide: (flowId: string) => Promise<void>;
+  runAction: (toolName: string) => Promise<void>;
   confirm: (decision: "approve" | "reject", note?: string) => Promise<void>;
+  answerDraft: (answer: string) => Promise<void>;
+  cancelDraft: () => Promise<void>;
   dismissAction: () => void;
   loadFlows: () => Promise<void>;
 }
@@ -89,6 +135,9 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [flows, setFlows] = useState<GuideFlowMeta[]>([]);
   const [clarify, setClarify] = useState<ClarifyPayload | null>(null);
+  const [sectionFilter, setSectionFilter] = useState<SectionQuickGuides | null>(
+    null,
+  );
 
   const [guideState, dispatchGuide] = useReducer(
     (state: GuideMachineState | null, action: GuideAction) => {
@@ -111,6 +160,13 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     actionStateRef.current = actionState;
   }, [actionState]);
 
+  const [draft, setDraft] = useState<ActionDraft | null>(null);
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
   // Terminal guide states clean up the panel so the assistant returns to its
   // launcher state instead of lingering in "guide" mode with a finished guide.
   // Starting a new guide replaces the state wholesale, so no explicit reset
@@ -131,6 +187,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   // authoritative status.
   const onLifecycle = useCallback(
     (event: CopilotLifecycleEvent, payload: CopilotLifecyclePayload) => {
+      // Only forward events for the currently active run — stale events from a
+      // previous run (e.g. after switching action chips) must be dropped.
+      if (payload.runId && payload.runId !== actionStateRef.current.runId) {
+        return;
+      }
       dispatchAction({ event, payload });
     },
     [],
@@ -148,12 +209,46 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         });
         setMode(result.mode);
         if (result.guideSession) {
+          setTranscript((entries) => [
+            ...entries,
+            { role: "user", text: utterance },
+          ]);
           dispatchGuide({ type: "setSession", session: result.guideSession });
           setClarify(null);
+        } else if (result.actionDraft) {
+          // Interactive parameter collection: reset transcript for the new
+          // draft session, keeping only the current user utterance and the
+          // first assistant question.
+          setDraft(result.actionDraft);
+          setClarify(null);
+          const initialEntries: TranscriptEntry[] = [
+            { role: "user", text: utterance },
+          ];
+          if (result.actionDraft.question) {
+            initialEntries.push({
+              role: "assistant",
+              text: t(result.actionDraft!.question!.labelKey),
+              labelKey: result.actionDraft!.question!.labelKey,
+            });
+          }
+          setTranscript(initialEntries);
+        } else if (result.result && result.actionPlan) {
+          // A low-risk action executed directly — surface the result card.
+          dispatchAction({
+            event: "action.executed",
+            payload: {
+              runId: result.result.runId,
+              status: result.result.status,
+              result: result.result,
+            },
+          });
+          setTranscript((entries) => [
+            ...entries,
+            { role: "assistant", text: result.result!.message },
+          ]);
+          setClarify(null);
         } else if (result.actionPlan) {
-          const planWithApproval: ActionPlan = result.approvalId
-            ? { ...result.actionPlan, approvalId: result.approvalId }
-            : result.actionPlan;
+          const planWithApproval = mergeApprovalId(result.actionPlan, result.approvalId);
           dispatchAction({
             event: "action.plan.created",
             payload: { plan: planWithApproval, runId: planWithApproval.runId },
@@ -210,49 +305,266 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     [locale],
   );
 
+  const runAction = useCallback(
+    async (toolName: string) => {
+      setError(null);
+      setLoading(true);
+      try {
+        const catalogEntry = ACTION_CATALOG.find((e) => e.toolName === toolName);
+        const utterance = catalogEntry ? t(catalogEntry.labelKey) : toolName;
+        const result = await createActionPlan({ toolName, utterance });
+        if (result.mode === "action_input") {
+          setMode("action_input");
+          setDraft(result.actionDraft);
+          setClarify(null);
+          const label = catalogEntry ? t(catalogEntry.labelKey) : toolName;
+          setTranscript((entries) => [
+            ...entries,
+            { role: "user", text: label },
+          ]);
+          if (result.actionDraft.question) {
+            setTranscript((entries) => [
+              ...entries,
+              { role: "assistant", text: result.actionDraft.question!.label },
+            ]);
+          }
+        } else if (result.result && result.actionPlan) {
+          // A low-risk action executed directly — surface the result card.
+          setMode("action");
+          dispatchAction({
+            event: "action.executed",
+            payload: {
+              runId: result.result.runId,
+              status: result.result.status,
+              result: result.result,
+            },
+          });
+          setClarify(null);
+        } else {
+          setMode("action");
+          const plan = result.actionPlan;
+          dispatchAction({
+            event: "action.plan.created",
+            payload: { plan, runId: plan.runId },
+          });
+          setClarify(null);
+          if (plan.requiresConfirmation) {
+            dispatchAction({
+              event: "action.awaiting_confirmation",
+              payload: {
+                runId: plan.runId,
+                approvalId: plan.approvalId,
+              },
+            });
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to start action");
+        setMode(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
+
   const confirm = useCallback(
     async (decision: "approve" | "reject", note?: string) => {
       const plan = actionStateRef.current.plan;
-      const approvalId = actionStateRef.current.approvalId;
-      if (!plan || !approvalId) return;
+      let approvalId = actionStateRef.current.approvalId;
+
+      if (!plan) {
+        setError(t("copilot.action.plan.confirm.noPlan"));
+        setMode(null);
+        return;
+      }
+
+      if (!approvalId) {
+        try {
+          const status = await getActionStatus(plan.runId);
+          const approvals = (status.approvals ?? []) as Array<{
+            id: string;
+            status: string;
+          }>;
+          const pending = approvals.find((a) => a.status === "pending");
+          if (pending?.id) approvalId = pending.id;
+        } catch {
+          // Status fetch errors fall through to the error below.
+        }
+      }
+
+      if (!approvalId) {
+        setError(t("copilot.action.plan.confirm.missingApproval"));
+        return;
+      }
+
       setError(null);
       try {
-        await confirmAction({
+        const result = await confirmAction({
           runId: plan.runId,
           decision,
           approvalId,
           note,
+          locale,
         });
-        // The socket (if connected) will deliver action.executed/failed; the
-        // REST response is authoritative for status, so mirror it here too.
+        // The REST response carries the authoritative run status — never
+        // infer from the decision; the tool may have failed after approval.
+        const runStatus = result.run.status as ActionResultStatus;
+        const isTerminal = runStatus === "completed";
         dispatchAction({
-          event: decision === "approve" ? "action.executed" : "action.failed",
+          event: isTerminal ? "action.executed" : "action.failed",
           payload: {
             runId: plan.runId,
-            status: decision === "approve" ? "completed" : "rejected",
+            status: runStatus,
             result: {
               runId: plan.runId,
-              status: decision === "approve" ? "completed" : "rejected",
+              status: runStatus,
               toolName: plan.toolName,
               output: null,
-              message:
-                decision === "approve" ? "Action completed" : "Action rejected",
+              message: isTerminal
+                ? (result.run.resultMessage ?? t("copilot.action.result.succeeded"))
+                : (result.run.error?.message ?? t("copilot.action.result.failed")),
             },
           },
         });
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to confirm action",
-        );
+        const message =
+          err instanceof Error ? err.message : "Failed to confirm action";
+        // Approval expiry: the backend marks the run as failed/rejected.
+        // Show a specific message so the user knows to retry the action.
+        if (message.includes("Approval expired") || message.includes("STATE_TRANSITION_INVALID")) {
+          setError(t("copilot.action.plan.confirm.expired"));
+        } else {
+          setError(message);
+        }
       }
     },
     [],
   );
 
+  const answerDraft = useCallback(
+    async (answer: string) => {
+      const current = draftRef.current;
+      if (!current) return;
+      setError(null);
+      setLoading(true);
+      setTranscript((entries) => [...entries, { role: "user", text: answer }]);
+      try {
+        const result = await answerActionDraft(current.draftId, answer);
+        if (!result.completed) {
+          setDraft(result.draft);
+          if (result.draft.message) {
+            setTranscript((entries) => [
+              ...entries,
+              { role: "assistant", text: result.draft.message! },
+            ]);
+          } else if (result.draft.question) {
+            setTranscript((entries) => [
+              ...entries,
+              {
+                role: "assistant",
+                text: t(result.draft.question!.labelKey),
+                labelKey: result.draft.question!.labelKey,
+              },
+            ]);
+          }
+          return;
+        }
+
+        // The draft is complete — the action now runs end-to-end.
+        setDraft(null);
+        setMode("action");
+        const { outcome } = result;
+        if (outcome.result) {
+          dispatchAction({
+            event: "action.executed",
+            payload: {
+              runId: outcome.result.runId,
+              status: outcome.result.status,
+              result: outcome.result,
+            },
+          });
+          setTranscript((entries) => [
+            ...entries,
+            { role: "assistant", text: outcome.result!.message },
+          ]);
+        } else {
+          const planWithApproval = mergeApprovalId(outcome.plan, outcome.approvalId);
+          dispatchAction({
+            event: "action.plan.created",
+            payload: { plan: planWithApproval, runId: planWithApproval.runId },
+          });
+          if (planWithApproval.requiresConfirmation) {
+            dispatchAction({
+              event: "action.awaiting_confirmation",
+              payload: {
+                runId: planWithApproval.runId,
+                approvalId: planWithApproval.approvalId,
+              },
+            });
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "";
+        setError(
+          msg || "Failed to submit your answer",
+        );
+        // Only wipe the draft if the error indicates it's gone (404/410)
+        // or the action failed after completion. Transient network errors
+        // should not destroy the Q&A state — the server-side draft still
+        // exists (15-min TTL) and the user can retry.
+        if (
+          msg.includes("not found") ||
+          msg.includes("expired") ||
+          msg.includes("already completed")
+        ) {
+          setDraft(null);
+          setMode("clarify");
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  const cancelDraft = useCallback(async () => {
+    const current = draftRef.current;
+    if (!current) return;
+    try {
+      await cancelActionDraft(current.draftId);
+    } catch {
+      // Best-effort cleanup; the draft expires server-side regardless.
+    }
+    setDraft(null);
+    setMode(null);
+    setTranscript([]);
+  }, []);
+
   const dismissAction = useCallback(() => {
     dispatchAction({ event: "copilot.classified", payload: {} });
     setMode(null);
   }, []);
+
+  const openSection = useCallback((guides: SectionQuickGuides) => {
+    setSectionFilter(guides);
+    setMode(null);
+    setDraft(null);
+    setClarify(null);
+    setError(null);
+    setOpen(true);
+  }, []);
+
+  // A fresh open via the launcher (or any other surface) always shows the
+  // full catalog; the section filter only lives for one sidebar-driven open.
+  // Tracked via a ref so the reset only fires on an open→closed transition
+  // (the mount-time effect run must not clobber a filter applied in the same
+  // flush).
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !open) setSectionFilter(null);
+    wasOpen.current = open;
+  }, [open]);
 
   const loadFlows = useCallback(async () => {
     try {
@@ -284,14 +596,21 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       mode,
       loading,
       error,
+      sectionFilter,
+      openSection,
       flows,
       guide: guideState,
       guideActions,
       action: actionState,
       clarify,
+      draft,
+      transcript,
       sendMessage,
       startGuide,
+      runAction,
       confirm,
+      answerDraft,
+      cancelDraft,
       dismissAction,
       loadFlows,
     }),
@@ -300,14 +619,21 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       mode,
       loading,
       error,
+      sectionFilter,
+      openSection,
       flows,
       guideState,
       guideActions,
       actionState,
       clarify,
+      draft,
+      transcript,
       sendMessage,
       startGuide,
+      runAction,
       confirm,
+      answerDraft,
+      cancelDraft,
       dismissAction,
       loadFlows,
     ],
