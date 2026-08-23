@@ -28,13 +28,12 @@ export const NAV_ACTION_TOOLS: Readonly<Record<string, readonly string[]>> = {
   ],
   "/dashboard/users": [
     "user.invite",
-    "user.list",
     "user.resendInvitation",
     "user.revokeInvitation",
     "user.delete",
   ],
-  "/dashboard/settings": ["settings.update"],
-  "/dashboard/roles": ["roles.create"],
+  "/dashboard/settings": [],
+  "/dashboard/roles": [],
 };
 
 export const NAV_GUIDE_FLOWS: Readonly<Record<string, readonly string[]>> = {

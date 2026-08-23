@@ -323,7 +323,7 @@ describe("CopilotPanel capability_unavailable recommendations", () => {
         kind: "generic",
         message: "Could you clarify?",
         suggestedFlows: ["documents.upload"],
-        suggestedActions: ["document.search"],
+        suggestedActions: ["document.search", "settings.update"],
       },
     });
 
@@ -351,6 +351,7 @@ describe("CopilotPanel capability_unavailable recommendations", () => {
     expect(container.textContent).toContain("copilot.clarify.flowsHeading");
     expect(container.textContent).toContain("Upload a document");
     expect(container.textContent).toContain("document.search");
+    expect(container.textContent).not.toContain("settings.update");
     expect(resolveGuideFlow).not.toHaveBeenCalled();
   });
 });
@@ -484,20 +485,20 @@ describe("CopilotPanel mode tabs", () => {
     vi.mocked(createActionPlan).mockResolvedValueOnce({
       mode: "action",
       actionPlan: {
-        runId: "run-user-list-1",
-        intent: "List users",
-        toolName: "user.list",
+        runId: "run-user-invite-1",
+        intent: "Invite a user",
+        toolName: "user.invite",
         risk: "low",
         requiresConfirmation: false,
-        summary: "List users",
+        summary: "Invite a user",
         target: null,
       },
       result: {
-        runId: "run-user-list-1",
+        runId: "run-user-invite-1",
         status: "completed",
-        toolName: "user.list",
-        output: { users: [{ email: "sara@company.com" }] },
-        message: "Found 1 user",
+        toolName: "user.invite",
+        output: { invited: true },
+        message: "Invited user",
       },
     });
 
@@ -520,7 +521,7 @@ describe("CopilotPanel mode tabs", () => {
     await act(async () => {});
 
     const chip = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("copilot.action.chip.user.list"),
+      (button) => button.textContent?.includes("copilot.action.chip.user.invite"),
     );
     expect(chip).toBeTruthy();
     act(() => {
@@ -532,7 +533,7 @@ describe("CopilotPanel mode tabs", () => {
 
     // The result card must render instead of a bare plan card.
     expect(container.textContent).toContain("copilot.action.result.succeeded");
-    expect(container.textContent).toContain("Found 1 user");
+    expect(container.textContent).toContain("Invited user");
   });
 });
 
@@ -541,7 +542,7 @@ describe("CopilotPanel sidebar section chips", () => {
     act(() => {
       root.render(
         <CopilotProvider>
-          <SectionActionsHarness tools={["user.invite", "user.list"]} />
+          <SectionActionsHarness tools={["user.invite"]} />
         </CopilotProvider>,
       );
     });
@@ -551,7 +552,6 @@ describe("CopilotPanel sidebar section chips", () => {
     expect(container.textContent).toContain("copilot.tabs.actions");
     expect(container.textContent).toContain("copilot.actions.title");
     expect(container.textContent).toContain("copilot.action.chip.user.invite");
-    expect(container.textContent).toContain("copilot.action.chip.user.list");
     expect(container.textContent).not.toContain(
       "copilot.action.chip.document.search",
     );

@@ -24,14 +24,11 @@ describe("nav-action tools registry", () => {
     ]);
     expect(navActionToolsFor("/dashboard/users")).toEqual([
       "user.invite",
-      "user.list",
       "user.resendInvitation",
       "user.revokeInvitation",
       "user.delete",
     ]);
-    expect(navActionToolsFor("/dashboard/settings")).toEqual([
-      "settings.update",
-    ]);
+    expect(navActionToolsFor("/dashboard/settings")).toEqual([]);
   });
 
   it("maps sections backed by guide flows to their flow chips", () => {
@@ -111,7 +108,6 @@ describe("permittedNavActionTools", () => {
   it("returns the full permitted section list", () => {
     expect(permittedNavActionTools("/dashboard/users", allowAll)).toEqual([
       "user.invite",
-      "user.list",
       "user.resendInvitation",
       "user.revokeInvitation",
       "user.delete",
@@ -125,10 +121,10 @@ describe("permittedSectionQuickGuides", () => {
 
   it("combines tools and flows for sections that carry both", () => {
     expect(permittedSectionQuickGuides("/dashboard/settings", allowAll)).toEqual(
-      { tools: ["settings.update"], flows: ["settings.open"] },
+      { tools: [], flows: ["settings.open"] },
     );
     expect(permittedSectionQuickGuides("/dashboard/roles", allowAll)).toEqual({
-      tools: ["roles.create"],
+      tools: [],
       flows: ["roles.create"],
     });
   });
@@ -154,7 +150,7 @@ describe("permittedSectionQuickGuides", () => {
       permission === Permission.ROLES_CREATE;
     expect(
       permittedSectionQuickGuides("/dashboard/roles", canRoleCreate),
-    ).toEqual({ tools: ["roles.create"], flows: ["roles.create"] });
+    ).toEqual({ tools: [], flows: ["roles.create"] });
     // Taxonomy needs COMPANY_SETTINGS_READ — not granted here.
     expect(
       permittedSectionQuickGuides("/dashboard/roles", denyAll),

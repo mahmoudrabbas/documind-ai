@@ -858,6 +858,7 @@ test("action draft lifecycle", async (t) => {
         actorId,
         deps,
       });
+      assert.ok(!afterName.completed, "the name answer leaves grants pending");
       const afterRole = await answerActionDraft({
         draftId: afterName.draft.draftId,
         answer: "Employee",
@@ -865,6 +866,7 @@ test("action draft lifecycle", async (t) => {
         actorId,
         deps,
       });
+      assert.ok(!afterRole.completed, "the base-role answer leaves grants pending");
 
       const afterGrants = await answerActionDraft({
         draftId: afterRole.draft.draftId,
@@ -905,6 +907,7 @@ test("action draft lifecycle", async (t) => {
         actorId,
         deps,
       });
+      assert.ok(!afterEverything.completed, "the list is still open until it is ended");
       assert.match(afterEverything.draft.message ?? "", /anything else/i);
 
       const finished = await answerActionDraft({

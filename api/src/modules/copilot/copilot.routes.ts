@@ -12,11 +12,14 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantScoping);
 
-// Copilot-specific rate limit: 30 requests per minute for mutating endpoints
+// Copilot-specific rate limit: 100 requests per minute for mutating endpoints
 // to bound LLM inference cost per user.
+export const COPILOT_RATE_LIMIT_WINDOW_MS = 60_000;
+export const COPILOT_RATE_LIMIT_MAX_REQUESTS = 100;
+
 const copilotRateLimiter = createRateLimiter({
-  windowMs: 60_000,
-  max: 30,
+  windowMs: COPILOT_RATE_LIMIT_WINDOW_MS,
+  max: COPILOT_RATE_LIMIT_MAX_REQUESTS,
   message: "Too many copilot requests. Please wait a moment and try again.",
 });
 

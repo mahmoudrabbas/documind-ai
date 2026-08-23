@@ -208,7 +208,6 @@ async function collectRoleGrants(opts: {
 
   const display = grantsSummary(merged);
   const nextResolved = new Set([...resolvedSet, ...resolvedAdditions]);
-  const pending = pendingScopeGrant(merged, nextResolved);
   let message = "";
   if (parsed.rejected.length > 0) {
     const items = parsed.rejected.map((item) => item.label).join(", ");

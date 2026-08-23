@@ -24,6 +24,7 @@ import {
   sendCopilotMessage,
 } from "@/services/copilot.service";
 import { ACTION_CATALOG } from "@/lib/copilot/action-catalog";
+import { resolveQuestionLabel } from "@/lib/copilot/question-label";
 import type { SectionQuickGuides } from "@/lib/copilot/nav-actions";
 import type {
   ActionDraft,
@@ -75,7 +76,6 @@ const DEFAULT_CLARIFY_ACTIONS = [
   "document.search",
   "document.get",
   "user.invite",
-  "settings.update",
 ];
 
 export interface CopilotContextValue {
@@ -227,8 +227,12 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           if (result.actionDraft.question) {
             initialEntries.push({
               role: "assistant",
-              text: t(result.actionDraft!.question!.labelKey),
-              labelKey: result.actionDraft!.question!.labelKey,
+              text: resolveQuestionLabel(
+                result.actionDraft.question.labelKey,
+                result.actionDraft.question.label,
+                t,
+              ),
+              labelKey: result.actionDraft.question.labelKey,
             });
           }
           setTranscript(initialEntries);
@@ -325,7 +329,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           if (result.actionDraft.question) {
             setTranscript((entries) => [
               ...entries,
-              { role: "assistant", text: result.actionDraft.question!.label },
+              {
+                role: "assistant",
+                text: resolveQuestionLabel(
+                  result.actionDraft.question!.labelKey,
+                  result.actionDraft.question!.label,
+                  t,
+                ),
+                labelKey: result.actionDraft.question!.labelKey,
+              },
             ]);
           }
         } else if (result.result && result.actionPlan) {
@@ -463,7 +475,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
               ...entries,
               {
                 role: "assistant",
-                text: t(result.draft.question!.labelKey),
+                text: resolveQuestionLabel(
+                  result.draft.question!.labelKey,
+                  result.draft.question!.label,
+                  t,
+                ),
                 labelKey: result.draft.question!.labelKey,
               },
             ]);

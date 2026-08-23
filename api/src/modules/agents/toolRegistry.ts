@@ -67,7 +67,15 @@ export class ToolRegistry {
     } catch (error) {
       const operational =
         error instanceof AppError
-          ? { code: error.code, message: error.message, details: error.details }
+          ? {
+              code: error.code,
+              message: error.message,
+              // AppError.details defaults to null, and this error object is
+              // persisted on every failed tool step, so carrying an always-null
+              // field would add noise to every one of them. Consumers already
+              // guard on details being a non-null object.
+              ...(error.details === null ? {} : { details: error.details }),
+            }
           : undefined;
       return {
         ok: false,

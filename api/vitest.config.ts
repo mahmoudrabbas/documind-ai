@@ -61,6 +61,8 @@ export default defineConfig({
       "src/modules/copilot/__tests__/classifierFallback.test.ts",
       "src/modules/copilot/__tests__/copilotSupervisorDecision.test.ts",
       "src/modules/copilot/__tests__/eval.test.ts",
+      "src/modules/copilot/__tests__/actionDraft.test.ts",
+      "src/modules/copilot/__tests__/resolveActionTarget.humanize.test.ts",
       "src/modules/public/__tests__/public.routes.test.ts",
       "src/modules/entitlement/__tests__/entitlement.admin.routes.integration.test.ts",
     ],

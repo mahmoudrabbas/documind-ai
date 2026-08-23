@@ -250,7 +250,7 @@ export function extractSettings(text: string): Record<string, unknown> | null {
     patch.profile = { ...(patch.profile as object | undefined), companyName: companyName[1].trim() };
   }
 
-  const timezone = lower.match(/\btimezone\s*(?:to|as|:)?\s*[“”"]?([a-z\/_-]{2,60})[“”"]?/i);
+  const timezone = lower.match(/\btimezone\s*(?:to|as|:)?\s*[“”"]?([a-z/_-]{2,60})[“”"]?/i);
   if (timezone) {
     patch.profile = { ...(patch.profile as object | undefined), timezone: timezone[1].trim() };
   }

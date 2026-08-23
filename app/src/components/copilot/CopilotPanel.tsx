@@ -13,6 +13,7 @@ import {
   partitionFlows,
 } from "@/lib/copilot/flow-catalog";
 import { permittedActions, ACTION_CATALOG } from "@/lib/copilot/action-catalog";
+import { resolveQuestionLabel } from "@/lib/copilot/question-label";
 import { usePermissions } from "@/providers/permission-provider";
 import { Permission, type PermissionValue } from "@/types/api/permissions.types";
 import {
@@ -30,19 +31,6 @@ function isAdminView(can: (permission: PermissionValue) => boolean): boolean {
     can(Permission.ROLES_READ) ||
     can(Permission.COMPANY_SETTINGS_READ)
   );
-}
-
-/** Resolves a question labelKey through the dictionary, falling back to the
- * server-provided English label when the key is missing or resolves to itself. */
-function questionLabel(
-  labelKey: string,
-  fallback: string,
-  t: (key: string) => string,
-): string {
-  const localized = t(labelKey);
-  return localized !== labelKey && localized.trim().length > 0
-    ? localized
-    : fallback;
 }
 
 /**
@@ -337,7 +325,11 @@ export function CopilotPanel() {
               {draft.question ? (
                 <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
                   <p className="text-body-md font-semibold text-on-surface">
-                    {questionLabel(draft.question.labelKey, draft.question.label, t)}
+                    {resolveQuestionLabel(
+                      draft.question.labelKey,
+                      draft.question.label,
+                      t,
+                    )}
                   </p>
                   {draft.questionsRemaining > 0 ? (
                     <p className="mt-1 text-label-sm text-on-surface-variant">
@@ -444,13 +436,19 @@ export function CopilotPanel() {
                 </div>
               ) : null}
 
-              {clarify.suggestedActions.length > 0 ? (
+              {clarify.suggestedActions.filter((action) =>
+                ACTION_CATALOG.some((entry) => entry.toolName === action),
+              ).length > 0 ? (
                 <div>
                   <p className="text-label-sm font-semibold text-on-surface-variant">
                     {t("copilot.clarify.actionsHeading")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {clarify.suggestedActions.map((action) => {
+                    {clarify.suggestedActions
+                      .filter((action) =>
+                        ACTION_CATALOG.some((entry) => entry.toolName === action),
+                      )
+                      .map((action) => {
                       const catalogEntry = ACTION_CATALOG.find((e) => e.toolName === action);
                       return (
                         <button

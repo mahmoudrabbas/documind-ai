@@ -55,7 +55,7 @@ class InMemoryCounter implements QuotaCounterPort {
     return this.usage.get(this.key(tenantId, dimension, periodStart)) ?? 0;
   }
 
-  async getAllUsage(tenantId: string, periodStart: string): Promise<Record<EntitlementDimension, number>> {
+  async getAllUsage(_tenantId: string, _periodStart: string): Promise<Record<EntitlementDimension, number>> {
     return {} as Record<EntitlementDimension, number>;
   }
 

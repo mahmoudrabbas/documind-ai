@@ -358,7 +358,6 @@ describe("nav action buttons", () => {
     expect(state.copilot.openSection).toHaveBeenCalledWith({
       tools: [
         "user.invite",
-        "user.list",
         "user.resendInvitation",
         "user.revokeInvitation",
         "user.delete",
@@ -375,7 +374,7 @@ describe("nav action buttons", () => {
       rowActionButton("/dashboard/roles")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["roles.create"],
+      tools: [],
       flows: ["roles.create"],
     });
 
@@ -391,7 +390,7 @@ describe("nav action buttons", () => {
       rowActionButton("/dashboard/settings")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["settings.update"],
+      tools: [],
       flows: ["settings.open"],
     });
   });
@@ -413,20 +412,15 @@ describe("nav action buttons", () => {
       flows: [],
     });
 
-    // Only read is granted — nothing destructive or updatable is offered.
-    act(() => {
-      rowActionButton("/dashboard/users")?.click();
-    });
-    expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["user.list"],
-      flows: [],
-    });
+    // Only read is granted; the unavailable user-list action is hidden, so
+    // this section has no visible Copilot quick action.
+    expect(rowActionButton("/dashboard/users")).toBeNull();
 
     act(() => {
       rowActionButton("/dashboard/roles")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["roles.create"],
+      tools: [],
       flows: ["roles.create"],
     });
   });

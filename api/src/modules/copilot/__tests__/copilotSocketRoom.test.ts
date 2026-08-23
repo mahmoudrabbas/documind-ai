@@ -23,6 +23,7 @@ import type { AddressInfo } from "node:net";
 import { io as ioClient, type Socket as ClientSocket } from "socket.io-client";
 import TenantModel from "../../../db/models/tenant.model.js";
 import UserModel from "../../../db/models/user.model.js";
+import AgentRunModel from "../../../db/models/agentRun.model.js";
 import { config } from "../../../config/index.js";
 import { signJwt } from "../../auth/jwtTokens.js";
 import {
@@ -40,6 +41,7 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
 
   let tenantId = "";
   let userId = "";
+  let runId = "";
   const clients: ClientSocket[] = [];
 
   function userToken(overrides: Record<string, unknown> = {}): string {
@@ -138,7 +140,7 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
       });
       connectedByThisFile = true;
     }
-    await Promise.all([TenantModel.init(), UserModel.init()]);
+    await Promise.all([TenantModel.init(), UserModel.init(), AgentRunModel.init()]);
 
     httpServer = createHttpServer();
     socketServer = createSocketServer(httpServer);
@@ -166,7 +168,11 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
   });
 
   beforeEach(async () => {
-    await Promise.all([TenantModel.deleteMany({}), UserModel.deleteMany({})]);
+    await Promise.all([
+      TenantModel.deleteMany({}),
+      UserModel.deleteMany({}),
+      AgentRunModel.deleteMany({}),
+    ]);
     const tenant = await TenantModel.create({
       name: "Copilot Tenant",
       slug: "copilot-tenant",
@@ -185,10 +191,21 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
       emailVerifiedAt: new Date(),
     });
     userId = user.id;
+    const run = await AgentRunModel.create({
+      tenantId: tenant._id,
+      actorId: user._id,
+      workflowName: "copilot-socket-test",
+      agentName: "copilot-socket-test-agent",
+      input: { question: "test" },
+      modelProvider: "test",
+      modelName: "test-model",
+      traceId: `trace-${tenantId}`,
+      requestId: `request-${tenantId}`,
+    });
+    runId = run.id;
   });
 
   it("delivers lifecycle events to a socket that joined copilot:<runId>", async () => {
-    const runId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
     const socket = connectSocket(userToken());
     await onConnected(socket);
     await expect(emitJoin(socket, runId)).resolves.toBe(true);
@@ -207,8 +224,7 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
   });
 
   it("does not deliver to a socket that did not join the run room", async () => {
-    const runId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-    const otherRunId = "6ba7b810-9dad-11d1-80b4-00c04fd430c9";
+    const otherRunId = new mongoose.Types.ObjectId().toString();
     const socket = connectSocket(userToken());
     await onConnected(socket);
     await emitJoin(socket, runId);
@@ -222,7 +238,6 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
   });
 
   it("stops delivering after copilot:leave", async () => {
-    const runId = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
     const socket = connectSocket(userToken());
     await onConnected(socket);
     await emitJoin(socket, runId);
@@ -235,6 +250,39 @@ describe.skipIf(!hasMongo)("copilotSocketRoom (T§15)", () => {
     const noEvent = expectNoEvent(socket, "action.executed");
     socketServer.emitToCopilotRun(runId, "action.executed", { runId });
     await noEvent;
+  });
+
+  it("refuses a copilot room join from another tenant", async () => {
+    const foreignTenant = await TenantModel.create({
+      name: "Foreign Copilot Tenant",
+      slug: "foreign-copilot-tenant",
+      status: "active",
+      plan: "free",
+    });
+    const foreignUser = await UserModel.create({
+      tenantId: foreignTenant._id,
+      name: "Foreign Copilot User",
+      email: "foreign-copilot-user@example.com",
+      passwordHash: "not-used",
+      role: "EMPLOYEE",
+      status: "active",
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+    const socket = connectSocket(
+      signJwt(
+        {
+          sub: foreignUser.id,
+          tenantId: foreignTenant.id,
+          type: "access",
+          role: "EMPLOYEE",
+        },
+        config.JWT_SECRET,
+        "15m",
+      ),
+    );
+    await onConnected(socket);
+    await expect(emitJoin(socket, runId)).resolves.toBe(false);
   });
 
   it("ignores malformed join/leave run ids and invalid emit run ids", async () => {

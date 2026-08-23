@@ -1,7 +1,8 @@
 /**
- * Static client-side action catalog — mirror of the 12 tools in the backend
+ * Static client-side action catalog — the visible subset of the backend
  * `platformActionToolCatalog` (api/src/modules/copilot/action/extractActionInput.ts
- * + agents/platformActionAgent.ts TOOL_RISK_MAP).
+ * + agents/platformActionAgent.ts TOOL_RISK_MAP). Actions that are not reliable
+ * from the assistant UI stay server-side but are intentionally omitted here.
  *
  * Permission-gated on the client via `can(Permission)`; the backend always
  * validates server-side regardless.
@@ -47,13 +48,6 @@ export const ACTION_CATALOG: readonly ActionCatalogEntry[] = [
     destructive: false,
   },
   {
-    toolName: "user.list",
-    labelKey: "copilot.action.chip.user.list",
-    permission: Permission.USERS_READ,
-    risk: "low",
-    destructive: false,
-  },
-  {
     toolName: "user.resendInvitation",
     labelKey: "copilot.action.chip.user.resendInvitation",
     permission: Permission.USERS_CREATE,
@@ -78,20 +72,6 @@ export const ACTION_CATALOG: readonly ActionCatalogEntry[] = [
     toolName: "document.updateMetadata",
     labelKey: "copilot.action.chip.document.updateMetadata",
     permission: Permission.DOCUMENTS_UPDATE,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "settings.update",
-    labelKey: "copilot.action.chip.settings.update",
-    permission: Permission.COMPANY_SETTINGS_UPDATE,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "roles.create",
-    labelKey: "copilot.action.chip.roles.create",
-    permission: Permission.ROLES_CREATE,
     risk: "low",
     destructive: false,
   },
