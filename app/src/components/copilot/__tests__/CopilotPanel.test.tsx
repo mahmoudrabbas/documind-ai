@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * Regression test for the "Create a role" chip: clicking it must start the
- * roles.create guide through the real provider (`startGuide` →
- * `resolveGuideFlowApi` → guide machine running), not just invoke a mocked
- * handler. The provider internals are real; only the network/service layer and
- * unrelated hooks are mocked.
+ * Regression test for the copilot side-panel: clicking a guide chip must start
+ * the guide through the real provider (`startGuide` → `resolveGuideFlow` →
+ * guide machine running), and section-driven opens must filter the action /
+ * flow chips. The provider internals are real; only the network/service layer
+ * and unrelated hooks are mocked.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,29 +16,29 @@ import type { GuideMachineState } from "@/lib/copilot/guide-machine";
 
 const mocks = vi.hoisted(() => ({
   session: {
-    sessionId: "guide-roles-1",
-    flowId: "roles.create",
+    sessionId: "guide-upload-1",
+    flowId: "documents.upload",
     locale: "en",
     dir: "ltr",
-    entryRoute: "/dashboard/roles",
+    entryRoute: "/dashboard/documents",
     steps: [
       {
         stepId: "step-1",
         order: 1,
-        title: "Open Roles",
-        instruction: "Click Roles in the sidebar to open the roles page.",
-        target: { targetId: "nav-roles", route: "/dashboard/roles" },
+        title: "Open Documents",
+        instruction: "Click Documents in the sidebar to open the documents page.",
+        target: { targetId: "nav-documents", route: "/dashboard/documents" },
         placement: "end",
         interaction: "navigate",
-        completion: { event: "route_change", routeMatch: "/dashboard/roles" },
+        completion: { event: "route_change", routeMatch: "/dashboard/documents" },
         fallback: { onMissing: "skip" },
       },
       {
         stepId: "step-2",
         order: 2,
-        title: "Start creating",
-        instruction: "Click the Create Role button to open the role form.",
-        target: { targetId: "roles-create-button" },
+        title: "Start uploading",
+        instruction: "Click the Upload button to open the upload dialog.",
+        target: { targetId: "documents-upload-button" },
         placement: "top",
         interaction: "click",
         completion: { event: "click" },
@@ -47,14 +47,6 @@ const mocks = vi.hoisted(() => ({
     ],
   } as GuideSession,
   flows: [
-    {
-      flowId: "roles.create",
-      title: "Create a role",
-      category: "roles",
-      audience: "admin",
-      keywords: [],
-      available: true,
-    },
     {
       flowId: "documents.upload",
       title: "Upload a document",
@@ -68,6 +60,14 @@ const mocks = vi.hoisted(() => ({
       title: "Search documents",
       category: "documents",
       audience: "employee",
+      keywords: [],
+      available: true,
+    },
+    {
+      flowId: "settings.open",
+      title: "Open settings",
+      category: "settings",
+      audience: "admin",
       keywords: [],
       available: true,
     },
@@ -180,7 +180,7 @@ afterEach(async () => {
 });
 
 describe("CopilotPanel flow chips", () => {
-  it("starts the roles.create guide when the Create a role chip is clicked", async () => {
+  it("starts the documents.upload guide when the Upload a document chip is clicked", async () => {
     act(() => {
       root.render(
         <CopilotProvider>
@@ -195,7 +195,7 @@ describe("CopilotPanel flow chips", () => {
     expect(getGuideFlows).toHaveBeenCalledTimes(1);
 
     const chip = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Create a role",
+      (button) => button.textContent?.trim() === "Upload a document",
     );
     expect(chip).toBeTruthy();
 
@@ -208,13 +208,13 @@ describe("CopilotPanel flow chips", () => {
     await act(async () => {});
 
     expect(resolveGuideFlow).toHaveBeenCalledWith({
-      flowId: "roles.create",
+      flowId: "documents.upload",
       locale: "en",
     });
     const probe = lastProbe();
     expect(probe.guide).not.toBeNull();
     expect(probe.guide?.status).toBe("running");
-    expect(probe.guide?.session.flowId).toBe("roles.create");
+    expect(probe.guide?.session.flowId).toBe("documents.upload");
     expect(probe.guide?.currentIndex).toBe(0);
     expect(probe.mode).toBe("guide");
   });
@@ -239,20 +239,19 @@ describe("CopilotPanel flow chips", () => {
 });
 
 describe("CopilotPanel capability_unavailable recommendations", () => {
-  it("emphasizes the recommended roles.create flow, keeps other flows visible, and starts the guide without sending a message", async () => {
+  it("emphasizes the recommended documents.upload flow, keeps other flows visible, and starts the guide without sending a message", async () => {
     vi.mocked(sendCopilotMessage).mockResolvedValueOnce({
       mode: "clarify",
       clarify: {
         kind: "capability_unavailable",
         message:
-          "I can guide you through creating a role, but I can't create roles directly for you yet.",
+          "I can guide you through uploading a document, but I can't upload it directly for you yet.",
         suggestedFlows: [
-          "roles.create",
           "documents.upload",
           "documents.search",
         ],
         suggestedActions: [],
-        recommendedFlowId: "roles.create",
+        recommendedFlowId: "documents.upload",
       },
     });
 
@@ -267,7 +266,7 @@ describe("CopilotPanel capability_unavailable recommendations", () => {
     await act(async () => {});
     expect(getGuideFlows).toHaveBeenCalledTimes(1);
 
-    typeAndSend("Create HR Manager for me");
+    typeAndSend("Upload something for me");
     await act(async () => {});
     await act(async () => {});
 
@@ -280,12 +279,11 @@ describe("CopilotPanel capability_unavailable recommendations", () => {
         "arrow_forward",
     );
     expect(recommended).toBeTruthy();
-    expect(recommended?.textContent).toContain("Create a role");
+    expect(recommended?.textContent).toContain("Upload a document");
     expect(recommended?.className).toContain("bg-primary");
     expect(recommended?.className).toContain("w-full");
 
     // Every other suggested flow stays visible.
-    expect(container.textContent).toContain("Upload a document");
     expect(container.textContent).toContain("Search documents");
 
     // The recommended CTA is rendered above the generic flow chips.
@@ -298,7 +296,7 @@ describe("CopilotPanel capability_unavailable recommendations", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
-    // Clicking it starts the roles.create guide — it must NOT send another
+    // Clicking it starts the documents.upload guide — it must NOT send another
     // normal Copilot message.
     act(() => {
       recommended?.click();
@@ -308,12 +306,12 @@ describe("CopilotPanel capability_unavailable recommendations", () => {
 
     expect(sendCopilotMessage).toHaveBeenCalledTimes(1);
     expect(resolveGuideFlow).toHaveBeenCalledWith({
-      flowId: "roles.create",
+      flowId: "documents.upload",
       locale: "en",
     });
     const probe = lastProbe();
     expect(probe.mode).toBe("guide");
-    expect(probe.guide?.session.flowId).toBe("roles.create");
+    expect(probe.guide?.session.flowId).toBe("documents.upload");
   });
 
   it("keeps the generic clarify rendering unchanged when no flow is recommended", async () => {
@@ -383,7 +381,7 @@ describe("CopilotPanel mode tabs", () => {
     await act(async () => {});
 
     // Default view is guide — flows are visible, action chips are not.
-    expect(container.textContent).toContain("Create a role");
+    expect(container.textContent).toContain("Upload a document");
     expect(container.textContent).toContain("copilot.panel.placeholder");
 
     // Switch to the Actions tab.
@@ -398,7 +396,7 @@ describe("CopilotPanel mode tabs", () => {
     // Now action chips should be visible, flows hidden.
     expect(container.textContent).toContain("copilot.actions.title");
     expect(container.textContent).toContain("copilot.actions.subtitle");
-    expect(container.textContent).toContain("copilot.action.chip.user.invite");
+    expect(container.textContent).toContain("copilot.action.chip.user.list");
   });
 
   it("auto-switches to the Actions tab when an action starts", async () => {
@@ -464,7 +462,7 @@ describe("CopilotPanel mode tabs", () => {
 
     // Click an action chip.
     const chip = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("copilot.action.chip.user.invite"),
+      (button) => button.textContent?.includes("copilot.action.chip.user.list"),
     );
     expect(chip).toBeTruthy();
     act(() => {
@@ -477,7 +475,7 @@ describe("CopilotPanel mode tabs", () => {
     // Error is shown but the panel stays in launcher with chips visible.
     expect(container.textContent).toContain("AGENT_HANDOFF_INVALID");
     expect(container.textContent).toContain("copilot.actions.title");
-    expect(container.textContent).toContain("copilot.action.chip.user.invite");
+    expect(container.textContent).toContain("copilot.action.chip.user.list");
   });
 
   it("surfaces the inline result when a chip action executes directly", async () => {
@@ -541,7 +539,7 @@ describe("CopilotPanel sidebar section chips", () => {
     act(() => {
       root.render(
         <CopilotProvider>
-          <SectionActionsHarness tools={["user.invite", "user.list"]} />
+          <SectionActionsHarness tools={["user.list", "document.softDelete"]} />
         </CopilotProvider>,
       );
     });
@@ -550,10 +548,10 @@ describe("CopilotPanel sidebar section chips", () => {
     // Auto-switched to the Actions tab with the section's quick guides only.
     expect(container.textContent).toContain("copilot.tabs.actions");
     expect(container.textContent).toContain("copilot.actions.title");
-    expect(container.textContent).toContain("copilot.action.chip.user.invite");
     expect(container.textContent).toContain("copilot.action.chip.user.list");
+    expect(container.textContent).toContain("copilot.action.chip.document.softDelete");
     expect(container.textContent).not.toContain(
-      "copilot.action.chip.document.search",
+      "copilot.action.chip.settings.update",
     );
   });
 
@@ -561,7 +559,7 @@ describe("CopilotPanel sidebar section chips", () => {
     act(() => {
       root.render(
         <CopilotProvider>
-          <SectionFlowsHarness flows={["roles.create"]} />
+          <SectionFlowsHarness flows={["documents.upload"]} />
         </CopilotProvider>,
       );
     });
@@ -569,8 +567,7 @@ describe("CopilotPanel sidebar section chips", () => {
 
     // Auto-switched to the Guides tab with the section's flow chips only.
     expect(container.textContent).toContain("copilot.tabs.guides");
-    expect(container.textContent).toContain("Create a role");
-    expect(container.textContent).not.toContain("Upload a document");
+    expect(container.textContent).toContain("Upload a document");
     expect(container.textContent).not.toContain("Search documents");
     // Action chips are not on screen either.
     expect(container.textContent).not.toContain("copilot.actions.title");
@@ -591,9 +588,9 @@ describe("CopilotPanel sidebar section chips", () => {
       (container.querySelector('[data-testid="open-section"]') as HTMLElement)?.click();
     });
     await act(async () => {});
-    expect(container.textContent).toContain("copilot.action.chip.user.invite");
+    expect(container.textContent).toContain("copilot.action.chip.user.list");
     expect(container.textContent).not.toContain(
-      "copilot.action.chip.document.search",
+      "copilot.action.chip.settings.update",
     );
 
     // Launcher-style reopen: the section filter is gone.
@@ -614,9 +611,9 @@ describe("CopilotPanel sidebar section chips", () => {
     });
     await act(async () => {});
 
-    expect(container.textContent).toContain("copilot.action.chip.user.invite");
+    expect(container.textContent).toContain("copilot.action.chip.user.list");
     expect(container.textContent).toContain(
-      "copilot.action.chip.document.search",
+      "copilot.action.chip.document.softDelete",
     );
   });
 });
@@ -644,7 +641,7 @@ function OpenCloseHarness() {
       <button
         type="button"
         data-testid="open-section"
-        onClick={() => openSection({ tools: ["user.invite"], flows: [] })}
+        onClick={() => openSection({ tools: ["user.list"], flows: [] })}
       >
         open section
       </button>

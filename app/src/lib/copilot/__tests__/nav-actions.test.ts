@@ -14,20 +14,10 @@ import { ACTION_CATALOG } from "@/lib/copilot/action-catalog";
 describe("nav-action tools registry", () => {
   it("maps each sidebar section to the matching action quick guides", () => {
     expect(navActionToolsFor("/dashboard/documents")).toEqual([
-      "document.search",
-      "document.get",
-      "document.updateMetadata",
-      "document.archive",
-      "document.restore",
       "document.softDelete",
-      "document.permanentDelete",
     ]);
     expect(navActionToolsFor("/dashboard/users")).toEqual([
-      "user.invite",
       "user.list",
-      "user.resendInvitation",
-      "user.revokeInvitation",
-      "user.delete",
     ]);
     expect(navActionToolsFor("/dashboard/settings")).toEqual([
       "settings.update",
@@ -35,7 +25,6 @@ describe("nav-action tools registry", () => {
   });
 
   it("maps sections backed by guide flows to their flow chips", () => {
-    expect(navGuideFlowsFor("/dashboard/roles")).toEqual(["roles.create"]);
     expect(navGuideFlowsFor("/dashboard/settings/document-taxonomy")).toEqual([
       "taxonomy.manage",
     ]);
@@ -72,7 +61,6 @@ describe("nav-action tools registry", () => {
   it("every mapped flow exists in the navigation flow registry", () => {
     const knownFlows = [
       "settings.open",
-      "roles.create",
       "taxonomy.manage",
       "billing.open",
       "usage.view",
@@ -100,21 +88,16 @@ describe("permittedNavActionTools", () => {
   });
 
   it("filters the section tools through the permission gate", () => {
-    const can = (permission: PermissionValue) =>
-      permission === Permission.DOCUMENTS_READ;
-    expect(permittedNavActionTools("/dashboard/documents", can)).toEqual([
-      "document.search",
-      "document.get",
+    const canDelete = (permission: PermissionValue) =>
+      permission === Permission.DOCUMENTS_DELETE;
+    expect(permittedNavActionTools("/dashboard/documents", canDelete)).toEqual([
+      "document.softDelete",
     ]);
   });
 
   it("returns the full permitted section list", () => {
     expect(permittedNavActionTools("/dashboard/users", allowAll)).toEqual([
-      "user.invite",
       "user.list",
-      "user.resendInvitation",
-      "user.revokeInvitation",
-      "user.delete",
     ]);
   });
 });
@@ -127,10 +110,7 @@ describe("permittedSectionQuickGuides", () => {
     expect(permittedSectionQuickGuides("/dashboard/settings", allowAll)).toEqual(
       { tools: ["settings.update"], flows: ["settings.open"] },
     );
-    expect(permittedSectionQuickGuides("/dashboard/roles", allowAll)).toEqual({
-      tools: ["roles.create"],
-      flows: ["roles.create"],
-    });
+    expect(permittedSectionQuickGuides("/dashboard/roles", allowAll)).toBeNull();
   });
 
   it("returns flows-only descriptors for flow-backed sections", () => {
@@ -152,9 +132,10 @@ describe("permittedSectionQuickGuides", () => {
   it("gates flows through their required permission", () => {
     const canRoleCreate = (permission: PermissionValue) =>
       permission === Permission.ROLES_CREATE;
+    // roles.create is no longer a mapped quick guide.
     expect(
       permittedSectionQuickGuides("/dashboard/roles", canRoleCreate),
-    ).toEqual({ tools: ["roles.create"], flows: ["roles.create"] });
+    ).toBeNull();
     // Taxonomy needs COMPANY_SETTINGS_READ — not granted here.
     expect(
       permittedSectionQuickGuides("/dashboard/roles", denyAll),

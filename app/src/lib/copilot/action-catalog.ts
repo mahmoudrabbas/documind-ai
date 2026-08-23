@@ -1,7 +1,8 @@
 /**
- * Static client-side action catalog — mirror of the 12 tools in the backend
- * `platformActionToolCatalog` (api/src/modules/copilot/action/extractActionInput.ts
- * + agents/platformActionAgent.ts TOOL_RISK_MAP).
+ * Static client-side action catalog — mirror of the backend
+ * `platformActionToolCatalog`. Curated to the three quick-guide actions
+ * surfaced in the copilot panel; the backend still validates server-side
+ * regardless of what is listed here.
  *
  * Permission-gated on the client via `can(Permission)`; the backend always
  * validates server-side regardless.
@@ -21,63 +22,14 @@ export interface ActionCatalogEntry {
 }
 
 /**
- * Ordered so the panel renders admin-only tools at the bottom.
- * Destructive actions flow through the existing plan → confirm dialog.
+ * The quick-guide action set surfaced in the copilot panel. Destructive
+ * actions flow through the existing plan → confirm dialog.
  */
 export const ACTION_CATALOG: readonly ActionCatalogEntry[] = [
-  {
-    toolName: "document.search",
-    labelKey: "copilot.action.chip.document.search",
-    permission: Permission.DOCUMENTS_READ,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "document.get",
-    labelKey: "copilot.action.chip.document.get",
-    permission: Permission.DOCUMENTS_READ,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "user.invite",
-    labelKey: "copilot.action.chip.user.invite",
-    permission: Permission.USERS_CREATE,
-    risk: "reversible",
-    destructive: false,
-  },
   {
     toolName: "user.list",
     labelKey: "copilot.action.chip.user.list",
     permission: Permission.USERS_READ,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "user.resendInvitation",
-    labelKey: "copilot.action.chip.user.resendInvitation",
-    permission: Permission.USERS_CREATE,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "document.archive",
-    labelKey: "copilot.action.chip.document.archive",
-    permission: Permission.DOCUMENTS_ARCHIVE,
-    risk: "reversible",
-    destructive: false,
-  },
-  {
-    toolName: "document.restore",
-    labelKey: "copilot.action.chip.document.restore",
-    permission: Permission.DOCUMENTS_ARCHIVE,
-    risk: "reversible",
-    destructive: false,
-  },
-  {
-    toolName: "document.updateMetadata",
-    labelKey: "copilot.action.chip.document.updateMetadata",
-    permission: Permission.DOCUMENTS_UPDATE,
     risk: "low",
     destructive: false,
   },
@@ -89,36 +41,8 @@ export const ACTION_CATALOG: readonly ActionCatalogEntry[] = [
     destructive: false,
   },
   {
-    toolName: "roles.create",
-    labelKey: "copilot.action.chip.roles.create",
-    permission: Permission.ROLES_CREATE,
-    risk: "low",
-    destructive: false,
-  },
-  {
-    toolName: "user.revokeInvitation",
-    labelKey: "copilot.action.chip.user.revokeInvitation",
-    permission: Permission.USERS_DELETE,
-    risk: "reversible",
-    destructive: false,
-  },
-  {
     toolName: "document.softDelete",
     labelKey: "copilot.action.chip.document.softDelete",
-    permission: Permission.DOCUMENTS_DELETE,
-    risk: "destructive",
-    destructive: true,
-  },
-  {
-    toolName: "user.delete",
-    labelKey: "copilot.action.chip.user.delete",
-    permission: Permission.USERS_DELETE,
-    risk: "destructive",
-    destructive: true,
-  },
-  {
-    toolName: "document.permanentDelete",
-    labelKey: "copilot.action.chip.document.permanentDelete",
     permission: Permission.DOCUMENTS_DELETE,
     risk: "destructive",
     destructive: true,

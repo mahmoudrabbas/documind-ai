@@ -17,29 +17,13 @@ import { ACTION_CATALOG } from "./action-catalog";
 import { Permission, type PermissionValue } from "@/types/api/permissions.types";
 
 export const NAV_ACTION_TOOLS: Readonly<Record<string, readonly string[]>> = {
-  "/dashboard/documents": [
-    "document.search",
-    "document.get",
-    "document.updateMetadata",
-    "document.archive",
-    "document.restore",
-    "document.softDelete",
-    "document.permanentDelete",
-  ],
-  "/dashboard/users": [
-    "user.invite",
-    "user.list",
-    "user.resendInvitation",
-    "user.revokeInvitation",
-    "user.delete",
-  ],
+  "/dashboard/documents": ["document.softDelete"],
+  "/dashboard/users": ["user.list"],
   "/dashboard/settings": ["settings.update"],
-  "/dashboard/roles": ["roles.create"],
 };
 
 export const NAV_GUIDE_FLOWS: Readonly<Record<string, readonly string[]>> = {
   "/dashboard/settings": ["settings.open"],
-  "/dashboard/roles": ["roles.create"],
   "/dashboard/settings/document-taxonomy": ["taxonomy.manage"],
   "/dashboard/settings/billing": ["billing.open"],
   "/company/usage": ["usage.view"],

@@ -288,21 +288,21 @@ describe("GuideOverlay wait fallback", () => {
 });
 
 describe("GuideOverlay wait-stop fallback", () => {
-  // roles.create steps 2-4 use onMissing "wait-stop": a temporarily missing
+  // documents.upload steps 2-4 use onMissing "wait-stop": a temporarily missing
   // target must never cascade the guide to a silent completion. The overlay
   // waits for fallback.waitMs and then STOPS with a recoverable reason (not
   // skip), while a Cancel button stays available during the wait window.
   const waitStopStep = () =>
     makeStep({
       stepId: "step-2",
-      target: { targetId: "roles-create-button" },
+      target: { targetId: "document-upload-button" },
       completion: { event: "click" },
       fallback: { onMissing: "wait-stop", waitMs: 8000 },
     });
 
   function missingTarget() {
     state.target = {
-      targetId: "roles-create-button",
+      targetId: "document-upload-button",
       status: "missing",
       rect: null,
       element: null,
@@ -356,7 +356,7 @@ describe("GuideOverlay wait-stop fallback", () => {
     // Target materializes within the bounded window: the effect re-runs, the
     // pending timer is cleared, and no skip/stop fires after waitMs.
     state.target = {
-      targetId: "roles-create-button",
+      targetId: "document-upload-button",
       status: "found",
       rect: { top: 0, left: 0, width: 200, height: 200 },
       element: null,
@@ -420,20 +420,20 @@ describe("GuideOverlay wait-stop fallback", () => {
   });
 });
 
-describe("GuideOverlay tooltip collision avoidance (roles-create-button)", () => {
+describe("GuideOverlay tooltip collision avoidance (document-upload-button)", () => {
   // The overlay must stay transparent to pointer events except the tooltip card
   // itself, so a target the tooltip no longer covers remains clickable.
   it("keeps the overlay pointer-transparent except for the tooltip card", () => {
     const clickStep = makeStep({
       stepId: "step-2",
-      target: { targetId: "roles-create-button" },
+      target: { targetId: "document-upload-button" },
       placement: "top",
       interaction: "click",
       completion: { event: "click" },
     });
     state.guide = runningGuide([clickStep]);
     state.target = {
-      targetId: "roles-create-button",
+      targetId: "document-upload-button",
       status: "found",
       rect: { top: 210, left: 1210, width: 120, height: 40 },
       element: null,
@@ -454,21 +454,21 @@ describe("GuideOverlay tooltip collision avoidance (roles-create-button)", () =>
   it("clicking the interactive target dispatches completion and advances the guide", () => {
     const clickStep = makeStep({
       stepId: "step-2",
-      target: { targetId: "roles-create-button" },
+      target: { targetId: "document-upload-button" },
       placement: "top",
       interaction: "click",
       completion: { event: "click" },
     });
     state.guide = runningGuide([clickStep]);
     state.target = {
-      targetId: "roles-create-button",
+      targetId: "document-upload-button",
       status: "found",
       rect: { top: 210, left: 1210, width: 120, height: 40 },
       element: null,
     };
 
     const targetEl = document.createElement("button");
-    targetEl.setAttribute("data-guide-id", "roles-create-button");
+    targetEl.setAttribute("data-guide-id", "document-upload-button");
     document.body.appendChild(targetEl);
 
     renderOverlay();
@@ -479,22 +479,22 @@ describe("GuideOverlay tooltip collision avoidance (roles-create-button)", () =>
     });
     expect(state.actions.dispatch).toHaveBeenCalledWith({
       type: "completion",
-      event: { type: "click", targetId: "roles-create-button" },
+      event: { type: "click", targetId: "document-upload-button" },
     });
     targetEl.remove();
   });
 });
 
 describe("GuideOverlay missing navigation target recovery", () => {
-  // The roles.create flow opens with a nav-roles step (interaction "navigate",
-  // completion route_change to /dashboard/roles, default fallback skip). A
+  // The documents.upload flow opens with a nav-documents step (interaction "navigate",
+  // completion route_change to /dashboard/documents, default fallback skip). A
   // missing nav target must never auto-skip into a silently completed guide.
   const navRolesStep = () =>
     makeStep({
       stepId: "step-1",
-      target: { targetId: "nav-roles" },
+      target: { targetId: "nav-documents" },
       interaction: "navigate",
-      completion: { event: "route_change", routeMatch: "/dashboard/roles" },
+      completion: { event: "route_change", routeMatch: "/dashboard/documents" },
       fallback: { onMissing: "skip" },
     });
 
@@ -502,7 +502,7 @@ describe("GuideOverlay missing navigation target recovery", () => {
     vi.useFakeTimers();
     state.guide = runningGuide([navRolesStep()]);
     state.target = {
-      targetId: "nav-roles",
+      targetId: "nav-documents",
       status: "missing",
       rect: null,
       element: null,
@@ -521,7 +521,7 @@ describe("GuideOverlay missing navigation target recovery", () => {
   it("renders a recovery card with go-to-route and cancel instead of the waiting pill", () => {
     state.guide = runningGuide([navRolesStep()]);
     state.target = {
-      targetId: "nav-roles",
+      targetId: "nav-documents",
       status: "missing",
       rect: null,
       element: null,
@@ -541,13 +541,13 @@ describe("GuideOverlay missing navigation target recovery", () => {
     act(() => {
       goToRoute?.click();
     });
-    expect(state.routerPush).toHaveBeenCalledWith("/dashboard/roles");
+    expect(state.routerPush).toHaveBeenCalledWith("/dashboard/documents");
   });
 
   it("resumes the guide when the recovery action reaches the route", () => {
     state.guide = runningGuide([navRolesStep()]);
     state.target = {
-      targetId: "nav-roles",
+      targetId: "nav-documents",
       status: "missing",
       rect: null,
       element: null,
@@ -560,11 +560,11 @@ describe("GuideOverlay missing navigation target recovery", () => {
     act(() => {
       goToRoute?.click();
     });
-    expect(state.routerPush).toHaveBeenCalledWith("/dashboard/roles");
+    expect(state.routerPush).toHaveBeenCalledWith("/dashboard/documents");
 
-    state.pathname = "/dashboard/roles";
+    state.pathname = "/dashboard/documents";
     state.target = {
-      targetId: "nav-roles",
+      targetId: "nav-documents",
       status: "found",
       rect: { top: 0, left: 0, width: 200, height: 200 },
       element: null,
@@ -572,14 +572,14 @@ describe("GuideOverlay missing navigation target recovery", () => {
     renderOverlay();
     expect(state.actions.dispatch).toHaveBeenCalledWith({
       type: "completion",
-      event: { type: "route_change", route: "/dashboard/roles" },
+      event: { type: "route_change", route: "/dashboard/documents" },
     });
   });
 
   it("cancel from the recovery card ends the guide", () => {
     state.guide = runningGuide([navRolesStep()]);
     state.target = {
-      targetId: "nav-roles",
+      targetId: "nav-documents",
       status: "missing",
       rect: null,
       element: null,

@@ -260,7 +260,6 @@ describe("nav action buttons", () => {
       "/dashboard/settings/billing",
       "/dashboard/settings/document-taxonomy",
       "/company/usage",
-      "/dashboard/roles",
     ]) {
       expect(rowActionButton(href), href).not.toBeNull();
     }
@@ -291,15 +290,7 @@ describe("nav action buttons", () => {
       rowActionButton("/dashboard/documents")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: [
-        "document.search",
-        "document.get",
-        "document.updateMetadata",
-        "document.archive",
-        "document.restore",
-        "document.softDelete",
-        "document.permanentDelete",
-      ],
+      tools: ["document.softDelete"],
       flows: [],
     });
     expect(onClose).toHaveBeenCalled();
@@ -308,13 +299,7 @@ describe("nav action buttons", () => {
       rowActionButton("/dashboard/users")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: [
-        "user.invite",
-        "user.list",
-        "user.resendInvitation",
-        "user.revokeInvitation",
-        "user.delete",
-      ],
+      tools: ["user.list"],
       flows: [],
     });
   });
@@ -322,14 +307,6 @@ describe("nav action buttons", () => {
   it("opens the copilot panel with the section's guide-flow chips", () => {
     grantAllPermissions();
     renderNav();
-
-    act(() => {
-      rowActionButton("/dashboard/roles")?.click();
-    });
-    expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["roles.create"],
-      flows: ["roles.create"],
-    });
 
     act(() => {
       rowActionButton("/dashboard/settings/billing")?.click();
@@ -351,6 +328,7 @@ describe("nav action buttons", () => {
   it("gates the section chips through effective permissions", () => {
     grantOnly(
       Permission.DOCUMENTS_READ,
+      Permission.DOCUMENTS_DELETE,
       Permission.USERS_READ,
       Permission.ROLES_READ,
       Permission.ROLES_CREATE,
@@ -361,25 +339,16 @@ describe("nav action buttons", () => {
       rowActionButton("/dashboard/documents")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["document.search", "document.get"],
+      tools: ["document.softDelete"],
       flows: [],
     });
 
-    // Only read is granted — nothing destructive or updatable is offered.
     act(() => {
       rowActionButton("/dashboard/users")?.click();
     });
     expect(state.copilot.openSection).toHaveBeenCalledWith({
       tools: ["user.list"],
       flows: [],
-    });
-
-    act(() => {
-      rowActionButton("/dashboard/roles")?.click();
-    });
-    expect(state.copilot.openSection).toHaveBeenCalledWith({
-      tools: ["roles.create"],
-      flows: ["roles.create"],
     });
   });
 

@@ -15,7 +15,7 @@ const flows: GuideFlowMeta[] = [
   meta("documents.search", { audience: "employee" }),
   meta("chat.ask", { audience: "employee" }),
   meta("users.invite", { audience: "admin" }),
-  meta("roles.create", { audience: "admin" }),
+  meta("users.remove", { audience: "admin" }),
   meta("platform.tour", { audience: "all" }),
 ];
 
@@ -28,7 +28,7 @@ describe("flow catalog ranking", () => {
       "chat.ask",
       "platform.tour",
     ]);
-    expect(rest.map((flow) => flow.flowId)).toEqual(["users.invite", "roles.create"]);
+    expect(rest.map((flow) => flow.flowId)).toEqual(["users.invite", "users.remove"]);
   });
 
   it("keeps unknown audience flows out of recommended", () => {
